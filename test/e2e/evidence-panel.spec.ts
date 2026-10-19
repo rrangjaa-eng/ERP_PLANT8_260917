@@ -114,6 +114,23 @@ test("바뀐 칸 없음 → 1차 aria-disabled + 이유 줄 · 네이티브 disa
   await expect(page.getByRole("dialog", { name: "입력 버리기" })).toBeVisible();
 });
 
+test("(감사 D-1) 공급가를 한 번만 고치고 Esc → 「입력 버리기」(숫자 칸 hidden 값이 다시 그린 뒤 바뀌어도 바뀐 칸 수가 늦지 않는다)", async ({ page }) => {
+  const { manager, login } = await managerPage(page);
+  await insertRecordFixture(manager, { supplyKrw: 1_000_000, vatKrw: 100_000 });
+  await login();
+  await page.goto("/expenses/evidence?state=all");
+  const panel = await openByEnter(page);
+  await panel.getByRole("textbox", { name: "공급가" }).fill("990,000");
+  await expect(panel.locator("#evidence-panel-preview")).toHaveText("세액 110,000 · 합계 1,100,000");
+  await page.keyboard.press("Escape");
+  const discard = page.getByRole("dialog", { name: "입력 버리기" });
+  await expect(discard).toBeVisible();
+  // 버린 뒤 포커스 = 연 칸(§10) — 패널과 확인 창이 한 번에 사라질 때 확인 창이 화면 제목으로 빼앗지 않는다.
+  await discard.getByRole("button", { name: /^입력 버리기/ }).click();
+  await expect(panel).toBeHidden();
+  await expect(evidenceCell(page, 0, EVIDENCE_COL.counterparty)).toBeFocused();
+});
+
 test("충돌: 다른 세션이 먼저 바꾼 뒤 저장 → FormAlert `다른 사람이 {HH:mm}에 바꿈` + 3차 새로 고침 · 입력 값 · 패널 그대로 → 새로 고침 → 새 서버 값 · 줄 0", async ({ page }) => {
   const { manager, login } = await managerPage(page);
   const recordId = await insertRecordFixture(manager, { supplyKrw: 1_000_000, vatKrw: 100_000 });

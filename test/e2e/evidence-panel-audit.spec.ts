@@ -315,12 +315,14 @@ for (const width of WIDTHS) {
           record("입력 아래 줄 = 서버 값(열 때)", width, ROLE, where, (await preview.textContent())?.trim() ?? null, expectPreview, (await preview.textContent())?.trim() === expectPreview);
           const style = await supplyInput.evaluate((el) => ({ numeric: getComputedStyle(el).fontVariantNumeric, align: getComputedStyle(el).textAlign, h: Math.round(el.getBoundingClientRect().height) }));
           record("공급가 칸 tabular-nums · text-align right", width, ROLE, where, style, { numeric: "tabular-nums", align: "right" }, style.numeric.includes("tabular-nums") && style.align === "right");
-          const previewNum = await preview.locator("*").first().evaluate((el) => ({ numeric: getComputedStyle(el).fontVariantNumeric })).catch(() => null);
+          const previewNum = await preview.locator("span", { hasText: /^[\d,]+$/ }).first().evaluate((el) => ({ numeric: getComputedStyle(el).fontVariantNumeric })).catch(() => null);
           record("입력 아래 줄 금액 tabular-nums", width, ROLE, where, previewNum, "tabular-nums", !!previewNum && previewNum.numeric.includes("tabular-nums"));
           // 입력 아래 줄 낱말 간격 — 텍스트 노드 · 금액 요소 사이 x 간격(px).
           const gaps = await preview.evaluate((el) => {
             const parts: { text: string; left: number; right: number }[] = [];
-            for (const node of el.childNodes) {
+            // 글자를 한 덩이(안쪽 span 하나)로 감쌌으면 그 안의 조각 사이를 잰다(06.1-07 D-3 고침 뒤 — 겉 조각 하나만 재면 빈 판정이다).
+            const root = el.childNodes.length === 1 && el.firstElementChild ? el.firstElementChild : el;
+            for (const node of root.childNodes) {
               const range = document.createRange();
               range.selectNodeContents(node);
               const rects = [...range.getClientRects()].filter((r) => r.width > 0);

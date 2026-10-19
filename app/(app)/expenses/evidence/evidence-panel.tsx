@@ -258,9 +258,10 @@ export function EvidencePanel({ detail: initial, lineClassName, onClose, onSaved
               <p id={PREVIEW_ID} className={lineClassName}>
                 {/* 미리 보기를 받는 동안은 빈 줄(앞 값을 다시 적지 않는다) — 받으면 그 수가 들어선다. */}
                 {line ? (
-                  <>
+                  <span>
+                {/* 글자를 한 덩이로 — 줄 클래스(undoLine)가 flex라 조각마다 gap이 붙었다(감사 D-3). */}
                     세액 <Num value={line.vatKrw} /> · 합계 <Num value={line.totalKrw} />
-                  </>
+                  </span>
                 ) : null}
               </p>
             )}

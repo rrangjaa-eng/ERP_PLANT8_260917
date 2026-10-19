@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAction } from "next-safe-action/hooks";
-import { setEvidenceTypeTaxRuleAction } from "./actions";
+import { setEvidenceTypePrivateToOwnerAction, setEvidenceTypeTaxRuleAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { parseNumberInput } from "@/lib/format-number";
 import { PcOnly, PhoneOnly } from "../pc-only";
@@ -45,9 +45,12 @@ const BASIS_DATE_OPTIONS: { value: BasisDate; label: string }[] = [
 // 즉시 저장(선택 상자는 변경 시, 수치 입력은 초점 이탈 시) — 별도 저장
 // 버튼이 없다. 이 항목이 적용되는 비율 값 자체는 여기서 받지 않는다 —
 // 그 값은 별도 화면의 이력형 키가 적용 시작일과 함께 관리한다.
-export function EvidenceTypeFields({ itemId, initialValue }: { itemId: string; initialValue: TaxRuleValue | null }) {
+export function EvidenceTypeFields({ itemId, initialValue, initialPrivate = false }: { itemId: string; initialValue: TaxRuleValue | null; initialPrivate?: boolean }) {
   const [value, setValue] = useState<TaxRuleValue>(initialValue ?? { ruleKind: "none" });
   const { execute } = useAction(setEvidenceTypeTaxRuleAction);
+  // 06.1-14(G15 · SYSTEM §7-2 boolean): 네이티브 체크박스 하나 — 라벨 자체가 클릭 영역, 바뀌면 즉시 저장(확인 창 없음 · 다시 누르면 되돌아간다).
+  const [privateToOwner, setPrivateToOwner] = useState(initialPrivate);
+  const privateAction = useAction(setEvidenceTypePrivateToOwnerAction);
 
   function save(next: TaxRuleValue) {
     setValue(next);
@@ -72,10 +75,24 @@ export function EvidenceTypeFields({ itemId, initialValue }: { itemId: string; i
   return (
     <>
       <PhoneOnly>
-        <div className={styles.taxRuleSection}>{phoneText}</div>
+        <div className={styles.taxRuleSection}>{privateToOwner ? `올린 사람 · 경영관리만 · ${phoneText}` : phoneText}</div>
       </PhoneOnly>
       <PcOnly>
         <div className={styles.taxRuleSection}>
+          <div className={styles.selectLabel}>
+            <label htmlFor={`private-to-owner-${itemId}`}>올린 사람 · 경영관리만 보기</label>
+            <input
+              id={`private-to-owner-${itemId}`}
+              type="checkbox"
+              checked={privateToOwner}
+              onChange={(event) => {
+                const next = event.target.checked;
+                setPrivateToOwner(next);
+                privateAction.execute({ id: itemId, value: next });
+              }}
+            />
+          </div>
+
           <div className={styles.selectLabel}>
             <label htmlFor={`rule-kind-${itemId}`}>규칙 종류</label>
             <select

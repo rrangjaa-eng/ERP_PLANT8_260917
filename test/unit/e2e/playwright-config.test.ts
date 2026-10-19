@@ -1,6 +1,8 @@
 import type { Project } from "@playwright/test";
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import config from "../../../playwright.config";
 
 // 코디네이터 지시(PR #88) — Task 1 커밋 7d726e3(규약 C4 Playwright 프로젝트
@@ -40,6 +42,29 @@ describe("playwright.config.ts — 규약 C4 확인증 프로젝트 격리(백�
     expect(byName("desktop")?.testIgnore).toEqual(expect.arrayContaining(shared));
     expect(byName("desktop-settings")?.testMatch).toEqual(shared);
     expect(byName("desktop-settings")?.workers).toBe(1);
+  });
+
+  // PR #253 CI e2e (1) — 증빙 표를 통째로 비우는(clearEvidence) 스펙 여덟이 desktop의 두 워커에서 겹쳐 돌아 서로의 기록을 지웠다.
+  it("증빙 표를 비우는 스펙은 desktop에서 빠지고 desktop-evidence에서 워커 1로 돈 뒤 desktop-settings가 잇는다", () => {
+    const wipers = [
+      "evidence-attach-audit.spec.ts",
+      "evidence-attach.spec.ts",
+      "evidence-intake.spec.ts",
+      "evidence-list-audit.spec.ts",
+      "evidence-panel-audit.spec.ts",
+      "evidence-panel.spec.ts",
+      "evidence-pick-audit.spec.ts",
+      "evidence-pick.spec.ts",
+    ];
+    expect(byName("desktop")?.testIgnore).toEqual(expect.arrayContaining(wipers));
+    expect(byName("desktop-evidence")?.testMatch).toEqual(wipers);
+    expect(byName("desktop-evidence")?.workers).toBe(1);
+    expect(byName("desktop-evidence")?.dependencies).toEqual(["mobile-375", "certs"]);
+    expect(byName("desktop-settings")?.dependencies).toEqual(["desktop-evidence"]);
+    // 새 스펙이 clearEvidence를 부르면 이 목록(= desktop-evidence)에 들어와야 한다.
+    const dir = resolve(__dirname, "../../e2e");
+    const callers = readdirSync(dir).filter((file) => file.endsWith(".spec.ts") && readFileSync(resolve(dir, file), "utf8").includes("clearEvidence("));
+    expect(callers.sort()).toEqual(wipers);
   });
 
   it("globalSetup이 통합 테스트처럼 CERT_FEATURE_ALLOWED를 켠다(webServer가 물려받는다)", () => {

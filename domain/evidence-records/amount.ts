@@ -27,6 +27,9 @@ const PURCHASE_REQUEST_NOT_FOUND = "없는 구매 요청 · 새로 고침";
 const PURCHASE_REQUEST_CANCELLED = "구매 요청 취소됨 · 새로 고침";
 const NOT_NEEDS_CHECK = "확인 필요 아님 · 새로 고침";
 const AMOUNT_HIDDEN = "증빙 금액 보기 권한 없음";
+// 패널 1차 막힘 글자 · 06.1-06 붙이기 막힘 글자와 같은 말(독립 검토 P3-1 · P3-2).
+const NO_CHANGE = "바뀐 칸 없음";
+const ARCHIVED = "보관됨";
 // C8 · E27 — 카드 사용에 붙은 기록의 금액 고침 갈래는 06.1-09가 연다. 그 전에는 카드 사용 붙임이 생기지 않는다(화면 문구 없음 — 서버 거부 글자만).
 export const CARD_USAGE_AMOUNT_LOCKED = "카드 사용에 붙음 · 금액 잠김";
 
@@ -136,12 +139,19 @@ type ChangeInput = { id: string; version: number; supplyKrw: number | null; clea
 // 금액이 아니다). 붙은 갈래는 문서 행 잠금 → 잠금 뒤 잠김 재판정 → 증빙 행 잠금 → 붙임 재확인 → version 비교 → 갱신 → 기록 차례다.
 async function changeRecord(viewer: Viewer, input: ChangeInput, deps?: EvidenceAmountDeps): Promise<EvidenceRecordChangeResult> {
   if (!(await can(viewer, "evidence.intake", "write"))) throw new ForbiddenError(INTAKE_FORBIDDEN);
+  // 독립 검토 P2-2 — 공급가가 오는 호출은 금액 보기 항목부터 본다(미리 보기와 같은 잣대). 금액 판정 거부 글자(합계보다 큼 · 부호 다름)가
+  // 못 보는 합계를 알려 주지 않게 그 판정보다 먼저 거부한다.
+  if (input.supplyKrw !== null && !(await visible(viewer, "evidence.amount"))) throw new ForbiddenError(AMOUNT_HIDDEN);
   const record = await getEvidenceRecord(viewer, input.id);
   if (!record || record.id === undefined) throw new UserFacingError(RECORD_NOT_FOUND);
   if (input.clearNeedsCheck && record.statusWord !== "확인 필요") throw new UserFacingError(NOT_NEEDS_CHECK);
   const current = await readRecordAmounts(viewer, input.id);
   if (!current) throw new UserFacingError(RECORD_NOT_FOUND);
   const amountChange = input.supplyKrw !== null && input.supplyKrw !== current.supplyKrw;
+  // P3-1 — 바뀐 것 없는 호출은 잠금 · version을 건드리지 않고 거부한다.
+  if (!amountChange && !input.clearNeedsCheck) throw new UserFacingError(NO_CHANGE);
+  // P3-2 — 보관된 증빙의 금액은 고치지 않는다(260907 증빙 수정과 같음). 잠금 뒤에는 UPDATE 조건(archived_at is null)이 다시 막는다.
+  if (amountChange && record.statusWord === ARCHIVED) throw new UserFacingError(ARCHIVED);
   if (amountChange && input.supplyKrw !== null) {
     const resolved = resolveEditedAmounts({ totalKrw: current.totalKrw, supplyKrw: input.supplyKrw });
     if (!resolved.ok) throw new UserFacingError(resolved.reason);

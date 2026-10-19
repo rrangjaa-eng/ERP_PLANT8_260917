@@ -522,16 +522,20 @@ function supplyOf(value: unknown): number | null {
 }
 
 // DB-15 · E22 — 등록 · 붙임 · 뗌(사람 = 이름 · 자동 = 문서 번호 자리) · 금액 전 → 후를 시각 순으로. 자동 떼기는 06.1-06 AUTO_DETACH_REASONS 글자로 가른다.
-function historyLines(history: Awaited<ReturnType<typeof listRecordHistory>>, amountShown: boolean): string[] {
+// 붙은 문서를 못 보면(seen 거짓) 문서 번호 · 붙인/뗀 사람 이름 칸 없이 줄만 남긴다(독립 검토 P2-1 — 06.1-06 P3-2 takenMessage와 같은 결). 번호 없는
+// 작성 중 · 카드 사용 낱말은 번호가 아니라 그대로 둔다.
+function historyLines(history: Awaited<ReturnType<typeof listRecordHistory>>, amountShown: boolean, seen: readonly boolean[]): string[] {
   const autoReasons: ReadonlySet<string> = new Set(Object.values(AUTO_DETACH_REASONS));
   const items: { at: Date; order: number; text: string }[] = [];
   if (history.registration) items.push({ at: history.registration.createdAt, order: 0, text: `${history.registration.createdByName ?? "—"} 등록` });
   history.links.forEach((link, index) => {
-    const owner = ownerWordOf(link);
-    items.push({ at: link.attachedAt, order: 1 + index * 2, text: `${link.attachedByName ?? "—"} 붙임 ${owner}` });
+    const shown = seen[index] === true;
+    const owner = shown || link.ownerNumber === null ? ownerWordOf(link) : null;
+    const attachedBy = shown ? `${link.attachedByName ?? "—"} ` : "";
+    items.push({ at: link.attachedAt, order: 1 + index * 2, text: `${attachedBy}붙임${owner === null ? "" : ` ${owner}`}` });
     if (link.detachedAt !== null && link.detachReason !== null) {
-      const who = autoReasons.has(link.detachReason) ? owner : (link.detachedByName ?? "—");
-      items.push({ at: link.detachedAt, order: 2 + index * 2, text: `${who} 뗌 · ${link.detachReason}` });
+      const who = !shown ? null : autoReasons.has(link.detachReason) ? owner : (link.detachedByName ?? "—");
+      items.push({ at: link.detachedAt, order: 2 + index * 2, text: `${who === null ? "" : `${who} `}뗌 · ${link.detachReason}` });
     }
   });
   if (amountShown) {
@@ -547,19 +551,23 @@ function historyLines(history: Awaited<ReturnType<typeof listRecordHistory>>, am
 }
 
 // 단건 상세 — 목록과 같은 범위(범위 밖 · 없는 id는 null). 붙은 문서 · 금액 잠김은 등록 권한자(범위 all)에게만(withAttachFacts와 같은 조건).
+// 패널을 여는 사람은 증빙 등록 쓰기뿐이다 — 액션 등록표(registry)는 집행되지 않으므로 여기서 거부한다(독립 검토 P2-1).
 export async function getEvidenceDetail(viewer: Viewer, id: string): Promise<EvidenceDetailView | null> {
+  if (!(await can(viewer, "evidence.intake", "write"))) throw new ForbiddenError(INTAKE_FORBIDDEN);
   if (!UUID.safeParse(id).success) return null;
   const scope = await evidenceScopeFor(viewer);
   const row = await findRecordForScope(viewer, scope, id);
   if (!row) return null;
   const [base] = await withAttachFacts(viewer, scope, [sourceOf(row)]);
   if (!base) return null;
-  const [history, amountShown, links, { readAmountLock }] = await Promise.all([
+  const [history, amountShown, links, { readAmountLock }, { canSeeLinkOwner }] = await Promise.all([
     listRecordHistory(viewer, id),
     visible(viewer, "evidence.amount"),
     scope.rows === "all" ? listLiveLinkOwnersByRecords(viewer, [id]) : Promise.resolve([]),
     import("@/domain/evidence-records/amount"),
+    import("@/domain/evidence-records/attach"),
   ]);
+  const seen = await Promise.all(history.links.map((link) => canSeeLinkOwner(viewer, link)));
   const registration = history.registration;
   const detail: EvidenceDetailDto = {
     id: base.id,
@@ -582,7 +590,7 @@ export async function getEvidenceDetail(viewer: Viewer, id: string): Promise<Evi
     attachedNumber: base.attachedNumber,
     attachedPending: base.attachedPending,
     amountLock: scope.rows === "all" ? await readAmountLock(viewer, links[0]) : null,
-    history: historyLines(history, amountShown),
+    history: historyLines(history, amountShown, seen),
     registered: registration ? `${registration.createdByName ?? "—"} · ${shortKst(registration.createdAt)}` : null,
   };
   const [view] = await projectMany(viewer, [detail], EVIDENCE_DETAIL_DTO_SPEC);

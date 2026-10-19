@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
 import { actionLog, evidenceRecordLinks, evidenceRecords, expenses, purchaseRequests, users } from "@/db/schema";
@@ -20,7 +20,7 @@ export async function readRecordAmounts(viewer: Viewer, id: string, tx: DbOrTx =
   return row ?? null;
 }
 
-// 공급가 · 세액 한 줄 — id · version이 같은 줄만 바꾸고 바꿨으면 참(거짓 = 낡음). 합계 칸은 쓰지 않는다(파일 값 고정 — PA-AMT, CHECK 합계 = 공급가 + 세액은
+// 공급가 · 세액 한 줄 — id · version이 같고 보관 아닌 줄만 바꾸고 바꿨으면 참(거짓 = 낡음). 합계 칸은 쓰지 않는다(파일 값 고정 — PA-AMT, CHECK 합계 = 공급가 + 세액은
 // domain이 diffKrw로 지킨다). clearNeedsCheck면 같은 문장에서 확인 필요 칸도 비운다(DA-13 — 금액 고침과 확인 필요 풀기가 한쪽만 반영되는 길 없음).
 // updated_at(timestamp)은 충돌 글자 HH:mm의 한국 시각 변환을 위해 UTC로 담는다(06.1-05 updateVisibilitiesIfVersionMatch와 같은 꼴).
 export async function updateAmountIfVersionMatches(
@@ -38,7 +38,7 @@ export async function updateAmountIfVersionMatches(
       version: sql`${evidenceRecords.version} + 1`,
       updatedAt: sql`(now() at time zone 'UTC')`,
     })
-    .where(and(eq(evidenceRecords.id, input.id), eq(evidenceRecords.version, input.version)))
+    .where(and(eq(evidenceRecords.id, input.id), eq(evidenceRecords.version, input.version), isNull(evidenceRecords.archivedAt)))
     .returning({ id: evidenceRecords.id });
   return rows.length > 0;
 }
@@ -58,6 +58,7 @@ export type RecordRegistration = { createdAt: Date; createdByName: string | null
 
 export type RecordLinkHistoryRow = {
   ownerKind: string;
+  ownerId: string;
   /** 지출결의 · 구매 요청 번호 — 번호 없는 임시 지출결의 · 카드 사용은 null. */
   ownerNumber: string | null;
   attachedAt: Date;
@@ -92,6 +93,7 @@ export async function listRecordHistory(viewer: Viewer, id: string): Promise<Rec
   const links = await db
     .select({
       ownerKind: evidenceRecordLinks.ownerKind,
+      ownerId: evidenceRecordLinks.ownerId,
       ownerNumber: sql<string | null>`case ${evidenceRecordLinks.ownerKind} when 'expense' then ${expenses.number} when 'purchase_request' then ${purchaseRequests.number} else null end`,
       attachedAt: evidenceRecordLinks.attachedAt,
       attachedByName: attachers.name,

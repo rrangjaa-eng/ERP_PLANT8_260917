@@ -23,7 +23,9 @@ import { seoulToday } from "@/lib/dates";
 import { markActionLogRowsPruned } from "@/repositories/action-log";
 import { AUTO_DETACH_REASONS } from "@/repositories/evidence-record-links";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertOrgUnit } from "@/repositories/org-units";
 import { upsertSimpleValue } from "@/repositories/settings";
+import { insertTeam } from "@/repositories/teams";
 import { setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
 import {
   createDraftExpenseFixture,
@@ -34,6 +36,8 @@ import {
   createReturnedExpenseFixture,
   insertLinkFixture,
   insertRecordFixture,
+  setRecordArchivedFixture,
+  setRecordVisibilityFixture,
 } from "./fixtures/evidence";
 import { makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
 import { purchaseProject, request as createRequest } from "./fixtures/purchase-requests";
@@ -419,5 +423,68 @@ describe("상세 이력 (DB-15 · PA-HISTORY)", () => {
       `${other.number} 뗌 · 문서 종결`,
     ]);
     expect(history.every((line) => /^\d{2}-\d{2} \d{2}:\d{2} /.test(line))).toBe(true);
+  });
+});
+
+describe("독립 검토 지적 (06.1-07 고침 — P2-1 · P2-2 · P3-1 · P3-2)", () => {
+  it("(P2-1) 증빙 등록 쓰기 없는 공개 범위 열람자(PM) → 상세 거부 — 화면 등록표(registry)가 아니라 domain이 막는다", async () => {
+    const manager = await createIntakeManager();
+    const recordId = await record(manager);
+    const division = await insertOrgUnit(SYSTEM_VIEWER, { name: `상세범위본부-${randomUUID().slice(0, 8)}` });
+    const team = await insertTeam(SYSTEM_VIEWER, { orgUnitId: division.id, name: `상세범위팀-${randomUUID().slice(0, 8)}` });
+    await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: team.id });
+    const pm = await createPmInTeam(team.id);
+    expect(await getEvidenceRecord(pm, recordId)).not.toBeNull();
+    expect(await caught(getEvidenceDetail(pm, recordId))).toBeInstanceOf(ForbiddenError);
+  });
+
+  it("(P2-1) 붙은 문서를 못 보는 등록자 → 이력 붙임 · 뗌 줄에 문서 번호 · 붙인/뗀 사람 이름 없음(번호 없는 작성 중 낱말은 그대로)", async () => {
+    const fx = await setupExpenseProject();
+    const registrar = await createIntakeViewer();
+    const recordId = await record(registrar);
+    const doc = await createReturnedExpenseFixture(fx);
+    await insertLinkFixture({ recordId, ownerId: doc.expenseId, attachedBy: fx.pm.id });
+    await db
+      .update(evidenceRecordLinks)
+      .set({ detachedAt: new Date(), detachedBy: fx.pm.id, detachReason: "다른 문서 증빙" })
+      .where(and(eq(evidenceRecordLinks.evidenceRecordId, recordId), isNull(evidenceRecordLinks.detachedAt)));
+    const draftId = await createDraftExpenseFixture(fx, fx.lines.split);
+    await insertLinkFixture({ recordId, ownerId: draftId, attachMode: "author", attachedBy: fx.pm.id });
+
+    const history = (await getEvidenceDetail(registrar, recordId))?.history ?? [];
+    const texts = history.map((line) => line.slice("MM-DD HH:mm ".length));
+    expect(texts).toEqual(["증빙 등록자 등록", "붙임", "뗌 · 다른 문서 증빙", "붙임 작성 중 문서"]);
+    expect(JSON.stringify(history)).not.toContain(doc.number);
+  });
+
+  it("(P2-2) evidence.amount를 못 보는 등록자 → 공급가가 오는 쓰기는 금액 판정 전에 거부(합계를 캐는 거부 글자 없음) · 값 그대로 / 공급가 없는 풀기는 된다", async () => {
+    const registrar = await createIntakeViewer();
+    if (!registrar.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: registrar.roleId, infoItem: "evidence.amount", visible: false });
+    const recordId = await record(registrar);
+    const tooLarge = await caught(updateEvidenceAmount(registrar, { id: recordId, version: 1, supplyKrw: 1_100_001 }));
+    expect(tooLarge).toBeInstanceOf(ForbiddenError);
+    expect((tooLarge as Error).message).toBe("증빙 금액 보기 권한 없음");
+    expect(await caught(updateEvidenceAmount(registrar, { id: recordId, version: 1, supplyKrw: 900_000 }))).toBeInstanceOf(ForbiddenError);
+    await setNeedsCheck(recordId, "사업자번호 틀림 · 거래처 확인");
+    expect(await caught(clearRecordNeedsCheck(registrar, { id: recordId, version: 1, supplyKrw: -1 }))).toBeInstanceOf(ForbiddenError);
+    expect(await recordRow(recordId)).toMatchObject({ supplyKrw: 1_000_000, vatKrw: 100_000, version: 1 });
+    expect(await clearRecordNeedsCheck(registrar, { id: recordId, version: 1 })).toEqual({ id: recordId, version: 2 });
+  });
+
+  it("(P3-1) 공급가가 지금 값과 같고 풀기도 아니면 트랜잭션 전에 「바뀐 칸 없음」 · version 그대로", async () => {
+    const manager = await createIntakeManager();
+    const recordId = await record(manager);
+    expect(await messageOf(updateEvidenceAmount(manager, { id: recordId, version: 1, supplyKrw: 1_000_000 }))).toBe("바뀐 칸 없음");
+    expect(await recordRow(recordId)).toMatchObject({ supplyKrw: 1_000_000, version: 1 });
+  });
+
+  it("(P3-2) 보관된 증빙 → 금액 고침 거부 「보관됨」 · 값 그대로", async () => {
+    const manager = await createIntakeManager();
+    const recordId = await record(manager);
+    await setRecordArchivedFixture(recordId, manager.id);
+    expect(await messageOf(updateEvidenceAmount(manager, { id: recordId, version: 1, supplyKrw: 900_000 }))).toBe("보관됨");
+    expect(await recordRow(recordId)).toMatchObject({ supplyKrw: 1_000_000, version: 1 });
+    expect(await logsOf(recordId, "evidence_record_amount_change")).toHaveLength(0);
   });
 });

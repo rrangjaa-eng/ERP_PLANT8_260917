@@ -60,7 +60,7 @@ import { withTransaction } from "@/lib/db-transaction";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { findExpenseApprovalStatuses } from "@/repositories/expenses";
-import { findProjectById, findProjectInScope } from "@/repositories/projects";
+import { findProjectById, findProjectInScope, lockProjectForWrite } from "@/repositories/projects";
 import { projectRowScope } from "@/domain/projects/visibility";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
@@ -1110,12 +1110,18 @@ export function purchaseRequestAuthorOpen(facts: PurchaseRequestEvidenceFacts, v
   return facts.requestedBy === viewerId && facts.status !== "cancelled" && !facts.projectCompleted && facts.liveLinks === 0;
 }
 
-// 요청 한 행의 판정 재료. tx가 있으면 요청 행을 잠가 읽는다(붙이기 트랜잭션의 문서 잠금). 프로젝트 완료 여부는 요청자 본인일 때만 읽는다(값은 나가지 않는다).
+// 요청 한 행의 판정 재료. tx가 있으면 프로젝트 행 → 요청 행 차례로 잠가 읽는다(붙이기 트랜잭션의 문서 잠금 — 정산 최종 승인의
+// lockProjectForWrite와 직렬화되어 커밋 전 완료를 놓치지 않는다 · PR-C Codex P2). 요청의 project_id는 바뀌지 않아 먼저 읽은 값으로 잠근다.
+// 프로젝트 완료 여부는 요청자 본인일 때만 읽는다(값은 나가지 않는다).
 export async function readPurchaseRequestEvidenceFacts(viewer: Viewer, id: string, tx?: DbOrTx): Promise<PurchaseRequestEvidenceFacts | null> {
   if (!UUID_SHAPE.test(id)) return null;
-  const row = tx ? await lockPurchaseRequestForUpdate(viewer, id, tx) : await findPurchaseRequestById(viewer, id);
+  const seen = await findPurchaseRequestById(viewer, id);
+  if (!seen) return null;
+  const projectId = seen.requestedBy === viewer.id && seen.linkKind === "quote_line" ? seen.projectId : null;
+  const lockedProject = tx && projectId ? await lockProjectForWrite(viewer, projectId, tx) : null;
+  const row = tx ? await lockPurchaseRequestForUpdate(viewer, id, tx) : seen;
   if (!row) return null;
-  const project = row.requestedBy === viewer.id && row.linkKind === "quote_line" && row.projectId ? await findProjectById(viewer, row.projectId, tx) : null;
+  const project = row.requestedBy === viewer.id && row.linkKind === "quote_line" && row.projectId ? (lockedProject ?? (await findProjectById(viewer, row.projectId, tx))) : null;
   const [count] = row.requestedBy === viewer.id ? await countLiveLinksByOwners(viewer, { ownerKind: "purchase_request", ownerIds: [row.id] }, tx) : [];
   return { requestedBy: row.requestedBy, status: row.status, projectCompleted: project?.status === "completed", liveLinks: count?.linkCount ?? 0 };
 }

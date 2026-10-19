@@ -26,7 +26,8 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 import styles from "@/app/(app)/projects/projects.module.css";
 import { CardUsageFilters, CardUsageList, CardUsageLoadError, type CardUsageListRowView } from "./card-usage-list";
 import { CardUsageDeleteUndo, CardUsageUndoLine } from "./delete-undo";
-import { CardUsageEditPanel, CardUsageForm, type CardSlipArea, type CardUsageEdit } from "./card-usage-form";
+import { CardUsageEditPanel, CardUsageForm, type CardEvidencePick, type CardSlipArea, type CardUsageEdit } from "./card-usage-form";
+import { countEvidencePool, evidencePickerMode } from "@/domain/evidence-records/pool";
 
 // 06-05(EXP-07 · UI-SPEC S8 · S9 · C12): 법인카드 사용 목록 = 원장. 한 건 등록은 `?new=1` 옆 패널(페이지 폼 없음).
 // 필터 · 쪽은 GET 쿼리(`month` · `card` · `link` · `via` · `page`) — 범위 · 합계 · 쪽은 서버(listCardUsages)가 정한다.
@@ -175,6 +176,18 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
     };
   }
 
+  // 06.1-09 S5 — 「증빙」 칸의 `증빙 고르기 {N}`(모드 none · 후보 0이면 트리거 DOM 0). 못 읽으면 트리거만 비운다(건은 이미 읽기 판정을 지났다).
+  let editPick: CardEvidencePick | null = null;
+  if (edit) {
+    try {
+      const { mode } = await evidencePickerMode(viewer, { kind: "corp_card_usage", id: edit.id });
+      const count = mode === "none" ? 0 : await countEvidencePool(viewer, { kind: "corp_card_usage", id: edit.id });
+      editPick = mode !== "none" && count >= 1 ? { mode, count } : null;
+    } catch {
+      editPick = null;
+    }
+  }
+
   let panel = null;
   if (edit) {
     panel = (
@@ -199,6 +212,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
           }}
           edit={edit}
           slip={editSlip}
+          evidencePick={editPick}
         />
       </CardUsageEditPanel>
     );

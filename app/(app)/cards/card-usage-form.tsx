@@ -28,6 +28,7 @@ import { completePurchaseRequestAction, previewPurchaseCompletionAction } from "
 import { ExternalLinkIcon, markPurchaseDone } from "./purchases/purchase-list";
 import purchaseStyles from "./purchases/purchases.module.css";
 import { LinkPicker, type PickedLine, type PickedProject } from "./link-picker";
+import { PickEvidenceDialog } from "../expenses/evidence/pick-evidence-dialog";
 
 // 06-05(UI-SPEC S9 · C12): 카드 사용 등록 옆 패널 본문 — `PanelForm intent="create"` + `Form layout="panel"`. 사람은 결제 합계만 적고
 // 공급가 · 부가세는 서버 계산 한 줄이다(D-607). 등록 뒤 패널은 열린 채 칸이 「새 건의 기본값」(직전 등록 = 방금 등록)으로 돌아가고
@@ -107,6 +108,8 @@ export type CardUsagePurchase = {
 
 /** 06-25 `증빙` 줄(카드 전표) — 서버가 정한 파일 목록 · 쓰기 동작 · 한도(MB). 구매 완료 모드(S13)에는 주지 않는다(파일 놓기가 되돌릴 수 없는 구매 완료를 부르지 않게). */
 export type CardSlipArea = { maxMb: number; files: AttachmentFile[]; canAdd: boolean; deletableIds: string[] };
+/** 06.1-09 S5 — 수정 패널 「증빙」 칸의 `증빙 고르기 {N}`. 모드가 none이거나 후보가 0이면 서버가 null을 준다(트리거 DOM 0). */
+export type CardEvidencePick = { mode: "registrar" | "author"; count: number };
 
 type SlipSave = { ok: true; id: string } | { ok: false; message: string };
 
@@ -273,6 +276,7 @@ export function CardUsageForm({
   purchaseCancel = null,
   slip = null,
   slipEditHref = null,
+  evidencePick = null,
 }: {
   cards: CardOption[];
   evidenceTypes: EvidenceTypeOption[];
@@ -289,8 +293,10 @@ export function CardUsageForm({
   /** 06-25 메모 아래 `증빙` 줄 — 수정 = 그 건에 바로 올림(즉시 저장), 새 건 = 첫 저장 뒤 올림(`slipEditHref` + 새 건 id로 수정 패널로 바뀐다). */
   slip?: CardSlipArea | null;
   slipEditHref?: string | null;
+  evidencePick?: CardEvidencePick | null;
 }) {
   const router = useRouter();
+  const [pickingEvidence, setPickingEvidence] = useState(false);
   const panelRef = useRef<PanelFormHandle>(null);
   const [gen, setGen] = useState(0);
   const [defaults, setDefaults] = useState(initialDefaults);
@@ -1085,12 +1091,27 @@ export function CardUsageForm({
                   canAdd={slip.canAdd}
                   deletableIds={slip.deletableIds}
                 />
+                {edit && evidencePick ? (
+                  <Button data-evidence-pick="" variant="tertiary" onClick={() => setPickingEvidence(true)}>
+                    {`증빙 고르기 ${evidencePick.count}`}
+                  </Button>
+                ) : null}
               </Form.Field>
             </div>
           ) : null}
         </div>
       </PanelForm>
       <MerchantPickDialog open={pickOpen} onClose={() => setPickOpen(false)} onPick={pickMerchant} />
+      {edit && evidencePick ? (
+        <PickEvidenceDialog
+          target={pickingEvidence ? { ownerKind: "corp_card_usage", ownerId: edit.id, mode: evidencePick.mode, subtitle: ["카드 사용", edit.number].filter(Boolean).join(" · ") } : null}
+          onClose={() => setPickingEvidence(false)}
+          onAttached={() => {
+            setPickingEvidence(false);
+            router.refresh();
+          }}
+        />
+      ) : null}
       <LinkPicker
         mode="card"
         step={linkStep}

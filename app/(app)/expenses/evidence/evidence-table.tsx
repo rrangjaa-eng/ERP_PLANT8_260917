@@ -290,6 +290,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   // 06.1-07 S3 — 1024 이상은 옆 패널(공급가 고침 · 확인 필요 풀기), 미만은 행 시트에 같은 읽기 줄(이력 포함). 둘 다 상세를 서버에서 한 번 받는다.
   const [panelDetail, setPanelDetail] = useState<{ detail: EvidenceDetailView; Panel: EvidencePanelComponent } | null>(null);
   const [sheetItems, setSheetItems] = useState<{ id: string; items: KvItem[] } | null>(null);
+  // 시트(<1024)의 상세 실패 한 줄은 열린 시트 안 action 자리에 선다(§7-8 · Codex 2회차 #5 — 표 위 결과 줄은 시트 뒤에 가린다).
+  const [sheetFailure, setSheetFailure] = useState<{ id: string; message: string } | null>(null);
 
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [cellErrors, setCellErrors] = useState<Record<string, string>>({});
@@ -568,10 +570,10 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   }
 
   // 06.1-07 S3 — 상세를 받아 패널(≥1024) · 행 시트(<1024)를 연다. 받지 못하면 표 위 결과 줄(보관 충돌과 같은 자리 · 꼬리 `새로 고침`).
-  async function loadDetail(rowId: string): Promise<EvidenceDetailView | null> {
+  async function loadDetail(rowId: string, onFail = (message: string) => setArchiveLine({ kind: "conflict", message, list })): Promise<EvidenceDetailView | null> {
     const result = await getEvidenceDetailAction({ id: rowId }).catch(() => undefined);
     const detail = result?.data?.detail ?? null;
-    if (!detail) setArchiveLine({ kind: "conflict", message: result?.serverError ?? COPY.unknownResult, list });
+    if (!detail) onFail(result?.serverError ?? COPY.unknownResult);
     return detail;
   }
   async function openPanel(row: Row) {
@@ -583,7 +585,9 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   function openSheet(row: Row) {
     setSheetRowId(row.id);
     setSheetItems(null);
-    void Promise.all([import("./evidence-panel"), loadDetail(row.id)]).then(([panel, detail]) => {
+    setSheetFailure(null);
+    const onFail = (message: string) => setSheetFailure({ id: row.id, message });
+    void Promise.all([import("./evidence-panel"), loadDetail(row.id, onFail)]).then(([panel, detail]) => {
       if (detail) setSheetItems({ id: row.id, items: panel.evidenceReadItems(detail) });
     });
   }
@@ -920,6 +924,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
               ]
             : []
         }
+        action={sheetRow && sheetFailure?.id === sheetRow.id ? <ConflictLine message={sheetFailure.message} /> : undefined}
       />
 
       {discardedEdits ? (

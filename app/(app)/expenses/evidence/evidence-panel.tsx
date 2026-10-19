@@ -29,6 +29,7 @@ const COPY = {
   unknownResult: "결과를 받지 못함 · 새로 고침",
   refresh: "새로 고침",
   draftOwner: "작성 중 문서",
+  archived: "보관됨",
 } as const;
 
 const STATUS_ROW_WORDS: ReadonlySet<string> = new Set(["확인 필요", "카드 미등록", "보관됨"]);
@@ -122,7 +123,8 @@ export function EvidencePanel({ detail: initial, lineClassName, onClose, onSaved
   const id = detail.id;
   const version = detail.version;
   const needsCheck = detail.statusWord === COPY.needsCheck;
-  const editable = !detail.amountLock && detail.supplyKrw !== undefined && detail.totalKrw !== undefined;
+  // 보관된 증빙은 금액을 고치지 않는다(서버도 거부 — 독립 검토 P3-2). 상태 줄 `보관됨`이 까닭을 보인다.
+  const editable = !detail.amountLock && detail.statusWord !== COPY.archived && detail.supplyKrw !== undefined && detail.totalKrw !== undefined;
   const parsed = parseNumberInput(supplyText);
   const supply = parsed !== null && Number.isInteger(parsed) ? parsed : null;
   const changed = editable && supplyText !== String(detail.supplyKrw ?? "") && supply !== detail.supplyKrw;
@@ -257,9 +259,9 @@ export function EvidencePanel({ detail: initial, lineClassName, onClose, onSaved
             {fieldError ? null : (
               <p id={PREVIEW_ID} className={lineClassName}>
                 {/* 미리 보기를 받는 동안은 빈 줄(앞 값을 다시 적지 않는다) — 받으면 그 수가 들어선다. */}
+                {/* 글자를 한 덩이로 — 줄 클래스(undoLine)가 flex라 조각마다 gap이 붙었다(감사 D-3). */}
                 {line ? (
                   <span>
-                {/* 글자를 한 덩이로 — 줄 클래스(undoLine)가 flex라 조각마다 gap이 붙었다(감사 D-3). */}
                     세액 <Num value={line.vatKrw} /> · 합계 <Num value={line.totalKrw} />
                   </span>
                 ) : null}
@@ -274,6 +276,8 @@ export function EvidencePanel({ detail: initial, lineClassName, onClose, onSaved
             ]}
           />
         )}
+        {/* 확인 필요 + 금액 잠김(붙은 뒤 확인 필요가 된 줄) — 풀기만 되고 공급가는 글자다. 잠김 줄은 서버 글자 그대로(Codex 2회차 #6). */}
+        {!editable && detail.amountLock ? <p className={lineClassName}>{detail.amountLock}</p> : null}
         {alert}
         <KvList items={tailItems(detail)} />
       </PanelForm>

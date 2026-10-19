@@ -245,6 +245,49 @@ test("완료 프로젝트의 반려 문서에 붙은 기록 → 공급가 input 
   await expect(panel).toContainText("붙임 작성 중 문서");
 });
 
+test("(Codex #6) 확인 필요 + 결재 중 문서에 붙음 → 공급가 글자 · 잠김 줄 · 1차 `확인 필요 풀기` / (P3-2) 보관됨 → 공급가 input 0 · 1차 0", async ({ page, browser, baseURL }) => {
+  test.setTimeout(150_000);
+  const fx = await setupExpenseE2E();
+  const { manager, login } = await managerPage(page);
+  const inReview = await submitLineExpense(browser, baseURL, fx, "tracer");
+  const locked = await insertRecordFixture(manager, { issuedOn: "2026-09-21" });
+  await insertLinkFixture({ recordId: locked, ownerId: inReview, attachedBy: manager.id });
+  await db.update(evidenceRecords).set({ needsCheck: "사업자번호 틀림 · 거래처 확인" }).where(eq(evidenceRecords.id, locked));
+  const archived = await insertRecordFixture(manager, { issuedOn: "2026-09-20" });
+  await db.update(evidenceRecords).set({ archivedAt: sql`now()`, archivedBy: manager.id }).where(eq(evidenceRecords.id, archived));
+  await login();
+  await page.goto("/expenses/evidence?state=all");
+  await expect(evidenceRows(page)).toHaveCount(1);
+
+  let panel = await openByClick(page, 0);
+  await expect(panel.locator("input:not([type=hidden])")).toHaveCount(0);
+  await expect(panel.getByText("결재 중 문서에 붙음 · 금액 잠김", { exact: true })).toBeVisible();
+  await expect(panel.locator('[data-ui="primary-button"]')).toHaveText(/확인 필요 풀기/);
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+
+  await page.goto("/expenses/evidence?state=archived");
+  await expect(evidenceRows(page)).toHaveCount(1);
+  panel = await openByClick(page, 0);
+  await expect(panel.locator("dd").first()).toHaveText("보관됨");
+  await expect(panel.locator("input:not([type=hidden])")).toHaveCount(0);
+  await expect(panel.locator('[data-ui="primary-button"]')).toHaveCount(0);
+});
+
+test("(Codex #5) 768 — 상세를 받지 못하면 그 실패 한 줄이 열린 시트 안에 선다", async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 900 });
+  const { manager, login } = await managerPage(page);
+  const recordId = await insertRecordFixture(manager, { supplyKrw: 1_000_000, vatKrw: 100_000 });
+  await login();
+  await page.goto("/expenses/evidence?state=all");
+  await expect(evidenceRows(page)).toHaveCount(1);
+  await db.delete(evidenceRecords).where(eq(evidenceRecords.id, recordId));
+  await evidenceTable(page).locator('[role="button"][aria-haspopup="dialog"]').first().click();
+  const sheet = page.getByRole("dialog", { name: "스테이지원" });
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toContainText("결과를 받지 못함");
+});
+
 for (const width of [768, 375] as const) {
   test(`${width} — 행 탭 → 읽기 시트에 패널과 같은 줄(공급가 글자 · 이력) · input 0 · 1차 0`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });

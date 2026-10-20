@@ -144,6 +144,35 @@ export function isServerAction(request: { method: () => string; headers: () => R
   return request.method() === "POST" && request.headers()["next-action"] !== undefined;
 }
 
+/**
+ * 서버 액션 POST를 종류별로 붙잡았다가 놓아 준다(06.1-15: 미리보기 재판정 구간을 폴링 지연 없이 결정적으로 잰다).
+ * 종류는 요청 본문 모양으로 가른다 — 미리보기 `previewExpenseAction({ expenseId, fields })`는 `fields`만 있고,
+ * 임시 저장 `saveExpenseDraftAction({ expenseId, expectedVersion, fields })`는 `expectedVersion`이 더 있다.
+ * 증빙 붙이기 · 떼기 액션(attach/actions.ts · detach-dialog.tsx)은 `fields` 키가 없어 어느 쪽에도 걸리지 않고 그대로 지나간다.
+ */
+export function holdServerAction(page: Page, kind: "preview" | "save") {
+  let arrive!: () => void;
+  let free!: () => void;
+  const arrived = new Promise<void>((resolve) => (arrive = resolve));
+  const gate = new Promise<void>((resolve) => (free = resolve));
+  const matches = (request: { method: () => string; headers: () => Record<string, string>; postData: () => string | null }) => {
+    if (!isServerAction(request)) return false;
+    const body = request.postData() ?? "";
+    if (!body.includes('"fields"')) return false;
+    return kind === "save" ? body.includes('"expectedVersion"') : !body.includes('"expectedVersion"');
+  };
+  const ready = page.route("**/*", async (route) => {
+    if (!matches(route.request())) {
+      await route.fallback();
+      return;
+    }
+    arrive();
+    await gate;
+    await route.continue();
+  });
+  return { ready, arrived, release: free };
+}
+
 export function waitForServerAction(page: Page) {
   return page.waitForResponse((response) => isServerAction(response.request()));
 }

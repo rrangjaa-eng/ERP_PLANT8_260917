@@ -13,7 +13,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { clearEvidence, loginAs } from "./helpers/evidence";
+import { clearEvidence, holdServerAction, loginAs } from "./helpers/evidence";
 
 // 06.1-08 S5(EVID-07 · RP-4): 작성자 증빙 고르기 — 임시 지출결의 화면 → `증빙 고르기 N` → PickDialog 다중 → 붙임 → 문서 섹션 읽기 행.
 // 판정은 CI=true 프로덕션 빌드에서 한다(CLAUDE.md §5). 등록 권한자는 회사 전체 증빙을 보므로 케이스마다 증빙 표를 비우고 시작한다.
@@ -88,14 +88,68 @@ test("(G-06.1-29) 증빙 고르기로 붙인 직후 — 새로 고침 없이 제
   await trigger.click();
   const picker = page.getByRole("dialog", { name: "증빙 고르기" });
   await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  // 미리보기 요청만 붙잡는다(고르기 · 떼기 액션은 통과) — 응답이 오기 전 구간이 폴링 지연과 상관없이 유지된다.
+  const preview = holdServerAction(page, "preview");
+  await preview.ready;
   await page.keyboard.press("Enter");
   await expect(picker).toBeHidden();
   await expect(page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible")).toHaveCount(1);
+  await preview.arrived;
 
-  // 그 자리 측정 — 읽기 행이 선 바로 다음 읽기: 서버 미리보기가 돌아오기 전에는 1차가 막힌 채다(재시도 단언 아님).
+  // 그 자리 측정 — 미리보기 응답이 붙잡힌 동안 1차는 막힌 채다(재시도 단언 아님).
   expect(await submit.getAttribute("aria-disabled")).toBe("true");
+  preview.release();
   await expect.poll(() => submit.getAttribute("aria-disabled")).not.toBe("true");
   await expect(memo).toHaveValue("저장 안 한 비고");
+  await submit.click();
+  await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
+  await page.context().close();
+});
+
+test("(G-06.1-29 저장 겹침) 고르기 직후 저장이 진행 중이어도 — 미리보기가 건너뛰어진 채 남지 않고 제출 1차가 열린다", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  const trigger = page.getByRole("button", { name: "증빙 고르기 1" });
+  await waitForHydration(trigger);
+  const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+  await expect(submit).toHaveAttribute("aria-disabled", "true");
+
+  const memo = page.getByLabel("비고");
+  await memo.fill("저장 겹침 비고");
+  // 읽기 행이 서는 같은 갱신 안에서 저장을 누르고(미리보기 타이머 250ms보다 먼저) 저장 요청은 붙잡아 저장 중(busy)을 유지한다.
+  // Next 서버 액션은 한 줄로 서므로 고르기를 끝낸 뒤에 저장이 나가야 한다.
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  const save = holdServerAction(page, "save");
+  await save.ready;
+  await page.evaluate(() => {
+    const observer = new MutationObserver(() => {
+      const rowShown = [...document.querySelectorAll("tbody tr")].some((row) => row.textContent?.includes("고름"));
+      if (!rowShown) return;
+      observer.disconnect();
+      const button = [...document.querySelectorAll("button")].find((el) => el.textContent?.trim().startsWith("임시 저장"));
+      button?.click();
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  });
+  await page.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await save.arrived;
+  // 타이머(250ms)가 저장 중에 지나가도록 둔다 — 건너뛰어지는 것이 시험 대상이다.
+  await page.waitForTimeout(600);
+  save.release();
+  await expect.poll(() => submit.getAttribute("aria-disabled")).not.toBe("true");
+  await expect(memo).toHaveValue("저장 겹침 비고");
   await submit.click();
   await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
   await page.context().close();

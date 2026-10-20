@@ -18,7 +18,7 @@ import { createIntakeManager, insertLinkFixture, insertRecordFixture, setRecordV
 import { attachEvidence } from "@/test/integration/fixtures/expenses";
 import { archiveTempRoles, insertTempRole, setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { clearEvidence, loginAs } from "./helpers/evidence";
+import { clearEvidence, holdServerAction, loginAs } from "./helpers/evidence";
 
 // 06.1-08 독립 DOM 감사(실행자가 아닌 별도 에이전트). 판정은 CI=true 프로덕션 빌드의 DOM 실측값으로만 한다(스크린샷 육안 금지).
 // 케이스마다 증빙 표를 비우고 자기 자료를 만든다(케이스끼리 기대지 않는다 — 06.1-06 감사 스펙 A/B 흔들림의 교훈).
@@ -877,12 +877,17 @@ test("P6 (G-06.1-29) 작성자 — 고르기 붙인 직후 · 마지막 떼기 �
     await trigger.click();
     const picker = pickDialog(page);
     await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+    // 미리보기 요청만 붙잡는다(고르기 · 떼기 액션은 통과) — 재판정 대기 구간이 폴링 지연과 상관없이 유지된다.
+    const preview = holdServerAction(page, "preview");
+    await preview.ready;
     await page.keyboard.press("Enter");
     await expect(picker).toBeHidden({ timeout: 15_000 });
     const rows = page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible").filter({ hasText: "고름" });
     await expect(rows).toHaveCount(1, { timeout: 15_000 });
-    // ⑻ 읽기 행이 선 바로 다음 줄 — 재시도 없이 한 번(재판정 대기 중이면 막힘).
+    await preview.arrived;
+    // ⑻ 미리보기 응답이 붙잡힌 동안 한 번 읽는다 — 재판정 대기 중이면 막힘.
     const immediate = await submit.getAttribute("aria-disabled");
+    preview.release();
     record("⑻ 붙인 읽기 행 직후 한 번 읽은 1차 aria-disabled(재판정 대기 중 true)", width, role, url, immediate, "true", immediate === "true");
     const focusAfterPick = await activeDescription(page);
     record("⑺ 고르기 모달 닫힘 뒤 document.activeElement(06.1-08: 트리거 또는 떼기)", width, role, url, focusAfterPick, "button«증빙 고르기 N» / button«떼기»", /^(button«(증빙 고르기 \d+|떼기)|body)/.test(focusAfterPick) && !focusAfterPick.startsWith("body"));

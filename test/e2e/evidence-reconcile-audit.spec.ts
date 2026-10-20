@@ -303,7 +303,8 @@ test("S2 행 행동 배타 · 전부 막힘 이유 글자 · `대리 등록` hre
       record("S2 이유 글자가 버튼 · 링크 아님", width, "경영관리", url, reasonRows[0]?.reasonTag ?? null, "inButton=false", reasonRows[0]?.reasonTag?.endsWith("inButton=false") === true);
       record("S2 이유 글자 크기 = --text-aux 13px(같은 행 행동 글자와 같음)", width, "경영관리", url, { reason: reasonRows[0]?.reasonFont ?? null, sibling: reasonRows[0]?.siblingActionFont ?? null, others: rows.map((r) => r.siblingActionFont) }, "13px", reasonRows[0]?.reasonFont === "13px");
       const hrefs = proxyRows.map((r) => r.proxyHref).sort();
-      const want = [`/cards?new=1&evidence=${lonely1}`, `/cards?new=1&evidence=${lonely2}`].sort();
+      // G-06.1-40: 출발 목록을 싣는다
+      const want = [`/cards?new=1&evidence=${lonely1}&from=${encodeURIComponent(url)}`, `/cards?new=1&evidence=${lonely2}&from=${encodeURIComponent(url)}`].sort();
       record("S2 `대리 등록` href", width, "경영관리", url, hrefs, want, JSON.stringify(hrefs) === JSON.stringify(want));
       record("S2 `대리 등록` · `붙이기` 보임", width, "경영관리", url, rows.map((r) => r.proxyVisible + r.attachVisible), "후보 0·있음 줄 각 1", rows.filter((r) => r.proxyVisible + r.attachVisible === 1).length === 3);
       record("S2 행 행동 크기", width, "경영관리", url, rows.map((r) => r.proxyBox ?? r.attachBox), "정보(PC — 3차 링크)", null);

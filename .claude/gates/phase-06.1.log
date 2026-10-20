@@ -21,3 +21,4 @@ cso 2026-10-20T08:50Z session=24becde7-2474-551b-a43b-f4d8bd69b460 (06.1 PR-D �
 design-review 2026-10-20T08:50Z session=24becde7-2474-551b-a43b-f4d8bd69b460 (06.1 PR-D — /design-review + Codex 5회(script 4폭 A·A2·B·C · codex exec gpt-6.1-sol medium D, 모두 exit 0), 확정 결함 D-1 대리 등록 Ctrl+E · D-2 목록 확인 필요 사유 · D-3 S8 닫기 위치 고침 3e91a74·8985f58·06c9cac, 플랜별 DOM 감사 09 246 · 13 185 · 14 238 항목 고침 뒤 FAIL 0, 보고서 /mnt/project-files/06.1-exec/pr-d/design-review.md · codex-design.md)
 qa 2026-10-20T08:50Z session=24becde7-2474-551b-a43b-f4d8bd69b460 (06.1 PR-D — /qa CI=true 프로덕션 빌드 Playwright 실측(사용자 대체 승인 2026-10-03), 카드 소지자·등록만·경영관리·관리자·PM·팀장·대표 × 375·320·768·1280, 건강 점수 96, 540 통과 · 실패 2(시험 충돌 4810c70 고침 · 장시간 수화 대기 단독 재실행 통과), 고침 뒤 desktop-evidence 77 · desktop 39 통과, 보고서 /mnt/project-files/06.1-exec/pr-d/qa.md)
 gsd-verify-work 2026-10-20T13:22Z session=d96c8a1a-455f-5014-9ef1-1ad0e417edbd
+review 2026-10-20T19:53Z session=036dde07-b7fb-5176-95e2-29064657648d

@@ -183,6 +183,8 @@ test("S1 결과 행 — 조각 글자 · 0 조각 부재 · 링크 href · 넘�
       await page.context().close();
       continue;
     }
+    // 끌어 놓기 입력은 스트리밍으로 숨은 채 먼저 DOM에 붙는다(attached) — 수화 전에 파일을 넣으면 React가 change를 받지 못해 결과 행이 서지 않는다.
+    await waitForHydration(page.getByTestId("attachments-input"));
     const card = `999900001111${last4}`;
     await uploadFixture(
       page,

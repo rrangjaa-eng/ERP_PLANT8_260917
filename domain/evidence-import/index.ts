@@ -89,6 +89,8 @@ export type RegisterEvidenceDeps = {
   finalizeAmounts: typeof defaultFinalizeAmounts;
   loadTaxRates: (asOf: string) => Promise<TaxRates>;
   findVendorsByBusinessNoDigitsList: EnsureVendorsDeps["findVendorsByBusinessNoDigitsList"];
+  // 시험 장벽(PR-C 검토 P2-2): 뒤 파일 취소가 붙은 문서를 다 잠근 뒤 · 증빙 행 UPDATE 전에 멈춘다(경합 재현용 — 운영 경로는 넘기지 않는다).
+  afterOwnerLock?: () => Promise<void>;
 };
 
 async function assertCanIntake(viewer: Viewer): Promise<void> {
@@ -183,11 +185,12 @@ function recordOf(line: PlannedLine & { vendorId: string | null }, format: Evide
 // 고치지 않는다) 그 문서는 순서대로 잠그지 못했으므로 등록 전체를 되돌린다(같은 파일을 다시 올리면 된다 — 이미 등록된 줄은 건너뛴다).
 export const CANCEL_FLAG_RACE = "증빙이 그사이 문서에 붙음 · 다시 등록";
 
-async function flagCanceledOriginals(viewer: Viewer, keys: readonly string[], tx: DbOrTx): Promise<void> {
+async function flagCanceledOriginals(viewer: Viewer, keys: readonly string[], tx: DbOrTx, afterOwnerLock?: () => Promise<void>): Promise<void> {
   if (keys.length === 0) return;
   const expenseOwnerIds = async (recordIds: readonly string[]) =>
     [...new Set((await listLiveLinkOwnersByRecords(viewer, recordIds, tx)).filter((owner) => owner.ownerKind === EXPENSE_DOCUMENT_KIND).map((owner) => owner.ownerId))].sort();
   const locked = await lockExpenseOwnersForRecordFlag(viewer, await expenseOwnerIds(await findFlaggableRecordIdsByDedupeKeys(viewer, keys, tx)), CANCEL_FLAG_RACE, tx);
+  await afterOwnerLock?.();
   const flagged = await flagRecordsNeedsCheckByDedupeKeys(viewer, keys, CANCEL_REGISTERED_CHECK, tx);
   for (const ownerId of await expenseOwnerIds(flagged)) {
     const owner = locked.get(ownerId);
@@ -285,7 +288,7 @@ export async function registerEvidenceFile(
       const insertedKeys = new Set((await insertRecordsIgnoringDuplicates(viewer, rows, tx)).map((row) => row.dedupeKey));
       const inserted = rows.filter((row) => insertedKeys.has(row.dedupeKey));
       const flaggedOriginals = [...cancelOfRegisteredOriginal].filter(([cancelKey]) => insertedKeys.has(cancelKey)).map(([, originalKey]) => originalKey);
-      await flagCanceledOriginals(viewer, flaggedOriginals, tx);
+      await flagCanceledOriginals(viewer, flaggedOriginals, tx, deps?.afterOwnerLock);
       const counts = {
         rowCount,
         registered: inserted.length,

@@ -7,7 +7,7 @@ import { db } from "@/db/client";
 import { corpCardUsages, corpCards, evidenceRecords, projects, purchaseRequests } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
-import { assignTeam } from "@/domain/org";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
@@ -67,10 +67,12 @@ async function proxyRole(): Promise<string> {
   return roleId;
 }
 
-async function person(roleId: string, teamName?: string): Promise<{ viewer: Viewer; email: string; password: string }> {
+// 팀은 이름(시드 팀) 또는 { id }(케이스마다 새로 만든 팀). 팀장처럼 팀당 한 자리인 발령은 새 팀에만 한다 — 시드 팀에 남으면 같은 스펙의
+// 다음 반복과 뒤 스펙의 팀장 발령이 「팀장 있음」으로 막힌다(evidence-attach.spec.ts 머리 주석과 같은 까닭).
+async function person(roleId: string, team?: string | { id: string }): Promise<{ viewer: Viewer; email: string; password: string }> {
   const email = `e2e-${randomUUID()}@example.test`;
   const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "감사 사람", roleId });
-  if (teamName) await assignTeam(SYSTEM_VIEWER, { userId, teamId: await teamIdByName(teamName), effectiveFrom: "2020-01-01" });
+  if (team) await assignTeam(SYSTEM_VIEWER, { userId, teamId: typeof team === "string" ? await teamIdByName(team) : team.id, effectiveFrom: "2020-01-01" });
   return { viewer: { id: userId, roleId }, email, password: tempPassword };
 }
 
@@ -120,9 +122,14 @@ async function line(viewer: Viewer, last4: string, input: { total: number; appro
   return row.id;
 }
 
-async function quoteLine(pm: Viewer, execution: number): Promise<{ projectId: string; lineId: string }> {
+async function freshTeam(): Promise<{ id: string }> {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `감사본부-${randomUUID()}` });
+  return createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `감사팀-${randomUUID().slice(0, 8)}` });
+}
+
+async function quoteLine(pm: Viewer, execution: number, teamId?: string): Promise<{ projectId: string; lineId: string }> {
   const client = await insertVendor(SYSTEM_VIEWER, { name: `감사클라-${randomUUID()}`, normalizedName: `감사클라-${randomUUID()}` });
-  const project = await createProject(pm, { clientId: client.id, teamId: await teamIdByName("기획1팀"), pmUserId: pm.id, name: `감사-${randomUUID().slice(0, 8)}`, startDate: "2026-09-01", endDate: "2026-12-31" });
+  const project = await createProject(pm, { clientId: client.id, teamId: teamId ?? (await teamIdByName("기획1팀")), pmUserId: pm.id, name: `감사-${randomUUID().slice(0, 8)}`, startDate: "2026-09-01", endDate: "2026-12-31" });
   if (!project.id) throw new Error("프로젝트 없음");
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision) throw new Error("차수 없음");
@@ -389,9 +396,12 @@ test("S4 카드 사용 후보 — 값 바뀜 2행 · 막힌 행 aria-disabled + 
   const cardBc = await addBcCard({ kind: "personal", holderUserId: holder.viewer.id });
   const manager = await person(await proxyRole());
   const P = approval();
+  // 줄 합계는 케이스마다 새로 — 완화 후보는 「승인번호 같음 또는 사용일 · 합계 같음」이라 고정 합계면 앞 반복(같은 DB)의 u2 · u3 꼴 카드 사용이
+  // 반복마다 둘씩 후보에 쌓이고, 고를 수 있는 그 행들이 앞에 서서 상한(20)에서 이 케이스의 막힌 행이 잘린다. 실행가(150,000)보다 커야 한다.
+  const T = 200_001 + Math.floor(Math.random() * 99_999);
   const u1 = await usage(holder.viewer, cardA, { total: 200_000, approvalNo: P, usedOn: "2026-04-30" });
-  const u2 = await usage(holder.viewer, cardB, { total: 204_100, usedOn: "2026-04-10" });
-  const u3 = await usage(holder.viewer, cardA, { total: 204_100, usedOn: "2026-04-10" });
+  const u2 = await usage(holder.viewer, cardB, { total: T, usedOn: "2026-04-10" });
+  const u3 = await usage(holder.viewer, cardA, { total: T, usedOn: "2026-04-10" });
   const statement = await line(manager.viewer, cardA, { total: 1_000, date: "2026.04.10" });
   await insertLinkFixture({ recordId: statement, ownerKind: "corp_card_usage", ownerId: u3.id, attachedBy: manager.viewer.id });
   const cap = await quoteLine(holder.viewer, 150_000);
@@ -400,15 +410,15 @@ test("S4 카드 사용 후보 — 값 바뀜 2행 · 막힌 행 aria-disabled + 
   const done = await quoteLine(holder.viewer, 3_000_000);
   const u6 = await usage(holder.viewer, cardA, { total: 90_000, approvalNo: P, usedOn: "2026-04-21", lineId: done.lineId });
   await db.update(projects).set({ status: "completed" }).where(eq(projects.id, done.projectId));
-  const recordId = await line(manager.viewer, cardA, { total: 204_100, approvalNo: P, date: "2026.04.10" });
+  const recordId = await line(manager.viewer, cardA, { total: T, approvalNo: P, date: "2026.04.10" });
   void recordId;
   const expected = new Map<string, { selectable: boolean; text: string }>([
-    [u1.number, { selectable: true, text: "합계 200,000 → 204,100" }],
+    [u1.number, { selectable: true, text: `합계 200,000 → ${won(T)}` }],
     [u2.number, { selectable: true, text: `카드 ${cardB} → ${cardA}` }],
     [u3.number, { selectable: false, text: `증빙 있음 · ${u3.number}` }],
-    [u4.number, { selectable: false, text: "합계 100,000 → 204,100 · 실행가 초과" }],
+    [u4.number, { selectable: false, text: `합계 100,000 → ${won(T)} · 실행가 초과` }],
     [u5.number, { selectable: false, text: `카드 다름 · ${cardBc}` }],
-    [u6.number, { selectable: false, text: "합계 90,000 → 204,100 · 완료 프로젝트" }],
+    [u6.number, { selectable: false, text: `합계 90,000 → ${won(T)} · 완료 프로젝트` }],
   ]);
 
   const page = await pageAs(browser, manager);
@@ -460,8 +470,10 @@ test("S4 카드 사용 후보 — 값 바뀜 2행 · 막힌 행 aria-disabled + 
 
 test("S5 카드 사용 수정 패널 — 작성자 막힌 행 · 결과 줄 DOM 0 × 폭 6 / 팀장 · 구매 카드 사용 트리거 0 / 경영관리 registrar 결과 줄", async ({ browser }) => {
   test.setTimeout(600_000);
-  const teamId = await teamIdByName("기획1팀");
-  const holder = await person(DEFAULT_ROLE_ID, "기획1팀");
+  // 새 팀 — 아래 팀장 발령이 팀당 한 자리라 시드 팀(기획1팀)을 쓰면 반복 · 뒤 스펙에서 막힌다.
+  const team = await freshTeam();
+  const teamId = team.id;
+  const holder = await person(DEFAULT_ROLE_ID, team);
   const last4 = await addLotteCard({ kind: "personal", holderUserId: holder.viewer.id });
   const u = await usage(holder.viewer, last4, { total: 200_000 });
   const manager = await person(await proxyRole());
@@ -475,6 +487,9 @@ test("S5 카드 사용 수정 패널 — 작성자 막힌 행 · 결과 줄 DOM 
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`/cards?editId=${u.id}`);
+    // 수정 패널은 SSR에서 닫힌 <dialog>로 오고 하이드레이션 뒤 showModal()로 열린다 — 열리기 전에는 안의 트리거가 접근성 트리에 없어
+    // getByRole이 0을 센다(첫 폭 = 첫 JS 적재가 가장 느리다). 패널이 열린 뒤에 잰다.
+    await expect(page.locator('dialog[data-ui="side-panel"]')).toBeVisible();
     const trigger = page.getByRole("button", { name: /^증빙 고르기 \d+$/ });
     const n = await trigger.count();
     record("S5 작성자 트리거 `증빙 고르기 N`", width, "작성자(PM)", url, n ? await trigger.first().textContent() : null, "증빙 고르기 1(N = 작성자가 고를 수 있는 후보 수 — 같은 합계 줄 하나)", n === 1 && (await trigger.first().textContent())?.trim() === "증빙 고르기 1");
@@ -517,7 +532,7 @@ test("S5 카드 사용 수정 패널 — 작성자 막힌 행 · 결과 줄 DOM 
   }
 
   // 구매에서 생긴 카드 사용(registered_via=purchase) — 등록한 사람에게 트리거 DOM 0.
-  const { projectId, lineId } = await quoteLine(holder.viewer, 3_000_000);
+  const { projectId, lineId } = await quoteLine(holder.viewer, 3_000_000, teamId);
   const pu = await usage(holder.viewer, last4, { total: 200_000, lineId });
   const [request] = await db.insert(purchaseRequests).values({ number: `26001-C${randomUUID().slice(0, 8)}`, linkKind: "quote_line", projectId, quoteLineId: lineId, requestedBy: holder.viewer.id, itemName: "감사현수막", estimateAmountKrw: 200_000 }).returning({ id: purchaseRequests.id });
   if (!request) throw new Error("구매 요청 없음");
@@ -529,7 +544,7 @@ test("S5 카드 사용 수정 패널 — 작성자 막힌 행 · 결과 줄 DOM 
   await page.context().close();
 
   // 팀장 — 작성자 모드 없음(트리거 0).
-  const lead = await person(TEAM_LEAD_ROLE_ID, "기획1팀");
+  const lead = await person(TEAM_LEAD_ROLE_ID, team);
   const leadPage = await pageAs(browser, lead);
   const leadResponse = await leadPage.goto(`/cards?editId=${u.id}`);
   const leadTrigger = await leadPage.locator("[data-evidence-pick]").count();
@@ -541,6 +556,7 @@ test("S5 카드 사용 수정 패널 — 작성자 막힌 행 · 결과 줄 DOM 
   const managerPage = await pageAs(browser, manager);
   await managerPage.setViewportSize({ width: 1280, height: 900 });
   const mResponse = await managerPage.goto(`/cards?editId=${u.id}`);
+  await expect(managerPage.locator('dialog[data-ui="side-panel"]')).toBeVisible();
   const mTrigger = managerPage.getByRole("button", { name: /^증빙 고르기 \d+$/ });
   const mCount = await mTrigger.count();
   record("S5 경영관리 — 트리거", 1280, "경영관리", url, { status: mResponse?.status(), trigger: mCount ? await mTrigger.first().textContent() : null }, "정보(registrar 풀 = 같은 카드 줄)", null);

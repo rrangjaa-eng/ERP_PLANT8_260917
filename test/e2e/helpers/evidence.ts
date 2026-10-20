@@ -149,8 +149,10 @@ export function waitForServerAction(page: Page) {
 }
 
 /** 증빙 목록 표 — 편집 칸이 하나라도 있으면 격자(role grid), 없으면(잠긴 줄 · 보기 전용 폭) 표라서 caption으로 잡는다. */
+// 드러난 표만 잡는다 — loading.tsx 뼈대가 먼저 나간 스트리밍 응답은 진짜 표를 `<div hidden id="S:0">`에 실어 보내고 React가 몰아서(≈300ms) 드러낸다.
+// 숨은 표를 세면 행 수 대기는 통과하는데 칸 폭(0/0) · role 질의(숨김 제외)가 비어 판정이 뒤집혔다(PR #254 CI e2e (2): DX-1 말줄임 · G9a select 0).
 export function evidenceTable(page: Page): Locator {
-  return page.locator("table").filter({ has: page.locator("caption", { hasText: /^증빙 목록$/ }) });
+  return page.locator("table").filter({ has: page.locator("caption", { hasText: /^증빙 목록$/ }), visible: true });
 }
 
 export function evidenceGrid(page: Page): Locator {

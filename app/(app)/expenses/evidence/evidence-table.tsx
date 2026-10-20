@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
@@ -21,6 +21,7 @@ import type { KvItem } from "@/ui/kv-list/KvList";
 import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import type { FooterNoticeItem } from "@/ui/table/footer-notice";
+import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import type { CellEditability, CellIssue, TableColumn } from "@/ui/table/types";
 import type {
   EvidenceDetailView,
@@ -35,8 +36,10 @@ import type {
 } from "@/domain/evidence-records";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { archiveEvidenceRecordAction, getEvidenceDetailAction, publishEvidenceRecordsAction, restoreEvidenceRecordAction } from "./actions";
+import { EvidenceExportButton } from "./export-button";
 import { IntakeZone } from "./intake-zone";
 import { PickDocumentDialog, type PickDocumentTarget } from "./pick-document-dialog";
+import { resolvePublishPaste, type PublishValue } from "./publish-paste";
 import expenseStyles from "../expenses.module.css";
 import styles from "./evidence-table.module.css";
 
@@ -70,9 +73,13 @@ type Row = {
   statusDetail: string | null;
   rowAction: EvidenceRowAction;
   /** 06.1-06 — 붙은 문서(상태 2행 링크) · `붙이기` 그림 · 비활성 이유. */
-  attached: { kind: "expense" | "purchase_request"; id: string | null; number: string | null; pending: boolean } | null;
+  attached: { kind: "expense" | "purchase_request" | "corp_card_usage"; id: string | null; number: string | null; pending: boolean; cardReplaced: boolean } | null;
   canAttach: boolean;
   attachBlocked: string | null;
+  /** 06.1-09 PA-ALLBLOCKED — 완화 후보가 전부 막힌 카드 줄의 행 행동 자리 글자(버튼 아님). */
+  actionBlockedReason: string | null;
+  /** 06.1-09 S8 — 완화 후보 0인 짝 없는 카드 줄 · 두 권한(서버 판정 · `canAttach`와 같이 서지 않는다 — DB-9). */
+  canProxy: boolean;
 };
 
 /** 사람이 바꾼 공개 칸 — 값은 셀 안에서만 쓰는 꼴(`private` · `division` · `team:{팀 id}`), version은 바꿀 때 본 값. */
@@ -84,6 +91,7 @@ const COPY = {
   emptyNone: "등록한 증빙이 없습니다",
   emptyTodo: "할 일 증빙이 없습니다",
   emptyUnmatched: "짝 없는 카드 줄이 없습니다",
+  cardReplaced: " · 등록한 카드와 다름",
   emptyFiltered: "조건에 맞는 증빙이 없습니다",
   showAll: "전체 보기",
   clearFilters: "필터 지우기",
@@ -99,15 +107,17 @@ const COPY = {
   unknownResult: "결과를 받지 못함 · 새로 고침",
   draftOwner: "작성 중 문서",
   attach: "붙이기",
+  proxy: "대리 등록",
 } as const;
 
 const ROW_ACTION_LABEL = { archive: "보관", restore: "되살리기" } as const;
 
-// 힌트 줄 — 이 화면에서 실제로 되는 키만(SYSTEM §7-3 「힌트 줄은 화면마다 실제로 되는 것만」 — 붙여넣기 `Ctrl+V`는 06.1-13이 공개 칸 붙여넣기를
-// 이을 때 더한다). 저장은 1차의 kbd가 말한다.
+// 힌트 줄 — 이 화면에서 실제로 되는 키만(SYSTEM §7-3 「힌트 줄은 화면마다 실제로 되는 것만」 — 붙여넣기는 공개 칸, 06.1-13 SP-6104).
+// 저장은 1차의 kbd가 말한다.
 const HINT_ITEMS = [
   { label: "이동", keys: "Tab ↑↓←→" },
   { label: "복사", keys: "Ctrl+C" },
+  { label: "붙여넣기", keys: "Ctrl+V" },
   { label: "취소", keys: "Esc" },
   { label: "파일", keys: "Ctrl+U" },
 ];
@@ -180,10 +190,12 @@ function rowFromView(view: EvidenceRecordView): Row[] {
       statusDetail: view.statusDetail ?? null,
       rowAction: view.rowAction ?? null,
       attached: view.attachedKind
-        ? { kind: view.attachedKind, id: view.attachedId ?? null, number: view.attachedNumber ?? null, pending: view.attachedPending === true }
+        ? { kind: view.attachedKind, id: view.attachedId ?? null, number: view.attachedNumber ?? null, pending: view.attachedPending === true, cardReplaced: view.cardReplaced === true }
         : null,
       canAttach: view.canAttach === true,
       attachBlocked: view.attachBlocked ?? null,
+      actionBlockedReason: view.actionBlockedReason ?? null,
+      canProxy: view.canProxy === true,
     },
   ];
 }
@@ -191,13 +203,17 @@ function rowFromView(view: EvidenceRecordView): Row[] {
 // 06.1-06 S2 2행 — 붙은 문서 번호 링크(지출결의 문서 · 구매 요청 목록). 번호 없는 임시 문서는 링크 없는 낱말(경영관리는 그 문서를 못 본다).
 function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
   if (attached.pending || attached.id === null || attached.number === null) return <span>{COPY.draftOwner}</span>;
-  const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : "/cards/purchases";
+  const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : attached.kind === "corp_card_usage" ? `/cards?editId=${attached.id}` : "/cards/purchases";
   // 링크 모양은 지출결의 목록 번호 링크(`expenseStyles.link` — `--text-link`)와 같다. 격자 로빙 밖(tabIndex -1 — §7-3 (아) 탭 정지 1개)이고
   // 키보드 경로는 그 칸 Enter(`pressCellAction` — 지급 대상 · 리저브 대장 선례)다.
   return (
-    <Link href={href} className={expenseStyles.link} tabIndex={-1} data-cell-action="">
-      {attached.number}
-    </Link>
+    <>
+      <Link href={href} className={expenseStyles.link} tabIndex={-1} data-cell-action="">
+        {attached.number}
+      </Link>
+      {/* M10 — 파일이 카드 사용의 카드를 바꾼 붙임. 링크 아님 · 2행 글자 그대로(새 클래스 · 색 0). */}
+      {attached.cardReplaced ? COPY.cardReplaced : null}
+    </>
   );
 }
 
@@ -220,6 +236,18 @@ function proposalValue(proposal: EvidenceProposal): string {
 
 function storedValue(row: Row): string {
   return row.visibility === "team" ? `team:${row.visibleTeamId ?? ""}` : row.visibility;
+}
+
+// 06.1-13(SP-6104) — 공개 칸 붙여넣기. 공개 열을 문자 열로 펼치고(공유 `ui/table`의 「잠김 셀 = 오류 셀」은 그대로 — 잠긴 줄은 resolvePublishPaste가
+// 건너뛴다 · PA-G2-NOUI), 줄 선택지는 공개 select와 같은 choicesFor를 넘긴다. 셀 안 값 꼴(`team:{id}`)과 함수 값 꼴을 오간다.
+const PASTE_COLUMNS: PasteColumn<Row>[] = [{ key: VISIBILITY, kind: "text", isEditable: () => true }];
+
+function publishValueOf(value: string): PublishValue {
+  return value.startsWith("team:") ? { visibility: "team", teamId: value.slice("team:".length) } : { visibility: value === "division" ? "division" : "private" };
+}
+
+function cellValueOf(value: PublishValue): string {
+  return value.visibility === "team" ? `team:${value.teamId ?? ""}` : value.visibility;
 }
 
 type PublishGroup = { visibility: EvidenceRecordVisibility; teamId?: string; items: [string, number][] };
@@ -276,6 +304,8 @@ export type EvidenceTableProps = { viewerId: string; list: EvidenceRecordList; t
 
 export function EvidenceTable({ viewerId, list, teams, filterOptions }: EvidenceTableProps) {
   const router = useRouter();
+  // 결과 0건일 때 `파일 받기`의 비활성 이유 = 빈 줄(검토 P3-5).
+  const emptyReasonId = useId();
   const [overlay, setOverlay] = useState<SavedOverlay | null>(null);
   const saved = overlay?.list === list ? overlay : null;
   const rows = (saved ? list.rows.map((view) => (view.id !== undefined ? (saved.rows.get(view.id) ?? view) : view)) : list.rows).flatMap(rowFromView);
@@ -298,8 +328,13 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const [rejectedRowIds, setRejectedRowIds] = useState<string[]>([]);
   const [rejectionSummary, setRejectionSummary] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  // 06.1-13 — 마지막 붙여넣기 요약 조각(합계 행 붙여넣기 묶음). 다음 붙여넣기 · 저장 성공 때 바뀐다.
+  const [pasteNotices, setPasteNotices] = useState<FooterNoticeItem[]>([]);
   const [discardedEdits, setDiscardedEdits] = useState<Record<string, unknown> | null>(null);
   const [issueSignal, setIssueSignal] = useState(0);
+  // 06.1-13 PA-G2-BLOCK — 오류 칸이 남아 서버를 부르지 않은 저장의 신호(그 뒤 첫 오류로 가기 신호와 같으면 합계 행 `오류 n칸 · 전부 거부`).
+  // 칸을 고치거나 다시 붙이면 0 — 낡은 거부 글자를 남기지 않는다.
+  const [blockSignal, setBlockSignal] = useState(0);
   // 첫 오류로 가기 신호 — 값이 바뀔 때마다 표가 첫 오류 칸으로 초점을 옮긴다. 증가분은 ref에 둔다(효과에서 부르는 저장 경로가 상태를 읽어 상태를 만들지 않게).
   const issueSignalRef = useRef(0);
   const [cellEditing, setCellEditing] = useState(false);
@@ -359,6 +394,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         setRejectedRowIds([]);
         setRejectionSummary(null);
         dirtyStorage.clearAfterSave();
+        setPasteNotices([]);
         setSavedNotice(`공개 범위 저장 · ${data.saved.saved}줄 · ${data.saved.savedAt}`);
       }
     },
@@ -375,9 +411,11 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   function handleSave() {
     if (savingRef.current || isExecuting || pending === 0 || uploading) return;
     // §7-3 (아) DR-5 — 보이는 줄에 고정 오류(`전부 거부`)가 남았으면 서버를 부르지 않고 첫 오류 칸으로 간다(견적 표 goToFirstIssue 꼴).
+    // 06.1-13 PA-G2-BLOCK — 붙여넣기 오류 칸(글자를 공개 값으로 옮길 수 없다)도 같고, 합계 행은 06.1-05 거부 글자(DA-18)다(blockSignal).
     if (Object.keys(cellErrors).some((id) => displayedIds.has(id))) {
       issueSignalRef.current += 1;
       setIssueSignal(issueSignalRef.current);
+      setBlockSignal(issueSignalRef.current);
       return;
     }
     savingRef.current = true;
@@ -441,6 +479,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
     if (columnKey !== VISIBILITY || !row || value === "") return;
     persistPendingRef.current = true;
     setSavedNotice(null);
+    setBlockSignal(0);
     setEdits((current) => {
       const next = { ...current };
       // 기준 값(제안이 있으면 제안, 없으면 저장된 값)으로 돌아오면 편집이 아니다.
@@ -454,6 +493,63 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       delete next[rowId];
       return next;
     });
+  }
+
+  // 06.1-13(SP-6104) — 공개 칸에서 `Ctrl+V`: 표가 그리는 순서(서식 그룹 순)로 아래 줄에 펼치고 줄마다 그 줄 선택지 라벨과 맞춘다.
+  // 맞은 칸은 사람이 바꾼 칸(편집 맵)이 되고, 모르는 라벨은 오류 칸, 잠긴 줄은 건너뛰고 합계 행 요약에만 센다. 넘친 줄은 버린다.
+  function handlePasteAtCell(row: Row, columnKey: string, clipboard: { text: string; appMeta: string | null }): string[] {
+    if (columnKey !== VISIBILITY) return [];
+    const grouped = new Map<string, Row[]>();
+    for (const candidate of rows) grouped.set(candidate.format, [...(grouped.get(candidate.format) ?? []), candidate]);
+    const ordered = [...grouped.values()].flat();
+    const rowIndex = ordered.findIndex((one) => one.id === row.id);
+    if (rowIndex === -1) return [];
+    const pasted = applyPaste({ clipboardText: clipboard.text, columns: PASTE_COLUMNS, rows: ordered, activeRowIndex: rowIndex, activeColIndex: 0 });
+    const resolved = resolvePublishPaste({
+      cells: pasted.cells,
+      rows: ordered.map((one) => {
+        const { options, groups } = choicesFor(one);
+        return {
+          locked: one.visibilityCell !== "edit",
+          choices: [...options, ...groups.flatMap((group) => group.options)].map((option) => ({ label: option.label, value: publishValueOf(option.value) })),
+        };
+      }),
+    });
+    const changes = resolved.values.flatMap(({ rowIndex: at, value }) => {
+      const target = ordered[at];
+      return target ? [{ target, value: cellValueOf(value) }] : [];
+    });
+    const errors = resolved.errors.flatMap(({ rowIndex: at, reason }) => {
+      const target = ordered[at];
+      return target ? [{ id: target.id, reason }] : [];
+    });
+    persistPendingRef.current = true;
+    setSavedNotice(null);
+    setBlockSignal(0);
+    setEdits((current) => {
+      const next = { ...current };
+      for (const { target, value } of changes) {
+        if (value === baseValue(target)) delete next[target.id];
+        else next[target.id] = { value, version: proposals.get(target.id)?.version ?? target.version };
+      }
+      // 오류가 된 칸은 값이 없다 — 앞 편집을 지워 오류 셀이 기준 값을 보이고 1차 N이 dirty 칸 수와 같게 한다(DOM 감사 D1).
+      for (const { id } of errors) delete next[id];
+      return next;
+    });
+    setCellErrors((current) => {
+      const next = { ...current };
+      for (const { target } of changes) delete next[target.id];
+      for (const { id, reason } of errors) next[id] = reason;
+      return next;
+    });
+    // 붙여넣기 묶음 — 0인 조각은 넣지 않는다(조각이 없으면 머리도 보이지 않는다 — composeFooterNotice).
+    const notices: FooterNoticeItem[] = [{ tone: "muted", text: `붙여넣기 ${formatCount(pasted.rowCount)}줄`, paste: "head" }];
+    if (pasted.droppedColumnCount > 0) notices.push({ tone: "warning", text: `오른쪽 ${formatCount(pasted.droppedColumnCount)}칸 버림`, paste: "piece" });
+    if (resolved.counts.droppedBelow > 0) notices.push({ tone: "warning", text: `아래 ${formatCount(resolved.counts.droppedBelow)}줄 버림`, paste: "piece" });
+    if (resolved.counts.unknown > 0) notices.push({ tone: "warning", text: `공개 칸 ${formatCount(resolved.counts.unknown)}개 모르는 값`, paste: "piece" });
+    if (resolved.counts.skippedLocked > 0) notices.push({ tone: "muted", text: `잠긴 줄 ${formatCount(resolved.counts.skippedLocked)}칸 건너뜀`, paste: "piece" });
+    setPasteNotices(notices);
+    return [...changes.map(({ target }) => target.id), ...errors.map(({ id }) => id)];
   }
 
   function applyRestored(stored: Record<string, unknown>) {
@@ -665,8 +761,17 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       header: "상태",
       priority: "p1",
       cell: (row) => <StatusTag status={row.statusWord} variant="text" />,
-      secondaryLine: (row) =>
-        row.attached ? <AttachedLine attached={row.attached} /> : row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null,
+      // PR-D D-2 — 붙은 기록도 확인 필요 · 카드 미등록이면 사유가 번호 링크 뒤에 남는다(문서 증빙 줄과 같은 사유 · 공개 칸 aria-describedby가 가리키는 id).
+      secondaryLine: (row) => {
+        const detail = row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null;
+        if (!row.attached) return detail;
+        return (
+          <>
+            <AttachedLine attached={row.attached} />
+            {detail ? <>{" · "}{detail}</> : null}
+          </>
+        );
+      },
       copyText: (row) => row.statusWord,
     },
     // §7-3 (차) 행 행동 열 — 머리글 숨김 · P1 밖 · 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 거래처 칸을 가리킨다. 키보드 경로는 Ctrl+E다(runKeyAction).
@@ -679,7 +784,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             headerHidden: true,
             priority: "p3" as const,
             cell: (row: Row) =>
-              row.rowAction || row.canAttach ? (
+              row.rowAction || row.canAttach || row.canProxy || row.actionBlockedReason ? (
                 <RowActions noWrap>
                   {row.canAttach && row.attachBlocked !== null ? (
                     <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} disabled disabledReason={row.attachBlocked} onClick={() => undefined}>
@@ -689,6 +794,13 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                     <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} busy={rowActionPending !== null} onClick={() => openAttach(row)}>
                       {COPY.attach}
                     </RowAction>
+                  ) : row.canProxy ? (
+                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} href={`/cards?new=1&evidence=${row.id}`}>
+                      {COPY.proxy}
+                    </RowAction>
+                  ) : row.actionBlockedReason ? (
+                    // PA-ALLBLOCKED · SYSTEM §7-3 — 막힌 행동(붙이기 · 대리 등록)의 컨트롤을 그리지 않고 그 자리에 이유를 한 번 쓴다(글자 · 버튼 아님). 끝의 보관은 그대로.
+                    <span className={tableStyles.selectReason}>{row.actionBlockedReason}</span>
                   ) : null}
                   {row.rowAction ? (
                   <RowAction
@@ -715,8 +827,11 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   };
 
   const claimedErrorCells = rejectedRowIds.filter((id) => displayedIds.has(id)).length;
-  const footerNotices: FooterNoticeItem[] = [];
-  if (rejectionSummary) footerNotices.push({ tone: "danger", text: rejectionSummary, replacesIssueCount: { errorCells: claimedErrorCells, conflictRows: 0 } });
+  const footerNotices: FooterNoticeItem[] = [...pasteNotices];
+  const shownErrorCells = rows.filter((row) => row.id in cellErrors).length;
+  if (blockSignal > 0 && blockSignal === issueSignal && shownErrorCells > 0) {
+    footerNotices.push({ tone: "danger", text: `오류 ${formatCount(shownErrorCells)}칸 · 전부 거부`, replacesIssueCount: { errorCells: shownErrorCells, conflictRows: 0 } });
+  } else if (rejectionSummary) footerNotices.push({ tone: "danger", text: rejectionSummary, replacesIssueCount: { errorCells: claimedErrorCells, conflictRows: 0 } });
   if (result.serverError) footerNotices.push({ tone: "danger", text: result.serverError });
 
   // 1차는 편집 폭에서만, 목록이 완전히 비었으면 없다(DR5 — 끌어 놓기 영역의 `파일 고르기`가 첫 행동 · 할 일 0이면 `전체 보기`).
@@ -725,16 +840,19 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const noChange = pending === 0 && !cellEditing;
   const primaryBlocked = uploading ? COPY.uploading : noChange ? COPY.noChange : undefined;
 
-  // Ctrl+E(§7-3 (차) 행 행동 열의 키보드 경로) — 붙일 수 있는 줄은 `붙이기`(S4), `보관됨` 보기는 `되살리기`. 보관은 위험 행동이라 단축키가 없다
-  // (PR-C D-1 · design-review P-1 ① — 1차 행동 키로 보관이 일어나지 않게). 힌트 줄은 실제로 되는 그 낱말 하나만.
-  const keyActionOf = (row: Row): "attach" | "restore" | null => (row.canAttach && row.attachBlocked === null ? "attach" : row.rowAction === "restore" ? "restore" : null);
+  // Ctrl+E(§7-3 (차) 행 행동 열의 키보드 경로) — 붙일 수 있는 줄은 `붙이기`(S4), 대리 등록 줄은 `대리 등록`(S8 — PR-D D-1), `보관됨` 보기는 `되살리기`.
+  // 보관은 위험 행동이라 단축키가 없다(PR-C D-1 · design-review P-1 ① — 1차 행동 키로 보관이 일어나지 않게). 붙이기 · 대리 등록은 행 행동 열과 같이 배타다.
+  // 힌트 줄은 실제로 되는 그 낱말 하나만.
+  const keyActionOf = (row: Row): "attach" | "proxy" | "restore" | null =>
+    row.canAttach && row.attachBlocked === null ? "attach" : !row.canAttach && row.canProxy ? "proxy" : row.rowAction === "restore" ? "restore" : null;
   function runKeyAction(row: Row) {
     const action = keyActionOf(row);
     if (action === "attach") openAttach(row);
+    else if (action === "proxy") router.push(`/cards?new=1&evidence=${row.id}`);
     else if (action === "restore") void runRowAction(row);
   }
   const shownKeyAction = rows.map(keyActionOf).find((action) => action !== null) ?? null;
-  const hintItems = shownKeyAction ? [...HINT_ITEMS, { label: shownKeyAction === "attach" ? COPY.attach : ROW_ACTION_LABEL.restore, keys: "Ctrl+E" }] : HINT_ITEMS;
+  const hintItems = shownKeyAction ? [...HINT_ITEMS, { label: shownKeyAction === "restore" ? ROW_ACTION_LABEL.restore : COPY[shownKeyAction], keys: "Ctrl+E" }] : HINT_ITEMS;
 
   // 쿼리 링크 갈래 — 클라이언트 이동이라 표가 다시 마운트되지 않고 편집 맵이 남는다(리저브 대장 · 카드 사용 필터 선례). 쪽은 1로 돌아간다.
   function go(key: "state" | "type" | "period", value: string) {
@@ -796,6 +914,13 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                 </select>
               </div>
             ))}
+            {/* 06.1-13 G6 — 선택 칸 뒤 · 묶음 표시 앞 2차 `파일 받기`. 편집 폭(≥1024)에서만(SP-65-2 · 카드 G9b 「넓은 화면만」). */}
+            {editableWidth ? (
+              <EvidenceExportButton
+                query={{ state: filters.state, type: filters.type, period: filters.period, ...(filters.batch ? { batch: filters.batch } : {}) }}
+                emptyReasonId={list.total.count === 0 ? emptyReasonId : undefined}
+              />
+            ) : null}
             {/* DA-19 — 결과 행 링크로 묶음이 걸리면 줄 수가 줄어든 이유(파일 이름)와 그 조건만 지우는 3차. */}
             {list.batch ? (
               <>
@@ -854,7 +979,9 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       ) : null}
 
       {rows.length === 0 ? (
-        <ListEmpty message={emptyState.message} action={emptyState.action} />
+        <div id={emptyReasonId}>
+          <ListEmpty message={emptyState.message} action={emptyState.action} />
+        </div>
       ) : (
         <div onKeyDownCapture={pressCellAction}>
         <Table
@@ -871,6 +998,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           saveLocked={isExecuting}
           onEditingChange={setCellEditing}
           onCellCommit={commitVisibility}
+          // 1024 미만은 편집 칸이 없어 붙여넣기도 없다(06.1-05 보기 전용 그대로).
+          onPasteAtCell={editableWidth ? handlePasteAtCell : undefined}
           cellIssue={cellIssue}
           cellDirty={(row, columnKey) => editableWidth && columnKey === VISIBILITY && (proposals.has(row.id) || row.id in edits)}
           firstIssueSignal={issueSignal}

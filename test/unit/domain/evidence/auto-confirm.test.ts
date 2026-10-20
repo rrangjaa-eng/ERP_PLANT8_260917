@@ -7,7 +7,7 @@ import { autoConfirmEligible, type EvidenceSources } from "@/domain/evidence/has
 const DOC_SUPPLY = 12_400_000;
 
 function sources(patch: Partial<EvidenceSources>): EvidenceSources {
-  return { fileCount: 0, linkCount: 1, authorLinkCount: 0, recordSupplyKrw: DOC_SUPPLY, lastAttachedAt: new Date("2026-10-16T01:00:00Z"), ...patch };
+  return { fileCount: 0, linkCount: 1, authorLinkCount: 0, recordSupplyKrw: DOC_SUPPLY, needsCheckCount: 0, lastAttachedAt: new Date("2026-10-16T01:00:00Z"), ...patch };
 }
 
 describe("autoConfirmEligible (06.1-12 RP-1)", () => {
@@ -31,6 +31,10 @@ describe("autoConfirmEligible (06.1-12 RP-1)", () => {
 
   it("작성자 붙임이 하나라도 있으면 → 거짓", () => {
     expect(autoConfirmEligible(sources({ linkCount: 2, authorLinkCount: 1 }), DOC_SUPPLY)).toBe(false);
+  });
+
+  it("확인 필요 붙은 기록이 하나라도 있으면 → 거짓(PR-C 검토 P2-1 — 경영관리가 다시 확인)", () => {
+    expect(autoConfirmEligible(sources({ linkCount: 2, needsCheckCount: 1 }), DOC_SUPPLY)).toBe(false);
   });
 
   it("05 파일이 하나라도 있으면 → 거짓(파일은 사람이 본다)", () => {

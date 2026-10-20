@@ -1,5 +1,5 @@
 import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { GoogleAuth } from "google-auth-library";
 import { env, resolvedStorageDriver } from "@/lib/env";
@@ -12,7 +12,8 @@ import { log } from "@/lib/log";
 // 04.3 서명 이미지 포트(lib/storage/signature-store.ts — put · get · delete)와는 다른 포트다: 증빙은 서명 주소 · 메타데이터
 // 재확인 · move · retain이 필요해 그 포트를 넓히지 않는다. gcs 드라이버(05-12)는 lib/gcp/gcs.ts의 인증 요청을 재사용한다.
 
-export type ObjectMetadata = { size: number; contentType: string; sha256: string | null };
+// generation — GCS 객체 세대(덮어쓰면 바뀐다). 로컬 · 가짜 드라이버는 비워 둘 수 있다(06.1-14 독립 검토 P2-2).
+export type ObjectMetadata = { size: number; contentType: string; sha256: string | null; generation?: string };
 
 export type SignedPut = { url: string; method: "PUT"; headers: Record<string, string> };
 
@@ -22,9 +23,12 @@ export type ObjectStorage = {
   createSignedGet(key: string, opts: { expiresSec: number; filename: string; disposition: "inline" | "attachment" }): Promise<{ url: string }>;
   // 없으면 null.
   getMetadata(key: string): Promise<ObjectMetadata | null>;
+  // 06.1-14(E14): 객체 앞 bytes바이트(더 짧으면 그 길이) — 완료 통보의 서명 대조용. 없으면 null.
+  // generation을 주면 그 세대만 읽는다(독립 검토 P2-2 — 메타데이터를 읽은 뒤 덮어쓴 객체를 대조하지 않는다).
+  readHead(key: string, bytes: number, opts?: { generation?: string }): Promise<Uint8Array | null>;
   // 원본을 대상으로 복사(대상이 있으면 덮어씀 · 형식 · sha256 메타 유지)한 뒤 원본을 지운다. 원본이 없으면 오류,
-  // 원본 삭제의 「없음」은 성공(두 호출이 겹쳐도 안전).
-  move(fromKey: string, toKey: string): Promise<void>;
+  // 원본 삭제의 「없음」은 성공(두 호출이 겹쳐도 안전). ifSourceGeneration을 주면 원본 세대가 다를 때 오류(P2-2 — 대조한 세대만 옮긴다).
+  move(fromKey: string, toKey: string, opts?: { ifSourceGeneration?: string }): Promise<void>;
   delete(key: string): Promise<void>;
   // 완료된 `evidence/` 객체의 보존 표식 — 1차 보호는 접두어 분리(수명 주기는 `incoming/`에만)이고 이것은 이중 방어다.
   retain(key: string): Promise<void>;
@@ -191,6 +195,25 @@ export function createLocalStorage(opts: { secret: string; dataDir: string; base
       return sidecar ? { size: sidecar.size, contentType: sidecar.contentType, sha256: sidecar.sha256 } : null;
     },
 
+    // 전체를 읽지 않고 앞 N바이트만.
+    async readHead(key, bytes) {
+      assertLocalKey(key);
+      let handle;
+      try {
+        handle = await open(objectPath(key), "r");
+      } catch (error) {
+        if (isMissing(error)) return null;
+        throw error;
+      }
+      try {
+        const buffer = Buffer.alloc(bytes);
+        const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
+        return buffer.subarray(0, bytesRead);
+      } finally {
+        await handle.close();
+      }
+    },
+
     async move(fromKey, toKey) {
       assertLocalKey(fromKey);
       assertLocalKey(toKey);
@@ -329,17 +352,29 @@ export function createGcsStorage(opts: {
       const res = await send({ op: "meta", method: "GET", url: objectUrl(key) });
       if (res.status === 404) return null;
       if (!ok(res.status)) fail("meta", res.status);
-      const body = parse<{ size?: string; contentType?: string; metadata?: { sha256?: string } }>(res);
-      return { size: Number(body.size), contentType: body.contentType ?? "", sha256: body.metadata?.sha256 ?? null };
+      const body = parse<{ size?: string; contentType?: string; generation?: string; metadata?: { sha256?: string } }>(res);
+      return { size: Number(body.size), contentType: body.contentType ?? "", sha256: body.metadata?.sha256 ?? null, ...(body.generation ? { generation: body.generation } : {}) };
+    },
+
+    // 06.1-14(E14): 매체 다운로드 + Range 한 번. 서버가 Range를 무시하고 200으로 전체를 주면 앞 N바이트만 자른다.
+    async readHead(key, bytes, readOpts) {
+      const generation = readOpts?.generation ? `&generation=${encodeURIComponent(readOpts.generation)}` : "";
+      const res = await send({ op: "get", method: "GET", url: `${objectUrl(key)}?alt=media${generation}`, headers: { Range: `bytes=0-${bytes - 1}` } });
+      if (res.status === 404) return null;
+      if (res.status !== 200 && res.status !== 206) fail("get", res.status);
+      return (res.data ?? Buffer.alloc(0)).subarray(0, bytes);
     },
 
     // 같은 버킷 안 재작성(형식 · 사용자 메타가 따라간다) → 원본 삭제. 재작성이 실패하면 원본을 지우지 않는다 — 원본은
     // incoming/에 남아 수명 주기가 7일 뒤 지운다(T-05-1208).
-    async move(fromKey, toKey) {
+    // 원본 세대 조건은 이어 부름마다 싣는다 — 세대가 바뀌면 412로 실패하고 원본을 지우지 않는다(P2-2).
+    async move(fromKey, toKey, moveOpts) {
       const rewriteUrl = `${objectUrl(fromKey)}/rewriteTo/b/${b}/o/${encodeURIComponent(toKey)}`;
+      const condition = moveOpts?.ifSourceGeneration ? [`ifSourceGenerationMatch=${encodeURIComponent(moveOpts.ifSourceGeneration)}`] : [];
       let token: string | undefined;
       for (;;) {
-        const res = await send({ op: "move", method: "POST", url: token ? `${rewriteUrl}?rewriteToken=${encodeURIComponent(token)}` : rewriteUrl });
+        const query = [...condition, ...(token ? [`rewriteToken=${encodeURIComponent(token)}`] : [])].join("&");
+        const res = await send({ op: "move", method: "POST", url: query ? `${rewriteUrl}?${query}` : rewriteUrl });
         if (!ok(res.status)) fail("move", res.status);
         const body = parse<{ done?: boolean; rewriteToken?: string }>(res);
         if (body.done) break;

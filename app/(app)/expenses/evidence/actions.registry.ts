@@ -22,3 +22,6 @@ registerAction({ name: "getEvidenceDetailAction", menu: "evidence.intake", actio
 registerAction({ name: "previewEvidenceAmountAction", menu: "evidence.intake", action: "view", dtoName: null });
 registerAction({ name: "updateEvidenceAmountAction", menu: "evidence.intake", action: "write", dtoName: null });
 registerAction({ name: "clearRecordNeedsCheckAction", menu: "evidence.intake", action: "write", dtoName: null });
+
+// 06.1-13 G6 — 증빙 목록 파일 받기(CSV 한 파일). 줄은 목록과 같은 투영(EvidenceRecordDto) — 권한은 목록을 여는 문과 같다(PA-G6-PERM).
+registerAction({ name: "exportEvidenceRecordsAction", menu: "evidence.intake", action: "write", dtoName: "EvidenceRecordDto" });

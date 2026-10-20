@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { approvalInstances, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, expenses } from "@/db/schema";
+import { approvalInstances, corpCardUsages, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, expenses } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { registerEvidenceFile, type EvidenceImportSuccess, type RegisterEvidenceDeps } from "@/domain/evidence-import";
@@ -12,6 +12,7 @@ import { insertRole } from "@/repositories/roles";
 import { insertMembership } from "@/repositories/team-memberships";
 import { rejectDocument } from "@/domain/approvals";
 import { createExpenseFromLines, submitExpense } from "@/domain/expenses";
+import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
 import { attachEvidence, makeEvidenceManager, type ExpenseFixture } from "./expenses";
 
 // 06.1-04: 증빙 등록 권한 계급 · 등록 도우미 — 06.1-05 · 06 · 09 · 11이 다시 쓴다.
@@ -177,3 +178,26 @@ export async function createReturnedExpenseFixture(fx: ExpenseFixture, opts: { l
   return { expenseId: doc.expenseId, number: doc.number };
 }
 
+
+/**
+ * 06.1-09: 카드 사용 한 건 — 06 precheckCardUsage → createCardUsage(K 번호가 붙는 실제 길). 승인번호는 06 등록 화면에 칸이 없어
+ * (대사만 채운다) 앞 대사가 채운 상태를 표에 직접 만든다. 테스트 전용이다.
+ */
+export async function createCardUsageFixture(
+  by: Viewer,
+  input: { corpCardId: string; usedOn: string; totalKrw: number; approvalNo?: string; lineId?: string; evidenceTypeCode?: string },
+): Promise<{ id: string; number: string; version: number }> {
+  const usage: CardUsageInput = {
+    corpCardId: input.corpCardId,
+    usedOn: input.usedOn,
+    merchantVendorId: null,
+    total: { currency: "KRW", amount: input.totalKrw, fxRate: 1 },
+    evidenceTypeCode: input.evidenceTypeCode ?? "card_receipt",
+    ...(input.lineId ? { linkKind: "quote_line" as const, lineId: input.lineId } : { linkKind: "team_cost" as const }),
+  };
+  const created = await createCardUsage(by, usage, await precheckCardUsage(by, usage));
+  if (input.approvalNo) await db.update(corpCardUsages).set({ approvalNo: input.approvalNo }).where(eq(corpCardUsages.id, created.id));
+  const [row] = await db.select({ number: corpCardUsages.number, version: corpCardUsages.version }).from(corpCardUsages).where(eq(corpCardUsages.id, created.id));
+  if (!row?.number) throw new Error("카드 사용 번호 없음");
+  return { id: created.id, number: row.number, version: row.version };
+}

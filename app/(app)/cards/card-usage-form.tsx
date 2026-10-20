@@ -23,11 +23,12 @@ import textFieldStyles from "@/ui/input/TextField.module.css";
 import cardStyles from "./cards.module.css";
 import { completeEvidenceUploadAction, createEvidenceViewUrlAction, removeEvidenceAction, requestCardSlipUploadAction } from "../expenses/actions";
 import { resaveLink, slipSnapshot, type SavedSlip } from "./slip-resave";
-import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction, updateCardUsageAction, usedByCandidatesAction } from "./actions";
+import { createCardUsageAction, createCardUsageFromEvidenceAction, previewCardAmountsAction, searchMerchantsAction, updateCardUsageAction, usedByCandidatesAction } from "./actions";
 import { completePurchaseRequestAction, previewPurchaseCompletionAction } from "./purchases/actions";
 import { ExternalLinkIcon, markPurchaseDone } from "./purchases/purchase-list";
 import purchaseStyles from "./purchases/purchases.module.css";
 import { LinkPicker, type PickedLine, type PickedProject } from "./link-picker";
+import { PickEvidenceDialog } from "../expenses/evidence/pick-evidence-dialog";
 
 // 06-05(UI-SPEC S9 · C12): 카드 사용 등록 옆 패널 본문 — `PanelForm intent="create"` + `Form layout="panel"`. 사람은 결제 합계만 적고
 // 공급가 · 부가세는 서버 계산 한 줄이다(D-607). 등록 뒤 패널은 열린 채 칸이 「새 건의 기본값」(직전 등록 = 방금 등록)으로 돌아가고
@@ -107,6 +108,11 @@ export type CardUsagePurchase = {
 
 /** 06-25 `증빙` 줄(카드 전표) — 서버가 정한 파일 목록 · 쓰기 동작 · 한도(MB). 구매 완료 모드(S13)에는 주지 않는다(파일 놓기가 되돌릴 수 없는 구매 완료를 부르지 않게). */
 export type CardSlipArea = { maxMb: number; files: AttachmentFile[]; canAdd: boolean; deletableIds: string[] };
+/** 06.1-09 S5 — 수정 패널 「증빙」 칸의 `증빙 고르기 {N}`. 모드가 none이거나 후보가 0이면 서버가 null을 준다(트리거 DOM 0). */
+export type CardEvidencePick = { mode: "registrar" | "author"; count: number };
+
+/** 06.1-09 S8 증빙 대리 등록 — 카드 · 사용일 · 합계 · 가맹점 · 증빙 종류는 파일 값 읽기 텍스트(사람이 고르는 것은 사용한 사람 · 연결 · 메모). 저장 뒤 `doneHref` + 새 건 id로 간다. */
+export type CardUsageFromEvidence = { evidenceId: string; cardText: string; totalKrw: number; merchant: string | null; evidenceLabel: string; doneHref: string };
 
 type SlipSave = { ok: true; id: string } | { ok: false; message: string };
 
@@ -259,6 +265,24 @@ export function CardUsageEditPanel({ id, closeHref, children }: { id: string; cl
   );
 }
 
+// PR-D D-3 — S8 대리 등록 패널은 증빙 목록 행의 `대리 등록`에서 연다. 목록으로 돌아오면 연 요소(그 행 링크)는 새로 그려진 것이라
+// SidePanel의 연 요소가 문서에 없다 — 같은 증빙의 `대리 등록` 링크를 찾아 그리로 포커스를 돌린다(없으면 화면 제목, §7-8).
+export function CardUsageFromEvidencePanel({ evidenceId, closeHref, children }: { evidenceId: string; closeHref: string; children: ReactNode }) {
+  return (
+    <SidePanel title="카드 사용 등록" closeHref={closeHref} returnFocusTo={() => proxyLinkFor(evidenceId)}>
+      {children}
+    </SidePanel>
+  );
+}
+
+function proxyLinkFor(evidenceId: string): HTMLElement | null {
+  for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+    const url = new URL(link.href);
+    if (!link.closest("dialog") && url.pathname === "/cards" && url.searchParams.get("evidence") === evidenceId) return link;
+  }
+  return null;
+}
+
 export function CardUsageForm({
   cards,
   evidenceTypes,
@@ -273,6 +297,8 @@ export function CardUsageForm({
   purchaseCancel = null,
   slip = null,
   slipEditHref = null,
+  evidencePick = null,
+  fromEvidence = null,
 }: {
   cards: CardOption[];
   evidenceTypes: EvidenceTypeOption[];
@@ -289,8 +315,11 @@ export function CardUsageForm({
   /** 06-25 메모 아래 `증빙` 줄 — 수정 = 그 건에 바로 올림(즉시 저장), 새 건 = 첫 저장 뒤 올림(`slipEditHref` + 새 건 id로 수정 패널로 바뀐다). */
   slip?: CardSlipArea | null;
   slipEditHref?: string | null;
+  evidencePick?: CardEvidencePick | null;
+  fromEvidence?: CardUsageFromEvidence | null;
 }) {
   const router = useRouter();
+  const [pickingEvidence, setPickingEvidence] = useState(false);
   const panelRef = useRef<PanelFormHandle>(null);
   const [gen, setGen] = useState(0);
   const [defaults, setDefaults] = useState(initialDefaults);
@@ -299,7 +328,7 @@ export function CardUsageForm({
   // 결제 합계 씨앗 — 수정 = 저장된 값, 구매 완료 = 예상 금액(통화 · 외화 · 환율 그대로).
   const seed = edit ?? purchase;
   const [currency, setCurrency] = useState<"KRW" | "USD">(seed?.currency ?? "KRW");
-  const initialAmount = seed?.amount === null || seed?.amount === undefined ? "" : String(seed.amount);
+  const initialAmount = fromEvidence ? String(fromEvidence.totalKrw) : seed?.amount === null || seed?.amount === undefined ? "" : String(seed.amount);
   const [amountRaw, setAmountRaw] = useState(initialAmount);
   const amountHidden = edit?.amountHidden === true;
   const initialFx = seed && seed.currency !== "KRW" && seed.fxRate !== null ? seed.fxRate : usdFxRate;
@@ -421,10 +450,18 @@ export function CardUsageForm({
       if (savedId && slipEditHref) router.replace(`${slipEditHref}${savedId}`, { scroll: false });
     },
   });
+  // 06.1-09 S8 — 성공하면 증빙 목록(짝 없는 카드 줄)으로 돌아가 토스트(그 줄은 빠진다).
+  const proxyCreate = useAction(createCardUsageFromEvidenceAction, {
+    onSuccess: ({ data }) => {
+      if (fromEvidence && data?.id) panelRef.current?.succeed({ href: `${fromEvidence.doneHref}${data.id}` });
+    },
+  });
   const { execute: executeCreate, result: createResult, isExecuting: creating, reset: resetCreate } = create;
   const active = purchase ? complete : edit ? update : null;
   const result = active ? active.result : resave.result.serverError || resave.result.validationErrors ? resave.result : createResult;
-  const isExecuting = active ? active.isExecuting : creating || resave.isExecuting;
+  const isExecuting = fromEvidence ? proxyCreate.isExecuting : active ? active.isExecuting : creating || resave.isExecuting;
+  const proxyError = fromEvidence ? proxyCreate.result.serverError : undefined;
+  const { reset: resetProxy } = proxyCreate;
   const { reset: resetResave } = resave;
   const activeReset = active?.reset;
   const reset = useCallback(() => {
@@ -450,7 +487,7 @@ export function CardUsageForm({
       )
     : cards;
   // 수정 모드의 카드 = 저장된 카드(여는 사람의 카드 옵션을 보지 않는다 — 옵션 0장이어도 선다).
-  const selectedCardId = edit ? (edit.cardOptions ? cardId : edit.cardId) : usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
+  const selectedCardId = fromEvidence ? cardId : edit ? (edit.cardOptions ? cardId : edit.cardId) : usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
   const proxyHint = edit ? edit.proxyHint : (usableCards.find((card) => card.id === selectedCardId)?.proxyHint ?? null);
 
   // 사용한 사람(EXP-07 · Q5) — 대리 등록 권한자 · 본인 개인 카드 밖 · 팀 비용일 때만. 후보는 사용일 기준으로 서버가 보낸다(남의 개인 카드 = 소지자 텍스트,
@@ -551,9 +588,10 @@ export function CardUsageForm({
     lastEditKey.current = editKey;
     setAttachError(null);
     if (result.serverError || result.validationErrors) reset();
-  }, [editKey, result.serverError, result.validationErrors, reset]);
+    if (proxyError) resetProxy();
+  }, [editKey, result.serverError, result.validationErrors, reset, proxyError, resetProxy]);
 
-  const shownItemName = itemName ?? merchant?.name ?? "";
+  const shownItemName = itemName ?? merchant?.name ?? fromEvidence?.merchant ?? "";
   const blanks = [
     ...(selectedCardId ? [] : [{ label: "카드", verb: "고르기" }]),
     ...(usedOn ? [] : [{ label: "사용일", verb: "고르기" }]),
@@ -708,6 +746,10 @@ export function CardUsageForm({
     }
     submittedRef.current = { corpCardId: selectedCardId, linkKind, project: linkKind === "team_cost" ? null : linkProject };
     const payload = buildPayload(memo);
+    if (fromEvidence) {
+      proxyCreate.execute({ evidenceId: fromEvidence.evidenceId, idempotencyKey, link: payload.link, memo: payload.memo, usedByUserId: showUsedBy ? usedById : null });
+      return;
+    }
     if (edit) update.execute({ ...payload, amount: amountHidden ? null : payload.amount, id: edit.id, version: edit.version, usedByUserId: showUsedBy ? usedById : edit.usedByUserId });
     else executeCreate({ ...(showUsedBy ? { ...payload, usedByUserId: usedById } : payload), idempotencyKey });
   }
@@ -782,11 +824,12 @@ export function CardUsageForm({
         ref={panelRef}
         id="card-usage-form"
         label={purchase ? "구매 완료" : edit ? "카드 사용 저장" : "카드 사용 등록"}
-        intent={edit || purchase ? "edit" : "create"}
+        intent={edit || purchase || fromEvidence ? "edit" : "create"}
         onSubmit={handleSubmit}
         pending={isExecuting}
         blockedReason={showingResult ? undefined : blockedReason}
         reason={
+          proxyError ??
           result.serverError ??
           attachError ??
           (!purchase && overCap && !showingResult && blankBlock(blanks) === undefined && !fxBlock && !evidenceBlock ? (
@@ -835,7 +878,15 @@ export function CardUsageForm({
               <span className={cardStyles.valueText}>{edit.number ?? "—"}</span>
             </div>
           ) : null}
-          {purchase && usableCards.length === 0 ? (
+          {fromEvidence ? (
+            <div data-ui="field-row" className={rowStyles.row}>
+              <span className={rowStyles.label}>카드</span>
+              <span className={cardStyles.valueText} title={fromEvidence.cardText}>
+                {fromEvidence.cardText}
+              </span>
+              {proxyHint ? <Form.Hint>{proxyHint}</Form.Hint> : null}
+            </div>
+          ) : purchase && usableCards.length === 0 ? (
             <div data-ui="field-row" className={rowStyles.row}>
               <span className={rowStyles.label}>카드</span>
               <span>—</span>
@@ -886,6 +937,12 @@ export function CardUsageForm({
               </Form.Field>
             </div>
           )}
+          {fromEvidence ? (
+            <div data-ui="field-row" className={rowStyles.row}>
+              <span className={rowStyles.label}>사용일</span>
+              <span className={cardStyles.valueText}>{usedOn}</span>
+            </div>
+          ) : (
           <TextField
             id="card-usage-used-on"
             name="usedOn"
@@ -896,6 +953,15 @@ export function CardUsageForm({
             onChange={(event) => setUsedOn(event.target.value)}
             error={fieldErrors?.usedOn?._errors?.[0]}
           />
+          )}
+          {fromEvidence ? (
+            <div data-ui="field-row" className={rowStyles.row}>
+              <span className={rowStyles.label}>가맹점</span>
+              <span className={cardStyles.valueText} title={fromEvidence.merchant ?? undefined}>
+                {fromEvidence.merchant ?? "—"}
+              </span>
+            </div>
+          ) : (
           <div data-ui="field-row" className={rowStyles.row}>
             <span className={rowStyles.label}>가맹점</span>
             <div className={cardStyles.valueLine}>
@@ -911,7 +977,19 @@ export function CardUsageForm({
               <Form.Hint>{`기본 증빙 ${merchant.defaultEvidenceName} · 카드에 없음`}</Form.Hint>
             ) : null}
           </div>
-          {amountHidden ? (
+          )}
+          {fromEvidence ? (
+            <>
+              <div data-ui="field-row" className={rowStyles.row}>
+                <span className={rowStyles.label}>결제 합계</span>
+                <span className={cardStyles.valueText}>{formatKrw(fromEvidence.totalKrw)}</span>
+              </div>
+              <div data-ui="field-row" className={rowStyles.row}>
+                <span className={rowStyles.label}>증빙 종류</span>
+                <span className={cardStyles.valueText}>{fromEvidence.evidenceLabel}</span>
+              </div>
+            </>
+          ) : amountHidden ? (
             <div data-ui="field-row" className={rowStyles.row}>
               <span className={rowStyles.label}>결제 합계</span>
               <span>—</span>
@@ -967,6 +1045,7 @@ export function CardUsageForm({
               <FxField initial={initialFx} error={fieldErrors?.fxRate?._errors?.[0]} onRaw={onFxRaw} />
             </div>
           ) : null}
+          {fromEvidence ? null : (
           <div data-ui="field-row" className={rowStyles.row}>
             <Form.Field id="card-usage-evidence" label="증빙 종류">
               <Select
@@ -979,6 +1058,7 @@ export function CardUsageForm({
               />
             </Form.Field>
           </div>
+          )}
           <div data-ui="field-row" className={rowStyles.row} role="radiogroup" aria-labelledby="card-usage-link-label">
             <span id="card-usage-link-label" className={rowStyles.label}>
               연결
@@ -1085,12 +1165,27 @@ export function CardUsageForm({
                   canAdd={slip.canAdd}
                   deletableIds={slip.deletableIds}
                 />
+                {edit && evidencePick ? (
+                  <Button data-evidence-pick="" variant="tertiary" onClick={() => setPickingEvidence(true)}>
+                    {`증빙 고르기 ${evidencePick.count}`}
+                  </Button>
+                ) : null}
               </Form.Field>
             </div>
           ) : null}
         </div>
       </PanelForm>
       <MerchantPickDialog open={pickOpen} onClose={() => setPickOpen(false)} onPick={pickMerchant} />
+      {edit && evidencePick ? (
+        <PickEvidenceDialog
+          target={pickingEvidence ? { ownerKind: "corp_card_usage", ownerId: edit.id, mode: evidencePick.mode, subtitle: ["카드 사용", edit.number].filter(Boolean).join(" · ") } : null}
+          onClose={() => setPickingEvidence(false)}
+          onAttached={() => {
+            setPickingEvidence(false);
+            router.refresh();
+          }}
+        />
+      ) : null}
       <LinkPicker
         mode="card"
         step={linkStep}

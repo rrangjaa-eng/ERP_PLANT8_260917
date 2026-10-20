@@ -37,8 +37,10 @@ describe("playwright.config.ts — 규약 C4 확인증 프로젝트 격리(백�
   });
 
   // PR #253 CI — phase6-keys가 desktop 안에서 공용 증빙 종류 `tax_invoice`를 보관하는 동안 다른 워커의 지출결의 제출이 막혔다.
-  it("공용 설정을 바꾸는 스펙(결재선 · 짝 격자)은 desktop에서 빠지고 desktop-settings에서 워커 1로 돈다", () => {
-    const shared = ["settings-approval-route.spec.ts", "phase6-keys.spec.ts"];
+  // PR #254 CI e2e (1) — evidence-private-type-audit가 공용 코드 항목 `personal_card_receipt`의 「경영관리만 보기」를 잠깐 끄는 동안
+  // 다른 워커의 evidence-private-type이 결재자 화면에서 파일 행 1을 봤다.
+  it("공용 설정을 바꾸는 스펙(결재선 · 짝 격자 · 증빙 종류 경영관리만 보기)은 desktop에서 빠지고 desktop-settings에서 워커 1로 돈다", () => {
+    const shared = ["settings-approval-route.spec.ts", "phase6-keys.spec.ts", "evidence-private-type.spec.ts", "evidence-private-type-audit.spec.ts"];
     expect(byName("desktop")?.testIgnore).toEqual(expect.arrayContaining(shared));
     expect(byName("desktop-settings")?.testMatch).toEqual(shared);
     expect(byName("desktop-settings")?.workers).toBe(1);
@@ -49,12 +51,19 @@ describe("playwright.config.ts — 규약 C4 확인증 프로젝트 격리(백�
     const wipers = [
       "evidence-attach-audit.spec.ts",
       "evidence-attach.spec.ts",
+      "evidence-export.spec.ts",
       "evidence-intake.spec.ts",
       "evidence-list-audit.spec.ts",
       "evidence-panel-audit.spec.ts",
       "evidence-panel.spec.ts",
+      "evidence-paste-audit-capture.spec.ts",
+      "evidence-paste-audit.spec.ts",
+      "evidence-paste.spec.ts",
       "evidence-pick-audit.spec.ts",
       "evidence-pick.spec.ts",
+      "evidence-reconcile-audit-capture.spec.ts",
+      "evidence-reconcile-audit.spec.ts",
+      "evidence-reconcile.spec.ts",
     ];
     expect(byName("desktop")?.testIgnore).toEqual(expect.arrayContaining(wipers));
     expect(byName("desktop-evidence")?.testMatch).toEqual(wipers);

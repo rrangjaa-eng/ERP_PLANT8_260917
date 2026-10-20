@@ -14,13 +14,15 @@ const COPY = {
   primary: "이 문서에 붙이기",
   failed: "붙이지 못함 · 다시 시도",
   inReview: "결재 중 문서 · 결재 끝까지 떼기 없음",
+  // 06.1-09 D-6111: 경영관리가 값 바뀜 카드 사용 행을 고르면 붙이는 순간 카드 사용이 파일 값으로 덮인다.
+  fileWins: "고르면 카드 사용 합계 · 카드가 파일 값으로",
 } as const;
 
 export type PickDocumentTarget = { recordId: string; subtitle: string };
 
 export function PickDocumentDialog({ target, onClose, onAttached }: { target: PickDocumentTarget | null; onClose: () => void; onAttached: (recordId: string) => void }) {
-  // 행 id → 문서 종류(지출결의 · 구매 요청) · 결재 중 — PickRow에는 그 칸이 없어 마지막 결과로 기억한다.
-  const kinds = useRef(new Map<string, { kind: "expense" | "purchase_request"; inReview: boolean }>());
+  // 행 id → 문서 종류(지출결의 · 구매 요청 · 카드 사용) · 결재 중 · 값 바뀜 — PickRow에는 그 칸이 없어 마지막 결과로 기억한다.
+  const kinds = useRef(new Map<string, { kind: "expense" | "purchase_request" | "corp_card_usage"; inReview: boolean; changes: boolean }>());
   const recordId = target?.recordId ?? null;
 
   const search = useCallback(
@@ -33,7 +35,7 @@ export function PickDocumentDialog({ target, onClose, onAttached }: { target: Pi
         kinds.current = new Map();
         const items = data.items.flatMap((item): PickRow[] => {
           if (!item.id || !item.kind || item.number === undefined || item.title === undefined) return [];
-          kinds.current.set(item.id, { kind: item.kind, inReview: item.inReview === true });
+          kinds.current.set(item.id, { kind: item.kind, inReview: item.inReview === true, changes: item.valueChanges !== undefined && item.valueChanges !== null });
           return [
             {
               type: "row",
@@ -83,7 +85,11 @@ export function PickDocumentDialog({ target, onClose, onAttached }: { target: Pi
       primaryLabel={COPY.primary}
       noun="문서"
       emptyNextStep={null}
-      resultLine={(row) => (row && kinds.current.get(row.id)?.inReview ? COPY.inReview : null)}
+      resultLine={(row) => {
+        const facts = row ? kinds.current.get(row.id) : undefined;
+        if (facts?.inReview) return COPY.inReview;
+        return facts?.changes ? COPY.fileWins : null;
+      }}
       onPick={onPick}
     />
   );

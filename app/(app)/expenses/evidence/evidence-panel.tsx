@@ -169,8 +169,13 @@ export function EvidencePanel({ detail: initial, lineClassName, onClose, onSaved
     setPreview(null);
     setFailure(null);
     setFormKey((key) => key + 1);
-    requestAnimationFrame(() => document.getElementById(SUPPLY_ID)?.focus());
   }
+
+  // 새로 고침 뒤 포커스 = 새로 그린 공급가 칸. requestAnimationFrame은 React가 새 폼을 커밋하기 전에 돌 수 있어(느린 CI 러너) 곧 지워질 옛 칸에
+  // 포커스를 주고 body로 떨어졌다(PR #254 CI e2e (2)) — 새 key의 폼이 커밋된 뒤에 준다.
+  useEffect(() => {
+    if (formKey > 0) document.getElementById(SUPPLY_ID)?.focus();
+  }, [formKey]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

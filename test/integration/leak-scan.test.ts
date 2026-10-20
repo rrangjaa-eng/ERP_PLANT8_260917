@@ -53,6 +53,7 @@ import "@/app/(app)/certs/submissions/[id]/actions.registry";
 import "@/app/(app)/admin/field-definitions/actions.registry";
 import "@/domain/evidence-import";
 import "@/domain/evidence-records";
+import "@/domain/evidence-records/export";
 import "@/app/(app)/expenses/evidence/actions.registry";
 import "@/domain/evidence-records/attach";
 import "@/domain/evidence-records/linked";

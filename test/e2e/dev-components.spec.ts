@@ -178,6 +178,30 @@ test.describe("로그인한 뒤", () => {
     expect(counts).toEqual([1, 2, 3]);
   });
 
+  // 06.1-13 Task 1 — SP-6104 select 셀 붙여넣기 결과 표본(화면보다 먼저). 모르는 값 오류 셀 하나 · 합계 행 붙여넣기 요약 조각 둘.
+  test("표 편집 — select 붙여넣기 표본: 모르는 값 오류 셀 하나 · 합계 행 `붙여넣기 3줄 · 공개 칸 1개 모르는 값 · 잠긴 줄 1칸 건너뜀`", async ({ page }) => {
+    const sample = page.locator('[data-gallery="table-select-paste"]');
+    await expect(sample.locator('[role="grid"]')).toHaveCount(1);
+    await expect(sample.locator('[aria-invalid="true"]')).toHaveCount(1);
+    await expect(sample).toContainText("목록에 없는 값 · 전체 공개");
+    await expect(sample.locator("tfoot")).toContainText("붙여넣기 3줄 · 공개 칸 1개 모르는 값 · 잠긴 줄 1칸 건너뜀");
+  });
+
+  // DOM 감사 D2 — 표본 공개 열은 실제 증빙 표처럼 P2다. 폰(<700)에서는 주 행이 항목 + 상태 둘이고, 잠긴 줄의 공개 글자는 접힌 줄로 간다
+  // (편집 칸은 접힌 줄에 끼지 않는다 — 공유 Table 규칙 · 증빙 표와 같다 · §7-3 P1 = 항목 + 상태).
+  test("표 편집 — select 붙여넣기 표본: 375에서 공개 열은 P2라 주 행에 없고 잠긴 줄은 접힌 줄에 있다", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    const sample = page.locator('[data-gallery="table-select-paste"]');
+    const mainRows = sample.locator("tbody tr:not([class*='collapsedRow'])");
+    await expect(mainRows).toHaveCount(3);
+    const visibleCells = await mainRows.evaluateAll((rows) => rows.map((row) => [...row.children].filter((cell) => getComputedStyle(cell).display !== "none").length));
+    expect(visibleCells).toEqual([2, 2, 2]);
+    const collapsed = sample.locator("tbody tr[class*='collapsedRow']");
+    await expect(collapsed).toHaveCount(1);
+    await expect(collapsed).toBeVisible();
+    await expect(collapsed).toContainText("미공개");
+  });
+
   // 06-29 Task 1 — SP-1 선택 표(SYSTEM §7-3 (카)). 선택 열 폭 · Space · 1차 N · 머리글 · 고를 수 없는 행 · Ctrl+Enter.
   test("표 선택 — Space로 고르기 · 1차 N · 머리글 일괄 · 고를 수 없는 행 · Ctrl+Enter 처리", async ({ page }) => {
     const sample = page.locator('[data-gallery="table-select"]');

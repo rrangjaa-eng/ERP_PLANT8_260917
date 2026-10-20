@@ -27,6 +27,7 @@ import {
   PickSamples,
   ReadTableSample,
   RowActionsSamples,
+  SelectPasteSample,
   SelectTableSample,
   ToastSample,
 } from "./gallery-client";
@@ -161,6 +162,9 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
       <DetailScreen.Section title="표 편집">
         <div data-gallery="table-edit">
           <EditTableSample />
+        </div>
+        <div data-gallery="table-select-paste">
+          <SelectPasteSample />
         </div>
       </DetailScreen.Section>
 

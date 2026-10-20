@@ -180,7 +180,7 @@ export default async function CodeTablesPage({
                 : []),
             ],
             // 증빙 종류 표의 세금 규칙 편집 줄 — 행 아래 전폭 줄(패널이 아니다).
-            detail: isEvidenceType && canWrite ? <EvidenceTypeFields itemId={item.id} initialValue={item.taxRule} /> : undefined,
+            detail: isEvidenceType && canWrite ? <EvidenceTypeFields itemId={item.id} initialValue={item.taxRule} initialPrivate={item.privateToOwner ?? false} /> : undefined,
           }))}
         />
       )}

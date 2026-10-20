@@ -36,6 +36,11 @@ function megabytes(size: number, maxMb: number): string {
   return String(rounded > maxMb ? rounded : Math.ceil(exact * 10) / 10);
 }
 
+// 06.1-14(E14 · RP-14): 설정 `evidence.min_size_kb`가 0보다 크고 선언 크기가 그보다 작을 때 — 폰이 줄인 사본 대신 원본을 올리게 한다.
+export function evidenceTooSmall(minKb: number): string {
+  return `${minKb}KB 미만 · 원본 파일로 다시`;
+}
+
 export function evidenceTooLarge(size: number, maxBytes: number): string {
   const maxMb = maxBytes / MB;
   return `${megabytes(size, maxMb)}MB · ${maxMb}MB 초과 · 파일을 줄여 다시`;
@@ -50,16 +55,51 @@ export type EvidenceUploadCheck = { ok: true } | { ok: false; reason: string };
 
 export function checkEvidenceUpload(
   input: EvidenceUploadDeclaration,
-  opts: { maxBytes: number; duplicates: readonly EvidenceDuplicate[] },
+  opts: { maxBytes: number; minBytes?: number; duplicates: readonly EvidenceDuplicate[] },
 ): EvidenceUploadCheck {
   if (!Number.isInteger(input.size) || input.size < 1 || !SHA256_SHAPE.test(input.sha256)) {
     return { ok: false, reason: EVIDENCE_UPLOAD_FAILED };
   }
   if (input.size > opts.maxBytes) return { ok: false, reason: evidenceTooLarge(input.size, opts.maxBytes) };
+  // 최소 용량은 크기 초과 다음 · 형식보다 먼저(사람은 「원본으로 다시」 하나만 보면 된다). 0이면 검사 없음.
+  const minBytes = opts.minBytes ?? 0;
+  if (minBytes > 0 && input.size < minBytes) return { ok: false, reason: evidenceTooSmall(Math.round(minBytes / 1024)) };
   if (!(EVIDENCE_CONTENT_TYPES as readonly string[]).includes(input.contentType)) return { ok: false, reason: EVIDENCE_WRONG_TYPE };
   if (opts.duplicates.some((duplicate) => duplicate.sameOwner)) return { ok: false, reason: EVIDENCE_DUPLICATE_SAME_OWNER };
   const visible = opts.duplicates.find((duplicate) => duplicate.visibleNumber !== null);
   if (visible?.visibleNumber) return { ok: false, reason: evidenceDuplicateElsewhere(visible.visibleNumber) };
   if (opts.duplicates.length > 0) return { ok: false, reason: EVIDENCE_DUPLICATE_HIDDEN };
   return { ok: true };
+}
+
+// 06.1-14(E14 · RP-14 · PA-SIG-HEAD): 완료 통보가 저장소에서 읽은 머리 16바이트와 선언 형식의 서명을 대조한다 — 260907
+// sniffDocumentType(JPEG · PNG · PDF · HEIC) + 05가 받는 WEBP. HEIC/HEIF 선언은 서로 같게 본다(브라우저마다 둘을 섞어 붙인다).
+// 12바이트 미만 · 모르는 형식은 거짓. PDF 꼬리 · 사진 크기 · HEIC 변환은 가져오지 않았다(CONTEXT 「가져오지 않음」).
+const HEIF_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "mif1", "msf1"]);
+
+function ascii(head: Uint8Array, from: number, to: number): string {
+  return String.fromCharCode(...head.subarray(from, to));
+}
+
+function startsWith(head: Uint8Array, prefix: readonly number[]): boolean {
+  return prefix.every((byte, i) => head[i] === byte);
+}
+
+export function signatureMatches(head: Uint8Array | null, contentType: string): boolean {
+  if (!head || head.length < 12) return false;
+  switch (contentType) {
+    case "image/jpeg":
+      return startsWith(head, [0xff, 0xd8, 0xff]);
+    case "image/png":
+      return startsWith(head, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    case "image/webp":
+      return ascii(head, 0, 4) === "RIFF" && ascii(head, 8, 12) === "WEBP";
+    case "image/heic":
+    case "image/heif":
+      return ascii(head, 4, 8) === "ftyp" && HEIF_BRANDS.has(ascii(head, 8, 12));
+    case "application/pdf":
+      return ascii(head, 0, 4) === "%PDF";
+    default:
+      return false;
+  }
 }

@@ -13,7 +13,7 @@ export const CANCEL_REGISTERED_CHECK = "취소 줄 등록됨 · 원거래 확인
 export type CardCandidate = { id: string; issuer: string; numberLast4: string; active: boolean };
 
 // 발급사는 자유 입력 칸이다 — 공백을 지우고 대문자로 맞춰 별칭(신한 · 비씨 · BC · 롯데)이 들어 있는지만 본다.
-function issuerText(text: string): string {
+export function issuerText(text: string): string {
   return text.replaceAll(/\s/g, "").toUpperCase();
 }
 

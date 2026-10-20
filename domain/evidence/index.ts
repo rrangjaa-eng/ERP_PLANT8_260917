@@ -7,16 +7,18 @@ import { withTransaction } from "@/lib/db-transaction";
 import { log } from "@/lib/log";
 import { getObjectStorage, type ObjectStorage } from "@/lib/gcp/storage";
 import { can, ForbiddenError } from "@/domain/permissions/can";
+import { evidenceScopeFor, rowScopeFor } from "@/domain/permissions/scope-for";
 import { project, projectMany } from "@/domain/permissions/project";
 import { getSettingValue } from "@/domain/settings/registry";
-import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
+import { EVIDENCE_MAX_SIZE_MB, EVIDENCE_MIN_SIZE_KB } from "@/domain/settings/keys";
 import { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 import { validateRejectReason } from "@/domain/approvals";
 import { buildEvidenceVoidedMessage } from "@/domain/approvals/conflict-message";
 import { canSeeExpense, EXPENSE_ALREADY_CLOSED, EXPENSE_DOCUMENT_KIND, ExpenseCloseRefusedError, ExpenseConflictError, ExpenseNotFoundError } from "@/domain/expenses";
 import { EVIDENCE_FILE_DTO_SPEC, type EvidenceFileDto } from "@/domain/evidence/dto";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
-import { checkEvidenceUpload, duplicateScopeKinds, EVIDENCE_DUPLICATE_HIDDEN, EVIDENCE_UPLOAD_FAILED, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
+import { fileVisibilityFor, privateEvidenceLine, privateEvidenceTypeOf, privateFileVisible, type FileVisibility } from "@/domain/evidence/private-files";
+import { checkEvidenceUpload, duplicateScopeKinds, EVIDENCE_DUPLICATE_HIDDEN, EVIDENCE_UPLOAD_FAILED, signatureMatches, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
 import {
   APPROVAL_EVIDENCE_KIND,
   denyRevisionEvidenceWrite,
@@ -36,9 +38,10 @@ import {
 import { CARD_USAGE_ENTITY, cardSlipNotFound, cardSlipOwner, cardSlipRights, cardSlipWriteOpen, denyCardSlipWrite, type CardSlipOwner } from "@/domain/corp-card-usages";
 import { bumpInstanceVersion } from "@/repositories/approvals";
 import { clearEvidenceValues, deleteReviewByExpense, type EvidenceReviewStatus } from "@/repositories/expense-evidence-reviews";
-import { bumpExpenseVersion } from "@/repositories/expense-payments";
+import { bumpExpenseVersion, findLivePayment } from "@/repositories/expense-payments";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
 import { findActiveBySha, findAliveFileOfIntent, findFileById, insertFile, listActiveByOwner, markRemoved, markRestored, markVoided, type FileRow } from "@/repositories/files";
+import { listLiveLinksWithRecords } from "@/repositories/evidence-record-links";
 import { findProjectById, lockProjectForWrite } from "@/repositories/projects";
 import { findUserById } from "@/repositories/users";
 import { completeIntentIfOpen, findIntentById, insertIntent } from "@/repositories/upload-intents";
@@ -59,6 +62,8 @@ const SIGNED_PUT_EXPIRES_SEC = 900;
 // 의도는 서명 PUT보다 오래 산다 — PUT 만료 직전에 시작한 느린 업로드(폰 · 큰 파일)가 끝난 뒤에도 완료 통보가 열려 있다(05 /review A10 · F7).
 const UPLOAD_GRACE_SEC = 15 * 60;
 const INTENT_TTL_MS = (SIGNED_PUT_EXPIRES_SEC + UPLOAD_GRACE_SEC) * 1000;
+// 06.1-14(E14): 서명 대조에 읽는 객체 머리 — JPEG · PNG · WEBP · HEIC · PDF 서명이 다 12바이트 안에 있다.
+const SIGNATURE_HEAD_BYTES = 16;
 const VIEW_URL_EXPIRES_SEC = 300;
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // PC 브라우저가 그리지 못할 수 있는 형식은 내려받기로(리뷰 Round 1 P3-6).
@@ -111,6 +116,8 @@ type OwnerState = {
   closed: boolean;
   // 06-11(U-4) — 프로젝트가 완료(completed)인 문서(프로젝트가 없는 팀 비용 문서는 false). 승인 뒤 기안자 추가를 닫는다.
   projectCompleted: boolean;
+  // 06.1-14(G15) — 지출결의의 문서 증빙 종류 값(그 종류의 「올린 사람 · 경영관리만 보기」가 05 파일 보임을 좁힌다). 다른 주인 종류는 없다.
+  evidenceType?: string | null;
 };
 
 type OwnerRights = { read: boolean; write: boolean };
@@ -158,6 +165,7 @@ async function expenseState(viewer: Viewer, ownerId: string, tx?: DbOrTx): Promi
     instance: instance ? { id: instance.id, version: instance.version } : null,
     closed: row.closedAt !== null,
     projectCompleted: project?.status === "completed",
+    evidenceType: row.evidenceType,
   };
 }
 
@@ -331,7 +339,8 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
     }
   }
 
-  const maxBytes = (await getSettingValue(EVIDENCE_MAX_SIZE_MB)) * MB;
+  const [maxMb, minKb] = await Promise.all([getSettingValue(EVIDENCE_MAX_SIZE_MB), getSettingValue(EVIDENCE_MIN_SIZE_KB)]);
+  const maxBytes = maxMb * MB;
   const duplicates: EvidenceDuplicate[] = [];
   for (const file of await findActiveBySha(viewer, input.sha256, duplicateScopeKinds(input.ownerKind))) {
     if (file.ownerKind === input.ownerKind && file.ownerId === owner.id) {
@@ -350,7 +359,7 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
     const visible = other.number !== null && (await otherRule.canSee(viewer, other));
     duplicates.push({ sameOwner: false, visibleNumber: visible ? other.number : null });
   }
-  const check = checkEvidenceUpload(input, { maxBytes, duplicates });
+  const check = checkEvidenceUpload(input, { maxBytes, minBytes: minKb * 1024, duplicates });
   if (!check.ok) throw new EvidenceCheckError(check.reason);
 
   const storage = storageOf(deps);
@@ -431,12 +440,21 @@ export async function completeEvidenceUpload(
     await storage.delete(intent.objectKey);
     throw new EvidenceUploadRefusedError("restart");
   }
+  // 06.1-14(E14 · RP-14): 메타데이터가 맞아도 내용이 선언 형식이 아니면(실행 파일을 PNG로) 옮기기 전에 지우고 같은 다시 올리기로 거부한다.
+  // 독립 검토 P2-2 — 서명 PUT 주소는 만료 전까지 다시 쓸 수 있다. 메타데이터에서 읽은 세대로 머리 읽기 · 옮기기를 고정해
+  // 대조한 객체와 옮기는 객체가 같은 세대가 되게 한다(세대가 바뀌면 머리 읽기는 없음 · 옮기기는 실패로 거부된다).
+  const pinned = metadata.generation === undefined ? undefined : { generation: metadata.generation };
+  if (!signatureMatches(await storage.readHead(intent.objectKey, SIGNATURE_HEAD_BYTES, pinned), intent.declaredContentType)) {
+    log.warn("evidence.upload_signature_mismatch", { intentId: intent.id, ownerKind: intent.ownerKind, ownerId: intent.ownerId, reason: "signature" });
+    await storage.delete(intent.objectKey);
+    throw new EvidenceUploadRefusedError("restart");
+  }
 
   // 파일 id가 호출마다 새것이라 같은 의도를 두 번 완료해도 아래 보상 삭제가 먼저 붙은 객체를 지우지 않는다.
   const fileId = randomUUID();
   const objectKey = `evidence/${fileId}`;
   try {
-    await storage.move(intent.objectKey, objectKey);
+    await storage.move(intent.objectKey, objectKey, pinned ? { ifSourceGeneration: pinned.generation } : undefined);
   } catch {
     throw new EvidenceUploadRefusedError("complete");
   }
@@ -536,6 +554,8 @@ export async function removeEvidence(viewer: Viewer, input: { fileId: string }, 
     if (owner.drafterId !== viewer.id) throw rule.notFound();
     if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
   }
+  // 독립 검토 P3-1 — 보기 길과 같은 G15 판정. 볼 수 없는 파일 id로 부르면 없는 것과 같은 글자로 거부한다.
+  if (!(await visibilityOf(viewer, file.ownerKind, owner)).visible(file)) throw rule.notFound();
   if (file.removedAt !== null) return;
   if (!rule.rights && !rule.drafterRemoves(owner)) {
     if (owner.closed) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
@@ -573,6 +593,8 @@ export async function createEvidenceViewUrl(viewer: Viewer, input: { fileId: str
   if (!file || !rule || file.removedAt !== null) return null;
   const owner = await rule.load(viewer, file.ownerId);
   if (!owner || !(await rule.canSee(viewer, owner))) return null;
+  // G15 — 남이 올린 「올린 사람 · 경영관리만 보기」 종류 파일은 주소가 없다(→ 404).
+  if (!(await visibilityOf(viewer, file.ownerKind, owner)).visible(file)) return null;
   return storageOf(deps).createSignedGet(file.objectKey, {
     expiresSec: VIEW_URL_EXPIRES_SEC,
     filename: file.originalName,
@@ -580,14 +602,47 @@ export async function createEvidenceViewUrl(viewer: Viewer, input: { fileId: str
   });
 }
 
-// 주인 문서를 볼 수 있는 사람에게만 — 삭제되지 않은 파일(무효 포함) 올린 순.
+// 06.1-14(G15 · RP-15 ⑵): 주인 하나의 파일 보임 판정 — 문서 증빙 종류가 「올린 사람 · 경영관리만 보기」면 올린 사람 · 전사 보는 범위만 본다.
+function visibilityOf(viewer: Viewer, ownerKind: string, owner: OwnerState): Promise<FileVisibility> {
+  return fileVisibilityFor(viewer, { ownerKind, evidenceType: owner.evidenceType ?? null });
+}
+
+// 주인 문서를 볼 수 있는 사람에게만 — 삭제되지 않은 파일(무효 포함) 올린 순. G15 종류는 남의 파일을 뺀다.
 export async function listEvidence(viewer: Viewer, input: { ownerKind: string; ownerId: string }): Promise<Partial<EvidenceFileDto>[]> {
   const rule = ruleFor(input.ownerKind);
   if (!rule || !UUID_SHAPE.test(input.ownerId)) return [];
   const owner = await rule.load(viewer, input.ownerId);
   if (!owner || !(await rule.canSee(viewer, owner))) return [];
-  const rows = await listActiveByOwner(viewer, input.ownerKind, input.ownerId);
-  return projectMany(viewer, rows.map(toDtoSource), EVIDENCE_FILE_DTO_SPEC);
+  const [rows, visibility] = await Promise.all([listActiveByOwner(viewer, input.ownerKind, input.ownerId), visibilityOf(viewer, input.ownerKind, owner)]);
+  return projectMany(viewer, rows.filter((row) => visibility.visible(row)).map(toDtoSource), EVIDENCE_FILE_DTO_SPEC);
+}
+
+// 06.1-14(G15 · PA-G15-NOTICE · PA-G15-LINKED): 숨긴 05 파일 · 숨긴 붙은 기록이 하나라도 있으면 문서 「증빙」 잠김 줄 글자, 아니면 null.
+export async function privateEvidenceNotice(viewer: Viewer, input: { ownerKind: string; ownerId: string }): Promise<string | null> {
+  const rule = ruleFor(input.ownerKind);
+  if (!rule || !UUID_SHAPE.test(input.ownerId)) return null;
+  const owner = await rule.load(viewer, input.ownerId);
+  if (!owner || !(await rule.canSee(viewer, owner))) return null;
+  const visibility = await visibilityOf(viewer, input.ownerKind, owner);
+  if (visibility.privateTypeName) {
+    const rows = await listActiveByOwner(viewer, input.ownerKind, owner.id);
+    if (rows.some((row) => !visibility.visible(row))) return privateEvidenceLine(visibility.privateTypeName);
+  }
+  // 붙은 기록(06.1-06 · 06.1-08 읽기와 같은 판정) — 기록 자신의 증빙 종류로 본다.
+  const links = await listLiveLinksWithRecords(viewer, { ownerKind: input.ownerKind, ownerIds: [owner.id] });
+  const scopeAll = await linkedScopeAll(viewer, links.length > 0);
+  for (const type of new Set(links.map((link) => link.evidenceType))) {
+    const item = await privateEvidenceTypeOf(viewer, type);
+    if (item?.privateToOwner && !privateFileVisible({ privateType: true, uploadedBy: null, viewerId: viewer.id, scopeAll })) return privateEvidenceLine(item.label);
+  }
+  return null;
+}
+
+// 붙은 기록의 G15 판정 입력 — 전사 보는 범위 또는 증빙 행 범위 all(06.1-01). 기록이 없으면 읽지 않는다.
+async function linkedScopeAll(viewer: Viewer, needed: boolean): Promise<boolean> {
+  if (!needed) return false;
+  const [rowScope, evidenceScope] = await Promise.all([rowScopeFor(viewer, "expense"), evidenceScopeFor(viewer)]);
+  return rowScope.rows === "all" || evidenceScope.rows === "all";
 }
 
 // 05-09: 파일 행 3차 규칙을 서버가 정한다(화면은 추론하지 않는다) — 하나 더 · 지울 수 있는 파일 · 무효 처리할 수 있는 파일 ·
@@ -601,6 +656,7 @@ export async function getEvidenceActions(viewer: Viewer, input: { ownerKind: str
   if (!rule || !UUID_SHAPE.test(input.ownerId)) return NO_EVIDENCE_ACTIONS;
   const owner = await rule.load(viewer, input.ownerId);
   if (!owner || !(await rule.canSee(viewer, owner))) return NO_EVIDENCE_ACTIONS;
+  const visibility = await visibilityOf(viewer, input.ownerKind, owner);
   if (rule.rights) {
     // 06-16 — 쓰기 권리면 하나 더 · 모든 살아 있는 파일을 지울 수 있다(무효 처리 · 결재 잠김은 없다).
     const canWrite = (await rule.rights(viewer, owner)).write;
@@ -611,7 +667,10 @@ export async function getEvidenceActions(viewer: Viewer, input: { ownerKind: str
   const canAdd = addOpen(rule, owner, adder);
   const canRemove = adder.drafter && rule.drafterRemoves(owner);
   const canVoid = rule.approved(owner) && !!rule.voidMenu && (await can(viewer, rule.voidMenu, "write"));
-  const live = canRemove || canVoid ? (await listActiveByOwner(viewer, input.ownerKind, owner.id)).filter((file) => file.voidedAt === null) : [];
+  const live =
+    canRemove || canVoid
+      ? (await listActiveByOwner(viewer, input.ownerKind, owner.id)).filter((file) => file.voidedAt === null && visibility.visible(file))
+      : [];
   return {
     canAdd,
     deletableFileIds: canRemove ? live.map((file) => file.id) : [],
@@ -632,6 +691,8 @@ export async function voidEvidence(viewer: Viewer, input: { fileId: string; reas
   const rule = file ? ruleFor(file.ownerKind) : null;
   const owner = file && rule ? await rule.load(viewer, file.ownerId) : null;
   if (!file || !rule || !owner || file.removedAt !== null || !(await rule.canSee(viewer, owner))) throw rule?.notFound() ?? new ExpenseNotFoundError();
+  // 독립 검토 P3-1 — 볼 수 없는 G15 파일은 없는 것과 같다(이미 무효여도 처리한 사람 · 시각을 내지 않는다).
+  if (!(await visibilityOf(viewer, file.ownerKind, owner)).visible(file)) throw rule.notFound();
   if (!rule.voidMenu || !(await can(viewer, rule.voidMenu, "write"))) throw new ForbiddenError("증빙 무효 처리 권한 없음");
   if (!rule.approved(owner)) throw new UserFacingError(EVIDENCE_VOID_ONLY_APPROVED);
   const reason = validateRejectReason(input.reason);
@@ -833,6 +894,43 @@ export async function lockEvidenceOwnerForChange(
   const locked = await readEvidenceOwner(viewer, { ownerKind: input.ownerKind, ownerId: input.ownerId }, tx);
   if (EXPENSE_RULE.approved(locked) && !approvedBefore) throw new ExpenseConflictError(locked.updatedAt);
   return locked;
+}
+
+// PR-C 카드 결정(2026-10-19 「붙은 것도 표시」): 붙은 증빙 기록에 확인 필요가 서는 쪽(뒤 파일 취소 — 등록 tx)이 증빙 행보다 먼저 문서를 잠근다 —
+// 순서 프로젝트 행 전부(id 오름차순) → 문서 행 전부(id 오름차순)(05 N-3 · 지급 완료와 같은 방향 · PR-C 검토 P3-1). 등록자는 그 문서를 못 볼 수 있어
+// 보임 판정을 하지 않는다(문서 글자를 내지 않는다). 붙임 주인 칸에는 외래 키가 없다 — 문서 행이 없으면 풀 확인 기록도 없으니 null(사유만 선다).
+// 잠근 문서의 프로젝트가 먼저 잠근 프로젝트에 없으면(잠금 없이 읽은 뒤 바뀜) 순서를 지킬 수 없으므로 raceMessage로 등록 전체를 되돌린다.
+export async function lockExpenseOwnersForRecordFlag(
+  viewer: Viewer,
+  ownerIds: readonly string[],
+  raceMessage: string,
+  tx: DbOrTx,
+): Promise<Map<string, EvidenceOwnerView | null>> {
+  const sortedIds = [...new Set(ownerIds)].sort();
+  const rows = new Map<string, Awaited<ReturnType<typeof findExpenseById>>>();
+  for (const ownerId of sortedIds) rows.set(ownerId, await findExpenseById(viewer, ownerId, tx));
+  const projectIds = [...new Set([...rows.values()].flatMap((row) => (row?.projectId ? [row.projectId] : [])))].sort();
+  for (const projectId of projectIds) await lockProjectForWrite(viewer, projectId, tx);
+  const locked = new Map<string, EvidenceOwnerView | null>();
+  for (const ownerId of sortedIds) {
+    const row = rows.get(ownerId);
+    if (!row) {
+      locked.set(ownerId, null);
+      continue;
+    }
+    const owner = await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId }, tx);
+    if (owner.projectId !== row.projectId) throw new UserFacingError(raceMessage);
+    locked.set(ownerId, owner);
+  }
+  return locked;
+}
+
+// 확인 필요가 선 붙은 기록의 문서 — 지급 전이면 붙임 추가와 같은 05 훅으로 확인 기록을 푼다(승인 = 확인 기록 해제 + 문서 version, 결재 중 =
+// 06.1 자동 확인만 지움). 증빙 집합은 그대로라 결재 인스턴스 version은 올리지 않는다. 지급 뒤 문서는 그대로(사유만 선다 — 사용자 결정).
+// lockExpenseOwnersForRecordFlag로 잠근 owner를 같은 tx로 넘긴다. 풀린 확인 기록 상태를 돌려준다(없으면 null).
+export async function releaseConfirmationOnRecordFlag(viewer: Viewer, owner: EvidenceOwnerState, tx: DbOrTx): Promise<EvidenceReviewStatus | null> {
+  if ((await findLivePayment(viewer, owner.id, tx)) !== null) return null;
+  return expenseApprovedEvidenceChange(viewer, owner, { kind: "add" }, tx);
 }
 
 // 변경 뒤 05 훅 — 05 completeEvidenceUpload(add) · voidEvidence(void)와 같은 두 단계를 같은 트랜잭션에서. add: 결재 중 · 승인이면 결재

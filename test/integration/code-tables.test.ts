@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { listCodeItems as domainListCodeItems, createCodeItem, setCodeItemActive, CODE_TABLES } from "@/domain/code-tables";
+import { listCodeItems as domainListCodeItems, createCodeItem, setCodeItemActive, setEvidenceTypePrivateToOwner, CODE_TABLES } from "@/domain/code-tables";
 import { archive } from "@/domain/archive";
 import { insertCodeItem, listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { upsertPermission } from "@/repositories/permissions";
@@ -119,7 +119,7 @@ describe("code-tables (MAST-04, 실제 Postgres)", () => {
 
   it("domain 반환 객체의 키 집합이 spec 선언 키 집합의 부분집합이다(행 객체 누출 없음)", async () => {
     const dto = await createCodeItem(SYSTEM_VIEWER, { tableKey: TABLE_KEY, value: "spec-1", label: "스펙 검증" });
-    const allowedKeys = new Set(["id", "tableKey", "value", "label", "sortOrder", "active", "archivedAt", "taxRule", "description"]);
+    const allowedKeys = new Set(["id", "tableKey", "value", "label", "sortOrder", "active", "archivedAt", "taxRule", "description", "privateToOwner"]);
     for (const key of Object.keys(dto)) {
       expect(allowedKeys.has(key)).toBe(true);
     }
@@ -143,5 +143,47 @@ describe("code-tables (MAST-04, 실제 Postgres)", () => {
       const dto = await createCodeItem(SYSTEM_VIEWER, { tableKey: key, value: `v-${randomUUID()}`, label: "허용" });
       expect(dto.tableKey).toBe(key);
     }
+  });
+});
+
+// 06.1-14(G15 · RP-15 · T-061-144): 증빙 종류 항목의 「올린 사람 · 경영관리만 보기」 켜기 · 끄기 — 세금 규칙 저장과 같은 권한 · 같은 대상 판정.
+describe("증빙 종류 「올린 사람 · 경영관리만 보기」(06.1-14 G15)", () => {
+  const personalCardReceipt = async () => {
+    const items = await domainListCodeItems(SYSTEM_VIEWER, "evidence_type", { includeInactive: true });
+    const found = items.find((item) => item.value === "personal_card_receipt");
+    if (!found?.id) throw new Error("개인카드 전표 항목 없음");
+    return found;
+  };
+
+  const privateLogs = async () => (await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" })).filter((row) => row.entity === "code_items");
+
+  it("관리자가 켜면 속성이 참이고 행동 로그 한 줄(code_items), 끄면 거짓이고 한 줄 더", async () => {
+    const item = await personalCardReceipt();
+    await setEvidenceTypePrivateToOwner(SYSTEM_VIEWER, item.id, false);
+    const before = (await privateLogs()).length;
+
+    const on = await setEvidenceTypePrivateToOwner(SYSTEM_VIEWER, item.id, true);
+    expect(on?.privateToOwner).toBe(true);
+    expect((await privateLogs()).length).toBe(before + 1);
+
+    const off = await setEvidenceTypePrivateToOwner(SYSTEM_VIEWER, item.id, false);
+    expect(off?.privateToOwner).toBe(false);
+    expect((await privateLogs()).length).toBe(before + 2);
+
+    await setEvidenceTypePrivateToOwner(SYSTEM_VIEWER, item.id, true);
+  });
+
+  it("코드표 쓰기 권한이 없는 계급은 거부되고 값이 그대로다", async () => {
+    const item = await personalCardReceipt();
+    const pmViewer = { id: "pm-tester-g15", roleId: DEFAULT_ROLE_ID };
+
+    await expect(setEvidenceTypePrivateToOwner(pmViewer, item.id, false)).rejects.toThrow();
+    expect((await personalCardReceipt()).privateToOwner).toBe(true);
+  });
+
+  it("증빙 종류가 아닌 코드표 항목은 거부된다", async () => {
+    const other = await createCodeItem(SYSTEM_VIEWER, { tableKey: TABLE_KEY, value: `g15-${randomUUID()}`, label: "다른 표" });
+
+    await expect(setEvidenceTypePrivateToOwner(SYSTEM_VIEWER, other.id, true)).rejects.toThrow("증빙 종류");
   });
 });

@@ -14,6 +14,7 @@ import { findLiveLinkForRecordForUpdate, listLiveLinkOwnersByRecords, type LiveL
 import { clearNeedsCheckIfVersionMatches, readRecordAmounts, updateAmountIfVersionMatches, type RecordAmounts } from "@/repositories/evidence-record-detail";
 import { lockRecordsForUpdate } from "@/repositories/evidence-records";
 import { lockPurchaseRequestForUpdate } from "@/repositories/purchase-requests";
+import { findCardUsageForWrite, lockCardUsageForUpdate } from "@/repositories/corp-card-usages";
 
 // 06.1-07(S3 · EVID-12 · EVID-09 · D-6106 · D-6520 · RP-1 · RP-2 · RP-6): 증빙 기록 한 줄의 공급가 고침과 확인 필요 풀기.
 // 합계(파일 값)는 고정, 세액 = 합계 − 공급가(domain/money — PA-AMT). 전 · 후는 끌 수 없는 evidence_record_amount_change(06 공급가액 고침
@@ -30,7 +31,7 @@ const AMOUNT_HIDDEN = "증빙 금액 보기 권한 없음";
 // 패널 1차 막힘 글자 · 06.1-06 붙이기 막힘 글자와 같은 말(독립 검토 P3-1 · P3-2).
 const NO_CHANGE = "바뀐 칸 없음";
 const ARCHIVED = "보관됨";
-// C8 · E27 — 카드 사용에 붙은 기록의 금액 고침 갈래는 06.1-09가 연다. 그 전에는 카드 사용 붙임이 생기지 않는다(화면 문구 없음 — 서버 거부 글자만).
+// C8 · E27 · PA-AMT-CU(06.1-09): 카드 사용에 붙은 기록의 금액 고침은 기록만 바꾼다. 붙은 카드 사용이 보관이면 이 글자로 거부한다(서버 거부 글자만).
 export const CARD_USAGE_AMOUNT_LOCKED = "카드 사용에 붙음 · 금액 잠김";
 
 const AMOUNT_TOO_LARGE = "공급가가 합계보다 큼";
@@ -94,7 +95,7 @@ type AttachTarget =
   | { kind: "expense"; linkId: string; before: EvidenceOwnerView }
   | { kind: "pending"; linkId: string }
   | { kind: "purchase_request"; linkId: string; ownerId: string }
-  | { kind: "corp_card_usage"; linkId: string };
+  | { kind: "corp_card_usage"; linkId: string; ownerId: string };
 
 async function readAttachTarget(viewer: Viewer, link: LiveLinkOwner | undefined): Promise<AttachTarget> {
   if (!link) return { kind: "none" };
@@ -104,13 +105,16 @@ async function readAttachTarget(viewer: Viewer, link: LiveLinkOwner | undefined)
     if (link.ownerNumber === null) return { kind: "pending", linkId: link.linkId };
     return { kind: "expense", linkId: link.linkId, before: await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: link.ownerId }) };
   }
-  return { kind: "corp_card_usage", linkId: link.linkId };
+  return { kind: "corp_card_usage", linkId: link.linkId, ownerId: link.ownerId };
 }
 
 // 사전 판독의 금액 잠김(트랜잭션 전) — 지출결의는 05 판정 단계 + 지급 행(06.5 findLivePayment — 06 SUPPLY_CORRECTION_PAID_LOCKED와 같은 판독).
 async function preReadLock(viewer: Viewer, target: AttachTarget): Promise<string | null> {
   if (target.kind === "pending") return amountLockOf({ pending: true });
-  if (target.kind === "corp_card_usage") return CARD_USAGE_AMOUNT_LOCKED;
+  if (target.kind === "corp_card_usage") {
+    const usage = await findCardUsageForWrite(viewer, target.ownerId, { includeArchived: true });
+    return !usage || usage.archivedAt !== null ? CARD_USAGE_AMOUNT_LOCKED : null;
+  }
   if (target.kind !== "expense") return null;
   return amountLockOf({ owner: target.before, paid: (await findLivePayment(viewer, target.before.id)) !== null });
 }
@@ -174,6 +178,10 @@ async function changeRecord(viewer: Viewer, input: ChangeInput, deps?: EvidenceA
       const request = await lockPurchaseRequestForUpdate(viewer, target.ownerId, tx);
       if (!request) throw new UserFacingError(PURCHASE_REQUEST_NOT_FOUND);
       if (request.status === "cancelled") throw new UserFacingError(PURCHASE_REQUEST_CANCELLED);
+    } else if (target.kind === "corp_card_usage") {
+      // 카드 사용 행 → 증빙 행 차례(문서 → 증빙). 잠그기만 하고 쓰지 않는다 — 카드 사용 값은 기록을 따라 바뀌지 않는다(D-6520).
+      const usage = await lockCardUsageForUpdate(viewer, target.ownerId, tx);
+      if (amountChange && (!usage || usage.archivedAt !== null)) throw new EvidenceAmountLockedError(CARD_USAGE_AMOUNT_LOCKED);
     }
     const [row] = await lockRecordsForUpdate(viewer, [input.id], tx);
     if (!row) throw new UserFacingError(RECORD_NOT_FOUND);

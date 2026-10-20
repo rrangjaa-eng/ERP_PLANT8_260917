@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/ui/button/Button";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { StaticTable, type StaticTableColumn } from "@/ui/table/StaticTable";
 import { DetachDialog, previewExpectedKrw, type DetachTarget } from "../evidence/detach-dialog";
 import { PickEvidenceDialog } from "../evidence/pick-evidence-dialog";
@@ -25,6 +26,8 @@ export type LinkedEvidenceItem = {
   pickedOn: string | null;
   action: "detach" | "void" | null;
   ownDetach: boolean;
+  /** 확인 필요 사유(서버 글자 그대로) — 있으면 2행 `확인 필요 · {사유}`(증빙 패널 상태 줄과 같은 꼴). */
+  needsCheck: string | null;
 };
 
 /** 06.1-08 — 증빙 고르기 트리거. 모드가 none이거나 후보가 0이면 서버가 이 값을 null로 준다(트리거 DOM 0). */
@@ -109,6 +112,12 @@ export function EvidenceRecordsSection({
             <span key="what">
               <span id={titleId(item.linkId)}>{titleOf(item)}</span>
               {item.pickedBy ? <span className={styles.evidencePicked}>{`${item.pickedBy} 고름 · ${item.pickedOn ?? ""}`}</span> : null}
+              {item.needsCheck ? (
+                <span className={styles.evidencePicked}>
+                  <StatusTag status="확인 필요" variant="text" />
+                  {` · ${item.needsCheck}`}
+                </span>
+              ) : null}
             </span>,
             item.issuedOn,
             <Num key="total" value={item.totalKrw} />,

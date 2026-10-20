@@ -33,6 +33,8 @@ function resultCounts(result: RegisterSuccess): BulkImportCount[] {
     // 같은 파일을 다시 올리면 `이미 등록 n · 같은 파일`(멱등 — 표 줄 수 변화 0).
     { label: "이미 등록", value: result.skippedDuplicate, kind: "muted", ...(result.sameFile ? { unit: " · 같은 파일" } : {}) },
     { label: "상쇄", value: result.offsetPairs, kind: "muted", unit: "쌍" },
+    { label: "카드 사용에 붙음", value: result.cardMatched, kind: "success", href: view("attached") },
+    { label: "짝 없음", value: result.cardUnmatched, kind: "warning", href: view("unmatched") },
     { label: "카드 미등록", value: result.cardUnknown, kind: "danger", href: view("card-unknown") },
     { label: "거래처 생성", value: result.vendorCreated, kind: "muted" },
     { label: "되살림", value: result.vendorRestored, kind: "muted" },

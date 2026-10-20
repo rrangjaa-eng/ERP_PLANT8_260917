@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { cardUsageReadScope } from "@/domain/corp-card-usages";
 import { EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
 import { EVIDENCE_FORMATS } from "@/domain/evidence-import/registry";
 import type { FormatRule } from "@/domain/evidence-import/types";
@@ -51,7 +52,7 @@ import {
   type LockedEvidenceRecord,
 } from "@/repositories/evidence-records";
 import type { DbOrTx } from "@/repositories/document-counters";
-import { AUTO_DETACH_REASONS, listLiveLinkOwnersByRecords } from "@/repositories/evidence-record-links";
+import { AUTO_DETACH_REASONS, findCardReplacedRecordIds, listLiveLinkOwnersByRecords } from "@/repositories/evidence-record-links";
 import { listRecordHistory } from "@/repositories/evidence-record-detail";
 import { findOrgUnitById } from "@/repositories/org-units";
 import { findMembershipsAtDate } from "@/repositories/team-memberships";
@@ -103,10 +104,16 @@ export type EvidenceRecordDto = {
    * 06.1-06 — 붙은 문서(상태 2행 링크). 등록 권한자(범위 all)에게만 싣는다. 번호 없는 임시 지출결의면 `attachedPending`만 참이고 id · 번호는
    * 싣지 않는다(경영관리는 그 문서를 못 본다 — Round 2 eng B-P2).
    */
-  attachedKind: "expense" | "purchase_request" | null;
+  attachedKind: "expense" | "purchase_request" | "corp_card_usage" | null;
   attachedId: string | null;
   attachedNumber: string | null;
   attachedPending: boolean;
+  /** 06.1-09 M10 — 파일이 붙은 카드 사용의 카드를 바꿨다(끌 수 없는 금액 기록 근거 · 붙임이 살아 있는 동안). 2행 끝 ` · 등록한 카드와 다름`. */
+  cardReplaced: boolean;
+  /** 06.1-09 S2(EVID-10 · E5) — 짝 없는 카드 줄(완화 후보 0)의 행 행동 `대리 등록`. `canAttach`와 같이 참이 되지 않는다(DB-9). */
+  canProxy: boolean;
+  /** 06.1-09 PA-ALLBLOCKED — 완화 후보가 전부 막힌 줄의 행 행동 자리 글자(S4 순위 1위 막힌 후보의 이유). 그 밖은 null. */
+  actionBlockedReason: string | null;
   /** 06.1-06 — 행 `붙이기`를 그린다(붙일 수 있는 상태 ∧ 볼 수 있는 대상 문서가 하나라도 있음). 짝 · 권리는 행마다 달라 S4가 판정한다. */
   canAttach: boolean;
   /** 06.1-06 — `붙이기` 비활성 이유(확인 필요 · 카드 미등록 — DA-13). 있으면 `붙이기`는 aria-disabled. */
@@ -141,6 +148,9 @@ export const EVIDENCE_RECORD_DTO_SPEC: DtoSpec<EvidenceRecordDto, EvidenceRecord
     { key: "attachedId", from: "attachedId", infoItem: "evidence.value" },
     { key: "attachedNumber", from: "attachedNumber", infoItem: "evidence.value" },
     { key: "attachedPending", from: "attachedPending", infoItem: "evidence.value" },
+    { key: "cardReplaced", from: "cardReplaced", infoItem: "evidence.value" },
+    { key: "canProxy", from: "canProxy", infoItem: "evidence.value" },
+    { key: "actionBlockedReason", from: "actionBlockedReason", infoItem: "evidence.value" },
     { key: "canAttach", from: "canAttach", infoItem: "evidence.value" },
     { key: "attachBlocked", from: "attachBlocked", infoItem: "evidence.value" },
   ],
@@ -281,6 +291,9 @@ function sourceOf(row: EvidenceRecordListRow): EvidenceRecordDto {
     attachedId: null,
     attachedNumber: null,
     attachedPending: false,
+    cardReplaced: false,
+    canProxy: false,
+    actionBlockedReason: null,
     canAttach: false,
     attachBlocked: null,
   };
@@ -288,26 +301,54 @@ function sourceOf(row: EvidenceRecordListRow): EvidenceRecordDto {
 
 // 06.1-06: 붙은 문서 · `붙이기` 판정을 한 쪽(최대 50줄)에 한 번에 — 붙임 주인 읽기 한 번 + 대상 문서 있음 조회 둘(쪽마다). 등록 권한자(범위 all)만.
 // 순환 import를 피해 대상 있음 조회는 부르는 쪽이 넘긴다(domain/evidence-records/attach.ts — 지출결의 · 구매 요청 범위).
-async function withAttachFacts(viewer: Viewer, scope: Awaited<ReturnType<typeof evidenceScopeFor>>, dtos: EvidenceRecordDto[]): Promise<EvidenceRecordDto[]> {
+async function withAttachFacts(viewer: Viewer, scope: Awaited<ReturnType<typeof evidenceScopeFor>>, rows: EvidenceRecordListRow[]): Promise<EvidenceRecordDto[]> {
+  const dtos = rows.map(sourceOf);
   if (scope.rows !== "all" || dtos.length === 0) return dtos;
   const owners = new Map((await listLiveLinkOwnersByRecords(viewer, dtos.map((dto) => dto.id))).map((owner) => [owner.recordId, owner]));
   const attachable = (dto: EvidenceRecordDto) => !owners.has(dto.id) && (dto.statusWord === "미공개" || dto.statusWord === "팀 공개" || dto.statusWord === "본부 공개");
   const needsTarget = dtos.some((dto) => attachable(dto) || evidenceAttachBlockOf(dto.statusWord) !== null);
-  const [{ hasAttachTarget }, intake] = await Promise.all([import("@/domain/evidence-records/attach"), can(viewer, "evidence.intake", "write")]);
-  const target = intake && needsTarget ? await hasAttachTarget(viewer) : false;
+  const [attach, intake, proxyRight, evidenceAmount, usageAmount] = await Promise.all([
+    import("@/domain/evidence-records/attach"),
+    can(viewer, "evidence.intake", "write"),
+    can(viewer, "cards.proxy", "write"),
+    visible(viewer, "evidence.amount"),
+    visible(viewer, "card_usage.amount"),
+  ]);
+  // 06.1-09 검토 P2-2: 대리 등록은 증빙 합계를 카드 사용 합계로 쓴다 — 두 금액 칸을 다 보는 사람만(S4 값 바꾸는 붙이기와 같은 문).
+  const proxy = proxyRight && evidenceAmount && usageAmount;
+  const target = intake && needsTarget ? await attach.hasAttachTarget(viewer) : false;
+  // 06.1-09 S2: 짝 없는 카드 줄(카드 등록됨 · 안 붙음 · 음수 아님 · 보관 아님 — C2)은 완화 후보로 행 행동을 가른다(쪽마다 질의 한 번 — E5 · DB-9).
+  const cardLines = intake ? rows.filter((row, index) => row.corpCardId !== null && row.totalKrw >= 0 && dtos[index] !== undefined && attachable(dtos[index])) : [];
+  const [judged, replaced] = await Promise.all([
+    cardLines.length > 0 ? attach.judgeCardCandidates(viewer, cardLines, await cardUsageReadScope(viewer)) : Promise.resolve(new Map<string, never[]>()),
+    findCardReplacedRecordIds(viewer, dtos.filter((dto) => owners.get(dto.id)?.ownerKind === "corp_card_usage").map((dto) => dto.id)),
+  ]);
+  const cardLineIds = new Set(cardLines.map((row) => row.id));
   return dtos.map((dto) => {
     const owner = owners.get(dto.id);
-    const kind = owner?.ownerKind === "expense" || owner?.ownerKind === "purchase_request" ? owner.ownerKind : null;
+    const ownerKind = owner?.ownerKind;
+    const kind = ownerKind === "expense" || ownerKind === "purchase_request" || ownerKind === "corp_card_usage" ? ownerKind : null;
     const pending = kind === "expense" && owner?.ownerNumber === null;
     const blocked = evidenceAttachBlockOf(dto.statusWord);
-    return {
+    const base: EvidenceRecordDto = {
       ...dto,
       attachedKind: kind,
       attachedId: kind && !pending ? (owner?.ownerId ?? null) : null,
       attachedNumber: kind && !pending ? (owner?.ownerNumber ?? null) : null,
       attachedPending: pending,
+      cardReplaced: replaced.has(dto.id),
       canAttach: target && (attachable(dto) || (blocked !== null && blocked !== "보관됨")),
       attachBlocked: blocked === "보관됨" ? null : blocked,
+    };
+    if (!cardLineIds.has(dto.id)) return base;
+    // DB-9: 후보 0 → 대리 등록만 · 고를 수 있는 후보 ≥ 1 → 붙이기만 · 전부 막힘 → 둘 다 없고 1위 막힌 후보의 이유(PA-ALLBLOCKED).
+    const candidates = judged.get(dto.id) ?? [];
+    const selectable = candidates.some((candidate) => candidate.judged.blockedReason === null);
+    return {
+      ...base,
+      canAttach: selectable,
+      canProxy: candidates.length === 0 && proxy,
+      actionBlockedReason: candidates.length > 0 && !selectable ? (candidates[0]?.judged.blockedReason ?? null) : null,
     };
   });
 }
@@ -380,11 +421,17 @@ function repositoryFilters(filters: EvidenceListFilters): EvidenceRecordFilters 
   };
 }
 
-// 목록 한 쪽(50건) + 필터 결과 전체의 합계 · 서식 그룹 건수 · 제안. 행 범위는 evidenceScopeFor 한 번(트랜잭션 밖)을 리포지토리 where가 집행한다.
-export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<EvidenceRecordList> {
+// 목록과 파일 받기의 같은 앞 단계 — 범위(evidenceScopeFor 한 번) · 거르개 읽기 · 리포지토리 거르개. 한쪽에만 거르개를 더하면 화면과 파일이
+// 갈라지므로(G6 「화면과 파일이 같다」) 둘 다 이 함수 하나를 부른다(검토 P3-4).
+async function listInputsFor(viewer: Viewer, query: EvidenceListQuery) {
   const scope = await evidenceScopeFor(viewer);
   const filters = readFilters(query);
-  const repoFilters = repositoryFilters(filters);
+  return { scope, filters, repoFilters: repositoryFilters(filters) };
+}
+
+// 목록 한 쪽(50건) + 필터 결과 전체의 합계 · 서식 그룹 건수 · 제안. 행 범위는 evidenceScopeFor 한 번(트랜잭션 밖)을 리포지토리 where가 집행한다.
+export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<EvidenceRecordList> {
+  const { scope, filters, repoFilters } = await listInputsFor(viewer, query);
   const [formatTotals, amountShown] = await Promise.all([countAndSumForScope(viewer, scope, repoFilters), visible(viewer, "evidence.amount")]);
   const count = formatTotals.reduce((sum, row) => sum + row.count, 0);
   const pageCount = pageCountFrom(count, EVIDENCE_PAGE_SIZE);
@@ -400,7 +447,7 @@ export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQue
   const proposals = scope.rows === "all" ? await proposalsFor(viewer, await listProposalTargets(viewer, scope, repoFilters, EVIDENCE_IMPORT_MAX_ROWS), division) : [];
   const sum = (key: "supplyKrw" | "vatKrw" | "totalKrw") => formatTotals.reduce((total, row) => total + row[key], 0);
   return {
-    rows: await projectMany(viewer, await withAttachFacts(viewer, scope, rows.map(sourceOf)), EVIDENCE_RECORD_DTO_SPEC),
+    rows: await projectMany(viewer, await withAttachFacts(viewer, scope, rows), EVIDENCE_RECORD_DTO_SPEC),
     proposals,
     division,
     filters,
@@ -410,6 +457,15 @@ export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQue
     page: { page, pageCount, pageSize: EVIDENCE_PAGE_SIZE, total: count },
     batch: batch ? { id: batch.id, fileName: batch.originalName } : null,
   };
+}
+
+// 06.1-13 G6(RP-16) — 파일 받기의 앞 단계. 목록과 같은 앞 단계(listInputsFor — 범위 · 거르개) · 같은 투영
+// (EVIDENCE_RECORD_DTO_SPEC)으로 쪽과 무관하게 필터 결과 전체를 읽는다. 붙임 판정(withAttachFacts — 행 행동 · 2행 링크)은 화면의 쪽 몫이라
+// 싣지 않는다 — 파일 열(날짜 · 거래처 · 금액 셋 · 공개 · 상태)은 그 판정과 무관하다.
+export async function listAllEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<{ filters: EvidenceListFilters; rows: EvidenceRecordView[] }> {
+  const { scope, filters, repoFilters } = await listInputsFor(viewer, query);
+  const rows = await listRecordsForScope(viewer, scope, repoFilters, null);
+  return { filters, rows: await projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC) };
 }
 
 // P-3 · DA-10: 지출결의 목록 필터 줄 끝 `증빙 {N}`의 N — 기본 보기 `할 일`과 같은 집합(확인 필요 포함 · 보관 · 카드 미등록 제외).
@@ -426,7 +482,7 @@ export async function listEvidenceRecordsByIds(viewer: Viewer, ids: readonly str
   if (valid.length === 0) return [];
   const scope = await evidenceScopeFor(viewer);
   const rows = await listRecordsByIdsForScope(viewer, scope, valid);
-  return projectMany(viewer, await withAttachFacts(viewer, scope, rows.map(sourceOf)), EVIDENCE_RECORD_DTO_SPEC);
+  return projectMany(viewer, await withAttachFacts(viewer, scope, rows), EVIDENCE_RECORD_DTO_SPEC);
 }
 
 // 단건 — 목록과 같은 범위. 범위 밖 · 없는 id는 null(호출부가 404). 06.1-06 · 07 · 08이 이 함수만 부른다.
@@ -435,7 +491,7 @@ export async function getEvidenceRecord(viewer: Viewer, id: string): Promise<Evi
   const scope = await evidenceScopeFor(viewer);
   const row = await findRecordForScope(viewer, scope, id);
   if (!row) return null;
-  const [view] = await projectMany(viewer, await withAttachFacts(viewer, scope, [sourceOf(row)]), EVIDENCE_RECORD_DTO_SPEC);
+  const [view] = await projectMany(viewer, await withAttachFacts(viewer, scope, [row]), EVIDENCE_RECORD_DTO_SPEC);
   return view ?? null;
 }
 
@@ -558,7 +614,7 @@ export async function getEvidenceDetail(viewer: Viewer, id: string): Promise<Evi
   const scope = await evidenceScopeFor(viewer);
   const row = await findRecordForScope(viewer, scope, id);
   if (!row) return null;
-  const [base] = await withAttachFacts(viewer, scope, [sourceOf(row)]);
+  const [base] = await withAttachFacts(viewer, scope, [row]);
   if (!base) return null;
   const [history, amountShown, links, { readAmountLock }, { canSeeLinkOwner }] = await Promise.all([
     listRecordHistory(viewer, id),
@@ -585,7 +641,8 @@ export async function getEvidenceDetail(viewer: Viewer, id: string): Promise<Evi
     supplyKrw: base.supplyKrw,
     vatKrw: base.vatKrw,
     totalKrw: base.totalKrw,
-    attachedKind: base.attachedKind,
+    // 상세 패널의 붙은 문서 링크는 지출결의 · 구매 요청만(카드 사용 링크는 06.1-09 범위 밖 — 이전처럼 "—").
+    attachedKind: base.attachedKind === "corp_card_usage" ? null : base.attachedKind,
     attachedId: base.attachedId,
     attachedNumber: base.attachedNumber,
     attachedPending: base.attachedPending,

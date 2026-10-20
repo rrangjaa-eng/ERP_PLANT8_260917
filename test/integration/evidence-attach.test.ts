@@ -2,11 +2,16 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db, pool } from "@/db/client";
-import { actionLog, approvalInstances, evidenceRecordLinks, expenseEvidenceReviews, expensePayments, expenses, projects, vendors } from "@/db/schema";
+import { actionLog, approvalInstances, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, expenseEvidenceReviews, expensePayments, expenses, projects, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { approveDocument } from "@/domain/approvals";
+import { createCorpCard } from "@/domain/corp-cards";
+import { CANCEL_REGISTERED_CHECK } from "@/domain/evidence-import/cards";
+import { CANCEL_FLAG_RACE, registerEvidenceFile } from "@/domain/evidence-import";
+import { EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
+import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { getEvidenceActions, evidenceRecordRights, readEvidenceOwner } from "@/domain/evidence";
-import { attachEvidenceRecord, listAttachCandidates } from "@/domain/evidence-records/attach";
+import { attachEvidenceRecord, detachEvidenceRecord, listAttachCandidates } from "@/domain/evidence-records/attach";
 import { listLinkedEvidence } from "@/domain/evidence-records/linked";
 import { archiveEvidenceRecord, EvidenceArchiveConflictError, getEvidenceRecord } from "@/domain/evidence-records";
 import { rankCandidates } from "@/domain/evidence-records/score";
@@ -17,6 +22,7 @@ import { createTeam } from "@/domain/org";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { seoulToday } from "@/lib/dates";
+import { upsertReview } from "@/repositories/expense-evidence-reviews";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { upsertSimpleValue } from "@/repositories/settings";
@@ -29,9 +35,11 @@ import {
   createDraftExpenseFixture,
   createInReviewExpenseFixture,
   createIntakeManager,
+  createIntakeViewer,
   createReturnedExpenseFixture,
   insertLinkFixture,
   insertRecordFixture,
+  registerFixtureFile,
   setRecordArchivedFixture,
 } from "./fixtures/evidence";
 import { makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
@@ -577,5 +585,373 @@ describe("구매 요청 붙이기", () => {
     expect(author[0]?.pickedBy).toBe("박서연");
     expect(author[0]?.pickedOn).toMatch(/^\d{2}-\d{2}$/);
     expect(linked.items.filter((item) => item.attachMode === "registrar").every((item) => item.pickedBy === null)).toBe(true);
+  });
+});
+
+// PR-C 카드 결정(2026-10-19 「붙은 것도 표시」): 뒤 파일 취소 줄의 원거래가 이미 문서에 붙어 있어도 원거래에 같은 확인 필요 사유를 세우고
+// 문서 「증빙」 행에 그 사유를 싣는다. 지급 게이트는 바꾸지 않는다 — 지급 전 문서는 06 확인 게이트(확인 전 → 지급 막힘)가 그대로 막는다.
+describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
+  const ORIGINAL = { 승인번호: "30000001", 매입일자: "2026.09.05", 매입금액: "50,000", 부가세: "4,545" };
+  const CANCEL = { 승인번호: "30000001", 매입일자: "2026.09.20", 매입금액: "-50,000", 부가세: "-4,545" };
+  const ORIGINAL_KEY = "card-lotte|2222|30000001|2026-09-05|50000";
+
+  async function attachedOriginal(manager: Viewer, expenseId: string): Promise<string> {
+    await createCorpCard(SYSTEM_VIEWER, { issuer: "롯데카드", numberLast4: "2222", label: "롯데카드 2222", kind: "shared" });
+    await registerFixtureFile(manager, lotteFixture([ORIGINAL]), "롯데_0901-0915.xls");
+    const [record] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.dedupeKey, ORIGINAL_KEY));
+    if (!record) throw new Error("원거래가 서지 않았다");
+    await attachEvidenceRecord(manager, { recordId: record.id, owner: { kind: "expense", id: expenseId } });
+    return record.id;
+  }
+
+  async function needsCheckOf(recordId: string): Promise<string | null> {
+    const [row] = await db.select({ needsCheck: evidenceRecords.needsCheck }).from(evidenceRecords).where(eq(evidenceRecords.id, recordId));
+    return row?.needsCheck ?? null;
+  }
+
+  async function laterCancelFile(manager: Viewer): Promise<void> {
+    await registerFixtureFile(manager, lotteFixture([ORIGINAL, CANCEL]), "롯데_0901-0930.xls");
+  }
+
+  it("지급 전 승인 문서에 붙은 원거래 → 뒤 파일 취소로 확인 필요 사유 · 문서 증빙 행에 사유 · 확인 전이라 지급은 막히고 확인 뒤 지급", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const expenseId = await approvedExpense(fx);
+    const recordId = await attachedOriginal(manager, expenseId);
+
+    await laterCancelFile(manager);
+
+    expect(await needsCheckOf(recordId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await liveLinks(recordId)).toHaveLength(1);
+    const linked = await listLinkedEvidence(manager, { kind: "expense", id: expenseId });
+    expect(linked.items.map((item) => item.needsCheck)).toEqual([CANCEL_REGISTERED_CHECK]);
+    const preview = await previewPayable(payer, { expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    const unconfirmed = completeExpensePayment(payer, { expenseId, expectedPayableKrw: preview.payableKrw, version: (await moneyOf(expenseId)).version });
+    expect(await messageOf(unconfirmed)).toBe(EVIDENCE_UNCONFIRMED);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(0);
+
+    await payNow(payer, expenseId);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(1);
+  });
+
+  it("지급 뒤 문서에 붙은 원거래 → 확인 필요 사유는 서고 지급 · 확인 기록 · 문서 version은 그대로", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const expenseId = await approvedExpense(fx);
+    const recordId = await attachedOriginal(manager, expenseId);
+    await payNow(payer, expenseId);
+    const before = { doc: await moneyOf(expenseId), reviews: await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId)) };
+
+    await laterCancelFile(manager);
+
+    expect(await needsCheckOf(recordId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(1);
+    expect(await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId))).toEqual(before.reviews);
+    expect((await moneyOf(expenseId)).version).toBe(before.doc.version);
+    const linked = await listLinkedEvidence(manager, { kind: "expense", id: expenseId });
+    expect(linked.items.map((item) => item.needsCheck)).toEqual([CANCEL_REGISTERED_CHECK]);
+  });
+
+  async function reviewsOf(expenseId: string) {
+    return db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId));
+  }
+
+  it("확인까지 마친 지급 전 승인 문서 → 뒤 파일 취소로 확인 기록이 풀리고 문서 version + 1 · 옛 version 지급 거부 · 다시 확인하면 지급", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const expenseId = await approvedExpense(fx);
+    await attachedOriginal(manager, expenseId);
+    const ready = await readyToPay(payer, expenseId);
+    expect((await reviewsOf(expenseId)).map((row) => row.status)).toEqual(["confirmed"]);
+
+    await laterCancelFile(manager);
+
+    expect(await reviewsOf(expenseId)).toEqual([]);
+    expect((await moneyOf(expenseId)).version).toBe(ready.version + 1);
+    expect(await caught(completeExpensePayment(payer, { expenseId, ...ready }))).toBeInstanceOf(Error);
+    const preview = await previewPayable(payer, { expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    const fresh = completeExpensePayment(payer, { expenseId, expectedPayableKrw: preview.payableKrw, version: (await moneyOf(expenseId)).version });
+    expect(await messageOf(fresh)).toBe(EVIDENCE_UNCONFIRMED);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(0);
+
+    await payNow(payer, expenseId);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(1);
+  });
+
+  it("결재 중 문서의 자동 확인(confirmed) → 뒤 파일 취소로 풀린다 · 문서 version은 그대로(결재 중 05 X-1)", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const doc = await createInReviewExpenseFixture(fx);
+    await attachedOriginal(manager, doc.expenseId);
+    const supply = (await moneyOf(doc.expenseId)).supply;
+    await upsertReview(SYSTEM_VIEWER, { expenseId: doc.expenseId, status: "confirmed", amountBeforeKrw: supply, amountAfterKrw: supply, waiveReason: null, reviewedBy: manager.id }, db);
+    const before = (await moneyOf(doc.expenseId)).version;
+
+    await laterCancelFile(manager);
+
+    expect(await reviewsOf(doc.expenseId)).toEqual([]);
+    expect((await moneyOf(doc.expenseId)).version).toBe(before);
+  });
+
+  it("지급 완료가 문서 행을 쥔 동안 뒤 파일 등록은 기다리고, 지급 커밋 뒤에는 지급 뒤 문서로 판정해 확인 기록을 그대로 둔다", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const expenseId = await approvedExpense(fx);
+    const recordId = await attachedOriginal(manager, expenseId);
+    const ready = await readyToPay(payer, expenseId);
+    const gate = deferred();
+    const reached = deferred();
+    const pay = completeExpensePayment(payer, { expenseId, ...ready }, { afterLock: () => (reached.resolve(), gate.promise) });
+    await reached.promise;
+    const register = laterCancelFile(manager);
+    await waitForLockWaiter(pool);
+    gate.resolve();
+    await pay;
+    await register;
+
+    expect(await needsCheckOf(recordId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(1);
+    expect((await reviewsOf(expenseId)).map((row) => row.status)).toEqual(["confirmed"]);
+  });
+
+  it("(PR-C 검토 P2-1) 확인이 풀린 문서에서 다른 기록을 무효 처리하고 같은 공급가 기록을 다시 붙여도 확인 필요 기록이 남아 있으면 자동 확인하지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager("지급경영", { payments: true, void: true });
+    const payer = await makePayer();
+    // 05 파일 0인 승인 문서(자동 확인 조건 — 파일 0): 다른 기록 r2를 붙여 올려 승인하고, 경영관리가 원거래 r1을 붙이면 공급가 합 = 문서 공급가라 자동 확인.
+    const [originalId] = await registerOriginals(manager);
+    if (!originalId) throw new Error("원거래 없음");
+    const [original] = await db.select({ supply: evidenceRecords.supplyKrw }).from(evidenceRecords).where(eq(evidenceRecords.id, originalId));
+    if (!original) throw new Error("원거래 없음");
+    const restSupply = DOC_SUPPLY - original.supply;
+    const otherId = await insertRecordFixture(manager, { supplyKrw: restSupply });
+    const doc = await createInReviewExpenseFixture(fx, { linkRecordId: otherId, linkedBy: manager.id });
+    await approveFresh(fx, doc.expenseId);
+    const expenseId = doc.expenseId;
+    await attachEvidenceRecord(manager, { recordId: originalId, owner: { kind: "expense", id: expenseId } });
+    expect((await reviewsOf(expenseId)).map((row) => row.status)).toEqual(["confirmed"]);
+
+    await laterCancelFile(manager);
+    expect(await reviewsOf(expenseId)).toEqual([]);
+
+    const [otherLink] = await liveLinks(otherId);
+    if (!otherLink) throw new Error("붙임 없음");
+    await detachEvidenceRecord(manager, { linkId: otherLink.id, reason: "다른 기록으로 바꿈" });
+    await attachEvidenceRecord(manager, { recordId: await insertRecordFixture(manager, { supplyKrw: restSupply }), owner: { kind: "expense", id: expenseId } });
+
+    expect(await needsCheckOf(originalId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await reviewsOf(expenseId)).toEqual([]);
+    const preview = await previewPayable(payer, { expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    const unconfirmed = completeExpensePayment(payer, { expenseId, expectedPayableKrw: preview.payableKrw, version: (await moneyOf(expenseId)).version });
+    expect(await messageOf(unconfirmed)).toBe(EVIDENCE_UNCONFIRMED);
+  });
+
+  // ── PR-C 검토 P2-2 · P3-1: 등록 쪽 경합 · 로그 · 다른 상태 · 보임 · 구매 요청 · 잠금 차례 ──
+  const ORIGINAL2 = { 승인번호: "30000002", 매입일자: "2026.09.06", 매입금액: "33,000", 부가세: "3,000" };
+  const CANCEL2 = { 승인번호: "30000002", 매입일자: "2026.09.21", 매입금액: "-33,000", 부가세: "-3,000" };
+  const keyOf = (row: typeof ORIGINAL) => `card-lotte|2222|${row.승인번호}|${row.매입일자.replaceAll(".", "-")}|${row.매입금액.replaceAll(",", "")}`;
+
+  // 원거래만 든 앞 파일을 등록하고(붙이지 않는다) 원거래 기록 id를 넘긴 차례대로 돌려준다.
+  async function registerOriginals(manager: Viewer, rows: readonly (typeof ORIGINAL)[] = [ORIGINAL]): Promise<string[]> {
+    await createCorpCard(SYSTEM_VIEWER, { issuer: "롯데카드", numberLast4: "2222", label: "롯데카드 2222", kind: "shared" });
+    await registerFixtureFile(manager, lotteFixture(rows), "롯데_0901-0915.xls");
+    const ids: string[] = [];
+    for (const row of rows) {
+      const [record] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.dedupeKey, keyOf(row)));
+      if (!record) throw new Error("원거래가 서지 않았다");
+      ids.push(record.id);
+    }
+    return ids;
+  }
+
+  async function releaseLogsOf(expenseId: string) {
+    return db
+      .select({ detail: actionLog.detail })
+      .from(actionLog)
+      .where(
+        and(
+          eq(actionLog.entity, "expense"),
+          eq(actionLog.entityId, expenseId),
+          eq(actionLog.actionType, "document_update"),
+          sql`${actionLog.detail}->>'reason' = ${CANCEL_REGISTERED_CHECK}`,
+        ),
+      );
+  }
+
+  async function importCounts() {
+    const count = async (table: typeof evidenceImportBatches | typeof evidenceRecords | typeof vendors) => (await db.select({ n: sql<number>`count(*)::int` }).from(table))[0]?.n;
+    return { batches: await count(evidenceImportBatches), records: await count(evidenceRecords), vendors: await count(vendors) };
+  }
+
+  it("(P2-2 ⑴) 문서를 잠근 뒤 · 증빙 행을 고치기 전에 다른 문서로 붙이기가 커밋되면 CANCEL_FLAG_RACE · 묶음 · 기록 · 거래처 · 사유 · 로그 전부 되돌림", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const doc = await createReturnedExpenseFixture(fx);
+    const [originalId] = await registerOriginals(manager);
+    if (!originalId) throw new Error("원거래 없음");
+    const before = await importCounts();
+
+    const result = registerEvidenceFile(
+      manager,
+      { bytes: lotteFixture([ORIGINAL, CANCEL]), fileName: "롯데_0901-0930.xls" },
+      { afterOwnerLock: async () => void (await attachEvidenceRecord(manager, { recordId: originalId, owner: { kind: "expense", id: doc.expenseId } })) },
+    );
+
+    expect(await messageOf(result)).toBe(CANCEL_FLAG_RACE);
+    expect(await importCounts()).toEqual(before);
+    expect(await needsCheckOf(originalId)).toBeNull();
+    expect(await liveLinks(originalId)).toHaveLength(1);
+    expect(await releaseLogsOf(doc.expenseId)).toEqual([]);
+  });
+
+  it("(P2-2 ⑵) 확인 기록을 풀면 문서 행동 로그 한 줄 — document_update · evidenceReview · released · 풀린 상태", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const expenseId = await approvedExpense(fx);
+    await attachedOriginal(manager, expenseId);
+    await readyToPay(payer, expenseId);
+
+    await laterCancelFile(manager);
+
+    expect((await releaseLogsOf(expenseId)).map((row) => row.detail)).toEqual([
+      { field: "evidenceReview", status: "released", reason: CANCEL_REGISTERED_CHECK, reviewReleased: "confirmed" },
+    ]);
+  });
+
+  it("(P2-2 ⑶) 작성 중 · 반려 문서에 붙은 원거래 → 사유만 서고 확인 기록 · 문서 version · 로그는 그대로", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const [draftLine, returnedLine] = await extraLines(fx, 2);
+    const draftId = await createDraftExpenseFixture(fx, draftLine);
+    const returned = await createReturnedExpenseFixture(fx, { lineId: returnedLine });
+    const [draftOriginal, returnedOriginal] = await registerOriginals(manager, [ORIGINAL, ORIGINAL2]);
+    if (!draftOriginal || !returnedOriginal) throw new Error("원거래 없음");
+    await insertLinkFixture({ recordId: draftOriginal, ownerId: draftId, attachedBy: manager.id });
+    await insertLinkFixture({ recordId: returnedOriginal, ownerId: returned.expenseId, attachedBy: manager.id });
+    const supply = (await moneyOf(returned.expenseId)).supply;
+    await upsertReview(SYSTEM_VIEWER, { expenseId: returned.expenseId, status: "confirmed", amountBeforeKrw: supply, amountAfterKrw: supply, waiveReason: null, reviewedBy: manager.id }, db);
+    const before = {
+      draft: await moneyOf(draftId),
+      returned: await moneyOf(returned.expenseId),
+      reviews: await reviewsOf(returned.expenseId),
+    };
+
+    await registerFixtureFile(manager, lotteFixture([ORIGINAL, CANCEL, ORIGINAL2, CANCEL2]), "롯데_0901-0930.xls");
+
+    expect(await needsCheckOf(draftOriginal)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await needsCheckOf(returnedOriginal)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await moneyOf(draftId)).toEqual(before.draft);
+    expect(await moneyOf(returned.expenseId)).toEqual(before.returned);
+    expect(await reviewsOf(returned.expenseId)).toEqual(before.reviews);
+    expect(await releaseLogsOf(draftId)).toEqual([]);
+    expect(await releaseLogsOf(returned.expenseId)).toEqual([]);
+  });
+
+  it("(P2-2 ⑷) 등록자가 그 문서를 못 봐도 등록은 서고 확인 기록이 풀린다(보임 판정 없음 · 문서 글자를 내지 않는다)", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const outsider = await createIntakeViewer();
+    const expenseId = await approvedExpense(fx);
+    const recordId = await attachedOriginal(manager, expenseId);
+    await readyToPay(payer, expenseId);
+    expect(await caught(readEvidenceOwner(outsider, { ownerKind: "expense", ownerId: expenseId }))).toBeInstanceOf(Error);
+
+    const result = await registerFixtureFile(outsider, lotteFixture([ORIGINAL, CANCEL]), "롯데_0901-0930.xls");
+
+    expect(result.registered).toBe(1);
+    expect(await needsCheckOf(recordId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await reviewsOf(expenseId)).toEqual([]);
+  });
+
+  it("(P2-2 ⑸) 구매 요청에 붙은 원거래 → 사유만 서고 붙임은 그대로", async () => {
+    const pfx = await purchaseProject();
+    const manager = await createIntakeManager();
+    const created = await createRequest(pfx, pfx.onlineLine, 110_000);
+    const [originalId] = await registerOriginals(manager);
+    if (!originalId) throw new Error("원거래 없음");
+    await insertLinkFixture({ recordId: originalId, ownerKind: "purchase_request", ownerId: created.id, attachedBy: manager.id });
+
+    await laterCancelFile(manager);
+
+    expect(await needsCheckOf(originalId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect((await liveLinks(originalId)).map((link) => link.ownerId)).toEqual([created.id]);
+  });
+
+  it("(P2-2 ⑹) 뒤 파일 등록이 문서를 쥔 동안 지급은 기다리고, 등록 커밋 뒤 지급은 옛 version이라 거부 · 지급 0행 · 확인 기록 풀림", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const expenseId = await approvedExpense(fx);
+    const recordId = await attachedOriginal(manager, expenseId);
+    const ready = await readyToPay(payer, expenseId);
+    const gate = deferred();
+    const reached = deferred();
+    const register = registerFixtureFile(manager, lotteFixture([ORIGINAL, CANCEL]), "롯데_0901-0930.xls", {
+      afterOwnerLock: () => (reached.resolve(), gate.promise),
+    });
+    await reached.promise;
+    const pay = caught(completeExpensePayment(payer, { expenseId, ...ready }));
+    await waitForLockWaiter(pool);
+    gate.resolve();
+    await register;
+
+    expect(await pay).toBeInstanceOf(Error);
+    expect(await needsCheckOf(recordId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(0);
+    expect(await reviewsOf(expenseId)).toEqual([]);
+  });
+
+  it("(P3-1) 잠금 차례 프로젝트 전부 → 문서 전부 — 둘째 문서의 프로젝트를 남이 쥐고 있으면 등록은 문서 행을 하나도 쥐지 않은 채 기다린다", async () => {
+    const fx = await setupExpenseProject();
+    const other = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const docA = await approvedExpense(fx);
+    const docB = await approvedExpense(other);
+    const [recordA, recordB] = await registerOriginals(manager, [ORIGINAL, ORIGINAL2]);
+    if (!recordA || !recordB) throw new Error("원거래 없음");
+    await attachEvidenceRecord(manager, { recordId: recordA, owner: { kind: "expense", id: docA } });
+    await attachEvidenceRecord(manager, { recordId: recordB, owner: { kind: "expense", id: docB } });
+    const [low, high] = [
+      { id: docA, projectId: fx.projectId },
+      { id: docB, projectId: other.projectId },
+    ].sort((a, b) => (a.id < b.id ? -1 : 1));
+    if (!low || !high) throw new Error("문서 없음");
+
+    const holder = await pool.connect();
+    await holder.query("BEGIN");
+    await holder.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [high.projectId]);
+    const register = caught(registerFixtureFile(manager, lotteFixture([ORIGINAL, CANCEL, ORIGINAL2, CANCEL2]), "롯데_0901-0930.xls"));
+    let lowDocFree = false;
+    try {
+      await waitForLockWaiter(pool);
+      const probe = await pool.connect();
+      try {
+        await probe.query("BEGIN");
+        lowDocFree = await probe.query("SELECT id FROM expenses WHERE id = $1 FOR UPDATE NOWAIT", [low.id]).then(
+          () => true,
+          () => false,
+        );
+      } finally {
+        await probe.query("ROLLBACK");
+        probe.release();
+      }
+    } finally {
+      await holder.query("ROLLBACK");
+      holder.release();
+    }
+
+    expect(await register).toBeUndefined();
+    expect(lowDocFree).toBe(true);
+    expect(await needsCheckOf(recordA)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await needsCheckOf(recordB)).toBe(CANCEL_REGISTERED_CHECK);
   });
 });

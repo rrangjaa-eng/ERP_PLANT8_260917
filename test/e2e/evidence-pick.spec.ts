@@ -222,7 +222,8 @@ test("경영관리: 모달을 연 뒤 다른 경로로 하나가 먼저 붙으�
   await options.nth(1).click();
   await expect(dialog.getByText("고른 2건")).toBeVisible();
 
-  await insertLinkFixture({ recordId: taken, ownerId: doc.expenseId.replace(/.$/, "0"), attachedBy: manager.id });
+  // 「다른 문서가 먼저 붙임」 — 이 문서와 다른 임의 id. 문서 id 끝 한 글자를 바꾸는 방식은 id가 이미 0으로 끝나면(16분의 1) 같은 문서가 돼 경합이 안 난다.
+  await insertLinkFixture({ recordId: taken, ownerId: randomUUID(), attachedBy: manager.id });
   await dialog.getByRole("button", { name: /^증빙 붙이기 2/ }).click();
   await expect(dialog.getByText(/^다른 사람이 먼저 붙임 · 먼저붙은곳/)).toBeVisible();
   await dialog.getByRole("button", { name: "새로 고침" }).click();

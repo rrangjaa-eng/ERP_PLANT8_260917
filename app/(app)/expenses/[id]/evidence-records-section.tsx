@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/ui/button/Button";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { StaticTable, type StaticTableColumn } from "@/ui/table/StaticTable";
 import { DetachDialog, previewExpectedKrw, type DetachTarget } from "../evidence/detach-dialog";
 import { PickEvidenceDialog } from "../evidence/pick-evidence-dialog";
@@ -25,6 +26,8 @@ export type LinkedEvidenceItem = {
   pickedOn: string | null;
   action: "detach" | "void" | null;
   ownDetach: boolean;
+  /** 확인 필요 사유(서버 글자 그대로) — 있으면 2행 `확인 필요 · {사유}`(증빙 패널 상태 줄과 같은 꼴). */
+  needsCheck: string | null;
 };
 
 /** 06.1-08 — 증빙 고르기 트리거. 모드가 none이거나 후보가 0이면 서버가 이 값을 null로 준다(트리거 DOM 0). */
@@ -69,6 +72,18 @@ export function EvidenceRecordsSection({
     const root = rootRef.current;
     (root?.querySelector<HTMLElement>("[data-evidence-pick]") ?? root?.querySelector<HTMLElement>("table button") ?? root)?.focus();
   }, [items.length, pick?.count]);
+  // 뗀 뒤(PR-C D-2 · §7-17) — 새로 고침으로 그 행이 빠지면 포커스는 다음 행의 행동(없으면 앞 행) → 다시 선 `증빙 고르기` → 화면 제목. 뗀 순간의 행 순서를 기억한다.
+  const detachedPending = useRef<{ linkId: string; order: string[] } | null>(null);
+  useEffect(() => {
+    const pending = detachedPending.current;
+    if (!pending || items.some((item) => item.linkId === pending.linkId)) return;
+    detachedPending.current = null;
+    const at = pending.order.indexOf(pending.linkId);
+    const candidates = [...pending.order.slice(at + 1), ...pending.order.slice(0, Math.max(at, 0)).reverse()];
+    const root = rootRef.current;
+    const action = candidates.map((linkId) => root?.querySelector<HTMLElement>(`button[aria-describedby="${titleId(linkId)}"]`)).find((button) => button);
+    (action ?? root?.querySelector<HTMLElement>("[data-evidence-pick]") ?? document.querySelector<HTMLElement>('[data-ui="screen-title"]'))?.focus();
+  }, [items]);
   if (items.length === 0 && !pick) return null;
   const titleOf = (item: LinkedEvidenceItem) => [item.typeLabel, item.counterparty].filter(Boolean).join(" · ") || "—";
   const line = lockLine && !lockLineShownAbove ? EVIDENCE_LOCK_LINE_TEXT[lockLine] : null;
@@ -97,6 +112,12 @@ export function EvidenceRecordsSection({
             <span key="what">
               <span id={titleId(item.linkId)}>{titleOf(item)}</span>
               {item.pickedBy ? <span className={styles.evidencePicked}>{`${item.pickedBy} 고름 · ${item.pickedOn ?? ""}`}</span> : null}
+              {item.needsCheck ? (
+                <span className={styles.evidencePicked}>
+                  <StatusTag status="확인 필요" variant="text" />
+                  {` · ${item.needsCheck}`}
+                </span>
+              ) : null}
             </span>,
             item.issuedOn,
             <Num key="total" value={item.totalKrw} />,
@@ -117,7 +138,14 @@ export function EvidenceRecordsSection({
         }))}
       /> : null}
       {line ? <p className={styles.evidenceLockLine}>{line}</p> : null}
-      <DetachDialog target={target} onClose={() => setTarget(null)} onDone={() => router.refresh()} />
+      <DetachDialog
+        target={target}
+        onClose={() => setTarget(null)}
+        onDone={() => {
+          if (target) detachedPending.current = { linkId: target.linkId, order: items.map((item) => item.linkId) };
+          router.refresh();
+        }}
+      />
       <PickEvidenceDialog
         target={picking && pick ? { ownerKind: pick.ownerKind, ownerId: pick.ownerId, mode: pick.mode, subtitle: [number, `후보 ${pick.count}`].filter(Boolean).join(" · ") } : null}
         onClose={() => setPicking(false)}

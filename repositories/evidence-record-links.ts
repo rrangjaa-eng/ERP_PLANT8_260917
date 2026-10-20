@@ -21,6 +21,8 @@ export type LiveLinkCount = {
   authorLinkCount: number;
   // 붙은 기록 공급가 합(원 정수 · 음수 기록 포함). 문서 금액이 아니다(D-6520) — 자동 확인 비교 입력으로만 쓴다.
   recordSupplyKrw: number;
+  // 붙은 기록 중 확인 필요(needs_check)가 선 수 — 자동 확인은 0일 때만(PR-C 검토 P2-1 · 경영관리가 다시 확인해야 지급).
+  needsCheckCount: number;
   lastAttachedAt: Date;
 };
 
@@ -38,6 +40,7 @@ export async function countLiveLinksByOwners(
       linkCount: sql<number>`count(*)::int`.mapWith(Number),
       authorLinkCount: sql<number>`(count(*) filter (where ${evidenceRecordLinks.attachMode} = 'author'))::int`.mapWith(Number),
       recordSupplyKrw: sql<number>`coalesce(sum(${evidenceRecords.supplyKrw}), 0)::bigint`.mapWith(Number),
+      needsCheckCount: sql<number>`(count(*) filter (where ${evidenceRecords.needsCheck} is not null))::int`.mapWith(Number),
       lastAttachedAt: sql<Date>`max(${evidenceRecordLinks.attachedAt})`.mapWith(evidenceRecordLinks.attachedAt),
     })
     .from(evidenceRecordLinks)
@@ -65,6 +68,7 @@ export type LiveLinkWithRecord = {
   corpCardId: string | null;
   cardLast4: string | null;
   approvalNo: string | null;
+  needsCheck: string | null;
 };
 
 // 살아 있는 붙임 행마다 붙임 칸 + 기록 칸, 붙인 순. 주인 범위(누가 이 주인을 보나) 판정은 부르는 domain 몫이다.
@@ -95,6 +99,7 @@ export async function listLiveLinksWithRecords(
       corpCardId: evidenceRecords.corpCardId,
       cardLast4: evidenceRecords.cardLast4,
       approvalNo: evidenceRecords.approvalNo,
+      needsCheck: evidenceRecords.needsCheck,
     })
     .from(evidenceRecordLinks)
     .innerJoin(evidenceRecords, eq(evidenceRecords.id, evidenceRecordLinks.evidenceRecordId))

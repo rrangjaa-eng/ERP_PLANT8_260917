@@ -1,5 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
 import { actionLog, approvalInstances, evidenceRecordLinks, expenseEvidenceReviews, expenses, projects } from "@/db/schema";
 import { approveDocument } from "@/domain/approvals";
@@ -15,12 +16,19 @@ import { upsertVisibility } from "@/repositories/permissions";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { teamIdByName } from "./approvals-fixtures";
 import { addApprovedRevision, setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
-import { createInReviewExpenseFixture, createIntakeManager, createReturnedExpenseFixture, insertRecordFixture, setRecordVisibilityFixture } from "./fixtures/evidence";
+import { getEvidenceRecord, listEvidenceRecordsByIds } from "@/domain/evidence-records";
+import { createInReviewExpenseFixture, createIntakeManager, createReturnedExpenseFixture, insertRecordFixture, setRecordArchivedFixture, setRecordVisibilityFixture } from "./fixtures/evidence";
 import { makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
 import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06.1-08 Task 2(RP-4 · RP-8 · E45 · D-6520): 경영관리 여러 장 붙이기 — 05 훅 · 자동 확인은 반복문 밖 한 번, 전부-아니면-전무,
 // 상한 20, 결정적 경합(deps.afterLock + waitForLockWaiter — setTimeout · sleep 없음).
+
+// 사전 판독 질의 수(PR-C /review P3-3) — 실제 함수를 그대로 부르되 몇 번 불렸는지 센다.
+vi.mock("@/domain/evidence-records", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/evidence-records")>();
+  return { ...actual, getEvidenceRecord: vi.fn(actual.getEvidenceRecord), listEvidenceRecordsByIds: vi.fn(actual.listEvidenceRecordsByIds) };
+});
 
 const DOC_SUPPLY = 12_400_000;
 let fx: ExpenseFixture;
@@ -279,6 +287,30 @@ describe("attachEvidenceBatch — 상한 · 전부-아니면-전무 · 결정적
     );
     expect(message).toBe(`다른 사람이 먼저 붙임 · ${firstName} 외 1건 · 새로 고침`);
     expect(await liveLinks(free)).toHaveLength(0);
+  });
+});
+
+describe("attachEvidenceBatch — 사전 판독 묶음 읽기 (PR-C /review P3-3)", () => {
+  it("3건 붙이기 → 사전 판독은 listEvidenceRecordsByIds 한 번 · 건마다 getEvidenceRecord 0번", async () => {
+    const manager = await createIntakeManager();
+    const doc = await createReturnedExpenseFixture(fx);
+    const ids = await records(manager, 3);
+    vi.mocked(getEvidenceRecord).mockClear();
+    vi.mocked(listEvidenceRecordsByIds).mockClear();
+    expect(await attachEvidenceBatch(manager, { evidenceIds: ids, owner: owner(doc.expenseId) })).toEqual({ attached: 3 });
+    expect(vi.mocked(getEvidenceRecord)).not.toHaveBeenCalled();
+    expect(vi.mocked(listEvidenceRecordsByIds)).toHaveBeenCalledTimes(1);
+  });
+
+  it("거부 차례 그대로: id 오름차순으로 먼저 오는 줄의 거부(없는 증빙 / 보관됨) · 붙임 0", async () => {
+    const manager = await createIntakeManager();
+    const doc = await createReturnedExpenseFixture(fx);
+    const archived = await insertRecordFixture(manager);
+    await setRecordArchivedFixture(archived, manager.id);
+    const missing = randomUUID();
+    const expected = [missing, archived].sort()[0] === missing ? "없는 증빙 · 새로 고침" : "보관됨";
+    expect(await messageOf(attachEvidenceBatch(manager, { evidenceIds: [archived, missing], owner: owner(doc.expenseId) }))).toBe(expected);
+    expect(await liveLinks(archived)).toHaveLength(0);
   });
 });
 

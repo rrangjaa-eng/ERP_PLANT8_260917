@@ -303,7 +303,7 @@ describe("붙은 증빙 금액 고침 · 잠김 (06.1-07 Task 2)", () => {
     const recordId = await insertRecordFixture(manager, { supplyKrw: 100_000, vatKrw: 10_000 });
     await attachEvidenceRecord(manager, { recordId, owner: { kind: "purchase_request", id: created.id } });
     const [before] = await db.select().from(purchaseRequests).where(eq(purchaseRequests.id, created.id));
-    await updateEvidenceAmount(manager, { id: recordId, version: 1, supplyKrw: 105_000 });
+    await updateEvidenceAmount(manager, { id: recordId, version: 2, supplyKrw: 105_000 });
     expect(await recordRow(recordId)).toMatchObject({ supplyKrw: 105_000, vatKrw: 5_000, totalKrw: 110_000 });
     const [after] = await db.select().from(purchaseRequests).where(eq(purchaseRequests.id, created.id));
     expect(after).toEqual(before);
@@ -430,7 +430,7 @@ describe("상세 이력 (DB-15 · PA-HISTORY)", () => {
     const doc = await createReturnedExpenseFixture(fx);
     await attachEvidenceRecord(manager, { recordId, owner: { kind: "expense", id: doc.expenseId } });
     await detachEvidenceRecord(manager, { linkId: await liveLinkId(recordId), reason: "다른 문서 증빙" });
-    await updateEvidenceAmount(manager, { id: recordId, version: 1, supplyKrw: 1_050_000 });
+    await updateEvidenceAmount(manager, { id: recordId, version: 2, supplyKrw: 1_050_000 });
     // 자동 떼기 줄 — 종결 tx의 detachLiveLinksForOwner와 같은 칸(사유 = AUTO_DETACH_REASONS)을 붙임 행에 직접 만든다.
     const other = await createReturnedExpenseFixture(fx, { lineId: fx.lines.split });
     await insertLinkFixture({ recordId, ownerId: other.expenseId, attachedBy: manager.id });

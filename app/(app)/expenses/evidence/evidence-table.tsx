@@ -681,7 +681,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         row.attached ? <AttachedLine attached={row.attached} /> : row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null,
       copyText: (row) => row.statusWord,
     },
-    // §7-3 (차) 행 행동 열 — 머리글 숨김 · P1 밖 · 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 거래처 칸을 가리킨다. 키보드 경로는 Ctrl+E다.
+    // §7-3 (차) 행 행동 열 — 머리글 숨김 · P1 밖 · 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 거래처 칸을 가리킨다. 키보드 경로는 Ctrl+E다(runKeyAction).
     // 안 붙은 줄은 끝에 떨어뜨린 `보관`, `보관됨` 보기는 `되살리기`만(서버 판정 rowAction). 1024 미만은 보기 전용이라 열이 없다.
     ...(editableWidth
       ? [
@@ -744,9 +744,16 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const noChange = pending === 0 && !cellEditing;
   const primaryBlocked = uploading ? COPY.uploading : noChange ? COPY.noChange : undefined;
 
-  // 힌트 줄 — 행 행동이 선 줄이 있을 때만 그 낱말과 Ctrl+E(실제로 되는 키만).
-  const shownRowAction = rows.find((row) => row.rowAction !== null)?.rowAction ?? null;
-  const hintItems = shownRowAction ? [...HINT_ITEMS, { label: ROW_ACTION_LABEL[shownRowAction], keys: "Ctrl+E" }] : HINT_ITEMS;
+  // Ctrl+E(§7-3 (차) 행 행동 열의 키보드 경로) — 붙일 수 있는 줄은 `붙이기`(S4), `보관됨` 보기는 `되살리기`. 보관은 위험 행동이라 단축키가 없다
+  // (PR-C D-1 · design-review P-1 ① — 1차 행동 키로 보관이 일어나지 않게). 힌트 줄은 실제로 되는 그 낱말 하나만.
+  const keyActionOf = (row: Row): "attach" | "restore" | null => (row.canAttach && row.attachBlocked === null ? "attach" : row.rowAction === "restore" ? "restore" : null);
+  function runKeyAction(row: Row) {
+    const action = keyActionOf(row);
+    if (action === "attach") openAttach(row);
+    else if (action === "restore") void runRowAction(row);
+  }
+  const shownKeyAction = rows.map(keyActionOf).find((action) => action !== null) ?? null;
+  const hintItems = shownKeyAction ? [...HINT_ITEMS, { label: shownKeyAction === "attach" ? COPY.attach : ROW_ACTION_LABEL.restore, keys: "Ctrl+E" }] : HINT_ITEMS;
 
   // 쿼리 링크 갈래 — 클라이언트 이동이라 표가 다시 마운트되지 않고 편집 맵이 남는다(리저브 대장 · 카드 사용 필터 선례). 쪽은 1로 돌아간다.
   function go(key: "state" | "type" | "period", value: string) {
@@ -886,7 +893,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           cellIssue={cellIssue}
           cellDirty={(row, columnKey) => editableWidth && columnKey === VISIBILITY && (proposals.has(row.id) || row.id in edits)}
           firstIssueSignal={issueSignal}
-          keyboard={{ onSave: () => setSaveRequests((count) => count + 1), onOpenRow: editableWidth ? (row) => void runRowAction(row) : undefined }}
+          keyboard={{ onSave: () => setSaveRequests((count) => count + 1), onOpenRow: editableWidth ? runKeyAction : undefined }}
           footerNotices={footerNotices}
           footerSuccess={savedNotice}
           footer={(notice) => (

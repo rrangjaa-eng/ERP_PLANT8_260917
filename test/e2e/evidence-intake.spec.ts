@@ -589,7 +589,7 @@ test("(DA-21) 올리는 동안 1차는 aria-disabled `올리는 중` · 사람�
   await expect(primary).toHaveText(/^공개 범위 저장 4/);
 });
 
-test("(DA-7 · E41) 안 붙은 줄 `보관` → 확인 창 없이 표 위 `증빙 보관됨` + `되돌리기`(초점) · 할 일에서 빠짐 → 되돌리기 → 돌아옴 · Ctrl+E도 같다", async ({ page }) => {
+test("(DA-7 · E41) 안 붙은 줄 `보관` → 확인 창 없이 표 위 `증빙 보관됨` + `되돌리기`(초점) · 할 일에서 빠짐 → 되돌리기 → 돌아옴 · Ctrl+E로는 보관하지 않는다", async ({ page }) => {
   const viewer = await loginIntake(page);
   const card = await addLotteCard({ kind: "shared" });
   await registerFile(viewer, lotteFixture(lotteLines(card, 2)), "롯데_2.xls");
@@ -601,7 +601,8 @@ test("(DA-7 · E41) 안 붙은 줄 `보관` → 확인 창 없이 표 위 `증�
   const archiveButtons = evidenceTable(page).getByRole("button", { name: "보관", exact: true });
   await expect(archiveButtons).toHaveCount(2);
   await expect(archiveButtons.first()).toHaveAttribute("tabindex", "-1");
-  await expect(page.getByRole("main").locator("kbd", { hasText: "Ctrl+E" })).toHaveCount(1);
+  // PR-C D-1 — 보관은 위험 행동이라 단축키가 없다(Ctrl+E는 붙이기 · 되살리기만). 보관만 선 화면이면 힌트에 Ctrl+E가 없다.
+  await expect(page.getByRole("main").locator("kbd", { hasText: "Ctrl+E" })).toHaveCount(0);
 
   const archived = waitForServerAction(page);
   await evidenceCell(page, 0, EVIDENCE_COL.actions).getByRole("button", { name: "보관", exact: true }).click();
@@ -622,11 +623,11 @@ test("(DA-7 · E41) 안 붙은 줄 `보관` → 확인 창 없이 표 위 `증�
   await expect(evidenceRows(page)).toHaveCount(2);
   await expect(line).toHaveCount(0);
 
-  // 키보드 경로 — 활성 셀 줄의 행 행동(§7-3 (차)).
+  // PR-C D-1 — Ctrl+E는 보관하지 않는다(행 1차 붙이기 키로 위험 행동이 일어나지 않게).
   await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.date));
   await page.keyboard.press("Control+e");
-  await expect(page.getByRole("status").filter({ hasText: "증빙 보관됨" })).toBeVisible();
-  await expect(evidenceRows(page)).toHaveCount(1);
+  await expect(evidenceRows(page)).toHaveCount(2);
+  await expect(page.getByRole("status").filter({ hasText: "증빙 보관됨" })).toHaveCount(0);
 });
 
 test("(DA-7) `?state=archived` 보기의 행 행동은 `되살리기`만 — 누르면 그 보기에서 빠진다 · 붙은 줄에는 `보관`이 없다", async ({ page }) => {

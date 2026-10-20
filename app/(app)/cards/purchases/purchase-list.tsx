@@ -300,13 +300,32 @@ export function PurchaseList({
     const tap = document.querySelector<HTMLElement>(`[role="button"][aria-label="${number} 상세 보기"]`);
     (action ?? tap ?? document.querySelector<HTMLElement>('[data-ui="screen-title"]'))?.focus();
   }, [rows]);
+  // 폰 읽기 시트의 `증빙 고르기`(PR-C ISSUE-003 · §7-8 시트를 겹치지 않는다) — 읽기 시트를 닫고 고르기를 연다. 고르기를 그냥 닫으면 읽기 시트를
+  // 다시 열고 포커스는 그 시트의 `증빙 고르기`, 붙였으면 다시 열지 않는다(위 afterPick).
+  const pickFromSheet = useRef<PurchaseListRowView | null>(null);
+  const refocusSheetPick = useRef(false);
+  useEffect(() => {
+    if (!refocusSheetPick.current || !sheet) return;
+    refocusSheetPick.current = false;
+    Array.from(document.querySelectorAll<HTMLElement>("dialog[open] button"))
+      .find((button) => button.textContent?.startsWith("증빙 고르기"))
+      ?.focus();
+  }, [sheet]);
   const sheetTarget = sheet ? cancelTarget(sheet) : null;
   const dialog = (
     <PickEvidenceDialog
       target={picking && picking.evidencePickN !== null ? { ownerKind: "purchase_request", ownerId: picking.id, mode: "author", subtitle: `${picking.number} · 후보 ${picking.evidencePickN}` } : null}
-      onClose={() => setPicking(null)}
+      onClose={() => {
+        setPicking(null);
+        const back = pickFromSheet.current;
+        if (!back) return;
+        pickFromSheet.current = null;
+        setSheet(back);
+        refocusSheetPick.current = true;
+      }}
       onAttached={() => {
         afterPick.current = picking?.number ?? null;
+        pickFromSheet.current = null;
         setSheet(null);
         router.refresh();
       }}
@@ -328,6 +347,8 @@ export function PurchaseList({
         open={sheet !== null}
         onClose={() => {
           setSheet(null);
+          // 고르기로 넘어가며 닫힌 시트 — 닫힘이 연 요소(행 탭 자리)로 포커스를 돌린 뒤에 고르기를 연다(그 자리가 고르기의 트리거가 된다).
+          if (pickFromSheet.current) setPicking(pickFromSheet.current);
           if (!undoFocusPending.current) return;
           undoFocusPending.current = false;
           window.setTimeout(focusUndo, 0);
@@ -346,7 +367,12 @@ export function PurchaseList({
         action={
           sheetTarget || sheet?.evidencePickN != null ? (
             <>
-              {sheet?.evidencePickN != null ? <RowAction onClick={() => setPicking(sheet)}>{`증빙 고르기 ${sheet.evidencePickN}`}</RowAction> : null}
+              {sheet?.evidencePickN != null ? <RowAction
+                  onClick={() => {
+                    pickFromSheet.current = sheet;
+                    setSheet(null);
+                  }}
+                >{`증빙 고르기 ${sheet.evidencePickN}`}</RowAction> : null}
               {sheetTarget ? (
                 <PurchaseCancelButton
                   target={sheetTarget}

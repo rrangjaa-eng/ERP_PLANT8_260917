@@ -36,7 +36,7 @@ import {
 import { CARD_USAGE_ENTITY, cardSlipNotFound, cardSlipOwner, cardSlipRights, cardSlipWriteOpen, denyCardSlipWrite, type CardSlipOwner } from "@/domain/corp-card-usages";
 import { bumpInstanceVersion } from "@/repositories/approvals";
 import { clearEvidenceValues, deleteReviewByExpense, type EvidenceReviewStatus } from "@/repositories/expense-evidence-reviews";
-import { bumpExpenseVersion } from "@/repositories/expense-payments";
+import { bumpExpenseVersion, findLivePayment } from "@/repositories/expense-payments";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
 import { findActiveBySha, findAliveFileOfIntent, findFileById, insertFile, listActiveByOwner, markRemoved, markRestored, markVoided, type FileRow } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite } from "@/repositories/projects";
@@ -833,6 +833,43 @@ export async function lockEvidenceOwnerForChange(
   const locked = await readEvidenceOwner(viewer, { ownerKind: input.ownerKind, ownerId: input.ownerId }, tx);
   if (EXPENSE_RULE.approved(locked) && !approvedBefore) throw new ExpenseConflictError(locked.updatedAt);
   return locked;
+}
+
+// PR-C 카드 결정(2026-10-19 「붙은 것도 표시」): 붙은 증빙 기록에 확인 필요가 서는 쪽(뒤 파일 취소 — 등록 tx)이 증빙 행보다 먼저 문서를 잠근다 —
+// 순서 프로젝트 행 전부(id 오름차순) → 문서 행 전부(id 오름차순)(05 N-3 · 지급 완료와 같은 방향 · PR-C 검토 P3-1). 등록자는 그 문서를 못 볼 수 있어
+// 보임 판정을 하지 않는다(문서 글자를 내지 않는다). 붙임 주인 칸에는 외래 키가 없다 — 문서 행이 없으면 풀 확인 기록도 없으니 null(사유만 선다).
+// 잠근 문서의 프로젝트가 먼저 잠근 프로젝트에 없으면(잠금 없이 읽은 뒤 바뀜) 순서를 지킬 수 없으므로 raceMessage로 등록 전체를 되돌린다.
+export async function lockExpenseOwnersForRecordFlag(
+  viewer: Viewer,
+  ownerIds: readonly string[],
+  raceMessage: string,
+  tx: DbOrTx,
+): Promise<Map<string, EvidenceOwnerView | null>> {
+  const sortedIds = [...new Set(ownerIds)].sort();
+  const rows = new Map<string, Awaited<ReturnType<typeof findExpenseById>>>();
+  for (const ownerId of sortedIds) rows.set(ownerId, await findExpenseById(viewer, ownerId, tx));
+  const projectIds = [...new Set([...rows.values()].flatMap((row) => (row?.projectId ? [row.projectId] : [])))].sort();
+  for (const projectId of projectIds) await lockProjectForWrite(viewer, projectId, tx);
+  const locked = new Map<string, EvidenceOwnerView | null>();
+  for (const ownerId of sortedIds) {
+    const row = rows.get(ownerId);
+    if (!row) {
+      locked.set(ownerId, null);
+      continue;
+    }
+    const owner = await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId }, tx);
+    if (owner.projectId !== row.projectId) throw new UserFacingError(raceMessage);
+    locked.set(ownerId, owner);
+  }
+  return locked;
+}
+
+// 확인 필요가 선 붙은 기록의 문서 — 지급 전이면 붙임 추가와 같은 05 훅으로 확인 기록을 푼다(승인 = 확인 기록 해제 + 문서 version, 결재 중 =
+// 06.1 자동 확인만 지움). 증빙 집합은 그대로라 결재 인스턴스 version은 올리지 않는다. 지급 뒤 문서는 그대로(사유만 선다 — 사용자 결정).
+// lockExpenseOwnersForRecordFlag로 잠근 owner를 같은 tx로 넘긴다. 풀린 확인 기록 상태를 돌려준다(없으면 null).
+export async function releaseConfirmationOnRecordFlag(viewer: Viewer, owner: EvidenceOwnerState, tx: DbOrTx): Promise<EvidenceReviewStatus | null> {
+  if ((await findLivePayment(viewer, owner.id, tx)) !== null) return null;
+  return expenseApprovedEvidenceChange(viewer, owner, { kind: "add" }, tx);
 }
 
 // 변경 뒤 05 훅 — 05 completeEvidenceUpload(add) · voidEvidence(void)와 같은 두 단계를 같은 트랜잭션에서. add: 결재 중 · 승인이면 결재

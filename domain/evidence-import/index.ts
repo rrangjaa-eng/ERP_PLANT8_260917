@@ -10,12 +10,15 @@ import { EVIDENCE_FORMATS, finalizeAmounts as defaultFinalizeAmounts, parseWorkb
 import type { EvidenceFormatKey, FinalLine, FormatRule, ParseSuccess, RefusalKind } from "@/domain/evidence-import/types";
 import { ensureVendorsForLines, type EnsureVendorsDeps } from "@/domain/evidence-import/vendor-autocreate";
 import { loadTaxRates as defaultLoadTaxRates, type TaxRates } from "@/domain/money/tax";
+import { lockExpenseOwnersForRecordFlag, releaseConfirmationOnRecordFlag, type EvidenceOwnerView } from "@/domain/evidence";
+import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import type { Viewer } from "@/domain/viewer";
 import { BUSINESS_NO_UNIQUE_INDEX } from "@/domain/vendors";
 import { withTransaction } from "@/lib/db-transaction";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { listCodeItems } from "@/repositories/code-tables";
 import { applyFileWins, findReconcileCandidates, lockCardUsagesForUpdate, type ReconcileCandidateRow } from "@/repositories/corp-card-usages";
@@ -26,11 +29,12 @@ import {
   findCardRecordsByApprovalNos,
   findArchivedDedupeKeys,
   findExistingDedupeKeys,
+  findFlaggableRecordIdsByDedupeKeys,
   flagRecordsNeedsCheckByDedupeKeys,
   insertRecordsIgnoringDuplicates,
   type EvidenceRecordInsert,
 } from "@/repositories/evidence-records";
-import { insertLinks, listLiveLinksWithRecords } from "@/repositories/evidence-record-links";
+import { insertLinks, listLiveLinkOwnersByRecords, listLiveLinksWithRecords } from "@/repositories/evidence-record-links";
 import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
 import { lockVendorAutocreate } from "@/repositories/vendors";
 
@@ -99,6 +103,8 @@ export type RegisterEvidenceDeps = {
   afterLock: () => Promise<void>;
   beforeApply: (tx: DbOrTx) => Promise<void>;
   isActionTypeEnabled: (actionType: CoreActionType) => Promise<boolean>;
+  // 시험 장벽(PR-C 검토 P2-2): 뒤 파일 취소가 붙은 문서를 다 잠근 뒤 · 증빙 행 UPDATE 전에 멈춘다(경합 재현용 — 운영 경로는 넘기지 않는다).
+  afterOwnerLock?: () => Promise<void>;
 };
 
 async function assertCanIntake(viewer: Viewer): Promise<void> {
@@ -193,7 +199,9 @@ const CARD_FORMAT_KEYS: ReadonlySet<string> = new Set(EVIDENCE_FORMATS.filter((f
 
 type InsertedCardRecord = { id: string; row: EvidenceRecordInsert };
 type ReconcileFacts = { candidates: ReconcileCandidateRow[]; inputs: ReconcileCandidate[] };
-type ReconcileResult = { matched: number; unmatched: number };
+// 붙임 INSERT는 등록 트랜잭션의 마지막 잠금 단계다(P2-1 — 증빙 행 확인 필요 UPDATE 뒤) — 대사는 넣을 줄만 돌려준다.
+type ReconcileLink = { recordId: string; ownerKind: "corp_card_usage"; ownerId: string; attachMode: "reconcile" };
+type ReconcileResult = { matched: number; unmatched: number; links: ReconcileLink[] };
 
 function sameIssuerOf(rule: FormatRule, issuer: string): boolean {
   const text = issuerText(issuer);
@@ -254,7 +262,8 @@ function patchChanges(pair: PlannedPair): boolean {
   return pair.patch.total !== null || pair.patch.card !== null;
 }
 
-// 등록 트랜잭션 안(기록 INSERT 뒤). 잠금 순서: (카드 등록 잠금 →) 견적 줄(id 순 한 호출 · N-8) → 카드 사용(id 순 한 호출). 프로젝트 행은 잠그지 않는다(T-061-907).
+// 등록 트랜잭션 안(기록 INSERT · 취소 원거래 문서 잠금 뒤). 잠금 순서: (카드 등록 잠금 → 프로젝트 → 문서 →) 견적 줄(id 순 한 호출 · N-8) → 카드 사용(id 순 한 호출).
+// 대사가 고르는 카드 사용의 프로젝트 행은 잠그지 않는다(T-061-907). 증빙 행 UPDATE · 붙임 INSERT는 호출한 쪽이 이 뒤에 한다(P2-1).
 // 잠근 뒤 version · 견적 줄 · 붙임이 계획과 다르면 그 짝은 짝 없음이다(E32). 덮기 막힘(holder · fixed · completed · cap)도 짝 없음 — 붙임 · 덮기 · 기록 0.
 async function reconcileCardRecords(
   viewer: Viewer,
@@ -273,7 +282,7 @@ async function reconcileCardRecords(
     totalKrw: record.row.totalKrw,
     needsCheck: record.row.needsCheck,
   }));
-  if (lines.length === 0) return { matched: 0, unmatched: 0 };
+  if (lines.length === 0) return { matched: 0, unmatched: 0, links: [] };
   const facts = await reconcileFacts(viewer, rule, lines, tx);
   const plan = planReconcile(lines, facts.inputs);
   const candidateOf = new Map(facts.candidates.map((row) => [row.id, row]));
@@ -355,12 +364,49 @@ async function reconcileCardRecords(
       { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
     );
   }
-  await insertLinks(
-    viewer,
-    applied.map((pair) => ({ recordId: pair.record.id, ownerKind: "corp_card_usage", ownerId: pair.candidate.id, attachMode: "reconcile" })),
-    tx,
-  );
-  return { matched: applied.length, unmatched: placed.length - applied.length };
+  return {
+    matched: applied.length,
+    unmatched: placed.length - applied.length,
+    links: applied.map((pair) => ({ recordId: pair.record.id, ownerKind: "corp_card_usage", ownerId: pair.candidate.id, attachMode: "reconcile" })),
+  };
+}
+
+// PR-C 카드 결정(2026-10-19 「붙은 것도 표시」): 취소 줄이 들어간 원거래에 확인 필요를 세운다 — 붙은 원거래도. 그 원거래가 붙은 지출결의가 지급
+// 전이면 확인 기록을 풀어 경영관리가 다시 확인해야 지급된다(06 확인 게이트 — 새 게이트 없음). 잠금 순서: 붙은 문서의 프로젝트 전부(id 오름차순) →
+// 문서 전부(id 오름차순 · PR-C 검토 P3-1) → (06.1-09 대사: 견적 줄 → 카드 사용 · 06.1-09 검토 P2-1) → 증빙 행(id 오름차순 — UPDATE 안) → 붙임 다시 읽기 → 확인 기록.
+// 문서 잠금(lockCanceledOriginalOwners)과 증빙 행 UPDATE(flagCanceledOriginals)를 나눠 대사를 그 사이에 둔다 — S4 붙이기(견적 줄 → 카드 사용 → 증빙 행)와 같은 차례. 문서를 잠근 사이 다른 문서에 붙은 줄이 생기면(붙이기는 증빙 행을
+// 고치지 않는다) 그 문서는 순서대로 잠그지 못했으므로 등록 전체를 되돌린다(같은 파일을 다시 올리면 된다 — 이미 등록된 줄은 건너뛴다).
+export const CANCEL_FLAG_RACE = "증빙이 그사이 문서에 붙음 · 다시 등록";
+
+type CanceledOriginalOwners = Map<string, EvidenceOwnerView | null>;
+
+async function expenseOwnerIdsOf(viewer: Viewer, recordIds: readonly string[], tx: DbOrTx): Promise<string[]> {
+  return [...new Set((await listLiveLinkOwnersByRecords(viewer, recordIds, tx)).filter((owner) => owner.ownerKind === EXPENSE_DOCUMENT_KIND).map((owner) => owner.ownerId))].sort();
+}
+
+async function lockCanceledOriginalOwners(viewer: Viewer, keys: readonly string[], tx: DbOrTx, afterOwnerLock?: () => Promise<void>): Promise<CanceledOriginalOwners> {
+  if (keys.length === 0) return new Map();
+  const locked = await lockExpenseOwnersForRecordFlag(viewer, await expenseOwnerIdsOf(viewer, await findFlaggableRecordIdsByDedupeKeys(viewer, keys, tx), tx), CANCEL_FLAG_RACE, tx);
+  await afterOwnerLock?.();
+  return locked;
+}
+
+async function flagCanceledOriginals(viewer: Viewer, keys: readonly string[], locked: CanceledOriginalOwners, tx: DbOrTx): Promise<void> {
+  if (keys.length === 0) return;
+  const flagged = await flagRecordsNeedsCheckByDedupeKeys(viewer, keys, CANCEL_REGISTERED_CHECK, tx);
+  for (const ownerId of await expenseOwnerIdsOf(viewer, flagged, tx)) {
+    const owner = locked.get(ownerId);
+    if (owner === undefined) throw new UserFacingError(CANCEL_FLAG_RACE);
+    if (owner === null) continue;
+    const released = await releaseConfirmationOnRecordFlag(viewer, owner, tx);
+    if (released) {
+      await recordAction(
+        viewer,
+        { actionType: "document_update", entity: "expense", entityId: owner.id, documentId: owner.id, detail: { field: "evidenceReview", status: "released", reason: CANCEL_REGISTERED_CHECK, reviewReleased: released } },
+        { tx },
+      );
+    }
+  }
 }
 
 // 서버 액션의 파일 칸 하나(FormData `file`) → 등록. 크기는 바이트를 읽기 전에 File.size로 잰다(액션 본문 크기 미들웨어는
@@ -447,10 +493,13 @@ export async function registerEvidenceFile(
       const insertedKeys = new Set(insertedIds.keys());
       const inserted = rows.filter((row) => insertedKeys.has(row.dedupeKey));
       const flaggedOriginals = [...cancelOfRegisteredOriginal].filter(([cancelKey]) => insertedKeys.has(cancelKey)).map(([, originalKey]) => originalKey);
-      await flagRecordsNeedsCheckByDedupeKeys(viewer, flaggedOriginals, CANCEL_REGISTERED_CHECK, tx);
+      // P2-1 잠금 한 줄 순서: 프로젝트 → 문서(취소 원거래가 붙은 지출결의) → 견적 줄 → 카드 사용(대사) → 증빙 행(확인 필요 UPDATE) → 붙임(대사 INSERT).
+      const flagOwners = await lockCanceledOriginalOwners(viewer, flaggedOriginals, tx, deps?.afterOwnerLock);
       const reconciled = overwriteBasis
         ? await reconcileCardRecords(viewer, rule, inserted.flatMap((row) => { const id = insertedIds.get(row.dedupeKey); return id ? [{ id, row }] : []; }), overwriteBasis, deps, tx)
-        : { matched: 0, unmatched: 0 };
+        : { matched: 0, unmatched: 0, links: [] };
+      await flagCanceledOriginals(viewer, flaggedOriginals, flagOwners, tx);
+      await insertLinks(viewer, reconciled.links, tx);
       const counts = {
         rowCount,
         registered: inserted.length,

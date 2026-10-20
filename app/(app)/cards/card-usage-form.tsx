@@ -265,6 +265,24 @@ export function CardUsageEditPanel({ id, closeHref, children }: { id: string; cl
   );
 }
 
+// PR-D D-3 — S8 대리 등록 패널은 증빙 목록 행의 `대리 등록`에서 연다. 목록으로 돌아오면 연 요소(그 행 링크)는 새로 그려진 것이라
+// SidePanel의 연 요소가 문서에 없다 — 같은 증빙의 `대리 등록` 링크를 찾아 그리로 포커스를 돌린다(없으면 화면 제목, §7-8).
+export function CardUsageFromEvidencePanel({ evidenceId, closeHref, children }: { evidenceId: string; closeHref: string; children: ReactNode }) {
+  return (
+    <SidePanel title="카드 사용 등록" closeHref={closeHref} returnFocusTo={() => proxyLinkFor(evidenceId)}>
+      {children}
+    </SidePanel>
+  );
+}
+
+function proxyLinkFor(evidenceId: string): HTMLElement | null {
+  for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+    const url = new URL(link.href);
+    if (!link.closest("dialog") && url.pathname === "/cards" && url.searchParams.get("evidence") === evidenceId) return link;
+  }
+  return null;
+}
+
 export function CardUsageForm({
   cards,
   evidenceTypes,

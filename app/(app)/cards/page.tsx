@@ -27,7 +27,7 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 import styles from "@/app/(app)/projects/projects.module.css";
 import { CardUsageFilters, CardUsageList, CardUsageLoadError, type CardUsageListRowView } from "./card-usage-list";
 import { CardUsageDeleteUndo, CardUsageUndoLine } from "./delete-undo";
-import { CardUsageEditPanel, CardUsageForm, type CardEvidencePick, type CardSlipArea, type CardUsageEdit, type CardUsageFromEvidence } from "./card-usage-form";
+import { CardUsageEditPanel, CardUsageForm, CardUsageFromEvidencePanel, type CardEvidencePick, type CardSlipArea, type CardUsageEdit, type CardUsageFromEvidence } from "./card-usage-form";
 import { countEvidencePool, evidencePickerMode } from "@/domain/evidence-records/pool";
 import { cardUsagePrefillFromEvidence } from "@/domain/evidence-records/attach";
 
@@ -224,16 +224,18 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
     const prefill = UUID_PATTERN.test(evidenceId) ? await cardUsagePrefillFromEvidence(viewer, evidenceId) : null;
     if (!prefill) notFound();
     const defaults = await cardUsageFormDefaults(viewer, today, { prefill: { corpCardId: prefill.corpCardId, usedOn: prefill.usedOn } });
+    // PR-D D-3(판정 P-1 ①) — 닫기(Esc · 취소 · x)도 저장처럼 출발한 증빙 목록으로 간다. 앱 안에서 그 목록에서 열었으면 SidePanel이 뒤로 가기로 닫는다.
+    const evidenceListHref = "/expenses/evidence?state=unmatched";
     const fromEvidence: CardUsageFromEvidence = {
       evidenceId,
       cardText: cards.find((card) => card.id === prefill.corpCardId)?.label ?? `카드 ${prefill.cardLast4}`,
       totalKrw: prefill.totalKrw,
       merchant: prefill.merchant,
       evidenceLabel: options.evidenceTypes.find((option) => option.value === prefill.evidenceTypeCode)?.label ?? prefill.evidenceTypeCode,
-      doneHref: "/expenses/evidence?state=unmatched&registered=",
+      doneHref: `${evidenceListHref}&registered=`,
     };
     panel = (
-      <SidePanel key={`evidence-${evidenceId}`} title="카드 사용 등록" closeHref={listHref}>
+      <CardUsageFromEvidencePanel key={`evidence-${evidenceId}`} evidenceId={evidenceId} closeHref={evidenceListHref}>
         <CardUsageForm
           cards={cards}
           evidenceTypes={options.evidenceTypes}
@@ -245,7 +247,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
           defaults={{ ...defaults, evidenceTypeCode: prefill.evidenceTypeCode }}
           fromEvidence={fromEvidence}
         />
-      </SidePanel>
+      </CardUsageFromEvidencePanel>
     );
   } else if (first(params.new) === "1" && cards.length > 0) {
     // 진입(M-4) — S14 견적 줄 행 `?line=` · S15 빈 섹션 `?project=`. 고를 수 없으면 서버가 버리고 직전 등록 기준.

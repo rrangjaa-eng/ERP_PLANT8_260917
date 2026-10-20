@@ -10,7 +10,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
-import { addLotteCard, attachRecordFixture, clearEvidence, createIntakeRole, evidenceRows, loginAs, loginIntake, registerFile, teamIdByName, uploadFixture } from "./helpers/evidence";
+import { addLotteCard, attachRecordFixture, clearEvidence, createIntakeRole, EVIDENCE_COL, evidenceCell, evidenceRows, focusGridCell, loginAs, loginIntake, registerFile, teamIdByName, uploadFixture } from "./helpers/evidence";
 import { waitForHydration } from "./leave-org";
 
 // 06.1-09 — 카드 파일 등록 → 1 · 2단계 대사 → S1 결과 행 `카드 사용에 붙음 n · 짝 없음 n`(UI-SPEC S1 카드 서식 추가 줄).
@@ -148,6 +148,41 @@ test.describe("S8 대리 등록 · S2 행 행동 배타(06.1-09 Task 3)", () => 
     await expect(evidenceRows(page)).toHaveCount(1);
     await expect(page.getByRole("link", { name: "대리 등록", exact: true })).toHaveCount(0);
     expect(await usagesOn(last4, holder.id)).toHaveLength(2);
+  });
+
+  // PR-D D-1 — 대리 등록 링크는 격자 로빙 밖(tabIndex -1)이라 키보드 경로가 Ctrl+E다(§7-3 (차) · PR-C D-1의 붙이기 · 되살리기와 같은 길).
+  // PR-D D-3(판정 P-1 ①) — 증빙 목록에서 연 S8은 Esc · `취소`로 닫아도 저장처럼 출발한 증빙 목록으로 돌아가고 포커스는 연 그 행이다.
+  test("(PR-D D-1 · D-3) 키보드만: 격자 칸 Ctrl+E → S8 대리 등록 · 힌트 `대리 등록 Ctrl+E` → Esc → 증빙 목록 · 그 행 / `취소` → 같음", async ({ page }) => {
+    const holder = await cardHolder();
+    const last4 = await addLotteCard({ kind: "personal", holderUserId: holder.id });
+    const manager = await loginAs(page, await proxyRole());
+    const lonely = await line(manager, last4, { total: total(), date: "2026.03.21" });
+    const listUrl = /\/expenses\/evidence\?state=unmatched$/;
+
+    await page.goto("/expenses/evidence?state=unmatched");
+    await expect(evidenceRows(page)).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "대리 등록", exact: true })).toHaveCount(1);
+    const hint = page.getByRole("main").locator("kbd", { hasText: "Ctrl+E" });
+    await expect(hint).toHaveCount(1);
+    await expect(hint.locator("xpath=..")).toContainText("대리 등록");
+
+    const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
+    for (const close of ["Escape", "취소"] as const) {
+      const cell = evidenceCell(page, 0, EVIDENCE_COL.date);
+      await focusGridCell(cell);
+      await page.keyboard.press("Control+e");
+      await expect(page).toHaveURL(new RegExp(`/cards\\?new=1&evidence=${lonely}$`));
+      await expect(sheet).toBeVisible();
+      await waitForHydration(sheet.getByRole("radio", { name: "팀 비용" }));
+      if (close === "Escape") await page.keyboard.press("Escape");
+      else await sheet.getByRole("button", { name: /^취소/ }).click();
+      await expect(sheet).toBeHidden();
+      await expect(page).toHaveURL(listUrl);
+      await expect(evidenceRows(page)).toHaveCount(1);
+      // 연 요소 = 그 행의 `대리 등록` 링크(목록이 새로 그려져 SidePanel returnFocusTo가 같은 증빙의 링크를 찾는다).
+      await expect(evidenceRows(page).first().getByRole("link", { name: "대리 등록", exact: true })).toBeFocused();
+    }
+    expect(await usagesOn(last4, holder.id)).toHaveLength(0);
   });
 
   test("완화 후보가 전부 막힌 줄 → `붙이기` · `대리 등록` DOM 0 · 행 행동 자리 `증빙 있음 · {번호}` 글자", async ({ page }) => {

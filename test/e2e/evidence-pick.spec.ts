@@ -92,7 +92,9 @@ test("(G-06.1-29) 증빙 고르기로 붙인 직후 — 새로 고침 없이 제
   await expect(picker).toBeHidden();
   await expect(page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible")).toHaveCount(1);
 
-  await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+  // 그 자리 측정 — 읽기 행이 선 바로 다음 읽기: 서버 미리보기가 돌아오기 전에는 1차가 막힌 채다(재시도 단언 아님).
+  expect(await submit.getAttribute("aria-disabled")).toBe("true");
+  await expect.poll(() => submit.getAttribute("aria-disabled")).not.toBe("true");
   await expect(memo).toHaveValue("저장 안 한 비고");
   await submit.click();
   await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
@@ -133,6 +135,8 @@ test("(G-06.1-29 대칭) 붙은 채 연 문서에서 마지막 기록을 떼면 
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
 
+  // 그 자리 측정 — 붙은 증빙 표가 사라진 바로 다음 읽기: 서버 미리보기가 돌아오기 전에도 1차는 이미 막혀 있다(재시도 단언 아님).
+  expect(await submit.getAttribute("aria-disabled")).toBe("true");
   await expect(submit).toHaveAttribute("aria-disabled", "true");
   const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
   expect(describedBy).not.toBe("");

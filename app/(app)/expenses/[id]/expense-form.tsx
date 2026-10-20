@@ -28,7 +28,7 @@ import {
 import { VendorPickDialog, type PickedPayee } from "./pick-vendor";
 import { LinePickDialog } from "./pick-line";
 import { EvidenceAttachments } from "./evidence-attachments";
-import { submitBlockReason, type ServerBlock } from "./submit-block";
+import { NEW_DOC_BLOCK, submitBlockReason, type ServerBlock } from "./submit-block";
 import { TaxParts } from "./tax-parts";
 import styles from "./expense.module.css";
 
@@ -210,6 +210,8 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
   const [previewFailed, setPreviewFailed] = useState(false);
   const previewSeq = useRef(0);
   const [serverBlock, setServerBlock] = useState(data.block);
+  // serverBlock이 반영한 붙은 증빙 기록 수 — prop과 다르면 서버 미리보기가 다시 재는 동안이다(그동안 1차는 막힌다).
+  const [judgedLinked, setJudgedLinked] = useState(linkedEvidenceCount);
   // 올린 파일이 완료됐지만 서버가 다시 그린 files가 아직 안 온 동안 — 서버 ⑧(대상 evidence)은 지난 값이다.
   // 완료 순간의 files를 기억하고, 서버가 새 files를 보내면 저절로 풀린다.
   const [addedAt, setAddedAt] = useState<AttachmentFile[] | null>(null);
@@ -287,6 +289,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     if (previewKey === firstPreviewKey.current) return;
     firstPreviewKey.current = "";
     const seq = ++previewSeq.current;
+    const requestedLinked = linkedEvidenceCount;
     setPreviewing(true);
     const timer = window.setTimeout(() => {
       if (busyRef.current) {
@@ -327,6 +330,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
         }
         if (seq !== previewSeq.current) return;
         setPreviewing(false);
+        setJudgedLinked(requestedLinked);
         if (result === undefined) {
           setNetworkFailed("submit");
           return;
@@ -355,8 +359,18 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
   }, [previewKey, data.id]);
 
   // 1차 옆 이유 — 서버 첫 이유(①~⑨)와 올리는 행 수를 한 함수로(D2: 올리는 중이면 ⑧ 대신 `증빙 올리는 중`).
-  const server = serverBlock?.target === "evidence" && (evidenceAdded || files.length > 0 || linkedEvidenceCount > 0) ? null : serverBlock;
+  // 붙임 수가 바뀌어 서버가 다시 재는 동안(G-06.1-29)은 묵은 ⑧을 붙임 수로 걷지 않고(응답이 온 뒤에만 걷는다), 05 파일도 붙임도 0이 되면 서버 ⑧ 원문을 바로 세운다.
+  const linkedPending = !newDoc && judgedLinked !== linkedEvidenceCount;
+  const noEvidence = !evidenceAdded && files.length === 0 && linkedEvidenceCount === 0;
+  const server =
+    serverBlock?.target === "evidence" && (evidenceAdded || files.length > 0 || (linkedEvidenceCount > 0 && !linkedPending))
+      ? null
+      : linkedPending && serverBlock === null && noEvidence
+        ? NEW_DOC_BLOCK
+        : serverBlock;
   const block = submitBlockReason({ server, uploadingCount: uploading });
+  // 이유 줄 없이 막기만 하는 짧은 대기(예: 기록 2→1) — 이유가 없으므로 `aria-describedby`도 없다.
+  const judging = linkedPending && block === null;
   const blockHref = block?.tone === "block" ? (server?.href ?? null) : null;
 
   // 비활성 1차 누름 · Ctrl+Enter · 첫 그림 — 서버를 부르지 않고 다음 한 수의 대상으로 포커스(칸이 없으면 이동 3차). 옮겼으면 true.
@@ -588,6 +602,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
       pressBlocked();
       return;
     }
+    if (judging) return;
     busyRef.current = true;
     setSubmitting(true);
     setFailure(null);
@@ -791,7 +806,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
         variant="primary"
         shortcut="Ctrl+Enter"
         pending={submitting}
-        disabled={block !== null}
+        disabled={block !== null || judging}
         aria-describedby={block ? "expense-blocked" : undefined}
         onClickCapture={block ? () => pressBlocked() : undefined}
       >

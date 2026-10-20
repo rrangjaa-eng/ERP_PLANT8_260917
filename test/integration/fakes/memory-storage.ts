@@ -5,6 +5,8 @@ import type { ObjectMetadata, ObjectStorage } from "@/lib/gcp/storage";
 // 테스트가 fake.put(url, { size, contentType, sha256 })으로 객체를 넣는다(서명 헤더와 다르면 거부 — GCS 서명 조건과 같은 결).
 // 옮기기 · 보존 표식 · 삭제는 기록으로 남겨 테스트가 단언한다. failNextMove · failRetain은 갈래 사례용 선택 옵션이다.
 // 06.1-14(E14): readHead는 put이 받은 선택 칸 head를, 없으면 선언 형식의 서명 바이트를 돌려준다 — 기존 테스트는 그대로 통과한다.
+// 06.1-14 독립 검토 P2-2: put마다 세대(generation)를 올린다 — getMetadata가 세대를 싣고, readHead · move는 준 세대가 다르면
+// 없음(null) · 오류다(GCS generation · ifSourceGenerationMatch 결). afterNext로 다음 getMetadata · readHead 직후에 덮어쓰기를 끼운다.
 
 type SignedPutRecord = { key: string; contentType: string; maxBytes: number; sha256: string };
 
@@ -18,6 +20,7 @@ export type MemoryStorage = ObjectStorage & {
   tamper(key: string, patch: Partial<ObjectMetadata>): void;
   failNextMove(): void;
   failRetain: boolean;
+  afterNext(op: "getMetadata" | "readHead", fn: () => void): void;
 };
 
 const pad16 = (bytes: readonly number[]) => Uint8Array.from([...bytes, ...new Array<number>(16 - bytes.length).fill(0)]);
@@ -36,7 +39,16 @@ const SIGNATURE_HEADS: Record<string, Uint8Array> = {
 export function createMemoryStorage(): MemoryStorage {
   const signed = new Map<string, SignedPutRecord>();
   const heads = new Map<string, Uint8Array>();
+  const generations = new Map<string, number>();
+  const hooks = new Map<"getMetadata" | "readHead", () => void>();
+  let nextGeneration = 1;
   let moveFailures = 0;
+  const runHook = (op: "getMetadata" | "readHead") => {
+    const hook = hooks.get(op);
+    hooks.delete(op);
+    hook?.();
+  };
+  const generationOf = (key: string) => String(generations.get(key) ?? 0);
 
   const storage: MemoryStorage = {
     objects: new Map(),
@@ -67,23 +79,31 @@ export function createMemoryStorage(): MemoryStorage {
 
     getMetadata(key) {
       const object = storage.objects.get(key);
-      return Promise.resolve(object ? { ...object } : null);
+      const result = object ? { ...object, generation: generationOf(key) } : null;
+      runHook("getMetadata");
+      return Promise.resolve(result);
     },
 
-    readHead(key, bytes) {
+    readHead(key, bytes, opts) {
       const object = storage.objects.get(key);
-      if (!object) return Promise.resolve(null);
+      if (!object || (opts?.generation !== undefined && opts.generation !== generationOf(key))) return Promise.resolve(null);
       const head = heads.get(key) ?? SIGNATURE_HEADS[object.contentType] ?? new Uint8Array(0);
+      runHook("readHead");
       return Promise.resolve(head.subarray(0, bytes));
     },
 
-    move(fromKey, toKey) {
+    move(fromKey, toKey, opts) {
       if (moveFailures > 0) {
         moveFailures -= 1;
         return Promise.reject(new Error("memory storage: move failed (injected)"));
       }
       const object = storage.objects.get(fromKey);
       if (!object) return Promise.reject(new Error(`memory storage: no object ${fromKey}`));
+      if (opts?.ifSourceGeneration !== undefined && opts.ifSourceGeneration !== generationOf(fromKey)) {
+        return Promise.reject(new Error("memory storage: source generation mismatch"));
+      }
+      generations.set(toKey, generations.get(fromKey) ?? 0);
+      generations.delete(fromKey);
       storage.objects.set(toKey, { ...object });
       storage.objects.delete(fromKey);
       const head = heads.get(fromKey);
@@ -96,6 +116,7 @@ export function createMemoryStorage(): MemoryStorage {
     delete(key) {
       storage.objects.delete(key);
       heads.delete(key);
+      generations.delete(key);
       storage.deletes.push(key);
       return Promise.resolve();
     },
@@ -113,6 +134,7 @@ export function createMemoryStorage(): MemoryStorage {
       if (object.sha256 !== record.sha256) throw new Error("memory storage: sha256 mismatch");
       if (object.size < 1 || object.size > record.maxBytes) throw new Error("memory storage: size out of range");
       storage.objects.set(record.key, { size: object.size, contentType: object.contentType, sha256: object.sha256 });
+      generations.set(record.key, nextGeneration++);
       if (object.head) heads.set(record.key, object.head);
       else heads.delete(record.key);
     },
@@ -125,6 +147,10 @@ export function createMemoryStorage(): MemoryStorage {
 
     failNextMove() {
       moveFailures += 1;
+    },
+
+    afterNext(op, fn) {
+      hooks.set(op, fn);
     },
   };
   return storage;

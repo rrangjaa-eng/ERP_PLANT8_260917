@@ -441,7 +441,10 @@ export async function completeEvidenceUpload(
     throw new EvidenceUploadRefusedError("restart");
   }
   // 06.1-14(E14 · RP-14): 메타데이터가 맞아도 내용이 선언 형식이 아니면(실행 파일을 PNG로) 옮기기 전에 지우고 같은 다시 올리기로 거부한다.
-  if (!signatureMatches(await storage.readHead(intent.objectKey, SIGNATURE_HEAD_BYTES), intent.declaredContentType)) {
+  // 독립 검토 P2-2 — 서명 PUT 주소는 만료 전까지 다시 쓸 수 있다. 메타데이터에서 읽은 세대로 머리 읽기 · 옮기기를 고정해
+  // 대조한 객체와 옮기는 객체가 같은 세대가 되게 한다(세대가 바뀌면 머리 읽기는 없음 · 옮기기는 실패로 거부된다).
+  const pinned = metadata.generation === undefined ? undefined : { generation: metadata.generation };
+  if (!signatureMatches(await storage.readHead(intent.objectKey, SIGNATURE_HEAD_BYTES, pinned), intent.declaredContentType)) {
     log.warn("evidence.upload_signature_mismatch", { intentId: intent.id, ownerKind: intent.ownerKind, ownerId: intent.ownerId, reason: "signature" });
     await storage.delete(intent.objectKey);
     throw new EvidenceUploadRefusedError("restart");
@@ -451,7 +454,7 @@ export async function completeEvidenceUpload(
   const fileId = randomUUID();
   const objectKey = `evidence/${fileId}`;
   try {
-    await storage.move(intent.objectKey, objectKey);
+    await storage.move(intent.objectKey, objectKey, pinned ? { ifSourceGeneration: pinned.generation } : undefined);
   } catch {
     throw new EvidenceUploadRefusedError("complete");
   }

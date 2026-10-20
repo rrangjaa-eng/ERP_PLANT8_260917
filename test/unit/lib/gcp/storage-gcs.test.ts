@@ -177,6 +177,12 @@ describe("getMetadata · delete — 04.3 GcsRequest", () => {
     await expect(storage.getMetadata(KEY)).rejects.toThrow("GCS meta 실패: 503");
   });
 
+  // 06.1-14 독립 검토 P2-2 — 완료 통보가 읽은 세대(generation)로 머리 읽기 · 옮기기를 고정한다.
+  it("응답에 generation이 있으면 그 값을 함께 돌려준다", async () => {
+    const { storage } = storageWith([json(200, { size: "3", contentType: "image/png", generation: "1700000000000001", metadata: { sha256: SHA } })]);
+    await expect(storage.getMetadata(KEY)).resolves.toEqual({ size: 3, contentType: "image/png", sha256: SHA, generation: "1700000000000001" });
+  });
+
   it("delete는 같은 주소에 DELETE · 404는 성공", async () => {
     const { storage, calls } = storageWith([{ status: 204 }, { status: 404 }]);
     await storage.delete(KEY);
@@ -205,6 +211,14 @@ describe("readHead — 앞부분 읽기", () => {
     await expect(storage.readHead(KEY, 16)).resolves.toBeNull();
     await expect(storage.readHead(KEY, 16)).rejects.toThrow("GCS get 실패: 503");
   });
+
+  // 06.1-14 독립 검토 P2-2 — 세대를 주면 그 세대만 읽는다(덮어쓴 뒤면 옛 세대가 없어 404 → null).
+  it("generation을 주면 주소에 &generation= 이 붙는다", async () => {
+    const { storage, calls } = storageWith([{ status: 206, data: head.subarray(0, 16) }, { status: 404 }]);
+    await storage.readHead(KEY, 16, { generation: "17" });
+    expect(calls[0]?.url).toBe(`${mediaUrl(KEY)}&generation=17`);
+    await expect(storage.readHead(KEY, 16, { generation: "17" })).resolves.toBeNull();
+  });
 });
 
 describe("move — JSON API rewriteTo 이어 부름 뒤 원본 DELETE(M1)", () => {
@@ -219,6 +233,17 @@ describe("move — JSON API rewriteTo 이어 부름 뒤 원본 DELETE(M1)", () =
       ["move", "POST", `${rewriteUrl}?rewriteToken=t1`],
       ["delete", "DELETE", `https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(KEY)}`],
     ]);
+  });
+
+  // 06.1-14 독립 검토 P2-2 — 원본 세대 조건(ifSourceGenerationMatch)을 이어 부름마다 싣고, 412면 원본을 지우지 않는다.
+  it("ifSourceGeneration을 주면 재작성 부름마다 ifSourceGenerationMatch가 붙고 412면 오류 · 원본 유지", async () => {
+    const ok = storageWith([json(200, { done: false, rewriteToken: "t1" }), json(200, { done: true }), { status: 204 }]);
+    await ok.storage.move(KEY, EVIDENCE_KEY, { ifSourceGeneration: "17" });
+    expect(ok.calls.slice(0, 2).map((c) => c.url)).toEqual([`${rewriteUrl}?ifSourceGenerationMatch=17`, `${rewriteUrl}?ifSourceGenerationMatch=17&rewriteToken=t1`]);
+
+    const stale = storageWith([{ status: 412 }]);
+    await expect(stale.storage.move(KEY, EVIDENCE_KEY, { ifSourceGeneration: "17" })).rejects.toThrow("GCS move 실패: 412");
+    expect(stale.calls).toHaveLength(1);
   });
 
   it("재작성이 실패하면 오류가 오르고 원본을 지우지 않는다", async () => {

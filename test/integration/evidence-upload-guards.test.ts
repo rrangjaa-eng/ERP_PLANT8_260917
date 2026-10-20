@@ -120,3 +120,44 @@ describe("E14 최소 용량 — 올리기 요청", () => {
     expect(intent.intentId).toBeTruthy();
   });
 });
+
+// 06.1-14 독립 검토 P2-2(TOCTOU) — 서명 PUT 주소는 15분 동안 다시 쓸 수 있다. 완료 통보는 메타데이터에서 읽은 세대로
+// 머리 읽기 · 옮기기를 고정해, 대조한 바이트와 옮기는 바이트가 같은 객체 세대가 되게 한다.
+describe("E14 세대 고정 — 대조 뒤 덮어쓰기", () => {
+  const PDF_PUT = (sha256: string) => ({ size: 212_000, contentType: "image/png", sha256, head: PDF_HEAD });
+
+  async function racedUpload(op: "getMetadata" | "readHead") {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const storage = createMemoryStorage();
+    const sha256 = randomBytes(32).toString("hex");
+    const declared = { size: 212_000, contentType: "image/png", sha256 };
+    const intent = await requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: expenseId, ...declared, name: "영수증.png" }, { storage, now: NOW });
+    storage.put(intent.url, { ...declared, head: PNG_HEAD });
+    // 진짜 PNG를 올리고 완료 통보를 부르는 사이에 같은 서명 주소로 같은 크기 · 헤더의 다른 바이트를 다시 올린다.
+    storage.afterNext(op, () => storage.put(intent.url, PDF_PUT(sha256)));
+    const error = await completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW }).then(
+      () => null,
+      (reason: unknown) => reason,
+    );
+    return { error, storage, expenseId };
+  }
+
+  it("머리 읽기 뒤 · 옮기기 전에 덮어쓰면 옮기지 않고 거부 · evidence/ 0 · 파일 행 0", async () => {
+    const { error, storage, expenseId } = await racedUpload("readHead");
+
+    expect(error).toBeInstanceOf(EvidenceUploadRefusedError);
+    expect(storage.moves).toEqual([]);
+    expect([...storage.objects.keys()].filter((key) => key.startsWith("evidence/"))).toEqual([]);
+    expect(await fileRowsOf(expenseId)).toEqual([]);
+  });
+
+  it("메타데이터 읽기 뒤 · 머리 읽기 전에 덮어쓰면 다시 올리기 거부 · 파일 행 0", async () => {
+    const { error, storage, expenseId } = await racedUpload("getMetadata");
+
+    expect(error).toBeInstanceOf(EvidenceUploadRefusedError);
+    expect((error as EvidenceUploadRefusedError).retry).toBe("restart");
+    expect(storage.moves).toEqual([]);
+    expect(await fileRowsOf(expenseId)).toEqual([]);
+  });
+});

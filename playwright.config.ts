@@ -57,6 +57,20 @@ const CERT_SPEC_PATTERN = "*cert*.spec.ts";
 // 이름이 `mobile-`로 시작하지 않아 mobile-375가 가져가지 않고, desktop은 testIgnore로 제외한다(mobile-375 ·
 // certs · cert-setup의 testIgnore는 건드리지 않는다 — playwright-config.test.ts가 고정한다).
 const VISUAL_SPEC_PATTERNS = ["visual.spec.ts", "visual-390.spec.ts"];
+// 공용 설정(결재선 · 증빙 종류 · 짝)을 바꾸는 스펙 — desktop에서 빼고 맨 끝 desktop-settings에서 한 워커로 돈다.
+const DESKTOP_SETTINGS_SPECS = ["settings-approval-route.spec.ts", "phase6-keys.spec.ts"];
+// 증빙 표 셋(기록 · 붙임 · 묶음)을 통째로 비우고(clearEvidence) 회사 전체 목록을 세는 스펙 — 두 워커에서 겹치면 서로의 기록을
+// 지우고 남의 기록을 센다(PR #253 CI e2e (1): 표 없음 · 11줄 대 1줄 · 묶음 FK 위반). desktop에서 빼고 desktop-evidence에서 한 워커로 돈다.
+const EVIDENCE_WIPE_SPECS = [
+  "evidence-attach-audit.spec.ts",
+  "evidence-attach.spec.ts",
+  "evidence-intake.spec.ts",
+  "evidence-list-audit.spec.ts",
+  "evidence-panel-audit.spec.ts",
+  "evidence-panel.spec.ts",
+  "evidence-pick-audit.spec.ts",
+  "evidence-pick.spec.ts",
+];
 
 export default defineConfig({
   testDir: "test/e2e",
@@ -93,7 +107,7 @@ export default defineConfig({
       // (2026-10-02, ci.yml e2e 잡). 로컬·1번 샤드에서는 환경 변수가 없어 그대로다.
       testIgnore: process.env.E2E_SKIP_DESKTOP
         ? ["**"]
-        : [MOBILE_SPEC_PATTERN, CERT_SPEC_PATTERN, "settings-approval-route.spec.ts", ...VISUAL_SPEC_PATTERNS],
+        : [MOBILE_SPEC_PATTERN, CERT_SPEC_PATTERN, ...DESKTOP_SETTINGS_SPECS, ...EVIDENCE_WIPE_SPECS, ...VISUAL_SPEC_PATTERNS],
       // 04.6-13(R2) — CI에서는 기준 사진을 찍는 깨끗한 DB 상태(visual-baseline.yml이 `visual`만 돌린다)와 e2e의 촬영
       // 상태가 같아야 사진이 재현되므로 `visual`이 desktop(과 뒤따르는 mobile-375 · cert-setup · certs · desktop-settings 사슬)
       // 앞에서 먼저 돈다. CI 2번 샤드의 폰·설정 단계(E2E_SKIP_DESKTOP)는 desktop을 비운 채 의존 사슬만 다시 거치므로
@@ -161,12 +175,25 @@ export default defineConfig({
       dependencies: ["cert-setup"],
     },
     {
+      // 증빙 표를 비우는 스펙(EVIDENCE_WIPE_SPECS)을 desktop · 폰 · 확인증이 다 끝난 뒤 한 워커로 돌린다 — 그때는 증빙 기록을
+      // 만드는 다른 스펙이 동시에 돌지 않는다. CI 2번 샤드의 폰 · 설정 단계(--project=desktop-settings)가 의존 사슬로 함께 돈다.
+      // 스펙 하나만 빨리: --project=desktop-evidence --no-deps <스펙>
+      name: "desktop-evidence",
+      testMatch: EVIDENCE_WIPE_SPECS,
+      workers: 1,
+      dependencies: ["mobile-375", "certs"],
+    },
+    {
       // 공유 erp_test의 전역 결재선을 바꾸는 스펙이라 다른 모든 스펙 뒤에 돈다(CEO-14).
       // 스펙 안 finally 복원과 함께 쓰는 이중 장치다. 확인증 프로젝트(certs)도
       // 「다른 모든 스펙」이라 그 뒤에 둔다.
+      // phase6-keys.spec.ts(06-02 짝 격자)도 같은 갈래다 — 공용 증빙 종류 `tax_invoice`를 잠깐 보관하고 짝 · 증빙 필수 설정을 바꾼다.
+      // desktop 안에서 돌면 다른 워커의 지출결의 제출이 그 창에 `쓰지 않는 증빙 종류` · `짝 아님`으로 막힌다
+      // (PR #253 CI — pre-settle-check 제출 1차 30초 비활성). 두 스펙 모두 공용 값을 바꾸므로 이 프로젝트 안에서도 한 워커다.
       name: "desktop-settings",
-      testMatch: "settings-approval-route.spec.ts",
-      dependencies: ["mobile-375", "certs"],
+      testMatch: DESKTOP_SETTINGS_SPECS,
+      workers: 1,
+      dependencies: ["desktop-evidence"],
     },
   ],
 });

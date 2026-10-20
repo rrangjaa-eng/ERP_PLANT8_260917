@@ -29,6 +29,8 @@ export type EvidenceLinkedItemDto = {
   action: "detach" | "void" | null;
   /** 06.1-08 — 이 행의 `떼기`가 작성자 본인 길(자기 author 붙임)이다. 화면이 작성자 액션을 고르는 데만 쓴다. */
   ownDetach: boolean;
+  /** 확인 필요 사유(PR-C 카드 결정 — 뒤 파일 취소가 붙은 원거래에 세운 사유 등) · 없으면 null. */
+  needsCheck: string | null;
 };
 
 export const EVIDENCE_LINKED_ITEM_DTO_SPEC: DtoSpec<EvidenceLinkedItemDto, EvidenceLinkedItemDto> = {
@@ -44,6 +46,7 @@ export const EVIDENCE_LINKED_ITEM_DTO_SPEC: DtoSpec<EvidenceLinkedItemDto, Evide
     { key: "pickedOn", from: "pickedOn", infoItem: "evidence.value" },
     { key: "action", from: "action", infoItem: "evidence.value" },
     { key: "ownDetach", from: "ownDetach", infoItem: "evidence.value" },
+    { key: "needsCheck", from: "needsCheck", infoItem: "evidence.value" },
   ],
 };
 
@@ -71,6 +74,7 @@ function itemOf(row: LinkedEvidenceRow, typeNames: ReadonlyMap<string, string>, 
     pickedOn: author ? kstDateOf(row.attachedAt).slice(5) : null,
     action,
     ownDetach,
+    needsCheck: row.needsCheck,
   };
 }
 

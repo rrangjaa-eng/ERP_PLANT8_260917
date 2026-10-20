@@ -2,9 +2,13 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db, pool } from "@/db/client";
-import { actionLog, approvalInstances, evidenceRecordLinks, expenseEvidenceReviews, expensePayments, expenses, projects, vendors } from "@/db/schema";
+import { actionLog, approvalInstances, evidenceRecordLinks, evidenceRecords, expenseEvidenceReviews, expensePayments, expenses, projects, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { approveDocument } from "@/domain/approvals";
+import { createCorpCard } from "@/domain/corp-cards";
+import { CANCEL_REGISTERED_CHECK } from "@/domain/evidence-import/cards";
+import { EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
+import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { getEvidenceActions, evidenceRecordRights, readEvidenceOwner } from "@/domain/evidence";
 import { attachEvidenceRecord, listAttachCandidates } from "@/domain/evidence-records/attach";
 import { listLinkedEvidence } from "@/domain/evidence-records/linked";
@@ -32,6 +36,7 @@ import {
   createReturnedExpenseFixture,
   insertLinkFixture,
   insertRecordFixture,
+  registerFixtureFile,
   setRecordArchivedFixture,
 } from "./fixtures/evidence";
 import { makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
@@ -577,5 +582,73 @@ describe("구매 요청 붙이기", () => {
     expect(author[0]?.pickedBy).toBe("박서연");
     expect(author[0]?.pickedOn).toMatch(/^\d{2}-\d{2}$/);
     expect(linked.items.filter((item) => item.attachMode === "registrar").every((item) => item.pickedBy === null)).toBe(true);
+  });
+});
+
+// PR-C 카드 결정(2026-10-19 「붙은 것도 표시」): 뒤 파일 취소 줄의 원거래가 이미 문서에 붙어 있어도 원거래에 같은 확인 필요 사유를 세우고
+// 문서 「증빙」 행에 그 사유를 싣는다. 지급 게이트는 바꾸지 않는다 — 지급 전 문서는 06 확인 게이트(확인 전 → 지급 막힘)가 그대로 막는다.
+describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
+  const ORIGINAL = { 승인번호: "30000001", 매입일자: "2026.09.05", 매입금액: "50,000", 부가세: "4,545" };
+  const CANCEL = { 승인번호: "30000001", 매입일자: "2026.09.20", 매입금액: "-50,000", 부가세: "-4,545" };
+  const ORIGINAL_KEY = "card-lotte|2222|30000001|2026-09-05|50000";
+
+  async function attachedOriginal(manager: Viewer, expenseId: string): Promise<string> {
+    await createCorpCard(SYSTEM_VIEWER, { issuer: "롯데카드", numberLast4: "2222", label: "롯데카드 2222", kind: "shared" });
+    await registerFixtureFile(manager, lotteFixture([ORIGINAL]), "롯데_0901-0915.xls");
+    const [record] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.dedupeKey, ORIGINAL_KEY));
+    if (!record) throw new Error("원거래가 서지 않았다");
+    await attachEvidenceRecord(manager, { recordId: record.id, owner: { kind: "expense", id: expenseId } });
+    return record.id;
+  }
+
+  async function needsCheckOf(recordId: string): Promise<string | null> {
+    const [row] = await db.select({ needsCheck: evidenceRecords.needsCheck }).from(evidenceRecords).where(eq(evidenceRecords.id, recordId));
+    return row?.needsCheck ?? null;
+  }
+
+  async function laterCancelFile(manager: Viewer): Promise<void> {
+    await registerFixtureFile(manager, lotteFixture([ORIGINAL, CANCEL]), "롯데_0901-0930.xls");
+  }
+
+  it("지급 전 승인 문서에 붙은 원거래 → 뒤 파일 취소로 확인 필요 사유 · 문서 증빙 행에 사유 · 확인 전이라 지급은 막히고 확인 뒤 지급", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const expenseId = await approvedExpense(fx);
+    const recordId = await attachedOriginal(manager, expenseId);
+
+    await laterCancelFile(manager);
+
+    expect(await needsCheckOf(recordId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await liveLinks(recordId)).toHaveLength(1);
+    const linked = await listLinkedEvidence(manager, { kind: "expense", id: expenseId });
+    expect(linked.items.map((item) => item.needsCheck)).toEqual([CANCEL_REGISTERED_CHECK]);
+    const preview = await previewPayable(payer, { expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    const unconfirmed = completeExpensePayment(payer, { expenseId, expectedPayableKrw: preview.payableKrw, version: (await moneyOf(expenseId)).version });
+    expect(await messageOf(unconfirmed)).toBe(EVIDENCE_UNCONFIRMED);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(0);
+
+    await payNow(payer, expenseId);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(1);
+  });
+
+  it("지급 뒤 문서에 붙은 원거래 → 확인 필요 사유는 서고 지급 · 확인 기록 · 문서 version은 그대로", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const expenseId = await approvedExpense(fx);
+    const recordId = await attachedOriginal(manager, expenseId);
+    await payNow(payer, expenseId);
+    const before = { doc: await moneyOf(expenseId), reviews: await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId)) };
+
+    await laterCancelFile(manager);
+
+    expect(await needsCheckOf(recordId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(1);
+    expect(await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId))).toEqual(before.reviews);
+    expect((await moneyOf(expenseId)).version).toBe(before.doc.version);
+    const linked = await listLinkedEvidence(manager, { kind: "expense", id: expenseId });
+    expect(linked.items.map((item) => item.needsCheck)).toEqual([CANCEL_REGISTERED_CHECK]);
   });
 });

@@ -132,8 +132,9 @@ const liveLinkExists = sql<boolean>`exists (select 1 from ${evidenceRecordLinks}
 // RP-15 ⑴ · G15: 증빙 종류가 「올린 사람 · 경영관리만 보기」(code_items.private_to_owner)인가 — 코드 항목이 보관이어도 뺀다.
 const privateToOwnerType = sql<boolean>`exists (select 1 from ${codeItems} where ${codeItems.tableKey} = 'evidence_type' and ${codeItems.value} = ${evidenceRecords.evidenceType} and ${codeItems.privateToOwner})`;
 
-// /review P2-1: 앞 파일 대조로 취소 줄을 등록한 원거래 줄에 확인 필요를 세운다(등록 트랜잭션 안 · 카드 등록 잠금 뒤). 보관 · 살아 있는 붙임 ·
-// 이미 사유가 있는 줄은 그대로 둔다(먼저 선 사유를 덮지 않는다). 바뀐 행 수.
+// /review P2-1: 앞 파일 대조로 취소 줄을 등록한 원거래 줄에 확인 필요를 세운다(등록 트랜잭션 안 · 카드 등록 잠금 뒤). 보관 · 이미 사유가 있는
+// 줄은 그대로 둔다(먼저 선 사유를 덮지 않는다). PR-C 카드 결정(2026-10-19 「붙은 것도 표시」): 살아 있는 붙임이 있는 원거래에도 세운다 — 문서
+// 「증빙」 행이 사유를 싣는다. 행 잠금은 id 오름차순(lockRecordsForUpdate와 같은 순서)으로 먼저 잡는다. 바뀐 행 수.
 export async function flagRecordsNeedsCheckByDedupeKeys(viewer: Viewer, keys: readonly string[], reason: string, tx: DbOrTx): Promise<number> {
   void viewer;
   if (keys.length === 0) return 0;
@@ -141,12 +142,7 @@ export async function flagRecordsNeedsCheckByDedupeKeys(viewer: Viewer, keys: re
     .update(evidenceRecords)
     .set({ needsCheck: reason, version: sql`${evidenceRecords.version} + 1`, updatedAt: new Date() })
     .where(
-      and(
-        sql`${evidenceRecords.dedupeKey} = ANY(${sql.param([...keys])}::text[])`,
-        isNull(evidenceRecords.archivedAt),
-        isNull(evidenceRecords.needsCheck),
-        sql`not ${liveLinkExists}`,
-      ),
+      sql`${evidenceRecords.id} in (select ${evidenceRecords.id} from ${evidenceRecords} where ${evidenceRecords.dedupeKey} = ANY(${sql.param([...keys])}::text[]) and ${evidenceRecords.archivedAt} is null and ${evidenceRecords.needsCheck} is null order by ${evidenceRecords.id} for update)`,
     )
     .returning({ id: evidenceRecords.id });
   return rows.length;

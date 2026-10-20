@@ -61,6 +61,7 @@ function linkedItemsOf(linked: LinkedRead): LinkedEvidenceItem[] {
             pickedOn: item.pickedOn ?? null,
             action: item.action ?? null,
             ownDetach: item.ownDetach === true,
+            needsCheck: item.needsCheck ?? null,
           },
         ]
       : [],

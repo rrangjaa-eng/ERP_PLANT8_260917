@@ -65,6 +65,7 @@ export type LiveLinkWithRecord = {
   corpCardId: string | null;
   cardLast4: string | null;
   approvalNo: string | null;
+  needsCheck: string | null;
 };
 
 // 살아 있는 붙임 행마다 붙임 칸 + 기록 칸, 붙인 순. 주인 범위(누가 이 주인을 보나) 판정은 부르는 domain 몫이다.
@@ -95,6 +96,7 @@ export async function listLiveLinksWithRecords(
       corpCardId: evidenceRecords.corpCardId,
       cardLast4: evidenceRecords.cardLast4,
       approvalNo: evidenceRecords.approvalNo,
+      needsCheck: evidenceRecords.needsCheck,
     })
     .from(evidenceRecordLinks)
     .innerJoin(evidenceRecords, eq(evidenceRecords.id, evidenceRecordLinks.evidenceRecordId))

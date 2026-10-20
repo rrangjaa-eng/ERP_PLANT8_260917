@@ -294,6 +294,25 @@ test.describe("S8 대리 등록 · S2 행 행동 배타(06.1-09 Task 3)", () => 
     expect(await usagesOn(last4, holder.id)).toHaveLength(1);
   });
 
+  // PR #256 Codex 봇 P2 — 토스트를 닫을 때 쿼리를 URLSearchParams로 다시 써 `%20`이 `+`로, 겹친 키 순서가 묶여 바뀌던 건. 날 쿼리에서 registered만 걷어야 한다.
+  test("(G-06.1-40 날 쿼리) `%20` · 섞인 겹친 키로 착지해 토스트를 닫으면 — registered만 걷히고 쿼리 글자는 그대로", async ({ page }) => {
+    const holder = await cardHolder();
+    const last4 = await addLotteCard({ kind: "personal", holderUserId: holder.id });
+    await loginAs(page, await proxyRole());
+    const registeredId = await cardUsage(holder, last4, 10_000, null);
+    const raw = "state=all&q=a%20b&x=1&type=card_receipt&x=2";
+
+    await page.goto(`/expenses/evidence?${raw}&registered=${registeredId}`);
+    const toast = page.getByRole("status").filter({ hasText: "카드 사용 등록 · " });
+    await expect(toast).toBeVisible();
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return url.pathname + url.search;
+      }, { timeout: 15_000 })
+      .toBe(`/expenses/evidence?${raw}`);
+  });
+
   // 열린 리디렉션 — 남이 만든 `from`은 증빙 목록이 아니면 지금 닫을 곳으로 떨어진다(T-06.1-16-01).
   test("(G-06.1-40 적대 from) `from=//evil.example/x`로 연 S8을 Esc로 닫으면 같은 출처 `/expenses/evidence?state=unmatched`", async ({ page }) => {
     const holder = await cardHolder();

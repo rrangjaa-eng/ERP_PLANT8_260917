@@ -285,6 +285,8 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     headcountShown ? headcountRaw : "",
   ]);
   const firstPreviewKey = useRef(previewKey);
+  // 저장 중(busy)에 타이머가 발화해 건너뛴 미리보기 — 저장이 풀릴 때 한 번 다시 부른다(release).
+  const previewSkippedRef = useRef(false);
   useEffect(() => {
     if (previewKey === firstPreviewKey.current) return;
     firstPreviewKey.current = "";
@@ -293,6 +295,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     setPreviewing(true);
     const timer = window.setTimeout(() => {
       if (busyRef.current) {
+        previewSkippedRef.current = true;
         setPreviewing(false);
         return;
       }
@@ -583,6 +586,10 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     busyRef.current = false;
     setSubmitting(false);
     setSaving(false);
+    if (previewSkippedRef.current) {
+      previewSkippedRef.current = false;
+      setReturnTick((tick) => tick + 1);
+    }
   }
 
   async function save() {

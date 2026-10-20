@@ -19,6 +19,7 @@ export type EvidenceSources = {
   linkCount: number;
   authorLinkCount: number;
   recordSupplyKrw: number;
+  needsCheckCount: number;
   lastAttachedAt: Date | null;
 };
 
@@ -31,7 +32,7 @@ export async function evidenceSourcesOf(
   const fileRows = await listAliveByOwners(viewer, input, tx);
   const linkRows = await countLiveLinksByOwners(viewer, input, tx);
   const sources = new Map<string, EvidenceSources>();
-  const empty = (): EvidenceSources => ({ fileCount: 0, linkCount: 0, authorLinkCount: 0, recordSupplyKrw: 0, lastAttachedAt: null });
+  const empty = (): EvidenceSources => ({ fileCount: 0, linkCount: 0, authorLinkCount: 0, recordSupplyKrw: 0, needsCheckCount: 0, lastAttachedAt: null });
   for (const row of fileRows) {
     const current = sources.get(row.ownerId) ?? empty();
     sources.set(row.ownerId, { ...current, fileCount: current.fileCount + 1 });
@@ -43,6 +44,7 @@ export async function evidenceSourcesOf(
       linkCount: row.linkCount,
       authorLinkCount: row.authorLinkCount,
       recordSupplyKrw: row.recordSupplyKrw,
+      needsCheckCount: row.needsCheckCount,
       lastAttachedAt: row.lastAttachedAt,
     });
   }
@@ -50,10 +52,10 @@ export async function evidenceSourcesOf(
 }
 
 // 06.1-12 자동 확인 조건(RP-1 · D-6117 × D-6520 · 카드 R2) — 조건만, 저장은 evidence-reviews. 붙임 ≥ 1 ∧ 작성자 붙임 0 ∧ 파일 0 ∧ 문서 공급가 있음 ∧
-// 붙은 기록 공급가 합 = 문서 공급가(원 정수 비교만 — 금액 산술 없음, 기록 금액은 문서 금액을 바꾸지 않는다).
+// 붙은 기록 공급가 합 = 문서 공급가(원 정수 비교만 — 금액 산술 없음, 기록 금액은 문서 금액을 바꾸지 않는다) ∧ 확인 필요 붙은 기록 0(PR-C 검토 P2-1).
 export function autoConfirmEligible(sources: EvidenceSources | undefined, docSupplyKrw: number | null): boolean {
   if (!sources || docSupplyKrw === null) return false;
-  return sources.linkCount >= 1 && sources.authorLinkCount === 0 && sources.fileCount === 0 && sources.recordSupplyKrw === docSupplyKrw;
+  return sources.linkCount >= 1 && sources.authorLinkCount === 0 && sources.fileCount === 0 && sources.needsCheckCount === 0 && sources.recordSupplyKrw === docSupplyKrw;
 }
 
 // 목록 · 집계용 묶음 판정 — 증빙(파일 또는 붙임)이 있는 주인 id 집합. 트랜잭션 콜백 안에서는 그 tx를 넘긴다(위와 같다).

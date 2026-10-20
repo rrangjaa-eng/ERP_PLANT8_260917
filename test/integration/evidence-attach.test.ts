@@ -10,7 +10,7 @@ import { CANCEL_REGISTERED_CHECK } from "@/domain/evidence-import/cards";
 import { EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { getEvidenceActions, evidenceRecordRights, readEvidenceOwner } from "@/domain/evidence";
-import { attachEvidenceRecord, listAttachCandidates } from "@/domain/evidence-records/attach";
+import { attachEvidenceRecord, detachEvidenceRecord, listAttachCandidates } from "@/domain/evidence-records/attach";
 import { listLinkedEvidence } from "@/domain/evidence-records/linked";
 import { archiveEvidenceRecord, EvidenceArchiveConflictError, getEvidenceRecord } from "@/domain/evidence-records";
 import { rankCandidates } from "@/domain/evidence-records/score";
@@ -717,4 +717,52 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
     expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(1);
     expect((await reviewsOf(expenseId)).map((row) => row.status)).toEqual(["confirmed"]);
   });
+
+  it("(PR-C 검토 P2-1) 확인이 풀린 문서에서 다른 기록을 무효 처리하고 같은 공급가 기록을 다시 붙여도 확인 필요 기록이 남아 있으면 자동 확인하지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager("지급경영", { payments: true, void: true });
+    const payer = await makePayer();
+    // 05 파일 0인 승인 문서(자동 확인 조건 — 파일 0): 다른 기록 r2를 붙여 올려 승인하고, 경영관리가 원거래 r1을 붙이면 공급가 합 = 문서 공급가라 자동 확인.
+    const [originalId] = await registerOriginals(manager);
+    if (!originalId) throw new Error("원거래 없음");
+    const [original] = await db.select({ supply: evidenceRecords.supplyKrw }).from(evidenceRecords).where(eq(evidenceRecords.id, originalId));
+    if (!original) throw new Error("원거래 없음");
+    const restSupply = DOC_SUPPLY - original.supply;
+    const otherId = await insertRecordFixture(manager, { supplyKrw: restSupply });
+    const doc = await createInReviewExpenseFixture(fx, { linkRecordId: otherId, linkedBy: manager.id });
+    await approveFresh(fx, doc.expenseId);
+    const expenseId = doc.expenseId;
+    await attachEvidenceRecord(manager, { recordId: originalId, owner: { kind: "expense", id: expenseId } });
+    expect((await reviewsOf(expenseId)).map((row) => row.status)).toEqual(["confirmed"]);
+
+    await laterCancelFile(manager);
+    expect(await reviewsOf(expenseId)).toEqual([]);
+
+    const [otherLink] = await liveLinks(otherId);
+    if (!otherLink) throw new Error("붙임 없음");
+    await detachEvidenceRecord(manager, { linkId: otherLink.id, reason: "다른 기록으로 바꿈" });
+    await attachEvidenceRecord(manager, { recordId: await insertRecordFixture(manager, { supplyKrw: restSupply }), owner: { kind: "expense", id: expenseId } });
+
+    expect(await needsCheckOf(originalId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await reviewsOf(expenseId)).toEqual([]);
+    const preview = await previewPayable(payer, { expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    const unconfirmed = completeExpensePayment(payer, { expenseId, expectedPayableKrw: preview.payableKrw, version: (await moneyOf(expenseId)).version });
+    expect(await messageOf(unconfirmed)).toBe(EVIDENCE_UNCONFIRMED);
+  });
+
+  const keyOf = (row: typeof ORIGINAL) => `card-lotte|2222|${row.승인번호}|${row.매입일자.replaceAll(".", "-")}|${row.매입금액.replaceAll(",", "")}`;
+
+  // 원거래만 든 앞 파일을 등록하고(붙이지 않는다) 원거래 기록 id를 넘긴 차례대로 돌려준다.
+  async function registerOriginals(manager: Viewer, rows: readonly (typeof ORIGINAL)[] = [ORIGINAL]): Promise<string[]> {
+    await createCorpCard(SYSTEM_VIEWER, { issuer: "롯데카드", numberLast4: "2222", label: "롯데카드 2222", kind: "shared" });
+    await registerFixtureFile(manager, lotteFixture(rows), "롯데_0901-0915.xls");
+    const ids: string[] = [];
+    for (const row of rows) {
+      const [record] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.dedupeKey, keyOf(row)));
+      if (!record) throw new Error("원거래가 서지 않았다");
+      ids.push(record.id);
+    }
+    return ids;
+  }
 });

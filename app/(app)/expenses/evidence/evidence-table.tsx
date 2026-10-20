@@ -831,16 +831,19 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const noChange = pending === 0 && !cellEditing;
   const primaryBlocked = uploading ? COPY.uploading : noChange ? COPY.noChange : undefined;
 
-  // Ctrl+E(§7-3 (차) 행 행동 열의 키보드 경로) — 붙일 수 있는 줄은 `붙이기`(S4), `보관됨` 보기는 `되살리기`. 보관은 위험 행동이라 단축키가 없다
-  // (PR-C D-1 · design-review P-1 ① — 1차 행동 키로 보관이 일어나지 않게). 힌트 줄은 실제로 되는 그 낱말 하나만.
-  const keyActionOf = (row: Row): "attach" | "restore" | null => (row.canAttach && row.attachBlocked === null ? "attach" : row.rowAction === "restore" ? "restore" : null);
+  // Ctrl+E(§7-3 (차) 행 행동 열의 키보드 경로) — 붙일 수 있는 줄은 `붙이기`(S4), 대리 등록 줄은 `대리 등록`(S8 — PR-D D-1), `보관됨` 보기는 `되살리기`.
+  // 보관은 위험 행동이라 단축키가 없다(PR-C D-1 · design-review P-1 ① — 1차 행동 키로 보관이 일어나지 않게). 붙이기 · 대리 등록은 행 행동 열과 같이 배타다.
+  // 힌트 줄은 실제로 되는 그 낱말 하나만.
+  const keyActionOf = (row: Row): "attach" | "proxy" | "restore" | null =>
+    row.canAttach && row.attachBlocked === null ? "attach" : !row.canAttach && row.canProxy ? "proxy" : row.rowAction === "restore" ? "restore" : null;
   function runKeyAction(row: Row) {
     const action = keyActionOf(row);
     if (action === "attach") openAttach(row);
+    else if (action === "proxy") router.push(`/cards?new=1&evidence=${row.id}`);
     else if (action === "restore") void runRowAction(row);
   }
   const shownKeyAction = rows.map(keyActionOf).find((action) => action !== null) ?? null;
-  const hintItems = shownKeyAction ? [...HINT_ITEMS, { label: shownKeyAction === "attach" ? COPY.attach : ROW_ACTION_LABEL.restore, keys: "Ctrl+E" }] : HINT_ITEMS;
+  const hintItems = shownKeyAction ? [...HINT_ITEMS, { label: shownKeyAction === "restore" ? ROW_ACTION_LABEL.restore : COPY[shownKeyAction], keys: "Ctrl+E" }] : HINT_ITEMS;
 
   // 쿼리 링크 갈래 — 클라이언트 이동이라 표가 다시 마운트되지 않고 편집 맵이 남는다(리저브 대장 · 카드 사용 필터 선례). 쪽은 1로 돌아간다.
   function go(key: "state" | "type" | "period", value: string) {

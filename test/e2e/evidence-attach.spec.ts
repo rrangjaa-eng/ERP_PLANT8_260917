@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { evidenceRecords, expenses } from "@/db/schema";
 import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
+import { CANCEL_REGISTERED_CHECK } from "@/domain/evidence-import/cards";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -299,19 +300,22 @@ test("S7 행 6 반려 문서 붙은 증빙 `떼기` → 사유 비면 1차 막�
   else await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
 });
 
-test("S7 행 7 결재 중 문서 → 붙은 증빙 행에 행동 없음 · 잠김 줄 `결재 중 · 떼기 없음`", async ({ page, browser, baseURL }) => {
+test("S7 행 7 결재 중 문서 → 붙은 증빙 행에 행동 없음 · 잠김 줄 `결재 중 · 떼기 없음` · 확인 필요 붙은 기록은 2행 `확인 필요 · {사유}`(PR-C 카드 결정)", async ({ page, browser, baseURL }) => {
   test.setTimeout(120_000);
   const fx = await setupExpenseE2E();
   const manager = await createIntakeManager();
   if (!manager.roleId) throw new Error("계급 없음");
   const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
-  await insertLinkFixture({ recordId: await insertRecordFixture(manager), ownerId: expenseId, attachedBy: manager.id });
+  const recordId = await insertRecordFixture(manager);
+  await insertLinkFixture({ recordId, ownerId: expenseId, attachedBy: manager.id });
+  await db.update(evidenceRecords).set({ needsCheck: CANCEL_REGISTERED_CHECK }).where(eq(evidenceRecords.id, recordId));
   await loginAs(page, manager.roleId);
   await page.goto(`/expenses/${expenseId}`);
   const section = linkedSection(page);
   await expect(section.getByRole("table", { name: "붙은 증빙" })).toBeVisible();
   await expect(section.getByRole("button")).toHaveCount(0);
   await expect(page.getByText("결재 중 · 떼기 없음", { exact: true })).toHaveCount(1);
+  await expect(section.getByRole("table", { name: "붙은 증빙" })).toContainText(`확인 필요 · ${CANCEL_REGISTERED_CHECK}`);
 });
 
 test("S7 행 8 승인 문서 → 무효 담당은 `무효 처리`(창 제목 `증빙 무효 처리`) · 등록만 가진 사람은 행동 없음", async ({ browser, baseURL }) => {

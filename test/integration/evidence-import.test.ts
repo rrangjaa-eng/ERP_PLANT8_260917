@@ -512,7 +512,7 @@ describe("domain/evidence-import — 서식 넷 · 세율 · 카드 · A-10 · G
     expect(await getEvidenceRecord(viewer, before.id)).toMatchObject({ statusWord: "확인 필요", statusDetail: CANCEL_REGISTERED_CHECK });
   });
 
-  it("(P2-1) 원거래에 이미 확인 필요 사유가 있으면 그 사유를 그대로 두고, 붙은 원거래에는 세우지 않는다", async () => {
+  it("(P2-1) 원거래에 이미 확인 필요 사유가 있으면 그 사유를 그대로 두고, 붙은 원거래에도 세운다(PR-C 카드 결정 「붙은 것도 표시」)", async () => {
     const viewer = await createIntakeViewer();
     const line = (approvalNo: string, sign: "" | "-") => ({ 승인번호: approvalNo, 매입일자: sign === "" ? "2026.09.05" : "2026.09.20", 매입금액: `${sign}50,000`, 부가세: `${sign}4,545` });
     await registerFixtureFile(viewer, lotteFixture([line("20000001", ""), line("20000002", ""), line("20000004", "")]), "롯데_원거래.xls");
@@ -530,7 +530,7 @@ describe("domain/evidence-import — 서식 넷 · 세율 · 카드 · A-10 · G
 
     expect(result).toMatchObject({ registered: 3, offsetPairs: 0 });
     expect(await recordOf(ORIGINAL_KEY)).toMatchObject({ needsCheck: A10_CHECK });
-    expect(await recordOf("card-lotte|2222|20000002|2026-09-05|50000")).toMatchObject({ needsCheck: null, version: attached.version });
+    expect(await recordOf("card-lotte|2222|20000002|2026-09-05|50000")).toMatchObject({ needsCheck: CANCEL_REGISTERED_CHECK, version: attached.version + 1 });
     expect(await recordOf("card-lotte|2222|20000004|2026-09-05|50000")).toMatchObject({ needsCheck: CANCEL_REGISTERED_CHECK });
   });
 

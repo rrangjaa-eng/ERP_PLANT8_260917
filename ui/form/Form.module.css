@@ -114,6 +114,12 @@
   display: block;
 }
 
+/* 라벨의 PC 음수 오른쪽 여백(-4px)은 flex 줄 전용이다 — 줄이 block이면 라벨이 줄보다 4px 넓어져 scrollWidth가 넘친다(DOM 실측 436 대 432). 라벨이 span인 줄도 첫 자식으로 덮는다. */
+.panel :global([data-ui="field-row"]) > label,
+.panel :global([data-ui="field-row"]) > span:first-child {
+  margin-inline-end: 0;
+}
+
 .panel :global([data-ui="field-row"]) > label {
   flex: none;
   margin-bottom: var(--s-1);

@@ -17,6 +17,7 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { RowSheet } from "@/ui/table/RowSheet";
 import { Table, reconcileSelection } from "@/ui/table/Table";
+import type { FooterNoticeItem } from "@/ui/table/footer-notice";
 import type { CellIssue, TableColumn } from "@/ui/table/types";
 import { Toast } from "@/ui/toast/Toast";
 import styles from "./components.module.css";
@@ -120,6 +121,51 @@ export function EditTableSample() {
           <td colSpan={EDIT_COLUMNS.length}>
             {`합계 · ${SAMPLE_ROWS.length}줄 · `}
             <Num value={TOTAL} />
+            {notice}
+          </td>
+        </tr>
+      )}
+    />
+  );
+}
+
+// 06.1-13(SP-6104 · G-2) — select 셀 붙여넣기 결과 표본(화면보다 먼저). 라벨 열 세 줄을 공개 칸에 붙인 뒤의 정적 상태 —
+// 맞은 줄은 저장 대기 · 모르는 라벨은 오류 셀(`목록에 없는 값 · {글자}`) · 잠긴 줄은 값 그대로 두고 합계 행 요약에만 센다(§7-3 (다)).
+type PasteSampleRow = { id: string; name: string; visibility: string; locked: boolean };
+
+const PASTE_ROWS: PasteSampleRow[] = [
+  { id: "p1", name: "표본 가", visibility: "기획1팀 공개", locked: false },
+  { id: "p2", name: "표본 나", visibility: "미공개", locked: false },
+  { id: "p3", name: "표본 다", visibility: "미공개", locked: true },
+];
+
+const PASTE_COLUMNS: TableColumn<PasteSampleRow>[] = [
+  { key: "name", header: "항목", priority: "p1", cell: (row) => row.name },
+  { key: "visibility", header: "공개", priority: "p1", editability: (row) => (row.locked ? "locked" : "edit"), cell: (row) => row.visibility },
+  { key: "status", header: "상태", priority: "p1", cell: (row) => <StatusTag status={row.locked ? "확인 필요" : "미공개"} variant="text" /> },
+];
+
+const PASTE_NOTICES: FooterNoticeItem[] = [
+  { tone: "muted", text: "붙여넣기 3줄", paste: "head" },
+  { tone: "warning", text: "공개 칸 1개 모르는 값", paste: "piece" },
+  { tone: "muted", text: "잠긴 줄 1칸 건너뜀", paste: "piece" },
+];
+
+export function SelectPasteSample() {
+  return (
+    <Table
+      caption="select 붙여넣기 표본"
+      columns={PASTE_COLUMNS}
+      rows={PASTE_ROWS}
+      getRowId={(row) => row.id}
+      enableGridKeyboard
+      cellIssue={(row, columnKey) => (row.id === "p2" && columnKey === "visibility" ? { kind: "error", message: "목록에 없는 값 · 전체 공개" } : undefined)}
+      cellDirty={(row, columnKey) => row.id === "p1" && columnKey === "visibility"}
+      footerNotices={PASTE_NOTICES}
+      footer={(notice) => (
+        <tr>
+          <td colSpan={PASTE_COLUMNS.length}>
+            {`합계 ${PASTE_ROWS.length}줄`}
             {notice}
           </td>
         </tr>

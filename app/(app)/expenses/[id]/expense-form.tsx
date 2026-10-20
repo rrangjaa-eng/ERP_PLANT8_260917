@@ -333,7 +333,6 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
         }
         if (seq !== previewSeq.current) return;
         setPreviewing(false);
-        setJudgedLinked(requestedLinked);
         if (result === undefined) {
           setNetworkFailed("submit");
           return;
@@ -345,6 +344,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
           }
           return;
         }
+        setJudgedLinked(requestedLinked);
         setNetworkFailed((current) => (current === "submit" ? null : current));
         setPreviewFailed(false);
         setTaxLine(result.data.taxLine);

@@ -13,7 +13,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { clearEvidence, holdServerAction, loginAs } from "./helpers/evidence";
+import { clearEvidence, holdServerAction, isServerAction, loginAs } from "./helpers/evidence";
 
 // 06.1-08 S5(EVID-07 · RP-4): 작성자 증빙 고르기 — 임시 지출결의 화면 → `증빙 고르기 N` → PickDialog 다중 → 붙임 → 문서 섹션 읽기 행.
 // 판정은 CI=true 프로덕션 빌드에서 한다(CLAUDE.md §5). 등록 권한자는 회사 전체 증빙을 보므로 케이스마다 증빙 표를 비우고 시작한다.
@@ -195,6 +195,57 @@ test("(G-06.1-29 대칭) 붙은 채 연 문서에서 마지막 기록을 떼면 
   const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
   expect(describedBy).not.toBe("");
   await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(/^증빙 없음 · /);
+  await page.context().close();
+});
+
+// PR #256 Codex 봇 P2 — 미리보기가 실패해도 judgedLinked가 먼저 갱신돼 임시 막힘(NEW_DOC_BLOCK)이 걷히고 묵은 서버 판정(null)으로 1차가 열리던 건.
+test("(G-06.1-29 미리보기 실패) 마지막 기록을 뗀 뒤 미리보기가 실패해도 — 제출 1차가 계속 막혀 있다", async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  const trigger = page.getByRole("button", { name: "증빙 고르기 1" });
+  await waitForHydration(trigger);
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await expect(page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible")).toHaveCount(1);
+
+  await page.reload();
+  const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+  const detach = detachButton(page);
+  await waitForHydration(detach);
+  await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+  // 미리보기 서버 액션(`fields`만 있고 `expectedVersion` 없음)만 끊는다 — 떼기 액션은 그대로 지나간다.
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const body = request.postData() ?? "";
+    if (isServerAction(request) && body.includes('"fields"') && !body.includes('"expectedVersion"')) {
+      await route.abort("failed");
+      return;
+    }
+    await route.fallback();
+  });
+  await detach.click();
+  const dialog = page.getByRole("dialog", { name: "증빙 떼기" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("사유").fill("잘못 고름");
+  await dialog.getByRole("button", { name: /^증빙 떼기/ }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+
+  // 실패한 미리보기가 끝날 때까지 기다린 뒤에도(디바운스 250ms 이상) 1차는 계속 막혀 있다.
+  await page.waitForTimeout(1500);
+  await expect(submit).toHaveAttribute("aria-disabled", "true");
   await page.context().close();
 });
 

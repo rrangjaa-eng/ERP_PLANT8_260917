@@ -17,7 +17,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { insertLinkFixture, setRecordVisibilityFixture } from "@/test/integration/fixtures/evidence";
-import { addBcCard, addLotteCard, clearEvidence, createIntakeRole, evidenceRows, registerFile, teamIdByName, uploadFixture } from "./helpers/evidence";
+import { addBcCard, addLotteCard, clearEvidence, createIntakeRole, EVIDENCE_COL, evidenceCell, evidenceRows, focusGridCell, registerFile, teamIdByName, uploadFixture } from "./helpers/evidence";
 import { waitForHydration } from "./leave-org";
 
 // 06.1-09 Task 4 독립 DOM 감사(실행자가 아닌 별도 에이전트). 판정은 CI=true 프로덕션 빌드의 DOM 실측값으로만 한다(스크린샷 육안 금지).
@@ -623,6 +623,190 @@ test("M10 `등록한 카드와 다름` — 2행 안 글자 · 색 = 2행 색 · 
     record("M10 보임", width, "경영관리", url, facts.visible, PHONE(width) ? "정보(폰 상태 열)" : true, PHONE(width) ? null : facts.visible);
     const [sw, cw] = await docOverflow(page);
     record("M10 문서 가로 넘침 없음", width, "경영관리", url, [sw, cw], "≤", sw <= cw);
+  }
+  await page.context().close();
+});
+
+// ── G-06.1-40 S8 출발 목록 복귀 ──────────────────────────────────────────────────────────
+
+test("G-06.1-40 S8 출발 목록 복귀 — 출발 셋 × 닫는 법 셋 × 폭 · 적대 from · 저장", async ({ browser }) => {
+  test.setTimeout(900_000);
+  const holder = await person(DEFAULT_ROLE_ID, "기획1팀");
+  const last4 = await addLotteCard({ kind: "personal", holderUserId: holder.viewer.id });
+  const manager = await person(await proxyRole());
+  const lonely = await line(manager.viewer, last4, { total: total(), date: "2026.03.17", merchant: "복귀가맹점" });
+  const saveT = [total(), total()] as const;
+  const saveIds = [await line(manager.viewer, last4, { total: saveT[0], date: "2026.03.18" }), await line(manager.viewer, last4, { total: saveT[1], date: "2026.03.19" })] as const;
+  const page = await pageAs(browser, manager);
+  const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
+  const pathSearch = () => page.evaluate(() => location.pathname + location.search);
+  const entryIndex = () => page.evaluate(() => (window as unknown as { navigation: { currentEntry: { index: number } } }).navigation.currentEntry.index);
+  const active = (id: string) =>
+    page.evaluate((evidenceId) => {
+      const a = document.activeElement as HTMLElement | null;
+      return { tag: a?.tagName ?? null, text: (a?.textContent ?? "").trim().slice(0, 20), href: a?.getAttribute("href")?.slice(0, 90) ?? null, title: a?.getAttribute("data-ui") === "screen-title", proxyRow: a?.tagName === "A" && (a.getAttribute("href") ?? "").includes(`evidence=${evidenceId}`) && (a.textContent ?? "").trim() === "대리 등록" };
+    }, id);
+  const settle = async () => {
+    await expect(sheet).toBeHidden();
+    await page.waitForTimeout(400);
+  };
+  const closeWith = async (way: "Esc" | "취소" | "x") => {
+    await waitForHydration(sheet.getByRole("radio", { name: "팀 비용" }));
+    if (way === "Esc") await page.keyboard.press("Escape");
+    else if (way === "취소") await sheet.getByRole("button", { name: /^취소/ }).click();
+    else await sheet.getByRole("button", { name: "닫기", exact: true }).click();
+  };
+  const origins = ["/expenses/evidence", "/expenses/evidence?state=all&type=card_receipt", "/expenses/evidence?state=unmatched"];
+  const fromDefault = "/expenses/evidence?state=unmatched";
+  const proxyLink = () => page.locator(`a[href*="evidence=${lonely}"]`);
+
+  // ⑴ 편집 폭 — 출발 셋 × 닫는 법 셋 × 여는 법(1280 링크 · Ctrl+E / 1024 링크)
+  for (const width of [1280, 1024] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const origin of origins) {
+      for (const way of ["Esc", "취소", "x"] as const) {
+        for (const open of width === 1280 ? (["링크", "Ctrl+E"] as const) : (["링크"] as const)) {
+          const item = `G40 ⑴ ${origin} · 닫기 ${way} · 열기 ${open}`;
+          await page.goto(origin);
+          await expect(proxyLink()).toHaveCount(1);
+          const href = (await proxyLink().getAttribute("href")) ?? "";
+          const fromVal = new URL(href, "http://x").searchParams.get("from");
+          record(`${item} — href from = 출발`, width, "경영관리", origin, fromVal, origin, fromVal === origin);
+          const idx0 = await entryIndex();
+          if (open === "링크") {
+            await waitForHydration(proxyLink());
+            await proxyLink().click();
+          } else {
+            await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.date));
+            await page.keyboard.press("Control+e");
+          }
+          await expect(sheet).toBeVisible();
+          // Ctrl+E는 격자 첫 행(저장 시험용 줄 셋 중 하나일 수 있다)을 연다 — 포커스는 실제로 연 증빙의 행으로 판정한다(감사 스펙 측정 보정).
+          const openedId = new URL(page.url()).searchParams.get("evidence") ?? lonely;
+          const first = await page.locator("[data-ui='screen-title']").count();
+          await closeWith(way);
+          await settle();
+          const landed = await pathSearch();
+          record(`${item} — 도착 = 출발`, width, "경영관리", origin, landed, origin, landed === origin);
+          const idx1 = await entryIndex();
+          record(`${item} — history 위치 = 출발`, width, "경영관리", origin, [idx0, idx1], "같음", idx0 === idx1);
+          const a = await active(openedId);
+          record(`${item} — 포커스 = 그 행 대리 등록`, width, "경영관리", origin, a, "proxyRow=true", a.proxyRow);
+          const dlg = await page.getByRole("dialog", { name: "카드 사용 등록" }).count();
+          record(`${item} — 패널 DOM 0`, width, "경영관리", origin, dlg, 0, dlg === 0);
+          record(`${item} — 1차 DOM 수(참고: 제목 수)`, width, "경영관리", origin, first, "정보", null);
+          const [sw, cw] = await docOverflow(page);
+          record(`${item} — 문서 가로 넘침 없음`, width, "경영관리", origin, [sw, cw], "≤", sw <= cw);
+        }
+      }
+    }
+  }
+
+  // ⑵ 좁은 폭 — 주소로 연 S8, Esc → 도착 = 출발(replace) · 제목 포커스 · 넘침 · 닫기 x 44
+  const narrowOrigin = "/expenses/evidence?state=all&type=card_receipt";
+  for (const width of [768, 700, 375, 320] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    const s8 = `/cards?new=1&evidence=${lonely}&from=${encodeURIComponent(narrowOrigin)}`;
+    await page.goto(s8);
+    await expect(sheet).toBeVisible();
+    const x = sheet.getByRole("button", { name: "닫기", exact: true });
+    const xb = await box(x);
+    record("G40 ⑵ 닫기 x 접근 이름 「닫기」 1개 · ≥44×44", width, "경영관리", s8, { count: await x.count(), box: xb }, "1 · ≥44×44", (await x.count()) === 1 && big(xb));
+    const sc = await sheet.evaluate((r) => [r.scrollWidth, r.clientWidth]);
+    record("G40 ⑵ 패널 scrollWidth ≤ clientWidth", width, "경영관리", s8, sc, "≤", (sc[0] ?? 0) <= (sc[1] ?? 0));
+    const [sw0, cw0] = await docOverflow(page);
+    record("G40 ⑵ 문서 가로 넘침 없음(열린 채)", width, "경영관리", s8, [sw0, cw0], "≤", sw0 <= cw0);
+    await closeWith("Esc");
+    await settle();
+    const landed = await pathSearch();
+    record("G40 ⑵ Esc → 도착 = 출발", width, "경영관리", s8, landed, narrowOrigin, landed === narrowOrigin);
+    await expect.poll(async () => (await active(lonely)).title, { timeout: 5_000 }).toBe(true).catch(() => undefined);
+    const a = await active(lonely);
+    record("G40 ⑵ 포커스 = 화면 제목(A-5)", width, "경영관리", s8, a, "title=true", a.title);
+    const dlg = await page.getByRole("dialog", { name: "카드 사용 등록" }).count();
+    record("G40 ⑵ 패널 DOM 0", width, "경영관리", s8, dlg, 0, dlg === 0);
+    const [sw, cw] = await docOverflow(page);
+    record("G40 ⑵ 문서 가로 넘침 없음(닫힌 뒤)", width, "경영관리", narrowOrigin, [sw, cw], "≤", sw <= cw);
+  }
+
+  // ⑶ 적대 from — 1280 · 375
+  const hostile = ["//evil.example/x", "https://evil.example/expenses/evidence", "/expenses/evidencex", "javascript:alert(1)"];
+  for (const width of [1280, 375] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const bad of hostile) {
+      const s8 = `/cards?new=1&evidence=${lonely}&from=${encodeURIComponent(bad)}`;
+      await page.goto(s8);
+      const appOrigin = new URL(page.url()).origin;
+      await expect(sheet).toBeVisible();
+      await closeWith("Esc");
+      await settle();
+      const now = await page.evaluate(() => ({ origin: location.origin, ps: location.pathname + location.search }));
+      record(`G40 ⑶ 적대 from ${bad} — 출처 · 경로+쿼리`, width, "경영관리", s8, now, { origin: appOrigin, ps: fromDefault }, now.origin === appOrigin && now.ps === fromDefault);
+      const [sw, cw] = await docOverflow(page);
+      record(`G40 ⑶ 적대 from ${bad} — 문서 가로 넘침 없음`, width, "경영관리", s8, [sw, cw], "≤", sw <= cw);
+    }
+  }
+
+  // ⑷ 【(a)】 저장 — 1280 · 375
+  for (const [i, width] of ([1280, 375] as const).entries()) {
+    const id = saveIds[i]!;
+    const t = saveT[i]!;
+    await page.setViewportSize({ width, height: 900 });
+    const startQ = narrowOrigin;
+    if (width === 1280) {
+      await page.goto(startQ);
+      const link = page.locator(`a[href*="evidence=${id}"]`);
+      await expect(link).toHaveCount(1);
+      await waitForHydration(link);
+      await link.click();
+    } else {
+      await page.goto(`/cards?new=1&evidence=${id}&from=${encodeURIComponent(startQ)}`);
+    }
+    await expect(sheet).toBeVisible();
+    const team = sheet.getByRole("radio", { name: "팀 비용" });
+    await waitForHydration(team);
+    await team.check();
+    await sheet.getByRole("button", { name: /^카드 사용 등록/ }).click();
+    await expect(page).toHaveURL(/registered=[0-9a-f-]{36}$/, { timeout: 20_000 });
+    const arrived = await pathSearch();
+    record("G40 ⑷ 저장 도착 = 출발 + &registered={uuid}", width, "경영관리", startQ, arrived, `${startQ}&registered=<uuid>`, new RegExp(`^${startQ.replace("?", "\\?")}&registered=[0-9a-f-]{36}$`).test(arrived));
+    const toast = page.getByRole("status").filter({ hasText: /^카드 사용 등록 · / });
+    await expect(toast).toBeVisible();
+    const tt = ((await toast.textContent()) ?? "").trim();
+    record("G40 ⑷ 토스트 role=status 글자", width, "경영관리", startQ, tt, `카드 사용 등록 · ${won(t)}`, tt.startsWith(`카드 사용 등록 · ${won(t)}`));
+    await expect.poll(pathSearch, { timeout: 15_000 }).toBe(startQ).catch(() => undefined);
+    const after = await pathSearch();
+    record("G40 ⑷ 4초 뒤 경로+쿼리 = 출발", width, "경영관리", startQ, after, startQ, after === startQ);
+    const a = await active(id);
+    record("G40 ⑷ 포커스 = 화면 제목", width, "경영관리", startQ, a, "title=true", a.title);
+    const stillLink = await page.locator(`a[href*="evidence=${id}"]`).count();
+    record("G40 ⑷ 그 줄 붙음(대리 등록 링크 0)", width, "경영관리", startQ, stillLink, 0, stillLink === 0);
+    const [sw, cw] = await docOverflow(page);
+    record("G40 ⑷ 문서 가로 넘침 없음", width, "경영관리", startQ, [sw, cw], "≤", sw <= cw);
+  }
+
+  // ⑹ 공백 거르개 q=a%20b — 주소 쿼리 원문 · history 위치
+  {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const origin = "/expenses/evidence?state=all&type=card_receipt&q=a%20b";
+    await page.goto(origin);
+    const rawBefore = await page.evaluate(() => location.search);
+    const rowLinks = await page.locator(`a[href*="evidence=${lonely}"]`).count();
+    record("G40 ⑹ q=a%20b 출발에 그 행 있음", 1280, "경영관리", origin, rowLinks, 1, rowLinks === 1);
+    if (rowLinks === 1) {
+      const idx0 = await entryIndex();
+      await waitForHydration(proxyLink());
+      await proxyLink().click();
+      await expect(sheet).toBeVisible();
+      await closeWith("Esc");
+      await settle();
+      const rawAfter = await page.evaluate(() => location.search);
+      const idx1 = await entryIndex();
+      record("G40 ⑹ 닫힌 뒤 주소 쿼리 원문 유지(%20)", 1280, "경영관리", origin, rawAfter, rawBefore, rawAfter === rawBefore && rawAfter.includes("q=a%20b"));
+      record("G40 ⑹ history 위치 = 출발", 1280, "경영관리", origin, [idx0, idx1], "같음", idx0 === idx1);
+      const a = await active(lonely);
+      record("G40 ⑹ 포커스 = 그 행 대리 등록", 1280, "경영관리", origin, a, "proxyRow=true", a.proxyRow);
+    }
   }
   await page.context().close();
 });

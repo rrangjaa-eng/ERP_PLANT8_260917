@@ -70,6 +70,9 @@ const EVIDENCE_WIPE_SPECS = [
   "evidence-panel.spec.ts",
   "evidence-pick-audit.spec.ts",
   "evidence-pick.spec.ts",
+  "evidence-reconcile-audit-capture.spec.ts",
+  "evidence-reconcile-audit.spec.ts",
+  "evidence-reconcile.spec.ts",
 ];
 
 export default defineConfig({

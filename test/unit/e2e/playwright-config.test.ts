@@ -55,6 +55,9 @@ describe("playwright.config.ts — 규약 C4 확인증 프로젝트 격리(백�
       "evidence-panel.spec.ts",
       "evidence-pick-audit.spec.ts",
       "evidence-pick.spec.ts",
+      "evidence-reconcile-audit-capture.spec.ts",
+      "evidence-reconcile-audit.spec.ts",
+      "evidence-reconcile.spec.ts",
     ];
     expect(byName("desktop")?.testIgnore).toEqual(expect.arrayContaining(wipers));
     expect(byName("desktop-evidence")?.testMatch).toEqual(wipers);

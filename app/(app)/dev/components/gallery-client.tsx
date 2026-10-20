@@ -141,7 +141,8 @@ const PASTE_ROWS: PasteSampleRow[] = [
 
 const PASTE_COLUMNS: TableColumn<PasteSampleRow>[] = [
   { key: "name", header: "항목", priority: "p1", cell: (row) => row.name },
-  { key: "visibility", header: "공개", priority: "p1", editability: (row) => (row.locked ? "locked" : "edit"), cell: (row) => row.visibility },
+  // 실제 증빙 표처럼 P2 — 폰(<700)에서는 접힌 줄로 간다(DOM 감사 D2 · §7-3 P1 = 항목 + 상태).
+  { key: "visibility", header: "공개", priority: "p2", editability: (row) => (row.locked ? "locked" : "edit"), cell: (row) => row.visibility },
   { key: "status", header: "상태", priority: "p1", cell: (row) => <StatusTag status={row.locked ? "확인 필요" : "미공개"} variant="text" /> },
 ];
 

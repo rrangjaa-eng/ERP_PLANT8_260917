@@ -260,6 +260,40 @@ test.describe("S8 대리 등록 · S2 행 행동 배타(06.1-09 Task 3)", () => 
     await expect(proxyLink).toBeFocused();
   });
 
+  // 【(a)】 G-06.1-40 결정 — 저장도 출발 목록으로 돌아오고, 토스트가 닫히면 registered만 걷힌다(거르개 그대로).
+  test("(G-06.1-40 저장) 전체+카드에서 연 S8 저장 → 출발 + registered · 토스트 `카드 사용 등록 · {합계}` → 토스트 뒤 출발 글자 그대로 · 그 줄 `붙음`", async ({ page }) => {
+    const holder = await cardHolder();
+    const last4 = await addLotteCard({ kind: "personal", holderUserId: holder.id });
+    const manager = await loginAs(page, await proxyRole());
+    const t = total();
+    const lonely = await line(manager, last4, { total: t, date: "2026.03.25" });
+    const origin = "/expenses/evidence?state=all&type=card_receipt";
+    const proxyLink = page.locator(`a[href*="evidence=${lonely}"]`);
+
+    await page.goto(origin);
+    await expect(proxyLink).toHaveCount(1);
+    await waitForHydration(proxyLink);
+    await proxyLink.click();
+    const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
+    await expect(sheet).toBeVisible();
+    const team = sheet.getByRole("radio", { name: "팀 비용" });
+    await waitForHydration(team);
+    await team.check();
+    await sheet.getByRole("button", { name: /^카드 사용 등록/ }).click();
+    await expect(page).toHaveURL(new RegExp(`${origin.replace("?", "\\?")}&registered=[0-9a-f-]{36}$`));
+    await expect(page.getByRole("status").filter({ hasText: `카드 사용 등록 · ${won(t)}` })).toBeVisible();
+    // 토스트가 4초 뒤 저절로 닫히면 registered만 걷힌다.
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return url.pathname + url.search;
+      }, { timeout: 15_000 })
+      .toBe(origin);
+    await expect(evidenceRows(page)).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "대리 등록", exact: true })).toHaveCount(0);
+    expect(await usagesOn(last4, holder.id)).toHaveLength(1);
+  });
+
   // 열린 리디렉션 — 남이 만든 `from`은 증빙 목록이 아니면 지금 닫을 곳으로 떨어진다(T-06.1-16-01).
   test("(G-06.1-40 적대 from) `from=//evil.example/x`로 연 S8을 Esc로 닫으면 같은 출처 `/expenses/evidence?state=unmatched`", async ({ page }) => {
     const holder = await cardHolder();

@@ -10,6 +10,7 @@ import {
   listEvidenceTeamOptions,
 } from "@/domain/evidence-records";
 import { loadCardUsageForEdit } from "@/domain/corp-card-usages";
+import { evidenceReturnHref } from "@/lib/evidence-return";
 import { formatKrw } from "@/lib/format-number";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { EvidenceTable } from "./evidence-table";
@@ -47,7 +48,10 @@ export default async function EvidencePage({ searchParams }: { searchParams: Pro
   const registeredId = firstParam(params.registered);
   const registered = registeredId ? await loadCardUsageForEdit(viewer, registeredId) : null;
   const registeredAmount = registered?.usage.currency === "KRW" ? registered.usage.amount : undefined;
-  const landingHref = `/expenses/evidence?state=${firstParam(params.state) ?? "unmatched"}`;
+  // G-06.1-40 — 토스트가 닫히면 `registered`만 걷는다(출발 거르개 그대로).
+  const landingQuery = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) for (const one of Array.isArray(value) ? value : value === undefined ? [] : [value]) landingQuery.append(key, one);
+  const landingHref = evidenceReturnHref(`/expenses/evidence?${landingQuery.toString()}`);
   return (
     <ListScreen title="증빙">
       {registeredAmount !== undefined ? <RegisteredToast message={`카드 사용 등록 · ${formatKrw(registeredAmount)}`} href={landingHref} /> : null}

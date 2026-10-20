@@ -114,6 +114,8 @@ export type ExpenseFormProps = {
   route: ReactNode;
   /** 06.1-08 D-1: 붙은 증빙 읽기 행 · 증빙 고르기 트리거 — 폼 「증빙」 칸(05 첨부와 같은 자리) 안에 그린다. 새 문서는 없다. */
   evidenceRecords?: ReactNode;
+  /** 06.1-08 붙은 증빙 기록(살아 있는 붙임) 수 — 붙이기 · 떼기 뒤 제출 막힘을 다시 잰다(G-06.1-29). 새 문서는 0. */
+  linkedEvidenceCount?: number;
 };
 
 const DATE_EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
@@ -144,7 +146,7 @@ function FxField({ initial, error, onRaw, below }: { initial: number; error: str
   );
 }
 
-export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords }: ExpenseFormProps) {
+export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords, linkedEvidenceCount = 0 }: ExpenseFormProps) {
   const router = useRouter();
   const [evidenceType, setEvidenceType] = useState(data.evidenceType ?? "");
   const [paymentMethod, setPaymentMethod] = useState(data.paymentMethod ?? "");
@@ -247,7 +249,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
 
   // 계산에 드는 칸(증빙 종류 · 공급가액 · 통화 · 환율 · 지급 예정일 · 분할 지급)이 바뀌면 짧은 지연 뒤 미리보기를 부른다. 늦게 온 응답이
   // 새 응답을 덮지 않게 요청 순번으로 거른다. 첫 그림은 서버가 보낸 값이라 부르지 않는다.
-  // 막힘 판정에 드는 지급 방식 · 증빙 파일 수도 본다(파일을 올리거나 떼면 서버가 다시 그린 files가 바뀐다).
+  // 막힘 판정에 드는 지급 방식 · 증빙 파일 수 · 붙은 증빙 기록 수도 본다(파일을 올리거나 떼면 · 기록을 붙이거나 떼면 서버가 다시 그린 값이 바뀐다).
   // 다른 탭에서 지급처 계좌를 등록하고 돌아오면 막힘이 지난 값으로 남는다 — 탭이 다시 보일 때마다 순번을 올려 미리보기를 다시 부른다.
   const [returnTick, setReturnTick] = useState(0);
   useEffect(() => {
@@ -271,6 +273,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     date,
     installment,
     files.length,
+    linkedEvidenceCount,
     teamKind,
     usageDate,
     content,
@@ -352,7 +355,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
   }, [previewKey, data.id]);
 
   // 1차 옆 이유 — 서버 첫 이유(①~⑨)와 올리는 행 수를 한 함수로(D2: 올리는 중이면 ⑧ 대신 `증빙 올리는 중`).
-  const server = serverBlock?.target === "evidence" && (evidenceAdded || files.length > 0) ? null : serverBlock;
+  const server = serverBlock?.target === "evidence" && (evidenceAdded || files.length > 0 || linkedEvidenceCount > 0) ? null : serverBlock;
   const block = submitBlockReason({ server, uploadingCount: uploading });
   const blockHref = block?.tone === "block" ? (server?.href ?? null) : null;
 

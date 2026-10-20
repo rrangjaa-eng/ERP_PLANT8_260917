@@ -62,6 +62,84 @@ test("작성자 PM: 임시 지출결의 → 증빙 고르기 1 → 검색 칸 �
   await page.context().close();
 });
 
+// 06.1 UAT #29 — 기록 붙임 · 떼기 뒤 같은 화면 제출 1차 재판정(.planning/debug/0601-pick-submit-disabled.md)
+test("(G-06.1-29) 증빙 고르기로 붙인 직후 — 새로 고침 없이 제출 1차가 열리고 비고는 그대로이며 제출된다", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  const trigger = page.getByRole("button", { name: "증빙 고르기 1" });
+  await waitForHydration(trigger);
+  const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+  await expect(submit).toHaveAttribute("aria-disabled", "true");
+  const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
+  expect(describedBy).not.toBe("");
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(/^증빙 없음 · /);
+
+  const memo = page.getByLabel("비고");
+  await memo.fill("저장 안 한 비고");
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await expect(page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible")).toHaveCount(1);
+
+  await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+  await expect(memo).toHaveValue("저장 안 한 비고");
+  await submit.click();
+  await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
+  await page.context().close();
+});
+
+test("(G-06.1-29 대칭) 붙은 채 연 문서에서 마지막 기록을 떼면 — 새로 고침 없이 제출 1차가 다시 막히고 이유 줄이 선다", async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  const trigger = page.getByRole("button", { name: "증빙 고르기 1" });
+  await waitForHydration(trigger);
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await expect(page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible")).toHaveCount(1);
+
+  await page.reload();
+  const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+  const detach = detachButton(page);
+  await waitForHydration(detach);
+  await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+  await detach.click();
+  const dialog = page.getByRole("dialog", { name: "증빙 떼기" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("사유").fill("잘못 고름");
+  await dialog.getByRole("button", { name: /^증빙 떼기/ }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+
+  await expect(submit).toHaveAttribute("aria-disabled", "true");
+  const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
+  expect(describedBy).not.toBe("");
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(/^증빙 없음 · /);
+  await page.context().close();
+});
+
 // 번호 있는 반려 문서(06.1-06 evidence-attach.spec.ts와 같은 갈래) — 경영관리 여러 장 붙이기의 문서.
 async function returnedExpense(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E): Promise<{ expenseId: string; number: string }> {
   const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");

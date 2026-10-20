@@ -707,7 +707,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                     </RowAction>
                   ) : row.actionBlockedReason ? (
                     // PA-ALLBLOCKED · SYSTEM §7-3 — 막힌 행동(붙이기 · 대리 등록)의 컨트롤을 그리지 않고 그 자리에 이유를 한 번 쓴다(글자 · 버튼 아님). 끝의 보관은 그대로.
-                    <span>{row.actionBlockedReason}</span>
+                    <span className={tableStyles.selectReason}>{row.actionBlockedReason}</span>
                   ) : null}
                   {row.rowAction ? (
                   <RowAction

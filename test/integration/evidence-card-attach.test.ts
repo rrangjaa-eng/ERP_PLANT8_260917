@@ -578,4 +578,62 @@ describe("S8 대리 등록(06.1-09 Task 3)", () => {
     expect(await usagesOn(fx.cardA.id)).toHaveLength(1);
     expect(await liveLinks(a.id)).toEqual([{ recordId: line.id, attachMode: "registrar" }]);
   });
+
+  it("(cso D1) 같은 키로 다른 증빙 둘 — 사전 판독 뒤 A(카드 a)가 먼저 커밋하면 B(카드 b · 다른 합계)는 `다른 저장이 먼저 됨 · 새로 고침` · A의 카드 사용에 붙지 않는다", async () => {
+    const fx = await proxyFx();
+    const a = await lonelyLine(fx);
+    const tb = total();
+    const b = await cardRecordWith(fx, { last4: fx.cardB.last4, approvalNo: approval(), total: won(tb), vat: won(Math.floor(tb / 11)), date: day() });
+    const key = randomUUID();
+    let usageOfA = "";
+    const message = await messageOf(
+      createCardUsageFromEvidence(fx.manager, { evidenceId: b, chosen: team, idempotencyKey: key }, {
+        afterPreRead: async () => {
+          usageOfA = (await createCardUsageFromEvidence(fx.manager, { evidenceId: a.id, chosen: team, idempotencyKey: key })).id;
+        },
+      }),
+    );
+    expect(message).toBe("다른 저장이 먼저 됨 · 새로 고침");
+    expect(await liveLinks(usageOfA)).toEqual([{ recordId: a.id, attachMode: "registrar" }]);
+    expect(await usageRow(usageOfA)).toMatchObject({ corpCardId: fx.cardA.id, totalAmountKrw: a.total });
+    expect(await usagesOn(fx.cardB.id)).toEqual([]);
+  });
+
+  it("(검토 P3-1) 경합 재시도는 카드 사용 → 증빙 행 차례로 잠근다 — 다른 연결이 카드 사용을 쥔 동안 증빙 행은 비어 있다(NOWAIT) · 풀린 뒤 붙임 1", async () => {
+    const fx = await proxyFx();
+    const line = await lonelyLine(fx);
+    const key = randomUUID();
+    const holder = await pool.connect();
+    let winner = "";
+    try {
+      const run = createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: key }, {
+        // 사전 판독 뒤에 같은 줄 값 · 같은 키 · 같은 등록자의 카드 사용을 만들어 둔다(앞서 만들면 완화 후보라 대리 등록이 막힌다) → 본 tx는 23505 → 재시도.
+        afterPreRead: async () => {
+          winner = (await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: line.date, totalKrw: line.total })).id;
+          await db.update(corpCardUsages).set({ idempotencyKey: key, registeredBy: fx.manager.id, registeredVia: "proxy" }).where(eq(corpCardUsages.id, winner));
+          await holder.query("BEGIN");
+          await holder.query("SELECT id FROM corp_card_usages WHERE id = $1 FOR UPDATE", [winner]);
+        },
+      });
+      await waitForLockWaiter(pool);
+      const probe = await pool.connect();
+      try {
+        await probe.query("BEGIN");
+        const free = await probe.query("SELECT id FROM evidence_records WHERE id = $1 FOR UPDATE NOWAIT", [line.id]).then(
+          () => true,
+          () => false,
+        );
+        await probe.query("ROLLBACK");
+        expect(free).toBe(true);
+      } finally {
+        probe.release();
+      }
+      await holder.query("COMMIT");
+      expect((await run).id).toBe(winner);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      holder.release();
+    }
+    expect(await liveLinks(winner)).toEqual([{ recordId: line.id, attachMode: "registrar" }]);
+  });
 });

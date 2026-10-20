@@ -9,6 +9,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { upsertVisibility } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
@@ -57,6 +58,9 @@ async function setup(): Promise<Fx> {
   const teamName = "기획1팀";
   const pm = await makePerson("대사PM", DEFAULT_ROLE_ID, teamName);
   const intake = await createIntakeViewer();
+  // 대사 덮기는 두 금액 보임일 때만(cso D2) — 경영관리 계급처럼 카드 사용 금액도 보이게 한다(새 계급은 행이 없으면 숨김).
+  if (!intake.roleId) throw new Error("계급 없음");
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: intake.roleId, infoItem: "card_usage.amount", visible: true });
   const cardA = await lotteCard({ kind: "personal", holderUserId: pm.id });
   const cardB = await lotteCard({ kind: "personal", holderUserId: pm.id });
   return { pm, intake, teamName, cardA, cardB };
@@ -250,6 +254,25 @@ describe("대사 — 덮기 막힘(카드 R3 · P2-C4)", () => {
     expect(await amountLogs(blocked.id)).toHaveLength(0);
     expect(await liveLinks(fine.id)).toHaveLength(1);
     expect(await usageRow(fine.id)).toMatchObject({ totalAmountKrw: 1_238_000 });
+  });
+
+  it("(cso D2) 등록자가 금액(card_usage.amount · evidence.amount) 중 하나라도 못 보면 값 바뀌는 짝은 붙임 0 · 덮기 0 · 기록 0 / 값 같은 짝은 붙고 승인번호만 채움", async () => {
+    for (const hidden of ["card_usage.amount", "evidence.amount"]) {
+      const fx = await setup();
+      if (!fx.intake.roleId) throw new Error("계급 없음");
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: fx.intake.roleId, infoItem: hidden, visible: false });
+      const [a1, a2] = [approval(), approval()];
+      const differ = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000, approvalNo: a1 });
+      const same = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardB.id, usedOn: USED_ON, totalKrw: 50_000 });
+
+      const result = await registerFixtureFile(fx.intake, lotteFixture([line(fx.cardB.last4, a1, 204_100, 18_554), line(fx.cardB.last4, a2, 50_000, 4_545)]));
+      expect(result).toMatchObject({ cardMatched: 1, cardUnmatched: 1 });
+      expect(await liveLinks(differ.id)).toEqual([]);
+      expect(await usageRow(differ.id)).toMatchObject({ corpCardId: fx.cardA.id, totalAmountKrw: 200_000, version: differ.version });
+      expect(await amountLogs(differ.id)).toHaveLength(0);
+      expect(await liveLinks(same.id)).toEqual([{ recordId: await recordIdOf(result.batchId, a2), attachMode: "reconcile" }]);
+      expect(await usageRow(same.id)).toMatchObject({ approvalNo: a2, totalAmountKrw: 50_000 });
+    }
   });
 
   it("완료 프로젝트: 값이 같으면(승인번호만) 붙임 · 승인번호 채움 / 합계가 다르면 붙임 0 · 덮기 0 · 기록 0", async () => {

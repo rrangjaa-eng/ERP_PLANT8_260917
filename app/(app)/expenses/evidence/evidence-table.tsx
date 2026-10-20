@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
@@ -304,6 +304,8 @@ export type EvidenceTableProps = { viewerId: string; list: EvidenceRecordList; t
 
 export function EvidenceTable({ viewerId, list, teams, filterOptions }: EvidenceTableProps) {
   const router = useRouter();
+  // 결과 0건일 때 `파일 받기`의 비활성 이유 = 빈 줄(검토 P3-5).
+  const emptyReasonId = useId();
   const [overlay, setOverlay] = useState<SavedOverlay | null>(null);
   const saved = overlay?.list === list ? overlay : null;
   const rows = (saved ? list.rows.map((view) => (view.id !== undefined ? (saved.rows.get(view.id) ?? view) : view)) : list.rows).flatMap(rowFromView);
@@ -902,7 +904,10 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             ))}
             {/* 06.1-13 G6 — 선택 칸 뒤 · 묶음 표시 앞 2차 `파일 받기`. 편집 폭(≥1024)에서만(SP-65-2 · 카드 G9b 「넓은 화면만」). */}
             {editableWidth ? (
-              <EvidenceExportButton query={{ state: filters.state, type: filters.type, period: filters.period, ...(filters.batch ? { batch: filters.batch } : {}) }} />
+              <EvidenceExportButton
+                query={{ state: filters.state, type: filters.type, period: filters.period, ...(filters.batch ? { batch: filters.batch } : {}) }}
+                emptyReasonId={list.total.count === 0 ? emptyReasonId : undefined}
+              />
             ) : null}
             {/* DA-19 — 결과 행 링크로 묶음이 걸리면 줄 수가 줄어든 이유(파일 이름)와 그 조건만 지우는 3차. */}
             {list.batch ? (
@@ -962,7 +967,9 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       ) : null}
 
       {rows.length === 0 ? (
-        <ListEmpty message={emptyState.message} action={emptyState.action} />
+        <div id={emptyReasonId}>
+          <ListEmpty message={emptyState.message} action={emptyState.action} />
+        </div>
       ) : (
         <div onKeyDownCapture={pressCellAction}>
         <Table

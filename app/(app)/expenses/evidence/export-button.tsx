@@ -12,7 +12,9 @@ export type EvidenceExportQuery = { state: string; type: string; period: string;
 
 const FAILED = "파일 받기 · 실패 · 다시 시도";
 
-export function EvidenceExportButton({ query }: { query: EvidenceExportQuery }) {
+// emptyReasonId — 결과 0건이면 화면의 빈 줄(「조건에 맞는 증빙이 없습니다」) id. 머리줄뿐인 파일은 뜻이 없어 비활성(aria-disabled — 네이티브 disabled
+// 아님 · §7-1 DR-11)이고, 이유는 이미 화면에 있는 그 줄을 가리킨다 — 버튼 옆에 같은 말을 또 쓰지 않는다(화면 사용성 원칙 · 검토 P3-5).
+export function EvidenceExportButton({ query, emptyReasonId }: { query: EvidenceExportQuery; emptyReasonId?: string }) {
   const [failed, setFailed] = useState(false);
   const { execute, isExecuting } = useAction(exportEvidenceRecordsAction, {
     onSuccess: ({ data }) => {
@@ -40,6 +42,8 @@ export function EvidenceExportButton({ query }: { query: EvidenceExportQuery }) 
         type="button"
         variant="secondary"
         pending={isExecuting}
+        disabled={emptyReasonId !== undefined}
+        aria-describedby={emptyReasonId}
         onClick={() => {
           setFailed(false);
           execute(query);

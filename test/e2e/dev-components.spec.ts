@@ -379,6 +379,28 @@ test.describe("로그인한 뒤", () => {
     expect(dialogBox && dialogBox.y >= 0 && dialogBox.y + dialogBox.height <= page.viewportSize()!.height).toBe(true);
   });
 
+  // PR #253 CI(evidence-attach-audit S4) — 목록이 넘쳐 스크롤되는데 가리키는 행이 없으면 목록 안에 탭 정지가 없어 axe scrollable-region-focusable.
+  // 로빙 행 하나(가리키는 행, 없으면 첫 행)가 늘 tabindex 0이어야 한다 — Tab으로 목록에 들어가면 그 행이 가리키는 행이 된다(검색 칸 ↓와 같다).
+  test("고르기 목록 — 넘쳐 스크롤되는 목록에 가리키는 행이 없어도 키보드로 닿는다(axe scrollable-region-focusable 0)", async ({ page }) => {
+    const dialog = page.locator("dialog:modal");
+    const search = dialog.getByRole("textbox", { name: "견적 줄 검색" });
+    await page.getByRole("button", { name: "줄 고르기 열기" }).click();
+    await expect(search).toBeFocused();
+    await search.fill("많음");
+    await expect(dialog.locator('[data-pick-id="m120"]')).toHaveCount(1);
+    await expect(dialog.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 5000 });
+    const body = dialog.locator("div:has(> ul[role='listbox'])").first();
+    expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    const results = await new AxeBuilder({ page }).include("dialog").withRules(["scrollable-region-focusable"]).analyze();
+    expect(results.violations.map((v) => v.id)).toEqual([]);
+    // 탭 정지는 목록 안에 정확히 하나.
+    expect(await dialog.locator("[role=option]").evaluateAll((els) => els.filter((el) => (el as HTMLElement).tabIndex >= 0).length)).toBe(1);
+    await search.press("Tab");
+    const first = dialog.getByRole("option").first();
+    await expect(first).toBeFocused();
+    await expect(first).toHaveAttribute("aria-selected", "true");
+  });
+
   // 06.2-07 Task 1 — SP-62-1 다중 고르기 변형 트레이서: 키보드로 한 명을 고르면 1차 `{동작} 1`이 켜지고 Enter로 끝난다.
   test("다중 고르기(SP-62-1) — 키보드로 한 명을 고르면 1차 {동작} 1이 켜지고 면 없이 비대화형 표시로 고름이 보이며 Enter로 끝난다", async ({ page }) => {
     const dialog = page.locator("dialog:modal");

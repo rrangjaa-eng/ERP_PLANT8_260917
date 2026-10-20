@@ -368,7 +368,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
   const server =
     serverBlock?.target === "evidence" && (evidenceAdded || files.length > 0 || (linkedEvidenceCount > 0 && !linkedPending))
       ? null
-      : linkedPending && serverBlock === null && noEvidence
+      : linkedPending && serverBlock === null && noEvidence && !prepaid
         ? NEW_DOC_BLOCK
         : serverBlock;
   const block = submitBlockReason({ server, uploadingCount: uploading });

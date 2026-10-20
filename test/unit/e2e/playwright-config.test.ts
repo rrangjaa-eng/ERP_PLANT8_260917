@@ -54,6 +54,8 @@ describe("playwright.config.ts — 규약 C4 확인증 프로젝트 격리(백�
       "evidence-list-audit.spec.ts",
       "evidence-panel-audit.spec.ts",
       "evidence-panel.spec.ts",
+      "evidence-paste-audit-capture.spec.ts",
+      "evidence-paste-audit.spec.ts",
       "evidence-paste.spec.ts",
       "evidence-pick-audit.spec.ts",
       "evidence-pick.spec.ts",

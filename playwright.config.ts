@@ -69,6 +69,8 @@ const EVIDENCE_WIPE_SPECS = [
   "evidence-list-audit.spec.ts",
   "evidence-panel-audit.spec.ts",
   "evidence-panel.spec.ts",
+  "evidence-paste-audit-capture.spec.ts",
+  "evidence-paste-audit.spec.ts",
   "evidence-paste.spec.ts",
   "evidence-pick-audit.spec.ts",
   "evidence-pick.spec.ts",

@@ -1142,7 +1142,7 @@ export async function judgeCardCandidates(viewer: Viewer, records: readonly Card
 
 // ── 06.1-09 S8 대리 등록(C-F14 · PA-S8-KEY · PA-S8-STALE · PA-S8-RACE · E5 · C2) ─────────────────────────────────────────────
 // 짝 없는 카드 줄(완화 후보 0 — S2 `canProxy`와 같은 판정)에서 06 카드 사용을 만들고 그 줄을 한 트랜잭션에 붙인다. 카드 · 사용일 · 합계 · 증빙 종류는
-// 서버가 증빙에서 다시 읽는다(브라우저 값을 믿지 않는다). 가맹점 거래처는 채우지도 만들지도 않는다 — 260907 `server/src/card-uses.ts:1196`
+// 서버가 증빙에서 다시 읽는다(브라우저 값을 믿지 않는다). 가맹점 거래처는 채우지도 만들지도 않는다 — 260907 `server/src/card-uses.ts:1191`
 // 답하기 길이 `purchasePlace: null`로 넣고, `server/src/receipts.ts:3200`이 카드 전표에서 거래처를 만들지 않는다(한 번 쓰고 마는 가맹점이 쌓인다).
 // 파일의 가맹점 글자는 폼에 읽기 텍스트로만 보인다. 06 domain은 이 파일을 import하지 않는다(순환 없음).
 

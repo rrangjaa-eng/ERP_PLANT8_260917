@@ -341,7 +341,8 @@ async function attachToCardUsage(viewer: Viewer, keys: ViewerKeys, recordId: str
     const { created } = await attachLinkInTx(tx, viewer, { recordId: record.id, owner: { kind: "corp_card_usage", id: usage.id }, mode: "registrar" }, { afterLock: deps?.afterLock });
     if (!created) return { created };
     const [lockedRecord] = await lockRecordsForUpdate(viewer, [record.id], tx);
-    if (!lockedRecord || lockedRecord.version !== record.version) throw new UserFacingError(RECORD_NOT_FOUND);
+    // attachLinkInTx가 잠근 채 붙임과 함께 증빙 version을 하나 올린다(p32 PR-C P3-1) — 사전 판독 뒤 다른 쓰기가 없었으면 정확히 +1이다.
+    if (!lockedRecord || lockedRecord.version !== record.version + 1) throw new UserFacingError(RECORD_NOT_FOUND);
 
     if (patchChangesValues(patch) && basis) {
       const blocks = await cardUsageOverwriteBlocks(viewer, [{ usageId: usage.id, totalKrw: patch.total?.after ?? null, corpCardId: patch.card?.after.id ?? null }], basis, tx);
@@ -1066,7 +1067,8 @@ async function attachAuthorToCardUsage(viewer: Viewer, ids: readonly string[], u
     const { created } = await attachLinkInTx(tx, viewer, { recordId, owner: { kind: "corp_card_usage", id: usage.id }, mode: "author" }, { afterLock: deps?.afterLock });
     if (!created) return { attached: 0 };
     const [lockedRecord] = await lockRecordsForUpdate(viewer, [recordId], tx);
-    if (!lockedRecord || lockedRecord.version !== pre.version) throw new UserFacingError(staleMessage(lockedRecord?.updatedAt ?? new Date()));
+    // 붙임이 version을 하나 올린다(attachLinkInTx) — 사전 판독 version + 1이 아니면 그사이 다른 쓰기가 있었다.
+    if (!lockedRecord || lockedRecord.version !== pre.version + 1) throw new UserFacingError(staleMessage(lockedRecord?.updatedAt ?? new Date()));
     if (patch.approvalNo && patch.approvalNo !== usage.approvalNo) {
       if ((await fillCardUsageApprovalNo(viewer, { id: usage.id, version: usage.version, approvalNo: patch.approvalNo }, tx)) === null) throw cardSlipNotFound();
     }

@@ -154,15 +154,14 @@ test.describe("지급 완료 검색 (06.5 D-6508)", () => {
     await expect(rowOf(page, fx.lines.retry.itemName)).toHaveCount(0);
 
     // 월 select가 바뀐 이동이 끝난 뒤 다음 goto를 해야 한다 — q · status만 보면 이동 전 주소로도 통과해 goto가 ERR_ABORTED로 끊긴다.
+    // 필터 줄은 GET 폼이라 같은 달을 다시 골라도(selectOption은 값이 같아도 change를 쏜다) 문서 이동이 일어난다 — 처음 주소엔 `month`가
+    // 없고 폼 제출 주소엔 늘 있으므로 `month`가 실린 주소를 기다린다(PR #254 CI e2e (1): 같은 달이라 이동 전 주소로 통과 → goto ERR_ABORTED).
     const monthSelect = page.getByRole("combobox", { name: "월" });
-    const monthBefore = await monthSelect.inputValue();
+    await waitForHydration(monthSelect);
     const monthFirst = await monthSelect.locator("option").first().getAttribute("value");
     await monthSelect.selectOption({ index: 0 });
     await expect(page).toHaveURL(
-      (url) =>
-        url.searchParams.get("q") === tracer.number &&
-        url.searchParams.get("status") === "지급 완료" &&
-        (monthFirst === monthBefore || url.searchParams.get("month") === monthFirst),
+      (url) => url.searchParams.get("q") === tracer.number && url.searchParams.get("status") === "지급 완료" && url.searchParams.get("month") === monthFirst,
     );
     await page.waitForLoadState();
 

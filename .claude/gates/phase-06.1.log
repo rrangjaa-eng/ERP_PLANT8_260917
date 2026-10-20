@@ -22,3 +22,5 @@ design-review 2026-10-20T08:50Z session=24becde7-2474-551b-a43b-f4d8bd69b460 (06
 qa 2026-10-20T08:50Z session=24becde7-2474-551b-a43b-f4d8bd69b460 (06.1 PR-D — /qa CI=true 프로덕션 빌드 Playwright 실측(사용자 대체 승인 2026-10-03), 카드 소지자·등록만·경영관리·관리자·PM·팀장·대표 × 375·320·768·1280, 건강 점수 96, 540 통과 · 실패 2(시험 충돌 4810c70 고침 · 장시간 수화 대기 단독 재실행 통과), 고침 뒤 desktop-evidence 77 · desktop 39 통과, 보고서 /mnt/project-files/06.1-exec/pr-d/qa.md)
 gsd-verify-work 2026-10-20T13:22Z session=d96c8a1a-455f-5014-9ef1-1ad0e417edbd
 review 2026-10-20T19:53Z session=036dde07-b7fb-5176-95e2-29064657648d
+design-review 2026-10-20T20:29Z session=036dde07-b7fb-5176-95e2-29064657648d
+qa 2026-10-20T20:38Z session=036dde07-b7fb-5176-95e2-29064657648d

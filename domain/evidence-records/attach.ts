@@ -1212,12 +1212,15 @@ async function proxyRefusal(viewer: Viewer, evidenceId: string): Promise<Error> 
 
 // 트랜잭션 안 공통 꼬리 — 완화 후보 재조회(E5 — 새로 만든 행 제외) → 승인번호 채움 → 06.1-06 attachLinkInTx(보관 · 붙음 재검사) → 기록.
 async function attachProxyLink(tx: DbOrTx, viewer: Viewer, ctx: { evidenceId: string; usage: CreatedCardUsage; line: RelaxedLine; scope: CardUsageScope }, deps: CardProxyDeps): Promise<void> {
+  // 전역 차례 카드 사용 → 증빙 행(검토 P3-1 — 경합 재시도의 usage는 이미 커밋된 행이다). 같은 키 재생 · 경합 패자가 받은 행이 이 줄과
+  // 카드 · 사용일 · 합계가 다르면 다른 증빙으로 만든 행이다 — 붙이지 않는다(cso D1).
+  const locked = await lockCardUsageForUpdate(viewer, ctx.usage.id, tx);
+  if (!locked || locked.archivedAt !== null) throw cardSlipNotFound();
+  if (locked.corpCardId !== ctx.line.corpCardId || locked.usedOn !== ctx.line.usedOn || locked.totalAmountKrw !== ctx.line.totalKrw) throw cardSlipNotFound();
   const others = await findRelaxedCandidates(viewer, { scope: ctx.scope, lines: [ctx.line], excludeIds: [ctx.usage.id] }, tx);
   if (others.some((row) => isRelaxedHit(ctx.line, { approvalNo: row.approvalNo, usedOn: row.usedOn, totalKrw: row.totalAmountKrw }))) throw new UserFacingError(CARD_USAGE_EXISTS);
   const { created } = await attachLinkInTx(tx, viewer, { recordId: ctx.evidenceId, owner: { kind: "corp_card_usage", id: ctx.usage.id }, mode: "registrar" });
   if (!created) return;
-  const locked = await lockCardUsageForUpdate(viewer, ctx.usage.id, tx);
-  if (!locked || locked.archivedAt !== null) throw cardSlipNotFound();
   if (ctx.line.approvalNo && locked.approvalNo === null) {
     if ((await fillCardUsageApprovalNo(viewer, { id: locked.id, version: locked.version, approvalNo: ctx.line.approvalNo }, tx)) === null) throw cardSlipNotFound();
   }

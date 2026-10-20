@@ -685,8 +685,10 @@ test("P4 경영관리 반려 문서 — 22 후보 · 넘침 줄 · 20건 상한 
   const v = await axe(page, "dialog[open]");
   record("axe 위반(S5 상한)", 1280, role, url, v, "[]", v.length === 0);
   await shot(page, "p4-cap-1280");
-  // 경합 — 고른 것 중 하나를 다른 문서에 먼저 붙인다.
-  await insertLinkFixture({ recordId: ids[0] ?? "", ownerId: randomUUID(), attachedBy: manager.id });
+  // 경합 — 고른 것 중 하나를 다른 문서에 먼저 붙인다. 22건이 점수 · 날짜 차가 같아 순위가 무작위 uuid 순이므로 ids[0]이 상위 20(고른 것) 밖일 수 있다
+  // (그러면 경합 없이 붙고 창이 닫힌다 — PR #254 CI e2e (2)). 실제로 고른 목록(listed)에 있는 증빙을 고른다.
+  const takenIndex = Array.from({ length: 22 }, (_, i) => `감사8상한${String(i).padStart(2, "0")}`).findIndex((n) => listed.includes(n));
+  await insertLinkFixture({ recordId: ids[takenIndex] ?? "", ownerId: randomUUID(), attachedBy: manager.id });
   await dialog.locator('[data-ui="primary-button"]').click();
   await expect(dialog.getByText(/^다른 사람이 먼저 붙임/)).toBeVisible({ timeout: 15_000 }).catch(() => undefined);
   const race = await dialog.evaluate((el) => ({ line: [...el.querySelectorAll("*")].find((n) => n.children.length === 0 && /^다른 사람이 먼저 붙임/.test((n.textContent ?? "").trim()))?.textContent?.trim() ?? null, refresh: [...el.querySelectorAll("button")].filter((b) => (b.textContent ?? "").trim() === "새로 고침").length, open: el.hasAttribute("open") }));

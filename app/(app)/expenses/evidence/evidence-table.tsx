@@ -36,6 +36,7 @@ import type {
 } from "@/domain/evidence-records";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { archiveEvidenceRecordAction, getEvidenceDetailAction, publishEvidenceRecordsAction, restoreEvidenceRecordAction } from "./actions";
+import { EvidenceExportButton } from "./export-button";
 import { IntakeZone } from "./intake-zone";
 import { PickDocumentDialog, type PickDocumentTarget } from "./pick-document-dialog";
 import { resolvePublishPaste, type PublishValue } from "./publish-paste";
@@ -896,6 +897,10 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                 </select>
               </div>
             ))}
+            {/* 06.1-13 G6 — 선택 칸 뒤 · 묶음 표시 앞 2차 `파일 받기`. 편집 폭(≥1024)에서만(SP-65-2 · 카드 G9b 「넓은 화면만」). */}
+            {editableWidth ? (
+              <EvidenceExportButton query={{ state: filters.state, type: filters.type, period: filters.period, ...(filters.batch ? { batch: filters.batch } : {}) }} />
+            ) : null}
             {/* DA-19 — 결과 행 링크로 묶음이 걸리면 줄 수가 줄어든 이유(파일 이름)와 그 조건만 지우는 3차. */}
             {list.batch ? (
               <>

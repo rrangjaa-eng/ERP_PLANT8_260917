@@ -64,6 +64,7 @@ const DESKTOP_SETTINGS_SPECS = ["settings-approval-route.spec.ts", "phase6-keys.
 const EVIDENCE_WIPE_SPECS = [
   "evidence-attach-audit.spec.ts",
   "evidence-attach.spec.ts",
+  "evidence-export.spec.ts",
   "evidence-intake.spec.ts",
   "evidence-list-audit.spec.ts",
   "evidence-panel-audit.spec.ts",

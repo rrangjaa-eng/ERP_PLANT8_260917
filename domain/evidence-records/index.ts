@@ -453,6 +453,16 @@ export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQue
   };
 }
 
+// 06.1-13 G6(RP-16) — 파일 받기의 앞 단계. 목록과 같은 범위(evidenceScopeFor 한 번) · 같은 거르개(readFilters · repositoryFilters) · 같은 투영
+// (EVIDENCE_RECORD_DTO_SPEC)으로 쪽과 무관하게 필터 결과 전체를 읽는다. 붙임 판정(withAttachFacts — 행 행동 · 2행 링크)은 화면의 쪽 몫이라
+// 싣지 않는다 — 파일 열(날짜 · 거래처 · 금액 셋 · 공개 · 상태)은 그 판정과 무관하다.
+export async function listAllEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<{ filters: EvidenceListFilters; rows: EvidenceRecordView[] }> {
+  const scope = await evidenceScopeFor(viewer);
+  const filters = readFilters(query);
+  const rows = await listRecordsForScope(viewer, scope, repositoryFilters(filters), null);
+  return { filters, rows: await projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC) };
+}
+
 // P-3 · DA-10: 지출결의 목록 필터 줄 끝 `증빙 {N}`의 N — 기본 보기 `할 일`과 같은 집합(확인 필요 포함 · 보관 · 카드 미등록 제외).
 // 등록 권한(evidence.intake 쓰기)이 없으면 null(링크 없음).
 export async function countTodoEvidence(viewer: Viewer): Promise<number | null> {

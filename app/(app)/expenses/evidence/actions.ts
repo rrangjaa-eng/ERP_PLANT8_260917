@@ -15,6 +15,7 @@ import {
   restoreEvidenceRecord,
 } from "@/domain/evidence-records";
 import { EvidenceAmountConflictError, clearRecordNeedsCheck, previewEvidenceAmount, updateEvidenceAmount } from "@/domain/evidence-records/amount";
+import { exportEvidenceRecords } from "@/domain/evidence-records/export";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import "./actions.registry";
 
@@ -124,3 +125,11 @@ export const clearRecordNeedsCheckAction = authedActionClient.schema(clearRecord
     return { conflict: error.message };
   }
 });
+
+// 06.1-13 G6(RP-16) — 증빙 목록 `파일 받기`. 입력은 목록 쿼리와 같은 거르개 모양(모르는 값은 domain이 기본값으로 읽는다 — 목록과 같은 답).
+// 범위 · 투영 · 끌 수 없는 기록은 domain이 한다. 직렬화가 끝난 뒤에만 응답이 생긴다(부분 파일 없음).
+const exportEvidenceInput = z.object({ state: z.string().optional(), type: z.string().optional(), period: z.string().optional(), batch: z.string().optional() });
+
+export const exportEvidenceRecordsAction = authedActionClient
+  .schema(exportEvidenceInput)
+  .action(async ({ parsedInput, ctx }) => exportEvidenceRecords(ctx.viewer, parsedInput));

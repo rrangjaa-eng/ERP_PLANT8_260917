@@ -216,7 +216,11 @@ async function measureRole(page: Page, role: "wide" | "narrow", width: number): 
   const kept = await page.getByLabel("증빙", { exact: true }).inputValue();
   const reRows = await dataRows(page);
   const reTotal = (await page.locator("main section[aria-label='합계'] p").first().textContent())?.trim() ?? "";
-  record("새로 고침 뒤 값 · 건수 유지", width, role, FILE_ONLY_URL, { kept, rows: reRows.length, total: reTotal }, { kept: "file-only", rows: fileRows.length, total: totalText }, kept === "file-only" && reRows.length === fileRows.length && reTotal === totalText);
+  // wide는 전사 지급 대상을 본다 — desktop의 다른 워커가 그사이 지급 대상 문서를 만들면 전체 건수가 는다(PR #254 CI e2e (1): 3건 → 4건).
+  // 그래서 건수는 이 감사가 만든 행(A · B · C · A2)으로 견주고, 합계 줄은 새로 고친 화면의 행 수와 맞는지만 본다.
+  const seeded = (rows: string[]) => [A, B, C, A2].map((name) => has(rows, name));
+  const reN = Number(/· (\d+)건\)/.exec(reTotal)?.[1] ?? NaN);
+  record("새로 고침 뒤 값 · 건수 유지", width, role, FILE_ONLY_URL, { kept, seeded: seeded(reRows), totalRows: reN === reRows.length }, { kept: "file-only", seeded: seeded(fileRows), totalRows: true }, kept === "file-only" && JSON.stringify(seeded(reRows)) === JSON.stringify(seeded(fileRows)) && reN === reRows.length);
 }
 
 for (const role of ["wide", "narrow"] as const) {

@@ -31,6 +31,8 @@ export function EvidenceAttachments(props: {
   onAdded?: () => void;
   // 05-09 문서 화면 — 서버가 정한 파일 행 3차 · 무효 처리 사유 검증 문구(04.1 반려 사유 상수).
   evidenceActions?: EvidenceActions;
+  // 06.1-14(G15 · PA-G15-NOTICE) — 숨긴 파일 · 숨긴 붙은 기록 한 줄. 05 잠김 둘이 먼저이고, 더할 수 있는 사람에게는 Attachments가 잠김 줄을 그리지 않는다.
+  privateNotice?: string | null;
   reasonMessages?: RejectMessages;
 }) {
   const router = useRouter();
@@ -90,7 +92,13 @@ export function EvidenceAttachments(props: {
         canAdd={granted ? granted.canAdd : undefined}
         deletableIds={granted?.deletableFileIds}
         voidable={granted && granted.voidableFileIds.length > 0 ? { ids: granted.voidableFileIds, onVoid: setVoidTarget } : undefined}
-        lockedText={granted?.drafterLocked ? EVIDENCE_DRAFTER_LOCKED_LINE : granted?.completedProjectLocked ? EVIDENCE_COMPLETED_PROJECT_LINE : undefined}
+        lockedText={
+          granted?.drafterLocked
+            ? EVIDENCE_DRAFTER_LOCKED_LINE
+            : granted?.completedProjectLocked
+              ? EVIDENCE_COMPLETED_PROJECT_LINE
+              : (props.privateNotice ?? undefined)
+        }
       />
       {props.reasonMessages ? (
         <VoidEvidenceDialog

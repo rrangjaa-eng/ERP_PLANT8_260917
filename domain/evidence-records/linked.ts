@@ -1,7 +1,9 @@
 import { evidenceRecordRights, readEvidenceOwner, type EvidenceRecordLockLine } from "@/domain/evidence";
+import { privateEvidenceTypeOf, privateFileVisible } from "@/domain/evidence/private-files";
 import { evidenceKindLabel } from "@/domain/evidence-records/status";
 import { codeLabelsOf, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { can } from "@/domain/permissions/can";
+import { evidenceScopeFor, rowScopeFor } from "@/domain/permissions/scope-for";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { canSeePurchaseRequest, purchaseRequestReadScope } from "@/domain/purchase-requests";
@@ -60,6 +62,19 @@ export type LinkedEvidence = {
 
 const PURCHASE_REQUEST_NOT_FOUND = "없는 구매 요청 · 새로 고침";
 
+// 06.1-14(G15 · PA-G15-LINKED · T-061-148): 기록 자신의 증빙 종류가 「올린 사람 · 경영관리만 보기」면 전사 보는 범위 · 증빙 행 범위 all만 본다
+// (기록은 경영관리가 등록하고 작성자는 공개 풀에서 그 종류를 못 고른다 — 06.1-05 ⑴). 올린 사람 갈래가 없다.
+async function visibleRows<Row extends { evidenceType: string }>(viewer: Viewer, rows: readonly Row[]): Promise<Row[]> {
+  const types = new Map<string, boolean>();
+  for (const type of new Set(rows.map((row) => row.evidenceType))) {
+    types.set(type, (await privateEvidenceTypeOf(viewer, type))?.privateToOwner === true);
+  }
+  if (![...types.values()].some(Boolean)) return [...rows];
+  const [rowScope, evidenceScope] = await Promise.all([rowScopeFor(viewer, "expense"), evidenceScopeFor(viewer)]);
+  const scopeAll = rowScope.rows === "all" || evidenceScope.rows === "all";
+  return rows.filter((row) => privateFileVisible({ privateType: types.get(row.evidenceType) === true, uploadedBy: null, viewerId: viewer.id, scopeAll }));
+}
+
 function itemOf(row: LinkedEvidenceRow, typeNames: ReadonlyMap<string, string>, action: EvidenceLinkedItemDto["action"], ownDetach = false): EvidenceLinkedItemDto {
   const author = row.attachMode === "author";
   return {
@@ -86,7 +101,7 @@ export async function listLinkedEvidence(viewer: Viewer, owner: { kind: "expense
       codeLabelsOf(viewer, "evidence_type"),
       can(viewer, "evidence.intake", "write"),
     ]);
-    const items = rows.map((row) => itemOf(row, typeNames, intake ? "detach" : null));
+    const items = (await visibleRows(viewer, rows)).map((row) => itemOf(row, typeNames, intake ? "detach" : null));
     return { items: await projectMany(viewer, items, EVIDENCE_LINKED_ITEM_DTO_SPEC), lockLine: null };
   }
   const state = await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: owner.id });
@@ -100,7 +115,7 @@ export async function listLinkedEvidence(viewer: Viewer, owner: { kind: "expense
   ]);
   // 떼기 권리는 지급 여부와 무관하다(paid는 붙이기 R1 갈래만 쓴다). 작성자 칸은 자기 author 붙임에만 — 남의 붙임 · 경영관리 붙임은 늘 아니다(A9).
   const rights = evidenceRecordRights(state, { intake, attachKey, voidKey, isDrafter: state.drafterId === viewer.id, paid: false, expensesWrite });
-  const items = rows.map((row) => {
+  const items = (await visibleRows(viewer, rows)).map((row) => {
     if (rights.detach !== "none") return itemOf(row, typeNames, rights.detach);
     const own = rights.authorDetach && row.attachMode === "author" && row.attachedBy === viewer.id;
     return itemOf(row, typeNames, own ? "detach" : null, own);
@@ -114,7 +129,7 @@ export async function listLinkedEvidenceForOwners(viewer: Viewer, input: { kind:
   const ids = await filterPurchaseRequestIdsInScope(viewer, { ids: input.ids, scope: await purchaseRequestReadScope(viewer) });
   const [rows, typeNames] = await Promise.all([listLiveLinksWithRecords(viewer, { ownerKind: input.kind, ownerIds: ids }), codeLabelsOf(viewer, "evidence_type")]);
   const first = new Map<string, EvidenceLinkedItemDto>();
-  for (const row of [...rows].sort((a, b) => a.attachedAt.getTime() - b.attachedAt.getTime())) {
+  for (const row of (await visibleRows(viewer, rows)).sort((a, b) => a.attachedAt.getTime() - b.attachedAt.getTime())) {
     if (!first.has(row.ownerId)) first.set(row.ownerId, itemOf({ ...row, attachedByName: null }, typeNames, null));
   }
   const entries = [...first.entries()];

@@ -16,6 +16,7 @@ import {
   updateCodeItemDescription as repoUpdateCodeItemDescription,
   findCodeItemById as repoFindCodeItemById,
   setCodeItemTaxRule as repoSetCodeItemTaxRule,
+  setCodeItemPrivateToOwner as repoSetCodeItemPrivateToOwner,
   type CodeItemRow,
 } from "@/repositories/code-tables";
 
@@ -63,6 +64,8 @@ export type CodeItemDto = {
   // 04-10(D-93): 값 한 문장 설명. 없으면 null(화면은 「—」). label과 같은
   // 정보 항목으로 게이트한다(새 정보 항목을 만들지 않는다).
   description: string | null;
+  // 06.1-14(G15): 증빙 종류 항목의 「올린 사람 · 경영관리만 보기」 — 그 밖의 코드표 항목은 늘 거짓.
+  privateToOwner: boolean;
 };
 
 export const CODE_ITEM_DTO_SPEC: DtoSpec<CodeItemRow, CodeItemDto> = {
@@ -76,6 +79,7 @@ export const CODE_ITEM_DTO_SPEC: DtoSpec<CodeItemRow, CodeItemDto> = {
     { key: "active", from: "active", infoItem: "code_item.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "code_item.value" },
     { key: "taxRule", from: "taxRule", infoItem: "code_item.value" },
+    { key: "privateToOwner", from: "privateToOwner", infoItem: "code_item.value" },
   ],
 };
 
@@ -237,6 +241,25 @@ export async function setEvidenceTypeTaxRule(
 
   const parsed = taxRuleSchema.parse(taxRule);
   await repoSetCodeItemTaxRule(viewer, id, parsed);
+
+  const updated = await repoFindCodeItemById(viewer, id);
+  return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;
+}
+
+// 06.1-14(G15 · RP-15 · T-061-144): 증빙 종류 항목의 「올린 사람 · 경영관리만 보기」 저장 — 세금 규칙 저장과 같은 순서
+// (권한 → 항목 읽기 → 증빙 종류만 → 쓰기 → 행동 로그 → 투영). 보기 범위를 좁히는 설정이라 기록이 남는다.
+export async function setEvidenceTypePrivateToOwner(viewer: Viewer, id: string, value: boolean): Promise<CodeItemDto | null> {
+  const allowed = await can(viewer, "admin.code-tables", "write");
+  if (!allowed) throw new ForbiddenError("증빙 종류 보기 제한 변경 권한 없음");
+
+  const current = await repoFindCodeItemById(viewer, id);
+  if (!current) return null;
+  if (current.tableKey !== EVIDENCE_TYPE_TABLE_KEY) {
+    throw new NotEvidenceTypeError("증빙 종류 코드표 항목에만 보기 제한 저장 가능");
+  }
+
+  await repoSetCodeItemPrivateToOwner(viewer, id, value);
+  await recordAction(viewer, { actionType: "document_update", entity: "code_items", entityId: id, detail: { change: "private_to_owner", value } });
 
   const updated = await repoFindCodeItemById(viewer, id);
   return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;

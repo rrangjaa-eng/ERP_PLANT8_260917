@@ -9,6 +9,7 @@ import {
   updateCodeItemLabel,
   updateCodeItemDescription,
   setEvidenceTypeTaxRule,
+  setEvidenceTypePrivateToOwner,
 } from "@/domain/code-tables";
 import { taxRuleSchema } from "@/domain/code-tables/tax-rule";
 import { archive } from "@/domain/archive";
@@ -62,6 +63,14 @@ export const setCodeItemActiveAction = authedActionClient
 // 03-06: 증빙 종류 항목의 세금 규칙 저장. taxRuleSchema를 그대로 액션
 // 스키마로 재사용한다(domain의 검증 계약과 화면의 입력 검증이 갈라지지
 // 않는다). domain이 evidence_type 항목이 아니면 거부한다.
+// 06.1-14(G15): 증빙 종류 항목의 「올린 사람 · 경영관리만 보기」 켜기 · 끄기. domain이 권한 · 증빙 종류 여부를 판정한다.
+export const setEvidenceTypePrivateToOwnerAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1), value: z.boolean() }))
+  .action(async ({ parsedInput, ctx }) => {
+    await setEvidenceTypePrivateToOwner(ctx.viewer, parsedInput.id, parsedInput.value);
+    revalidatePath("/admin/code-tables");
+  });
+
 export const setEvidenceTypeTaxRuleAction = authedActionClient
   .schema(z.object({ id: z.string().min(1), taxRule: taxRuleSchema }))
   .action(async ({ parsedInput, ctx }) => {

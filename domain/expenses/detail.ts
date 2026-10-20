@@ -64,7 +64,10 @@ export function buildExpenseDetailRows(projected: Partial<ExpenseDetailDto>): Do
         tone: "default",
         files: projected.evidenceFiles.map((file) => ({ id: file.id, name: file.name, sizeBytes: file.sizeBytes, contentType: file.contentType })),
       }
-    : null;
+    : projected.hiddenEvidenceNotice
+      ? // 06.1-14(G15 · 카드 G-N2 추천안 ① — 사용자 확정): 보이는 파일이 0이고 숨긴 파일이 있으면 같은 자리에 잠김 한 줄(「증빙 없음」과 「있지만 못 봄」을 가른다).
+        { label: "증빙", value: projected.hiddenEvidenceNotice, tone: "muted" as const }
+      : null;
   rows.push(
     ...compact([textRow("지급 예정일", projected.scheduledPaymentDate), textRow("지급 방식", projected.paymentMethodName)]),
     ...(evidenceRow ? [evidenceRow] : []),

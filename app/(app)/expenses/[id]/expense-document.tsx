@@ -41,6 +41,7 @@ export function ExpenseDocument({
   view,
   files,
   evidenceActions,
+  privateNotice = null,
   linkedEvidence,
   maxMb,
   submitted,
@@ -51,6 +52,8 @@ export function ExpenseDocument({
   view: ApprovalView | null;
   files: AttachmentFile[];
   evidenceActions: EvidenceActions;
+  /** 06.1-14(G15) — 숨긴 「올린 사람 · 경영관리만 보기」 파일 · 붙은 기록의 잠김 줄 글자(서버 판정). 없으면 null. */
+  privateNotice?: string | null;
   /** 06.1-06 — 붙은 증빙 기록(서버 listLinkedEvidence) · 섹션 잠김 줄 코드. */
   linkedEvidence: { items: LinkedEvidenceItem[]; lockLine: EvidenceLockLineCode | null; pick: EvidencePickState | null };
   maxMb: number;
@@ -204,6 +207,7 @@ export function ExpenseDocument({
           mode="read"
           maxMb={maxMb}
           evidenceActions={evidenceActions}
+          privateNotice={privateNotice}
           reasonMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
         />
       </div>
@@ -212,7 +216,7 @@ export function ExpenseDocument({
         lockLine={linkedEvidence.lockLine}
         pick={linkedEvidence.pick}
         number={expense.number ?? null}
-        lockLineShownAbove={evidenceActions.drafterLocked || evidenceActions.completedProjectLocked}
+        lockLineShownAbove={evidenceActions.drafterLocked || evidenceActions.completedProjectLocked || (!evidenceActions.canAdd && privateNotice !== null)}
       />
       {review}
       <PrepaidReasonLine reason={expense.prepaidReason} />

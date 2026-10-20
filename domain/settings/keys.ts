@@ -1128,6 +1128,20 @@ export const EVIDENCE_MAX_SIZE_MB: SettingDef<number> = {
 
 SETTING_DEFS.push(EVIDENCE_MAX_SIZE_MB);
 
+// 06.1-14(E14 · RP-14): 증빙 최소 용량 — 0이면 검사 없음(260907 `expense.min_file_kb`와 같은 결). 올리기 요청이 선언 크기로 본다.
+export const EVIDENCE_MIN_SIZE_KB: SettingDef<number> = {
+  key: "evidence.min_size_kb",
+  kind: "simple",
+  schema: z.coerce.number().refine((value) => Number.isInteger(value) && value >= 0 && value <= 10_240, { message: "숫자 형식 오류 · 20처럼" }),
+  label: "증빙 최소 용량",
+  hint: "0이면 검사 없음",
+  namespace: "증빙",
+  unitLabel: "KB",
+  default: 0,
+};
+
+SETTING_DEFS.push(EVIDENCE_MIN_SIZE_KB);
+
 // 06-02 구매 요청 번호(A#3) — 프로젝트 요청 `{프로젝트 번호}{구분자}{접두어}{순번}`(기본 26001-C0001, 카운터 `purchase_request` ·
 // period = 프로젝트 번호 — 지출결의 번호와 같은 꼴), 팀 비용 요청 `TC26-0001`(카운터 `purchase_request_team` · period = 연도 — 팀 비용 지출결의 번호와 같은 꼴).
 export const DOCUMENT_NUMBER_PURCHASE_REQUEST_PREFIX: SettingDef<string> = {

@@ -118,6 +118,10 @@ describe("parseArgs", () => {
     expect(parseArgs(["/expenses/{expenseId}", "--out", "test-results/r.md", "--seed", "evidence-author-pick"]).seed).toBe("evidence-author-pick");
   });
 
+  it("--seed evidence-private-type도 받는다(06.1-14 G5 — 개인카드 전표 문서를 보는 결재자 화면)", () => {
+    expect(parseArgs(["/expenses/{expenseId}", "--out", "test-results/r.md", "--seed", "evidence-private-type"]).seed).toBe("evidence-private-type");
+  });
+
   it("--plan은 반복할 수 있다", () => {
     const args = parseArgs([
       "/x",

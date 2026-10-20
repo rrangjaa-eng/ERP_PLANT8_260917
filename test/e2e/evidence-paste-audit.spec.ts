@@ -11,7 +11,7 @@ import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
-import { assignTeam } from "@/domain/org";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { setRecordVisibilityFixture } from "@/test/integration/fixtures/evidence";
 import {
@@ -50,11 +50,17 @@ function record(item: string, width: number | string, role: string, url: string,
 
 type Who = { viewer: Viewer; email: string; password: string };
 
-async function person(roleId: string, teamName?: string): Promise<Who> {
+async function person(roleId: string, team?: string | { id: string }): Promise<Who> {
   const email = `e2e-${randomUUID()}@example.test`;
   const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "감사 사람", roleId });
-  if (teamName) await assignTeam(SYSTEM_VIEWER, { userId, teamId: await teamIdByName(teamName), effectiveFrom: "2020-01-01" });
+  if (team) await assignTeam(SYSTEM_VIEWER, { userId, teamId: typeof team === "string" ? await teamIdByName(team) : team.id, effectiveFrom: "2020-01-01" });
   return { viewer: { id: userId, roleId }, email, password: tempPassword };
+}
+
+// 팀장 발령은 팀당 한 자리라 시드 팀(기획1팀)을 쓰면 반복 · 같은 DB의 뒤 스펙에서 SeatTakenError로 막힌다(PR-D qa) — 케이스마다 새 팀.
+async function freshTeam(): Promise<{ id: string }> {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `감사본부-${randomUUID()}` });
+  return createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `감사팀-${randomUUID().slice(0, 8)}` });
 }
 
 async function pageAs(browser: Browser, who: Who, width: number): Promise<Page> {
@@ -490,8 +496,8 @@ test("자격 — 경영관리 1280 붙여넣기 · 내려받기 / 금액 노출 
     }
     await page.context().close();
   }
-  for (const [label, roleId, team] of [["권한 없음(role-pm)", DEFAULT_ROLE_ID, "기획1팀"], ["팀장(role-team-lead)", TEAM_LEAD_ROLE_ID, "기획1팀"]] as const) {
-    const who = await person(roleId, team);
+  for (const [label, roleId] of [["권한 없음(role-pm)", DEFAULT_ROLE_ID], ["팀장(role-team-lead)", TEAM_LEAD_ROLE_ID]] as const) {
+    const who = await person(roleId, await freshTeam());
     const page = await pageAs(browser, who, 1280);
     const response = await page.goto("/expenses/evidence?state=all");
     const status = response?.status() ?? null;

@@ -385,3 +385,76 @@ describe("대사 — 동시성(E32 · N-8)", () => {
     expect((await usageRow(u.id)).totalAmountKrw).toBe(110_000);
   });
 });
+
+// 06.1-09 독립 검토 P2-1: 등록 tx의 잠금 한 줄 순서 — 프로젝트 → 문서 → 견적 줄 → 카드 사용 → 증빙 행 → 붙임. 앞 파일로 등록된 원거래 R의
+// 취소 줄과 카드 사용 U 짝 줄이 한 파일에 들면, 등록은 견적 줄 · 카드 사용을 다 잡기 전에는 R을 잠그지 않는다 — S4 붙이기(견적 줄 → U → R)와
+// S8 대리 등록(프로젝트 → 견적 줄 → 새 카드 사용 → R)이 앞 자원을 쥔 채 R을 기다려도 교착이 생기지 않는다.
+describe("대사 — 잠금 순서(06.1-09 검토 P2-1)", () => {
+  const ORIGINAL_DATE = "2026.04.05";
+  const CANCEL_DATE = "2026.04.20";
+
+  async function registeredOriginal(fx: Fx): Promise<{ recordId: string; approvalNo: string }> {
+    const approvalNo = approval();
+    const first = await registerFixtureFile(fx.intake, lotteFixture([line(fx.cardA.last4, approvalNo, 50_000, 4_545, ORIGINAL_DATE)]), "원거래.xls");
+    return { recordId: await recordIdOf(first.batchId, approvalNo), approvalNo };
+  }
+
+  // holder가 앞 자원을 쥔 동안 등록을 출발 → 등록이 기다리기 시작하면 probe가 R(과 extra)을 NOWAIT로 잡아 본다.
+  async function probeWhileHeld(holdSql: string, holdId: string, register: () => Promise<unknown>, probeIds: { recordId: string; usageId?: string }) {
+    const holder = await pool.connect();
+    await holder.query("BEGIN");
+    await holder.query(holdSql, [holdId]);
+    const registering = register();
+    const free = { record: false, usage: false };
+    try {
+      await waitForLockWaiter(pool);
+      // 자동 커밋 한 문장씩 — 잡자마자 놓는다(앞 NOWAIT 실패가 뒤 시도를 막지 않게).
+      free.record = await pool.query("SELECT id FROM evidence_records WHERE id = $1 FOR UPDATE NOWAIT", [probeIds.recordId]).then(() => true, () => false);
+      if (probeIds.usageId) free.usage = await pool.query("SELECT id FROM corp_card_usages WHERE id = $1 FOR UPDATE NOWAIT", [probeIds.usageId]).then(() => true, () => false);
+    } finally {
+      await holder.query("ROLLBACK");
+      holder.release();
+    }
+    return { free, result: await registering };
+  }
+
+  it("다른 연결이 카드 사용 U를 쥔 동안(S4 붙이기 자리) 등록은 U에서 기다리고 원거래 R은 비어 있다(NOWAIT 성공) · 놓으면 붙임 1 · R 확인 필요", async () => {
+    const fx = await setup();
+    const original = await registeredOriginal(fx);
+    const u = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 204_100 });
+    const file = lotteFixture([
+      line(fx.cardA.last4, original.approvalNo, 50_000, 4_545, ORIGINAL_DATE),
+      line(fx.cardA.last4, original.approvalNo, -50_000, -4_545, CANCEL_DATE),
+      line(fx.cardA.last4, approval(), 204_100, 18_554),
+    ]);
+    const { free, result } = await probeWhileHeld("SELECT id FROM corp_card_usages WHERE id = $1 FOR UPDATE", u.id, () => registerFixtureFile(fx.intake, file, "취소_짝.xls"), {
+      recordId: original.recordId,
+    });
+    expect(free.record).toBe(true);
+    expect(result).toMatchObject({ cardMatched: 1 });
+    expect(await liveLinks(u.id)).toHaveLength(1);
+    const [flagged] = await db.select({ needsCheck: evidenceRecords.needsCheck }).from(evidenceRecords).where(eq(evidenceRecords.id, original.recordId));
+    expect(flagged?.needsCheck).not.toBeNull();
+  });
+
+  it("다른 연결이 견적 줄 L을 쥔 동안(S8 대리 등록 · 06 카드 사용 저장 자리) 등록은 L에서 기다리고 카드 사용 U · 원거래 R은 비어 있다", async () => {
+    const fx = await setup();
+    const original = await registeredOriginal(fx);
+    const { lines } = await lineProject(fx.pm, [1_000_000]);
+    const lineId = lines[0] ?? "";
+    const a1 = approval();
+    const u = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 110_000, approvalNo: a1, lineId });
+    const file = lotteFixture([
+      line(fx.cardA.last4, original.approvalNo, 50_000, 4_545, ORIGINAL_DATE),
+      line(fx.cardA.last4, original.approvalNo, -50_000, -4_545, CANCEL_DATE),
+      line(fx.cardA.last4, a1, 220_000, 20_000),
+    ]);
+    const { free, result } = await probeWhileHeld("SELECT id FROM quote_lines WHERE id = $1 FOR UPDATE", lineId, () => registerFixtureFile(fx.intake, file, "취소_줄.xls"), {
+      recordId: original.recordId,
+      usageId: u.id,
+    });
+    expect(free).toEqual({ record: true, usage: true });
+    expect(result).toMatchObject({ cardMatched: 1 });
+    expect((await usageRow(u.id)).totalAmountKrw).toBe(220_000);
+  });
+});

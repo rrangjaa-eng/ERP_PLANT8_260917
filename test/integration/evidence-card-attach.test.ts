@@ -145,12 +145,15 @@ describe("경영관리 → 카드 사용 붙이기(06.1-09 Task 2)", () => {
     expect(await usageRow(usage.id)).toMatchObject({ totalAmountKrw: 200_000, version: usage.version });
   });
 
-  it("(N-6) 영수증 기록(카드 서식 아님)은 값을 바꾸지 않고 붙는다", async () => {
+  it("(Codex P2) 카드 서식이 아닌 기록 id를 카드 사용에 직접 실으면 거부 · 붙임 0 · 여러 장 반복해도 0 · 값 · 기록 그대로", async () => {
     const fx = await setup();
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
-    const recordId = await insertRecordFixture(fx.manager, { evidenceType: "card_receipt", supplyKrw: 181_818, vatKrw: 18_182, issuedOn: USED_ON });
-    await attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } });
-    expect(await liveLinks(usage.id)).toHaveLength(1);
+    // 같은 사용일 · 합계 — S4 후보 조건(isRelaxedHit)은 맞아도 카드 서식이 아니면 후보가 아니다(UI 후보 · registrar 풀은 같은 카드 줄만).
+    for (const supplyKrw of [181_818, 181_818]) {
+      const recordId = await insertRecordFixture(fx.manager, { evidenceType: "card_receipt", supplyKrw, vatKrw: 18_182, issuedOn: USED_ON });
+      expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } }))).toBe("없는 증빙 · 새로 고침");
+    }
+    expect(await liveLinks(usage.id)).toEqual([]);
     expect(await usageRow(usage.id)).toMatchObject({ totalAmountKrw: 200_000, version: usage.version });
     expect(await amountLogs(usage.id)).toHaveLength(0);
   });

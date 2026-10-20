@@ -310,7 +310,8 @@ async function planCardAttach(viewer: Viewer, recordId: string, usageId: string)
   if (!usage) throw cardSlipNotFound();
   const record = await findRecordForScope(viewer, await evidenceScopeFor(viewer), recordId);
   if (!record) throw new UserFacingError(RECORD_NOT_FOUND);
-  if (!isCardFormat(record.format)) return { usage, record, patch: null, basis: null };
+  // Codex P2: 카드 사용에는 카드 서식 기록만 — S4 후보(cardCandidatesFor) · registrar 풀(cardHitFilter = 같은 카드)과 같은 판정. 카드 서식이 아닌 id를 직접 실어도 후보가 아니다.
+  if (!isCardFormat(record.format)) throw new UserFacingError(RECORD_NOT_FOUND);
   if (!sameIssuerOfFormat(record.format, usage.cardIssuer) || record.corpCardId === null) throw new UserFacingError(`카드 다름 · ${usage.cardLast4}`);
   if ((await cardStatementOwners(viewer, [usage.id])).has(usage.id)) throw new UserFacingError(`증빙 있음 · ${usage.number}`);
   // 검토 P2-3: 화면이 보인 후보 조건(같은 승인번호 ∨ 같은 사용일 ∧ 합계 — S4 후보 · registrar S5 풀)을 서버가 다시 본다. 조건 밖 줄은 후보가 아니다.

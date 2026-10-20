@@ -198,3 +198,28 @@ test("(DR-36) 768 — 공개 칸 편집이 없고 붙여넣기를 해도 표가 
   await expect(page.getByRole("button", { name: /^공개 범위 저장/ })).toHaveCount(0);
   expect(await evidenceTable(page).innerText()).toBe(before);
 });
+
+test("(D1 회귀) 붙여넣기로 바뀐 칸 위에 모르는 값을 다시 붙이면 그 칸은 오류 셀 · 앞 편집이 지워져 1차 N = dirty 칸 수", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const viewer = await loginIntake(page);
+  await privateRows(viewer, 3);
+  await page.goto("/expenses/evidence?state=all");
+  await expect(evidenceRows(page)).toHaveCount(3);
+
+  const division = await divisionLabel(page);
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.visibility));
+  await pasteAtFocus(page, `${division}\n미공개\n기획1팀 공개`);
+  await expect(dirtyCells(page)).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /^공개 범위 저장 2/ })).toBeVisible();
+
+  // 셋째 줄(이미 `기획1팀 공개`로 바뀐 칸)에 모르는 값을 덮어 붙인다.
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.visibility));
+  await pasteAtFocus(page, `${division}\n미공개\n기획9팀 공개`);
+  await expect(evidenceCell(page, 2, EVIDENCE_COL.visibility)).toHaveAttribute("aria-invalid", "true");
+  await expect(evidenceTable(page)).toContainText("목록에 없는 값 · 기획9팀 공개");
+  // 오류 셀은 값이 없다 — 기준 값(미공개)을 보이고, 앞 편집 글자(`기획1팀 공개`)가 남지 않는다.
+  await expect(evidenceCell(page, 2, EVIDENCE_COL.visibility)).not.toContainText("기획1팀 공개");
+  await expect(dirtyCells(page)).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /^공개 범위 저장 1(?!\d)/ })).toBeVisible();
+});
+

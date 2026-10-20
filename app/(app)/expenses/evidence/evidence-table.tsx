@@ -530,6 +530,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         if (value === baseValue(target)) delete next[target.id];
         else next[target.id] = { value, version: proposals.get(target.id)?.version ?? target.version };
       }
+      // 오류가 된 칸은 값이 없다 — 앞 편집을 지워 오류 셀이 기준 값을 보이고 1차 N이 dirty 칸 수와 같게 한다(DOM 감사 D1).
+      for (const { id } of errors) delete next[id];
       return next;
     });
     setCellErrors((current) => {

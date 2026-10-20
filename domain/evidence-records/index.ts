@@ -307,7 +307,15 @@ async function withAttachFacts(viewer: Viewer, scope: Awaited<ReturnType<typeof 
   const owners = new Map((await listLiveLinkOwnersByRecords(viewer, dtos.map((dto) => dto.id))).map((owner) => [owner.recordId, owner]));
   const attachable = (dto: EvidenceRecordDto) => !owners.has(dto.id) && (dto.statusWord === "미공개" || dto.statusWord === "팀 공개" || dto.statusWord === "본부 공개");
   const needsTarget = dtos.some((dto) => attachable(dto) || evidenceAttachBlockOf(dto.statusWord) !== null);
-  const [attach, intake, proxy] = await Promise.all([import("@/domain/evidence-records/attach"), can(viewer, "evidence.intake", "write"), can(viewer, "cards.proxy", "write")]);
+  const [attach, intake, proxyRight, evidenceAmount, usageAmount] = await Promise.all([
+    import("@/domain/evidence-records/attach"),
+    can(viewer, "evidence.intake", "write"),
+    can(viewer, "cards.proxy", "write"),
+    visible(viewer, "evidence.amount"),
+    visible(viewer, "card_usage.amount"),
+  ]);
+  // 06.1-09 검토 P2-2: 대리 등록은 증빙 합계를 카드 사용 합계로 쓴다 — 두 금액 칸을 다 보는 사람만(S4 값 바꾸는 붙이기와 같은 문).
+  const proxy = proxyRight && evidenceAmount && usageAmount;
   const target = intake && needsTarget ? await attach.hasAttachTarget(viewer) : false;
   // 06.1-09 S2: 짝 없는 카드 줄(카드 등록됨 · 안 붙음 · 음수 아님 · 보관 아님 — C2)은 완화 후보로 행 행동을 가른다(쪽마다 질의 한 번 — E5 · DB-9).
   const cardLines = intake ? rows.filter((row, index) => row.corpCardId !== null && row.totalKrw >= 0 && dtos[index] !== undefined && attachable(dtos[index])) : [];

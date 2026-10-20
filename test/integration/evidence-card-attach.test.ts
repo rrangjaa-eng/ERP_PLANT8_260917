@@ -443,6 +443,20 @@ describe("S8 대리 등록(06.1-09 Task 3)", () => {
     expect(await cardUsagePrefillFromEvidence(fx.manager, line.id)).toBeNull();
   });
 
+  it("(검토 P2-2) 금액 보기(evidence.amount · card_usage.amount) 중 하나라도 없으면 → 행 대리 등록 없음 · 미리 채움 null · 저장 거부(권리 없음) · 카드 사용 0행", async () => {
+    for (const hidden of ["evidence.amount", "card_usage.amount"]) {
+      const fx = await proxyFx();
+      if (!fx.manager.roleId) throw new Error("계급 없음");
+      const line = await lonelyLine(fx);
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: fx.manager.roleId, infoItem: hidden, visible: false });
+      const [row] = await listEvidenceRecordsByIds(fx.manager, [line.id]);
+      expect(row?.canProxy).toBe(false);
+      expect(await cardUsagePrefillFromEvidence(fx.manager, line.id)).toBeNull();
+      expect(await messageOf(createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: randomUUID() }))).toBe("카드 사용 수정 권리 없음");
+      expect(await usagesOn(fx.cardA.id)).toEqual([]);
+    }
+  });
+
   it("대리 등록 권한 없음 · 증빙 등록 권한 없음 → 미리 채움 null · 저장 거부 · 카드 사용 0행", async () => {
     const fx = await setup();
     const line = await lonelyLine(fx);

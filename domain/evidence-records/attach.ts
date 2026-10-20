@@ -1194,6 +1194,9 @@ async function proxyTakenError(viewer: Viewer, owner: LiveLinkOwner | undefined)
 async function proxyRefusal(viewer: Viewer, evidenceId: string): Promise<Error> {
   if (!(await can(viewer, "evidence.intake", "write"))) return new ForbiddenError(INTAKE_FORBIDDEN);
   if (!(await can(viewer, "cards.proxy", "write"))) return new ForbiddenError(CARD_PROXY_DENIED);
+  // 검토 P2-2: 금액을 못 보는 사람은 보이지 않는 합계로 카드 사용을 만들지 못한다(S4 planCardAttach와 같은 거부).
+  const [usageAmount, recordAmount] = await Promise.all([visible(viewer, "card_usage.amount"), visible(viewer, "evidence.amount")]);
+  if (!usageAmount || !recordAmount) denyCardSlipWrite();
   const view = await getEvidenceRecord(viewer, evidenceId);
   if (!view) return new UserFacingError(RECORD_NOT_FOUND);
   const [owner] = await listLiveLinkOwnersByRecords(viewer, [evidenceId]);

@@ -10,6 +10,7 @@ import { teamKindOptions } from "../team-kind-options";
 import { getEvidenceActions, listEvidence } from "@/domain/evidence";
 import { getPaymentView, type PaymentViewDto } from "@/domain/payments";
 import { nextUnreviewedTarget, parsePayReturn, type PayReturn } from "@/domain/payments/targets";
+import type { Viewer } from "@/domain/viewer";
 import { log } from "@/lib/log";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
@@ -24,10 +25,48 @@ import { expenseStatusWord } from "../status-display";
 import { seoulMinuteOf } from "@/app/(app)/leave/status-display";
 import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { ExpenseDocument } from "./expense-document";
+import { EvidenceRecordsSection, type EvidencePickState, type LinkedEvidenceItem } from "./evidence-records-section";
+import { listLinkedEvidence } from "@/domain/evidence-records/linked";
+import { countEvidencePool, evidencePickerMode } from "@/domain/evidence-records/pool";
 import { DeleteDraftButton } from "./delete-draft-button";
 import { CloseExpenseButton } from "./close-expense-button";
 import { ExpenseForm } from "./expense-form";
 import styles from "./expense.module.css";
+
+// 06.1-08(S5): 증빙 고르기 트리거 재료 — 모드가 none이거나 후보가 0이면 null(트리거 DOM 0). 못 읽으면 트리거만 비운다(문서는 이미 읽기 판정을 지났다).
+async function readEvidencePick(viewer: Viewer, id: string): Promise<EvidencePickState | null> {
+  try {
+    const { mode } = await evidencePickerMode(viewer, { kind: "expense", id });
+    if (mode === "none") return null;
+    const count = await countEvidencePool(viewer, { kind: "expense", id });
+    return count >= 1 ? { ownerKind: "expense", ownerId: id, mode, count } : null;
+  } catch {
+    return null;
+  }
+}
+
+type LinkedRead = Awaited<ReturnType<typeof listLinkedEvidence>>;
+
+function linkedItemsOf(linked: LinkedRead): LinkedEvidenceItem[] {
+  return linked.items.flatMap((item): LinkedEvidenceItem[] =>
+    item.linkId && item.issuedOn !== undefined
+      ? [
+          {
+            linkId: item.linkId,
+            typeLabel: item.typeLabel ?? null,
+            counterparty: item.counterparty ?? null,
+            issuedOn: item.issuedOn,
+            totalKrw: item.totalKrw ?? null,
+            pickedBy: item.pickedBy ?? null,
+            pickedOn: item.pickedOn ?? null,
+            action: item.action ?? null,
+            ownDetach: item.ownDetach === true,
+          },
+        ]
+      : [],
+  );
+}
+
 
 // 05-05(S3 · S7): 인스턴스(결재)가 없는 작성 중 문서는 폼, 그 밖은 문서 화면. 05-09: 반려 · 회수된 내 문서(가능 행동에 다시 신청)도 폼 —
 // 머리 줄 상태 `반려` · `회수` · 메타 번호, 맨 위 읽기 행(`KvList`), 1차 `지출결의 다시 제출`(같은 번호). 볼 수 없는 사람은 404(`layout.tsx`가 응답 전에 먼저 판정한다 —
@@ -63,7 +102,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     // 06-03: 지급 섹션은 결재 통과(approved — 자기 승인 포함, UA-607) 문서만. view가 null(05 C1 — 쓰기 권한 없는 기안자의 번호 없는 작성 중 문서)이거나
     // 통과 전이면 부르지 않는다(섹션 요소 0 · 오류 화면 없음).
     // 06.2-09(S6 · D-6206): 프로젝트 칸 링크는 서버가 「열 수 있음」을 판정한 때만 — 결재 차례로 문서만 보이는 사람에게 죽은 링크를 그리지 않는다.
-    const [evidenceActions, paymentView, projectOpenable] = await Promise.all([
+    // 06.1-06(E21): 붙은 증빙 기록 읽기 행 · 행 끝 행동 · 잠김 줄(서버 권리). 못 읽으면 섹션만 비운다(문서는 이미 읽기 판정을 지났다).
+    const [evidenceActions, paymentView, projectOpenable, linked, pick] = await Promise.all([
       getEvidenceActions(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id }),
       view?.status === "approved"
         ? getPaymentView(viewer, id).catch((error: unknown) => {
@@ -73,7 +113,10 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           })
         : null,
       expense.projectId ? canOpenProject(viewer, expense.projectId) : false,
+      listLinkedEvidence(viewer, { kind: "expense", id }).catch(() => ({ items: [], lockLine: null })),
+      readEvidencePick(viewer, id),
     ]);
+    const linkedEvidence = { lockLine: linked.lockLine, items: linkedItemsOf(linked), pick };
     const documentFiles: AttachmentFile[] = evidence.flatMap((file) =>
       file.id && file.originalName && file.createdAt
         ? [
@@ -106,12 +149,12 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         }))
       : null;
     const documentPaymentView: Partial<PaymentViewDto> | "error" | null = paymentView && paymentView !== "error" && payReturn ? { ...paymentView, payReturn } : paymentView;
-    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} maxMb={maxMb} submitted={submitted} paymentView={documentPaymentView} projectOpenable={projectOpenable} />;
+    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} linkedEvidence={linkedEvidence} maxMb={maxMb} submitted={submitted} paymentView={documentPaymentView} projectOpenable={projectOpenable} />;
   }
 
   // 작성 중 — 폼. 결재선은 제출 전 한 줄(기안자 · 문서 종류의 결재선 설정으로 해석 — 막히면 이유 한 줄).
   // 서로 기대지 않는 읽기 넷을 동시에(05 /review A13).
-  const [{ route, routeBlocked }, { evidence: evidenceItems, payment: paymentItems, prepaidDueDays, companyBorne }, currencies, initialBlock] = await Promise.all([
+  const [{ route, routeBlocked }, { evidence: evidenceItems, payment: paymentItems, prepaidDueDays, companyBorne }, currencies, initialBlock, formLinked, formPick] = await Promise.all([
     // 06.2-09(S5 · D-6215 · D-6224): 작성 중 문서는 문서 팀으로 담당자를 푼다 — 기안자가 아니거나 쓰기 권한이 없으면 문서 팀을 풀지 않는다(단계 이름만).
     previewExpenseRoute(viewer, { expenseId: id })
       .catch((error: unknown) => {
@@ -136,6 +179,9 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         throw error;
       },
     ),
+    // 06.1-08(S5): 작성 중 · 반려 · 회수 폼도 붙은 증빙 읽기 행과 증빙 고르기 트리거를 폼 안 「증빙」 칸(05 첨부 바로 아래)에 그린다 — §6-3 칸 순서.
+    listLinkedEvidence(viewer, { kind: "expense", id }).catch(() => ({ items: [], lockLine: null })),
+    readEvidencePick(viewer, id),
   ]);
   const optionsOf = (items: { value: string; label: string; description: string | null }[], current: string | null | undefined, currentLabel: string | null | undefined): SelectOption[] => {
     const options = items.map((item) => ({ value: item.value, label: item.label, description: item.description }));
@@ -243,6 +289,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           currencies={currencies}
           files={files}
           maxMb={maxMb}
+          evidenceRecords={<EvidenceRecordsSection items={linkedItemsOf(formLinked)} lockLine={formLinked.lockLine} number={expense.number ?? null} lockLineShownAbove={false} pick={formPick} />}
           route={
             route ? (
               <ApprovalRoute

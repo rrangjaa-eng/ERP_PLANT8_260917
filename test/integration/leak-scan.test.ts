@@ -54,6 +54,10 @@ import "@/app/(app)/admin/field-definitions/actions.registry";
 import "@/domain/evidence-import";
 import "@/domain/evidence-records";
 import "@/app/(app)/expenses/evidence/actions.registry";
+import "@/domain/evidence-records/attach";
+import "@/domain/evidence-records/linked";
+import "@/domain/evidence-records/pool";
+import "@/app/(app)/expenses/evidence/attach/actions.registry";
 import {
   createFieldDefinition,
   FIELD_DEFINITION_ADMIN_DTO_FIELDS,
@@ -210,6 +214,21 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
         expect(field.infoItem, field.key).toBe(amounts.includes(field.key) ? "evidence.amount" : "evidence.value");
       }
       expect(dto?.fields.filter((field) => amounts.includes(field.key))).toHaveLength(amounts.length);
+    });
+
+    // 06.1-06 — 붙은 증빙 읽기 행의 금액은 증빙 금액. 붙일 문서 후보 · 떼기 미리 보기의 금액은 문서 금액이라 문서 금액 항목(독립 검토 P3-1).
+    // 나머지 칸은 증빙 내용.
+    it("06.1-06 증빙 붙임 DTO의 금액 칸 정보 항목 · 나머지는 evidence.value다", () => {
+      for (const [dtoName, amountKey, amountItem] of [
+        ["EvidenceAttachCandidateDto", "amountKrw", "expense.amount"],
+        ["EvidenceAttachRequestCandidateDto", "amountKrw", "purchase_request.amount"],
+        ["EvidenceLinkedItemDto", "totalKrw", "evidence.amount"],
+        ["EvidenceDetachPreviewDto", "amountKrw", "expense.amount"],
+      ] as const) {
+        const dto = DTO_REGISTRY.find((entry) => entry.name === dtoName);
+        expect(dto?.fields.length, dtoName).toBeGreaterThan(1);
+        for (const field of dto?.fields ?? []) expect(field.infoItem, `${dtoName}.${field.key}`).toBe(field.key === amountKey ? amountItem : "evidence.value");
+      }
     });
 
     // quick 261001-85g(ADMN-03) — 프로젝트 등록 폼 선택지(거래처 · 팀 · 사람)도 명세로 등록돼 이 스캔이 본다.

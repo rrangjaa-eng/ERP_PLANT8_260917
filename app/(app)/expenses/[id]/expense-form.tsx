@@ -112,6 +112,8 @@ export type ExpenseFormProps = {
   maxMb: number;
   // 서버가 그린 결재선 한 줄(제출 전 — 04.1 `previewRoute` + `ui/approval-route`).
   route: ReactNode;
+  /** 06.1-08 D-1: 붙은 증빙 읽기 행 · 증빙 고르기 트리거 — 폼 「증빙」 칸(05 첨부와 같은 자리) 안에 그린다. 새 문서는 없다. */
+  evidenceRecords?: ReactNode;
 };
 
 const DATE_EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
@@ -142,7 +144,7 @@ function FxField({ initial, error, onRaw, below }: { initial: number; error: str
   );
 }
 
-export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route }: ExpenseFormProps) {
+export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords }: ExpenseFormProps) {
   const router = useRouter();
   const [evidenceType, setEvidenceType] = useState(data.evidenceType ?? "");
   const [paymentMethod, setPaymentMethod] = useState(data.paymentMethod ?? "");
@@ -1009,6 +1011,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
                 pickerId="evidence-picker"
               />
             )}
+            {evidenceRecords}
           </div>
         </Form.Field>
 

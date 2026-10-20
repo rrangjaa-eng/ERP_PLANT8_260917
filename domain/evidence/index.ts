@@ -719,3 +719,141 @@ export async function restoreEvidence(viewer: Viewer, input: { fileId: string })
     );
   });
 }
+
+// ── 06.1-06 증빙 기록 붙임(RP-4) — 05 규칙표 위 내보냄 넷 ──────────────────────────────────────────
+// 06.1 증빙 기록(엑셀 한 줄)을 지출결의에 붙이고 뗄 때의 권리 · 잠금 순서 · 변경 뒤 훅. 판정은 위 05 표(OWNER_RULES.expense · adderOf ·
+// addOpen · bumpsInstance · onApprovedEvidenceChange)를 그대로 부르고, 06.1 몫은 evidence.intake 갈래와 카드 R1(승인 · 지급 전) 한 줄뿐이다
+// (05 함수 · 표 줄은 고치지 않는다). 구매 요청은 05 표 밖이라 domain/evidence-records/attach.ts가 직접 판정한다.
+
+export type EvidenceOwnerState = OwnerState;
+export type EvidenceOwnerPhase = "draft" | "returned" | "in_review" | "approved" | "closed" | "other";
+export type EvidenceOwnerView = EvidenceOwnerState & { phase: EvidenceOwnerPhase };
+
+const EXPENSE_RULE = OWNER_RULES.expense as OwnerRule;
+
+function phaseOf(owner: OwnerState): EvidenceOwnerPhase {
+  if (owner.closed) return "closed";
+  if (owner.number === null) return "draft";
+  if (EXPENSE_RULE.drafterRemoves(owner)) return "returned";
+  if (EXPENSE_RULE.inReview(owner)) return "in_review";
+  if (EXPENSE_RULE.approved(owner)) return "approved";
+  return "other";
+}
+
+// 주인 판독 — tx가 없으면 풀 읽기 + 05 보임 판정(못 보면 없는 문서 — 문서 읽기와 같은 거부), tx가 있으면 05 rule.lock이 잠근 상태(보임은
+// 부르는 쪽이 트랜잭션 전에 이미 지났다). 지금 받는 주인 종류는 지출결의 하나다.
+export async function readEvidenceOwner(viewer: Viewer, input: { ownerKind: string; ownerId: string }, tx?: DbOrTx): Promise<EvidenceOwnerView> {
+  if (input.ownerKind !== EXPENSE_DOCUMENT_KIND || !UUID_SHAPE.test(input.ownerId)) throw new ExpenseNotFoundError();
+  const owner = tx ? await EXPENSE_RULE.lock(viewer, input.ownerId, tx) : await EXPENSE_RULE.load(viewer, input.ownerId);
+  if (!owner) throw EXPENSE_RULE.notFound();
+  if (!tx && !(await EXPENSE_RULE.canSee(viewer, owner))) throw EXPENSE_RULE.notFound();
+  return { ...owner, phase: phaseOf(owner) };
+}
+
+/** 사람 플래그 — 부르는 쪽이 트랜잭션 전에 can()으로 읽는다(paid = 취소 안 된 지급 행 있음, 06.1 카드 R1). */
+export type EvidenceRecordFlags = {
+  intake: boolean;
+  attachKey: boolean;
+  voidKey: boolean;
+  isDrafter: boolean;
+  paid: boolean;
+  /** 06.1-08 — `expenses` 쓰기(05 adderOf 기안자 조건). 작성자 칸 둘만 쓴다. 안 넘기면 거짓. */
+  expensesWrite?: boolean;
+};
+/** 잠김 줄 코드 — 글자는 app이 그린다(05 둘 + 06.1 둘, PA-LOCKCODE). */
+export type EvidenceRecordLockLine = "in_review_author" | "in_review_no_detach" | "approved_void_only" | "completed_project_author";
+/** 경영관리 칸(attach · detach) + 작성자 칸(06.1-08 authorAttach · authorDetach — 05 drafterAdds · drafterRemoves, RP-4). */
+export type EvidenceRecordRights = {
+  attach: boolean;
+  detach: "none" | "detach" | "void";
+  lockLine: EvidenceRecordLockLine | null;
+  authorAttach: boolean;
+  authorDetach: boolean;
+};
+
+type RegistrarRights = Pick<EvidenceRecordRights, "attach" | "detach" | "lockLine">;
+
+const NO_RECORD_RIGHTS: RegistrarRights = { attach: false, detach: "none", lockLine: null };
+
+// UI-SPEC S7 열 줄 — S2 행 행동 · S4 막힌 행 · 문서 「증빙」 섹션 · 서버 거부가 이 함수 하나를 쓴다. 결재 중 붙이기 · 완료 프로젝트 승인 문서
+// 붙이기는 05 addOpen의 붙이기 권한자 갈래 그대로(+ evidence.intake), 승인 · 지급 전 붙이기는 카드 R1(사용자 답 「지급 전까지 허용」 2026-10-16),
+// 승인 뒤 떼기는 05 voidEvidence와 같은 키(expenses.evidence_void)의 무효 처리, 결재 중 떼기는 아무도(D-6110).
+export function evidenceRecordRights(owner: EvidenceOwnerState, flags: EvidenceRecordFlags): EvidenceRecordRights {
+  // 작성자 칸 — 05 기안자 규칙(adderOf 기안자 = drafterId ∧ expenses 쓰기, drafterAdds · drafterRemoves) 그대로. 두 번째 표를 짓지 않는다(RP-4).
+  const author = flags.isDrafter && flags.expensesWrite === true && !owner.closed;
+  return { ...registrarRights(owner, flags), authorAttach: author && EXPENSE_RULE.drafterAdds(owner), authorDetach: author && EXPENSE_RULE.drafterRemoves(owner) };
+}
+
+function registrarRights(owner: EvidenceOwnerState, flags: EvidenceRecordFlags): RegistrarRights {
+  const rule = EXPENSE_RULE;
+  if (owner.closed || owner.number === null) return NO_RECORD_RIGHTS;
+  if (rule.drafterRemoves(owner)) return flags.intake ? { attach: true, detach: "detach", lockLine: null } : NO_RECORD_RIGHTS;
+  const attacher = flags.attachKey && !flags.isDrafter;
+  const adder05 = addOpen(rule, owner, { drafter: false, attacher });
+  if (rule.inReview(owner)) {
+    const attach = flags.intake && adder05;
+    const lockLine: EvidenceRecordLockLine | null = attach ? "in_review_no_detach" : flags.isDrafter || flags.intake ? "in_review_author" : null;
+    return { attach, detach: "none", lockLine };
+  }
+  if (rule.approved(owner)) {
+    const attach = flags.intake && (adder05 || (attacher && !flags.paid));
+    const detach = flags.voidKey ? "void" : "none";
+    const lockLine: EvidenceRecordLockLine | null =
+      flags.isDrafter && owner.projectCompleted ? "completed_project_author" : (flags.isDrafter || flags.intake) && !flags.voidKey ? "approved_void_only" : null;
+    return { attach, detach, lockLine };
+  }
+  return NO_RECORD_RIGHTS;
+}
+
+// 붙이기 거부 글자 — 05 상수 그대로(새 거부 상수 없음). 05 requestEvidenceUpload의 갈래 차례와 같다.
+export function evidenceAttachRefusal(owner: EvidenceOwnerState): string {
+  if (owner.closed) return EXPENSE_ALREADY_CLOSED;
+  if (EXPENSE_RULE.inReview(owner)) return EVIDENCE_LOCKED_IN_REVIEW;
+  return EXPENSE_RULE.approved(owner) && owner.projectCompleted ? EVIDENCE_COMPLETED_PROJECT_LOCKED : EVIDENCE_ADD_DRAFTER_ONLY;
+}
+
+// 떼기 거부 글자 — 결재 중은 05 결재 중 잠김, 승인 뒤 무효 키 없음은 05 삭제 잠김, 그 밖은 05 작성자 갈래.
+export function evidenceDetachRefusal(owner: EvidenceOwnerState): string {
+  if (owner.closed) return EXPENSE_ALREADY_CLOSED;
+  if (EXPENSE_RULE.inReview(owner)) return EVIDENCE_LOCKED_IN_REVIEW;
+  if (EXPENSE_RULE.approved(owner)) return EVIDENCE_REMOVE_LOCKED_APPROVED;
+  return EVIDENCE_ADD_DRAFTER_ONLY;
+}
+
+// 잠금 순서 — 05 completeEvidenceUpload와 같다(E-49): 사전 판독이 승인이면 프로젝트 행(lockParent) → 문서 행(rule.lock = lockExpenseForUpdate).
+// 잠그는 사이 최종 승인이 커밋된 문서는 프로젝트 행을 잡지 않았으니 거꾸로 잡지 않고 다시 하기로 거부한다(05 N-3 방향). 증빙 행 잠금은 그 뒤 부르는 쪽.
+export async function lockEvidenceOwnerForChange(
+  viewer: Viewer,
+  input: { ownerKind: string; ownerId: string; before: EvidenceOwnerState },
+  tx: DbOrTx,
+): Promise<EvidenceOwnerView> {
+  if (input.ownerKind !== EXPENSE_DOCUMENT_KIND) throw new ExpenseNotFoundError();
+  const approvedBefore = EXPENSE_RULE.approved(input.before);
+  if (approvedBefore) await EXPENSE_RULE.lockParent?.(viewer, input.before, tx);
+  const locked = await readEvidenceOwner(viewer, { ownerKind: input.ownerKind, ownerId: input.ownerId }, tx);
+  if (EXPENSE_RULE.approved(locked) && !approvedBefore) throw new ExpenseConflictError(locked.updatedAt);
+  return locked;
+}
+
+// 변경 뒤 05 훅 — 05 completeEvidenceUpload(add) · voidEvidence(void)와 같은 두 단계를 같은 트랜잭션에서. add: 결재 중 · 승인이면 결재
+// 인스턴스 version(사유 evidence · 바꾼 사람 — 옛 화면 승인이 05 거부 문구로 막힌다, E25) → onApprovedEvidenceChange(승인 = 확인 기록 해제 +
+// 문서 version, 결재 중 = 06.1 자동 확인만 지움 — 06.1-12 N-1). void(승인 뒤 무효 처리): onApprovedEvidenceChange만(인스턴스 version 그대로).
+// 풀린 확인 기록 상태를 돌려준다(없으면 null).
+export async function afterEvidenceOwnerChange(
+  viewer: Viewer,
+  owner: EvidenceOwnerState,
+  change: { kind: "add" | "void" },
+  tx: DbOrTx,
+): Promise<EvidenceReviewStatus | null> {
+  const rule = EXPENSE_RULE;
+  if (change.kind === "add" && bumpsInstance(rule, owner)) {
+    const bumped = await bumpInstanceVersion(viewer, { instanceId: owner.instance.id, expectedVersion: owner.instance.version, updatedBy: viewer.id, reason: "evidence" }, tx);
+    if (!bumped) throw new ExpenseConflictError(owner.updatedAt);
+  }
+  return (await rule.onApprovedEvidenceChange?.(viewer, owner, change, tx)) ?? null;
+}
+
+/** 05 판정으로 셈한 문서 단계(후보 행처럼 잠그지 않고 읽은 상태용 — readEvidenceOwner와 같은 판정). */
+export function evidenceOwnerPhase(owner: EvidenceOwnerState): EvidenceOwnerPhase {
+  return phaseOf(owner);
+}

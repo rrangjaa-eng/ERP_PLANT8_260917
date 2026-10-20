@@ -132,6 +132,26 @@ const liveLinkExists = sql<boolean>`exists (select 1 from ${evidenceRecordLinks}
 // RP-15 ⑴ · G15: 증빙 종류가 「올린 사람 · 경영관리만 보기」(code_items.private_to_owner)인가 — 코드 항목이 보관이어도 뺀다.
 const privateToOwnerType = sql<boolean>`exists (select 1 from ${codeItems} where ${codeItems.tableKey} = 'evidence_type' and ${codeItems.value} = ${evidenceRecords.evidenceType} and ${codeItems.privateToOwner})`;
 
+// /review P2-1: 앞 파일 대조로 취소 줄을 등록한 원거래 줄에 확인 필요를 세운다(등록 트랜잭션 안 · 카드 등록 잠금 뒤). 보관 · 살아 있는 붙임 ·
+// 이미 사유가 있는 줄은 그대로 둔다(먼저 선 사유를 덮지 않는다). 바뀐 행 수.
+export async function flagRecordsNeedsCheckByDedupeKeys(viewer: Viewer, keys: readonly string[], reason: string, tx: DbOrTx): Promise<number> {
+  void viewer;
+  if (keys.length === 0) return 0;
+  const rows = await tx
+    .update(evidenceRecords)
+    .set({ needsCheck: reason, version: sql`${evidenceRecords.version} + 1`, updatedAt: new Date() })
+    .where(
+      and(
+        sql`${evidenceRecords.dedupeKey} = ANY(${sql.param([...keys])}::text[])`,
+        isNull(evidenceRecords.archivedAt),
+        isNull(evidenceRecords.needsCheck),
+        sql`not ${liveLinkExists}`,
+      ),
+    )
+    .returning({ id: evidenceRecords.id });
+  return rows.length;
+}
+
 // 증빙 행 범위(06.1-01 EvidenceScope)를 where 조각으로 — 이 번역은 이 함수 하나다. 06.2 RowScope(rowScopeFor)와 따로다(RP-5 — 입력이
 // 행의 공개 칸이다). repositories/row-scope.ts 규약을 따른다: id가 null인 갈래는 거짓 조각(조각을 undefined로 두면 and() · or()가 조용히
 // 빼서 조건 전체가 사라진다 — CSO-4), 보관된 팀 발령은 팀 범위를 주지 않는다, 모르는 갈래는 거짓(fail-closed). 하위 질의의 teams는
@@ -147,7 +167,8 @@ function scopeWhere(scope: EvidenceScope): SQL {
           : sql`(${evidenceRecords.visibility} = 'team' and ${evidenceRecords.visibleTeamId} = ${scope.teamId} and exists (select 1 from ${teams} where ${teams.id} = ${scope.teamId} and ${teams.archivedAt} is null))`;
       const division =
         scope.orgUnitId === null ? sql`false` : sql`(${evidenceRecords.visibility} = 'division' and ${evidenceRecords.visibleOrgUnitId} = ${scope.orgUnitId})`;
-      return sql`((${team}) or (${division})) and not ${liveLinkExists} and ${evidenceRecords.archivedAt} is null and not ${privateToOwnerType}`;
+      // P2-1(사용자 결정 2026-10-17): 확인 필요 줄(취소 줄이 등록된 원거래 등)은 공개 범위가 저장돼 있어도 팀원에게 내지 않는다.
+      return sql`((${team}) or (${division})) and not ${liveLinkExists} and ${evidenceRecords.archivedAt} is null and ${evidenceRecords.needsCheck} is null and not ${privateToOwnerType}`;
     }
     case "none":
       return sql`false`;
@@ -157,6 +178,12 @@ function scopeWhere(scope: EvidenceScope): SQL {
       return sql`false`;
     }
   }
+}
+
+// 06.1-08 풀(repositories/evidence-pool.ts)이 같은 범위 번역을 쓴다 — 새 범위 판정을 짓지 않는 얇은 내보내기(RP-5).
+export function evidenceScopeCondition(viewer: Viewer, scope: EvidenceScope): SQL {
+  void viewer;
+  return scopeWhere(scope);
 }
 
 /** `[상태 ▾]` 값(UI-SPEC S2). 기본은 todo — 값이 없거나 모르는 값이면 domain이 todo로 읽는다. */
@@ -485,6 +512,16 @@ export async function setRecordArchivedIfVersionMatches(viewer: Viewer, input: {
     )
     .returning({ id: evidenceRecords.id });
   return rows.length > 0;
+}
+
+// 붙임 변화를 증빙 행 version에 싣는다(PR-C /review P3-1) — 붙이기는 증빙 행을 잠그기만 해서, 그 잠금을 기다린 보관 · 플래그 문장이 문장 시작
+// 스냅샷의 「안 붙음」으로 통과했다. 행을 고치면 기다린 문장이 EPQ로 새 version을 보고 version 조건 · 화면 낡음 판정이 막는다. 잠근 뒤에 부른다.
+export async function bumpRecordVersion(viewer: Viewer, id: string, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx
+    .update(evidenceRecords)
+    .set({ version: sql`${evidenceRecords.version} + 1`, updatedAt: sql`(now() at time zone 'UTC')` })
+    .where(eq(evidenceRecords.id, id));
 }
 
 // 묶음 한 행의 서식 · 원래 파일 이름 — 결과 행 1행(`{파일 이름} · {서식 이름}`)과 batch 표시가 쓴다.

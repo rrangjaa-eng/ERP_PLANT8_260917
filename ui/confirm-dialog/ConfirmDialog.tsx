@@ -218,7 +218,10 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   useEffect(() => {
     const dialog = dialogRef.current;
     return () => {
-      if (dialog?.open && !dialog.isConnected) returnFocus(previouslyFocusedRef.current);
+      // 함께 사라진 호스트(옆 패널)가 이미 연 요소로 포커스를 돌렸으면 빼앗지 않는다 — 포커스를 잃었을 때(body)만 돌린다(06.1-07 D-1 뒤 실측:
+      // 입력 버리기 → 패널 · 확인 창이 한 커밋에 사라져 화면 제목으로 갔다).
+      const lost = document.activeElement === null || document.activeElement === document.body;
+      if (dialog?.open && !dialog.isConnected && lost) returnFocus(previouslyFocusedRef.current);
     };
   }, []);
 

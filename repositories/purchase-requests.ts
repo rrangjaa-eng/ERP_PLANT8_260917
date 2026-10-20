@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
@@ -209,4 +209,92 @@ export async function markPurchaseRequestRequested(viewer: Viewer, input: { id: 
     .where(and(eq(purchaseRequests.id, input.id), eq(purchaseRequests.version, input.version), eq(purchaseRequests.status, "cancelled")))
     .returning({ version: purchaseRequests.version });
   return row?.version ?? null;
+}
+
+// ── 06.1-06 증빙 기록 붙이기 후보 · 보임(RP-5) ─────────────────────────────────────────────
+
+/** 후보 한 질의의 상한 — 21째 행은 넘침 판정에만(지출결의 후보와 같은 값). */
+export const PURCHASE_REQUEST_CANDIDATE_LIMIT = 20;
+
+export type PurchaseRequestAttachCandidateRow = {
+  id: string;
+  number: string;
+  itemName: string;
+  requestedByName: string;
+  status: string;
+  estimateAmountKrw: number;
+  /** 요청일(서울 날짜). */
+  requestedOn: string;
+  score: number;
+};
+
+// 06 목록과 같은 범위(scopeCondition — listAccess의 scope) ∧ 취소 아님 ∧ 검색어(요청 번호 · 품목 · 요청자 — 바인딩). 종류 · 사업자번호 칸이
+// 없어 점수는 기록 합계 ↔ 견적 원화 1뿐이다(PA-CAND). 순서: 점수 내림 → 요청일과 기록 날짜 차 오름 → id.
+export async function listPurchaseRequestAttachCandidates(
+  viewer: Viewer,
+  input: { scope: PurchaseRequestScope; record: { totalKrw: number; issuedOn: string }; query: string | null },
+  tx: DbOrTx = db,
+): Promise<PurchaseRequestAttachCandidateRow[]> {
+  void viewer;
+  const requestedOn = sql<string>`to_char((${purchaseRequests.createdAt} at time zone 'UTC') at time zone 'Asia/Seoul', 'YYYY-MM-DD')`;
+  const score = sql<number>`(case when ${purchaseRequests.estimateAmountKrw} = ${input.record.totalKrw} then 1 else 0 end)`;
+  const conditions: (SQL | undefined)[] = [scopeCondition(input.scope), sql`${purchaseRequests.status} <> 'cancelled'`];
+  if (input.query) {
+    const like = `%${input.query.replace(/[\\%_]/g, "\\$&")}%`;
+    conditions.push(sql`(${purchaseRequests.number} ilike ${like} or ${purchaseRequests.itemName} ilike ${like} or ${users.name} ilike ${like})`);
+  }
+  const rows = await tx
+    .select({
+      id: purchaseRequests.id,
+      number: purchaseRequests.number,
+      itemName: purchaseRequests.itemName,
+      requestedByName: users.name,
+      status: purchaseRequests.status,
+      estimateAmountKrw: purchaseRequests.estimateAmountKrw,
+      requestedOn,
+      score,
+    })
+    .from(purchaseRequests)
+    .innerJoin(users, eq(users.id, purchaseRequests.requestedBy))
+    .leftJoin(projects, eq(projects.id, purchaseRequests.projectId))
+    .where(and(...conditions))
+    .orderBy(sql`${score} desc`, sql`abs(((${purchaseRequests.createdAt} at time zone 'UTC') at time zone 'Asia/Seoul')::date - ${input.record.issuedOn}::date) asc`, sql`${purchaseRequests.id} asc`)
+    .limit(PURCHASE_REQUEST_CANDIDATE_LIMIT + 1);
+  return rows.map((row) => ({ ...row, score: Number(row.score) }));
+}
+
+// 요청 하나가 그 사람의 읽기 범위(06 목록 scope) 안인가 — 문서 「증빙」 섹션 · 붙이기 · 떼기의 보임 판정.
+export async function isPurchaseRequestInScope(viewer: Viewer, input: { id: string; scope: PurchaseRequestScope }, tx: DbOrTx = db): Promise<boolean> {
+  void viewer;
+  const [row] = await tx
+    .select({ id: purchaseRequests.id })
+    .from(purchaseRequests)
+    .leftJoin(projects, eq(projects.id, purchaseRequests.projectId))
+    .where(and(eq(purchaseRequests.id, input.id), scopeCondition(input.scope)))
+    .limit(1);
+  return row !== undefined;
+}
+
+// 06.1-08(PA-PRLINE): 쪽의 구매 요청 id 가운데 그 범위 안인 것만 — 질의 하나(목록 쪽마다 한 번). 범위 판정은 목록과 같은 scopeCondition.
+export async function filterPurchaseRequestIdsInScope(viewer: Viewer, input: { ids: readonly string[]; scope: PurchaseRequestScope }, tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  if (input.ids.length === 0) return [];
+  const rows = await tx
+    .select({ id: purchaseRequests.id })
+    .from(purchaseRequests)
+    .leftJoin(projects, eq(projects.id, purchaseRequests.projectId))
+    .where(and(inArray(purchaseRequests.id, [...input.ids]), scopeCondition(input.scope)));
+  return rows.map((row) => row.id);
+}
+
+// 쪽 단위 존재 조회 — 범위 안 취소 아닌 요청이 하나라도 있나.
+export async function hasPurchaseRequestAttachTarget(viewer: Viewer, input: { scope: PurchaseRequestScope }): Promise<boolean> {
+  void viewer;
+  const [row] = await db
+    .select({ id: purchaseRequests.id })
+    .from(purchaseRequests)
+    .leftJoin(projects, eq(projects.id, purchaseRequests.projectId))
+    .where(and(scopeCondition(input.scope), sql`${purchaseRequests.status} <> 'cancelled'`))
+    .limit(1);
+  return row !== undefined;
 }

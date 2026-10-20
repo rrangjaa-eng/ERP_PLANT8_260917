@@ -128,13 +128,19 @@ export function PanelForm({
     const form = formRef.current;
     if (!form) return;
     snapshotRef.current = readValues(form, dirtyFieldsRef.current);
+    // 숫자 칸(TextField numberKind)의 hidden `name` 칸은 React가 다시 그려야 값이 바뀐다 — 이 이벤트 순간에는 옛 값이라 한 번 더 센다
+    // (06.1-07 감사 D-1 — 한 번만 고치고 Esc면 바뀐 칸 0으로 닫혔다). 다시 그림은 이 리스너 뒤에 오므로 다음 프레임에 센다.
+    let frame = 0;
     function onEdit() {
       setOwnStatus(null);
       reportGuard();
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(reportGuard);
     }
     form.addEventListener("input", onEdit);
     form.addEventListener("change", onEdit);
     return () => {
+      cancelAnimationFrame(frame);
       form.removeEventListener("input", onEdit);
       form.removeEventListener("change", onEdit);
     };

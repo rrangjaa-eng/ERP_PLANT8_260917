@@ -163,6 +163,10 @@
   font-weight: var(--fw-bold);
 }
 
+.current .number {
+  color: var(--text-muted);
+}
+
 .current .rowSub {
   font-weight: var(--fw-regular);
 }

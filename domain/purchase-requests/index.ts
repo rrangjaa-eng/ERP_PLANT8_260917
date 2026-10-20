@@ -60,7 +60,7 @@ import { withTransaction } from "@/lib/db-transaction";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { findExpenseApprovalStatuses } from "@/repositories/expenses";
-import { findProjectById, findProjectInScope } from "@/repositories/projects";
+import { findProjectById, findProjectInScope, lockProjectForWrite } from "@/repositories/projects";
 import { projectRowScope } from "@/domain/projects/visibility";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
@@ -70,6 +70,7 @@ import { findUserNamesByIds } from "@/repositories/users";
 import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { teamAtDate } from "@/domain/org";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { AUTO_DETACH_REASONS, countLiveLinksByOwners, detachLiveLinksForOwner } from "@/repositories/evidence-record-links";
 import {
   findPurchaseRequestById,
   insertPurchaseRequest,
@@ -84,6 +85,7 @@ import {
   readLockedLineFacts,
   type PurchaseRequestFilter,
   type PurchaseRequestListRow,
+  isPurchaseRequestInScope,
   type PurchaseRequestScope,
 } from "@/repositories/purchase-requests";
 
@@ -565,9 +567,17 @@ export async function cancelPurchaseRequest(
     if (locked.version !== input.version) throw new PurchaseRequestRejectedError(REQUEST_STALE);
     const version = await markPurchaseRequestCancelled(viewer, { id: pre.requestId, version: input.version, cancelledBy: viewer.id, reason }, innerTx);
     if (version === null) throw new PurchaseRequestRejectedError(REQUEST_STALE);
+    // 06.1-06(E22): 붙은 증빙 기록은 사유와 함께 풀로 돌아간다(취소 되돌리기는 붙임을 다시 만들지 않는다).
+    // 뗀 붙임 수는 주인 쓰기 로그 detail에 싣는다(독립 검토 P3-5 — 새 행동 종류 없음 · 0이면 칸 없음).
+    const detachedLinks = await detachLiveLinksForOwner(viewer, { ownerKind: "purchase_request", ownerId: pre.requestId, reason: AUTO_DETACH_REASONS.purchaseRequestCancel }, innerTx);
     await recordAction(
       viewer,
-      { actionType: "status_change", entity: PURCHASE_REQUEST_ENTITY, entityId: pre.requestId, detail: { from: "requested", to: "cancelled", ...(reason === null ? {} : { reason }) } },
+      {
+        actionType: "status_change",
+        entity: PURCHASE_REQUEST_ENTITY,
+        entityId: pre.requestId,
+        detail: { from: "requested", to: "cancelled", ...(reason === null ? {} : { reason }), ...(detachedLinks > 0 ? { detachedEvidenceLinks: detachedLinks } : {}) },
+      },
       { tx: innerTx },
     );
     return { id: pre.requestId, number: locked.number, version };
@@ -820,9 +830,11 @@ export type PurchaseRequestListItemDto = {
   cancelReason: string | null;
   /** 취소 · 구매 완료 행동이 되돌려 보내는 낙관적 동시성 값. */
   version: number;
+  /** 06.1-06(DB-15) 살아 있는 증빙 붙임 수 — 취소 확인 창 결과 줄 `붙은 증빙 {n}건은 증빙 목록으로`(클라이언트가 세지 않는다). */
+  linkedEvidenceCount: number;
 };
 
-const VALUE_KEYS = ["id", "number", "requestedOn", "itemName", "linkUrl", "requestedByName", "status", "linkKind", "version", "cancelledOn", "cancelledByName", "cancelReason"] as const;
+const VALUE_KEYS = ["id", "number", "requestedOn", "itemName", "linkUrl", "requestedByName", "status", "linkKind", "version", "cancelledOn", "cancelledByName", "cancelReason", "linkedEvidenceCount"] as const;
 const AMOUNT_KEYS = ["currency", "foreignAmount", "fxRate", "estimateKrw"] as const;
 
 export const PURCHASE_REQUEST_LIST_DTO_SPEC: DtoSpec<PurchaseRequestListItemDto, PurchaseRequestListItemDto> = {
@@ -860,7 +872,7 @@ function requestLinkLabel(row: PurchaseRequestListRow, lineNo: Map<string, numbe
   return `${row.projectName} · ${number === undefined ? row.lineItemName : `${number} ${row.lineItemName}`}`;
 }
 
-function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>): PurchaseRequestListItemDto {
+function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>, linkCounts: Map<string, number>): PurchaseRequestListItemDto {
   return {
     id: row.id,
     number: row.number,
@@ -881,6 +893,7 @@ function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>)
     cancelledByName: row.cancelledByName,
     cancelReason: row.cancelReason,
     version: row.version,
+    linkedEvidenceCount: linkCounts.get(row.id) ?? 0,
   };
 }
 
@@ -909,6 +922,8 @@ export type PurchaseRequestList = {
   totals: { count: number; estimateKrw: number | null };
   /** 06-14 행 `요청 취소` — `신청됨` 행 id → 갈래(요청자 본인 `own` · 구매 권한자의 남의 요청 `others`). 그 밖 행은 없다(Q2). */
   cancelBranches: Record<string, "own" | "others">;
+  /** 06.1-08 행 `증빙 고르기` — 내 요청 · 취소 아님 · 완료 프로젝트 줄 아님 · 붙은 증빙 0인 행 id(상태 `신청됨` 조건 없음 — 구매 완료 뒤에도 붙인다, PA-PRDONE). */
+  evidenceAuthorIds: string[];
 };
 
 // 서울 월 → [그 달 0시, 다음 달 0시) — `created_at`은 UTC 시각으로 저장된다(seoulToday(createdAt)와 같은 가정).
@@ -939,7 +954,10 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
   const lineNo = await lineNumbers(viewer, rows.flatMap((row) => (row.lineRevisionId ? [row.lineRevisionId] : [])));
   // `전체` 보기는 상태 그룹 순서(신청됨 → 구매 완료 → 취소)로 놓는다 — 그룹 안은 최근 요청이 첫 줄(안정 정렬).
   const ordered = filters.status === "all" ? [...rows].sort((a, b) => STATUS_ORDER[a.status as PurchaseRequestStatusValue] - STATUS_ORDER[b.status as PurchaseRequestStatusValue]) : rows;
-  const projected = await projectMany(viewer, ordered.map((row) => toProjectable(row, lineNo)), PURCHASE_REQUEST_LIST_DTO_SPEC);
+  const linkCounts = new Map(
+    (await countLiveLinksByOwners(viewer, { ownerKind: "purchase_request", ownerIds: rows.map((row) => row.id) })).map((count) => [count.ownerId, count.linkCount]),
+  );
+  const projected = await projectMany(viewer, ordered.map((row) => toProjectable(row, lineNo, linkCounts)), PURCHASE_REQUEST_LIST_DTO_SPEC);
   const estimates = await listPurchaseRequestEstimates(viewer, { scope, filter });
   const pageCount = pageCountFrom(projected.length, LIST_PAGE_SIZE);
   const page = clampPage(filters.page, pageCount);
@@ -949,6 +967,11 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
     privileged,
     anyInScope,
     totals: { count: estimates.length, estimateKrw: (await visible(viewer, "purchase_request.amount")) ? sumKrw(estimates) : null },
+    evidenceAuthorIds: rows
+      .filter((row) =>
+        purchaseRequestAuthorOpen({ requestedBy: row.requestedBy, status: row.status, projectCompleted: row.projectStatus === "completed", liveLinks: linkCounts.get(row.id) ?? 0 }, viewer.id),
+      )
+      .map((row) => row.id),
     cancelBranches: Object.fromEntries(
       rows.flatMap((row): [string, "own" | "others"][] => {
         // U1-1: 완료 프로젝트 줄 요청은 취소를 내놓지 않는다(서버도 거부).
@@ -1063,4 +1086,42 @@ export async function purchaseRequestEntry(viewer: Viewer, lineId: string): Prom
   const row = found.rows.find((candidate) => candidate.id === lineId);
   if (!row || row.itemName === undefined) return null;
   return { project, line: { id: lineId, itemName: row.itemName, remainingKrw: row.remainingKrw ?? null, hint: row.hint ?? null } };
+}
+
+// ── 06.1-06 구매 요청 읽기 판정(증빙 기록 붙이기 · 문서 「증빙」 섹션 — RP-5) ─────────────────────────────
+
+// 06 목록 범위(listAccess) 그대로 — 붙이기 후보 질의가 같은 scope를 쓴다. 판정(can · 프로젝트 범위)은 트랜잭션 밖에서.
+export async function purchaseRequestReadScope(viewer: Viewer, today: string = seoulToday()): Promise<PurchaseRequestScope> {
+  return (await listAccess(viewer, today)).scope;
+}
+
+// 요청 하나를 그 사람이 볼 수 있나 — 06 목록과 같은 범위 조건.
+export async function canSeePurchaseRequest(viewer: Viewer, input: { id: string }): Promise<boolean> {
+  if (!UUID_SHAPE.test(input.id)) return false;
+  return isPurchaseRequestInScope(viewer, { id: input.id, scope: await purchaseRequestReadScope(viewer) });
+}
+
+// ── 06.1-08 작성자 증빙 고르기 판정(E30 · DB-10 · PA-PRDONE) ───────────────────────────────────────────────
+
+export type PurchaseRequestEvidenceFacts = { requestedBy: string; status: string; projectCompleted: boolean; liveLinks: number };
+
+// 내 요청 ∧ 취소 아님 ∧ 완료 프로젝트 줄 아님 ∧ 살아 있는 붙임 0 — 상태 `신청됨` 조건은 없다(구매 완료 뒤에도 영수증을 붙인다).
+export function purchaseRequestAuthorOpen(facts: PurchaseRequestEvidenceFacts, viewerId: string): boolean {
+  return facts.requestedBy === viewerId && facts.status !== "cancelled" && !facts.projectCompleted && facts.liveLinks === 0;
+}
+
+// 요청 한 행의 판정 재료. tx가 있으면 프로젝트 행 → 요청 행 차례로 잠가 읽는다(붙이기 트랜잭션의 문서 잠금 — 정산 최종 승인의
+// lockProjectForWrite와 직렬화되어 커밋 전 완료를 놓치지 않는다 · PR-C Codex P2). 요청의 project_id는 바뀌지 않아 먼저 읽은 값으로 잠근다.
+// 프로젝트 완료 여부는 요청자 본인일 때만 읽는다(값은 나가지 않는다).
+export async function readPurchaseRequestEvidenceFacts(viewer: Viewer, id: string, tx?: DbOrTx): Promise<PurchaseRequestEvidenceFacts | null> {
+  if (!UUID_SHAPE.test(id)) return null;
+  const seen = await findPurchaseRequestById(viewer, id);
+  if (!seen) return null;
+  const projectId = seen.requestedBy === viewer.id && seen.linkKind === "quote_line" ? seen.projectId : null;
+  const lockedProject = tx && projectId ? await lockProjectForWrite(viewer, projectId, tx) : null;
+  const row = tx ? await lockPurchaseRequestForUpdate(viewer, id, tx) : seen;
+  if (!row) return null;
+  const project = row.requestedBy === viewer.id && row.linkKind === "quote_line" && row.projectId ? (lockedProject ?? (await findProjectById(viewer, row.projectId, tx))) : null;
+  const [count] = row.requestedBy === viewer.id ? await countLiveLinksByOwners(viewer, { ownerKind: "purchase_request", ownerIds: [row.id] }, tx) : [];
+  return { requestedBy: row.requestedBy, status: row.status, projectCompleted: project?.status === "completed", liveLinks: count?.linkCount ?? 0 };
 }

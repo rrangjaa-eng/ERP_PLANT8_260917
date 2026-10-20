@@ -20,6 +20,8 @@ export type SelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "id" | "
   options: SelectOption[];
   groups?: SelectOptionGroup[];
   error?: string;
+  /** 06.1-05 F7 — 첫 `—` 빈 옵션을 그리지 않는다(첫 옵션이 기본값인 칸만 — 증빙 공개 칸). 주지 않으면 지금 그대로. */
+  hideEmptyOption?: boolean;
 };
 
 // `Form.Hint`와 같은 모양(`--text-aux --text-muted`) 한 줄. 공용 `Select`로 아직
@@ -33,7 +35,7 @@ export function SelectHint({ id, children }: { id: string; children: ReactNode }
   );
 }
 
-export function Select({ id, options, groups, error, className, onChange, ...rest }: SelectProps) {
+export function Select({ id, options, groups, error, hideEmptyOption, className, onChange, ...rest }: SelectProps) {
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
   // 제어·비제어 둘 다 — 제어면 `value`가, 비제어면 고른 값을 따라가는 로컬
@@ -55,7 +57,7 @@ export function Select({ id, options, groups, error, className, onChange, ...res
         aria-describedby={error ? errorId : description ? hintId : undefined}
         className={[styles.select, error ? styles.selectError : "", className].filter(Boolean).join(" ")}
       >
-        <option value="">—</option>
+        {hideEmptyOption ? null : <option value="">—</option>}
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}

@@ -15,3 +15,10 @@ registerAction({ name: "publishEvidenceRecordsAction", menu: "evidence.intake", 
 // 06.1-05 — 증빙 보관 · 되살림(DA-7). 결과는 줄 id · 새 version 또는 충돌 글자(행 DTO 없음).
 registerAction({ name: "archiveEvidenceRecordAction", menu: "evidence.intake", action: "write", dtoName: null });
 registerAction({ name: "restoreEvidenceRecordAction", menu: "evidence.intake", action: "write", dtoName: null });
+
+// 06.1-07 — S3 증빙 패널. 상세는 EvidenceDetailDto(금액 셋 = 증빙 금액 · 나머지 = 증빙 내용), 미리 보기는 세액 · 합계 두 수 또는 이유 한 줄,
+// 저장 · 풀기는 줄 id · 새 version 또는 충돌 글자(행 DTO 없음).
+registerAction({ name: "getEvidenceDetailAction", menu: "evidence.intake", action: "view", dtoName: "EvidenceDetailDto" });
+registerAction({ name: "previewEvidenceAmountAction", menu: "evidence.intake", action: "view", dtoName: null });
+registerAction({ name: "updateEvidenceAmountAction", menu: "evidence.intake", action: "write", dtoName: null });
+registerAction({ name: "clearRecordNeedsCheckAction", menu: "evidence.intake", action: "write", dtoName: null });

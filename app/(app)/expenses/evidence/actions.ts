@@ -11,8 +11,10 @@ import {
   getEvidenceBatch,
   listEvidenceRecordsByIds,
   publishEvidenceRecords,
+  getEvidenceDetail,
   restoreEvidenceRecord,
 } from "@/domain/evidence-records";
+import { EvidenceAmountConflictError, clearRecordNeedsCheck, previewEvidenceAmount, updateEvidenceAmount } from "@/domain/evidence-records/amount";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import "./actions.registry";
 
@@ -79,6 +81,46 @@ export const restoreEvidenceRecordAction = authedActionClient.schema(archiveInpu
     return { record: await restoreEvidenceRecord(ctx.viewer, parsedInput) };
   } catch (error) {
     if (!(error instanceof EvidenceArchiveConflictError)) throw error;
+    return { conflict: error.message };
+  }
+});
+
+// 06.1-07(S3 증빙 패널) — 단건 상세 · 공급가 미리 보기 · 금액 저장 · 확인 필요 풀기. 세액 · 합계는 서버가 공급가에서 셈한다(PA-AMT) —
+// 입력에 그 칸이 없다. 낡은 version은 오류가 아니라 결과(`conflict` 글자)다 — 패널이 그 줄 꼬리 `새로 고침`으로 다시 불러온다(DA-23 · B-R1).
+const detailInputSchema = z.object({ id: z.string().uuid() });
+
+export const getEvidenceDetailAction = authedActionClient.schema(detailInputSchema).action(async ({ parsedInput, ctx }) => ({
+  detail: await getEvidenceDetail(ctx.viewer, parsedInput.id),
+}));
+
+const previewEvidenceAmountInput = z.object({ id: z.string().uuid(), supplyKrw: z.number().int() });
+
+export const previewEvidenceAmountAction = authedActionClient
+  .schema(previewEvidenceAmountInput)
+  .action(async ({ parsedInput, ctx }) => previewEvidenceAmount(ctx.viewer, parsedInput));
+
+const updateEvidenceAmountInput = z.object({
+  id: z.string().uuid(),
+  version: z.number().int(),
+  supplyKrw: z.number().int(),
+});
+
+export const updateEvidenceAmountAction = authedActionClient.schema(updateEvidenceAmountInput).action(async ({ parsedInput, ctx }) => {
+  try {
+    return { record: await updateEvidenceAmount(ctx.viewer, parsedInput) };
+  } catch (error) {
+    if (!(error instanceof EvidenceAmountConflictError)) throw error;
+    return { conflict: error.message };
+  }
+});
+
+const clearRecordNeedsCheckInput = z.object({ id: z.string().uuid(), version: z.number().int(), supplyKrw: z.number().int().optional() });
+
+export const clearRecordNeedsCheckAction = authedActionClient.schema(clearRecordNeedsCheckInput).action(async ({ parsedInput, ctx }) => {
+  try {
+    return { record: await clearRecordNeedsCheck(ctx.viewer, parsedInput) };
+  } catch (error) {
+    if (!(error instanceof EvidenceAmountConflictError)) throw error;
     return { conflict: error.message };
   }
 });

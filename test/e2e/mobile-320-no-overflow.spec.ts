@@ -1,6 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser, uniqueBusinessNo, waitForCardUsageSection } from "./fixtures";
-import { loginPage } from "./leave-org";
+import { loginPage, waitForHydration } from "./leave-org";
+import { setupExpenseE2E } from "./expense-fixture";
+import { createExpenseFromLines } from "@/domain/expenses";
+import { createIntakeManager, insertRecordFixture, setRecordVisibilityFixture } from "@/test/integration/fixtures/evidence";
 import { addLongNameMembers, setupMembersE2E } from "./project-members-fixture";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
@@ -281,6 +284,31 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
     await expect(detail.getByRole("dialog", { name: "참여자 더하기" })).toBeVisible();
     expectMeasured("320px 참여자 더하기 시트", await measure(detail));
     await detail.context().close();
+  });
+
+  test("PM이 여는 증빙 고르기 시트(06.1-08 S5) — 폭 320 · 가로 넘침 0 · 1차 · 닫기 높이 ≥ 44", async ({ browser, baseURL }) => {
+    test.setTimeout(90_000);
+    const fx = await setupExpenseE2E();
+    const manager = await createIntakeManager();
+    const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+    await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+    const expenseId = created.created[0]?.expenseId;
+    if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+    const pm = await loginPage(browser, baseURL, fx.pm, { width: 320, height: 640 });
+    await pm.goto(`/expenses/${expenseId}`);
+    const trigger = pm.getByRole("button", { name: "증빙 고르기 1" });
+    await waitForHydration(trigger);
+    await trigger.click();
+    const dialog = pm.getByRole("dialog", { name: "증빙 고르기" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("[aria-busy]")).toHaveCount(0);
+    expectMeasured("320px 증빙 고르기 시트", await measure(pm));
+    for (const control of [dialog.getByRole("button", { name: /^증빙 붙이기/ }), dialog.getByRole("button", { name: "닫기" })]) {
+      const box = await control.boundingBox();
+      expect.soft(box?.height ?? 0, "시트 버튼 높이").toBeGreaterThanOrEqual(44);
+    }
+    await pm.context().close();
   });
 
   test("PM이 여는 프로젝트 등록·상세(견적 줄 포함)", async ({ page }) => {

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { recordAction } from "@/domain/action-log/record";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
-import { flagSameApprovalOtherAmount, planAmbiguousGroups, resolveCardForLine } from "@/domain/evidence-import/cards";
+import { CANCEL_REGISTERED_CHECK, flagSameApprovalOtherAmount, planAmbiguousGroups, resolveCardForLine } from "@/domain/evidence-import/cards";
 import { EVIDENCE_IMPORT_MAX_BYTES, sizeRefusalHeadline } from "@/domain/evidence-import/limits";
 import { EVIDENCE_FORMATS, finalizeAmounts as defaultFinalizeAmounts, parseWorkbook as defaultParseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
 import type { EvidenceFormatKey, FinalLine, FormatRule, ParseSuccess, RefusalKind } from "@/domain/evidence-import/types";
@@ -22,6 +22,7 @@ import {
   findCardRecordsByApprovalNos,
   findArchivedDedupeKeys,
   findExistingDedupeKeys,
+  flagRecordsNeedsCheckByDedupeKeys,
   insertRecordsIgnoringDuplicates,
   type EvidenceRecordInsert,
 } from "@/repositories/evidence-records";
@@ -215,11 +216,23 @@ export async function registerEvidenceFile(
       return registered.length === 2 || (registered.length === 1 && registered.every((line) => !archivedKeys.has(line.dedupeKey)));
     });
     const missingHalves = settledPairs.flatMap((pair) => [pair.original, pair.cancel].filter((line) => !existingKeys.has(line.dedupeKey)));
+    // P2-1(사용자 결정 2026-10-17 「지금 막기」): 맞춘 쌍의 원거래는 확인 필요 — 앞 파일로 등록된 원거래는 취소 줄이 실제로 들어간 뒤
+    // UPDATE로(write), 앞 파일의 취소에 맞춰 새로 넣는 원거래는 사유 차례(06.1-02 → A-10 → GH-P1)의 끝에 세운다. 새로 넣는 원거래의
+    // 열쇠는 앞 파일에 없어 GH-P1이 `@`로 바꾸지 않는다.
+    const cancelOfRegisteredOriginal = new Map(
+      settledPairs.filter((pair) => existingKeys.has(pair.original.dedupeKey) && !existingKeys.has(pair.cancel.dedupeKey)).map((pair) => [pair.cancel.dedupeKey, pair.original.dedupeKey]),
+    );
+    const newOriginalKeys = new Set(settledPairs.filter((pair) => existingKeys.has(pair.cancel.dedupeKey) && !existingKeys.has(pair.original.dedupeKey)).map((pair) => pair.original.dedupeKey));
     const lines = (deps?.finalizeAmounts ?? defaultFinalizeAmounts)([...parsed.lines, ...missingHalves], ratesByDate, rulesByType);
-    const planned: PlannedLine[] = card
-      ? await planCardLines(viewer, rule, lines, existingKeys, { sameFile, fileSha256 }, tx)
-      : lines.map((line) => ({ ...line, corpCardId: null }));
-    return { planned, settledAlready: settledPairs.length * 2 - missingHalves.length, offsetPairs: parsed.offsetPairs - settledPairs.length };
+    const planned: PlannedLine[] = (
+      card ? await planCardLines(viewer, rule, lines, existingKeys, { sameFile, fileSha256 }, tx) : lines.map((line) => ({ ...line, corpCardId: null }))
+    ).map((line) => (newOriginalKeys.has(line.dedupeKey) ? { ...line, needsCheck: line.needsCheck ?? CANCEL_REGISTERED_CHECK } : line));
+    return {
+      planned,
+      cancelOfRegisteredOriginal,
+      settledAlready: settledPairs.length * 2 - missingHalves.length,
+      offsetPairs: parsed.offsetPairs - settledPairs.length,
+    };
   };
   const originalName = originalNameOf(input.fileName);
   const rowCount = parsed.lines.length + parsed.offsetLines.length * 2;
@@ -231,7 +244,7 @@ export async function registerEvidenceFile(
       // (eng B-P3) 거래처를 만드는 서식은 거래처 잠금이 첫 줄이고, 이미 등록된 줄은 그 뒤에 걸러 새 줄만 거래처 단계로 보낸다(E11) —
       // 잠금 앞에서 거르면 기다리는 사이 다른 등록이 커밋한 줄이 「새 줄」로 남아 그 사이 보관된 거래처를 되살린다.
       if (rule.createsVendor) await lockVendorAutocreate(viewer, tx);
-      const { planned, settledAlready, offsetPairs } = await planLines(tx);
+      const { planned, cancelOfRegisteredOriginal, settledAlready, offsetPairs } = await planLines(tx);
       const already = rule.createsVendor ? await findExistingDedupeKeys(viewer, planned.map((line) => line.dedupeKey), tx) : new Set<string>();
       // 묶음을 먼저 만들어 거래처 로그 detail에 묶음 id를 담는다(D-6114).
       const batch = await insertBatch(viewer, { format: parsed.format, originalName, fileSha256, rowCount, uploadedBy: viewer.id }, tx);
@@ -239,6 +252,8 @@ export async function registerEvidenceFile(
       const rows = linked.lines.map((line) => recordOf(line, parsed.format, batch.id, viewer));
       const insertedKeys = new Set((await insertRecordsIgnoringDuplicates(viewer, rows, tx)).map((row) => row.dedupeKey));
       const inserted = rows.filter((row) => insertedKeys.has(row.dedupeKey));
+      const flaggedOriginals = [...cancelOfRegisteredOriginal].filter(([cancelKey]) => insertedKeys.has(cancelKey)).map(([, originalKey]) => originalKey);
+      await flagRecordsNeedsCheckByDedupeKeys(viewer, flaggedOriginals, CANCEL_REGISTERED_CHECK, tx);
       const counts = {
         rowCount,
         registered: inserted.length,

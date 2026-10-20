@@ -28,6 +28,7 @@ import type { Viewer } from "@/domain/viewer";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulToday } from "@/lib/dates";
+import { formatKrw } from "@/lib/format-number";
 import { kstDateTimeOf } from "@/lib/kst-date";
 import { clampPage, pageCountFrom } from "@/lib/paging";
 import {
@@ -49,6 +50,9 @@ import {
   type EvidenceVisibilityUpdate,
   type LockedEvidenceRecord,
 } from "@/repositories/evidence-records";
+import type { DbOrTx } from "@/repositories/document-counters";
+import { AUTO_DETACH_REASONS, listLiveLinkOwnersByRecords } from "@/repositories/evidence-record-links";
+import { listRecordHistory } from "@/repositories/evidence-record-detail";
 import { findOrgUnitById } from "@/repositories/org-units";
 import { findMembershipsAtDate } from "@/repositories/team-memberships";
 import { findTeamsByIds, listTeams, type TeamRow } from "@/repositories/teams";
@@ -59,7 +63,7 @@ import { findTeamsByIds, listTeams, type TeamRow } from "@/repositories/teams";
 
 export type { EvidenceRecordVisibility, EvidenceRecordWord, EvidenceRowAction, EvidenceVisibilityCell } from "@/domain/evidence-records/status";
 
-const INTAKE_FORBIDDEN = "증빙 등록 권한 없음";
+export const INTAKE_FORBIDDEN = "증빙 등록 권한 없음";
 // 화면이 만들 수 없는 요청(같은 줄 두 번 · 없는 줄 · 본부 설정 없음의 본부 공개 — PA-DIV-UNSET)은 줄 오류 없이 요청 전체를 거부한다.
 // 글자는 입력 검증의 일반 문구(lib/actions/zod-error-message.ts) 그대로다.
 const INVALID_REQUEST = "입력값 오류 · 값 확인";
@@ -95,6 +99,18 @@ export type EvidenceRecordDto = {
   visibilityCell: EvidenceVisibilityCell;
   /** 행 행동 열의 3차(DA-7) — 서버 판정. 화면은 이 값대로 `보관` · `되살리기`를 그리거나 그리지 않는다. */
   rowAction: EvidenceRowAction;
+  /**
+   * 06.1-06 — 붙은 문서(상태 2행 링크). 등록 권한자(범위 all)에게만 싣는다. 번호 없는 임시 지출결의면 `attachedPending`만 참이고 id · 번호는
+   * 싣지 않는다(경영관리는 그 문서를 못 본다 — Round 2 eng B-P2).
+   */
+  attachedKind: "expense" | "purchase_request" | null;
+  attachedId: string | null;
+  attachedNumber: string | null;
+  attachedPending: boolean;
+  /** 06.1-06 — 행 `붙이기`를 그린다(붙일 수 있는 상태 ∧ 볼 수 있는 대상 문서가 하나라도 있음). 짝 · 권리는 행마다 달라 S4가 판정한다. */
+  canAttach: boolean;
+  /** 06.1-06 — `붙이기` 비활성 이유(확인 필요 · 카드 미등록 — DA-13). 있으면 `붙이기`는 aria-disabled. */
+  attachBlocked: string | null;
 };
 
 // 금액 셋 = 증빙 금액, 나머지 = 증빙 내용(팀 · 본부 이름이 든 상태 2행도 증빙 기록의 공개 칸이다).
@@ -121,6 +137,12 @@ export const EVIDENCE_RECORD_DTO_SPEC: DtoSpec<EvidenceRecordDto, EvidenceRecord
     { key: "statusDetail", from: "statusDetail", infoItem: "evidence.value" },
     { key: "visibilityCell", from: "visibilityCell", infoItem: "evidence.value" },
     { key: "rowAction", from: "rowAction", infoItem: "evidence.value" },
+    { key: "attachedKind", from: "attachedKind", infoItem: "evidence.value" },
+    { key: "attachedId", from: "attachedId", infoItem: "evidence.value" },
+    { key: "attachedNumber", from: "attachedNumber", infoItem: "evidence.value" },
+    { key: "attachedPending", from: "attachedPending", infoItem: "evidence.value" },
+    { key: "canAttach", from: "canAttach", infoItem: "evidence.value" },
+    { key: "attachBlocked", from: "attachBlocked", infoItem: "evidence.value" },
   ],
 };
 
@@ -255,7 +277,39 @@ function sourceOf(row: EvidenceRecordListRow): EvidenceRecordDto {
     statusDetail: status.detail,
     visibilityCell: evidenceVisibilityCell(input),
     rowAction: evidenceRowAction(input),
+    attachedKind: null,
+    attachedId: null,
+    attachedNumber: null,
+    attachedPending: false,
+    canAttach: false,
+    attachBlocked: null,
   };
+}
+
+// 06.1-06: 붙은 문서 · `붙이기` 판정을 한 쪽(최대 50줄)에 한 번에 — 붙임 주인 읽기 한 번 + 대상 문서 있음 조회 둘(쪽마다). 등록 권한자(범위 all)만.
+// 순환 import를 피해 대상 있음 조회는 부르는 쪽이 넘긴다(domain/evidence-records/attach.ts — 지출결의 · 구매 요청 범위).
+async function withAttachFacts(viewer: Viewer, scope: Awaited<ReturnType<typeof evidenceScopeFor>>, dtos: EvidenceRecordDto[]): Promise<EvidenceRecordDto[]> {
+  if (scope.rows !== "all" || dtos.length === 0) return dtos;
+  const owners = new Map((await listLiveLinkOwnersByRecords(viewer, dtos.map((dto) => dto.id))).map((owner) => [owner.recordId, owner]));
+  const attachable = (dto: EvidenceRecordDto) => !owners.has(dto.id) && (dto.statusWord === "미공개" || dto.statusWord === "팀 공개" || dto.statusWord === "본부 공개");
+  const needsTarget = dtos.some((dto) => attachable(dto) || evidenceAttachBlockOf(dto.statusWord) !== null);
+  const [{ hasAttachTarget }, intake] = await Promise.all([import("@/domain/evidence-records/attach"), can(viewer, "evidence.intake", "write")]);
+  const target = intake && needsTarget ? await hasAttachTarget(viewer) : false;
+  return dtos.map((dto) => {
+    const owner = owners.get(dto.id);
+    const kind = owner?.ownerKind === "expense" || owner?.ownerKind === "purchase_request" ? owner.ownerKind : null;
+    const pending = kind === "expense" && owner?.ownerNumber === null;
+    const blocked = evidenceAttachBlockOf(dto.statusWord);
+    return {
+      ...dto,
+      attachedKind: kind,
+      attachedId: kind && !pending ? (owner?.ownerId ?? null) : null,
+      attachedNumber: kind && !pending ? (owner?.ownerNumber ?? null) : null,
+      attachedPending: pending,
+      canAttach: target && (attachable(dto) || (blocked !== null && blocked !== "보관됨")),
+      attachBlocked: blocked === "보관됨" ? null : blocked,
+    };
+  });
 }
 
 // 설정 본부 — 트랜잭션 밖 읽기. 값이 없으면 null(PA-DIV-UNSET).
@@ -346,7 +400,7 @@ export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQue
   const proposals = scope.rows === "all" ? await proposalsFor(viewer, await listProposalTargets(viewer, scope, repoFilters, EVIDENCE_IMPORT_MAX_ROWS), division) : [];
   const sum = (key: "supplyKrw" | "vatKrw" | "totalKrw") => formatTotals.reduce((total, row) => total + row[key], 0);
   return {
-    rows: await projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC),
+    rows: await projectMany(viewer, await withAttachFacts(viewer, scope, rows.map(sourceOf)), EVIDENCE_RECORD_DTO_SPEC),
     proposals,
     division,
     filters,
@@ -370,16 +424,176 @@ export async function countTodoEvidence(viewer: Viewer): Promise<number | null> 
 export async function listEvidenceRecordsByIds(viewer: Viewer, ids: readonly string[]): Promise<EvidenceRecordView[]> {
   const valid = ids.filter((id) => UUID.safeParse(id).success).slice(0, EVIDENCE_PAGE_SIZE);
   if (valid.length === 0) return [];
-  const rows = await listRecordsByIdsForScope(viewer, await evidenceScopeFor(viewer), valid);
-  return projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC);
+  const scope = await evidenceScopeFor(viewer);
+  const rows = await listRecordsByIdsForScope(viewer, scope, valid);
+  return projectMany(viewer, await withAttachFacts(viewer, scope, rows.map(sourceOf)), EVIDENCE_RECORD_DTO_SPEC);
 }
 
 // 단건 — 목록과 같은 범위. 범위 밖 · 없는 id는 null(호출부가 404). 06.1-06 · 07 · 08이 이 함수만 부른다.
 export async function getEvidenceRecord(viewer: Viewer, id: string): Promise<EvidenceRecordView | null> {
   if (!UUID.safeParse(id).success) return null;
-  const row = await findRecordForScope(viewer, await evidenceScopeFor(viewer), id);
+  const scope = await evidenceScopeFor(viewer);
+  const row = await findRecordForScope(viewer, scope, id);
   if (!row) return null;
-  const [view] = await projectMany(viewer, [sourceOf(row)], EVIDENCE_RECORD_DTO_SPEC);
+  const [view] = await projectMany(viewer, await withAttachFacts(viewer, scope, [sourceOf(row)]), EVIDENCE_RECORD_DTO_SPEC);
+  return view ?? null;
+}
+
+// ── 06.1-07 S3 증빙 패널 — 단건 상세(이력 · 금액 잠김 포함) ─────────────────────────────────────────────────────────
+// 패널은 이 DTO를 그대로 그린다(계산 없음). 금액 셋 = 증빙 금액, 나머지 · 이력 = 증빙 내용. 승인번호 전문은 이 상세에만 싣는다(목록 DTO는 그대로).
+// 번호 없는 임시 지출결의에 붙은 기록은 그 문서 id · 번호를 싣지 않고 이력 자리에 `작성 중 문서`(Round 2 eng B-P2 · T-061-75).
+export type EvidenceDetailDto = {
+  id: string;
+  version: number;
+  typeLabel: string | null;
+  counterparty: string | null;
+  statusWord: EvidenceRecordWord;
+  statusDetail: string | null;
+  visibilityLabel: string;
+  issuedOn: string;
+  approvalNo: string | null;
+  originalApprovalNo: string | null;
+  businessNo: string | null;
+  cardLabel: string | null;
+  supplyKrw: number;
+  vatKrw: number;
+  totalKrw: number;
+  attachedKind: "expense" | "purchase_request" | null;
+  attachedId: string | null;
+  attachedNumber: string | null;
+  attachedPending: boolean;
+  /** `{작성 중|결재 중|승인됨|지급 완료|종결} 문서에 붙음 · 금액 잠김` 또는 null(E7 · DB-3 — 서버 거부와 같은 사전 판독). */
+  amountLock: string | null;
+  /** 이력 줄(시각 순) — `{MM-DD HH:mm} {이름} 등록` 꼴, 시각은 서버가 한국 시각 글자로 만든다. 금액 줄은 evidence.amount를 볼 때만. */
+  history: string[];
+  /** `{이름} · {MM-DD HH:mm}`. */
+  registered: string | null;
+};
+
+export const EVIDENCE_DETAIL_DTO_SPEC: DtoSpec<EvidenceDetailDto, EvidenceDetailDto> = {
+  fields: [
+    ...(
+      [
+        "id",
+        "version",
+        "typeLabel",
+        "counterparty",
+        "statusWord",
+        "statusDetail",
+        "visibilityLabel",
+        "issuedOn",
+        "approvalNo",
+        "originalApprovalNo",
+        "businessNo",
+        "cardLabel",
+        "attachedKind",
+        "attachedId",
+        "attachedNumber",
+        "attachedPending",
+        "amountLock",
+        "history",
+        "registered",
+      ] as const
+    ).map((key) => ({ key, from: key, infoItem: "evidence.value" })),
+    { key: "supplyKrw", from: "supplyKrw", infoItem: "evidence.amount" },
+    { key: "vatKrw", from: "vatKrw", infoItem: "evidence.amount" },
+    { key: "totalKrw", from: "totalKrw", infoItem: "evidence.amount" },
+  ],
+};
+
+registerDto({ name: "EvidenceDetailDto", fields: EVIDENCE_DETAIL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+
+export type EvidenceDetailView = Partial<EvidenceDetailDto>;
+
+// 문서 번호가 들어갈 자리 — 번호 없는 임시 지출결의는 `작성 중 문서`, 카드 사용은 `카드 사용`(번호 없음).
+function ownerWordOf(link: { ownerKind: string; ownerNumber: string | null }): string {
+  if (link.ownerNumber !== null) return link.ownerNumber;
+  return link.ownerKind === "corp_card_usage" ? "카드 사용" : "작성 중 문서";
+}
+
+function shortKst(instant: Date): string {
+  return kstDateTimeOf(instant).slice(5);
+}
+
+function supplyOf(value: unknown): number | null {
+  if (typeof value !== "object" || value === null) return null;
+  const supply = (value as { supplyKrw?: unknown }).supplyKrw;
+  return typeof supply === "number" ? supply : null;
+}
+
+// DB-15 · E22 — 등록 · 붙임 · 뗌(사람 = 이름 · 자동 = 문서 번호 자리) · 금액 전 → 후를 시각 순으로. 자동 떼기는 06.1-06 AUTO_DETACH_REASONS 글자로 가른다.
+// 붙은 문서를 못 보면(seen 거짓) 문서 번호 · 붙인/뗀 사람 이름 칸 없이 줄만 남긴다(독립 검토 P2-1 — 06.1-06 P3-2 takenMessage와 같은 결). 번호 없는
+// 작성 중 · 카드 사용 낱말은 번호가 아니라 그대로 둔다.
+function historyLines(history: Awaited<ReturnType<typeof listRecordHistory>>, amountShown: boolean, seen: readonly boolean[]): string[] {
+  const autoReasons: ReadonlySet<string> = new Set(Object.values(AUTO_DETACH_REASONS));
+  const items: { at: Date; order: number; text: string }[] = [];
+  if (history.registration) items.push({ at: history.registration.createdAt, order: 0, text: `${history.registration.createdByName ?? "—"} 등록` });
+  history.links.forEach((link, index) => {
+    const shown = seen[index] === true;
+    const owner = shown || link.ownerNumber === null ? ownerWordOf(link) : null;
+    const attachedBy = shown ? `${link.attachedByName ?? "—"} ` : "";
+    items.push({ at: link.attachedAt, order: 1 + index * 2, text: `${attachedBy}붙임${owner === null ? "" : ` ${owner}`}` });
+    if (link.detachedAt !== null && link.detachReason !== null) {
+      const who = !shown ? null : autoReasons.has(link.detachReason) ? owner : (link.detachedByName ?? "—");
+      items.push({ at: link.detachedAt, order: 2 + index * 2, text: `${who === null ? "" : `${who} `}뗌 · ${link.detachReason}` });
+    }
+  });
+  if (amountShown) {
+    history.amountChanges.forEach((change, index) => {
+      const detail = change.detail as { before?: unknown; after?: unknown } | null;
+      const before = supplyOf(detail?.before);
+      const after = supplyOf(detail?.after);
+      if (before === null || after === null) return;
+      items.push({ at: change.occurredAt, order: 1_000 + index, text: `${change.actorName ?? "—"} 금액 ${formatKrw(before)} → ${formatKrw(after)}` });
+    });
+  }
+  return items.sort((a, b) => a.at.getTime() - b.at.getTime() || a.order - b.order).map((item) => `${shortKst(item.at)} ${item.text}`);
+}
+
+// 단건 상세 — 목록과 같은 범위(범위 밖 · 없는 id는 null). 붙은 문서 · 금액 잠김은 등록 권한자(범위 all)에게만(withAttachFacts와 같은 조건).
+// 패널을 여는 사람은 증빙 등록 쓰기뿐이다 — 액션 등록표(registry)는 집행되지 않으므로 여기서 거부한다(독립 검토 P2-1).
+export async function getEvidenceDetail(viewer: Viewer, id: string): Promise<EvidenceDetailView | null> {
+  if (!(await can(viewer, "evidence.intake", "write"))) throw new ForbiddenError(INTAKE_FORBIDDEN);
+  if (!UUID.safeParse(id).success) return null;
+  const scope = await evidenceScopeFor(viewer);
+  const row = await findRecordForScope(viewer, scope, id);
+  if (!row) return null;
+  const [base] = await withAttachFacts(viewer, scope, [sourceOf(row)]);
+  if (!base) return null;
+  const [history, amountShown, links, { readAmountLock }, { canSeeLinkOwner }] = await Promise.all([
+    listRecordHistory(viewer, id),
+    visible(viewer, "evidence.amount"),
+    scope.rows === "all" ? listLiveLinkOwnersByRecords(viewer, [id]) : Promise.resolve([]),
+    import("@/domain/evidence-records/amount"),
+    import("@/domain/evidence-records/attach"),
+  ]);
+  const seen = await Promise.all(history.links.map((link) => canSeeLinkOwner(viewer, link)));
+  const registration = history.registration;
+  const detail: EvidenceDetailDto = {
+    id: base.id,
+    version: base.version,
+    typeLabel: base.typeLabel,
+    counterparty: base.counterparty,
+    statusWord: base.statusWord,
+    statusDetail: base.statusDetail,
+    visibilityLabel: base.visibilityLabel,
+    issuedOn: base.issuedOn,
+    approvalNo: row.approvalNo,
+    originalApprovalNo: row.originalApprovalNo,
+    businessNo: base.businessNo,
+    cardLabel: base.cardLabel,
+    supplyKrw: base.supplyKrw,
+    vatKrw: base.vatKrw,
+    totalKrw: base.totalKrw,
+    attachedKind: base.attachedKind,
+    attachedId: base.attachedId,
+    attachedNumber: base.attachedNumber,
+    attachedPending: base.attachedPending,
+    amountLock: scope.rows === "all" ? await readAmountLock(viewer, links[0]) : null,
+    history: historyLines(history, amountShown, seen),
+    registered: registration ? `${registration.createdByName ?? "—"} · ${shortKst(registration.createdAt)}` : null,
+  };
+  const [view] = await projectMany(viewer, [detail], EVIDENCE_DETAIL_DTO_SPEC);
   return view ?? null;
 }
 
@@ -565,4 +779,55 @@ export function archiveEvidenceRecord(viewer: Viewer, input: EvidenceArchiveInpu
 
 export function restoreEvidenceRecord(viewer: Viewer, input: EvidenceArchiveInput): Promise<EvidenceArchiveInput> {
   return setEvidenceArchived(viewer, input, "restore");
+}
+
+// ── 06.1-06 붙이기 판정용 기록 사실(DTO 아님 — domain 안에서만) ─────────────────────────────────────────────────
+// 후보 점수 · 짝 판정 · 부제에 쓰는 기록 칸과 지금 상태 낱말. 목록과 같은 범위(evidenceScopeFor — 트랜잭션 밖 한 번). 금액은 같음 판정 ·
+// 부제(evidence.amount를 볼 수 있을 때만)에만 쓴다.
+export type EvidenceRecordFacts = {
+  id: string;
+  evidenceType: string;
+  typeLabel: string | null;
+  counterparty: string | null;
+  businessNoDigits: string | null;
+  supplyKrw: number;
+  totalKrw: number;
+  issuedOn: string;
+  statusWord: EvidenceRecordWord;
+};
+
+export async function readEvidenceRecordFacts(viewer: Viewer, id: string): Promise<EvidenceRecordFacts | null> {
+  if (!UUID.safeParse(id).success) return null;
+  const row = await findRecordForScope(viewer, await evidenceScopeFor(viewer), id);
+  if (!row) return null;
+  const source = sourceOf(row);
+  return {
+    id: row.id,
+    evidenceType: row.evidenceType,
+    typeLabel: source.typeLabel,
+    counterparty: source.counterparty,
+    businessNoDigits: row.businessNoDigits,
+    supplyKrw: row.supplyKrw,
+    totalKrw: row.totalKrw,
+    issuedOn: row.issuedOn,
+    statusWord: source.statusWord,
+  };
+}
+
+// 붙일 수 없는 상태 낱말 → 거부 글자(DA-13 — S2 행 `붙이기`의 비활성 이유와 같은 글자). 붙음은 붙임 행으로 따로 판정한다.
+const ATTACH_BLOCKED_BY_WORD: Partial<Record<EvidenceRecordWord, string>> = {
+  보관됨: "보관됨",
+  "카드 미등록": "카드 미등록 · 카드 등록은 관리자",
+  "확인 필요": "확인 필요 · 패널에서 확인 필요 풀기",
+};
+
+export function evidenceAttachBlockOf(word: EvidenceRecordWord): string | null {
+  return ATTACH_BLOCKED_BY_WORD[word] ?? null;
+}
+
+// 트랜잭션 안 증빙 행 잠금(lockRecordsForUpdate) 뒤 지금 상태 낱말 — 없는 행은 null. 잠금 뒤 재검사(C-F12 — 사전 판독 뒤 보관 · 확인 필요 ·
+// 카드 미등록으로 바뀐 줄을 막는다). 확인 필요는 기록 칸(needs_check)을 읽으므로 뒤 파일 취소가 원래 줄을 확인 필요로 바꾸면 여기서 막힌다.
+export async function lockEvidenceRecordState(viewer: Viewer, id: string, tx: DbOrTx): Promise<EvidenceRecordWord | null> {
+  const [row] = await lockRecordsForUpdate(viewer, [id], tx);
+  return row ? evidenceRecordStatus(lockedStatusInput(row)).word : null;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { formatCount, formatKrw } from "@/lib/format-number";
@@ -16,11 +17,13 @@ import { RowSheet } from "@/ui/table/RowSheet";
 import { Table } from "@/ui/table/Table";
 import tableStyles from "@/ui/table/Table.module.css";
 import { Toast } from "@/ui/toast/Toast";
+import type { KvItem } from "@/ui/kv-list/KvList";
 import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import type { FooterNoticeItem } from "@/ui/table/footer-notice";
 import type { CellEditability, CellIssue, TableColumn } from "@/ui/table/types";
 import type {
+  EvidenceDetailView,
   EvidenceListFilters,
   EvidenceProposal,
   EvidenceRecordList,
@@ -31,8 +34,9 @@ import type {
   EvidenceTeamOption,
 } from "@/domain/evidence-records";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
-import { archiveEvidenceRecordAction, publishEvidenceRecordsAction, restoreEvidenceRecordAction } from "./actions";
+import { archiveEvidenceRecordAction, getEvidenceDetailAction, publishEvidenceRecordsAction, restoreEvidenceRecordAction } from "./actions";
 import { IntakeZone } from "./intake-zone";
+import { PickDocumentDialog, type PickDocumentTarget } from "./pick-document-dialog";
 import expenseStyles from "../expenses.module.css";
 import styles from "./evidence-table.module.css";
 
@@ -41,6 +45,12 @@ import styles from "./evidence-table.module.css";
 // 서버 제안은 dirty 면으로 그리되 편집 맵과 따로 둔다 — 떠나기 경고 · 브라우저 보관에는 사람이 바꾼 칸만 든다(DA-4).
 // 06.1-05 Task 2 — 필터 셋(쿼리 링크 · 기본 `할 일`) · 서식 그룹 · 필터 결과 전체 합계 · 폭별 열 · 잠긴 셀 이유 · 페이지 줄 · 힌트 줄 · 빈 상태 넷 · 폰 읽기 시트.
 // 06.1-05 Task 3 — 공개 칸 「다른 팀」 묶음 · 서버 거부 칸 · 업로드 중 1차 막힘 · 행 행동(보관 · 되살리기) + 표 위 결과 줄 `되돌리기`.
+
+// 06.1-07 S3 — 패널(옆 패널 · 폼 · 입력 칸)은 열 때 불러온다. 이 화면의 첫 묶음에 패널의 CSS가 함께 실리면 번들러가 CSS 차례를 바꿔
+// 같은 명시도의 표 칸 편집기(.cellSelect)가 ui/select 테두리에 밀린다(evidence-list-audit ③ 실측 — 정적 import 빌드에서 이 화면 CSS가 Select 앞으로 섞임).
+// next/dynamic(Suspense)을 쓰지 않고 상세와 함께 받은 모듈의 컴포넌트를 상태로 쥔다 — Suspense 경계는 드러낼 때 React가 300ms 단위로 몰아
+// 그려 첫 열림이 360ms가 됐다(06.1-07 감사 D-2 실측: 망은 51ms에 끝나고 300ms 넘게 비었다). 서스펜드가 없으니 라우트 loading.tsx로도 올라가지 않는다.
+type EvidencePanelComponent = (typeof import("./evidence-panel"))["EvidencePanel"];
 
 type Row = {
   id: string;
@@ -59,6 +69,10 @@ type Row = {
   statusWord: EvidenceRecordWord;
   statusDetail: string | null;
   rowAction: EvidenceRowAction;
+  /** 06.1-06 — 붙은 문서(상태 2행 링크) · `붙이기` 그림 · 비활성 이유. */
+  attached: { kind: "expense" | "purchase_request"; id: string | null; number: string | null; pending: boolean } | null;
+  canAttach: boolean;
+  attachBlocked: string | null;
 };
 
 /** 사람이 바꾼 공개 칸 — 값은 셀 안에서만 쓰는 꼴(`private` · `division` · `team:{팀 id}`), version은 바꿀 때 본 값. */
@@ -83,6 +97,8 @@ const COPY = {
   undo: "되돌리기",
   undoFailed: "되돌리기 실패 · 다시 시도",
   unknownResult: "결과를 받지 못함 · 새로 고침",
+  draftOwner: "작성 중 문서",
+  attach: "붙이기",
 } as const;
 
 const ROW_ACTION_LABEL = { archive: "보관", restore: "되살리기" } as const;
@@ -163,8 +179,39 @@ function rowFromView(view: EvidenceRecordView): Row[] {
       statusWord: view.statusWord,
       statusDetail: view.statusDetail ?? null,
       rowAction: view.rowAction ?? null,
+      attached: view.attachedKind
+        ? { kind: view.attachedKind, id: view.attachedId ?? null, number: view.attachedNumber ?? null, pending: view.attachedPending === true }
+        : null,
+      canAttach: view.canAttach === true,
+      attachBlocked: view.attachBlocked ?? null,
     },
   ];
+}
+
+// 06.1-06 S2 2행 — 붙은 문서 번호 링크(지출결의 문서 · 구매 요청 목록). 번호 없는 임시 문서는 링크 없는 낱말(경영관리는 그 문서를 못 본다).
+function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
+  if (attached.pending || attached.id === null || attached.number === null) return <span>{COPY.draftOwner}</span>;
+  const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : "/cards/purchases";
+  // 링크 모양은 지출결의 목록 번호 링크(`expenseStyles.link` — `--text-link`)와 같다. 격자 로빙 밖(tabIndex -1 — §7-3 (아) 탭 정지 1개)이고
+  // 키보드 경로는 그 칸 Enter(`pressCellAction` — 지급 대상 · 리저브 대장 선례)다.
+  return (
+    <Link href={href} className={expenseStyles.link} tabIndex={-1} data-cell-action="">
+      {attached.number}
+    </Link>
+  );
+}
+
+// D-2 — 격자 포커스 칸(편집 칸이 아닌 상태 칸)의 Enter = 그 칸 안 `[data-cell-action]`(상태 2행 문서 번호 링크) 누르기. 표를 감싼 요소가 캡처 단계에서
+// 먼저 받는다(ui/table 무변경 — 지급 대상 H-2 · 리저브 대장 S22 선례). 조합 중 · 수정 키 · 편집 칸 안 입력은 손대지 않는다(공개 칸 Enter 편집 그대로).
+function pressCellAction(event: React.KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Enter" || event.ctrlKey || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.matches("td[data-grid-focus]")) return;
+  const action = target.querySelector<HTMLElement>("[data-cell-action]");
+  if (!action) return;
+  event.preventDefault();
+  event.stopPropagation();
+  action.click();
 }
 
 function proposalValue(proposal: EvidenceProposal): string {
@@ -213,6 +260,7 @@ function VisibilityEditCell({ id, initialValue, choices, onCommit, onCancel }: {
       onBlur={(event) => (event.currentTarget.value === initialValue ? onCancel() : onCommit(event.currentTarget.value))}
       options={choices.options}
       groups={choices.groups}
+      hideEmptyOption
       className={styles.cellSelect}
     />
   );
@@ -239,6 +287,11 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const defaults = filterOptions.defaults;
   const [sheetRowId, setSheetRowId] = useState<string | null>(null);
   const sheetRow = rows.find((row) => row.id === sheetRowId);
+  // 06.1-07 S3 — 1024 이상은 옆 패널(공급가 고침 · 확인 필요 풀기), 미만은 행 시트에 같은 읽기 줄(이력 포함). 둘 다 상세를 서버에서 한 번 받는다.
+  const [panelDetail, setPanelDetail] = useState<{ detail: EvidenceDetailView; Panel: EvidencePanelComponent } | null>(null);
+  const [sheetItems, setSheetItems] = useState<{ id: string; items: KvItem[] } | null>(null);
+  // 시트(<1024)의 상세 실패 한 줄은 열린 시트 안 action 자리에 선다(§7-8 · Codex 2회차 #5 — 표 위 결과 줄은 시트 뒤에 가린다).
+  const [sheetFailure, setSheetFailure] = useState<{ id: string; message: string } | null>(null);
 
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [cellErrors, setCellErrors] = useState<Record<string, string>>({});
@@ -427,6 +480,30 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   // 새로 보관할 때만 `되돌리기`를 다시 그려 포커스를 준다(공휴일 delete-undo 꼴).
   const [archiveShown, setArchiveShown] = useState(0);
   const [rowActionPending, setRowActionPending] = useState<string | null>(null);
+  // 06.1-06 S4 — 붙일 문서 고르기(행 `붙이기`). 닫히면 PickDialog가 그 행의 `붙이기`로 포커스를 돌린다.
+  const [attachTarget, setAttachTarget] = useState<PickDocumentTarget | null>(null);
+  function openAttach(row: Row) {
+    if (row.attachBlocked !== null || rowActionPending !== null) return;
+    setAttachTarget({ recordId: row.id, subtitle: row.counterparty ?? "" });
+  }
+  // 붙인 뒤 새 목록이 오면 포커스 자리 — 그 행이 남으면 그 행, 「할 일」처럼 빠지면 다음 행(없으면 이전 행, 없으면 화면 제목).
+  // 붙인 순간의 행 순서를 기억해 두고, 목록(list)이 바뀐 커밋 뒤에 한 번만 옮긴다(PickDialog가 돌려준 `붙이기`는 그 행과 함께 사라진다).
+  const attachedFocusRef = useRef<{ id: string; order: string[] } | null>(null);
+  function onAttached(recordId: string) {
+    attachedFocusRef.current = { id: recordId, order: rows.map((row) => row.id) };
+    router.refresh();
+  }
+  useEffect(() => {
+    const pending = attachedFocusRef.current;
+    if (!pending) return;
+    attachedFocusRef.current = null;
+    const present = new Set(list.rows.flatMap((view) => (view.id === undefined ? [] : [view.id])));
+    const at = pending.order.indexOf(pending.id);
+    const candidates = [pending.id, ...pending.order.slice(at + 1), ...pending.order.slice(0, Math.max(at, 0)).reverse()];
+    const targetId = candidates.find((id) => present.has(id));
+    const cell = targetId ? document.getElementById(counterpartyId(targetId))?.closest<HTMLElement>("td") : null;
+    (cell ?? document.querySelector<HTMLElement>('[data-ui="screen-title"]'))?.focus();
+  }, [list]);
   const shownArchiveLine = archiveLine?.kind === "conflict" && archiveLine.list !== list ? null : archiveLine;
 
   // 보관한 줄은 목록에서 빠진다 — 그 줄의 편집 · 오류 칸만 버린다(다른 줄 편집은 행 id 키라 다시 받아도 남는다).
@@ -492,6 +569,29 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
     setArchiveLine({ kind: "archived", record, undoFailed: true });
   }
 
+  // 06.1-07 S3 — 상세를 받아 패널(≥1024) · 행 시트(<1024)를 연다. 받지 못하면 표 위 결과 줄(보관 충돌과 같은 자리 · 꼬리 `새로 고침`).
+  async function loadDetail(rowId: string, onFail = (message: string) => setArchiveLine({ kind: "conflict", message, list })): Promise<EvidenceDetailView | null> {
+    const result = await getEvidenceDetailAction({ id: rowId }).catch(() => undefined);
+    const detail = result?.data?.detail ?? null;
+    if (!detail) onFail(result?.serverError ?? COPY.unknownResult);
+    return detail;
+  }
+  async function openPanel(row: Row) {
+    if (cellEditing || panelDetail !== null) return;
+    // 패널 청크와 상세를 함께 받는다(openSheet와 같은 꼴 — 감사 D-2).
+    const [panel, detail] = await Promise.all([import("./evidence-panel"), loadDetail(row.id)]);
+    if (detail) setPanelDetail({ detail, Panel: panel.EvidencePanel });
+  }
+  function openSheet(row: Row) {
+    setSheetRowId(row.id);
+    setSheetItems(null);
+    setSheetFailure(null);
+    const onFail = (message: string) => setSheetFailure({ id: row.id, message });
+    void Promise.all([import("./evidence-panel"), loadDetail(row.id, onFail)]).then(([panel, detail]) => {
+      if (detail) setSheetItems({ id: row.id, items: panel.evidenceReadItems(detail) });
+    });
+  }
+
   // 열 우선순위(UI-SPEC S2): P1 거래처·가맹점 · 합계 · 상태 / P2 날짜 · 공개 / P3 공급가 · 세액 — 1280 미만에서 P3를 숨기고(DOM에는 남음)
   // 그 합은 합계 행 라벨 뒤에 남는다. `copyText`는 격자 Ctrl+C가 싣는 글자(힌트 줄 「복사」가 실제로 값을 싣는다).
   const columns: TableColumn<Row>[] = [
@@ -501,16 +601,38 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       header: "거래처·가맹점",
       priority: "p1",
       // DX-1 — 한 줄 말줄임 + title 전문(격자 칸 minmax(0, max-content)라 폰 320에서도 문서를 넘기지 않는다). id는 행 행동이 가리킨다.
-      cell: (row) =>
-        row.counterparty ? (
-          <span id={counterpartyId(row.id)} className={styles.counterpartyCell}>
-            <span className={styles.counterpartyText} title={row.counterparty}>
-              {row.counterparty}
-            </span>
+      // 06.1-07 PA-PANEL-OPEN — 이 칸이 S3 패널(≥1024) · 읽기 시트(<1024)를 여는 행 이름 버튼이다(읽기 칸이라 격자 Enter = `pressCellAction`이 누른다).
+      // 격자 로빙 밖(tabIndex -1 — §7-3 (아) 탭 정지 1개). 표 칸 role="button"은 ui/table 접힌 줄 탭과 같은 꼴(버튼 겉모양 없이 말줄임을 지킨다).
+      cell: (row) => {
+        const name = row.counterparty ? (
+          <span className={styles.counterpartyText} title={row.counterparty}>
+            {row.counterparty}
           </span>
         ) : (
-          <span id={counterpartyId(row.id)}>—</span>
-        ),
+          "—"
+        );
+        const className = styles.counterpartyCell;
+        // 1024 미만은 같은 칸이 읽기 시트를 연다 — 700~1023은 접힌 줄(ui/table 행 탭)이 없어 이것이 시트로 가는 유일한 길이다.
+        const open = () => (editableWidth ? void openPanel(row) : openSheet(row));
+        return (
+          <span
+            id={counterpartyId(row.id)}
+            className={className}
+            role="button"
+            tabIndex={-1}
+            aria-haspopup="dialog"
+            data-cell-action=""
+            onClick={open}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              open();
+            }}
+          >
+            {name}
+          </span>
+        );
+      },
       secondaryLine: (row) => row.kindLine,
       copyText: (row) => row.counterparty ?? "",
     },
@@ -543,10 +665,11 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       header: "상태",
       priority: "p1",
       cell: (row) => <StatusTag status={row.statusWord} variant="text" />,
-      secondaryLine: (row) => (row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null),
+      secondaryLine: (row) =>
+        row.attached ? <AttachedLine attached={row.attached} /> : row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null,
       copyText: (row) => row.statusWord,
     },
-    // §7-3 (차) 행 행동 열 — 머리글 숨김 · P1 밖 · 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 거래처 칸을 가리킨다. 키보드 경로는 Ctrl+E다.
+    // §7-3 (차) 행 행동 열 — 머리글 숨김 · P1 밖 · 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 거래처 칸을 가리킨다. 키보드 경로는 Ctrl+E다(runKeyAction).
     // 안 붙은 줄은 끝에 떨어뜨린 `보관`, `보관됨` 보기는 `되살리기`만(서버 판정 rowAction). 1024 미만은 보기 전용이라 열이 없다.
     ...(editableWidth
       ? [
@@ -556,8 +679,18 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             headerHidden: true,
             priority: "p3" as const,
             cell: (row: Row) =>
-              row.rowAction ? (
+              row.rowAction || row.canAttach ? (
                 <RowActions noWrap>
+                  {row.canAttach && row.attachBlocked !== null ? (
+                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} disabled disabledReason={row.attachBlocked} onClick={() => undefined}>
+                      {COPY.attach}
+                    </RowAction>
+                  ) : row.canAttach ? (
+                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} busy={rowActionPending !== null} onClick={() => openAttach(row)}>
+                      {COPY.attach}
+                    </RowAction>
+                  ) : null}
+                  {row.rowAction ? (
                   <RowAction
                     tabIndex={-1}
                     danger={row.rowAction === "archive"}
@@ -568,6 +701,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                   >
                     {ROW_ACTION_LABEL[row.rowAction]}
                   </RowAction>
+                  ) : null}
                 </RowActions>
               ) : null,
           },
@@ -591,9 +725,16 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const noChange = pending === 0 && !cellEditing;
   const primaryBlocked = uploading ? COPY.uploading : noChange ? COPY.noChange : undefined;
 
-  // 힌트 줄 — 행 행동이 선 줄이 있을 때만 그 낱말과 Ctrl+E(실제로 되는 키만).
-  const shownRowAction = rows.find((row) => row.rowAction !== null)?.rowAction ?? null;
-  const hintItems = shownRowAction ? [...HINT_ITEMS, { label: ROW_ACTION_LABEL[shownRowAction], keys: "Ctrl+E" }] : HINT_ITEMS;
+  // Ctrl+E(§7-3 (차) 행 행동 열의 키보드 경로) — 붙일 수 있는 줄은 `붙이기`(S4), `보관됨` 보기는 `되살리기`. 보관은 위험 행동이라 단축키가 없다
+  // (PR-C D-1 · design-review P-1 ① — 1차 행동 키로 보관이 일어나지 않게). 힌트 줄은 실제로 되는 그 낱말 하나만.
+  const keyActionOf = (row: Row): "attach" | "restore" | null => (row.canAttach && row.attachBlocked === null ? "attach" : row.rowAction === "restore" ? "restore" : null);
+  function runKeyAction(row: Row) {
+    const action = keyActionOf(row);
+    if (action === "attach") openAttach(row);
+    else if (action === "restore") void runRowAction(row);
+  }
+  const shownKeyAction = rows.map(keyActionOf).find((action) => action !== null) ?? null;
+  const hintItems = shownKeyAction ? [...HINT_ITEMS, { label: shownKeyAction === "attach" ? COPY.attach : ROW_ACTION_LABEL.restore, keys: "Ctrl+E" }] : HINT_ITEMS;
 
   // 쿼리 링크 갈래 — 클라이언트 이동이라 표가 다시 마운트되지 않고 편집 맵이 남는다(리저브 대장 · 카드 사용 필터 선례). 쪽은 1로 돌아간다.
   function go(key: "state" | "type" | "period", value: string) {
@@ -715,6 +856,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       {rows.length === 0 ? (
         <ListEmpty message={emptyState.message} action={emptyState.action} />
       ) : (
+        <div onKeyDownCapture={pressCellAction}>
         <Table
           caption={COPY.caption}
           columns={columns}
@@ -725,14 +867,14 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           groupHeader={(row) => groupLabels.get(row.format) ?? row.format}
           enableGridKeyboard
           rowLabel={(row) => `${row.issuedOn} ${row.counterparty ?? ""}`}
-          onRowTap={(row) => setSheetRowId(row.id)}
+          onRowTap={openSheet}
           saveLocked={isExecuting}
           onEditingChange={setCellEditing}
           onCellCommit={commitVisibility}
           cellIssue={cellIssue}
           cellDirty={(row, columnKey) => editableWidth && columnKey === VISIBILITY && (proposals.has(row.id) || row.id in edits)}
           firstIssueSignal={issueSignal}
-          keyboard={{ onSave: () => setSaveRequests((count) => count + 1), onOpenRow: editableWidth ? (row) => void runRowAction(row) : undefined }}
+          keyboard={{ onSave: () => setSaveRequests((count) => count + 1), onOpenRow: editableWidth ? runKeyAction : undefined }}
           footerNotices={footerNotices}
           footerSuccess={savedNotice}
           footer={(notice) => (
@@ -744,6 +886,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             </tr>
           )}
         />
+        </div>
       )}
 
       {/* DA-22 — 50건 번호 페이지(링크 갈래 — 범위 글자 · `이전` · 숫자 · `다음`). 클라이언트 이동이라 편집 맵이 남는다. */}
@@ -767,14 +910,17 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         </div>
       ) : null}
 
-      {/* 1024 미만 행 탭 → 읽기 시트(KvList 줄만 · 행동 없음). 폰에서 숨는 열(날짜 · 공급가 · 세액 · 공개)을 여기서 본다. */}
+      {/* 1024 미만 행 탭 → 읽기 시트(KvList 줄만 · 행동 없음). 폰에서 숨는 열(날짜 · 공급가 · 세액 · 공개)을 여기서 본다.
+          06.1-07 — 상세가 오면 S3 패널과 같은 읽기 줄(공급가 글자 · 이력 포함), 오기 전에는 표 줄 값. */}
       <RowSheet
         open={sheetRow !== undefined}
         onClose={() => setSheetRowId(null)}
         title={sheetRow?.counterparty ?? "—"}
         subtitle={sheetRow ? [sheetRow.issuedOn, sheetRow.kindLine].filter((part): part is string => Boolean(part)).join(" · ") : ""}
         items={
-          sheetRow
+          sheetRow && sheetItems?.id === sheetRow.id
+            ? sheetItems.items
+            : sheetRow
             ? [
                 { label: "날짜", value: <Num value={sheetRow.issuedOn} /> },
                 { label: "공급가", value: <Num value={sheetRow.supplyKrw} /> },
@@ -785,6 +931,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
               ]
             : []
         }
+        action={sheetRow && sheetFailure?.id === sheetRow.id ? <ConflictLine message={sheetFailure.message} /> : undefined}
       />
 
       {discardedEdits ? (
@@ -797,6 +944,10 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           }}
           onDismiss={() => setDiscardedEdits(null)}
         />
+      ) : null}
+      <PickDocumentDialog target={attachTarget} onClose={() => setAttachTarget(null)} onAttached={onAttached} />
+      {panelDetail ? (
+        <panelDetail.Panel key={panelDetail.detail.id} detail={panelDetail.detail} lineClassName={styles.undoLine} onClose={() => setPanelDetail(null)} onSaved={() => router.refresh()} />
       ) : null}
     </>
   );

@@ -264,6 +264,8 @@ function PickDialogInner(props: PickDialogProps) {
   const items = result?.items ?? [];
   const rows = rowsOf(items);
   const activeRow = rows.find((row) => row.id === activeId) ?? null;
+  // 로빙 탭 정지 — 가리키는 행, 없으면 첫 행(검색 칸 ↓와 같은 행). 목록이 넘쳐 스크롤돼도 Tab으로 닿는다(axe scrollable-region-focusable).
+  const tabStopId = activeRow?.id ?? rows[0]?.id ?? null;
   // 06-29(SP-8) — 목록이 오는 중 · 오류 중에는 옛 목록의 행을 고를 수 없다(1차 aria-disabled, Enter도 아무 일 없음).
   const rejectionBlocks = rejection !== null && !rejection.retryable;
   const chosen = !many && !loading && !failed && !rejectionBlocks && activeRow?.selectable ? activeRow : null;
@@ -517,8 +519,10 @@ function PickDialogInner(props: PickDialogProps) {
                     key={item.id}
                     row={item}
                     active={item.id === activeId}
+                    tabStop={item.id === tabStopId}
                     preselected={item.id === preselectedId}
                     onActivate={() => focusRow(item.id)}
+                    onFocus={() => item.id !== activeId && activate(item.id)}
                     onMove={(delta) => moveFrom(item.id, delta)}
                     onEnter={() => void (many ? pickMany() : pickChosen(item))}
                     multi={many ? { selected: selected.some((picked) => picked.id === item.id), onToggle: () => toggleRow(item) } : undefined}
@@ -587,8 +591,10 @@ function PickDialogInner(props: PickDialogProps) {
 function PickRowView({
   row,
   active,
+  tabStop,
   preselected,
   onActivate,
+  onFocus,
   onMove,
   onEnter,
   multi,
@@ -596,9 +602,13 @@ function PickRowView({
 }: {
   row: PickRow;
   active: boolean;
+  /** 로빙 탭 정지(tabindex 0) — 가리키는 행, 없으면 첫 행. */
+  tabStop: boolean;
   /** 06.1 SP-6106 — 서버가 미리 고른 단일 행: 아직 가리키는 행이면 현재 행 표시(700 + 왼쪽 선)로 선다. */
   preselected: boolean;
   onActivate: () => void;
+  /** Tab으로 들어온 행이 가리키는 행이 된다. */
+  onFocus: () => void;
   onMove: (delta: 1 | -1) => void;
   onEnter: () => void;
   /** 다중 변형 — option `aria-selected`가 고름이고 로빙 포커스 행이 현재 줄이다. */
@@ -612,8 +622,9 @@ function PickRowView({
       aria-selected={multi ? (multi.selected ? "true" : "false") : active && row.selectable ? "true" : "false"}
       aria-disabled={row.selectable ? undefined : "true"}
       aria-describedby={row.reason ? reasonId : undefined}
-      tabIndex={active ? 0 : -1}
+      tabIndex={tabStop ? 0 : -1}
       className={[styles.row, row.number ? styles.numbered : "", (multi ? active : row.current || (preselected && active)) ? styles.current : "", row.selectable ? "" : styles.disabled].filter(Boolean).join(" ")}
+      onFocus={onFocus}
       onClick={() => {
         onActivate();
         multi?.onToggle();

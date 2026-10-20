@@ -10,6 +10,7 @@ import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { formatForeignLine, formatKrw } from "@/lib/format-number";
+import { PickEvidenceDialog } from "../../expenses/evidence/pick-evidence-dialog";
 // 필터 칸 모양은 프로젝트 목록 필터와 같은 클래스(새 CSS 없음).
 import filterStyles from "@/app/(app)/projects/projects.module.css";
 import cardStyles from "../cards.module.css";
@@ -47,6 +48,12 @@ export type PurchaseListRowView = {
   cancelReason: string | null;
   /** 06-14 `신청됨` 행에서만 서버가 준다 — 요청자 본인 `own` · 구매 권한자의 남의 요청 `others`. 없으면 `요청 취소`가 서지 않는다(Q2). */
   cancelBranch: "own" | "others" | null;
+  /** 06.1-06(DB-15) 살아 있는 증빙 붙임 수 — 취소 창 결과 줄(서버가 센다). */
+  linkedEvidenceCount: number;
+  /** 06.1-08 행 `증빙 고르기 {N}` — 서버가 센 후보 수(내 열린 요청 행에서만 · 아니면 null). */
+  evidencePickN: number | null;
+  /** 06.1-08 품목 칸 2행 `증빙 {거래처} · {합계}` — 붙은 증빙 첫 줄(없으면 null). */
+  evidenceLine: string | null;
 };
 
 // 06-12 S13 성공 뒤 제자리 결과 — 패널(폼)이 성공 순간 남기고, 목록이 `?done={id}`로 다시 그려질 때 읽는다(액션 응답 값 · 한 번만 포커스).
@@ -142,7 +149,7 @@ function statusSecondLine(row: PurchaseListRowView): ReactNode {
 const COLUMNS: TableColumn<PurchaseListRowView>[] = [
   { key: "number", header: "번호", priority: "p2", cell: (row) => <Num value={row.number} /> },
   { key: "requestedOn", header: "요청일", priority: "p2", cell: (row) => <Num value={row.requestedOn.slice(5)} /> },
-  { key: "item", header: "품목", priority: "p1", cell: itemCell },
+  { key: "item", header: "품목", priority: "p1", cell: itemCell, secondaryLine: (row) => row.evidenceLine },
   { key: "link", header: "연결", priority: "p2", cell: linkCell },
   { key: "requester", header: "요청자", priority: "p2", cell: (row) => row.requestedByName },
   { key: "estimate", header: "예상 금액", priority: "p1", align: "right", cell: (row) => <Num value={row.estimateKrw} />, secondaryLine: estimateSecondLine },
@@ -191,26 +198,33 @@ function cancelTarget(row: PurchaseListRowView): PurchaseCancelTarget | null {
     branch: row.cancelBranch,
     quoteLinked: row.quoteLinked,
     estimateText: row.estimateKrw === null ? null : formatKrw(row.estimateKrw),
+    linkedEvidenceCount: row.linkedEvidenceCount,
   };
 }
 
-// 행동 칸 — 구매 권한자에게 `신청됨` 행 `구매 완료`(접근 이름 `{번호} 구매 완료`) · 취소 권한이 있는 `신청됨` 행 `요청 취소`(맨 끝 danger).
-// 구매 완료 · 취소 행에는 행동이 없다(Q2).
-function actionsColumn(listHref: string, canComplete: boolean): TableColumn<PurchaseListRowView> {
+// 행동 칸 — 구매 권한자에게 `신청됨` 행 `구매 완료`(접근 이름 `{번호} 구매 완료`) · 취소 권한이 있는 `신청됨` 행 `요청 취소`(맨 끝 danger) ·
+// 06.1-08: 내 열린 요청 행(상태 무관 — 구매 완료 뒤에도)에 3차 `증빙 고르기 {N}`. 구매 완료 · 취소 행에는 그 밖의 행동이 없다(Q2).
+function actionsColumn(listHref: string, canComplete: boolean, onPick: (row: PurchaseListRowView) => void): TableColumn<PurchaseListRowView> {
   return {
     key: "actions",
     header: "행동",
     headerHidden: true,
     priority: "p3",
     cell: (row) => {
-      if (row.status !== "requested") return null;
       const target = cancelTarget(row);
-      if (!canComplete && !target) return null;
+      const complete = canComplete && row.status === "requested";
+      if (!complete && !target && row.evidencePickN === null) return null;
       return (
         <RowActions>
-          {canComplete ? (
+          {complete ? (
             <RowAction href={completeHref(listHref, row.id)}>
               <span className="sr-only">{`${row.number} `}</span>구매 완료
+            </RowAction>
+          ) : null}
+          {row.evidencePickN !== null ? (
+            <RowAction onClick={() => onPick(row)}>
+              <span className="sr-only">{`${row.number} `}</span>
+              {`증빙 고르기 ${row.evidencePickN}`}
             </RowAction>
           ) : null}
           {target ? <PurchaseCancelButton target={target} /> : null}
@@ -275,13 +289,54 @@ export function PurchaseList({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [rows, doneId]);
+  const [picking, setPicking] = useState<PurchaseListRowView | null>(null);
+  const afterPick = useRef<string | null>(null);
+  // 붙인 뒤 트리거가 사라진 행 — 포커스는 보이는 행 행동(`{번호} 요청 취소`) → 폰 탭 자리(`{번호} 상세 보기`) → 화면 제목 순.
+  useEffect(() => {
+    const number = afterPick.current;
+    if (!number) return;
+    afterPick.current = null;
+    const action = Array.from(document.querySelectorAll<HTMLElement>("button")).find((button) => button.textContent?.includes(`${number} 요청 취소`) && button.getClientRects().length > 0);
+    const tap = document.querySelector<HTMLElement>(`[role="button"][aria-label="${number} 상세 보기"]`);
+    (action ?? tap ?? document.querySelector<HTMLElement>('[data-ui="screen-title"]'))?.focus();
+  }, [rows]);
+  // 폰 읽기 시트의 `증빙 고르기`(PR-C ISSUE-003 · §7-8 시트를 겹치지 않는다) — 읽기 시트를 닫고 고르기를 연다. 고르기를 그냥 닫으면 읽기 시트를
+  // 다시 열고 포커스는 그 시트의 `증빙 고르기`, 붙였으면 다시 열지 않는다(위 afterPick).
+  const pickFromSheet = useRef<PurchaseListRowView | null>(null);
+  const refocusSheetPick = useRef(false);
+  useEffect(() => {
+    if (!refocusSheetPick.current || !sheet) return;
+    refocusSheetPick.current = false;
+    Array.from(document.querySelectorAll<HTMLElement>("dialog[open] button"))
+      .find((button) => button.textContent?.startsWith("증빙 고르기"))
+      ?.focus();
+  }, [sheet]);
   const sheetTarget = sheet ? cancelTarget(sheet) : null;
-  if (!canComplete && !rows.some((row) => row.cancelBranch !== null)) return <Table caption="구매 요청" columns={COLUMNS} rows={rows} getRowId={(row) => row.id} {...groupProps(groupByStatus)} />;
+  const dialog = (
+    <PickEvidenceDialog
+      target={picking && picking.evidencePickN !== null ? { ownerKind: "purchase_request", ownerId: picking.id, mode: "author", subtitle: `${picking.number} · 후보 ${picking.evidencePickN}` } : null}
+      onClose={() => {
+        setPicking(null);
+        const back = pickFromSheet.current;
+        if (!back) return;
+        pickFromSheet.current = null;
+        setSheet(back);
+        refocusSheetPick.current = true;
+      }}
+      onAttached={() => {
+        afterPick.current = picking?.number ?? null;
+        pickFromSheet.current = null;
+        setSheet(null);
+        router.refresh();
+      }}
+    />
+  );
+  if (!canComplete && !rows.some((row) => row.cancelBranch !== null || row.evidencePickN !== null)) return <Table caption="구매 요청" columns={COLUMNS} rows={rows} getRowId={(row) => row.id} {...groupProps(groupByStatus)} />;
   return (
     <>
       <Table
         caption="구매 요청"
-        columns={[...COLUMNS, actionsColumn(listHref, canComplete)]}
+        columns={[...COLUMNS, actionsColumn(listHref, canComplete, setPicking)]}
         rows={rows}
         getRowId={(row) => row.id}
         {...groupProps(groupByStatus)}
@@ -292,6 +347,8 @@ export function PurchaseList({
         open={sheet !== null}
         onClose={() => {
           setSheet(null);
+          // 고르기로 넘어가며 닫힌 시트 — 닫힘이 연 요소(행 탭 자리)로 포커스를 돌린 뒤에 고르기를 연다(그 자리가 고르기의 트리거가 된다).
+          if (pickFromSheet.current) setPicking(pickFromSheet.current);
           if (!undoFocusPending.current) return;
           undoFocusPending.current = false;
           window.setTimeout(focusUndo, 0);
@@ -308,17 +365,28 @@ export function PurchaseList({
             : []
         }
         action={
-          sheetTarget ? (
-            <PurchaseCancelButton
-              target={sheetTarget}
-              onDone={() => {
-                undoFocusPending.current = true;
-                setSheet(null);
-              }}
-            />
+          sheetTarget || sheet?.evidencePickN != null ? (
+            <>
+              {sheet?.evidencePickN != null ? <RowAction
+                  onClick={() => {
+                    pickFromSheet.current = sheet;
+                    setSheet(null);
+                  }}
+                >{`증빙 고르기 ${sheet.evidencePickN}`}</RowAction> : null}
+              {sheetTarget ? (
+                <PurchaseCancelButton
+                  target={sheetTarget}
+                  onDone={() => {
+                    undoFocusPending.current = true;
+                    setSheet(null);
+                  }}
+                />
+              ) : null}
+            </>
           ) : undefined
         }
       />
+      {dialog}
     </>
   );
 }

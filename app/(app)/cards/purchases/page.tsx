@@ -4,6 +4,8 @@ import { seoulToday } from "@/lib/dates";
 import { CANCEL_REASON_MAX, CANCEL_REASON_TOO_LONG, listPurchaseRequests, loadPurchaseCompletion, loadPurchaseRequestTeam, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";
 import { REJECT_REASON_EMPTY_MESSAGE } from "@/domain/approvals";
 import { cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
+import { listLinkedEvidenceForOwners, type EvidenceLinkedItemDto } from "@/domain/evidence-records/linked";
+import { countEvidencePool } from "@/domain/evidence-records/pool";
 import { recentFxRate } from "@/domain/money/currency";
 import { formatKrw } from "@/lib/format-number";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
@@ -74,6 +76,18 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
     // 목록 자리 한 줄 + `다시 시도`(UI-SPEC 「Error — 목록 로드」) — 화면의 나머지(머리 · 1차)는 선다.
     console.error(error);
   }
+  // 06.1-08(PA-POOLN · PA-PRLINE): 쪽마다 한 번씩 — 후보 수(문서 무관)는 내 열린 요청이 있을 때만, 붙은 증빙 첫 줄은 쪽의 요청 전부. 못 읽으면 그 줄만 비운다.
+  const authorIds = new Set(list?.evidenceAuthorIds ?? []);
+  const [pickCount, linkedByRequest] = await Promise.all([
+    authorIds.size > 0 ? countEvidencePool(viewer, { kind: "purchase_request" }).catch(() => 0) : Promise.resolve(0),
+    list && list.rows.length > 0 ? listLinkedEvidenceForOwners(viewer, { kind: "purchase_request", ids: list.rows.flatMap((row) => (row.id ? [row.id] : [])) }).catch((): Record<string, Partial<EvidenceLinkedItemDto>> => ({})) : Promise.resolve<Record<string, Partial<EvidenceLinkedItemDto>>>({}),
+  ]);
+  const evidenceLineOf = (id: string): string | null => {
+    const linked = linkedByRequest[id];
+    if (!linked) return null;
+    const name = linked.counterparty ?? "—";
+    return linked.totalKrw === undefined ? `증빙 ${name}` : `증빙 ${name} · ${formatKrw(linked.totalKrw)}`;
+  };
   const rows: PurchaseListRowView[] = (list?.rows ?? []).flatMap((row) =>
     row.id && row.number && row.requestedOn && row.itemName !== undefined && row.status
       ? [
@@ -98,6 +112,9 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
             cancelledByName: row.cancelledByName ?? null,
             cancelReason: row.cancelReason ?? null,
             cancelBranch: list?.cancelBranches[row.id] ?? null,
+            linkedEvidenceCount: row.linkedEvidenceCount ?? 0,
+            evidencePickN: authorIds.has(row.id) && pickCount >= 1 ? pickCount : null,
+            evidenceLine: evidenceLineOf(row.id),
           },
         ]
       : [],

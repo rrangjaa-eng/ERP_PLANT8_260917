@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { and, eq, inArray, isNotNull, like, or, sql } from "drizzle-orm";
 import { closeDb, db } from "@/db/client";
 import {
+  evidenceRecordLinks,
   approvalInstances,
   approvalRoutes,
   approvalSteps,
@@ -510,6 +511,23 @@ export async function purgeDemoData(): Promise<DemoPurgeResult> {
     record("approvalRoutes", await tx.delete(approvalRoutes).where(inArray(approvalRoutes.instanceId, instanceIds)));
     record("approvalInstances", await tx.delete(approvalInstances).where(inArray(approvalInstances.id, instanceIds)));
 
+    // 06.1-06(재검토 2회차 N-3): 견본 지출결의 · 카드 사용 · 구매 요청의 증빙 붙임 행 — 남은 살아 있는 붙임이 기록을 부분 유니크로 영영 묶지 않게
+    // 주인 행보다 먼저 지운다(이 스크립트는 파일 · 확인 기록도 행을 지우는 정리 도구라 뗌 칸 대신 행 삭제). 증빙 기록 · 등록 묶음은 견본이 아니라 남긴다.
+    const requestIds = (
+      await tx.select({ id: purchaseRequests.id }).from(purchaseRequests).where(or(inArray(purchaseRequests.projectId, projectIds), inArray(purchaseRequests.quoteLineId, lineIds)))
+    ).map((row) => row.id);
+    record(
+      "evidenceRecordLinks",
+      await tx
+        .delete(evidenceRecordLinks)
+        .where(
+          or(
+            and(eq(evidenceRecordLinks.ownerKind, "expense"), inArray(evidenceRecordLinks.ownerId, expenseIds)),
+            and(eq(evidenceRecordLinks.ownerKind, "corp_card_usage"), inArray(evidenceRecordLinks.ownerId, usageIds)),
+            and(eq(evidenceRecordLinks.ownerKind, "purchase_request"), inArray(evidenceRecordLinks.ownerId, requestIds)),
+          ),
+        ),
+    );
     record("expensePayments", await tx.delete(expensePayments).where(inArray(expensePayments.expenseId, expenseIds)));
     record("expenseEvidenceReviews", await tx.delete(expenseEvidenceReviews).where(inArray(expenseEvidenceReviews.expenseId, expenseIds)));
     const fileOwnerIds = [...expenseIds, ...revisionIds, ...usageIds, ...reserveIds];

@@ -421,11 +421,17 @@ function repositoryFilters(filters: EvidenceListFilters): EvidenceRecordFilters 
   };
 }
 
-// 목록 한 쪽(50건) + 필터 결과 전체의 합계 · 서식 그룹 건수 · 제안. 행 범위는 evidenceScopeFor 한 번(트랜잭션 밖)을 리포지토리 where가 집행한다.
-export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<EvidenceRecordList> {
+// 목록과 파일 받기의 같은 앞 단계 — 범위(evidenceScopeFor 한 번) · 거르개 읽기 · 리포지토리 거르개. 한쪽에만 거르개를 더하면 화면과 파일이
+// 갈라지므로(G6 「화면과 파일이 같다」) 둘 다 이 함수 하나를 부른다(검토 P3-4).
+async function listInputsFor(viewer: Viewer, query: EvidenceListQuery) {
   const scope = await evidenceScopeFor(viewer);
   const filters = readFilters(query);
-  const repoFilters = repositoryFilters(filters);
+  return { scope, filters, repoFilters: repositoryFilters(filters) };
+}
+
+// 목록 한 쪽(50건) + 필터 결과 전체의 합계 · 서식 그룹 건수 · 제안. 행 범위는 evidenceScopeFor 한 번(트랜잭션 밖)을 리포지토리 where가 집행한다.
+export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<EvidenceRecordList> {
+  const { scope, filters, repoFilters } = await listInputsFor(viewer, query);
   const [formatTotals, amountShown] = await Promise.all([countAndSumForScope(viewer, scope, repoFilters), visible(viewer, "evidence.amount")]);
   const count = formatTotals.reduce((sum, row) => sum + row.count, 0);
   const pageCount = pageCountFrom(count, EVIDENCE_PAGE_SIZE);
@@ -451,6 +457,15 @@ export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQue
     page: { page, pageCount, pageSize: EVIDENCE_PAGE_SIZE, total: count },
     batch: batch ? { id: batch.id, fileName: batch.originalName } : null,
   };
+}
+
+// 06.1-13 G6(RP-16) — 파일 받기의 앞 단계. 목록과 같은 앞 단계(listInputsFor — 범위 · 거르개) · 같은 투영
+// (EVIDENCE_RECORD_DTO_SPEC)으로 쪽과 무관하게 필터 결과 전체를 읽는다. 붙임 판정(withAttachFacts — 행 행동 · 2행 링크)은 화면의 쪽 몫이라
+// 싣지 않는다 — 파일 열(날짜 · 거래처 · 금액 셋 · 공개 · 상태)은 그 판정과 무관하다.
+export async function listAllEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<{ filters: EvidenceListFilters; rows: EvidenceRecordView[] }> {
+  const { scope, filters, repoFilters } = await listInputsFor(viewer, query);
+  const rows = await listRecordsForScope(viewer, scope, repoFilters, null);
+  return { filters, rows: await projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC) };
 }
 
 // P-3 · DA-10: 지출결의 목록 필터 줄 끝 `증빙 {N}`의 N — 기본 보기 `할 일`과 같은 집합(확인 필요 포함 · 보관 · 카드 미등록 제외).

@@ -332,15 +332,13 @@ export async function listRecordsForScope(
   viewer: Viewer,
   scope: EvidenceScope,
   filters: EvidenceRecordFilters,
-  page: { limit: number; offset: number },
+  page: { limit: number; offset: number } | null,
 ): Promise<EvidenceRecordListRow[]> {
   void viewer;
   if (scope.rows === "none") return [];
-  return selectList(db)
-    .where(listWhere(scope, filters))
-    .orderBy(...LIST_ORDER)
-    .limit(page.limit)
-    .offset(page.offset);
+  const ordered = selectList(db).where(listWhere(scope, filters)).orderBy(...LIST_ORDER);
+  // 06.1-13 G6 — 쪽 없음(null)은 필터 결과 전체(파일 받기). where · 정렬은 목록 그대로.
+  return page ? ordered.limit(page.limit).offset(page.offset) : ordered;
 }
 
 // 단건 — 목록과 같은 범위(범위 밖 · 보관 = 없음). 06.1-06 · 07 · 08이 이 함수만 부른다.

@@ -318,6 +318,37 @@ test("S7 행 7 결재 중 문서 → 붙은 증빙 행에 행동 없음 · 잠�
   await expect(section.getByRole("table", { name: "붙은 증빙" })).toContainText(`확인 필요 · ${CANCEL_REGISTERED_CHECK}`);
 });
 
+// PR-D D-2 — 붙어 있으면서 확인 필요인 기록의 사유가 목록 상태 2행에도 있다(문서 증빙 줄과 같은 사유 글자) · 잠긴 공개 칸의
+// aria-describedby가 실제로 있는 그 사유 요소를 가리킨다(1280 편집 폭).
+test("(PR-D D-2) 붙은 + 확인 필요 기록 → 목록 상태 2행 = 번호 링크 + 사유 · 공개 칸 aria-describedby → 있는 사유 요소", async ({ page, browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  if (!manager.roleId) throw new Error("계급 없음");
+  const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
+  const recordId = await insertRecordFixture(manager);
+  await insertLinkFixture({ recordId, ownerId: expenseId, attachedBy: manager.id });
+  await db.update(evidenceRecords).set({ needsCheck: CANCEL_REGISTERED_CHECK }).where(eq(evidenceRecords.id, recordId));
+  const [expense] = await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!expense?.number) throw new Error("번호 없음");
+  await loginAs(page, manager.roleId);
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  await page.goto("/expenses/evidence?state=all");
+  await expect(evidenceRows(page)).toHaveCount(1);
+  const status = evidenceCell(page, 0, EVIDENCE_COL.status);
+  await expect(status).toContainText("확인 필요");
+  await expect(status.getByRole("link", { name: expense.number })).toBeVisible();
+  await expect(status).toContainText(CANCEL_REGISTERED_CHECK);
+  const locked = evidenceCell(page, 0, EVIDENCE_COL.visibility).locator("[aria-describedby]");
+  await expect(locked).toHaveCount(1);
+  const describedBy = (await locked.getAttribute("aria-describedby")) ?? "";
+  const target = page.locator(`[id="${describedBy}"]`);
+  await expect(target).toHaveCount(1);
+  await expect(target).toHaveText(CANCEL_REGISTERED_CHECK);
+  await expect(status.locator(`[id="${describedBy}"]`)).toHaveCount(1);
+});
+
 test("S7 행 8 승인 문서 → 무효 담당은 `무효 처리`(창 제목 `증빙 무효 처리`) · 등록만 가진 사람은 행동 없음", async ({ browser, baseURL }) => {
   test.setTimeout(180_000);
   const fx = await setupExpenseE2E();

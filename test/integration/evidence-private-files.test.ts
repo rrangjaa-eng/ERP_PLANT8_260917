@@ -6,13 +6,14 @@ import { approvalInstances, codeItems, expenses } from "@/db/schema";
 import { approveDocument, createVisibleMemo, loadKindDetails, rejectDocument } from "@/domain/approvals";
 import { createEvidenceViewUrl, getEvidenceActions, listEvidence, privateEvidenceNotice, removeEvidence, voidEvidence } from "@/domain/evidence";
 import { evidenceSourcesOf, hasEvidence } from "@/domain/evidence/has-evidence";
-import { listLinkedEvidence } from "@/domain/evidence-records/linked";
+import { listLinkedEvidence, listLinkedEvidenceForOwners } from "@/domain/evidence-records/linked";
 import { getPaymentView } from "@/domain/payments";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { makePerson } from "./approvals-fixtures";
+import { purchaseProject, request as createPurchaseRequestFixture } from "./fixtures/purchase-requests";
 import { attachEvidence, setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
 import { createInReviewExpenseFixture, createIntakeManager, insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 
@@ -175,6 +176,26 @@ describe("G15 결재 시트(Round 2 P1-6 · 카드 G-N2)", () => {
 });
 
 describe("G15 붙은 증빙 기록(PA-G15-LINKED)", () => {
+  // 06.1-14 독립 검토 P3-4 — 구매 요청 목록 길(listLinkedEvidenceForOwners)도 같은 거름을 쓴다: 요청마다 「보이는 첫 기록」 하나.
+  it("구매 요청 목록 — 요청자는 먼저 붙은 G15 기록을 건너뛰고 공개 기록을, 경영관리는 G15 기록을 첫 기록으로 본다", async () => {
+    const pfx = await purchaseProject();
+    const manager = await createIntakeManager();
+    if (!manager.roleId) throw new Error("계급 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: manager.roleId, menu: "projects", action: "view", allowed: true });
+    const created = await createPurchaseRequestFixture(pfx, pfx.onlineLine, 110_000);
+    const privateRecord = await insertRecordFixture(manager, { evidenceType: PRIVATE_TYPE, nameOnDocument: "개인카드사", supplyKrw: 100_000, vatKrw: 10_000 });
+    const publicRecord = await insertRecordFixture(manager, { evidenceType: "card_receipt", nameOnDocument: "스테이지원", supplyKrw: 100_000, vatKrw: 10_000 });
+    await insertLinkFixture({ recordId: privateRecord, ownerKind: "purchase_request", ownerId: created.id, attachedBy: manager.id });
+    await insertLinkFixture({ recordId: publicRecord, ownerKind: "purchase_request", ownerId: created.id, attachedBy: manager.id });
+
+    const requester = await listLinkedEvidenceForOwners(pfx.pm, { kind: "purchase_request", ids: [created.id] });
+    expect(requester[created.id]?.recordId).toBe(publicRecord);
+    expect(JSON.stringify(requester)).not.toContain("개인카드사");
+
+    const managed = await listLinkedEvidenceForOwners(manager, { kind: "purchase_request", ids: [created.id] });
+    expect(managed[created.id]?.recordId).toBe(privateRecord);
+  });
+
   it("결재자는 G15 종류 기록 행을 못 보고(공개 종류 하나만) 경영관리는 둘을 보며, 잠김 줄은 숨긴 기록도 센다", async () => {
     const fx = await setupExpenseProject();
     const manager = await createIntakeManager();

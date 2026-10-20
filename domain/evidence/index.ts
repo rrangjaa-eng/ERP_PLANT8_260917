@@ -554,6 +554,8 @@ export async function removeEvidence(viewer: Viewer, input: { fileId: string }, 
     if (owner.drafterId !== viewer.id) throw rule.notFound();
     if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
   }
+  // 독립 검토 P3-1 — 보기 길과 같은 G15 판정. 볼 수 없는 파일 id로 부르면 없는 것과 같은 글자로 거부한다.
+  if (!(await visibilityOf(viewer, file.ownerKind, owner)).visible(file)) throw rule.notFound();
   if (file.removedAt !== null) return;
   if (!rule.rights && !rule.drafterRemoves(owner)) {
     if (owner.closed) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
@@ -689,6 +691,8 @@ export async function voidEvidence(viewer: Viewer, input: { fileId: string; reas
   const rule = file ? ruleFor(file.ownerKind) : null;
   const owner = file && rule ? await rule.load(viewer, file.ownerId) : null;
   if (!file || !rule || !owner || file.removedAt !== null || !(await rule.canSee(viewer, owner))) throw rule?.notFound() ?? new ExpenseNotFoundError();
+  // 독립 검토 P3-1 — 볼 수 없는 G15 파일은 없는 것과 같다(이미 무효여도 처리한 사람 · 시각을 내지 않는다).
+  if (!(await visibilityOf(viewer, file.ownerKind, owner)).visible(file)) throw rule.notFound();
   if (!rule.voidMenu || !(await can(viewer, rule.voidMenu, "write"))) throw new ForbiddenError("증빙 무효 처리 권한 없음");
   if (!rule.approved(owner)) throw new UserFacingError(EVIDENCE_VOID_ONLY_APPROVED);
   const reason = validateRejectReason(input.reason);

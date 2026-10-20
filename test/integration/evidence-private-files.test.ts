@@ -1,14 +1,18 @@
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { approvalInstances, codeItems, expenses } from "@/db/schema";
-import { approveDocument, createVisibleMemo, loadKindDetails } from "@/domain/approvals";
-import { createEvidenceViewUrl, getEvidenceActions, listEvidence, privateEvidenceNotice } from "@/domain/evidence";
+import { approveDocument, createVisibleMemo, loadKindDetails, rejectDocument } from "@/domain/approvals";
+import { createEvidenceViewUrl, getEvidenceActions, listEvidence, privateEvidenceNotice, removeEvidence, voidEvidence } from "@/domain/evidence";
 import { evidenceSourcesOf, hasEvidence } from "@/domain/evidence/has-evidence";
 import { listLinkedEvidence } from "@/domain/evidence-records/linked";
 import { getPaymentView } from "@/domain/payments";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { upsertPermission } from "@/repositories/permissions";
+import { insertRole } from "@/repositories/roles";
+import { makePerson } from "./approvals-fixtures";
 import { attachEvidence, setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
 import { createInReviewExpenseFixture, createIntakeManager, insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 
@@ -212,5 +216,57 @@ describe("G15 지급 패널 보기(getPaymentView)", () => {
     expect(lead).not.toContain(pmFile.id);
     expect(lead).not.toContain(managerFile.id);
     expect(JSON.stringify(await getPaymentView(fx.pm, expenseId))).not.toContain(managerFile.id);
+  });
+});
+
+// 06.1-14 독립 검토 P3-1 — 지우기 · 무효 처리 쓰기 길도 보기와 같은 G15 판정을 쓴다. 볼 수 없는 파일 id로 부르면 「없는 지출결의」와
+// 같은 글자로 거부하고, 이미 무효인 숨김 파일이어도 처리한 사람 이름 · 시각을 내지 않는다.
+describe("G15 쓰기 길 — 지우기 · 무효 처리(P3-1)", () => {
+  const NOT_FOUND = "없는 지출결의 · 새로 고침";
+
+  const instanceOf = async (expenseId: string) => {
+    const [row] = await db.select({ id: approvalInstances.id, version: approvalInstances.version }).from(approvalInstances).where(eq(approvalInstances.documentId, expenseId));
+    if (!row) throw new Error("결재 인스턴스 없음");
+    return row;
+  };
+
+  const liveIdsOf = async (viewer: Viewer, expenseId: string) =>
+    (await listEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: expenseId })).filter((file) => !file.voidedAt).map((file) => file.id);
+
+  // 팀 보는 범위 + 무효 처리 권한(전사 범위가 아니라 G15 숨김 파일을 못 본다).
+  async function teamVoider(): Promise<Viewer> {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀무효-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_void", action: "write", allowed: true });
+    return makePerson("팀무효", role.id, "기획1팀");
+  }
+
+  it("반려된 문서의 기안자는 경영관리 숨김 파일을 id로 지우지 못하고(없는 지출결의) 자기 파일은 지운다", async () => {
+    const doc = await privateDoc();
+    const instance = await instanceOf(doc.expenseId);
+    await rejectDocument(doc.fx.lead, { instanceId: instance.id, expectedVersion: instance.version, reason: "공급가 다시" });
+
+    await expect(removeEvidence(doc.fx.pm, { fileId: doc.managerFileId })).rejects.toThrow(NOT_FOUND);
+    expect(await liveIdsOf(doc.manager, doc.expenseId)).toContain(doc.managerFileId);
+    await expect(removeEvidence(doc.fx.pm, { fileId: doc.pmFileId })).resolves.toBeUndefined();
+  });
+
+  it("전사 범위가 아닌 무효 처리 권한자는 숨김 파일을 무효로 만들지 못하고, 이미 무효인 숨김 파일에도 처리한 사람이 나오지 않는다", async () => {
+    const doc = await privateDoc();
+    const instance = await instanceOf(doc.expenseId);
+    const first = await approveDocument(doc.fx.lead, { instanceId: instance.id, expectedVersion: instance.version });
+    expect((await approveDocument(doc.fx.ceo, { instanceId: instance.id, expectedVersion: first.version })).status).toBe("approved");
+    const voider = await teamVoider();
+
+    await expect(voidEvidence(voider, { fileId: doc.pmFileId, reason: "잘못 붙음" })).rejects.toThrow(NOT_FOUND);
+    expect(await liveIdsOf(doc.manager, doc.expenseId)).toContain(doc.pmFileId);
+
+    await voidEvidence(doc.manager, { fileId: doc.pmFileId, reason: "잘못 붙음" });
+    const error = await voidEvidence(voider, { fileId: doc.pmFileId, reason: "잘못 붙음" }).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(NOT_FOUND);
   });
 });

@@ -70,9 +70,13 @@ type Row = {
   statusDetail: string | null;
   rowAction: EvidenceRowAction;
   /** 06.1-06 — 붙은 문서(상태 2행 링크) · `붙이기` 그림 · 비활성 이유. */
-  attached: { kind: "expense" | "purchase_request"; id: string | null; number: string | null; pending: boolean } | null;
+  attached: { kind: "expense" | "purchase_request" | "corp_card_usage"; id: string | null; number: string | null; pending: boolean; cardReplaced: boolean } | null;
   canAttach: boolean;
   attachBlocked: string | null;
+  /** 06.1-09 PA-ALLBLOCKED — 완화 후보가 전부 막힌 카드 줄의 행 행동 자리 글자(버튼 아님). */
+  actionBlockedReason: string | null;
+  /** 06.1-09 S8 — 완화 후보 0인 짝 없는 카드 줄 · 두 권한(서버 판정 · `canAttach`와 같이 서지 않는다 — DB-9). */
+  canProxy: boolean;
 };
 
 /** 사람이 바꾼 공개 칸 — 값은 셀 안에서만 쓰는 꼴(`private` · `division` · `team:{팀 id}`), version은 바꿀 때 본 값. */
@@ -84,6 +88,7 @@ const COPY = {
   emptyNone: "등록한 증빙이 없습니다",
   emptyTodo: "할 일 증빙이 없습니다",
   emptyUnmatched: "짝 없는 카드 줄이 없습니다",
+  cardReplaced: " · 등록한 카드와 다름",
   emptyFiltered: "조건에 맞는 증빙이 없습니다",
   showAll: "전체 보기",
   clearFilters: "필터 지우기",
@@ -99,6 +104,7 @@ const COPY = {
   unknownResult: "결과를 받지 못함 · 새로 고침",
   draftOwner: "작성 중 문서",
   attach: "붙이기",
+  proxy: "대리 등록",
 } as const;
 
 const ROW_ACTION_LABEL = { archive: "보관", restore: "되살리기" } as const;
@@ -180,10 +186,12 @@ function rowFromView(view: EvidenceRecordView): Row[] {
       statusDetail: view.statusDetail ?? null,
       rowAction: view.rowAction ?? null,
       attached: view.attachedKind
-        ? { kind: view.attachedKind, id: view.attachedId ?? null, number: view.attachedNumber ?? null, pending: view.attachedPending === true }
+        ? { kind: view.attachedKind, id: view.attachedId ?? null, number: view.attachedNumber ?? null, pending: view.attachedPending === true, cardReplaced: view.cardReplaced === true }
         : null,
       canAttach: view.canAttach === true,
       attachBlocked: view.attachBlocked ?? null,
+      actionBlockedReason: view.actionBlockedReason ?? null,
+      canProxy: view.canProxy === true,
     },
   ];
 }
@@ -191,13 +199,17 @@ function rowFromView(view: EvidenceRecordView): Row[] {
 // 06.1-06 S2 2행 — 붙은 문서 번호 링크(지출결의 문서 · 구매 요청 목록). 번호 없는 임시 문서는 링크 없는 낱말(경영관리는 그 문서를 못 본다).
 function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
   if (attached.pending || attached.id === null || attached.number === null) return <span>{COPY.draftOwner}</span>;
-  const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : "/cards/purchases";
+  const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : attached.kind === "corp_card_usage" ? `/cards?editId=${attached.id}` : "/cards/purchases";
   // 링크 모양은 지출결의 목록 번호 링크(`expenseStyles.link` — `--text-link`)와 같다. 격자 로빙 밖(tabIndex -1 — §7-3 (아) 탭 정지 1개)이고
   // 키보드 경로는 그 칸 Enter(`pressCellAction` — 지급 대상 · 리저브 대장 선례)다.
   return (
-    <Link href={href} className={expenseStyles.link} tabIndex={-1} data-cell-action="">
-      {attached.number}
-    </Link>
+    <>
+      <Link href={href} className={expenseStyles.link} tabIndex={-1} data-cell-action="">
+        {attached.number}
+      </Link>
+      {/* M10 — 파일이 카드 사용의 카드를 바꾼 붙임. 링크 아님 · 2행 글자 그대로(새 클래스 · 색 0). */}
+      {attached.cardReplaced ? COPY.cardReplaced : null}
+    </>
   );
 }
 
@@ -679,7 +691,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             headerHidden: true,
             priority: "p3" as const,
             cell: (row: Row) =>
-              row.rowAction || row.canAttach ? (
+              row.rowAction || row.canAttach || row.canProxy || row.actionBlockedReason ? (
                 <RowActions noWrap>
                   {row.canAttach && row.attachBlocked !== null ? (
                     <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} disabled disabledReason={row.attachBlocked} onClick={() => undefined}>
@@ -689,6 +701,13 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                     <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} busy={rowActionPending !== null} onClick={() => openAttach(row)}>
                       {COPY.attach}
                     </RowAction>
+                  ) : row.canProxy ? (
+                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} href={`/cards?new=1&evidence=${row.id}`}>
+                      {COPY.proxy}
+                    </RowAction>
+                  ) : row.actionBlockedReason ? (
+                    // PA-ALLBLOCKED · SYSTEM §7-3 — 막힌 행동(붙이기 · 대리 등록)의 컨트롤을 그리지 않고 그 자리에 이유를 한 번 쓴다(글자 · 버튼 아님). 끝의 보관은 그대로.
+                    <span className={tableStyles.selectReason}>{row.actionBlockedReason}</span>
                   ) : null}
                   {row.rowAction ? (
                   <RowAction

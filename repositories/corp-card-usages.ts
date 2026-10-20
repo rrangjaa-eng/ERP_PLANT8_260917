@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, gte, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { corpCardUsages, corpCards, projects, purchaseRequests, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
@@ -334,6 +335,230 @@ export async function restoreCardUsageRow(viewer: Viewer, input: { id: string; v
     .update(corpCardUsages)
     .set({ archivedAt: null, archivedBy: null, version: sql`${corpCardUsages.version} + 1`, updatedAt: new Date() })
     .where(and(eq(corpCardUsages.id, input.id), eq(corpCardUsages.version, input.version), isNotNull(corpCardUsages.archivedAt)))
+    .returning({ version: corpCardUsages.version });
+  return row?.version ?? null;
+}
+
+// ── 06.1-09 카드 대사(EVIDENCE-10 · E28 · E32) ─────────────────────────────────────────────
+
+/** 대사 후보 — 보관 안 된 카드 사용 중 사용일이 파일 줄과 같고 승인번호가 같거나 카드가 같은 것. 「증빙 있음」 · 「카드 명세 붙음」은 부르는 domain이 채운다. */
+export type ReconcileCandidateRow = {
+  id: string;
+  version: number;
+  number: string | null;
+  corpCardId: string;
+  cardIssuer: string;
+  cardLast4: string;
+  approvalNo: string | null;
+  usedOn: string;
+  totalAmountKrw: number;
+  supplyKrw: number;
+  vatKrw: number;
+  evidenceTypeCode: string;
+  quoteLineId: string | null;
+  purchaseRequestId: string | null;
+};
+
+export async function findReconcileCandidates(
+  viewer: Viewer,
+  input: { cardIds: readonly string[]; approvalNos: readonly string[]; usedOns: readonly string[] },
+  tx: DbOrTx,
+): Promise<ReconcileCandidateRow[]> {
+  void viewer;
+  if (input.usedOns.length === 0 || (input.cardIds.length === 0 && input.approvalNos.length === 0)) return [];
+  const match: SQL[] = [];
+  if (input.approvalNos.length > 0) match.push(inArray(corpCardUsages.approvalNo, [...input.approvalNos]));
+  if (input.cardIds.length > 0) match.push(inArray(corpCardUsages.corpCardId, [...input.cardIds]));
+  return tx
+    .select({
+      id: corpCardUsages.id,
+      version: corpCardUsages.version,
+      number: corpCardUsages.number,
+      corpCardId: corpCardUsages.corpCardId,
+      cardIssuer: corpCards.issuer,
+      cardLast4: corpCards.numberLast4,
+      approvalNo: corpCardUsages.approvalNo,
+      usedOn: corpCardUsages.usedOn,
+      totalAmountKrw: corpCardUsages.totalAmountKrw,
+      supplyKrw: corpCardUsages.supplyKrw,
+      vatKrw: corpCardUsages.vatKrw,
+      evidenceTypeCode: corpCardUsages.evidenceTypeCode,
+      quoteLineId: corpCardUsages.quoteLineId,
+      purchaseRequestId: corpCardUsages.purchaseRequestId,
+    })
+    .from(corpCardUsages)
+    .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))
+    .where(and(isNull(corpCardUsages.archivedAt), inArray(corpCardUsages.usedOn, [...input.usedOns]), or(...match)))
+    .orderBy(asc(corpCardUsages.id));
+}
+
+/** 잠근 행의 재확인 재료 — version · 견적 줄 · 보관 · 살아 있는 붙임 수. */
+export type LockedCardUsageRow = { id: string; version: number; quoteLineId: string | null; archivedAt: Date | null; liveLinks: number };
+
+// 여러 건을 id 오름차순으로 한 번에 잠근다(교착 없음 — 두 등록이 같은 차례로 잡는다). 한 건 잠금 lockCardUsageForUpdate는 그대로 둔다.
+export async function lockCardUsagesForUpdate(viewer: Viewer, ids: readonly string[], tx: DbOrTx): Promise<LockedCardUsageRow[]> {
+  void viewer;
+  if (ids.length === 0) return [];
+  const rows = await tx
+    .select({ id: corpCardUsages.id, version: corpCardUsages.version, quoteLineId: corpCardUsages.quoteLineId, archivedAt: corpCardUsages.archivedAt })
+    .from(corpCardUsages)
+    .where(inArray(corpCardUsages.id, [...ids]))
+    .orderBy(asc(corpCardUsages.id))
+    .for("update");
+  const counts = await tx
+    .select({ id: corpCardUsages.id, liveLinks: sql<boolean>`${liveLinkExists(viewer, "corp_card_usage", corpCardUsages.id)}` })
+    .from(corpCardUsages)
+    .where(inArray(corpCardUsages.id, [...ids]));
+  const linked = new Map(counts.map((row) => [row.id, row.liveLinks]));
+  return rows.map((row) => ({ ...row, liveLinks: linked.get(row.id) ? 1 : 0 }));
+}
+
+// D-6111 파일 값 덮기 — version 조건부 · 보관 안 된 건만. 번호 · 연결 칸은 쓰지 않는다. 0행(null) = 낡음.
+export async function applyFileWins(
+  viewer: Viewer,
+  input: { id: string; version: number; corpCardId: string; approvalNo: string | null; total: { totalKrw: number; supplyKrw: number; vatKrw: number } | null },
+  tx: DbOrTx,
+): Promise<number | null> {
+  void viewer;
+  const [row] = await tx
+    .update(corpCardUsages)
+    .set({
+      corpCardId: input.corpCardId,
+      approvalNo: input.approvalNo,
+      // 합계가 바뀔 때만 돈 칸을 쓴다 — 카드 명세의 합계는 원화라 외화 칸은 비운다(KRW = 환율 1).
+      ...(input.total
+        ? { totalCurrency: "KRW", totalForeignAmount: null, totalFxRate: "1.0000", totalAmountKrw: input.total.totalKrw, supplyKrw: input.total.supplyKrw, vatKrw: input.total.vatKrw }
+        : {}),
+      version: sql`${corpCardUsages.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(corpCardUsages.id, input.id), eq(corpCardUsages.version, input.version), isNull(corpCardUsages.archivedAt)))
+    .returning({ version: corpCardUsages.version });
+  return row?.version ?? null;
+}
+
+/** 덮기 막힘 판정 재료(카드 R3 · P2-C4) — 프로젝트 상태는 판정용이라 범위 없이 읽고 화면에 내보내지 않는다. */
+export type CardUsageOverwriteFacts = {
+  id: string;
+  usedOn: string;
+  evidenceTypeCode: string;
+  registeredVia: string;
+  quoteLineId: string | null;
+  lineKind: string | null;
+  projectStatus: string | null;
+  cardKind: string;
+  cardHolderUserId: string | null;
+  cardTeamId: string | null;
+};
+
+export type CardOwnerFacts = { id: string; kind: string; holderUserId: string | null; teamId: string | null };
+
+export async function findCardUsageOverwriteFacts(
+  viewer: Viewer,
+  input: { usageIds: readonly string[]; cardIds: readonly string[] },
+  tx: DbOrTx = db,
+): Promise<{ usages: CardUsageOverwriteFacts[]; cards: CardOwnerFacts[] }> {
+  void viewer;
+  const usages =
+    input.usageIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: corpCardUsages.id,
+            usedOn: corpCardUsages.usedOn,
+            evidenceTypeCode: corpCardUsages.evidenceTypeCode,
+            registeredVia: corpCardUsages.registeredVia,
+            quoteLineId: corpCardUsages.quoteLineId,
+            lineKind: quoteLines.lineKind,
+            projectStatus: projects.status,
+            cardKind: corpCards.kind,
+            cardHolderUserId: corpCards.holderUserId,
+            cardTeamId: corpCards.teamId,
+          })
+          .from(corpCardUsages)
+          .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))
+          .leftJoin(quoteLines, eq(quoteLines.id, corpCardUsages.quoteLineId))
+          .leftJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
+          .leftJoin(projects, eq(projects.id, quoteRevisions.projectId))
+          .where(inArray(corpCardUsages.id, [...input.usageIds]));
+  const cards =
+    input.cardIds.length === 0
+      ? []
+      : await tx
+          .select({ id: corpCards.id, kind: corpCards.kind, holderUserId: corpCards.holderUserId, teamId: corpCards.teamId })
+          .from(corpCards)
+          .where(inArray(corpCards.id, [...input.cardIds]));
+  return { usages, cards };
+}
+
+// ── 06.1-09 3단계 완화 후보(PA-RELAX · DB-9 · E5) — S4 카드 사용 후보 · S2 행 행동 · S8 재조회가 같은 조건 조각 ──────────
+
+/** 완화 후보 한 행 — 막힘(카드 명세 붙음 · 다른 카드사 · 덮기 막힘)은 부르는 domain이 순수 판정으로 가른다. 연결 프로젝트는 읽지 않는다(RP-5). */
+export type RelaxedCandidateRow = {
+  id: string;
+  version: number;
+  number: string | null;
+  corpCardId: string;
+  cardIssuer: string;
+  cardLast4: string;
+  approvalNo: string | null;
+  usedOn: string;
+  totalAmountKrw: number;
+  usedByName: string | null;
+  quoteLineId: string | null;
+};
+
+export type RelaxedLineKey = { approvalNo: string | null; usedOn: string; totalKrw: number };
+
+// (같은 승인번호 — 사용일 무관) 또는 (같은 사용일 ∧ 같은 합계 — 카드 무관). 카드사 일치는 별칭 정규화가 서식 쪽이라 domain이 가른다.
+function relaxedLineCondition(line: RelaxedLineKey): SQL | undefined {
+  const sameDayTotal = and(eq(corpCardUsages.usedOn, line.usedOn), eq(corpCardUsages.totalAmountKrw, line.totalKrw));
+  return line.approvalNo === null ? sameDayTotal : or(eq(corpCardUsages.approvalNo, line.approvalNo), sameDayTotal);
+}
+
+export async function findRelaxedCandidates(
+  viewer: Viewer,
+  input: { scope: CardUsageScope; lines: readonly RelaxedLineKey[]; excludeIds?: readonly string[] },
+  tx: DbOrTx = db,
+): Promise<RelaxedCandidateRow[]> {
+  void viewer;
+  if (input.lines.length === 0) return [];
+  const usedBy = alias(users, "used_by");
+  return tx
+    .select({
+      id: corpCardUsages.id,
+      version: corpCardUsages.version,
+      number: corpCardUsages.number,
+      corpCardId: corpCardUsages.corpCardId,
+      cardIssuer: corpCards.issuer,
+      cardLast4: corpCards.numberLast4,
+      approvalNo: corpCardUsages.approvalNo,
+      usedOn: corpCardUsages.usedOn,
+      totalAmountKrw: corpCardUsages.totalAmountKrw,
+      usedByName: usedBy.name,
+      quoteLineId: corpCardUsages.quoteLineId,
+    })
+    .from(corpCardUsages)
+    .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))
+    .leftJoin(usedBy, eq(usedBy.id, corpCardUsages.usedByUserId))
+    .where(
+      and(
+        isNull(corpCardUsages.archivedAt),
+        scopeCondition(input.scope),
+        or(...input.lines.map(relaxedLineCondition)),
+        input.excludeIds && input.excludeIds.length > 0 ? notInArray(corpCardUsages.id, [...input.excludeIds]) : undefined,
+      ),
+    )
+    .orderBy(asc(corpCardUsages.usedOn), asc(corpCardUsages.id));
+}
+
+// 작성자 붙이기(E23): 카드 사용 값은 그대로 두고 비어 있던 승인번호만 채운다 — version 조건부 · 보관 안 된 건만. 0행(null) = 낡음.
+export async function fillCardUsageApprovalNo(viewer: Viewer, input: { id: string; version: number; approvalNo: string }, tx: DbOrTx): Promise<number | null> {
+  void viewer;
+  const [row] = await tx
+    .update(corpCardUsages)
+    .set({ approvalNo: input.approvalNo, version: sql`${corpCardUsages.version} + 1`, updatedAt: new Date() })
+    .where(and(eq(corpCardUsages.id, input.id), eq(corpCardUsages.version, input.version), isNull(corpCardUsages.archivedAt)))
     .returning({ version: corpCardUsages.version });
   return row?.version ?? null;
 }

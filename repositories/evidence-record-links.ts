@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
-import { evidenceRecordLinks, evidenceRecords, expenses, purchaseRequests, users } from "@/db/schema";
+import { actionLog, corpCardUsages, evidenceRecordLinks, evidenceRecords, expenses, purchaseRequests, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 06.1-12(EVID-08 · D-6104 · D-6105): 증빙 기록 붙임 읽기. 살아 있는 붙임 = detached_at IS NULL — 06.1 「증빙 있음」 판정은 이 파일의 조건 하나다.
@@ -154,6 +154,19 @@ export async function insertLink(
   return row;
 }
 
+// 06.1-09(대사 E32): 붙임 여러 행을 한 문장 다중 VALUES로 — insertLink와 같은 칸 · 같은 부분 유니크(위반은 23505로 올라간다).
+export async function insertLinks(
+  viewer: Viewer,
+  rows: readonly { recordId: string; ownerKind: EvidenceLinkOwnerKind; ownerId: string; attachMode: EvidenceAttachMode }[],
+  tx: DbOrTx,
+): Promise<EvidenceLinkRow[]> {
+  if (rows.length === 0) return [];
+  return tx
+    .insert(evidenceRecordLinks)
+    .values(rows.map((row) => ({ evidenceRecordId: row.recordId, ownerKind: row.ownerKind, ownerId: row.ownerId, attachMode: row.attachMode, attachedBy: viewer.id })))
+    .returning(LINK_COLUMNS);
+}
+
 // 뗌 — 살아 있는 붙임만(조건부 UPDATE). 0행 = 이미 뗌(두 탭 · 응답 유실 재시도 — 부르는 쪽이 멱등 성공으로 끝낸다).
 export async function detachLink(viewer: Viewer, input: { linkId: string; reason: string }, tx: DbOrTx): Promise<boolean> {
   const rows = await tx
@@ -200,12 +213,41 @@ export async function listLiveLinkOwnersByRecords(viewer: Viewer, recordIds: rea
       linkId: evidenceRecordLinks.id,
       ownerKind: evidenceRecordLinks.ownerKind,
       ownerId: evidenceRecordLinks.ownerId,
-      ownerNumber: sql<string | null>`case ${evidenceRecordLinks.ownerKind} when 'expense' then ${expenses.number} when 'purchase_request' then ${purchaseRequests.number} else null end`,
+      ownerNumber: sql<string | null>`case ${evidenceRecordLinks.ownerKind} when 'expense' then ${expenses.number} when 'purchase_request' then ${purchaseRequests.number} when 'corp_card_usage' then ${corpCardUsages.number} else null end`,
     })
     .from(evidenceRecordLinks)
     .leftJoin(expenses, and(eq(evidenceRecordLinks.ownerKind, "expense"), eq(expenses.id, evidenceRecordLinks.ownerId)))
     .leftJoin(purchaseRequests, and(eq(evidenceRecordLinks.ownerKind, "purchase_request"), eq(purchaseRequests.id, evidenceRecordLinks.ownerId)))
+    .leftJoin(corpCardUsages, and(eq(evidenceRecordLinks.ownerKind, "corp_card_usage"), eq(corpCardUsages.id, evidenceRecordLinks.ownerId)))
     .where(and(inArray(evidenceRecordLinks.evidenceRecordId, [...recordIds]), live()));
+}
+
+// 06.1-09 M10 — 파일이 지금 붙은 카드 사용의 카드를 바꾼 증빙 id(쪽마다 한 번). 근거는 끌 수 없는 금액 기록(정리 pruned_at은 행을 지우지 않아 조건에 없다)이고,
+// 그 기록의 카드 사용이 지금 살아 있는 붙임 주인일 때만이다 — 뗀 뒤 다른 카드 사용에 다시 붙이면 표식이 없다.
+export async function findCardReplacedRecordIds(viewer: Viewer, recordIds: readonly string[], tx: DbOrTx = db): Promise<Set<string>> {
+  void viewer;
+  if (recordIds.length === 0) return new Set();
+  const rows: { recordId: string }[] = await tx
+    .select({ recordId: evidenceRecordLinks.evidenceRecordId })
+    .from(actionLog)
+    .innerJoin(
+      evidenceRecordLinks,
+      and(
+        sql`${evidenceRecordLinks.evidenceRecordId}::text = ${actionLog.detail}->>'evidenceRecordId'`,
+        eq(evidenceRecordLinks.ownerKind, "corp_card_usage"),
+        sql`${evidenceRecordLinks.ownerId}::text = ${actionLog.entityId}`,
+        live(),
+      ),
+    )
+    .where(
+      and(
+        eq(actionLog.actionType, "evidence_record_amount_change"),
+        eq(actionLog.entity, "corp_card_usage"),
+        inArray(evidenceRecordLinks.evidenceRecordId, [...recordIds]),
+        sql`${actionLog.detail}->>'cardLast4Before' IS DISTINCT FROM ${actionLog.detail}->>'cardLast4After'`,
+      ),
+    );
+  return new Set(rows.map((row) => row.recordId));
 }
 
 const pickers = alias(users, "evidence_link_pickers");

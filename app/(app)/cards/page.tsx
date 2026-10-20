@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import { countOpenPurchaseRequests } from "@/domain/purchase-requests";
 import { seoulToday } from "@/lib/dates";
@@ -26,7 +27,9 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 import styles from "@/app/(app)/projects/projects.module.css";
 import { CardUsageFilters, CardUsageList, CardUsageLoadError, type CardUsageListRowView } from "./card-usage-list";
 import { CardUsageDeleteUndo, CardUsageUndoLine } from "./delete-undo";
-import { CardUsageEditPanel, CardUsageForm, type CardSlipArea, type CardUsageEdit } from "./card-usage-form";
+import { CardUsageEditPanel, CardUsageForm, type CardEvidencePick, type CardSlipArea, type CardUsageEdit, type CardUsageFromEvidence } from "./card-usage-form";
+import { countEvidencePool, evidencePickerMode } from "@/domain/evidence-records/pool";
+import { cardUsagePrefillFromEvidence } from "@/domain/evidence-records/attach";
 
 // 06-05(EXP-07 · UI-SPEC S8 · S9 · C12): 법인카드 사용 목록 = 원장. 한 건 등록은 `?new=1` 옆 패널(페이지 폼 없음).
 // 필터 · 쪽은 GET 쿼리(`month` · `card` · `link` · `via` · `page`) — 범위 · 합계 · 쪽은 서버(listCardUsages)가 정한다.
@@ -175,6 +178,18 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
     };
   }
 
+  // 06.1-09 S5 — 「증빙」 칸의 `증빙 고르기 {N}`(모드 none · 후보 0이면 트리거 DOM 0). 못 읽으면 트리거만 비운다(건은 이미 읽기 판정을 지났다).
+  let editPick: CardEvidencePick | null = null;
+  if (edit) {
+    try {
+      const { mode } = await evidencePickerMode(viewer, { kind: "corp_card_usage", id: edit.id });
+      const count = mode === "none" ? 0 : await countEvidencePool(viewer, { kind: "corp_card_usage", id: edit.id });
+      editPick = mode !== "none" && count >= 1 ? { mode, count } : null;
+    } catch {
+      editPick = null;
+    }
+  }
+
   let panel = null;
   if (edit) {
     panel = (
@@ -199,8 +214,38 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
           }}
           edit={edit}
           slip={editSlip}
+          evidencePick={editPick}
         />
       </CardUsageEditPanel>
+    );
+  } else if (first(params.new) === "1" && first(params.evidence) !== undefined) {
+    // 06.1-09 S8 대리 등록 — 이미 붙었거나 범위 밖 · 보관 · 완화 후보가 생긴 증빙이면 404(PA-S8-STALE). 카드 · 사용일 · 합계 · 가맹점 · 증빙 종류는 파일 값 읽기 텍스트.
+    const evidenceId = first(params.evidence) ?? "";
+    const prefill = UUID_PATTERN.test(evidenceId) ? await cardUsagePrefillFromEvidence(viewer, evidenceId) : null;
+    if (!prefill) notFound();
+    const defaults = await cardUsageFormDefaults(viewer, today, { prefill: { corpCardId: prefill.corpCardId, usedOn: prefill.usedOn } });
+    const fromEvidence: CardUsageFromEvidence = {
+      evidenceId,
+      cardText: cards.find((card) => card.id === prefill.corpCardId)?.label ?? `카드 ${prefill.cardLast4}`,
+      totalKrw: prefill.totalKrw,
+      merchant: prefill.merchant,
+      evidenceLabel: options.evidenceTypes.find((option) => option.value === prefill.evidenceTypeCode)?.label ?? prefill.evidenceTypeCode,
+      doneHref: "/expenses/evidence?state=unmatched&registered=",
+    };
+    panel = (
+      <SidePanel key={`evidence-${evidenceId}`} title="카드 사용 등록" closeHref={listHref}>
+        <CardUsageForm
+          cards={cards}
+          evidenceTypes={options.evidenceTypes}
+          teamName={options.teamName}
+          teamAssigned={options.teamAssigned}
+          userName={user.name}
+          today={today}
+          usdFxRate={options.usdFxRate}
+          defaults={{ ...defaults, evidenceTypeCode: prefill.evidenceTypeCode }}
+          fromEvidence={fromEvidence}
+        />
+      </SidePanel>
     );
   } else if (first(params.new) === "1" && cards.length > 0) {
     // 진입(M-4) — S14 견적 줄 행 `?line=` · S15 빈 섹션 `?project=`. 고를 수 없으면 서버가 버리고 직전 등록 기준.

@@ -13,7 +13,7 @@ export const listAttachCandidatesAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => listAttachCandidates(ctx.viewer, { recordId: parsedInput.recordId, query: parsedInput.query ?? null }));
 
 export const attachEvidenceRecordAction = authedActionClient
-  .schema(z.object({ recordId: z.string().uuid(), ownerKind: z.enum(["expense", "purchase_request"]), ownerId: z.string().uuid() }))
+  .schema(z.object({ recordId: z.string().uuid(), ownerKind: z.enum(["expense", "purchase_request", "corp_card_usage"]), ownerId: z.string().uuid() }))
   .action(async ({ parsedInput, ctx }) =>
     attachEvidenceRecord(ctx.viewer, { recordId: parsedInput.recordId, owner: { kind: parsedInput.ownerKind, id: parsedInput.ownerId } }),
   );
@@ -29,13 +29,15 @@ export const previewDetachAction = authedActionClient
 // 06.1-08(RP-4 · RP-5): 증빙 고르기 S5. 풀 · 여러 장 붙이기 모두 작성자 · 범위 · 상태는 서버가 다시 읽는다 — 입력은 id 배열(1 ~ 상한) · 문서 종류 · 문서 id · 검색어뿐.
 const ownerSchema = { ownerKind: z.enum(["expense", "purchase_request"]), ownerId: z.string().uuid() };
 const batchSchema = z.object({ evidenceIds: z.array(z.string().uuid()).min(1).max(ATTACH_BATCH_MAX), ...ownerSchema });
+// 06.1-09: 카드 사용 S5(단일) — 풀 · 작성자 붙이기만 카드 사용을 받는다(경영관리 카드 사용 붙이기는 attachEvidenceRecordAction 하나 붙이기).
+const cardOwnerSchema = { ownerKind: z.enum(["expense", "purchase_request", "corp_card_usage"]), ownerId: z.string().uuid() };
 
 export const listEvidencePoolAction = authedActionClient
-  .schema(z.object({ ...ownerSchema, query: z.string().max(100).optional() }))
+  .schema(z.object({ ...cardOwnerSchema, query: z.string().max(100).optional() }))
   .action(async ({ parsedInput, ctx }) => listEvidencePool(ctx.viewer, { owner: { kind: parsedInput.ownerKind, id: parsedInput.ownerId }, q: parsedInput.query ?? null }));
 
 export const attachEvidenceAsAuthorAction = authedActionClient
-  .schema(batchSchema)
+  .schema(z.object({ evidenceIds: z.array(z.string().uuid()).min(1).max(ATTACH_BATCH_MAX), ...cardOwnerSchema }))
   .action(async ({ parsedInput, ctx }) => attachEvidenceAsAuthor(ctx.viewer, { evidenceIds: parsedInput.evidenceIds, owner: { kind: parsedInput.ownerKind, id: parsedInput.ownerId } }));
 
 export const attachEvidenceBatchAction = authedActionClient

@@ -15,6 +15,7 @@ import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { project, type DtoSpec } from "@/domain/permissions/project";
+import { visible } from "@/domain/permissions/visible";
 import type { Viewer } from "@/domain/viewer";
 import { BUSINESS_NO_UNIQUE_INDEX } from "@/domain/vendors";
 import { withTransaction } from "@/lib/db-transaction";
@@ -297,6 +298,9 @@ async function reconcileCardRecords(
     );
     return [{ match, candidate, record, patch }];
   });
+  // cso D2: 값을 바꾸는 덮기는 등록자가 두 금액을 다 볼 때만(S4 planCardAttach · S8 proxyRefusal과 같은 판정) — 아니면 그 짝은 짝 없음(덮기 막힘과 같은 결과).
+  const [usageAmount, recordAmount] = await Promise.all([visible(viewer, "card_usage.amount"), visible(viewer, "evidence.amount")]);
+  if (!usageAmount || !recordAmount) pairs = pairs.filter((pair) => !patchChanges(pair));
 
   // N-8: 합계가 바뀌는 견적 줄 연결 짝의 줄(저장된 줄 + 사슬의 현재 줄)을 카드 사용보다 먼저 잠근다 — 06 createCardUsage가 같은 현재 줄을 잡는다.
   const lineIds = presentValues(pairs.filter((pair) => pair.patch.total !== null).map((pair) => pair.candidate.quoteLineId));

@@ -305,6 +305,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           currencies={currencies}
           files={files}
           maxMb={maxMb}
+          linkedEvidenceCount={formLinked.items.length}
           evidenceRecords={<EvidenceRecordsSection items={linkedItemsOf(formLinked)} lockLine={formLinked.lockLine} number={expense.number ?? null} lockLineShownAbove={false} pick={formPick} />}
           route={
             route ? (

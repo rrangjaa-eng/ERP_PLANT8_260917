@@ -30,6 +30,7 @@ import { CardUsageDeleteUndo, CardUsageUndoLine } from "./delete-undo";
 import { CardUsageEditPanel, CardUsageForm, CardUsageFromEvidencePanel, type CardEvidencePick, type CardSlipArea, type CardUsageEdit, type CardUsageFromEvidence } from "./card-usage-form";
 import { countEvidencePool, evidencePickerMode } from "@/domain/evidence-records/pool";
 import { cardUsagePrefillFromEvidence } from "@/domain/evidence-records/attach";
+import { evidenceReturnHref } from "@/lib/evidence-return";
 
 // 06-05(EXP-07 · UI-SPEC S8 · S9 · C12): 법인카드 사용 목록 = 원장. 한 건 등록은 `?new=1` 옆 패널(페이지 폼 없음).
 // 필터 · 쪽은 GET 쿼리(`month` · `card` · `link` · `via` · `page`) — 범위 · 합계 · 쪽은 서버(listCardUsages)가 정한다.
@@ -224,18 +225,18 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
     const prefill = UUID_PATTERN.test(evidenceId) ? await cardUsagePrefillFromEvidence(viewer, evidenceId) : null;
     if (!prefill) notFound();
     const defaults = await cardUsageFormDefaults(viewer, today, { prefill: { corpCardId: prefill.corpCardId, usedOn: prefill.usedOn } });
-    // PR-D D-3(판정 P-1 ①) — 닫기(Esc · 취소 · x)도 저장처럼 출발한 증빙 목록으로 간다. 앱 안에서 그 목록에서 열었으면 SidePanel이 뒤로 가기로 닫는다.
-    const evidenceListHref = "/expenses/evidence?state=unmatched";
+    // G-06.1-40 — 닫기(Esc · 취소 · x)는 링크가 실은 출발 증빙 목록(`from`, `evidenceReturnHref`가 같은 앱 증빙 목록만 받는다)으로. 앱 안에서 그 목록에서 열었으면 SidePanel이 뒤로 가기로 닫는다. 저장 도착도 같은 출발 목록(G-06.1-40 결정 (a)).
+    const returnHref = evidenceReturnHref(first(params.from));
     const fromEvidence: CardUsageFromEvidence = {
       evidenceId,
       cardText: cards.find((card) => card.id === prefill.corpCardId)?.label ?? `카드 ${prefill.cardLast4}`,
       totalKrw: prefill.totalKrw,
       merchant: prefill.merchant,
       evidenceLabel: options.evidenceTypes.find((option) => option.value === prefill.evidenceTypeCode)?.label ?? prefill.evidenceTypeCode,
-      doneHref: `${evidenceListHref}&registered=`,
+      doneHref: `${returnHref}${returnHref.includes("?") ? "&" : "?"}registered=`,
     };
     panel = (
-      <CardUsageFromEvidencePanel key={`evidence-${evidenceId}`} evidenceId={evidenceId} closeHref={evidenceListHref}>
+      <CardUsageFromEvidencePanel key={`evidence-${evidenceId}`} evidenceId={evidenceId} closeHref={returnHref}>
         <CardUsageForm
           cards={cards}
           evidenceTypes={options.evidenceTypes}

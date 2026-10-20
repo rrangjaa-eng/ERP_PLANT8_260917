@@ -13,7 +13,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { clearEvidence, loginAs } from "./helpers/evidence";
+import { clearEvidence, holdServerAction, isServerAction, loginAs } from "./helpers/evidence";
 
 // 06.1-08 S5(EVID-07 · RP-4): 작성자 증빙 고르기 — 임시 지출결의 화면 → `증빙 고르기 N` → PickDialog 다중 → 붙임 → 문서 섹션 읽기 행.
 // 판정은 CI=true 프로덕션 빌드에서 한다(CLAUDE.md §5). 등록 권한자는 회사 전체 증빙을 보므로 케이스마다 증빙 표를 비우고 시작한다.
@@ -59,6 +59,193 @@ test("작성자 PM: 임시 지출결의 → 증빙 고르기 1 → 검색 칸 �
   await expect(rows.first()).toContainText(fx.vendorName);
   await expect(rows.first()).toContainText(`${fx.pm.name} 고름`);
   await expect(page.getByRole("button", { name: /^증빙 고르기/ })).toHaveCount(0);
+  await page.context().close();
+});
+
+// 06.1 UAT #29 — 기록 붙임 · 떼기 뒤 같은 화면 제출 1차 재판정(.planning/debug/0601-pick-submit-disabled.md)
+test("(G-06.1-29) 증빙 고르기로 붙인 직후 — 새로 고침 없이 제출 1차가 열리고 비고는 그대로이며 제출된다", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  const trigger = page.getByRole("button", { name: "증빙 고르기 1" });
+  await waitForHydration(trigger);
+  const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+  await expect(submit).toHaveAttribute("aria-disabled", "true");
+  const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
+  expect(describedBy).not.toBe("");
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(/^증빙 없음 · /);
+
+  const memo = page.getByLabel("비고");
+  await memo.fill("저장 안 한 비고");
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  // 미리보기 요청만 붙잡는다(고르기 · 떼기 액션은 통과) — 응답이 오기 전 구간이 폴링 지연과 상관없이 유지된다.
+  const preview = holdServerAction(page, "preview");
+  await preview.ready;
+  await page.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await expect(page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible")).toHaveCount(1);
+  await preview.arrived;
+
+  // 그 자리 측정 — 미리보기 응답이 붙잡힌 동안 1차는 막힌 채다(재시도 단언 아님).
+  expect(await submit.getAttribute("aria-disabled")).toBe("true");
+  preview.release();
+  await expect.poll(() => submit.getAttribute("aria-disabled")).not.toBe("true");
+  await expect(memo).toHaveValue("저장 안 한 비고");
+  await submit.click();
+  await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
+  await page.context().close();
+});
+
+test("(G-06.1-29 저장 겹침) 고르기 직후 저장이 진행 중이어도 — 미리보기가 건너뛰어진 채 남지 않고 제출 1차가 열린다", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  const trigger = page.getByRole("button", { name: "증빙 고르기 1" });
+  await waitForHydration(trigger);
+  const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+  await expect(submit).toHaveAttribute("aria-disabled", "true");
+
+  const memo = page.getByLabel("비고");
+  await memo.fill("저장 겹침 비고");
+  // 읽기 행이 서는 같은 갱신 안에서 저장을 누르고(미리보기 타이머 250ms보다 먼저) 저장 요청은 붙잡아 저장 중(busy)을 유지한다.
+  // Next 서버 액션은 한 줄로 서므로 고르기를 끝낸 뒤에 저장이 나가야 한다.
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  const save = holdServerAction(page, "save");
+  await save.ready;
+  await page.evaluate(() => {
+    const observer = new MutationObserver(() => {
+      const rowShown = [...document.querySelectorAll("tbody tr")].some((row) => row.textContent?.includes("고름"));
+      if (!rowShown) return;
+      observer.disconnect();
+      const button = [...document.querySelectorAll("button")].find((el) => el.textContent?.trim().startsWith("임시 저장"));
+      button?.click();
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  });
+  await page.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await save.arrived;
+  // 타이머(250ms)가 저장 중에 지나가도록 둔다 — 건너뛰어지는 것이 시험 대상이다.
+  await page.waitForTimeout(600);
+  save.release();
+  await expect.poll(() => submit.getAttribute("aria-disabled")).not.toBe("true");
+  await expect(memo).toHaveValue("저장 겹침 비고");
+  await submit.click();
+  await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
+  await page.context().close();
+});
+
+test("(G-06.1-29 대칭) 붙은 채 연 문서에서 마지막 기록을 떼면 — 새로 고침 없이 제출 1차가 다시 막히고 이유 줄이 선다", async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  const trigger = page.getByRole("button", { name: "증빙 고르기 1" });
+  await waitForHydration(trigger);
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await expect(page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible")).toHaveCount(1);
+
+  await page.reload();
+  const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+  const detach = detachButton(page);
+  await waitForHydration(detach);
+  await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+  await detach.click();
+  const dialog = page.getByRole("dialog", { name: "증빙 떼기" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("사유").fill("잘못 고름");
+  await dialog.getByRole("button", { name: /^증빙 떼기/ }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+
+  // 그 자리 측정 — 붙은 증빙 표가 사라진 바로 다음 읽기: 서버 미리보기가 돌아오기 전에도 1차는 이미 막혀 있다(재시도 단언 아님).
+  expect(await submit.getAttribute("aria-disabled")).toBe("true");
+  await expect(submit).toHaveAttribute("aria-disabled", "true");
+  const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
+  expect(describedBy).not.toBe("");
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(/^증빙 없음 · /);
+  await page.context().close();
+});
+
+// PR #256 Codex 봇 P2 — 미리보기가 실패해도 judgedLinked가 먼저 갱신돼 임시 막힘(NEW_DOC_BLOCK)이 걷히고 묵은 서버 판정(null)으로 1차가 열리던 건.
+test("(G-06.1-29 미리보기 실패) 마지막 기록을 뗀 뒤 미리보기가 실패해도 — 제출 1차가 계속 막혀 있다", async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  const trigger = page.getByRole("button", { name: "증빙 고르기 1" });
+  await waitForHydration(trigger);
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await expect(page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible")).toHaveCount(1);
+
+  await page.reload();
+  const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+  const detach = detachButton(page);
+  await waitForHydration(detach);
+  await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+  // 미리보기 서버 액션(`fields`만 있고 `expectedVersion` 없음)만 끊는다 — 떼기 액션은 그대로 지나간다.
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const body = request.postData() ?? "";
+    if (isServerAction(request) && body.includes('"fields"') && !body.includes('"expectedVersion"')) {
+      await route.abort("failed");
+      return;
+    }
+    await route.fallback();
+  });
+  await detach.click();
+  const dialog = page.getByRole("dialog", { name: "증빙 떼기" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("사유").fill("잘못 고름");
+  await dialog.getByRole("button", { name: /^증빙 떼기/ }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+
+  // 실패한 미리보기가 끝날 때까지 기다린 뒤에도(디바운스 250ms 이상) 1차는 계속 막혀 있다.
+  await page.waitForTimeout(1500);
+  await expect(submit).toHaveAttribute("aria-disabled", "true");
   await page.context().close();
 });
 
@@ -140,7 +327,8 @@ test("경영관리: 모달을 연 뒤 다른 경로로 하나가 먼저 붙으�
   await options.nth(1).click();
   await expect(dialog.getByText("고른 2건")).toBeVisible();
 
-  await insertLinkFixture({ recordId: taken, ownerId: doc.expenseId.replace(/.$/, "0"), attachedBy: manager.id });
+  // 「다른 문서가 먼저 붙임」 — 이 문서와 다른 임의 id. 문서 id 끝 한 글자를 바꾸는 방식은 id가 이미 0으로 끝나면(16분의 1) 같은 문서가 돼 경합이 안 난다.
+  await insertLinkFixture({ recordId: taken, ownerId: randomUUID(), attachedBy: manager.id });
   await dialog.getByRole("button", { name: /^증빙 붙이기 2/ }).click();
   await expect(dialog.getByText(/^다른 사람이 먼저 붙임 · 먼저붙은곳/)).toBeVisible();
   await dialog.getByRole("button", { name: "새로 고침" }).click();

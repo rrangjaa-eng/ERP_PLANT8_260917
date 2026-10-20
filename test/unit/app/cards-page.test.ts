@@ -36,7 +36,15 @@ vi.mock("@/domain/settings/registry", () => ({ getSettingValue: () => Promise.re
 // 06-14 하위 링크 `구매 요청 {N}`의 건수는 이 테스트 밖(DB를 읽는다) — 0건으로 고정.
 vi.mock("@/domain/purchase-requests", () => ({ countOpenPurchaseRequests: () => Promise.resolve(0) }));
 // 패널 본문(클라이언트 폼)은 이 테스트 밖 — 닫기 href만 본다.
-vi.mock("@/app/(app)/cards/card-usage-form", () => ({ CardUsageForm: () => null }));
+// S8(증빙에서 연 대리 등록)은 저장 도착(doneHref)도 본다 — fromEvidence가 있을 때만 그린다.
+vi.mock("@/app/(app)/cards/card-usage-form", () => ({
+  CardUsageForm: ({ fromEvidence }: { fromEvidence?: { doneHref: string } }) => (fromEvidence ? createElement("div", { "data-done-href": fromEvidence.doneHref }) : null),
+  CardUsageFromEvidencePanel: ({ closeHref, children }: { closeHref: string; children?: ReactNode }) => createElement("div", { "data-close-href": closeHref }, children),
+}));
+vi.mock("@/domain/evidence-records/attach", () => ({
+  cardUsagePrefillFromEvidence: () =>
+    Promise.resolve({ corpCardId: "11111111-1111-4111-8111-111111111111", cardLast4: "1111", usedOn: "2026-03-17", totalKrw: 1_240_000, merchant: "대리가맹점", evidenceTypeCode: "card_receipt" }),
+}));
 vi.mock("@/ui/side-panel/SidePanel", () => ({
   SidePanel: ({ closeHref, children }: { closeHref: string; children?: ReactNode }) => createElement("div", { "data-close-href": closeHref }, children),
 }));
@@ -110,5 +118,28 @@ describe("쓸 카드 0장 빈 화면(DOM 감사 O3)", () => {
     formOptions.mockResolvedValue(options([CARD]));
     list.mockResolvedValue(emptyList());
     expect(await render({})).toContain('id="card-usage-filter-month"');
+  });
+});
+
+// G-06.1-40 — S8 대리 등록의 닫을 곳은 링크가 실은 출발 증빙 목록(`from`)이고, 증빙 목록이 아닌 값은 지금 닫을 곳으로 떨어진다(열린 리디렉션 T-06.1-16-01).
+describe("S8 대리 등록 닫을 곳 · 저장 도착(G-06.1-40)", () => {
+  const EVIDENCE = "22222222-2222-4222-8222-222222222222";
+
+  async function renderS8(from: string | undefined): Promise<string> {
+    formOptions.mockResolvedValue(options([CARD]));
+    list.mockResolvedValue(emptyList());
+    return render({ new: "1", evidence: EVIDENCE, ...(from === undefined ? {} : { from }) });
+  }
+
+  it.each([
+    { name: "from 없음", from: undefined, close: "/expenses/evidence?state=unmatched", done: "/expenses/evidence?state=unmatched&amp;registered=" },
+    { name: "전체+카드", from: "/expenses/evidence?state=all&type=card_receipt", close: "/expenses/evidence?state=all&amp;type=card_receipt", done: "/expenses/evidence?state=all&amp;type=card_receipt&amp;registered=" },
+    { name: "쿼리 없는 목록", from: "/expenses/evidence", close: "/expenses/evidence", done: "/expenses/evidence?registered=" },
+    { name: "적대 값", from: "//evil.example/x", close: "/expenses/evidence?state=unmatched", done: "/expenses/evidence?state=unmatched&amp;registered=" },
+  ])("$name — 닫을 곳 · 저장 도착이 출발 목록(결정 a)", async ({ from, close, done }) => {
+    const html = await renderS8(from);
+    expect(html).toContain(`data-close-href="${close}"`);
+    expect(html).toContain(`data-done-href="${done}"`);
+    expect(html).not.toContain("evil.example");
   });
 });

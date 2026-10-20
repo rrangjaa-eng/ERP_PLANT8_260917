@@ -316,7 +316,17 @@ test.describe("06.1-14 감사", () => {
   async function openSheet(page: Page, itemName: string): Promise<boolean> {
     await page.goto("/approvals");
     const trigger = page.getByRole("button", { name: new RegExp(`지출결의 · .*${itemName}`) }).first();
-    if ((await trigger.count()) === 0) return false;
+    // goto 직후 즉시 스냅숏(count)이 아니라 나타남을 기다린다 — 없는 게 정답인 경우만 false.
+    await trigger.waitFor({ state: "visible", timeout: 15_000 }).catch(() => undefined);
+    if ((await trigger.count()) === 0) {
+      const diag = await page.evaluate(() => ({
+        url: location.href,
+        body: document.body.innerText.slice(0, 2000),
+        buttons: [...document.querySelectorAll("button")].map((b) => (b.textContent ?? "").trim()).filter((t) => t.startsWith("지출결의 · ")),
+      }));
+      await test.info().attach(`approvals-miss-${itemName}`, { body: JSON.stringify(diag, null, 2), contentType: "application/json" });
+      return false;
+    }
     await waitForHydration(trigger);
     await trigger.click();
     await expect(page.getByRole("dialog")).toBeVisible();

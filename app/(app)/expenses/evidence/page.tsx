@@ -47,10 +47,9 @@ export default async function EvidencePage({ searchParams }: { searchParams: Pro
   const registeredId = firstParam(params.registered);
   const registered = registeredId ? await loadCardUsageForEdit(viewer, registeredId) : null;
   const registeredAmount = registered?.usage.currency === "KRW" ? registered.usage.amount : undefined;
-  const landingHref = `/expenses/evidence?state=${firstParam(params.state) ?? "unmatched"}`;
   return (
     <ListScreen title="증빙">
-      {registeredAmount !== undefined ? <RegisteredToast message={`카드 사용 등록 · ${formatKrw(registeredAmount)}`} href={landingHref} /> : null}
+      {registeredAmount !== undefined ? <RegisteredToast message={`카드 사용 등록 · ${formatKrw(registeredAmount)}`} /> : null}
       <EvidenceTable
         viewerId={viewer.id}
         list={list}

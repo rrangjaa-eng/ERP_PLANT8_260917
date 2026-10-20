@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { corpCardUsages, corpCards, evidenceRecords, projects, purchaseRequests } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
@@ -93,14 +93,14 @@ async function pageAs(browser: Browser, who: { email: string; password: string }
   return page;
 }
 
-async function cardIdOf(last4: string): Promise<string> {
-  const [card] = await db.select({ id: corpCards.id }).from(corpCards).where(eq(corpCards.numberLast4, last4)).limit(1);
+async function cardIdOf(holderId: string, last4: string): Promise<string> {
+  const [card] = await db.select({ id: corpCards.id }).from(corpCards).where(and(eq(corpCards.numberLast4, last4), eq(corpCards.holderUserId, holderId))).limit(1);
   if (!card) throw new Error("카드 없음");
   return card.id;
 }
 
 async function usage(holder: Viewer, last4: string, input: { total: number; approvalNo?: string | null; usedOn?: string; lineId?: string }): Promise<{ id: string; number: string }> {
-  const corpCardId = await cardIdOf(last4);
+  const corpCardId = await cardIdOf(holder.id, last4);
   const base = { corpCardId, usedOn: input.usedOn ?? "2026-04-30", merchantVendorId: null, total: { currency: "KRW" as const, amount: input.total, fxRate: 1 }, evidenceTypeCode: "card_receipt" };
   const cardInput: CardUsageInput = input.lineId ? { ...base, linkKind: "quote_line", lineId: input.lineId } : { ...base, linkKind: "team_cost" };
   const created = await createCardUsage(holder, cardInput, await precheckCardUsage(holder, cardInput));

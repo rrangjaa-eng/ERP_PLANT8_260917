@@ -10,7 +10,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
-import { addLotteCard, attachRecordFixture, clearEvidence, createIntakeRole, EVIDENCE_COL, evidenceCell, evidenceRows, focusGridCell, loginAs, loginIntake, registerFile, teamIdByName, uploadFixture } from "./helpers/evidence";
+import { addLotteCard, attachRecordFixture, clearEvidence, createIntakeRole, EVIDENCE_COL, evidenceCell, evidenceRows, focusGridCell, loginAs, registerFile, teamIdByName, uploadFixture } from "./helpers/evidence";
 import { waitForHydration } from "./leave-org";
 
 // 06.1-09 — 카드 파일 등록 → 1 · 2단계 대사 → S1 결과 행 `카드 사용에 붙음 n · 짝 없음 n`(UI-SPEC S1 카드 서식 추가 줄).
@@ -47,7 +47,11 @@ test("카드 사용 둘 + 롯데 3줄 → 결과 행 `카드 사용에 붙음 2 
   await cardUsage(holder, last4, 200_000, a1);
   await cardUsage(holder, last4, 50_000, null);
 
-  await loginIntake(page);
+  // cso D2(8ec9fb3) — 값을 바꾸는 대사 짝(200,000 → 204,100)은 등록자가 두 금액(card_usage.amount · evidence.amount)을 다 볼 때만 붙는다.
+  // 새 등록 계급은 card_usage.amount 행이 없어 숨김이라 통합 시험(evidence-reconcile setup)처럼 보임을 준다(evidence.amount는 createIntakeRole이 준다).
+  const roleId = await createIntakeRole();
+  await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "card_usage.amount", visible: true });
+  await loginAs(page, roleId);
   await page.goto("/expenses/evidence");
   const card = `999900001111${last4}`;
   await uploadFixture(

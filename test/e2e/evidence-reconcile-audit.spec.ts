@@ -155,7 +155,11 @@ test("S1 결과 행 — 조각 글자 · 0 조각 부재 · 링크 href · 넘�
   test.setTimeout(600_000);
   const holder = await person(DEFAULT_ROLE_ID, "기획1팀");
   const manager = await person(await proxyRole());
-  const intakeOnly = await person(await createIntakeRole());
+  // cso D2(8ec9fb3) — 값을 바꾸는 대사 짝은 등록자가 두 금액을 다 볼 때만 붙는다. 「intake만」은 메뉴(권한)가 intake뿐이라는 뜻이고,
+  // 새 계급은 card_usage.amount 행이 없어 숨김이라 통합 시험(evidence-reconcile setup)처럼 그 보임만 준다(evidence.amount는 createIntakeRole이 준다).
+  const intakeOnlyRole = await createIntakeRole();
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: intakeOnlyRole, infoItem: "card_usage.amount", visible: true });
+  const intakeOnly = await person(intakeOnlyRole);
   const runs: Array<{ role: string; who: typeof manager; width: number }> = [
     ...WIDTHS.map((width) => ({ role: "경영관리", who: manager, width })),
     { role: "intake만", who: intakeOnly, width: 1280 },

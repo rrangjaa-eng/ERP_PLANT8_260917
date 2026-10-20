@@ -13,29 +13,40 @@ export type PublishPasteRow = { choices: readonly { label: string; value: Publis
 export type PublishPasteResult = {
   values: { rowIndex: number; value: PublishValue }[];
   errors: { rowIndex: number; reason: string }[];
-  counts: { unknown: number; skippedLocked: number };
+  /** droppedBelow — 표 아래를 넘쳐 버린 줄 수(조용히 버리지 않는다 — §7-3, 합계 행 요약에 센다). */
+  counts: { unknown: number; skippedLocked: number; droppedBelow: number };
 };
 
 export function resolvePublishPaste({ cells, rows }: { cells: readonly PasteCell[]; rows: readonly PublishPasteRow[] }): PublishPasteResult {
-  const result: PublishPasteResult = { values: [], errors: [], counts: { unknown: 0, skippedLocked: 0 } };
+  const result: PublishPasteResult = { values: [], errors: [], counts: { unknown: 0, skippedLocked: 0, droppedBelow: 0 } };
+  const droppedRows = new Set<number>();
   for (const cell of cells) {
     const row = rows[cell.rowIndex];
-    // 표 아래를 넘친 줄은 버린다 — 증빙 목록은 붙여넣기로 줄을 만들지 않는다.
-    if (!row) continue;
+    // 표 아래를 넘친 줄은 버린다 — 증빙 목록은 붙여넣기로 줄을 만들지 않는다. 버린 줄은 세어 요약에 남긴다.
+    if (!row) {
+      droppedRows.add(cell.rowIndex);
+      continue;
+    }
     if (row.locked) {
       result.counts.skippedLocked += 1;
       continue;
     }
     // 공개 열은 문자 열로 펼치므로 칸은 늘 글자다(오류 칸이 오면 빈 글자로 본다).
     const text = cell.result.status === "ok" ? cell.result.value.trim() : "";
-    const match = row.choices.find((choice) => choice.label === text);
-    if (match) {
-      result.values.push({ rowIndex: cell.rowIndex, value: match.value });
+    const matches = row.choices.filter((choice) => choice.label === text);
+    if (matches.length === 1 && matches[0]) {
+      result.values.push({ rowIndex: cell.rowIndex, value: matches[0].value });
+      continue;
+    }
+    // 같은 라벨이 여럿이면 고르지 않는다 — 공유 select 붙여넣기(`applyPaste`)와 같은 규칙 · 같은 글자.
+    if (matches.length > 1) {
+      result.errors.push({ rowIndex: cell.rowIndex, reason: "같은 이름 여럿 · 목록에서 고르기" });
       continue;
     }
     // 이유 글자는 공유 select 붙여넣기(`applyPaste`)와 같다.
     result.errors.push({ rowIndex: cell.rowIndex, reason: `목록에 없는 값 · ${text || "(빈 값)"}` });
     result.counts.unknown += 1;
   }
+  result.counts.droppedBelow = droppedRows.size;
   return result;
 }

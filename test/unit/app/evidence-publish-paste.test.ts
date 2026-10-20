@@ -45,7 +45,7 @@ describe("resolvePublishPaste — 라벨 글자 대조", () => {
       { rowIndex: 2, value: { visibility: "team", teamId: TEAM_1 } },
     ]);
     expect(result.errors).toEqual([]);
-    expect(result.counts).toEqual({ unknown: 0, skippedLocked: 0 });
+    expect(result.counts).toEqual({ unknown: 0, skippedLocked: 0, droppedBelow: 0 });
   });
 
   it("앞뒤 공백은 무시한다", () => {
@@ -69,7 +69,7 @@ describe("resolvePublishPaste — 라벨 글자 대조", () => {
     const result = resolvePublishPaste({ cells: cells(["기획8팀 공개"]), rows: [row()] });
     expect(result.values).toEqual([]);
     expect(result.errors).toEqual([{ rowIndex: 0, reason: "목록에 없는 값 · 기획8팀 공개" }]);
-    expect(result.counts).toEqual({ unknown: 1, skippedLocked: 0 });
+    expect(result.counts).toEqual({ unknown: 1, skippedLocked: 0, droppedBelow: 0 });
   });
 
   it("빈 칸은 오류 `목록에 없는 값 · (빈 값)`", () => {
@@ -81,7 +81,7 @@ describe("resolvePublishPaste — 라벨 글자 대조", () => {
     const result = resolvePublishPaste({ cells: cells(["미공개"]), rows: [row({ locked: true })] });
     expect(result.values).toEqual([]);
     expect(result.errors).toEqual([]);
-    expect(result.counts).toEqual({ unknown: 0, skippedLocked: 1 });
+    expect(result.counts).toEqual({ unknown: 0, skippedLocked: 1, droppedBelow: 0 });
   });
 });
 
@@ -110,13 +110,28 @@ describe("resolvePublishPaste — 섞인 붙여넣기(Task 2)", () => {
     });
     expect(result.values.map((value) => value.rowIndex)).toEqual([0, 3]);
     expect(result.errors).toEqual([]);
-    expect(result.counts).toEqual({ unknown: 0, skippedLocked: 2 });
+    expect(result.counts).toEqual({ unknown: 0, skippedLocked: 2, droppedBelow: 0 });
   });
 
-  it("붙여넣기 범위가 표 아래를 넘으면 넘친 줄은 버린다(새 줄 없음 · 세지 않음)", () => {
+  it("붙여넣기 범위가 표 아래를 넘으면 넘친 줄은 버리고 그 줄 수를 센다(새 줄 없음 · 조용히 버리지 않는다 — §7-3)", () => {
     const result = resolvePublishPaste({ cells: cells(["미공개", "없는값", "없는값"], 1), rows: [row(), row()] });
     expect(result.values).toEqual([{ rowIndex: 1, value: { visibility: "private" } }]);
     expect(result.errors).toEqual([]);
-    expect(result.counts).toEqual({ unknown: 0, skippedLocked: 0 });
+    expect(result.counts).toEqual({ unknown: 0, skippedLocked: 0, droppedBelow: 2 });
+  });
+
+  it("같은 라벨이 둘 이상이면 고르지 않고 오류 셀 `같은 이름 여럿 · 목록에서 고르기`(공유 applyPaste select 갈래와 같은 글자)", () => {
+    const twin: PublishPasteRow = {
+      locked: false,
+      choices: [
+        { label: "경영 공개", value: { visibility: "division" } },
+        { label: "경영 공개", value: { visibility: "team", teamId: TEAM_1 } },
+        { label: "미공개", value: { visibility: "private" } },
+      ],
+    };
+    const result = resolvePublishPaste({ cells: cells(["경영 공개", "미공개"]), rows: [twin, twin] });
+    expect(result.values).toEqual([{ rowIndex: 1, value: { visibility: "private" } }]);
+    expect(result.errors).toEqual([{ rowIndex: 0, reason: "같은 이름 여럿 · 목록에서 고르기" }]);
+    expect(result.counts).toEqual({ unknown: 0, skippedLocked: 0, droppedBelow: 0 });
   });
 });

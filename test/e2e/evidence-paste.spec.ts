@@ -223,3 +223,17 @@ test("(D1 회귀) 붙여넣기로 바뀐 칸 위에 모르는 값을 다시 붙�
   await expect(page.getByRole("button", { name: /^공개 범위 저장 1(?!\d)/ })).toBeVisible();
 });
 
+test("(§7-3 · 검토 P3-1) 표 아래로 넘친 붙여넣기 줄은 버리고 합계 행에 `아래 n줄 버림`", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const viewer = await loginIntake(page);
+  await privateRows(viewer, 2);
+  await page.goto("/expenses/evidence?state=all");
+  await expect(evidenceRows(page)).toHaveCount(2);
+
+  await focusGridCell(evidenceCell(page, 1, EVIDENCE_COL.visibility));
+  await pasteAtFocus(page, "기획1팀 공개\n미공개\n미공개");
+  await expect(evidenceCell(page, 1, EVIDENCE_COL.visibility)).toHaveText("기획1팀 공개");
+  await expect(evidenceRows(page)).toHaveCount(2);
+  await expect(footer(page)).toContainText("붙여넣기 3줄 · 아래 2줄 버림");
+  await expect(dirtyCells(page)).toHaveCount(1);
+});

@@ -543,6 +543,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
     // 붙여넣기 묶음 — 0인 조각은 넣지 않는다(조각이 없으면 머리도 보이지 않는다 — composeFooterNotice).
     const notices: FooterNoticeItem[] = [{ tone: "muted", text: `붙여넣기 ${formatCount(pasted.rowCount)}줄`, paste: "head" }];
     if (pasted.droppedColumnCount > 0) notices.push({ tone: "warning", text: `오른쪽 ${formatCount(pasted.droppedColumnCount)}칸 버림`, paste: "piece" });
+    if (resolved.counts.droppedBelow > 0) notices.push({ tone: "warning", text: `아래 ${formatCount(resolved.counts.droppedBelow)}줄 버림`, paste: "piece" });
     if (resolved.counts.unknown > 0) notices.push({ tone: "warning", text: `공개 칸 ${formatCount(resolved.counts.unknown)}개 모르는 값`, paste: "piece" });
     if (resolved.counts.skippedLocked > 0) notices.push({ tone: "muted", text: `잠긴 줄 ${formatCount(resolved.counts.skippedLocked)}칸 건너뜀`, paste: "piece" });
     setPasteNotices(notices);

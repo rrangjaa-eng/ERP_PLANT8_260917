@@ -281,6 +281,15 @@ describe("작성자 S5 카드 사용(06.1-09 Task 2 · PA-CUAUTH · E23 · DB-8)
     expect(await amountLogs(usage.id)).toHaveLength(0);
   });
 
+  it("(검토 P3-1) 승인번호가 이미 있는 카드 사용에 다른 승인번호 줄을 붙이면 붙임 1 · 승인번호는 덮지 않는다(비어 있을 때만 채움)", async () => {
+    const fx = await setup();
+    const kept = approval();
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000, approvalNo: kept });
+    const line = await teamRecord(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182" });
+    expect(await attachEvidenceAsAuthor(fx.pm, { evidenceIds: [line], owner: { kind: "corp_card_usage", id: usage.id } })).toEqual({ attached: 1 });
+    expect(await usageRow(usage.id)).toMatchObject({ approvalNo: kept, version: usage.version });
+  });
+
   it("구매에서 생긴 카드 사용의 등록한 사람 · 남(경영관리 아닌 같은 팀 사람) → none · 직접 붙이기 거부", async () => {
     const fx = await setup();
     const { projectId, lineId } = await lineOf(fx.pm, 3_000_000);

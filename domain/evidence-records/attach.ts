@@ -1073,7 +1073,8 @@ async function attachAuthorToCardUsage(viewer: Viewer, ids: readonly string[], u
     const [lockedRecord] = await lockRecordsForUpdate(viewer, [recordId], tx);
     // 붙임이 version을 하나 올린다(attachLinkInTx) — 사전 판독 version + 1이 아니면 그사이 다른 쓰기가 있었다.
     if (!lockedRecord || lockedRecord.version !== pre.version + 1) throw new UserFacingError(staleMessage(lockedRecord?.updatedAt ?? new Date()));
-    if (patch.approvalNo && patch.approvalNo !== usage.approvalNo) {
+    // 검토 P3-1: 비어 있던 승인번호만 채운다 — 이미 있는 승인번호는 덮지 않는다.
+    if (patch.approvalNo && usage.approvalNo === null) {
       if ((await fillCardUsageApprovalNo(viewer, { id: usage.id, version: usage.version, approvalNo: patch.approvalNo }, tx)) === null) throw cardSlipNotFound();
     }
     await recordAction(
@@ -1217,7 +1218,7 @@ async function attachProxyLink(tx: DbOrTx, viewer: Viewer, ctx: { evidenceId: st
   if (!created) return;
   const locked = await lockCardUsageForUpdate(viewer, ctx.usage.id, tx);
   if (!locked || locked.archivedAt !== null) throw cardSlipNotFound();
-  if (ctx.line.approvalNo && locked.approvalNo !== ctx.line.approvalNo) {
+  if (ctx.line.approvalNo && locked.approvalNo === null) {
     if ((await fillCardUsageApprovalNo(viewer, { id: locked.id, version: locked.version, approvalNo: ctx.line.approvalNo }, tx)) === null) throw cardSlipNotFound();
   }
   await recordAction(

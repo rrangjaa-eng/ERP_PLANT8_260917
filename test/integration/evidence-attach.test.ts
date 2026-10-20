@@ -751,6 +751,8 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
     expect(await messageOf(unconfirmed)).toBe(EVIDENCE_UNCONFIRMED);
   });
 
+  const ORIGINAL2 = { 승인번호: "30000002", 매입일자: "2026.09.06", 매입금액: "33,000", 부가세: "3,000" };
+  const CANCEL2 = { 승인번호: "30000002", 매입일자: "2026.09.21", 매입금액: "-33,000", 부가세: "-3,000" };
   const keyOf = (row: typeof ORIGINAL) => `card-lotte|2222|${row.승인번호}|${row.매입일자.replaceAll(".", "-")}|${row.매입금액.replaceAll(",", "")}`;
 
   // 원거래만 든 앞 파일을 등록하고(붙이지 않는다) 원거래 기록 id를 넘긴 차례대로 돌려준다.
@@ -765,4 +767,49 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
     }
     return ids;
   }
+
+  it("(P3-1) 잠금 차례 프로젝트 전부 → 문서 전부 — 둘째 문서의 프로젝트를 남이 쥐고 있으면 등록은 문서 행을 하나도 쥐지 않은 채 기다린다", async () => {
+    const fx = await setupExpenseProject();
+    const other = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const docA = await approvedExpense(fx);
+    const docB = await approvedExpense(other);
+    const [recordA, recordB] = await registerOriginals(manager, [ORIGINAL, ORIGINAL2]);
+    if (!recordA || !recordB) throw new Error("원거래 없음");
+    await attachEvidenceRecord(manager, { recordId: recordA, owner: { kind: "expense", id: docA } });
+    await attachEvidenceRecord(manager, { recordId: recordB, owner: { kind: "expense", id: docB } });
+    const [low, high] = [
+      { id: docA, projectId: fx.projectId },
+      { id: docB, projectId: other.projectId },
+    ].sort((a, b) => (a.id < b.id ? -1 : 1));
+    if (!low || !high) throw new Error("문서 없음");
+
+    const holder = await pool.connect();
+    await holder.query("BEGIN");
+    await holder.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [high.projectId]);
+    const register = caught(registerFixtureFile(manager, lotteFixture([ORIGINAL, CANCEL, ORIGINAL2, CANCEL2]), "롯데_0901-0930.xls"));
+    let lowDocFree = false;
+    try {
+      await waitForLockWaiter(pool);
+      const probe = await pool.connect();
+      try {
+        await probe.query("BEGIN");
+        lowDocFree = await probe.query("SELECT id FROM expenses WHERE id = $1 FOR UPDATE NOWAIT", [low.id]).then(
+          () => true,
+          () => false,
+        );
+      } finally {
+        await probe.query("ROLLBACK");
+        probe.release();
+      }
+    } finally {
+      await holder.query("ROLLBACK");
+      holder.release();
+    }
+
+    expect(await register).toBeUndefined();
+    expect(lowDocFree).toBe(true);
+    expect(await needsCheckOf(recordA)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await needsCheckOf(recordB)).toBe(CANCEL_REGISTERED_CHECK);
+  });
 });

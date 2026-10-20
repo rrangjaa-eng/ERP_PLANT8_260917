@@ -7,12 +7,15 @@ import { EVIDENCE_FORMATS, finalizeAmounts as defaultFinalizeAmounts, parseWorkb
 import type { EvidenceFormatKey, FinalLine, FormatRule, ParseSuccess, RefusalKind } from "@/domain/evidence-import/types";
 import { ensureVendorsForLines, type EnsureVendorsDeps } from "@/domain/evidence-import/vendor-autocreate";
 import { loadTaxRates as defaultLoadTaxRates, type TaxRates } from "@/domain/money/tax";
+import { lockExpenseOwnerForRecordFlag, releaseConfirmationOnRecordFlag, type EvidenceOwnerView } from "@/domain/evidence";
+import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import type { Viewer } from "@/domain/viewer";
 import { BUSINESS_NO_UNIQUE_INDEX } from "@/domain/vendors";
 import { withTransaction } from "@/lib/db-transaction";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCardsByLast4 } from "@/repositories/corp-cards";
@@ -22,10 +25,12 @@ import {
   findCardRecordsByApprovalNos,
   findArchivedDedupeKeys,
   findExistingDedupeKeys,
+  findFlaggableRecordIdsByDedupeKeys,
   flagRecordsNeedsCheckByDedupeKeys,
   insertRecordsIgnoringDuplicates,
   type EvidenceRecordInsert,
 } from "@/repositories/evidence-records";
+import { listLiveLinkOwnersByRecords } from "@/repositories/evidence-record-links";
 import { lockVendorAutocreate } from "@/repositories/vendors";
 
 // 06.1-04: 증빙 등록 서비스 — 엑셀 파일 하나 → 권한 · 크기 · 읽기(06.1-02) · 사전 조회 · 한 트랜잭션(묶음 + 기록 + 행동 로그) · 결과.
@@ -172,6 +177,36 @@ function recordOf(line: PlannedLine & { vendorId: string | null }, format: Evide
   };
 }
 
+// PR-C 카드 결정(2026-10-19 「붙은 것도 표시」): 취소 줄이 들어간 원거래에 확인 필요를 세운다 — 붙은 원거래도. 그 원거래가 붙은 지출결의가 지급
+// 전이면 확인 기록을 풀어 경영관리가 다시 확인해야 지급된다(06 확인 게이트 — 새 게이트 없음). 잠금 순서: 붙은 문서마다 프로젝트 → 문서(문서 id
+// 오름차순) → 증빙 행(id 오름차순 — UPDATE 안) → 붙임 다시 읽기 → 확인 기록. 문서를 잠근 사이 다른 문서에 붙은 줄이 생기면(붙이기는 증빙 행을
+// 고치지 않는다) 그 문서는 순서대로 잠그지 못했으므로 등록 전체를 되돌린다(같은 파일을 다시 올리면 된다 — 이미 등록된 줄은 건너뛴다).
+export const CANCEL_FLAG_RACE = "증빙이 그사이 문서에 붙음 · 다시 등록";
+
+async function flagCanceledOriginals(viewer: Viewer, keys: readonly string[], tx: DbOrTx): Promise<void> {
+  if (keys.length === 0) return;
+  const expenseOwnerIds = async (recordIds: readonly string[]) =>
+    [...new Set((await listLiveLinkOwnersByRecords(viewer, recordIds, tx)).filter((owner) => owner.ownerKind === EXPENSE_DOCUMENT_KIND).map((owner) => owner.ownerId))].sort();
+  const locked = new Map<string, EvidenceOwnerView | null>();
+  for (const ownerId of await expenseOwnerIds(await findFlaggableRecordIdsByDedupeKeys(viewer, keys, tx))) {
+    locked.set(ownerId, await lockExpenseOwnerForRecordFlag(viewer, ownerId, tx));
+  }
+  const flagged = await flagRecordsNeedsCheckByDedupeKeys(viewer, keys, CANCEL_REGISTERED_CHECK, tx);
+  for (const ownerId of await expenseOwnerIds(flagged)) {
+    const owner = locked.get(ownerId);
+    if (owner === undefined) throw new UserFacingError(CANCEL_FLAG_RACE);
+    if (owner === null) continue;
+    const released = await releaseConfirmationOnRecordFlag(viewer, owner, tx);
+    if (released) {
+      await recordAction(
+        viewer,
+        { actionType: "document_update", entity: "expense", entityId: owner.id, documentId: owner.id, detail: { field: "evidenceReview", status: "released", reason: CANCEL_REGISTERED_CHECK, reviewReleased: released } },
+        { tx },
+      );
+    }
+  }
+}
+
 // 서버 액션의 파일 칸 하나(FormData `file`) → 등록. 크기는 바이트를 읽기 전에 File.size로 잰다(액션 본문 크기 미들웨어는
 // JSON 길이만 잰다 — lib/actions/payload-size.ts). 첫 방어선은 06.1-05 브라우저 사전 검사다.
 export async function registerEvidenceUpload(viewer: Viewer, file: unknown, deps?: Partial<RegisterEvidenceDeps>): Promise<EvidenceImportResult> {
@@ -253,7 +288,7 @@ export async function registerEvidenceFile(
       const insertedKeys = new Set((await insertRecordsIgnoringDuplicates(viewer, rows, tx)).map((row) => row.dedupeKey));
       const inserted = rows.filter((row) => insertedKeys.has(row.dedupeKey));
       const flaggedOriginals = [...cancelOfRegisteredOriginal].filter(([cancelKey]) => insertedKeys.has(cancelKey)).map(([, originalKey]) => originalKey);
-      await flagRecordsNeedsCheckByDedupeKeys(viewer, flaggedOriginals, CANCEL_REGISTERED_CHECK, tx);
+      await flagCanceledOriginals(viewer, flaggedOriginals, tx);
       const counts = {
         rowCount,
         registered: inserted.length,

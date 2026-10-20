@@ -134,10 +134,10 @@ const privateToOwnerType = sql<boolean>`exists (select 1 from ${codeItems} where
 
 // /review P2-1: 앞 파일 대조로 취소 줄을 등록한 원거래 줄에 확인 필요를 세운다(등록 트랜잭션 안 · 카드 등록 잠금 뒤). 보관 · 이미 사유가 있는
 // 줄은 그대로 둔다(먼저 선 사유를 덮지 않는다). PR-C 카드 결정(2026-10-19 「붙은 것도 표시」): 살아 있는 붙임이 있는 원거래에도 세운다 — 문서
-// 「증빙」 행이 사유를 싣는다. 행 잠금은 id 오름차순(lockRecordsForUpdate와 같은 순서)으로 먼저 잡는다. 바뀐 행 수.
-export async function flagRecordsNeedsCheckByDedupeKeys(viewer: Viewer, keys: readonly string[], reason: string, tx: DbOrTx): Promise<number> {
+// 「증빙」 행이 사유를 싣는다. 행 잠금은 id 오름차순(lockRecordsForUpdate와 같은 순서)으로 먼저 잡는다. 바뀐 행 id.
+export async function flagRecordsNeedsCheckByDedupeKeys(viewer: Viewer, keys: readonly string[], reason: string, tx: DbOrTx): Promise<string[]> {
   void viewer;
-  if (keys.length === 0) return 0;
+  if (keys.length === 0) return [];
   const rows = await tx
     .update(evidenceRecords)
     .set({ needsCheck: reason, version: sql`${evidenceRecords.version} + 1`, updatedAt: new Date() })
@@ -145,7 +145,18 @@ export async function flagRecordsNeedsCheckByDedupeKeys(viewer: Viewer, keys: re
       sql`${evidenceRecords.id} in (select ${evidenceRecords.id} from ${evidenceRecords} where ${evidenceRecords.dedupeKey} = ANY(${sql.param([...keys])}::text[]) and ${evidenceRecords.archivedAt} is null and ${evidenceRecords.needsCheck} is null order by ${evidenceRecords.id} for update)`,
     )
     .returning({ id: evidenceRecords.id });
-  return rows.length;
+  return rows.map((row) => row.id);
+}
+
+// PR-C 카드 결정: 위 UPDATE가 세울 줄(보관 아님 · 사유 없음)의 id — 부르는 쪽이 붙은 문서를 증빙 행보다 먼저 잠그려고 읽는다(잠그지 않는다).
+export async function findFlaggableRecordIdsByDedupeKeys(viewer: Viewer, keys: readonly string[], tx: DbOrTx): Promise<string[]> {
+  void viewer;
+  if (keys.length === 0) return [];
+  const rows = await tx
+    .select({ id: evidenceRecords.id })
+    .from(evidenceRecords)
+    .where(and(sql`${evidenceRecords.dedupeKey} = ANY(${sql.param([...keys])}::text[])`, isNull(evidenceRecords.archivedAt), isNull(evidenceRecords.needsCheck)));
+  return rows.map((row) => row.id);
 }
 
 // 증빙 행 범위(06.1-01 EvidenceScope)를 where 조각으로 — 이 번역은 이 함수 하나다. 06.2 RowScope(rowScopeFor)와 따로다(RP-5 — 입력이

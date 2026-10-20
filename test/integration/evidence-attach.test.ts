@@ -21,6 +21,7 @@ import { createTeam } from "@/domain/org";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { seoulToday } from "@/lib/dates";
+import { upsertReview } from "@/repositories/expense-evidence-reviews";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { upsertSimpleValue } from "@/repositories/settings";
@@ -650,5 +651,70 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
     expect((await moneyOf(expenseId)).version).toBe(before.doc.version);
     const linked = await listLinkedEvidence(manager, { kind: "expense", id: expenseId });
     expect(linked.items.map((item) => item.needsCheck)).toEqual([CANCEL_REGISTERED_CHECK]);
+  });
+
+  async function reviewsOf(expenseId: string) {
+    return db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId));
+  }
+
+  it("확인까지 마친 지급 전 승인 문서 → 뒤 파일 취소로 확인 기록이 풀리고 문서 version + 1 · 옛 version 지급 거부 · 다시 확인하면 지급", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const expenseId = await approvedExpense(fx);
+    await attachedOriginal(manager, expenseId);
+    const ready = await readyToPay(payer, expenseId);
+    expect((await reviewsOf(expenseId)).map((row) => row.status)).toEqual(["confirmed"]);
+
+    await laterCancelFile(manager);
+
+    expect(await reviewsOf(expenseId)).toEqual([]);
+    expect((await moneyOf(expenseId)).version).toBe(ready.version + 1);
+    expect(await caught(completeExpensePayment(payer, { expenseId, ...ready }))).toBeInstanceOf(Error);
+    const preview = await previewPayable(payer, { expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    const fresh = completeExpensePayment(payer, { expenseId, expectedPayableKrw: preview.payableKrw, version: (await moneyOf(expenseId)).version });
+    expect(await messageOf(fresh)).toBe(EVIDENCE_UNCONFIRMED);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(0);
+
+    await payNow(payer, expenseId);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(1);
+  });
+
+  it("결재 중 문서의 자동 확인(confirmed) → 뒤 파일 취소로 풀린다 · 문서 version은 그대로(결재 중 05 X-1)", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const doc = await createInReviewExpenseFixture(fx);
+    await attachedOriginal(manager, doc.expenseId);
+    const supply = (await moneyOf(doc.expenseId)).supply;
+    await upsertReview(SYSTEM_VIEWER, { expenseId: doc.expenseId, status: "confirmed", amountBeforeKrw: supply, amountAfterKrw: supply, waiveReason: null, reviewedBy: manager.id }, db);
+    const before = (await moneyOf(doc.expenseId)).version;
+
+    await laterCancelFile(manager);
+
+    expect(await reviewsOf(doc.expenseId)).toEqual([]);
+    expect((await moneyOf(doc.expenseId)).version).toBe(before);
+  });
+
+  it("지급 완료가 문서 행을 쥔 동안 뒤 파일 등록은 기다리고, 지급 커밋 뒤에는 지급 뒤 문서로 판정해 확인 기록을 그대로 둔다", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const payer = await makePayer();
+    const expenseId = await approvedExpense(fx);
+    const recordId = await attachedOriginal(manager, expenseId);
+    const ready = await readyToPay(payer, expenseId);
+    const gate = deferred();
+    const reached = deferred();
+    const pay = completeExpensePayment(payer, { expenseId, ...ready }, { afterLock: () => (reached.resolve(), gate.promise) });
+    await reached.promise;
+    const register = laterCancelFile(manager);
+    await waitForLockWaiter(pool);
+    gate.resolve();
+    await pay;
+    await register;
+
+    expect(await needsCheckOf(recordId)).toBe(CANCEL_REGISTERED_CHECK);
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toHaveLength(1);
+    expect((await reviewsOf(expenseId)).map((row) => row.status)).toEqual(["confirmed"]);
   });
 });

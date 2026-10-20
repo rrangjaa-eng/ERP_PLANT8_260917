@@ -469,6 +469,9 @@ for (const width of WIDTHS) {
       await shot(page, `panel-conflict-${width}`);
       const refreshBox = await box(refresh.first());
       record("충돌 `새로 고침` 크기(참고)", width, ROLE, where, refreshBox, "—", null);
+      // 느린 러너 재현(PR #254 CI e2e (2)) — CPU를 늦추면 rAF가 React 커밋보다 먼저 돌아 포커스가 body로 떨어졌다(로컬 10/10). 새로 고침 · 포커스 실측 동안만 늦춘다.
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: 20 });
       await refresh.first().click();
       await expect.soft(c.getByRole("textbox", { name: "공급가" })).toHaveValue(fmt(bumped));
       const after = await c.getByRole("textbox", { name: "공급가" }).inputValue();
@@ -476,6 +479,8 @@ for (const width of WIDTHS) {
       await page.waitForTimeout(200);
       const active = await activeDescription(page);
       record("새로 고침 뒤 포커스 = 공급가 칸", width, ROLE, where, active, "input#evidence-panel-supply", active.startsWith("input#evidence-panel-supply"));
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+      await cdp.detach();
       await page.keyboard.press("Escape");
       await expect(c).toBeHidden();
     }

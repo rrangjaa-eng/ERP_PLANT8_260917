@@ -84,6 +84,13 @@ export function sameCardFilter(viewer: Viewer, cardId: string, totalKrw?: number
   return totalKrw === undefined ? card : sql`${card} and ${evidenceRecords.totalKrw} = ${totalKrw}::bigint`;
 }
 
+/** 06.1-09 검토 P2-3: 경영관리(registrar) 카드 사용 풀 — 같은 카드 ∧ S4 후보 조건(같은 승인번호 ∨ 같은 사용일 ∧ 합계 — `isRelaxedHit`). */
+export function cardHitFilter(viewer: Viewer, cardId: string, usage: { approvalNo: string | null; usedOn: string; totalKrw: number }): SQL {
+  const card = sameCardFilter(viewer, cardId);
+  const sameDay = sql`${evidenceRecords.issuedOn} = ${usage.usedOn}::date and ${evidenceRecords.totalKrw} = ${usage.totalKrw}::bigint`;
+  return usage.approvalNo === null ? sql`${card} and ${sameDay}` : sql`${card} and (${evidenceRecords.approvalNo} = ${usage.approvalNo} or (${sameDay}))`;
+}
+
 function ownerWhere(ownerFilter: SQL | null | undefined): SQL {
   return ownerFilter ? sql`(${ownerFilter})` : sql`true`;
 }

@@ -12,7 +12,7 @@ import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { evidenceScopeFor } from "@/domain/permissions/scope-for";
 import type { Viewer } from "@/domain/viewer";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { countPoolForScope, listPoolForScope, POOL_LIMIT, readPoolDocFacts, sameCardFilter, type PoolDocFacts, type PoolRow } from "@/repositories/evidence-pool";
+import { countPoolForScope, listPoolForScope, POOL_LIMIT, readPoolDocFacts, cardHitFilter, sameCardFilter, type PoolDocFacts, type PoolRow } from "@/repositories/evidence-pool";
 import type { CardUsageForWrite } from "@/repositories/corp-card-usages";
 import type { SQL } from "drizzle-orm";
 import { findLivePayment } from "@/repositories/expense-payments";
@@ -90,12 +90,18 @@ function allowedTypesOf(codes: PairCodes, paymentMethod: string | null): readonl
   return ofMethod.length === 0 ? null : ofMethod.map((pair) => pair.evidence);
 }
 
+// 카드 사용 풀 — 작성자는 같은 카드 줄(합계 다른 줄은 막힌 행 · DB-8), 경영관리는 서버 붙이기가 받는 S4 후보 조건 줄만(검토 P2-3 — planCardAttach).
+function cardPoolFilter(viewer: Viewer, mode: Exclude<EvidencePickerMode, "none">, usage: CardUsageForWrite): SQL {
+  if (mode === "author") return sameCardFilter(viewer, usage.corpCardId);
+  return cardHitFilter(viewer, usage.corpCardId, { approvalNo: usage.approvalNo, usedOn: usage.usedOn, totalKrw: usage.totalAmountKrw });
+}
+
 async function contextOf(viewer: Viewer, owner: PoolOwner): Promise<PoolContext> {
   if (owner.kind === "corp_card_usage") {
     const { mode, usage } = await cardMode(viewer, owner.id);
     if (mode === "none" || !usage) throw notFound(owner);
     const doc: PoolDocFacts = { kind: "corp_card_usage", evidenceType: null, businessNo: null, amountKrw: usage.totalAmountKrw, date: usage.usedOn, paymentMethod: null };
-    return { mode, doc, allowedTypes: null, codes: null, phase: null, card: { usage, filter: sameCardFilter(viewer, usage.corpCardId) } };
+    return { mode, doc, allowedTypes: null, codes: null, phase: null, card: { usage, filter: cardPoolFilter(viewer, mode, usage) } };
   }
   if (owner.kind === "purchase_request") {
     if ((await requestMode(viewer, owner.id)) !== "author") throw notFound(owner);
@@ -220,7 +226,7 @@ export async function countEvidencePool(viewer: Viewer, owner: { kind: PoolOwner
     const { mode, usage } = await cardMode(viewer, owner.id);
     if (mode === "none" || !usage) return 0;
     // 작성자 모드는 막힌 행(합계 다름)을 센 수에서 뺀다(DB-16).
-    const ownerFilter = sameCardFilter(viewer, usage.corpCardId, mode === "author" ? usage.totalAmountKrw : undefined);
+    const ownerFilter = mode === "author" ? sameCardFilter(viewer, usage.corpCardId, usage.totalAmountKrw) : cardPoolFilter(viewer, mode, usage);
     return countPoolForScope(viewer, await evidenceScopeFor(viewer), { author: mode === "author", cardFormats: CARD_FORMATS, allowedTypes: null, ownerFilter });
   }
   if (owner.kind === "purchase_request") {

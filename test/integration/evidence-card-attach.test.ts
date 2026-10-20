@@ -65,6 +65,14 @@ async function cardRecord(fx: Fx, last4: string, total: string, vat: string): Pr
   return row.id;
 }
 
+// S4 후보 조건(검토 P2-3 — 같은 승인번호 ∨ 같은 사용일 ∧ 합계)을 맞춘다: 등록이 끝난 뒤 카드 사용과 그 줄들에 같은 새 승인번호를 싣는다
+// (등록 전에 맞추면 대사 1단계가 먼저 붙인다). 사람이 고르는 길(3단계)을 재는 시험의 준비다.
+async function pairByApproval(usageId: string, recordIds: readonly string[]): Promise<void> {
+  const shared = approval();
+  await db.update(corpCardUsages).set({ approvalNo: shared }).where(eq(corpCardUsages.id, usageId));
+  for (const recordId of recordIds) await db.update(evidenceRecords).set({ approvalNo: shared }).where(eq(evidenceRecords.id, recordId));
+}
+
 async function usageRow(id: string) {
   const [row] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, id));
   if (!row) throw new Error("카드 사용 없음");
@@ -109,6 +117,7 @@ describe("경영관리 → 카드 사용 붙이기(06.1-09 Task 2)", () => {
     const fx = await setup();
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
     const recordId = await cardRecord(fx, fx.cardB.last4, "204,100", "18,554");
+    await pairByApproval(usage.id, [recordId]);
 
     await attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } }, { isActionTypeEnabled: () => Promise.resolve(false) });
 
@@ -118,6 +127,22 @@ describe("경영관리 → 카드 사용 붙이기(06.1-09 Task 2)", () => {
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({ entity: "corp_card_usage" });
     expect(logs[0]?.detail).toMatchObject({ cardLast4Before: fx.cardA.last4, cardLast4After: fx.cardB.last4, evidenceRecordId: recordId });
+  });
+
+  it("(검토 P2-3) 후보 조건 밖(승인번호 다름 · 사용일 다름) 같은 카드 줄을 직접 실으면 거부 · 붙임 0 · 합계 그대로 / registrar S5 풀에도 없다", async () => {
+    const fx = await setup();
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const outside = await cardRecord(fx, fx.cardA.last4, "204,100", "18,555");
+    const paired = await cardRecord(fx, fx.cardA.last4, "210,000", "19,091");
+    await pairByApproval(usage.id, [paired]);
+
+    const poolIds = (await listEvidencePool(fx.manager, { owner: { kind: "corp_card_usage", id: usage.id } })).items.map((item) => item.id);
+    expect(poolIds).toContain(paired);
+    expect(poolIds).not.toContain(outside);
+
+    expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId: outside, owner: { kind: "corp_card_usage", id: usage.id } }))).toBe("없는 증빙 · 새로 고침");
+    expect(await liveLinks(usage.id)).toEqual([]);
+    expect(await usageRow(usage.id)).toMatchObject({ totalAmountKrw: 200_000, version: usage.version });
   });
 
   it("(N-6) 영수증 기록(카드 서식 아님)은 값을 바꾸지 않고 붙는다", async () => {
@@ -135,6 +160,7 @@ describe("경영관리 → 카드 사용 붙이기(06.1-09 Task 2)", () => {
     const { lineId } = await lineOf(fx.pm, 300_000);
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000, lineId });
     const recordId = await cardRecord(fx, fx.cardA.last4, "1,238,000", "112,545");
+    await pairByApproval(usage.id, [recordId]);
     expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } }))).toBe("합계 200,000 → 1,238,000 · 실행가 초과");
     expect(await liveLinks(usage.id)).toEqual([]);
     expect(await usageRow(usage.id)).toMatchObject({ totalAmountKrw: 200_000, version: usage.version });
@@ -146,6 +172,7 @@ describe("경영관리 → 카드 사용 붙이기(06.1-09 Task 2)", () => {
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 90_000, lineId });
     await db.update(projects).set({ status: "completed" }).where(eq(projects.id, projectId));
     const recordId = await cardRecord(fx, fx.cardA.last4, "99,000", "9,000");
+    await pairByApproval(usage.id, [recordId]);
     expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } }))).toBe("합계 90,000 → 99,000 · 완료 프로젝트");
     expect(await liveLinks(usage.id)).toEqual([]);
   });
@@ -295,6 +322,7 @@ describe("경영관리 카드 사용 붙이기 동시성(06.1-09 · 잠금 순�
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000, lineId });
     const r1 = await cardRecord(fx, fx.cardA.last4, "204,100", "18,555");
     const r2 = await cardRecord(fx, fx.cardA.last4, "210,000", "19,091");
+    await pairByApproval(usage.id, [r1, r2]);
 
     const held = deferred();
     const reached = deferred();
@@ -390,6 +418,7 @@ describe("S2 행 행동 배타 · M10 표식(06.1-09 Task 3)", () => {
 
     const s4 = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
     const s4Record = await cardRecord(fx, fx.cardB.last4, "204,100", "18,554");
+    await pairByApproval(s4.id, [s4Record]);
     await attachEvidenceRecord(fx.manager, { recordId: s4Record, owner: { kind: "corp_card_usage", id: s4.id } });
     expect((await rowOf(fx.manager, s4Record)).cardReplaced).toBe(true);
     await detachLiveLinksForOwner(fx.manager, { ownerKind: "corp_card_usage", ownerId: s4.id, reason: "카드 사용 삭제" }, db);

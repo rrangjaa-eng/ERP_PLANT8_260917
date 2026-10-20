@@ -313,6 +313,10 @@ async function planCardAttach(viewer: Viewer, recordId: string, usageId: string)
   if (!isCardFormat(record.format)) return { usage, record, patch: null, basis: null };
   if (!sameIssuerOfFormat(record.format, usage.cardIssuer) || record.corpCardId === null) throw new UserFacingError(`카드 다름 · ${usage.cardLast4}`);
   if ((await cardStatementOwners(viewer, [usage.id])).has(usage.id)) throw new UserFacingError(`증빙 있음 · ${usage.number}`);
+  // 검토 P2-3: 화면이 보인 후보 조건(같은 승인번호 ∨ 같은 사용일 ∧ 합계 — S4 후보 · registrar S5 풀)을 서버가 다시 본다. 조건 밖 줄은 후보가 아니다.
+  if (!isRelaxedHit({ approvalNo: record.approvalNo, usedOn: record.issuedOn, totalKrw: record.totalKrw }, { approvalNo: usage.approvalNo, usedOn: usage.usedOn, totalKrw: usage.totalAmountKrw })) {
+    throw new UserFacingError(RECORD_NOT_FOUND);
+  }
   const patch = fileWinsPatch(
     { totalKrw: usage.totalAmountKrw, corpCardId: usage.corpCardId, cardLast4: usage.cardLast4 },
     { totalKrw: record.totalKrw, corpCardId: record.corpCardId, cardLast4: record.cardLast4 ?? "", approvalNo: record.approvalNo },

@@ -1,38 +1,37 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-07T17:55:59.520Z",
-  "phase": "06.2",
-  "phase_name": "view-scope",
-  "phase_dir": ".planning/phases/06.2-view-scope",
+  "timestamp": "2026-10-21T05:30:23.606Z",
+  "phase": "07",
+  "phase_name": "schedule-notify-audit",
+  "phase_dir": ".planning/phases/07-schedule-notify-audit",
   "plan": 0,
   "task": 0,
   "total_tasks": 0,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "REVIEWS.md (eng·design R1) 작성", "status": "done", "commit": "4ad6aa2"},
-    {"id": 2, "name": "검토 R1 반영(플랜 12개·CONTEXT·UI-SPEC)", "status": "done", "commit": "22169278"},
-    {"id": 3, "name": "VALIDATION·ROADMAP 웨이브 맞춤", "status": "done", "commit": "70b4c6c9"},
-    {"id": 4, "name": "정밀 플랜 검사(막힘 0·경고 1·참고 3)", "status": "done"},
-    {"id": 5, "name": "/plan-design-review 2회차(Codex·Opus) + 게이트 기록", "status": "done", "commit": "9b6da580"}
+    {"id": 1, "name": "07-REVIEWS.md 배치·원장", "status": "done", "commit": "ee0899f"},
+    {"id": 2, "name": "CONTEXT 결정 반영(D-726~749)", "status": "done", "commit": "b2f0507"},
+    {"id": 3, "name": "28플랜 재계획·교차 정합", "status": "done", "commit": "941aeec"},
+    {"id": 4, "name": "플랜 체커 3라운드 PASSED", "status": "done", "commit": "66bc71d"},
+    {"id": 5, "name": "draft PR #258 (#257 대체)", "status": "done"}
   ],
   "remaining_tasks": [
-    {"id": 6, "name": "디자인 재검토 2회차 막힘 1·중요 6 + 플랜 검사 경고 1·참고 반영 (/gsd-plan-phase 06.2 --reviews, Round 2)", "status": "not_started"},
-    {"id": 7, "name": "플랜 검사 재실행(Opus, 새 문맥) 막힘 0 확인", "status": "not_started"},
-    {"id": 8, "name": "커밋·푸시, PR(base claude/project-thread-5jx649) draft 유지, 결과 보고", "status": "not_started"}
+    {"id": 6, "name": "/plan-eng-review 1회", "status": "not_started"},
+    {"id": 7, "name": "/plan-design-review 1회(07-UI-SPEC draft, Codex는 이 세션에서)", "status": "not_started"},
+    {"id": 8, "name": "지적 반영·재검토 최대 1회 → PR #258 ready·머지", "status": "not_started"},
+    {"id": 9, "name": "/gsd-execute-phase 07", "status": "not_started"}
   ],
-  "blockers": [
-    {"description": "게이트 리뷰를 시작한 세션은 gsd-planner를 못 띄움(plant8-session-boundary 훅)", "type": "technical", "workaround": "새 세션에서 재개"}
-  ],
+  "blockers": [],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "카드 3건 답(K1 계급 이행·K2 본부 책임자 카드/구매 목록·K3 참여자 지출결의)", "context": "추천안으로 반영, CONTEXT '바뀔 수 있는 결정' 표에 바꿀 곳", "blocking": false},
-    {"action": "#184 머지(문서만 PR)", "context": "사용자 머지", "blocking": true}
+    {"action": "07-24 D-729 배포 뒤 권한 부여", "context": "실행 단계 수동 작업", "blocking": false},
+    {"action": "위험 경로 PR 3묶음(스키마·인증·권한) 머지", "context": "D-726, CLAUDE.md §4 머지", "blocking": false}
   ],
   "decisions": [
-    {"decision": "G34(02, PR-4)는 PR-3 뒤 별도 PR", "rationale": "PR-5 전엔 참여자가 지출결의를 못 내 잘못 가는 틈 없음", "phase": "06.2"},
-    {"decision": "참여자 다중 선택 유지", "rationale": "260907 projects.ts:3953 personIds 배열·Projects.tsx:2408 체크박스", "phase": "06.2"}
+    {"decision": "STATE.md 13b 변경 되돌림", "rationale": "06.6 선례: 실행 세션만 자기 페이즈 진행 표기 갱신", "phase": "07"},
+    {"decision": "AQ-11 no-slot: 기한 안 마지막 영업일, 마감 넘기면 다음 지급 가능 금요일", "rationale": "사용자 답(D-741)", "phase": "07"}
   ],
   "uncommitted_files": [],
-  "next_action": "/mnt/project-files/06.2-prep/design-review-r2.md를 REVIEWS.md Round 2로 넣고 /gsd-plan-phase 06.2 --reviews",
-  "context_notes": "eng 재검토는 하지 않음(브리프). Codex 지적은 후보, 판정은 근거로."
+  "next_action": "새 세션(plant8 환경)에서 /gsd-progress → /plan-eng-review → /plan-design-review",
+  "context_notes": "계획 완료 뒤 독립 게이트 리뷰 경계에서 끊음. PR #258."
 }

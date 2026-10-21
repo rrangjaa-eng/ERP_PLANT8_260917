@@ -406,6 +406,50 @@ README는 「사용액=실행가 합 등」 7개 중 두 가지만 구체로 적
 - 직접 확인: ① `decisions.cjs` 정규식 3종과 07-CONTEXT.md·06.5-CONTEXT.md의 `parseDecisions` 결과(07: 17개 읽힘 · 4줄 무시, 06.5: 21개 전부) ② 대체 꼴 3종이 읽힘 ③ `plant8-skill-gate.sh:52-53·77-84`와 `.planning/STATE.md:3 current_phase: 06` ④ 07-CONTEXT.md의 D-7xx 줄 번호(38~45·49~54·61~65·71·79·90~91) ⑤ 07-01-PLAN.md:222-267 AQ 표.
 - 확인 못 함: 플랜·UI-SPEC의 개별 줄(원 보고서의 인용을 따름) · 옛 저장소 `ERP_PLANT8_260907`의 줄 번호(메모 인용) · codex-A~G 원문(RS·FV 요약을 따름) · claude-passes.md 원문 · 계획 판단 7개 중 5개 이름 · `phase-06.log`에서의 `290af5ce` 줄 실재.
 
+## 6. Round 2 — 계획 게이트 지적 (2026-10-21, `/plan-eng-review` · `/plan-design-review`)
+
+정본: `eng-review.md` 「Decision ledger」(R1~R15 · C1~C3) · `design-review.md` 「Decision ledger」(Q1 · U1~U18 · X1~X4). 세부 문구·근거는 정본을 범위 Read. 세션 수용 항목은 사용자 승인이 아니며 PR #258에서 거부될 수 있다(eng-review.md 「진행 방식」).
+
+사용자 결정(PR #258 답 없음 — 기본값으로 반영)
+- **R1**(D-726 PR-S 머지 위상): 현행 **C** — PR-S 구성·W4 끝 ready 유지. 07-01 지도에 직렬 머지 큐 길이·예상 소요와 「PR-S 머지 지연 시 무인 PR draft 유지·스택 브랜치 재머지 주기」를 적는다. 답이 A·B로 오면 07-01 지도·ROADMAP만 고친다.
+- **Q1**(D-747 원가율 첫 저장 되돌리기): **A** 미룸 — 07에는 U3 결과 줄만.
+
+세션 수용 — 반영할 자리
+| ID | 반영 위치 |
+|---|---|
+| R2 custom SQL 재생성 절차 · R5 묶음 PR 변경 시 하류 재반영 | 07-01 머지 규칙 |
+| R3 NOT VALID/VALIDATE 같은 Job 사유 | 07-02 |
+| R4 트리거 정리 금지 조건(`UNPRUNABLE_ACTION_TYPES`) + 통합 시험 | 07-13 |
+| R6 받는 사람별 상한 시험 · R8 `EvaluateContext.tx` · R9 평가 실패 사례 + OPERATIONS 재실행 절차 | 07-10 |
+| R7 W1 중간 상태 한 줄 + E2E 단언 범위 분리 | 07-01 · 07-16 |
+| R10 대표 action-log 500 수정 + 스모크 200 | 07-05 · 07-25 |
+| R11 퇴직자 잠금 풀기 거부 위치 | 07-17 |
+| R12 착지 링크 결재 조인 50행 성능 사례 | 07-19 |
+| R13 등록부 삽입 위치 = SC-07 표 순서 | 07-22 · 07-23 |
+| R14 자동 정산 예약 작업 「뺌」 한 줄 | 07-01 |
+| R15 `resolvePaySchedule` 상한 행 단위 격리 + 단위 시험 | 07-01 · 07-16 |
+| C1~C3 사실 정정(`seed/index.ts:205-233` · `lib/auth.ts:70` · `prevBusinessOnOrBefore` 07-01 신규) | 해당 read_first |
+| U1 SC-12 임시 비밀번호 결과 단계 | UI-SPEC SC-12 · 07-17 |
+| U2 SC-11 `퇴직 > 잠김` · `잠김 N` 퇴직 제외 | UI-SPEC SC-11 · 07-17 |
+| U3 SC-04 첫 저장 결과 줄 | UI-SPEC SC-04 · 07-08 |
+| U4 SC-22 사유 낱말 표 · `권한 없음` 숨김 | UI-SPEC SC-22 · 07-27 |
+| U5 SC-10 결과 줄 꼴 되돌리기 | UI-SPEC SC-10 · 07-15 |
+| U6 즉시 저장 `aria-busy`/`aria-disabled` | UI-SPEC 공통 계약 · SC-05·10·11·17 맡는 플랜 E2E |
+| U7 결과 줄 유지 시점 | UI-SPEC 공통 계약 3 |
+| U8 SC-01 PARTIAL 표시 | UI-SPEC SC-01 · 07-12 · 07-16 |
+| U9 SC-08 폰 `상세` P2 | UI-SPEC SC-08 · 07-25 |
+| U10 SC-06 aria·묶음 규칙·폰 행 링크 | UI-SPEC SC-06 · 개정 3 · 07-19 |
+| U11 SC-18 `새 거래처` 상시 | UI-SPEC SC-18 · 07-20 |
+| U12 SC-17 패널 행동 줄·FormAlert·Enter | UI-SPEC SC-17 · 07-20 |
+| U13 SC-03 편집 중 1차 하나 | UI-SPEC SC-03 · 07-16 |
+| U14 SC-19 면 제목 낱말 | UI-SPEC SC-19 · 07-23 |
+| U15 SC-20 상태 열 우선순위 | UI-SPEC SC-20 · 07-24 |
+| U16 상태 표 빈칸 | UI-SPEC 해당 SC · 07-20 · 07-21 · 07-23 |
+| U17 문구 정합(보관 이유 · `{min}~{max}` · 106·116행) | UI-SPEC |
+| U18 맡는 플랜 줄 | UI-SPEC SC-06 · SC-13 · SC-14 |
+
+반영 안 함: X1(K22 잠김) · X2(미채택) · X3(07 밖 `/admin/vendors` 필터 격자 — quick 후보) · X4(결함 아님).
+
 ## Plan-Revision Conflicts
 
 <!-- gsd:plan-revision-conflicts:begin -->

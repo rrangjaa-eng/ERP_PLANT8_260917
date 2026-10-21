@@ -262,6 +262,8 @@ export async function setSimpleSettingValue(
     await assertSeqStartNotLowered(viewer, def.key, parsed.data, now, tx);
     await setSettingValue(viewer, def, value, {
       can: () => Promise.resolve(true),
+      // 07-04 /review: setSettingValue가 여는 트랜잭션을 이 tx로 — 잠근 tx 안에서 풀 연결을 하나 더 잡지 않는다.
+      withTransaction: (fn) => fn(tx),
       upsertSimpleValue: (v, key, val, by) => upsertSimpleValue(v, key, val, by, tx),
       recordAction: (v, logEntry) => recordAction(v, logEntry, { tx }),
     });

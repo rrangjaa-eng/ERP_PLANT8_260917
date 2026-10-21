@@ -1398,7 +1398,7 @@ export function QuoteLedger({
     },
   });
 
-  // S13 — 저장 성공: 600ms --accent-weak 틴트 뒤 묶음이 닫힌다(prefers-reduced-motion이면 바로).
+  // S13 — 저장 성공: 600ms --surface-selected 틴트(07 개정 11) 뒤 묶음이 닫힌다(prefers-reduced-motion이면 바로).
   function closePeriodFieldAfterSave() {
     const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {

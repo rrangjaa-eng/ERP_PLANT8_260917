@@ -603,7 +603,8 @@ test("③ intake 1280 — Ctrl+U 파일 선택 · 방향키 → Enter 편집 →
   record("공개 select 선택지 순서(DA-1 — 자리표시 `—` 뺌)", 1280, role, url, choices, "기획1팀 공개 → 기획본부 공개 → 미공개 → [다른 팀: …(기획1팀 제외)]", choices[0] === "기획1팀 공개" && choices[1] === "기획본부 공개" && choices[2] === "미공개" && String(choices[3]).startsWith("[다른 팀:") && !String(choices[3]).includes("기획1팀 공개"));
   // F7(디자인 검토 P3 · 사용자 결정 2026-10-17 「이 칸만 끄기」) — 공개 칸만 `hideEmptyOption`으로 `—`를 끈다. 첫 선택지가 제안 팀이다.
   record("공개 select 첫 선택지 = 제안 팀(F7 — `—` 없음)", 1280, role, url, options[0], "기획1팀 공개(맨 위 · 기본)", options[0] === "기획1팀 공개" && !options.includes("—"));
-  await classAudit(page, "cellSelect", 1280, url, [["height", "var(--control-h)"], ["border-bottom-color", "var(--accent)"], ["background-color", "var(--accent-weak)"], ["color", "var(--text-strong)"], ["font-size", "var(--text-body)"], ["padding-left", "var(--s-1)"]], { "border-bottom-style": "solid", "border-bottom-width": "1px", "border-top-width": "0px" });
+  // 07 개정 11 — 초점 잡힌 공개 select = 흰 바탕 + 안쪽 2px --accent 선(초록 면 · 바깥 포커스 링 없음).
+  await classAudit(page, "cellSelect", 1280, url, [["height", "var(--control-h)"], ["border-bottom-color", "var(--accent)"], ["background-color", "var(--surface-base)"], ["outline-color", "var(--accent)"], ["color", "var(--text-strong)"], ["font-size", "var(--text-body)"], ["padding-left", "var(--s-1)"]], { "border-bottom-style": "solid", "border-bottom-width": "1px", "border-top-width": "0px", "outline-style": "solid", "outline-width": "2px", "outline-offset": "-2px" });
   await page.keyboard.press("Escape");
   await expect(editor).toHaveCount(0);
   const afterEsc = (await cell.innerText()).trim();

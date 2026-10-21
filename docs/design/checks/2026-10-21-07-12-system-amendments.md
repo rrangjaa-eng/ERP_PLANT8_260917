@@ -20,3 +20,8 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: 기존 원시 n-50 · n-60 · n-100을 역할 토큰이 다시 가리킬 뿐, 새 토큰 0
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 크기·간격 변경 없음. 새 낱말 줄바꿈은 /dev/components 감사(4폭)에서 실측 대상
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 해당 없음(스크린샷 육안 금지, CLAUDE.md §6) · 독립 DOM 감사 audit/07-12-dom-audit.md 몫(오케스트레이터)
+
+## 검토 3회차 — 화면 표 칸 편집기(Codex P2 · Table.module.css:81)
+- [x] 개정 11은 시스템 규칙이라 `StaticTable`(.inputCells) 밖 동적 편집 표에도 같다 — 근거: 견적 · 매출 · 발행 요청(project-detail) · 리저브(reserves) · 지급 대상(expenses) · 증빙(evidence-table) · 경품(event-detail) 모듈의 `.cellInput` · `.cellInputNumeric` · `.cellSelect` 쉬는 면 `--accent-weak` → 투명, 포커스 = `--surface-base` + 안쪽 `--focus-w` `--accent` 선(바깥 `--focus` 링 제거). 새 토큰 0 · `evidence-table.tsx` 그대로(모듈 CSS만).
+- [x] 단위 시험이 다섯 모듈의 편집기 규칙을 잠근다 — 근거: `test/unit/design/tokens.test.ts` 「화면 표 칸 편집기 — 개정 11」.
+- [x] 실측(Chromium, CI=true 프로덕션 빌드, 1280): 아홉 편집기 모두 쉼 · hover 계산 배경 투명(칸 면 n-0 또는 n-60), 포커스 rgb(255, 255, 255) + outline 2px solid rgb(0, 84, 70) · offset -2px. g-50 계산 배경 0. 글자 대비 15.53~16.79 · 밑줄 · 포커스 선 8.25~8.91.

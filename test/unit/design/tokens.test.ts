@@ -475,3 +475,38 @@ describe("tokens.css · ui/table — 개정 11 표 모양 확정(표 안 초록 
     expect(rule).toMatch(/outline-offset:\s*calc\(-1 \* var\(--focus-w\)\)/);
   });
 });
+
+// 07-12 검토 3회차(Codex P2 · Table.module.css:81) — 개정 11은 시스템 규칙이다. `.inputCells`는 정적 표에만 붙으므로
+// 동적 편집 표(견적 · 매출 · 발행 요청 · 리저브 · 지출 지급 대상 · 증빙 · 경품)의 칸 편집기도 같은 모양을 지켜야 한다:
+// 쉬는 면 투명(초록 면 없음) · 포커스 = 흰 바탕 + 안쪽 --focus-w --accent 선(바깥 링 없음).
+describe("화면 표 칸 편집기(.cellInput · .cellInputNumeric · .cellSelect) — 개정 11", () => {
+  const MODULES = [
+    "app/(app)/projects/[id]/project-detail.module.css",
+    "app/(app)/pnl/reserves/reserves.module.css",
+    "app/(app)/expenses/expenses.module.css",
+    "app/(app)/expenses/evidence/evidence-table.module.css",
+    "app/(app)/certs/events/[id]/event-detail.module.css",
+  ] as const;
+  const EDITOR = /^\.cell(?:Select|Input|InputNumeric)(?::focus-visible)?$/;
+
+  for (const path of MODULES) {
+    const css = stripComments(readFileSync(resolve(process.cwd(), path), "utf8"));
+    const rules = [...css.matchAll(/(?<=^|\})\s*([^{}@]+?)\s*\{([^}]*)\}/g)]
+      .map((m) => ({ selectors: (m[1] as string).split(",").map((s) => s.trim()), body: m[2] as string }))
+      .filter((rule) => rule.selectors.every((s) => EDITOR.test(s)));
+    const rest = rules.filter((rule) => rule.selectors.every((s) => !s.endsWith(":focus-visible")) && /background/.test(rule.body));
+    const focus = rules.filter((rule) => rule.selectors.every((s) => s.endsWith(":focus-visible")));
+
+    it(`${path} — 쉬는 칸 면 투명 · 포커스 칸 흰 바탕 + 안쪽 accent 선`, () => {
+      expect(rest.length, "쉬는 칸 규칙").toBeGreaterThan(0);
+      expect(focus.length, "포커스 칸 규칙").toBeGreaterThan(0);
+      for (const rule of rest) expect(rule.body).toMatch(/background:\s*transparent/);
+      for (const rule of [...rest, ...focus]) expect(rule.body).not.toMatch(/--accent-weak|--g-\d+/);
+      for (const rule of focus) {
+        expect(rule.body).toMatch(/background:\s*var\(--surface-base\)/);
+        expect(rule.body).toMatch(/outline:\s*var\(--focus-w\) solid var\(--accent\)/);
+        expect(rule.body).toMatch(/outline-offset:\s*calc\(-1 \* var\(--focus-w\)\)/);
+      }
+    });
+  }
+});

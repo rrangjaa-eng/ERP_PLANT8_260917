@@ -3,6 +3,7 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import { listSeatDuplicateHolders, listSeatHolders, lockSeatKeys, type OccupiedTeamRow, type SeatDuplicateHolderRow } from "@/repositories/seats";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
+import { registerDto } from "@/domain/permissions/dto-registry";
 import { DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { addDays, kstToday } from "@/lib/kst-date";
@@ -180,6 +181,15 @@ export async function assertNoSeatDuplicates(
 
 export type SeatHolderDto = { userId: string; name: string };
 export type SeatDuplicatesDto = { teams: Record<string, SeatHolderDto[]>; orgUnits: Record<string, SeatHolderDto[]> };
+
+// 07-03(R1) — listSeatDuplicates가 사람 · 팀 정보를 둘 다 볼 때만 이름을 싣는다(아래). 같은 규칙을 누수 스캔이 계급마다 돈다.
+registerDto({
+  name: "SeatDuplicatesDto",
+  fields: [
+    { key: "teams", infoItem: ["person.value", "team.value"] },
+    { key: "orgUnits", infoItem: ["person.value", "team.value"] },
+  ],
+});
 
 // 06.4(D-6405 · D-6413 · D-6415): 조직 화면 중복 — 자리마다 다른 보유자 구간과 하루라도 겹치는 사람만 남기고(퇴직 예정
 // 보유자와 그 다음 날부터의 후임은 중복이 아니다), 남은 사람이 2명 이상인 자리만 이름 오름차순으로.

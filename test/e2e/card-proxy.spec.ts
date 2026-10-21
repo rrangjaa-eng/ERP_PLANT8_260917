@@ -139,6 +139,12 @@ test.describe("법인카드 대리 등록 · 수정 (06-09)", () => {
     const fx = await setup();
     const page = await loginPage(browser, baseURL, fx.proxy);
     await registerByProxy(page, fx, "300000");
+    // 등록 패널이 숨은 것은 네이티브 dialog.close() 직후다 — 닫기 이동(router.replace → `/cards`)은 아직 진행 중일 수 있다. 그 사이에 행 `수정`을
+    // 누르면 늦게 끝난 이동이 등록 패널을 내리며(주소로 연 패널 = 연 요소 없음) 포커스를 화면 제목으로 옮기고, 수정 패널은 그 제목을 연 요소로
+    // 잡아 닫힌 뒤 「수정」이 아니라 제목으로 돌아간다(PR #262 CI e2e (1)). 이 테스트는 포커스 복귀를 보므로 닫기가 끝난 것 — 주소에서 `new=1`이
+    // 빠지고 제목에 포커스 — 을 보고 넘어간다. 이동 중에 누르는 경우는 아래 [06-12 검토 I-2]가 따로 지킨다.
+    await expect(page).not.toHaveURL(/new=1/);
+    await expect(page.locator('[data-ui="screen-title"]')).toBeFocused();
 
     const rows = fixtureRows(page, fx);
     await expect(rows.getByText("경영관리 등록", { exact: true })).toHaveCount(1);

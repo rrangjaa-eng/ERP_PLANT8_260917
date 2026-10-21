@@ -297,6 +297,14 @@ export type PaymentTargetRowDto = {
   account?: PaymentAccount;
   // 06.5-06(결정 맥락 11): 오늘(KST) 이체 파일에 담긴 가장 늦은 시각 HH:mm — 이체 파일 게이트를 가진 사람에게만, 아니면 null.
   transferFileAt: string | null;
+  // 07-01(D-715 · D-742): scheduledPaymentDate는 유효 예정일(수동 ?? 자동). 수동 지정 여부 · 자동값 · 결재 마감(ISO) · 밀림 사유 · 계산 실패(R15).
+  scheduledPaymentManual: boolean;
+  autoPaymentDate: string;
+  paymentCutoffAt: string;
+  paymentPushReason: "cutoff" | "no-slot" | null;
+  paymentScheduleFailed: boolean;
+  // gate `payment.cutoff` 판정 이유(그 주 소속 — 통과면 null). 지급 처리 동작은 막지 않는다(D-703 · J7).
+  paymentCutoffReason: string | null;
 };
 
 export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTargetRowDto> = {
@@ -318,6 +326,32 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
     { key: "account", from: "account", infoItem: "vendor.value" },
     { key: "transferFileAt", from: "transferFileAt", infoItem: "expense.value" },
+    { key: "scheduledPaymentManual", from: "scheduledPaymentManual", infoItem: "expense.value" },
+    { key: "autoPaymentDate", from: "autoPaymentDate", infoItem: "expense.value" },
+    { key: "paymentCutoffAt", from: "paymentCutoffAt", infoItem: "expense.value" },
+    { key: "paymentPushReason", from: "paymentPushReason", infoItem: "expense.value" },
+    { key: "paymentScheduleFailed", from: "paymentScheduleFailed", infoItem: "expense.value" },
+    { key: "paymentCutoffReason", from: "paymentCutoffReason", infoItem: "expense.value" },
+  ],
+};
+
+// 07-01(J11 데이터 — 화면은 07-16): 지금 승인되면 이번 주 · 다음 주에 들어갈 결재 중 지출결의. 지급 대상 groups · 합계에는 넣지 않는다.
+export type ApprovingPaymentRowDto = {
+  id: string;
+  number: string | null;
+  title: string;
+  payableKrw: number | null;
+  // 결재 상태 낱말(gate `payment.cutoff` 이유 — `결재 중`).
+  status: string;
+};
+
+export const APPROVING_PAYMENT_ROW_DTO_SPEC: DtoSpec<ApprovingPaymentRowDto, ApprovingPaymentRowDto> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "expense.value" },
+    { key: "number", from: "number", infoItem: "expense.value" },
+    { key: "title", from: "title", infoItem: "expense.value" },
+    { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
+    { key: "status", from: "status", infoItem: "expense.value" },
   ],
 };
 
@@ -365,4 +399,5 @@ registerDto({ name: "expensePreview", fields: EXPENSE_PREVIEW_DTO_SPEC.fields.ma
 registerDto({ name: "expenseNewDefaults", fields: EXPENSE_NEW_DEFAULTS_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseListRow", fields: EXPENSE_LIST_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "paymentTargetRow", fields: PAYMENT_TARGET_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "approvingPaymentRow", fields: APPROVING_PAYMENT_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "paidPaymentRow", fields: PAID_PAYMENT_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });

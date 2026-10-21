@@ -283,7 +283,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await page.context().close();
   });
 
-  test("그룹 · 합계 — 예정일 어제 · 오늘 · 없음 → `예정일 지남` · `이번 주 지급` · `지급 예정일 없음` 순, 지남 머리글 경고 색 · 합계 금액 굵게", async ({ browser, baseURL }) => {
+  test("그룹 · 합계 — 예정일 어제 · 오늘 · 없음(자동 = 제출일 + 기한) → `예정일 지남` · `이번 주 {요일} MM-DD · 마감 …` · `그 뒤` 순(07-01 지급 주 머리글), 지남 머리글 경고 색 · 합계 금액 굵게", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const today = seoulToday();
     await setScheduled(await approvedTarget(fx, "tracer"), addDays(today, -1));
@@ -295,8 +295,8 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await page.goto("/expenses");
     const table = page.getByRole("grid", { name: "지급 대상" }); // 06-17 — P4 행에 이체액 편집 칸이 서서 편집 표(grid)다
     const overdue = table.getByText("예정일 지남", { exact: true });
-    const thisWeek = table.getByText("이번 주 지급", { exact: true });
-    const none = table.getByText("지급 예정일 없음", { exact: true });
+    const thisWeek = table.getByText(new RegExp(`^이번 주 . ${today.slice(5)} · 마감 \\d{2}-\\d{2} \\d{2}:\\d{2}$`));
+    const none = table.getByText("그 뒤", { exact: true });
     await expect(overdue).toBeVisible();
     const ys = await Promise.all([overdue, thisWeek, none].map(async (locator) => (await locator.boundingBox())?.y ?? -1));
     expect(ys[0]).toBeLessThan(ys[1] ?? -1);

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Browser, type Locator, type Page, type Request as PwRequest } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { files } from "@/db/schema";
@@ -365,6 +365,22 @@ test.describe("완료 전 점검 — 정산 결재 문서(O-16 · PS-4)", () => 
     const fx = await setupRejectedSettling(browser, baseURL);
     await draftWithOpenAllowed(fx);
     const page = await loginPage(browser, baseURL, fx.org.ceo);
+    // 뼈대(라우트 loading.tsx)는 `점검 보기` 링크의 상세 프리페치(로딩 경계까지)가 도착해 있어야 누르는 즉시 그려진다 — 프리페치가 끝나기 전에
+    // 누르면 라우터가 지연된 본 응답(2.5초)을 기다려 뼈대 없이 넘어간다(PR #263 CI e2e (1) — 화면 열림 ~160ms 뒤 클릭이라 부하 속 프리페치에 졌다).
+    // 링크가 화면에 들어오면 프리페치가 바로 나가므로 화면을 열기 전에 기다림을 걸고, 누르기 전에 그 요청이 끝나기를 기다린다. 라우터가 본문을
+    // 다 읽고 요청을 끊어(net::ERR_ABORTED) 정상 흐름에서도 requestfailed로 끝나니 둘 다 받는다(waitForResponse().finished()는 끊긴 요청에 안 끝난다).
+    const detailPrefetch = new Promise<void>((resolve) => {
+      const settle = (request: PwRequest) => {
+        const headers = request.headers();
+        if (new URL(request.url()).pathname !== `/projects/${fx.projectId}`) return;
+        if (headers["next-router-prefetch"] === undefined || headers["next-router-segment-prefetch"] !== undefined) return;
+        page.off("requestfinished", settle);
+        page.off("requestfailed", settle);
+        resolve();
+      };
+      page.on("requestfinished", settle);
+      page.on("requestfailed", settle);
+    });
     await page.goto(`/projects/${fx.projectId}/settlement`);
 
     const approve = page.getByRole("button", { name: /^승인/ });
@@ -385,6 +401,7 @@ test.describe("완료 전 점검 — 정산 결재 문서(O-16 · PS-4)", () => 
         await route.continue();
       },
     );
+    await detailPrefetch;
     await page.getByRole("link", { name: "점검 보기", exact: true }).click();
     await expect(page.locator('[data-ui="table-skeleton"]')).toHaveCSS("opacity", "1", { timeout: 2_000 });
     await expect(page).toHaveURL(new RegExp(`/projects/${fx.projectId}#pre-settle-check$`));

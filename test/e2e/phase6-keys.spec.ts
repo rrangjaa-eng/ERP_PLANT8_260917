@@ -49,7 +49,11 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
 
     await expect(page.getByLabel("증빙 크기 한도")).toHaveValue("10");
     await expect(page.getByLabel("선결제 증빙 기한")).toHaveValue("14");
-    await expect(page.getByText("일", { exact: true })).toBeVisible();
+    // 단위 「일」은 이 칸의 것이다 — 07-01 「지급 기한 일수」도 같은 「일」 단위를 달아 화면 전체 글자 찾기는 둘을 잡는다(strict mode).
+    // 칸 옆 단위 글자(setting-<키>-unit)와 그 글자가 칸 설명에 이어지는지(05 /review B6)를 함께 본다.
+    await expect(page.locator(`[id="setting-${EVIDENCE_PREPAID_DUE_DAYS.key}-unit"]`)).toHaveText("일");
+    await expect(page.locator(`[id="setting-${EVIDENCE_PREPAID_DUE_DAYS.key}-unit"]`)).toBeVisible();
+    await expect(page.getByLabel("선결제 증빙 기한")).toHaveAccessibleDescription(/일$/);
 
     // 기본값은 빈 값 — 다른 스펙이 고정 이름을 켜 뒀다면 그 이름(그 밖의 값은 아니다).
     await expect(page.getByLabel("온라인구매 협력사")).toHaveValue(new RegExp(`^(${E2E_ONLINE_VENDOR_NAME})?$`));

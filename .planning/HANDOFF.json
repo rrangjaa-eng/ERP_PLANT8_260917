@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-21T06:20:00Z",
+  "timestamp": "2026-10-21T08:30:00Z",
   "phase": "07",
   "phase_name": "schedule-notify-audit",
   "phase_dir": ".planning/phases/07-schedule-notify-audit",
@@ -20,17 +20,23 @@
       "name": "plan-design-review",
       "status": "done",
       "commit": "8a82238"
+    },
+    {
+      "id": 3,
+      "name": "eng R2-R15 + design U1-U18 계획 반영, 재검토 1회(BLOCKER 0), UI-SPEC approved",
+      "status": "done",
+      "commit": "5ab9a96"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 3,
-      "name": "eng R2-R15 + design U1-U18 계획 반영, 재검토 최대 1회",
-      "status": "not_started"
+      "id": 4,
+      "name": "PR #258 사용자 머지(.claude/ 위험 경로)",
+      "status": "in_progress"
     },
     {
-      "id": 4,
-      "name": "PR #258 ready → 머지 → execute-phase 07",
+      "id": 5,
+      "name": "머지 뒤 main 기준 실행 브랜치 → /gsd-execute-phase 07",
       "status": "not_started"
     }
   ],
@@ -43,6 +49,11 @@
   ],
   "async_jobs": [],
   "human_actions_pending": [
+    {
+      "action": "PR #258 머지",
+      "context": ".claude/gates/phase-07.log 포함 — 훅이 세션 머지를 막음",
+      "blocking": true
+    },
     {
       "action": "PR #258 R1·Q1 답",
       "context": "D-726 머지 위상, 원가율 첫 저장 되돌리기",
@@ -62,6 +73,6 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 [#258-03 계획]: /gsd-progress → PR #258 [지시]·R1·Q1 확인 → eng·design 지적을 계획 파일에 반영",
-  "context_notes": "design-review.md·eng-review.md Decision ledger의 반영 위치 열을 따라 UI-SPEC과 PLAN을 고친다. 잠긴 결정 불변."
+  "next_action": "새 세션 [#258-04 실행]: /gsd-progress → PR #258 머지·[지시]·R1·Q1 확인 → 머지됐으면 /gsd-execute-phase 07",
+  "context_notes": "계획 게이트 통과(5ab9a96). R1=C·Q1=A 기본값. R10 대표 action_log.detail은 07-05 D-722 카드 ⑧(무답=끔). PR 묶음·머지 규칙은 07-01-PLAN.md PR 묶음 절."
 }

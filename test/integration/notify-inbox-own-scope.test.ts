@@ -78,6 +78,8 @@ describe("알림함 본인 범위 (SC5b · D-4208 · T-07-03-02)", () => {
     const bIds = new Set((await rowsOf(b.id)).map((row) => String(row.id)));
 
     const page = await listMyNotifications(a, { limit: 50, cursor: { createdAt: bFirst.createdAt, id: bFirst.id } });
+    // 빈 쪽이면 아래 두 단언이 공허하게 참이 된다 — 커서보다 앞선 A의 두 행이 실제로 나와야 한다(a-late는 커서 뒤).
+    expect(page.rows).toHaveLength(2);
     expect(page.rows.every((row) => aIds.has(row.id))).toBe(true);
     expect(page.rows.some((row) => bIds.has(row.id))).toBe(false);
   });

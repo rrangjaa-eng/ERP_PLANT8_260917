@@ -1,38 +1,83 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-07T17:55:59.520Z",
-  "phase": "06.2",
-  "phase_name": "view-scope",
-  "phase_dir": ".planning/phases/06.2-view-scope",
+  "timestamp": "2026-10-21T10:10:00Z",
+  "phase": "07",
+  "phase_name": "schedule-notify-audit",
+  "phase_dir": ".planning/phases/07-schedule-notify-audit",
   "plan": 0,
   "task": 0,
   "total_tasks": 0,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "REVIEWS.md (eng·design R1) 작성", "status": "done", "commit": "4ad6aa2"},
-    {"id": 2, "name": "검토 R1 반영(플랜 12개·CONTEXT·UI-SPEC)", "status": "done", "commit": "22169278"},
-    {"id": 3, "name": "VALIDATION·ROADMAP 웨이브 맞춤", "status": "done", "commit": "70b4c6c9"},
-    {"id": 4, "name": "정밀 플랜 검사(막힘 0·경고 1·참고 3)", "status": "done"},
-    {"id": 5, "name": "/plan-design-review 2회차(Codex·Opus) + 게이트 기록", "status": "done", "commit": "9b6da580"}
+    {
+      "id": 1,
+      "name": "plan-eng-review",
+      "status": "done",
+      "commit": "b029773"
+    },
+    {
+      "id": 2,
+      "name": "plan-design-review",
+      "status": "done",
+      "commit": "8a82238"
+    },
+    {
+      "id": 3,
+      "name": "eng R2-R15 + design U1-U18 계획 반영, 재검토 1회(BLOCKER 0), UI-SPEC approved",
+      "status": "done",
+      "commit": "5ab9a96"
+    },
+    {
+      "id": 6,
+      "name": "PR #258 [지시] 반영: D-726 A(07-13 → PR-LOG, PR-S W3 끝 ready), D-747 A 유지",
+      "status": "done",
+      "commit": "docs: apply R1=A (07-13 → PR-LOG)"
+    }
   ],
   "remaining_tasks": [
-    {"id": 6, "name": "디자인 재검토 2회차 막힘 1·중요 6 + 플랜 검사 경고 1·참고 반영 (/gsd-plan-phase 06.2 --reviews, Round 2)", "status": "not_started"},
-    {"id": 7, "name": "플랜 검사 재실행(Opus, 새 문맥) 막힘 0 확인", "status": "not_started"},
-    {"id": 8, "name": "커밋·푸시, PR(base claude/project-thread-5jx649) draft 유지, 결과 보고", "status": "not_started"}
+    {
+      "id": 4,
+      "name": "PR #258 사용자 머지(.claude/ 위험 경로)",
+      "status": "in_progress"
+    },
+    {
+      "id": 5,
+      "name": "머지 뒤 main 기준 실행 브랜치 → /gsd-execute-phase 07",
+      "status": "not_started"
+    }
   ],
-  "blockers": [
-    {"description": "게이트 리뷰를 시작한 세션은 gsd-planner를 못 띄움(plant8-session-boundary 훅)", "type": "technical", "workaround": "새 세션에서 재개"}
-  ],
+  "blockers": [],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "카드 3건 답(K1 계급 이행·K2 본부 책임자 카드/구매 목록·K3 참여자 지출결의)", "context": "추천안으로 반영, CONTEXT '바뀔 수 있는 결정' 표에 바꿀 곳", "blocking": false},
-    {"action": "#184 머지(문서만 PR)", "context": "사용자 머지", "blocking": true}
+    {
+      "action": "PR #258 머지",
+      "context": ".claude/gates/phase-07.log 포함 — 훅이 세션 머지를 막음",
+      "blocking": true
+    }
   ],
   "decisions": [
-    {"decision": "G34(02, PR-4)는 PR-3 뒤 별도 PR", "rationale": "PR-5 전엔 참여자가 지출결의를 못 내 잘못 가는 틈 없음", "phase": "06.2"},
-    {"decision": "참여자 다중 선택 유지", "rationale": "260907 projects.ts:3953 personIds 배열·Projects.tsx:2408 체크박스", "phase": "06.2"}
+    {
+      "decision": "STATE.md 13b 변경 되돌림",
+      "rationale": "06.6 선례: 실행 세션만 자기 페이즈 진행 표기 갱신",
+      "phase": "07"
+    },
+    {
+      "decision": "AQ-11 no-slot: 기한 안 마지막 영업일, 마감 넘기면 다음 지급 가능 금요일",
+      "rationale": "사용자 답(D-741)",
+      "phase": "07"
+    },
+    {
+      "decision": "D-726 개정: 위험 경로 네 묶음 — PR-S(07-02·07·11, W3 끝) · PR-LOG(07-13, PR-S 머지 뒤) · PR-AUTH · PR-PERM, 사용자 직접 머지 4번",
+      "rationale": "PR #258 [지시] issuecomment-6313020600 (R1 → A)",
+      "phase": "07"
+    },
+    {
+      "decision": "D-747 원가율 첫 저장 되돌리기 없음(결과 줄만)",
+      "rationale": "PR #258 [지시] (Q1 → A)",
+      "phase": "07"
+    }
   ],
   "uncommitted_files": [],
-  "next_action": "/mnt/project-files/06.2-prep/design-review-r2.md를 REVIEWS.md Round 2로 넣고 /gsd-plan-phase 06.2 --reviews",
-  "context_notes": "eng 재검토는 하지 않음(브리프). Codex 지적은 후보, 판정은 근거로."
+  "next_action": "새 세션 [#258-04 실행]: /gsd-progress → PR #258 머지·새 [지시] 확인 → 머지됐으면 /gsd-execute-phase 07",
+  "context_notes": "계획 게이트 통과(5ab9a96). R1=A(07-13 → PR-LOG `claude/07-pr-log`, PR-S W3 끝 ready, 사용자 머지 4번) · Q1=A. R10 대표 action_log.detail은 07-05 D-722 카드 ⑧(무답=끔). PR 묶음·머지 규칙은 07-01-PLAN.md PR 묶음 절."
 }

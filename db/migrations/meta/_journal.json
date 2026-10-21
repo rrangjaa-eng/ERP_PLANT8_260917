@@ -281,6 +281,13 @@
       "when": 1792586681188,
       "tag": "0039_phase7_payment_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792587644700,
+      "tag": "0040_phase7_payment_schedule_validate",
+      "breakpoints": true
     }
   ]
 }

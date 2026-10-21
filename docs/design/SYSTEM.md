@@ -12,7 +12,7 @@
 **이름: 원장(元帳)** — 안 A. 색 구성은 안 C(작업대)의 그린 톤온톤을 흡수했다.
 
 **한 줄 원칙**
-> 화면 전체가 하나의 원장이다. 표·패널(옆 패널 폼 포함)은 흰 면 한 장에 1px 선이고, 페이지 배치 폼은 바탕 위 한 열(흰 면은 입력 칸)이며, 그룹은 옅은 초록 줄 면으로 가른다. 그림자는 표 면의 옅은 한 겹과 떠 있는 요소(모달·옆 패널·시트)에만 있다.
+> 화면 전체가 하나의 원장이다. 표·패널(옆 패널 폼 포함)은 흰 면 한 장에 1px 선이고, 페이지 배치 폼은 바탕 위 한 열(흰 면은 입력 칸)이며, 그룹은 옅은 중립 줄 면으로 가른다(표 안에 초록 면 없음 — 07 개정 11). 그림자는 표 면의 옅은 한 겹과 떠 있는 요소(모달·옆 패널·시트)에만 있다.
 
 이 한 줄이 이 제품이 남과 다른 지점이다. 「흔한 AI 대시보드」(카드 속 카드·그라디언트·블러·보라 포인트)로 가는 길은 카드 없음 · 그라디언트·블러 없음 · 포인트 색 한 가지로 구조적으로 막고, 「관공서 사내망」(회색 격자·작은 글씨)과는 행 높이 44와 면 위계로 갈라진다.
 
@@ -95,21 +95,21 @@
 
 | 무리 | 역할 토큰 → 원시 |
 |---|---|
-| 면 | `--surface-canvas`→n-75(페이지 바탕) · `--surface-base`→n-0(표·패널·모달·입력 칸·옆 패널 폼 — 페이지 배치 폼은 `--surface-canvas` 위, §0) · `--surface-head`→n-50(표 머리글) · `--surface-foot`→n-50(합계 줄) · `--surface-group`→g-50(그룹 줄) · `--surface-actions`→n-25(패널 행동 줄) · `--surface-muted`→n-60(비활성·뼈대 행) · `--surface-selected`→g-100 |
+| 면 | `--surface-canvas`→n-75(페이지 바탕) · `--surface-base`→n-0(표·패널·모달·입력 칸·옆 패널 폼 — 페이지 배치 폼은 `--surface-canvas` 위, §0) · `--surface-head`→n-50(표 머리글) · `--surface-foot`→n-50(합계 줄) · `--surface-group`→n-50(그룹 줄 — 07 개정 11) · `--surface-actions`→n-25(패널 행동 줄) · `--surface-muted`→n-60(비활성·뼈대 행) · `--surface-selected`→n-100(07 개정 11) |
 | 글자 | `--text-strong`→n-900 · `--text-muted`→n-700 · `--text-faint`→n-600 · `--text-group`→g-800 · `--text-on-accent`→n-0 · `--text-on-tint`→g-950(편집 표 머리글 글자 — `--surface-selected` 위, §7-3 894) · `--text-link`→`--accent` |
 | 선 | `--border-surface`→n-150(표·패널·합계 면 테두리) · `--border-row`→n-100(행 사이·섹션) · `--border-strong`→n-200(합계 위) · `--border-button`→n-300(2차 버튼) · `--border-control`→n-500(입력 테두리, UQ-7 A) · `--line-w`=1px · `--underline-w-hover`=2px · `--underline-offset`=2px |
 | 강조·상태 | `--accent`→g-700 · `--accent-hover`→g-800 · `--accent-weak`→g-50 · `--status-danger`/`-weak`→red-800/red-50 · `--status-warning`/`-weak`→amber-700/amber-50 · `--status-success`→g-600 · `--status-accent`→g-700 · `--status-muted`→n-700 · `--focus`→g-700 |
 | 상단 바 | `--bar-bg`→g-900 · `--bar-fg`→g-100 · `--bar-muted`→g-300 · `--bar-leaf`→g-400 · `--bar-h`=48 · `--focus-on-bar`→g-100(바 위 포커스 링) |
 | 형태 | `--radius-tag`=4 · `--radius-control`=6(버튼·입력) · `--radius-surface`=8(표·합계 면·토스트·팝오버) · `--radius-dialog`=12(모달) · `--radius-panel`=16(옆 패널 왼쪽 두 모서리 · 시트 위 두 모서리) |
-| 깊이 | `--shadow-surface`=`0 1px 2px` ink-a05(표 면) · `--shadow-float`=`0 24px 48px -12px` ink-a30 + `0 2px 8px` ink-a10(모달·옆 패널·시트) · `--shadow-pop`=`0 12px 28px -8px` ink-a30(토스트·사용자 메뉴 — UQ-4 후보 5) · `--surface-dirty`=`--g-100`(저장 대기 칸 면 — 후보 7) · `--scrim-dialog`→ink-a40 · `--scrim-panel`→ink-a20 · 인셋 3종(`--inset-tab/-error/-dirty`) 유지 |
+| 깊이 | `--shadow-surface`=`0 1px 2px` ink-a05(표 면) · `--shadow-float`=`0 24px 48px -12px` ink-a30 + `0 2px 8px` ink-a10(모달·옆 패널·시트) · `--shadow-pop`=`0 12px 28px -8px` ink-a30(토스트·사용자 메뉴 — UQ-4 후보 5) · `--surface-dirty`=`--n-60`(저장 대기 칸 면 — 후보 7, 07 개정 11에서 중립으로) · `--scrim-dialog`→ink-a40 · `--scrim-panel`→ink-a20 · 인셋 3종(`--inset-tab/-error/-dirty`) 유지 |
 | 크기 | `--row-h`=44(PC·폰) · `--control-h`=PC 32/폰 40 · `--control-h-panel`=40 · `--field-h`(입력·행동 줄 버튼 높이 한 변수 — 기본 `--control-h`, 옆 패널 틀이 `--control-h-panel`로 덮는다) · `--panel-w`=480 · `--dialog-w`=480(UQ-6 A) · `--recipient-w`=480(외부 수령자 본문 폭 — `--panel-w` · `--dialog-w`와 뜻이 다르다) · `--row-number-w`=28(견적 줄 번호 칸 최소 폭) · `--sheet-max-h`=88dvh · `--container-max` 1280 · `--form-max` 720 · `--label-w` 96 · 페이지 폼 칸 폭 `--field-w-select` 200 · `--field-w-short` 280 · `--field-w-long` 480 |
 | 간격 · 글자 · 굵기 | §2-2 · §3 |
 | 인쇄 | `--print-ink` · `--print-rule` · `--print-rule-w`(2px 구조 선 — 인쇄 템플릿은 스킨 대상이 아니다) · `--print-line` 그대로 |
 
 **웜톤 금지**(사용자 2026-09-27): 모든 `--surface-*`와 `--n-*`는 R ≤ G 이고 R ≤ B(무채 또는 초록·청록 쪽으로 기운 차가운 회색)다. `--status-warning-weak`는 상태 틴트라 면 역할이 아니고 페이지·표·패널 바탕으로 쓰지 않는다.
 
-**대비(실측, WCAG 상대 휘도)**: 허용 쌍은 4.5 이상이다 — `--text-strong` on canvas 15.3 · on base 16.8 / `--text-muted` on canvas 5.94 · on head 6.11 · on actions 6.16 · on selected 5.18 / `--text-faint` on canvas 4.88 · on base 5.35 · on group 4.71 / `--text-group` on group 9.79 / `--text-link`·`--accent` on canvas 8.12 · 흰 글자 on accent 8.91 / `--status-danger` on base 8.15 / on accent-weak(고른 행 면 — 06 SP-1): `--status-success` 4.63 · `--status-warning` 5.22 · `--status-danger` 7.18 · `--text-muted` 5.74 · `--text-faint` 4.71 · `--status-warning` on group. 제목(`--text-title` 700, 22 ≥ 18.66px)은 큰 글자라 3 이상이면 되지만 실제로는 위 값이 전부 넘는다. 부제(18px)는 큰 글자 기준(18.66)에 못 미쳐 4.5 표를 따른다.
-**금지 쌍**(4.5 미만 — 쓰지 않는다, 같은 이유로 테스트가 실측을 단언): `--text-faint` × `--surface-selected` 4.26 · `--status-success` × `--surface-selected` 4.18 · `--status-success` × `--status-danger-weak` 4.49.
+**대비(실측, WCAG 상대 휘도)**: 허용 쌍은 4.5 이상이다 — `--text-strong` on canvas 15.3 · on base 16.8 / `--text-muted` on canvas 5.94 · on head 6.11 · on actions 6.16 · on selected 5.34 / `--text-faint` on canvas 4.88 · on base 5.35 · on group 5.02 / `--text-group` on group 10.43 / `--text-link`·`--accent` on canvas 8.12 · 흰 글자 on accent 8.91 / `--status-danger` on base 8.15 / on accent-weak(고른 행 면 — 06 SP-1): `--status-success` 4.63 · `--status-warning` 5.22 · `--status-danger` 7.18 · `--text-muted` 5.74 · `--text-faint` 4.71 · `--status-warning` on group. 제목(`--text-title` 700, 22 ≥ 18.66px)은 큰 글자라 3 이상이면 되지만 실제로는 위 값이 전부 넘는다. 부제(18px)는 큰 글자 기준(18.66)에 못 미쳐 4.5 표를 따른다.
+**금지 쌍**(4.5 미만 — 쓰지 않는다, 같은 이유로 테스트가 실측을 단언): `--text-faint` × `--surface-selected` 4.39 · `--status-success` × `--surface-selected` 4.31(07 개정 11 — `--surface-selected`가 n-100이 된 뒤 값. 옛 g-100 위 4.26 · 4.18) · `--status-success` × `--status-danger-weak` 4.49.
 **UI 경계 3:1**: `--border-control`(`--n-500` `#7C8A86`) on `--surface-base` 3.60 · on canvas 3.28. `--border-button`(n-300)는 2차 버튼에 글자 라벨이 있어 3:1 대상이 아니다(`--n-300` on 흰 면 1.78).
 **인쇄**: `@media print`는 색 역할 토큰 전부를 `var(--print-ink)` 또는 `#FFFFFF`로, `--shadow-*`를 `none`으로 접는다 — 인쇄물에 회색 면·초록 글자가 나오지 않게(`test/unit/design/tokens.test.ts`가 단언한다).
 기계 확인: `test/unit/design/tokens.test.ts`(웜톤 · 역할 간격 참조 · 대비 쌍 · 입력 테두리 · 미정의/순환 없음 · 옛 이름 없음 · 인쇄 접기).
@@ -781,7 +781,7 @@ PC · 폰 공통 (최대 폭 360, 가운데 정렬)
 ### 7-2. 입력 · 오류 표시
 
 - 텍스트 입력: 높이 32(PC)/40(폰)/48(외부 수령자). `1px solid --border-control`, 배경 `--surface-base`, 패딩 `0 8px`, `--text-body`. focus: `outline 2px --focus offset 2px`, 테두리는 그대로. radius 0
-- 표 안 입력: 테두리 없이 아래 `1px --accent` 밑줄 + focus 링. 셀 배경 `--g-50`
+- 표 안 입력: 테두리 없이 아래 `1px --accent` 밑줄 + focus 링. 셀 배경 투명(07 개정 11 — 옛 `--g-50` 면 없음)
 - 라벨: 입력 위(폰) 또는 왼쪽 96px(PC 폼). `--text-aux --text-muted` 600. 필수 표시 `*` 없음 — 필수인데 비면 제출 버튼이 이유를 말한다
 - 자리표시자(placeholder)는 형식 예만: `2026-09-18`, `12,400,000`. 안내문 금지
 - 숫자 입력(원화·외화 금액·환율·수량 — 식별자형 제외, D-95): 타이핑 중 정수부에 쉼표 자동 삽입 · 소수점 입력 허용(자리 상한 외화 2 · 환율 4 · 수량 2) · 쉼표가 들어가도 커서가 제자리 · 서버로는 쉼표를 뗀 값 · 우측 정렬 `tabular-nums`
@@ -833,9 +833,9 @@ change) — 검증 실패(zod)는 위 오류 규칙(입력 아래 원인·다음
 
 **구조**
 - **표 면(스킨 A)**: `--surface-base` 면 · 1px `--border-surface` · `--radius-surface`(8) · `--shadow-surface` · `overflow: hidden` · `border-collapse: separate`. 행 높이 `--row-h` 44 · 세로선 없음 · 첫·끝 칸 좌우 `--s-4`. 편집 표의 편집 동작(Tab · 방향키 · Ctrl+V · Ctrl+Enter · Ctrl+S)은 그대로이고 스킨은 겉모양만 바꾼다
-- 머리글: `--text-aux` `--text-muted` 600, 면 `--surface-head`, 아래 1px `--border-row`(2026-10-02 DECISIONS — 2026-09-26 「2px가 정본」을 스킨 A가 뒤집었다). 스크롤 시 sticky. 읽기용 표(목록)는 `--surface-base` 면, **편집용 표(견적·카드·목표)는 `--g-100` 바탕 + `--g-950` 글자** — 편집 가능한 표임을 머리글 색으로 안다(편집 표 머리글색의 스킨 적용은 04.6-12)
+- 머리글: `--text-aux` `--text-muted` 600, 면 `--surface-head`, 아래 1px `--border-row`(2026-10-02 DECISIONS — 2026-09-26 「2px가 정본」을 스킨 A가 뒤집었다). 스크롤 시 sticky. 읽기용 표(목록)는 `--surface-base` 면, **편집용 표(견적·카드·목표)는 `--surface-selected`(n-100) 바탕 + `--g-950` 글자** — 편집 가능한 표임을 머리글 색으로 안다(편집 표 머리글색의 스킨 적용은 04.6-12)
 - 행: 아래 1px `--border-row`(마지막 행 선 없음). hover `--surface-muted`. 높이 `--row-h` 44(PC·폰 — 내용이 길면 내용을 따른다)
-- 그룹 머리글 행: `--surface-group` 면 + `--text-group` 600 · 선 없음(옅은 초록 줄이 그룹을 가른다) · 위 `--s-3` 여백
+- 그룹 머리글 행: `--surface-group` 면 + `--text-group` 600 · 선 없음(옅은 중립 줄 면 n-50이 그룹을 가른다 — 07 개정 11) · 위 `--s-3` 여백
 - **편집 표의** 합계 행: 면 `--surface-foot`, 위 1px `--border-strong`, `--text-body` 700. 편집용 표에서는 `--g-100` 바탕. **저장 결과 메시지가 이 행 오른쪽 끝에 붙는다**(아래). **읽기 목록(§6-1)의 합계는 표 아래 합계 행이 아니라 표 위 합계 줄이다 — 라벨 `--text-aux` `--text-muted` 600 + 금액 `--text-body` `--fw-bold`(14 굵게 — 사용자 결정 ⑥), 합계 면 = `--surface-base` · 1px `--border-surface` · `--radius-surface` · 안쪽 `--s-3` `--s-4`**(합계 행은 표 안의 한 행이라 본문 크기이고, 합계 줄은 표 밖에서 목록 전체를 요약한다)
 - 세로선 없음. 첫 칸(행 번호) `--text-tag` `--text-faint`, 폭 `--row-number-w`(28)
 - 열 폭: 문자 열은 `auto`, 숫자 열은 내용 최대 자릿수에 고정(`ch` 단위). 항목명은 줄바꿈 허용(`keep-all`), 거래처는 한 줄 말줄임
@@ -843,8 +843,8 @@ change) — 검증 실패(zod)는 위 오류 규칙(입력 아래 원인·다음
 **편집 (UX-05, 엑셀과 같은 키)**
 - 셀 클릭 또는 Enter → 편집. Tab/Shift+Tab 좌우, Enter 아래, 방향키 이동, Esc 취소(값 되돌림), Ctrl+C/Ctrl+V 범위 복사·붙여넣기(붙여넣기 범위가 표를 넘으면 새 줄 자동), Ctrl+Enter 새 줄, Ctrl+S 일괄 저장, Ctrl+E 현재 줄로 지출결의, Ctrl+D 줄 복제, Delete 줄 삭제(확인 모달), **`Ctrl+A` 표 전체 선택(모든 페이지, 편집 중이 아닐 때)**
 - **코드표 셀은 편집 중일 때만 셀 아래 한 줄(`--text-aux --text-muted`, §7-2 이유 줄과 같은 자리)에 고른 값의 설명을 보인다. 그 자리에 오류 이유가 있으면 오류가 이긴다**(D-93)
-- 편집 중 행: 배경 `--g-50`, 셀에 `--accent` 밑줄. 저장 대기(dirty) 셀: `inset 0 0 0 1px --g-600` 외곽선 + 옅은 초록 면 `--surface-dirty`(UQ-4 후보 7). 편집 칸 포커스 링은 모서리 `--radius-control`을 따른다(§4-4). 선택 범위: `--g-50`, 활성 셀 `2px --accent` 외곽선
-- **일괄 저장은 전부 저장 또는 전부 거부.** 실패 시: 오류 셀은 `--status-danger-weak` 배경 + 좌측 `2px --status-danger` 인셋 선으로 **고정**(다른 셀을 편집해도 남는다), 셀 hover/포커스에 이유 한 줄(`--text-aux --status-danger`, 셀 아래 인라인). 합계 행 오른쪽에 `오류 1칸 · 전부 거부` 붉게. 성공 시 같은 자리에 `저장됨 6줄 14:02` `--status-success`, 편집 행 배경이 600ms 동안 `--g-50` → `--surface-base`
+- 편집 중 행: 배경 투명(초록 면 없음 — 07 개정 11), 셀에 `--accent` 밑줄. 저장 대기(dirty) 셀: `inset 0 0 0 1px --g-600` 외곽선 + 중립 면 `--surface-dirty`(n-60, UQ-4 후보 7). 편집 칸 포커스 링은 모서리 `--radius-control`을 따른다(§4-4). 선택 범위: `--surface-selected`(n-100), 활성 셀 `2px --accent` 외곽선
+- **일괄 저장은 전부 저장 또는 전부 거부.** 실패 시: 오류 셀은 `--status-danger-weak` 배경 + 좌측 `2px --status-danger` 인셋 선으로 **고정**(다른 셀을 편집해도 남는다), 셀 hover/포커스에 이유 한 줄(`--text-aux --status-danger`, 셀 아래 인라인). 합계 행 오른쪽에 `오류 1칸 · 전부 거부` 붉게. 성공 시 같은 자리에 `저장됨 6줄 14:02` `--status-success`, 편집 행 배경이 600ms 동안 `--surface-selected` → `--surface-base`
 - 충돌(다른 사람이 먼저 저장): 해당 셀을 오류 셀과 같은 모양으로 고정, 이유 `다른 사람이 14:01에 9,800,000으로 바꿈 · 덮어쓰기 / 그 값으로`
 - 읽기 모드와 편집 모드를 나누지 않는다. 편집 권한이 있으면 표는 항상 편집 가능하다
 
@@ -879,7 +879,7 @@ change) — 검증 실패(zod)는 위 오류 규칙(입력 아래 원인·다음
 | 읽기 전용 | 연결 문서가 있는 줄의 금액 셀(수량·단가·실행가·환율) — 항목명·비고는 편집(D-66). 계산 열(견적가·차익·잔액)도 항상 이 단계 | 값만, 배경 없음. 포커스는 되지만 편집에 들어가지 않는다. 편집 시도 시 셀 아래 한 줄 `--text-aux --text-muted` 이유(§7-2와 같은 자리) | `aria-readonly="true"` |
 | 잠김 | 완료 프로젝트의 견적 줄 전체(D-47) · 정산 프로젝트에서 기존 줄의 실행가 밖 셀과 새 줄의 견적 칸(수량 `1`·단가 원화 `0` 고정 — CEO-D10·D12, D-78 개정) · 고객 승인된 현재 차수에서 기존 견적 줄의 수량·단가·상태·소분류(CEO-D7 · ENG-D7) | 읽기 전용과 같고, 표 위에 한 줄 `--text-aux --text-muted` — `완료 · 견적 줄 잠김` / `정산 · 실행가와 새 줄만` / `{n}차 고객 승인됨 · 고치려면 새 차수`(편집 셀이 0인 읽기 표에는 없다) | 〃 |
 
-머리글 바탕은 "이 사람이 이 표에서 편집할 수 있는 셀이 하나라도 있는가"로 정한다 — 있으면 `--g-100` + `--g-950`(편집 가능 신호), 없으면 흰 바탕(읽기용 표). 완료 프로젝트를 보는 PM은 흰 바탕, 같은 화면을 보는 경영관리는 `--g-100`(「견적 외 비용 줄 추가」가 가능하므로)이다. 사람마다 다르고 화면 안에서 바뀌지 않는다. 편집 가능한 셀이 하나도 없는 표는 `role="grid"`가 아니라 `<table>` + 시각적으로 숨긴 `<caption>`으로 렌더한다(§10). **이것은 모드 토글이 아니다** — 위 §7-3 본문의 「읽기 모드와 편집 모드를 나누지 않는다」는 그대로다. 이 절은 사용자가 켜고 끄는 모드가 아니라 **편집 가능한 셀 수가 0일 때 컴포넌트가 자동으로 취하는 렌더 형태**이고, 그 판정은 서버가 보낸 셀 단계에서 파생된다.
+머리글 바탕은 "이 사람이 이 표에서 편집할 수 있는 셀이 하나라도 있는가"로 정한다 — 있으면 `--surface-selected`(n-100) + `--g-950`(편집 가능 신호), 없으면 흰 바탕(읽기용 표). 완료 프로젝트를 보는 PM은 흰 바탕, 같은 화면을 보는 경영관리는 `--surface-selected`(「견적 외 비용 줄 추가」가 가능하므로)이다. 사람마다 다르고 화면 안에서 바뀌지 않는다. 편집 가능한 셀이 하나도 없는 표는 `role="grid"`가 아니라 `<table>` + 시각적으로 숨긴 `<caption>`으로 렌더한다(§10). **이것은 모드 토글이 아니다** — 위 §7-3 본문의 「읽기 모드와 편집 모드를 나누지 않는다」는 그대로다. 이 절은 사용자가 켜고 끄는 모드가 아니라 **편집 가능한 셀 수가 0일 때 컴포넌트가 자동으로 취하는 렌더 형태**이고, 그 판정은 서버가 보낸 셀 단계에서 파생된다.
 
 **표 위 한 줄 = 잠긴 셀의 편집 시도 이유 — 한 문자열**(같은 함수가 만든다): `완료 · 견적 줄 잠김` / `정산 · 실행가와 새 줄만` / `{n}차 고객 승인됨 · 고치려면 새 차수`. 한 표에 하나만(우선순위 완료 > 정산 > 승인 차수). **편집 셀이 0인 읽기 표(예: 완료를 보는 PM)에는 잠김 줄이 없다** — 흰 머리글과 상태 태그가 말한다. 0줄이면 표 위 줄 대신 EMPTY 한 줄.
 
@@ -947,10 +947,10 @@ dirty 셀이 하나라도 있으면 `beforeunload`로 이탈을 경고한다. �
 
 편집 표의 variant `selectable` — 한 쪽에서 여러 행을 골라 한 번에 처리한다(첫 사용처 = 06 지급 대상 표). 일괄 저장형 표(위 (사))와 달리 **저장은 행마다 따로 커밋되고**(AS1) 한 행의 거부가 다른 행을 막지 않는다 — 지급 완료는 은행에서 이미 일어난 일의 기록이라 한 건의 계좌 오류로 스무 건의 기록이 막히면 안 된다.
 
-- **선택 열**: 맨 왼쪽, 네이티브 체크박스(`accent-color: var(--native-accent)`), 칸 폭 `calc(var(--row-number-w) + 2 * var(--cell-pad-x))`, 행 높이 `--row-h`. 고른 행 면은 `--accent-weak`(범위 선택과 같은 면 — `--surface-selected` 위에서는 `--status-success` · `--text-faint` 글자가 4.5:1 미만이라 쓰지 않는다, §1-4). 머리글 셀 = 그 쪽에서 고를 수 있는 행 전체(섞이면 `indeterminate`), `Space` = 현재 행 고르기. 힌트 줄 낱말 `고르기 Space`
+- **선택 열**: 맨 왼쪽, 네이티브 체크박스(`accent-color: var(--native-accent)`), 칸 폭 `calc(var(--row-number-w) + 2 * var(--cell-pad-x))`, 행 높이 `--row-h`. 고른 행 면은 `--surface-selected`(범위 선택과 같은 면 — 07 개정 11에서 중립 n-100이 되었고 `--accent-weak`을 쓰지 않는다. 이 면 위에서 `--status-success` · `--text-faint` 글자는 4.5:1 미만이다, §1-4 금지 쌍). 머리글 셀 = 그 쪽에서 고를 수 있는 행 전체(섞이면 `indeterminate`), `Space` = 현재 행 고르기. 힌트 줄 낱말 `고르기 Space`
 - **고를 수 있는지는 서버가 행마다 보낸다.** 못 고르는 행의 체크박스는 `aria-disabled` + `aria-describedby` → 그 행 안의 이유 글자(이유 없는 비활성 없음)
 - **행 아래 줄은 하나(막힘 > 정보)**: 막힘 줄(`blockedReason`)은 끝에 3차 글자 링크 하나를 가질 수 있다(`blockedLink?: (row) => { label; href; newTab } | null`). 막힘이 없는 행은 info 톤 정보 줄 하나(`noteReason?: (row) => string | null`, `--text-aux --text-muted`)를 가질 수 있다 (DECISIONS 06.5 SP-65-5)
-- **1차는 표 위 행동 줄 하나** `{동사} N Ctrl+Enter`(예 `지급 완료 5`, 「건」 없음). 결과 글자 `시:분 {동사} N건 · 막힘 N건`(막힘 0이면 앞 묶음만)은 필터 줄의 필터 다음 자리 — 1차(오른쪽 끝)와 떨어진 자리이고 시각이 앞이라 1차 라벨과 붙어 읽히지 않는다. 막힌 행은 자리를 유지하고 행 아래 `--text-aux --status-danger` 이유. 막힌 행 배경 칠 금지(§1-3 규칙 3 — 면은 고른 행의 `--accent-weak` 하나)
+- **1차는 표 위 행동 줄 하나** `{동사} N Ctrl+Enter`(예 `지급 완료 5`, 「건」 없음). 결과 글자 `시:분 {동사} N건 · 막힘 N건`(막힘 0이면 앞 묶음만)은 필터 줄의 필터 다음 자리 — 1차(오른쪽 끝)와 떨어진 자리이고 시각이 앞이라 1차 라벨과 붙어 읽히지 않는다. 막힌 행은 자리를 유지하고 행 아래 `--text-aux --status-danger` 이유. 막힌 행 배경 칠 금지(§1-3 규칙 3 — 면은 고른 행의 `--surface-selected` 하나)
 - **탭 정지 2개**: `selectable` 표는 머리글 「이 쪽 전체 고르기」 + 격자, 탭 정지 2개다(행 체크박스는 정지하지 않는다 — DECISIONS 2026-10-06 「선택 표 탭 정지 2개」).
 - 행 선택의 뜻은 체크박스 `checked` 하나다. 행 · 셀에 `aria-selected`를 선택 뜻으로 쓰지 않는다 — `aria-selected`는 §10 편집 표의 활성 셀 뜻 그대로다
 - `selectable` 표에는 새 줄이 없다 — 표 안 `Ctrl+Enter`는 (가)의 「새 줄」이 아니라 화면 1차(`{동사} N`)다
@@ -959,6 +959,8 @@ dirty 셀이 하나라도 있으면 `beforeunload`로 이탈을 경고한다. �
 - 화면 틀의 1차는 `ListScreen.primaryAction` 버튼 갈래다(§7-20)
 
 (DECISIONS 06 SP-1)
+
+- **(07 보강 — 개정 11) 표 모양 확정 (N9 · 사용자 10/7 13:04 · 13:09 · 13:12)**: 표 안에 초록 면이 없다. 표 면 역할 토큰 셋은 기존 중립 원시 값을 다시 가리킨다 — `--surface-group`→n-50 · `--surface-selected`→n-100 · `--surface-dirty`→n-60(§1-4). 머리글 · 묶음 줄은 `--surface-head`/`--surface-group`(같은 중립 값), 범위 선택 · 일괄 처리 표의 고른 행 면은 `--surface-selected` 하나, 표 안 입력 칸은 배경 투명, 저장 대기 칸은 `--surface-dirty` + `--inset-dirty`. **포커스 칸 · 입력 중 칸은 `--surface-base` 바탕 + 안쪽 `--focus-w`(2px) `--accent` 선**이다(선은 칸 안쪽으로 그리고, 행 hover 면이 이 칸을 이기지 못한다). 오류 · 충돌 칸은 고정 모양 그대로다. §1-1 원시 표의 옛 용도(`--g-100` 표 머리글 · `--g-50` 편집 중 행 · 범위 선택)는 더 쓰이지 않는다. 새 색 · 서체 · radius 0 — 기존 원시 값을 역할이 다시 가리킬 뿐이다 (DECISIONS 07 SYSTEM 개정 11)
 
 ### 7-4. 「내 차례」 목록
 
@@ -1120,8 +1122,8 @@ dirty 셀이 하나라도 있으면 `beforeunload`로 이탈을 경고한다. �
 - `<table>` + 시각적으로 숨긴 `<caption>`. `role="grid"`가 **아니다** — 셀 편집이 없어 §7-3의 grid 기계장치(활성 셀·`aria-selected`·`aria-readonly`)가 필요 없다. 행 머리글 `<th scope="row">`(항목 이름 + 그 항목 전체 선택 체크박스), 열 머리글 `<th scope="col">`(계급 이름, 체크박스 없음). PC는 **계급이 열, 항목이 행**이다(2026-10-05 DECISIONS — 79열이면 가로 스크롤)
 - **권한표**: 열 = 계급(시드 5종 + 추가분), 행 = 메뉴 × 동작(보기/쓰기/승인) — 메뉴마다 그룹 줄(`<th scope="rowgroup" colspan>` · §7-3의 그룹 줄과 같은 `--surface-group` 면) 뒤에 동작 행. 모서리 칸 글자는 「메뉴」. 셀 = 체크박스 1개
 - **정보 노출표**: 열 = 계급, 행 = 정보 항목(그룹 줄 없음). 모서리 칸 글자는 「정보 항목」. 셀 = 체크박스 1개
-- 머리글: `--text-aux --text-muted` 600, §7-3의 「편집 가능한 표」 신호를 그대로 물려받아 `--g-100` 바탕 + `--g-950` 글자 — 체크박스 격자도 값을 바꾸는 컨트롤이기 때문이다
-- **PC에서 가로 스크롤이 없다**(열 수 = 계급 수 + 1). 항목이 늘면 세로 스크롤(`max-height: 70vh`)만 생긴다. 열 머리글(계급)은 `position: sticky; top: 0`, 행 머리글(항목)은 `position: sticky; left: 0` + 오른쪽 `1px --border-strong` 구분선(계급이 아주 많아져 가로로 넘칠 때를 위해 유지). 두 sticky가 겹치는 좌상단 모서리 셀은 `--g-100`으로 채워 배경이 끊기지 않게 한다. 머리글은 한 줄이라 2단 top 오프셋이 없다
+- 머리글: `--text-aux --text-muted` 600, §7-3의 「편집 가능한 표」 신호를 그대로 물려받아 `--surface-selected`(n-100) 바탕 + `--g-950` 글자 — 체크박스 격자도 값을 바꾸는 컨트롤이기 때문이다
+- **PC에서 가로 스크롤이 없다**(열 수 = 계급 수 + 1). 항목이 늘면 세로 스크롤(`max-height: 70vh`)만 생긴다. 열 머리글(계급)은 `position: sticky; top: 0`, 행 머리글(항목)은 `position: sticky; left: 0` + 오른쪽 `1px --border-strong` 구분선(계급이 아주 많아져 가로로 넘칠 때를 위해 유지). 두 sticky가 겹치는 좌상단 모서리 셀은 `--surface-selected`로 채워 배경이 끊기지 않게 한다. 머리글은 한 줄이라 2단 top 오프셋이 없다
 - 세로선 없음(§4-2). 메뉴 그룹 경계는 그룹 줄 면(`--surface-group`)이 표시한다
 - 행 높이·표 면은 §7-3과 같다: 항목 행 `--row-h` 44, 머리 행·그룹 줄 안쪽 여백도 §7-3 표와 같은 값, 바깥 면은 `--surface-base` + 1px `--border-surface` + `--radius-surface`(2026-10-05 DECISIONS 하위 결정). 면은 내용 폭에 맞춘다(항목 열 240 + 계급 열 96 × 계급 수, 넓으면 컨테이너 폭까지 — 컨테이너 폭이 아니다. 항목 이름과 체크박스가 멀어지지 않게). 표는 고정 레이아웃이라 계급이 많아 넘치면 계급 열이 같은 폭으로 줄고 가로 스크롤은 생기지 않는다. 항목 이름이 240보다 길면 줄바꿈하고, 계급 이름은 두 줄까지 보인 뒤 말줄임이다(전체 이름은 접근성 이름·title)(2026-10-05 DECISIONS 하위 결정)
 

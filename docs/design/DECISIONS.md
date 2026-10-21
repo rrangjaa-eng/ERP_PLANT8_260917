@@ -1629,6 +1629,8 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 
 **범위**: SYSTEM.md §4-3 · §4-4 · §5 · §7-3, `docs/design/tokens.css`(`--shadow-pop` · `--surface-dirty`), `ui/toast` · `ui/shell/TopBar` 사용자 메뉴 · `ui/confirm-dialog` · `ui/table`, 칸 안 입력 포커스 링 3곳(`projects/[id]` · `pnl/reserves` · `certs/events/[id]`의 CSS 한 줄씩).
 
+→ 07 SYSTEM 개정 11로 면 값이 바뀜(n-60 · n-100)
+
 ## 2026-10-03 — 04.6-14 · 16 · 17이 넘긴 사용자 답의 문서 기록: DR3 B · DR2 A · DR4 A (04.6-26 ⑤)
 
 **결정**: 사용자가 2026-10-01에 고른 세 결정을 SYSTEM.md에 적는다.
@@ -1706,6 +1708,8 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **토큰**: stylelint 2단 계약이 컴포넌트의 원시 토큰(`--g-*`) 직접 참조를 막으므로 역할 토큰 `--text-on-tint`→g-950 하나를 더한다(새 색 아님 — 기존 g-950의 역할 이름). 인쇄에서는 `--print-ink`. 대비 쌍 `--text-on-tint` on `--surface-selected` 4.5 이상을 단위 시험에 넣는다.
 
 **범위**: `docs/design/tokens.css` · SYSTEM.md §1-2 역할 표, `ui/table/Table.module.css`(`.editable .headerCell`).
+
+→ 07 SYSTEM 개정 11로 면 값이 바뀜(n-60 · n-100)
 
 
 ## 2026-10-03 — 결재 시트에 문서 화면 링크 「문서 화면 열기」 (사용자 카드 답 2026-10-03 23:12 KST: 링크 넣음 — 04.6-17)
@@ -2265,3 +2269,11 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: 표의 「0과 빈 값」 줄 자체를 `없음`으로 바꾸기(계산값의 빈 값까지 바뀜) · 빈칸(§2-4가 빈칸을 두지 않는다).
 **결정자**: 사용자 카드 10/7 11:20 · 07-UI-SPEC 개정 12.
 **범위**: `docs/design/SYSTEM.md` §2-4, 화면 07-18. 새 색 · 서체 · radius 0.
+
+## 2026-10-21 — 07 SYSTEM 개정 11 — §1-4 · §4-4 · §7-3 표 모양 확정 (07-12 · N9)
+
+**결정**: ⑴ 표 면 역할 토큰 셋을 기존 중립 원시 값으로 다시 가리킨다 — `--surface-group`→n-50 · `--surface-selected`→n-100 · `--surface-dirty`→n-60(옛 g-50 · g-100 · g-100). 원시 값 추가 · 변경 없음. ⑵ `ui/table/Table.module.css`에서 표 안 초록 면을 모두 없앤다 — 머리글 · 묶음 줄은 `--surface-head`/`--surface-group`(같은 중립 값), 범위 선택 · 일괄 처리 표의 고른 행 면은 `--surface-selected` 하나, 표 안 입력 칸 배경은 투명, 저장 대기 칸은 `--surface-dirty` + `--inset-dirty`, 저장 완료 틴트 시작색도 `--surface-selected`. ⑶ 포커스 칸 · 입력 중 칸은 `--surface-base`(흰 바탕) + 안쪽 `--focus-w`(2px) `--accent` 선이다. 선은 칸 안쪽으로 그리는 outline(`outline-offset: calc(-1 * var(--focus-w))`)이다 — stylelint가 `box-shadow`에 `--inset-*` 토큰만 허용해서 `box-shadow: inset 0 0 0 …` 리터럴 대신 같은 모양의 outline을 쓴다(새 토큰 0). 행 hover 면과 고른 행 면이 포커스 칸의 흰 바탕을 이기지 못하게 선택자 순서 · 명시도를 맞췄고 오류 · 충돌 칸은 고정 모양 그대로다. ⑷ 대비 표를 새 면 값으로 다시 쟀다 — `--text-on-tint` × `--surface-selected` 13.95 · `--text-faint` × `--surface-selected` 4.39(금지 쌍 유지) · `--status-success` × `--surface-selected` 4.31(금지 쌍 유지) · `--status-warning` × `--surface-group` 5.56(허용 유지).
+**이유**: 사용자 10/7 13:04 「표의 초록 배경 면 자체를 빼라」 · 13:09 제안 3 확정 · 13:12 선 2px(`--focus-w`) — `notes/260907-full-inventory/decisions.md:28-31`. 채택 화면의 CSS 정본(`focus/final-table-look.css`)은 이 저장소에 없어 `notes/07-review/design-codex/fable-verdicts.md:98`의 서술과 decisions.md:29 · :31에서 규칙을 옮겼다(원본 미확인). INV-DEC:15 「채택 화면은 07 구현 때 실제 앱 + /design-review」에 따라 DOM 감사와 `/design-review`가 최종 판정한다. 표가 역할 이름만 쓰므로 토큰 재배정 한 곳이 모든 표 화면(07-16 · 18 · 19 · 20 · 21 · 24 · 25)에 퍼진다.
+**버린 대안**: 선 1px · 1.5px(사용자가 2px로 확정) · 얇은 초록 선만 남기기(13:04 안은 13:09에 무효) · 화면마다 표 CSS를 따로 고치기(화면 하나만 예외 금지) · `box-shadow` 리터럴(stylelint 2단 계약 위반) 또는 새 `--inset-focus` 토큰(새 토큰 금지).
+**결정자**: 사용자 카드 10/7 13:09 · 13:12.
+**범위**: `docs/design/tokens.css`(역할 토큰 셋 + 대비 주석), `ui/table/Table.module.css`, `docs/design/SYSTEM.md` §0 · §1-4 · §7-2 · §7-3 · §7-13, 표가 있는 07 화면 전부. 대비 시험 `test/unit/design/tokens.test.ts`. 표 밖 `--accent-weak` 면(`projects/[id]` · `expenses` · `evidence-table` · `pnl/reserves` · `certs/events/[id]`의 화면 CSS)은 이 기록의 범위가 아니다 — 그 화면 플랜 몫. 새 색 · 서체 · radius 0.

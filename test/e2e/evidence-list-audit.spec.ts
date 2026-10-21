@@ -277,7 +277,7 @@ test("① intake × 6폭 × 기본 · state=all · state=all&batch — 머리글
         return { bg, color: getComputedStyle(element).color };
       });
       if (editable) {
-        record("머리글 background-color", width, role, url, head.bg, "rgb(220, 232, 228)", head.bg === "rgb(220, 232, 228)");
+        record("머리글 background-color", width, role, url, head.bg, "rgb(228, 234, 231)", head.bg === "rgb(228, 234, 231)");
         record("머리글 color", width, role, url, head.color, "rgb(0, 33, 28)", head.color === "rgb(0, 33, 28)");
       } else {
         const surfaceHead = await tokenProbe(page, "background-color", "var(--surface-head)");

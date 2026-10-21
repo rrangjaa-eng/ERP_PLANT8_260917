@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-21T05:30:23.606Z",
+  "timestamp": "2026-10-21T06:20:00Z",
   "phase": "07",
   "phase_name": "schedule-notify-audit",
   "phase_dir": ".planning/phases/07-schedule-notify-audit",
@@ -9,29 +9,59 @@
   "total_tasks": 0,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "07-REVIEWS.md 배치·원장", "status": "done", "commit": "ee0899f"},
-    {"id": 2, "name": "CONTEXT 결정 반영(D-726~749)", "status": "done", "commit": "b2f0507"},
-    {"id": 3, "name": "28플랜 재계획·교차 정합", "status": "done", "commit": "941aeec"},
-    {"id": 4, "name": "플랜 체커 3라운드 PASSED", "status": "done", "commit": "66bc71d"},
-    {"id": 5, "name": "draft PR #258 (#257 대체)", "status": "done"}
+    {
+      "id": 1,
+      "name": "plan-eng-review",
+      "status": "done",
+      "commit": "b029773"
+    },
+    {
+      "id": 2,
+      "name": "plan-design-review",
+      "status": "done",
+      "commit": "8a82238"
+    }
   ],
   "remaining_tasks": [
-    {"id": 6, "name": "/plan-eng-review 1회", "status": "not_started"},
-    {"id": 7, "name": "/plan-design-review 1회(07-UI-SPEC draft, Codex는 이 세션에서)", "status": "not_started"},
-    {"id": 8, "name": "지적 반영·재검토 최대 1회 → PR #258 ready·머지", "status": "not_started"},
-    {"id": 9, "name": "/gsd-execute-phase 07", "status": "not_started"}
+    {
+      "id": 3,
+      "name": "eng R2-R15 + design U1-U18 계획 반영, 재검토 최대 1회",
+      "status": "not_started"
+    },
+    {
+      "id": 4,
+      "name": "PR #258 ready → 머지 → execute-phase 07",
+      "status": "not_started"
+    }
   ],
-  "blockers": [],
+  "blockers": [
+    {
+      "description": "R1·Q1 사용자 답 대기(비차단)",
+      "type": "human_action",
+      "workaround": "현행(C·A) 유지"
+    }
+  ],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "07-24 D-729 배포 뒤 권한 부여", "context": "실행 단계 수동 작업", "blocking": false},
-    {"action": "위험 경로 PR 3묶음(스키마·인증·권한) 머지", "context": "D-726, CLAUDE.md §4 머지", "blocking": false}
+    {
+      "action": "PR #258 R1·Q1 답",
+      "context": "D-726 머지 위상, 원가율 첫 저장 되돌리기",
+      "blocking": false
+    }
   ],
   "decisions": [
-    {"decision": "STATE.md 13b 변경 되돌림", "rationale": "06.6 선례: 실행 세션만 자기 페이즈 진행 표기 갱신", "phase": "07"},
-    {"decision": "AQ-11 no-slot: 기한 안 마지막 영업일, 마감 넘기면 다음 지급 가능 금요일", "rationale": "사용자 답(D-741)", "phase": "07"}
+    {
+      "decision": "STATE.md 13b 변경 되돌림",
+      "rationale": "06.6 선례: 실행 세션만 자기 페이즈 진행 표기 갱신",
+      "phase": "07"
+    },
+    {
+      "decision": "AQ-11 no-slot: 기한 안 마지막 영업일, 마감 넘기면 다음 지급 가능 금요일",
+      "rationale": "사용자 답(D-741)",
+      "phase": "07"
+    }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션(plant8 환경)에서 /gsd-progress → /plan-eng-review → /plan-design-review",
-  "context_notes": "계획 완료 뒤 독립 게이트 리뷰 경계에서 끊음. PR #258."
+  "next_action": "새 세션 [#258-03 계획]: /gsd-progress → PR #258 [지시]·R1·Q1 확인 → eng·design 지적을 계획 파일에 반영",
+  "context_notes": "design-review.md·eng-review.md Decision ledger의 반영 위치 열을 따라 UI-SPEC과 PLAN을 고친다. 잠긴 결정 불변."
 }

@@ -153,3 +153,19 @@
 6. Codex 디자인 검토 · `/review` · `/qa`는 이 감사 범위 밖.
 
 측정 스크립트는 저장소에 올리지 않았다(임시 `test/e2e/zz-audit0712-*.spec.ts`, 미추적).
+
+## D1 재측정 (수정 커밋 `41d87df` 뒤, 2026-10-21T15:47Z)
+
+- 대상: 브랜치 HEAD `41d87df`. 게이트 실행자(실행자 · 첫 감사자와 별도 에이전트)가 같은 방법으로 다시 잼 — `CI=true` 프로덕션 빌드(`pnpm build && pnpm start`), Chromium(/opt/pw-browsers), 전용 DB `erp_gate0712_test`, Playwright `getComputedStyle` + canvas sRGB 정규화 + WCAG 상대 휘도. 1280폭.
+- 화면: `/expenses` 지급 대상 표, 팀 지급 권한자 로그인, 증빙 확인된 지급 대상 3건 전부 체크 → 마우스 · 포커스 치운 뒤 `td.selectedRow` 30칸의 보이는 글자 전수.
+
+| 글자 | 전경 on 배경 | 크기/굵기 | 대비 | 판정 |
+|---|---|---|---|---|
+| `span.base.success.text` **`확인됨`** (3곳) | `#005446` on `#E4EAE7` | 11px/600 | **7.31** (전 4.31) | **PASS** |
+| 문서 번호 · 문서 링크 `a.link` | `#005446` on `#E4EAE7` | 14px/400 | 7.31 | PASS |
+| 거래처 · 은행 · 계좌 마스크 · 날짜 · 금액 | `#13201C` on `#E4EAE7` | 14px/400 | 13.77 | PASS |
+| 고른 행 hover 상태의 `확인됨` | `#005446` on `#E4EAE7` | 11px/600 | 7.31 | PASS |
+
+- 고른 칸 안 탐침 글자(상속 확인): `var(--text-faint)` → `#52615C` 5.34 · `var(--status-success)` → `#005446` 7.31. `:root` 값은 그대로(`--status-success #0E7A66` · `--text-faint #5F6E6A`) — 재지정은 `.selectedRow` 안에만 닿는다.
+- 고른 행 글자 최소 대비 **7.31 ≥ 4.5** → **D1 해소**.
+- 측정 스펙은 임시 파일(`test/e2e/zz-gate0712-d1.spec.ts`, 미추적 · 커밋 안 함).

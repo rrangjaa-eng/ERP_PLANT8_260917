@@ -821,7 +821,7 @@ function listDomainDtoTypeNames(): string[] {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
-        for (const match of readFileSync(full, "utf8").matchAll(/export type (\w+Dto)\b/g)) names.add(match[1] as string);
+        for (const match of readFileSync(full, "utf8").matchAll(/export type (\w+(?:Dto|DTO))\b/g)) names.add(match[1] as string);
       }
     }
   };
@@ -829,7 +829,7 @@ function listDomainDtoTypeNames(): string[] {
   return [...names].sort();
 }
 
-// 덮이지 않는 `*Dto` 타입 이름을 돌려준다 — 이름 그대로 · Dto를 뗀 첫 글자 소문자 · 명시 대응 표 · 이유 있는 면제 중 하나.
+// 덮이지 않는 `*Dto` · `*DTO` 타입 이름을 돌려준다 — 이름 그대로 · Dto/DTO를 뗀 첫 글자 소문자 · 명시 대응 표 · 이유 있는 면제 중 하나.
 function unmappedDtoTypes(
   typeNames: readonly string[],
   registeredNames: readonly string[],
@@ -866,6 +866,16 @@ describe("`*Dto` 타입 ↔ DTO 레지스트리 대조 — 미매핑 0 (07-03 ·
     expect(registeredNames).toContain("evidenceFile");
     const without = registeredNames.filter((name) => name !== "evidenceFile");
     expect(unmappedDtoTypes(typeNames, without, DTO_TYPE_TO_REGISTRY_NAME, DTO_COVERAGE_EXEMPT)).toContain("EvidenceFileDto");
+  });
+
+  it("전부 대문자 `*DTO` 접미사 타입도 대조된다 — routePreview · routePreviewStep 등록을 빼면 RoutePreviewDTO · RoutePreviewStepDTO가 미매핑으로 잡힌다", () => {
+    expect(typeNames).toContain("RoutePreviewDTO");
+    expect(typeNames).toContain("RoutePreviewStepDTO");
+    expect(registeredNames).toContain("routePreview");
+    expect(registeredNames).toContain("routePreviewStep");
+    const without = registeredNames.filter((name) => name !== "routePreview" && name !== "routePreviewStep");
+    const unmapped = unmappedDtoTypes(typeNames, without, DTO_TYPE_TO_REGISTRY_NAME, DTO_COVERAGE_EXEMPT);
+    expect(unmapped).toEqual(expect.arrayContaining(["RoutePreviewDTO", "RoutePreviewStepDTO"]));
   });
 
   it("대응 표 · 면제 표의 키가 실제 `*Dto` 타입 이름이다(죽은 항목 0)", () => {

@@ -169,3 +169,4 @@
 - 고른 칸 안 탐침 글자(상속 확인): `var(--text-faint)` → `#52615C` 5.34 · `var(--status-success)` → `#005446` 7.31. `:root` 값은 그대로(`--status-success #0E7A66` · `--text-faint #5F6E6A`) — 재지정은 `.selectedRow` 안에만 닿는다.
 - 고른 행 글자 최소 대비 **7.31 ≥ 4.5** → **D1 해소**.
 - 측정 스펙은 임시 파일(`test/e2e/zz-gate0712-d1.spec.ts`, 미추적 · 커밋 안 함).
+- 이웃 상태(게이트 `/review`에서 찾음): 같은 면인 **범위 선택 칸**(`td.selectedCell`, 지급 대상 표에서 Shift+→로 「확인됨」 칸까지 범위)에서는 `41d87df` 뒤에도 `#0E7A66` on `#E4EAE7` = **4.31 FAIL**(재지정이 `.selectedRow`에만 있었음). `.selectedCell`에 같은 두 재지정을 건 뒤 다시 잼: `#005446` on `#E4EAE7` = **7.31 PASS**(같은 빌드 · 같은 DB · 같은 방법).

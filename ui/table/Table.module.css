@@ -244,6 +244,9 @@ th.groupHeader {
 /* 04-04(아) — 범위 선택(앵커 셀 + 현재 셀). 07 개정 11: 중립 선택 면(--surface-selected = n-100). */
 .selectedCell {
   background: var(--surface-selected);
+  /* 07-12 D1 — 고른 행(.selectedRow)과 같은 면이라 같은 재지정(§1-4 고른 행 면 규칙). */
+  --status-success: var(--status-accent);
+  --text-faint: var(--text-muted);
 }
 
 /* 06-29(SP-1 · SYSTEM §7-3 (카)) — 일괄 처리 표의 선택 열. 칸 폭 = 행 번호 칸 폭 식 · 체크박스는 네이티브(accent-color) · 고른 행 면은 범위 선택과 같은 --surface-selected 하나다(07 개정 11 — 중립 n-100).

@@ -449,6 +449,14 @@ describe("tokens.css · ui/table — 개정 11 표 모양 확정(표 안 초록 
     expect(rule).toMatch(/--text-faint:\s*var\(--text-muted\)/);
   });
 
+  // 07-12 게이트 /review — 같은 면(--surface-selected)인 범위 선택 칸(.selectedCell, Shift+화살표)에서도 「확인됨」이 4.31로 렌더됐다(지급 대상 표 DOM 실측).
+  it("범위 선택 칸(.selectedCell)도 --status-success → --status-accent · --text-faint → --text-muted로 다시 가리킨다", () => {
+    const rule = /(?:^|\n)\.selectedCell\s*\{([^}]*)\}/.exec(TABLE_CSS)?.[1] ?? "";
+    expect(rule).toMatch(/background:\s*var\(--surface-selected\)/);
+    expect(rule).toMatch(/--status-success:\s*var\(--status-accent\)/);
+    expect(rule).toMatch(/--text-faint:\s*var\(--text-muted\)/);
+  });
+
   it("고른 행 면 위 대체 쌍 실측: status-accent 7.31 · text-muted 5.34, 모두 4.5 이상", () => {
     const measured = (fg: string, bg: string) => Math.round(ratio(fg, bg) * 100) / 100;
     expect(ratio("--status-accent", "--surface-selected")).toBeGreaterThanOrEqual(4.5);

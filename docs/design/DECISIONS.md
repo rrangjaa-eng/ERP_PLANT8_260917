@@ -2284,3 +2284,4 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **이유**: 면 값 개정 11이 만든 금지 쌍이 화면에서 실제로 렌더됐다. 화면 하나의 예외나 `StatusTag` 호출부 수정 대신, 면을 정하는 표 CSS 한 곳이 같은 뜻의 더 진한 기존 역할을 가리키게 해 모든 표 화면(고른 행이 있는 07 화면 전부)에 퍼진다. 상태 뜻(초록)은 `--status-accent`가 같은 초록 계열이라 유지된다.
 **버린 대안**: `--surface-selected` 값을 더 옅게(개정 11 사용자 확정 값 변경) · 새 진한 초록 토큰(새 토큰 금지) · `expenses` 화면 CSS만 고치기(화면 하나만 예외 금지) · 고른 행에서 상태 글자 색을 없애기(상태는 색 · 배지로, 사용성 원칙).
 **범위**: `ui/table/Table.module.css`, `docs/design/SYSTEM.md` §1-4 · §7-3, `test/unit/design/tokens.test.ts`. 새 색 · 서체 · radius 0.
+**보강(07-12 게이트 `/review`)**: 같은 면인 범위 선택 칸(`.selectedCell`, `Shift`+방향키)에서도 지급 대상 표 「확인됨」이 `#0E7A66` on `#E4EAE7` 4.31로 DOM 실측돼, `.selectedCell`에도 같은 두 재지정을 건다.

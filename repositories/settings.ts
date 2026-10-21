@@ -69,9 +69,10 @@ export async function listHistory(viewer: Viewer, key: string, tx: DbOrTx = db):
 export async function insertHistorizedValue(
   viewer: Viewer,
   input: { key: string; effectiveFrom: string; value: unknown; by: string | null },
+  tx: DbOrTx = db,
 ): Promise<SettingHistorizedRow> {
   void viewer;
-  const [row] = await db
+  const [row] = await tx
     .insert(settingsHistorized)
     .values({
       key: input.key,

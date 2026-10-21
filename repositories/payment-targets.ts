@@ -74,12 +74,19 @@ export async function listPaymentTargetRows(
   viewer: Viewer,
   input: { documentKind: string; teamId?: string | null; search?: ExpenseSearch },
 ): Promise<PaymentTargetRow[]> {
-  const conditions: SQL[] = [
-    isNull(expenses.deletedAt),
-    isNull(expenses.closedAt),
-    eq(approvalInstances.status, "approved"),
-    sql`not ${livePayment}`,
-  ];
+  return listRowsByStatus(viewer, input, eq(approvalInstances.status, "approved"));
+}
+
+// 07-01(J11 데이터): 같은 질의의 상태 조건만 결재 중(submitted · in_review)으로 바꾼 형제 — 지금 승인되면 이번 주 · 다음 주에 들어갈 건.
+export async function listApprovingPaymentTargetRows(
+  viewer: Viewer,
+  input: { documentKind: string; teamId?: string | null; search?: ExpenseSearch },
+): Promise<PaymentTargetRow[]> {
+  return listRowsByStatus(viewer, input, inArray(approvalInstances.status, ["submitted", "in_review"]));
+}
+
+async function listRowsByStatus(viewer: Viewer, input: { documentKind: string; teamId?: string | null; search?: ExpenseSearch }, status: SQL): Promise<PaymentTargetRow[]> {
+  const conditions: SQL[] = [isNull(expenses.deletedAt), isNull(expenses.closedAt), status, sql`not ${livePayment}`];
   if (input.teamId) conditions.push(sql`${docTeamId} = ${input.teamId}::uuid`);
   // 06.5 D-6508: 검색은 여기서 거르고 보는 범위는 domain visibleRows가 그 뒤에 거른다(AND) — 같은 조건 함수 하나(repositories/expenses.ts).
   if (input.search) conditions.push(expenseSearchCondition(viewer, input.search.query, input.search.fields));

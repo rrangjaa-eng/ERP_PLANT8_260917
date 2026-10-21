@@ -622,11 +622,35 @@ export type ExpenseListRow = ExpenseRow & {
 // 결재 중 = 제출 시각 ↑ · 승인 = 지급 예정일 ↑(없음은 끝).
 // 05-09(05-08 검토 #6): 승인 뒤 증빙 추가가 인스턴스 updated_at을 올리므로 승인 날짜는 지금 차수 단계의 마지막 처리 시각에서 읽는다
 // (반려 · 회수에서는 증빙 변경이 인스턴스를 건드리지 않아 updated_at = 상태 바뀐 시각 그대로).
-const statusChangedAtExpr = sql<Date | null>`case when ${approvalInstances.status} = 'approved' then (
+// 07-01: 승인된 인스턴스의 지금 차수 승인 단계는 전부 action = 'approved'라 필터를 더해도 statusChangedAtExpr 결과는 같다.
+const currentRoundApprovedAtExpr = sql`(
   select max(${approvalSteps.actedAt}) from ${approvalSteps}
   inner join ${approvalRoutes} on ${approvalRoutes.id} = ${approvalSteps.routeId}
-  where ${approvalRoutes.instanceId} = ${approvalInstances.id} and ${approvalRoutes.round} = ${approvalInstances.currentRound}
-) else ${approvalInstances.updatedAt} end`.mapWith(approvalInstances.updatedAt);
+  where ${approvalRoutes.instanceId} = ${approvalInstances.id} and ${approvalRoutes.round} = ${approvalInstances.currentRound} and ${approvalSteps.action} = 'approved'
+)`;
+const statusChangedAtExpr = sql<Date | null>`case when ${approvalInstances.status} = 'approved' then ${currentRoundApprovedAtExpr} else ${approvalInstances.updatedAt} end`.mapWith(
+  approvalInstances.updatedAt,
+);
+
+// 07-01(D-703 · P4): 결재 마감 판정의 승인 시각 = 지금 차수 승인 단계 acted_at(서버 시각)의 최댓값. 인스턴스 updated_at은 승인 뒤 증빙 변경으로
+// 올라가므로 쓰지 않는다. 인스턴스가 approved가 아니면 null(결재 중). 부르는 쪽이 이미 보임 범위로 거른 id만 넘긴다.
+export async function listCurrentRoundApprovedAt(
+  viewer: Viewer,
+  input: { documentKind: string; expenseIds: readonly string[] },
+  tx: DbOrTx = db,
+): Promise<Map<string, Date | null>> {
+  void viewer;
+  if (input.expenseIds.length === 0) return new Map();
+  const rows = await tx
+    .select({
+      id: expenses.id,
+      approvedAt: sql<Date | null>`case when ${approvalInstances.status} = 'approved' then ${currentRoundApprovedAtExpr} end`.mapWith(approvalInstances.updatedAt),
+    })
+    .from(expenses)
+    .leftJoin(approvalInstances, instanceJoin(input.documentKind))
+    .where(inArray(expenses.id, [...input.expenseIds]));
+  return new Map(rows.map((row) => [row.id, row.approvedAt]));
+}
 
 export async function listExpensePage(
   viewer: Viewer,

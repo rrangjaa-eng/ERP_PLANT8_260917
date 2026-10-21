@@ -88,11 +88,9 @@ describe("세율 스냅숏 · 세율 바뀜", () => {
     const expenseId = await draftOnStageLine(fx);
     // 예정 행은 실제 서울 오늘 + 30일 — addHistorizedValue · cancelHistorizedValue · 제출 세금 계산이 모두 실제 시계를 본다.
     const scheduledFrom = addDays(seoulToday(), 30);
-    await saveExpenseDraft(fx.pm, {
-      expenseId,
-      expectedVersion: 1,
-      fields: { evidenceType: "test_vat_scheduled", scheduledPaymentDate: addDays(scheduledFrom, 5) },
-    });
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { evidenceType: "test_vat_scheduled" } });
+    // 07-01 D-714: 작성자 저장은 지급 예정일을 칸에 쓰지 않는다 — 저장 칸 값(D-740 기존 값 · 지급 권한자 수동 지정)을 시험이 직접 둔다.
+    await db.update(expenses).set({ scheduledPaymentDate: addDays(scheduledFrom, 5) }).where(eq(expenses.id, expenseId));
     const before = await computeExpenseTax(fx.pm, await expenseRow(expenseId));
     if (before.unavailable) throw new Error("예정 행 전 계산 불가");
 

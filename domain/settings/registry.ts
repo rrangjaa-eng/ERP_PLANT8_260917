@@ -13,6 +13,7 @@ import {
   findSimpleValue as defaultFindSimpleValue,
   findSimpleValues as defaultFindSimpleValues,
   upsertSimpleValue as defaultUpsertSimpleValue,
+  lockSimpleKey as defaultLockSimpleKey,
   findEffectiveValue as defaultFindEffectiveValue,
   listHistory as defaultListHistory,
   insertHistorizedValue as defaultInsertHistorizedValue,
@@ -111,6 +112,7 @@ export type RegistryDeps = {
   recordAction: typeof defaultRecordAction;
   findSimpleValue: typeof defaultFindSimpleValue;
   upsertSimpleValue: typeof defaultUpsertSimpleValue;
+  lockSimpleKey: typeof defaultLockSimpleKey;
   findEffectiveValue: typeof defaultFindEffectiveValue;
   listHistory: typeof defaultListHistory;
   insertHistorizedValue: typeof defaultInsertHistorizedValue;
@@ -236,10 +238,13 @@ export async function setSettingValue<T>(
   await assertNewPairsActive(def, parsed, deps);
   const upsertSimpleValue = deps?.upsertSimpleValue ?? defaultUpsertSimpleValue;
   const findSimpleValue = deps?.findSimpleValue ?? defaultFindSimpleValue;
+  const lockSimpleKey = deps?.lockSimpleKey ?? defaultLockSimpleKey;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   const withTransaction = deps?.withTransaction ?? defaultWithTransaction;
   // 07-04(D7 · R4 · R5): 이전 값 읽기 · 저장 · 기록을 한 트랜잭션에 묶는다 — 기록이 실패하면 값도 그대로다.
   await withTransaction(async (tx) => {
+    // PR #259 Codex P2: 같은 키의 동시 저장이 둘 다 같은 이전 값을 읽지 않게 읽기 전에 키를 잠근다(같은 tx).
+    await lockSimpleKey(viewer, def.key, tx);
     const previous = (await findSimpleValue(SYSTEM_VIEWER, def.key, tx))?.value ?? null;
     await upsertSimpleValue(viewer, def.key, parsed, viewer.id, tx);
     await recordAction(

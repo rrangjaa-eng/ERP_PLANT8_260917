@@ -190,6 +190,13 @@ export async function lockRouteStep(viewer: Viewer, step: string, tx: DbOrTx): P
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"approval_route_step:" + step}, 0))`);
 }
 
+// PR #259 Codex P2: 같은 비이력형 키의 저장(setSettingValue)을 줄 세운다 — 이전 값 읽기가 앞 저장의 커밋을 보게 한다.
+// 행이 아직 없는 키도 잠가야 해서 FOR UPDATE가 아니라 키 단위 advisory 잠금이다. 트랜잭션 끝에 풀린다.
+export async function lockSimpleKey(viewer: Viewer, key: string, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"settings_simple:" + key}, 0))`);
+}
+
 export async function findSimpleValues(viewer: Viewer, keys: string[], tx?: DbOrTx): Promise<SettingSimpleRow[]> {
   void viewer;
   if (keys.length === 0) return [];

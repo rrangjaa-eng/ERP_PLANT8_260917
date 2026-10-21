@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(outerTx)),
     findSimpleValue: vi.fn(),
     upsertSimpleValue: vi.fn(),
+    lockSimpleKey: vi.fn(),
     lockDocumentCounter: vi.fn(),
     recordAction: vi.fn(),
   };
@@ -25,6 +26,7 @@ vi.mock("@/repositories/settings", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/repositories/settings")>()),
   findSimpleValue: mocks.findSimpleValue,
   upsertSimpleValue: mocks.upsertSimpleValue,
+  lockSimpleKey: mocks.lockSimpleKey,
 }));
 vi.mock("@/repositories/document-counters", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/repositories/document-counters")>()),
@@ -45,6 +47,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.findSimpleValue.mockResolvedValue({ key: DOCUMENT_NUMBER_PROJECT_SEQ_START.key, value: 5 });
   mocks.upsertSimpleValue.mockResolvedValue(undefined);
+  mocks.lockSimpleKey.mockResolvedValue(undefined);
   mocks.lockDocumentCounter.mockResolvedValue(0);
   mocks.recordAction.mockResolvedValue(undefined);
 });
@@ -54,6 +57,7 @@ describe("setSimpleSettingValue — 순번 시작값 저장은 트랜잭션 하�
     await setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, 7, new Date("2026-10-21T00:00:00Z"));
 
     expect(mocks.withTransaction).toHaveBeenCalledTimes(1);
+    expect(mocks.lockSimpleKey).toHaveBeenCalledWith(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START.key, mocks.outerTx);
     for (const call of mocks.findSimpleValue.mock.calls) expect(call[2]).toBe(mocks.outerTx);
     expect(mocks.upsertSimpleValue).toHaveBeenCalledWith(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START.key, 7, SYSTEM_VIEWER.id, mocks.outerTx);
     expect(mocks.recordAction).toHaveBeenCalledWith(

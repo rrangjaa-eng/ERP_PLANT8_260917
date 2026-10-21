@@ -171,7 +171,10 @@ describe("setSettingValue (비이력형 전용)", () => {
     const tx = { marker: "tx" } as never;
     const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn(tx)) as never;
     const findSimpleValue = vi.fn().mockResolvedValue({ value: 0.1 });
-    await setSettingValue(viewer, SIMPLE_DEF, 0.4, { can, upsertSimpleValue, recordAction, withTransaction, findSimpleValue });
+    const lockSimpleKey = vi.fn().mockResolvedValue(undefined);
+    await setSettingValue(viewer, SIMPLE_DEF, 0.4, { can, upsertSimpleValue, recordAction, withTransaction, findSimpleValue, lockSimpleKey });
+    expect(lockSimpleKey).toHaveBeenCalledWith(viewer, SIMPLE_DEF.key, tx);
+    expect(lockSimpleKey.mock.invocationCallOrder[0]).toBeLessThan(findSimpleValue.mock.invocationCallOrder.at(-1)!);
     expect(upsertSimpleValue).toHaveBeenCalledWith(viewer, SIMPLE_DEF.key, 0.4, viewer.id, tx);
     expect(recordAction).toHaveBeenCalledTimes(1);
     expect(recordAction.mock.calls[0]?.[1]).toMatchObject({
@@ -207,6 +210,7 @@ describe("setSettingValue — 짝 격자 키의 새 짝은 활성 코드값만",
     findSimpleValue: vi.fn().mockResolvedValue(stored === undefined ? null : { value: stored }),
     listActiveCodeValues: vi.fn(activeValues),
     upsertSimpleValue: vi.fn().mockResolvedValue(undefined),
+    lockSimpleKey: vi.fn().mockResolvedValue(undefined),
     recordAction: vi.fn().mockResolvedValue(undefined),
     withTransaction: vi.fn((fn: (t: never) => Promise<unknown>) => fn({} as never)) as never,
   });

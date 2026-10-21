@@ -229,8 +229,14 @@ export async function importSettings(
       if (!def) continue;
       const rows = await repoListHistory(viewer, item.key, tx);
       if (rows.some((row) => row.effectiveFrom === item.effectiveFrom)) continue;
+      // PR #259 Codex P2: 이전 값은 저장된 행 + 같은 가져오기의 새 행(건너뛸 행 제외) 중 이 날짜 앞의 것으로 정한다 —
+      // 앞선 가져오기 행과 같은 값이면 buildChanges가 바뀐 칸으로 싣지 않는다.
+      const storedDates = new Set(rows.map((row) => row.effectiveFrom));
+      const earlier = [...rows, ...historized.filter((other) => other.key === item.key && !storedDates.has(other.effectiveFrom))]
+        .filter((row) => row.effectiveFrom < item.effectiveFrom)
+        .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
       const column = `${item.key}@${item.effectiveFrom}`;
-      before[column] = effectiveValueAt(def, rows, item.effectiveFrom);
+      before[column] = effectiveValueAt(def, earlier, item.effectiveFrom);
       after[column] = item.value;
     }
 

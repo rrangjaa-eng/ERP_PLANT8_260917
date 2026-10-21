@@ -24,6 +24,7 @@ import {
   type SettingDef,
 } from "@/domain/settings/registry";
 import { queryActionLog } from "@/repositories/action-log";
+import { findSimpleValue } from "@/repositories/settings";
 
 // 07-04(D7 · R4 · R5): 설정 · 사람 계급 변경이 끌 수 없는 기록으로 전후 값과 함께, 저장과 한 트랜잭션으로 남는다.
 
@@ -82,6 +83,42 @@ describe("설정 저장 — settings_change 전후 값 (Task 1)", () => {
     ).rejects.toThrow("로그 쓰기 실패 흉내");
 
     expect(await getSettingValue(def)).toBe(10);
+  });
+});
+
+describe("단순 설정 동시 저장 — 이전 값 사슬 (PR #259 Codex P2)", () => {
+  it("같은 키를 동시에 두 번 저장해도 이전 값이 바로 앞 저장값이다([10,20] 뒤 [20,30])", async () => {
+    const def = simpleDef();
+    await setSettingValue(SYSTEM_VIEWER, def, 10);
+
+    // 첫 저장이 이전 값을 읽은 뒤, 둘째 저장이 이전 값을 읽거나 400ms가 지날 때까지 멈춘다 — 잠금이 없으면 둘 다 10을 읽는다.
+    let firstRead!: () => void;
+    const firstHasRead = new Promise<void>((resolve) => (firstRead = resolve));
+    let secondRead!: () => void;
+    const secondHasRead = new Promise<void>((resolve) => (secondRead = resolve));
+    const first = setSettingValue(SYSTEM_VIEWER, def, 20, {
+      findSimpleValue: async (viewer, key, tx) => {
+        const row = await findSimpleValue(viewer, key, tx);
+        firstRead();
+        await Promise.race([secondHasRead, new Promise((resolve) => setTimeout(resolve, 400))]);
+        return row;
+      },
+    });
+    await firstHasRead;
+    const second = setSettingValue(SYSTEM_VIEWER, def, 30, {
+      findSimpleValue: async (viewer, key, tx) => {
+        const row = await findSimpleValue(viewer, key, tx);
+        secondRead();
+        return row;
+      },
+    });
+    await Promise.all([first, second]);
+
+    const details = (await settingsLogsFor(def.key)).map((entry) => entry.detail as Detail);
+    expect(details).toContainEqual({ key: def.key, changes: { value: [10, 20] } });
+    expect(details).toContainEqual({ key: def.key, changes: { value: [20, 30] } });
+    expect(details).not.toContainEqual({ key: def.key, changes: { value: [10, 30] } });
+    expect(await getSettingValue(def)).toBe(30);
   });
 });
 
@@ -180,6 +217,35 @@ describe("결재선 단계 설정 · 설정 가져오기 — 전후 값 (Task 2)
         [`${TAX_VAT_RATE.key}@2999-01-01`]: [previousVat, 0.2],
       },
     });
+  });
+
+  async function latestImportChanges() {
+    const imports = (await queryActionLog(SYSTEM_VIEWER, { actionType: "settings_change" })).filter((entry) => entry.entity === "settings");
+    return (imports.at(-1)?.detail as Detail | undefined)?.changes;
+  }
+
+  it("설정 가져오기: 한 키의 새 이력 행 여럿은 앞선 가져오기 행을 이전 값으로 본다(PR #259 Codex P2)", async () => {
+    const previousVat = await getSettingValue(TAX_VAT_RATE, { asOf: new Date("2998-01-01T00:00:00Z") });
+    await importSettings(SYSTEM_VIEWER, {
+      schemaVersion: "1",
+      exportedAt: new Date().toISOString(),
+      // 일부러 늦은 날짜를 먼저 — 이전 값은 적용 시작일 순서로 정한다.
+      settings: { [TAX_VAT_RATE.key]: [{ effectiveFrom: "2999-01-01", value: 0.3 }, { effectiveFrom: "2998-01-01", value: 0.2 }] },
+    });
+    expect(await latestImportChanges()).toEqual({
+      [`${TAX_VAT_RATE.key}@2998-01-01`]: [previousVat, 0.2],
+      [`${TAX_VAT_RATE.key}@2999-01-01`]: [0.2, 0.3],
+    });
+  });
+
+  it("설정 가져오기: 앞선 가져오기 행과 같은 값의 새 이력 행은 바뀐 것이 아니다", async () => {
+    const previousVat = await getSettingValue(TAX_VAT_RATE, { asOf: new Date("2998-01-01T00:00:00Z") });
+    await importSettings(SYSTEM_VIEWER, {
+      schemaVersion: "1",
+      exportedAt: new Date().toISOString(),
+      settings: { [TAX_VAT_RATE.key]: [{ effectiveFrom: "2998-01-01", value: 0.2 }, { effectiveFrom: "2999-01-01", value: 0.2 }] },
+    });
+    expect(await latestImportChanges()).toEqual({ [`${TAX_VAT_RATE.key}@2998-01-01`]: [previousVat, 0.2] });
   });
 
   it("설정 가져오기: 기록이 실패하면 값도 적용되지 않는다(같은 트랜잭션)", async () => {

@@ -4,12 +4,13 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { approvalInstances, approvalRoutes, approvalSteps, expenses } from "@/db/schema";
 import { approveDocument } from "@/domain/approvals";
+import { createExpenseFromLines, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { gate } from "@/domain/rules/gate";
 import { listPaymentTargets, nextUnreviewedTarget, type PaymentTargetList } from "@/domain/payments/targets";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { setupExpenseProject, type ExpenseFixture } from "../fixtures/expenses";
-import { createInReviewExpenseFixture, insertRecordFixture } from "../fixtures/evidence";
+import { createInReviewExpenseFixture, insertLinkFixture, insertRecordFixture } from "../fixtures/evidence";
 import { makePaymentManager } from "../fixtures/payments";
 
 // 07-01 Task 2(D-703 · K30 · J11 · B-P2-2 · B-P1-4): 로더(승인 시각 = 지금 차수 acted_at) → 순수 함수 → gate `payment.cutoff` → DTO · 지급 주 묶음.
@@ -139,5 +140,29 @@ describe("지급 주 묶음 · 마감 gate (07-01 Task 2)", () => {
       expect(next?.id).toBe(order[index + 1]);
     }
     expect(await nextUnreviewedTarget(payer, { afterExpenseId: order.at(-1) ?? "" }, deps)).toBeNull();
+  }, 30_000);
+
+  it("D-742 · NB P1-2: 작성자가 저장한 날짜(이번 주 금)는 수동 면제를 받지 못한다 — 마감 뒤 승인 → cutoff · 마감 지나 밀림", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { scheduledPaymentDate: "2026-08-07" } });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    const [draft] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+    const saved = await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: draft?.version ?? 0, fields: { scheduledPaymentDate: "2026-08-07" } });
+    await insertLinkFixture({ recordId: await insertRecordFixture(payer, { issuedOn: "2026-06-08" }), ownerId: expenseId, attachedBy: payer.id });
+    const submitted = await submitExpense(fx.pm, { expenseId, expectedVersion: saved.version });
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+    let { version } = await instanceOf(submitted.instanceId);
+    for (const approver of [fx.lead, fx.ceo]) version = (await approveDocument(approver, { instanceId: submitted.instanceId, expectedVersion: version })).version;
+    const routes = await db.select({ id: approvalRoutes.id }).from(approvalRoutes).where(eq(approvalRoutes.instanceId, submitted.instanceId));
+    await db.update(approvalSteps).set({ actedAt: kst("2026-08-06T14:01") }).where(inArray(approvalSteps.routeId, routes.map((route) => route.id)));
+
+    const list = await listPaymentTargets(payer, {}, { today: TODAY, now: AFTER_CUTOFF });
+    expect(rowOf(list, expenseId)).toMatchObject({
+      scheduledPaymentDate: "2026-08-14",
+      scheduledPaymentManual: false,
+      paymentPushReason: "cutoff",
+      paymentCutoffReason: "마감 지나 밀림",
+    });
   }, 30_000);
 });

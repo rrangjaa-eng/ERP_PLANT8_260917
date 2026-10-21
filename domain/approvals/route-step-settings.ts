@@ -2,6 +2,7 @@ import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan, ForbiddenError } from "@/domain/permissions/can";
 import { getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { buildChanges } from "@/domain/action-log/changes";
 import { lockRouteStep, lockSimpleValues, upsertSimpleValue as defaultUpsertSimpleValue } from "@/repositories/settings";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
@@ -50,20 +51,21 @@ export async function saveRouteStepSettings(
   // 쓰기 전에 네 칸을 전부 검증한다 — 한 칸이라도 틀리면 아무것도 쓰지 않는다.
   const values = withOrgUnitFallback(input.values);
   const entries = [
-    { key: step.enabled.key, value: step.enabled.schema.parse(values.enabled) },
-    { key: step.roleId.key, value: step.roleId.schema.parse(values.roleId) },
-    { key: step.scope.key, value: step.scope.schema.parse(values.scope) },
-    { key: step.orgUnitId.key, value: step.orgUnitId.schema.parse(values.orgUnitId) },
+    { key: step.enabled.key, value: step.enabled.schema.parse(values.enabled), previous: (row?: { value: unknown }) => simpleValueOrDefault(step.enabled, row) },
+    { key: step.roleId.key, value: step.roleId.schema.parse(values.roleId), previous: (row?: { value: unknown }) => simpleValueOrDefault(step.roleId, row) },
+    { key: step.scope.key, value: step.scope.schema.parse(values.scope), previous: (row?: { value: unknown }) => simpleValueOrDefault(step.scope, row) },
+    { key: step.orgUnitId.key, value: step.orgUnitId.schema.parse(values.orgUnitId), previous: (row?: { value: unknown }) => simpleValueOrDefault(step.orgUnitId, row) },
   ];
 
   const upsertSimpleValue = deps?.upsertSimpleValue ?? defaultUpsertSimpleValue;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
     await lockRouteStep(viewer, `${input.kind}:${input.stepIndex}`, tx);
+    // 07-04(R5): 전후 값 기록을 위해 저장 전 네 칸을 같은 tx에서 읽는다(기대값 비교와 같은 읽기).
+    const rows = await lockSimpleValues(viewer, defs.map((def) => def.key), tx);
+    const stored = new Map(rows.map((row) => [row.key, row]));
     if (input.expected) {
-      const rows = await lockSimpleValues(viewer, defs.map((def) => def.key), tx);
       // 화면과 같은 규칙으로 읽는다 — 형식이 맞지 않는 저장값은 기본값(화면이 보인 값)이어야 기대값과 맞는다.
-      const stored = new Map(rows.map((row) => [row.key, row]));
       const current = withOrgUnitFallback({
         enabled: simpleValueOrDefault(step.enabled, stored.get(step.enabled.key)),
         roleId: simpleValueOrDefault(step.roleId, stored.get(step.roleId.key)),
@@ -75,10 +77,16 @@ export async function saveRouteStepSettings(
       if (fields.some((field) => current[field] !== expected[field])) throw new UserFacingError(ROUTE_STEP_STALE_ERROR);
     }
     for (const entry of entries) {
+      const previous = entry.previous(stored.get(entry.key)) ?? null;
       await upsertSimpleValue(viewer, entry.key, entry.value, viewer.id, tx);
       await recordAction(
         viewer,
-        { actionType: "settings_change", entity: "settings_simple", entityId: entry.key, detail: { key: entry.key } },
+        {
+          actionType: "settings_change",
+          entity: "settings_simple",
+          entityId: entry.key,
+          detail: { key: entry.key, changes: buildChanges({ value: previous }, { value: entry.value }) },
+        },
         { tx },
       );
     }

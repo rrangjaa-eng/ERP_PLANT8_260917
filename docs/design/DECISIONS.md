@@ -2277,3 +2277,10 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: 선 1px · 1.5px(사용자가 2px로 확정) · 얇은 초록 선만 남기기(13:04 안은 13:09에 무효) · 화면마다 표 CSS를 따로 고치기(화면 하나만 예외 금지) · `box-shadow` 리터럴(stylelint 2단 계약 위반) 또는 새 `--inset-focus` 토큰(새 토큰 금지).
 **결정자**: 사용자 카드 10/7 13:09 · 13:12.
 **범위**: `docs/design/tokens.css`(역할 토큰 셋 + 대비 주석), `ui/table/Table.module.css`, `docs/design/SYSTEM.md` §0 · §1-4 · §7-2 · §7-3 · §7-13, 표가 있는 07 화면 전부. 대비 시험 `test/unit/design/tokens.test.ts`. 표 밖 `--accent-weak` 면(`projects/[id]` · `expenses` · `evidence-table` · `pnl/reserves` · `certs/events/[id]`의 화면 CSS)은 이 기록의 범위가 아니다 — 그 화면 플랜 몫. 새 색 · 서체 · radius 0.
+
+## 2026-10-21 — 고른 행 면 위 상태 글자 대비 (07-12 · DOM 감사 D1)
+
+**결정**: 표의 고른 행 면(`ui/table/Table.module.css` `.selectedRow` = `--surface-selected`) 안에서는 `--status-success`를 `--status-accent`로, `--text-faint`를 `--text-muted`로 다시 가리킨다(CSS 변수 재지정, 하위 요소가 상속). `/expenses` 지급 대상 표의 「확인됨」(`StatusTag` success, 11px/600)이 개정 11로 면이 n-100이 된 뒤 4.31:1(AA 4.5 미만)로 실측됐다. 대체 글자는 g-700 7.31 · n-700 5.34(오류 · 충돌 칸 면 위 7.61 · 5.56). 금지 쌍 표(§1-4)는 그대로 두고 규칙을 덧붙였다.
+**이유**: 면 값 개정 11이 만든 금지 쌍이 화면에서 실제로 렌더됐다. 화면 하나의 예외나 `StatusTag` 호출부 수정 대신, 면을 정하는 표 CSS 한 곳이 같은 뜻의 더 진한 기존 역할을 가리키게 해 모든 표 화면(고른 행이 있는 07 화면 전부)에 퍼진다. 상태 뜻(초록)은 `--status-accent`가 같은 초록 계열이라 유지된다.
+**버린 대안**: `--surface-selected` 값을 더 옅게(개정 11 사용자 확정 값 변경) · 새 진한 초록 토큰(새 토큰 금지) · `expenses` 화면 CSS만 고치기(화면 하나만 예외 금지) · 고른 행에서 상태 글자 색을 없애기(상태는 색 · 배지로, 사용성 원칙).
+**범위**: `ui/table/Table.module.css`, `docs/design/SYSTEM.md` §1-4 · §7-3, `test/unit/design/tokens.test.ts`. 새 색 · 서체 · radius 0.

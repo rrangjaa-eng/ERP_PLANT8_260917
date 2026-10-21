@@ -440,6 +440,26 @@ describe("tokens.css · ui/table — 개정 11 표 모양 확정(표 안 초록 
     expect(backgrounds.filter((v) => /--accent-weak|--g-\d+/.test(v))).toEqual([]);
   });
 
+  // 07-12 D1 — 고른 행 면 위 금지 쌍(--status-success 4.31 · --text-faint 4.39)을 시스템 규칙으로 막는다:
+  // .selectedRow가 두 역할을 더 진한 기존 역할로 다시 가리키고, 그 대체 쌍이 4.5 이상임을 토큰 수학으로 잠근다.
+  it("고른 행(.selectedRow)은 --status-success → --status-accent · --text-faint → --text-muted로 다시 가리킨다", () => {
+    const rule = /(?:^|\n)\.selectedRow\s*\{([^}]*)\}/.exec(TABLE_CSS)?.[1] ?? "";
+    expect(rule).toMatch(/background:\s*var\(--surface-selected\)/);
+    expect(rule).toMatch(/--status-success:\s*var\(--status-accent\)/);
+    expect(rule).toMatch(/--text-faint:\s*var\(--text-muted\)/);
+  });
+
+  it("고른 행 면 위 대체 쌍 실측: status-accent 7.31 · text-muted 5.34, 모두 4.5 이상", () => {
+    const measured = (fg: string, bg: string) => Math.round(ratio(fg, bg) * 100) / 100;
+    expect(ratio("--status-accent", "--surface-selected")).toBeGreaterThanOrEqual(4.5);
+    expect(ratio("--text-muted", "--surface-selected")).toBeGreaterThanOrEqual(4.5);
+    expect(measured("--text-muted", "--surface-selected")).toBe(5.34);
+    expect(measured("--status-accent", "--surface-selected")).toBe(7.31);
+    // 오류 · 충돌 칸 면(고정 빨강)에서도 대체 글자는 4.5 이상이다 — 옛 --status-success는 4.49였다.
+    expect(ratio("--status-accent", "--status-danger-weak")).toBeGreaterThanOrEqual(4.5);
+    expect(ratio("--text-muted", "--status-danger-weak")).toBeGreaterThanOrEqual(4.5);
+  });
+
   it("포커스 칸은 흰 바탕(--surface-base) + 안쪽 --focus-w --accent 선이다", () => {
     const rule = /\.cell:focus-visible[^{]*\{([^}]*)\}/.exec(TABLE_CSS)?.[1] ?? "";
     expect(rule).toMatch(/background:\s*var\(--surface-base\)/);

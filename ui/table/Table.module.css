@@ -268,6 +268,10 @@ th.groupHeader {
 
 .selectedRow {
   background: var(--surface-selected);
+  /* 07-12 D1 — 고른 행 면(n-100) 위에서 4.5 미만인 글자 역할을 같은 뜻의 더 진한 역할로 다시 가리킨다(§1-4 금지 쌍).
+     상태 글자(StatusTag)와 흐린 글자가 var()로 읽으므로 호출부 · 화면 CSS는 바뀌지 않는다. 새 토큰 0. */
+  --status-success: var(--status-accent);
+  --text-faint: var(--text-muted);
 }
 
 .table:not(.editable) tbody tr:hover > .cell.selectedRow {

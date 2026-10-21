@@ -1317,7 +1317,20 @@ export const PAYMENT_WEEKDAY: SettingDef<"mon" | "tue" | "wed" | "thu" | "fri"> 
   default: "fri",
 };
 
-SETTING_DEFS.push(PAYMENT_TERM_DAYS, PAYMENT_WEEKDAY);
+// 07-01 D-701: 결재 마감 = 지급일 하루 전 날 이하 가장 가까운 영업일의 이 시각(KST). 허용 밖 저장값은 기본값으로 읽어 마감 계산이
+// Invalid Date가 되지 않게 한다(문서 번호 구분자와 같은 readInvalidAsDefault 관례).
+export const PAYMENT_CUTOFF_TIME: SettingDef<string> = {
+  key: "payment.cutoff_time",
+  kind: "simple",
+  schema: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, { message: "시각 형식 오류 · 14:00처럼" }),
+  label: "결재 마감 시각",
+  hint: "HH:MM",
+  namespace: "지급",
+  default: "14:00",
+  readInvalidAsDefault: true,
+};
+
+SETTING_DEFS.push(PAYMENT_TERM_DAYS, PAYMENT_WEEKDAY, PAYMENT_CUTOFF_TIME);
 
 // 06.1-05(C3 · Q2 A · E19): 증빙 「본부 공개」가 열리는 본부 하나. 기본값이 없어 일반 시드 고리가 건너뛰고 seedMasterData가 기획본부를
 // 넣는다(없을 때만 — 운영 값을 덮지 않는다). 이력형이 아니다 — 바꾸면 그 뒤 저장하는 본부 공개 줄만 새 본부로 가고, 이미 저장한 줄은

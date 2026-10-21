@@ -15,9 +15,9 @@ function holidays(dates: readonly string[] = [], years: readonly number[] = [202
   };
 }
 
-// 승인을 기준일 아침으로 두어 마감 넘김 밀림(Task 2)이 끼지 않게 한다.
+// 승인을 기준일 전날 0시로 두어 마감 넘김 밀림(Task 2)이 끼지 않게 한다(D-749 지급일 = 기준일이면 마감이 기준일 전날 14:00).
 function resolve(input: { baseDate: string; termDays?: number; manualDate?: string | null; lookup?: HolidayLookup; cfg?: PayScheduleConfig }) {
-  const approvedAt = new Date(`${input.baseDate}T00:00:00+09:00`);
+  const approvedAt = new Date(new Date(`${input.baseDate}T00:00:00+09:00`).getTime() - 24 * 60 * 60 * 1000);
   return resolvePaySchedule({
     baseDate: input.baseDate,
     termDays: input.termDays ?? 60,

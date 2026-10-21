@@ -57,7 +57,7 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 | NOTI-03 | 조건 종류별 evaluate + `createTestConditionKind` 호환 | V4 | 알림 링크는 보임 판정 뒤 | integration | `test/integration/notify/kinds-*.test.ts` | ❌ | ⬜ pending |
 | NOTI-03 · D-716 | 사건 알림은 다음 영업일 9시 묶음에 한 번만 | — | N/A | integration | `test/integration/notify/events-window.test.ts` | ❌ | ⬜ pending |
 | NOTI-03 | `/admin/notification-rules` 누수 스캔·메뉴 레지스트리 | V4 | 권한 없는 계급 404 | unit · integration | `test/unit/admin-menu-registry.test.ts` · `test/integration/leak-scan.test.ts` | ✅ 수정 | ⬜ pending |
-| 기준 5 | `*Dto` 열거 ↔ `DTO_REGISTRY` 미매핑 0 | V4 | N/A | unit | `test/unit/dto-registry-coverage.test.ts` | ❌ W0 | ⬜ pending |
+| 기준 5 | `*Dto` 열거 ↔ `DTO_REGISTRY` 미매핑 0 (07-03 K31 — 런타임 대조) | V4 | N/A | integration · unit | `test/integration/leak-scan.test.ts`(런타임 `*Dto` ↔ `DTO_REGISTRY` 이름 대조 describe) · `test/unit/leak-scan-coverage.test.ts`(`registerDto(` 모듈이 누수 스캔 import에 있는지) | ✅ 수정 | ⬜ pending |
 | 기준 5 | 행동 로그 불변·전후 값·마스킹 | V7 | DELETE/TRUNCATE 거부 | unit · integration | `test/integration/action-log-immutable.test.ts` | ❌ | ⬜ pending |
 | 기준 5 · ADMN-10 | 계급 스모크(시드 계급 × 메뉴 노출/404, 대표 행동 로그 열림) | V4 | N/A | e2e | `CI=true pnpm playwright test --project=desktop test/e2e/role-smoke.spec.ts` | ❌ W0 | ⬜ pending |
 | 기준 5 | 관리자 폼 8개·설정·`/account` 오류 표시(§6-3·§7-2) | — | N/A | e2e(독립 DOM 감사) | `CI=true pnpm playwright test --project=desktop-settings` | 부분 ✅ | ⬜ pending |
@@ -78,7 +78,7 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 ## Wave 0 Requirements
 
 - [ ] `test/unit/payments/pay-schedule.test.ts` · `test/unit/payments/pay-cutoff.test.ts` — EXP-11·12 순수 함수(공휴일은 고정 Set 주입)
-- [ ] `test/unit/dto-registry-coverage.test.ts` — 미매핑 `*Dto` 0
+- [ ] `test/integration/leak-scan.test.ts` 런타임 `*Dto` ↔ `DTO_REGISTRY` 대조 describe · `test/unit/leak-scan-coverage.test.ts` `registerDto(` 모듈 로드 대조 — 미매핑 `*Dto` 0(07-03 K31, 기존 파일 보강)
 - [ ] `test/unit/notify/rules.test.ts` — 규칙 병합
 - [ ] `test/e2e/role-smoke.spec.ts` — 계급 스모크
 
@@ -140,6 +140,7 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 | D-729 · D-730 예산 (L58-59@ee0899f) | 막 | W4 · W5 행(+ D-747) |
 | D-728 퇴직자 잠금 풀기 (L57@ee0899f) | 막 | U1 · D-728 행 |
 | C5 웨이브 8→7 (L135@ee0899f) | 참고 | 웨이브 표 7줄 |
+| 묶음 사이 맞춤(공유 플래너, fb46980 뒤) — 기준 5 행 · Wave 0이 07-03이 없앤 `test/unit/dto-registry-coverage.test.ts`를 참조 (07-03 K31) | P2 | 07-03 경로로 바꿈 — `test/integration/leak-scan.test.ts` 런타임 대조 describe · `test/unit/leak-scan-coverage.test.ts`. 07-RESEARCH · 07-PATTERNS의 같은 참조는 조사 산출물이라 두고 계약에 「낡은 참조 — 07-03 경로가 정본」 |
 
 #### Review Feedback Deferred
 

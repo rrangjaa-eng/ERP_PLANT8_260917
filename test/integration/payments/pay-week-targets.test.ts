@@ -142,6 +142,20 @@ describe("지급 주 묶음 · 마감 gate (07-01 Task 2)", () => {
     expect(await nextUnreviewedTarget(payer, { afterExpenseId: order.at(-1) ?? "" }, deps)).toBeNull();
   }, 30_000);
 
+  it("수동 지정일이 기준일 · 오늘보다 몇 해 뒤여도 그 해 공휴일을 읽어 수동 값 그대로(예정일 계산 실패 아님 — D-742)", async () => {
+    const payer = await makePayer();
+    const manual = await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-08-01T10:00"), manual: "2029-08-10" });
+
+    const list = await listPaymentTargets(payer, {}, { today: TODAY, now: AFTER_CUTOFF });
+    expect(rowOf(list, manual)).toMatchObject({
+      scheduledPaymentDate: "2029-08-10",
+      scheduledPaymentManual: true,
+      paymentScheduleFailed: false,
+      paymentCutoffAt: kst("2029-08-09T14:00").toISOString(),
+      paymentCutoffReason: null,
+    });
+  }, 30_000);
+
   it("D-742 · NB P1-2: 작성자가 저장한 날짜(이번 주 금)는 수동 면제를 받지 못한다 — 마감 뒤 승인 → cutoff · 마감 지나 밀림", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();

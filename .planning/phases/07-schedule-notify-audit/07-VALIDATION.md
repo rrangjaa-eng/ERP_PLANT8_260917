@@ -35,8 +35,8 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 
 - **After every task commit:** `pnpm lint && pnpm typecheck` + 바뀐 단위 파일
 - **After every plan wave:** 해당 웨이브 통합 파일 → 건드린 화면 E2E(한 번에 하나). 스키마 플랜(PR-S, 웨이브마다 하나)은 `pnpm lint:sql` + `pnpm db:generate` 재생성 확인 + `pnpm exec vitest run --project unit test/unit/db/migration-journal.test.ts`(C2 — 파일 이름 · 번호 grep 대신)
-- **PR ready 때(묶음마다 한 번, D-726):** 위험 경로 묶음(PR-S · PR-AUTH · PR-PERM)은 마지막 플랜이 끝난 뒤 ready → CI 전체 한 번 → 게이트 한 번(묶음 플랜 게이트 줄 합집합). 무인 PR은 플랜마다 ready → CI 한 번. 로컬에서 전체를 되풀이하지 않는다(CLAUDE.md §5)
-- **Before `/gsd-verify-work`:** 28개 플랜의 PR(묶음 3 + 무인 · 화면)이 모두 main에 들어가고 마지막 main CI · 스테이징 배포 초록
+- **PR ready 때(묶음마다 한 번, D-726):** 위험 경로 묶음(PR-S · PR-LOG · PR-AUTH · PR-PERM)은 마지막 플랜이 끝난 뒤 ready(PR-LOG는 PR-S 머지 뒤) → CI 전체 한 번 → 게이트 한 번(묶음 플랜 게이트 줄 합집합). 무인 PR은 플랜마다 ready → CI 한 번. 로컬에서 전체를 되풀이하지 않는다(CLAUDE.md §5)
+- **Before `/gsd-verify-work`:** 28개 플랜의 PR(묶음 4 + 무인 · 화면)이 모두 main에 들어가고 마지막 main CI · 스테이징 배포 초록
 - **Max feedback latency:** 300 seconds
 
 ---
@@ -122,8 +122,8 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 |---|---|---|
 | W1 | 07-01 · 07-02(PR-S) · 07-03 · 07-04 · 07-12 | 07-01 · 03 · 04 · 12는 플랜 끝에 각자 ready → CI → 세션 머지. 07-02는 PR-S draft를 연다 |
 | W2 | 07-05(PR-PERM) · 07-06 · 07-07(PR-S) · 07-08 · 07-09(PR-AUTH) · 07-26(PR-PERM) | PR-AUTH = W2 끝에 ready → CI 한 번 → 사용자 머지. 07-08은 W2 끝 세션 머지 |
-| W3 | 07-10 · 07-11(PR-S) · 07-15(PR-PERM) · 07-16 · 07-17 | PR-PERM = W3 끝(D-722 카드 답 뒤) ready → CI 한 번 → 사용자 머지. 07-17은 세션 머지(D-727) |
-| W4 | 07-13(PR-S) · 07-14 · 07-18 · 07-20 · 07-21 · 07-27 · 07-28 | PR-S = W4 끝 ready → 직전 origin/main 반영 · 번호 겹치면 07-02 → 07 → 11 → 13 순 재생성 → `migration-journal.test.ts` 초록 → CI 한 번 → 사용자 머지. 07-21은 세션 머지(D-727). 07-28(07-16 뒤 같은 폼 파일 — 체커 1회차 A2)은 무인 화면 PR · C3 게이트 · 세션 머지 |
+| W3 | 07-10 · 07-11(PR-S) · 07-15(PR-PERM) · 07-16 · 07-17 | PR-S = W3 끝 ready(07-11 실행자) → 직전 origin/main 반영 · 번호 겹치면 07-02 → 07 → 11 순 재생성 → `migration-journal.test.ts` 초록 → CI 한 번 → 사용자 머지. PR-PERM = W3 끝(D-722 카드 답 뒤) ready → CI 한 번 → 사용자 머지. 07-17은 세션 머지(D-727) |
+| W4 | 07-13(PR-LOG) · 07-14 · 07-18 · 07-20 · 07-21 · 07-27 · 07-28 | PR-LOG = PR-S 머지 뒤 ready → 직전 origin/main 반영 · 번호 겹치면 07-13만 같은 이름으로 재생성 → `migration-journal.test.ts` 초록 → CI 한 번 → 사용자 머지. 07-21은 세션 머지(D-727). 07-28(07-16 뒤 같은 폼 파일 — 체커 1회차 A2)은 무인 화면 PR · C3 게이트 · 세션 머지 |
 | W5 | 07-19 · 07-22 | 화면 PR마다 독립 DOM 감사(`CI=true`, 375 · 320 · 768 · 1280) → CI |
 | W6 | 07-23 · 07-24 | 같음. 07-23 · 07-24는 `+ /cso` |
 | W7 | 07-25 | 최종 검수(N10 0 단언 · 계급 스모크 · 누수 스캔) |

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-21T08:30:00Z",
+  "timestamp": "2026-10-21T10:10:00Z",
   "phase": "07",
   "phase_name": "schedule-notify-audit",
   "phase_dir": ".planning/phases/07-schedule-notify-audit",
@@ -26,6 +26,12 @@
       "name": "eng R2-R15 + design U1-U18 계획 반영, 재검토 1회(BLOCKER 0), UI-SPEC approved",
       "status": "done",
       "commit": "5ab9a96"
+    },
+    {
+      "id": 6,
+      "name": "PR #258 [지시] 반영: D-726 A(07-13 → PR-LOG, PR-S W3 끝 ready), D-747 A 유지",
+      "status": "done",
+      "commit": "docs: apply R1=A (07-13 → PR-LOG)"
     }
   ],
   "remaining_tasks": [
@@ -40,24 +46,13 @@
       "status": "not_started"
     }
   ],
-  "blockers": [
-    {
-      "description": "R1·Q1 사용자 답 대기(비차단)",
-      "type": "human_action",
-      "workaround": "현행(C·A) 유지"
-    }
-  ],
+  "blockers": [],
   "async_jobs": [],
   "human_actions_pending": [
     {
       "action": "PR #258 머지",
       "context": ".claude/gates/phase-07.log 포함 — 훅이 세션 머지를 막음",
       "blocking": true
-    },
-    {
-      "action": "PR #258 R1·Q1 답",
-      "context": "D-726 머지 위상, 원가율 첫 저장 되돌리기",
-      "blocking": false
     }
   ],
   "decisions": [
@@ -70,9 +65,19 @@
       "decision": "AQ-11 no-slot: 기한 안 마지막 영업일, 마감 넘기면 다음 지급 가능 금요일",
       "rationale": "사용자 답(D-741)",
       "phase": "07"
+    },
+    {
+      "decision": "D-726 개정: 위험 경로 네 묶음 — PR-S(07-02·07·11, W3 끝) · PR-LOG(07-13, PR-S 머지 뒤) · PR-AUTH · PR-PERM, 사용자 직접 머지 4번",
+      "rationale": "PR #258 [지시] issuecomment-6313020600 (R1 → A)",
+      "phase": "07"
+    },
+    {
+      "decision": "D-747 원가율 첫 저장 되돌리기 없음(결과 줄만)",
+      "rationale": "PR #258 [지시] (Q1 → A)",
+      "phase": "07"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 [#258-04 실행]: /gsd-progress → PR #258 머지·[지시]·R1·Q1 확인 → 머지됐으면 /gsd-execute-phase 07",
-  "context_notes": "계획 게이트 통과(5ab9a96). R1=C·Q1=A 기본값. R10 대표 action_log.detail은 07-05 D-722 카드 ⑧(무답=끔). PR 묶음·머지 규칙은 07-01-PLAN.md PR 묶음 절."
+  "next_action": "새 세션 [#258-04 실행]: /gsd-progress → PR #258 머지·새 [지시] 확인 → 머지됐으면 /gsd-execute-phase 07",
+  "context_notes": "계획 게이트 통과(5ab9a96). R1=A(07-13 → PR-LOG `claude/07-pr-log`, PR-S W3 끝 ready, 사용자 머지 4번) · Q1=A. R10 대표 action_log.detail은 07-05 D-722 카드 ⑧(무답=끔). PR 묶음·머지 규칙은 07-01-PLAN.md PR 묶음 절."
 }

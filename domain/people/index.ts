@@ -5,6 +5,7 @@ import { scopeFor } from "@/domain/permissions/scope-for";
 import { project, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { buildChanges } from "@/domain/action-log/changes";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { createAccount as defaultCreateAccount } from "@/domain/auth/accounts";
 import { archive as defaultArchive } from "@/domain/archive";
@@ -396,7 +397,16 @@ export async function changePersonRole(
     });
     await assertSeatsFree(viewer, { userId, roleId, seats, today, showNames }, tx);
     await repoUpdateUserRole(viewer, userId, roleId, tx);
-    await recordAction(viewer, { actionType: "permission_change", entity: "user", entityId: userId }, { tx });
+    await recordAction(
+      viewer,
+      {
+        actionType: "permission_change",
+        entity: "user",
+        entityId: userId,
+        detail: { changes: buildChanges({ roleId: row.roleId }, { roleId }) },
+      },
+      { tx },
+    );
   });
 }
 

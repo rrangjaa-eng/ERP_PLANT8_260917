@@ -207,3 +207,36 @@ describe("evidence_vendor_* (06.1-04 D-6114)", () => {
     expect(isActionTypeEnabled).not.toHaveBeenCalled();
   });
 });
+
+// 07-04(D7 · P8): 07 새 행동 유형 다섯은 세 목록에 함께 있고, settings_change는 끌 수 없다.
+describe("07 새 행동 유형 (07-04 P8)", () => {
+  const NEW_TYPES = {
+    payment_schedule_change: "지급 예정일 변경",
+    password_reset: "비밀번호 초기화",
+    vendor_account_change: "거래처 계좌 변경",
+    vendor_confirm: "거래처 확인",
+    notification_rule_change: "알림 규칙 변경",
+  } as const;
+
+  it.each(Object.entries(NEW_TYPES))("%s가 세 배열에 함께 있고 라벨이 「%s」다", (type, label) => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain(type);
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain(type);
+    expect((ACTION_TYPE_LABELS as Record<string, string>)[type]).toBe(label);
+  });
+
+  it("settings_change가 끌 수 없는 종류이고 선택 로그 설정에서 빼도 기록된다", async () => {
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("settings_change");
+    expect(ACTION_LOG_OPTIONAL_TYPES.default as readonly string[]).not.toContain("settings_change");
+    const appendActionLog = vi.fn().mockResolvedValue(undefined);
+    await recordAction(
+      viewer,
+      { actionType: "settings_change", entity: "settings_simple", entityId: "k" },
+      { appendActionLog, isActionTypeEnabled: () => Promise.resolve(false) },
+    );
+    expect(appendActionLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("예전 저장값에 settings_change가 남아 있어도 읽기에서 그 값만 빠진다", () => {
+    expect(ACTION_LOG_OPTIONAL_TYPES.schema.parse(["settings_change", "login"])).toEqual(["login"]);
+  });
+});

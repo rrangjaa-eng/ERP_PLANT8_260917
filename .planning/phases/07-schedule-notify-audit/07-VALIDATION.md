@@ -36,7 +36,7 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 - **After every task commit:** `pnpm lint && pnpm typecheck` + 바뀐 단위 파일
 - **After every plan wave:** 해당 웨이브 통합 파일 → 건드린 화면 E2E(한 번에 하나). 스키마 플랜(PR-S, 웨이브마다 하나)은 `pnpm lint:sql` + `pnpm db:generate` 재생성 확인 + `pnpm exec vitest run --project unit test/unit/db/migration-journal.test.ts`(C2 — 파일 이름 · 번호 grep 대신)
 - **PR ready 때(묶음마다 한 번, D-726):** 위험 경로 묶음(PR-S · PR-AUTH · PR-PERM)은 마지막 플랜이 끝난 뒤 ready → CI 전체 한 번 → 게이트 한 번(묶음 플랜 게이트 줄 합집합). 무인 PR은 플랜마다 ready → CI 한 번. 로컬에서 전체를 되풀이하지 않는다(CLAUDE.md §5)
-- **Before `/gsd-verify-work`:** 27개 플랜 PR(묶음 3 + 무인 · 화면)이 모두 main에 들어가고 마지막 main CI · 스테이징 배포 초록
+- **Before `/gsd-verify-work`:** 28개 플랜의 PR(묶음 3 + 무인 · 화면)이 모두 main에 들어가고 마지막 main CI · 스테이징 배포 초록
 - **Max feedback latency:** 300 seconds
 
 ---
@@ -59,13 +59,15 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 | NOTI-03 | `/admin/notification-rules` 누수 스캔·메뉴 레지스트리 | V4 | 권한 없는 계급 404 | unit · integration | `test/unit/admin-menu-registry.test.ts` · `test/integration/leak-scan.test.ts` | ✅ 수정 | ⬜ pending |
 | 기준 5 | `*Dto` 열거 ↔ `DTO_REGISTRY` 미매핑 0 (07-03 K31 — 런타임 대조) | V4 | N/A | integration · unit | `test/integration/leak-scan.test.ts`(런타임 `*Dto` ↔ `DTO_REGISTRY` 이름 대조 describe) · `test/unit/leak-scan-coverage.test.ts`(`registerDto(` 모듈이 누수 스캔 import에 있는지) | ✅ 수정 | ⬜ pending |
 | 기준 5 | 행동 로그 불변·전후 값·마스킹 | V7 | DELETE/TRUNCATE 거부 | unit · integration | `test/integration/action-log-immutable.test.ts` | ❌ | ⬜ pending |
+| 기준 5 · R5 (Round 1 · 체커 1회차 A4) | 권한표 칸 · 정보 노출표 칸 · 계급 만들기 · 이름 · 업무/보는 범위 저장의 `permission_change`가 `detail.changes` 전후 값(`[이전 또는 null, 이후]`)을 싣고 저장과 한 트랜잭션 — 기록 실패면 값도 그대로 · 상한 · 마지막 관리자 · SelfLockout 사례 그대로 녹색(07-26, PR-PERM) | V7 | 권한 변경 감사 기록 누락 · 갈라짐 없음 | integration | `test/integration/action-log-permission-changes.test.ts`(07-26) | ❌ W0 | ⬜ pending |
 | 기준 5 · ADMN-10 | 계급 스모크(시드 계급 × 메뉴 노출/404, 대표 행동 로그 열림) | V4 | N/A | e2e | `CI=true pnpm playwright test --project=desktop test/e2e/role-smoke.spec.ts` | ❌ W0 | ⬜ pending |
 | 기준 5 | 관리자 폼 8개·설정·`/account` 오류 표시(§6-3·§7-2) | — | N/A | e2e(독립 DOM 감사) | `CI=true pnpm playwright test --project=desktop-settings` | 부분 ✅ | ⬜ pending |
 | D-723 | 로그인 IP 한도·잠금 설정 범위 | V2 | 계정별 잠금이 방어 | integration | `test/integration/auth/*.test.ts` | 부분 ✅ | ⬜ pending |
 | C2 (Round 1) | PR-S 마이그레이션 저널 가드 — idx 연속 · tag 접두 · when 증가 · SQL · 스냅숏 짝 · 고아 없음, 번호를 다시 만든 뒤에도 초록(07-02 · 07-07 · 07-11 · 07-13 스키마 태스크) | — | N/A | unit | `pnpm exec vitest run --project unit test/unit/db/migration-journal.test.ts` | ✅ 있음 | ⬜ pending |
 | EXP-11 · D-741 (Round 1) | 기한 안 지급 요일 없음 → 기한 안 마지막 영업일 · `"no-slot"` · 배지 없음 / 그날 마감 1분 넘긴 승인 → 다음 지급 가능 금요일 · `"cutoff"`(기한 넘어도) / 기한 끝 휴일 · 주말 → 앞 영업일 / 수동 지정 → 마감 면제(D-742) / `payWeekGroupLabel` 실제 요일 | — | N/A | unit | `pnpm exec vitest run --project unit test/unit/payments/pay-schedule.test.ts` | ❌ W0 | ⬜ pending |
 | EXP-12 · D-731 (Round 1) | `payRuleLine` 네 꼴(기한 안 마지막 {요일}요일 · 기한 안 마지막 영업일 · 마감 넘겨 밀림 · `결재 마감 면제`) 단위 + SC-02 · SC-03 지급 예정일 값 바로 아래 한 줄 | — | N/A | unit · e2e | `pnpm exec vitest run --project unit test/unit/payments/pay-schedule.test.ts` · `CI=true pnpm playwright test test/e2e/payment-schedule.spec.ts` | ❌ W0 | ⬜ pending |
-| J13 · N8 (Round 1) | 지출결의 `상세` — 임시 저장은 비어도 되고 제출 때 비면 `상세 · 입력`으로 거부(서버 `submitExpense`도 같은 판정) | V5 | 서버 제출 검증 | unit · e2e | 07-16이 정한 단위 파일(`test/unit/expenses/` 아래) · `CI=true pnpm playwright test test/e2e/expense-hope-date.spec.ts` | ❌ | ⬜ pending |
+| J13 · N8 (Round 1 · 체커 1회차 A2 — 07-28) | 지출결의 `상세` — 임시 저장은 비어도 되고 제출 때 비면 `상세 · 입력`으로 거부(서버 `submitExpense`도 같은 판정) · 기존 제출 시험은 `상세`를 채워 단언 그대로 녹색(07-28, 07-16에서 뗌) | V5 | 서버 제출 검증 | unit · e2e | `pnpm exec vitest run --project unit test/unit/expenses/detail-required.test.ts` · `CI=true pnpm playwright test --project=desktop test/e2e/expense-detail-required.spec.ts` | ❌ W0 | ⬜ pending |
+| R20 · EXP-11 (Round 1 · 체커 1회차 A4) | 비공개 증빙 종류(개인카드)로 올린 파일은 업로드 완료 때 `files.private_to_owner = true` — 뒤에 문서 종류를 공개로 바꿔도 목록 · 단건 열기 · 내려받기 · 결재 시트에서 올린 사람 · 전사 보는 범위만 봄, 공개 종류로 올린 파일은 false(07-27) | V4 | `files` 칸 숨김 — 서버 보임 판정(단건은 「없음」 응답) | integration | `test/integration/evidence/private-file-flag.test.ts`(07-27) | ❌ W0 | ⬜ pending |
 | R13 · N10 (Round 1) | 관리자 폼 8개 + 설정 + `/account`에서 `ui/` 밖 `select` · `input`(checkbox · radio · hidden 제외) 0 — 제외: 필터 줄 select · 표 안 셀 입력. 폼별 맡는 플랜이 자기 몫을 실측, 07-25가 최종 0 단언 | — | N/A | e2e(독립 DOM 감사) | 07-25 최종 검수 DOM 실측(`CI=true`, 파일은 07-25가 정함) | ❌ | ⬜ pending |
 | W4 · W5 · D-729 · D-730 · D-747 (Round 1) | 경영관리 예산 직접 수정(사유 필수 · 이력 `직접 수정` + 메모) · PO 감액은 예산 자동 반영 없음(증액만) · 원가율 첫 저장 → 진행 중 전부 첫 예산 줄 | V4 | `projects.budget` 쓰기 = 경영관리만, 서버 판정(D-722 표) | unit · integration · e2e | `pnpm exec vitest run --project unit test/unit/projects/budget.test.ts` · `test/integration/project-budget.test.ts` · `CI=true pnpm playwright test test/e2e/projects-budget.spec.ts` | ❌ | ⬜ pending |
 | U1 · D-728 (Round 1) | 퇴직자 행에는 잠겨 있어도 `잠금 풀기`가 렌더되지 않고, 서버 `unlockPerson`도 퇴직자를 거부 | V4 | 서버 거부(UI 숨김과 무관) | integration · e2e | 07-17이 정한 통합 파일 · `CI=true pnpm playwright test test/e2e/people-unlock-reset.spec.ts` | ❌ | ⬜ pending |
@@ -81,21 +83,24 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 - [ ] `test/integration/leak-scan.test.ts` 런타임 `*Dto` ↔ `DTO_REGISTRY` 대조 describe · `test/unit/leak-scan-coverage.test.ts` `registerDto(` 모듈 로드 대조 — 미매핑 `*Dto` 0(07-03 K31, 기존 파일 보강)
 - [ ] `test/unit/notify/rules.test.ts` — 규칙 병합
 - [ ] `test/e2e/role-smoke.spec.ts` — 계급 스모크
+- [ ] `test/integration/action-log-permission-changes.test.ts` — 권한 변경 `detail.changes` 전후 값 · 한 트랜잭션(07-26, 기준 5 · R5)
+- [ ] `test/integration/evidence/private-file-flag.test.ts` — 개인카드 증빙 `files` 칸 숨김(07-27, R20 · 새 폴더)
+- [ ] `test/unit/expenses/detail-required.test.ts` · `test/e2e/expense-detail-required.spec.ts` — `상세` 제출 필수(07-28, J13 · N8)
 
 프레임워크 설치: 없음(모두 기존). C2 가드 `test/unit/db/migration-journal.test.ts`는 이미 있다(Wave 0 아님).
 
 ---
 
-## 웨이브 · PR 묶음 (Round 1 — D-726 · D-727, 7웨이브 27플랜)
+## 웨이브 · PR 묶음 (Round 1 — D-726 · D-727, 7웨이브 28플랜)
 
 | 웨이브 | 플랜 | 검증 시점 |
 |---|---|---|
 | W1 | 07-01 · 07-02(PR-S) · 07-03 · 07-04 · 07-12 | 07-01 · 03 · 04 · 12는 플랜 끝에 각자 ready → CI → 세션 머지. 07-02는 PR-S draft를 연다 |
 | W2 | 07-05(PR-PERM) · 07-06 · 07-07(PR-S) · 07-08 · 07-09(PR-AUTH) · 07-26(PR-PERM) | PR-AUTH = W2 끝에 ready → CI 한 번 → 사용자 머지. 07-08은 W2 끝 세션 머지 |
 | W3 | 07-10 · 07-11(PR-S) · 07-15(PR-PERM) · 07-16 · 07-17 | PR-PERM = W3 끝(D-722 카드 답 뒤) ready → CI 한 번 → 사용자 머지. 07-17은 세션 머지(D-727) |
-| W4 | 07-13(PR-S) · 07-14 · 07-18 · 07-20 · 07-21 · 07-27 | PR-S = W4 끝 ready → 직전 origin/main 반영 · 번호 겹치면 07-02 → 07 → 11 → 13 순 재생성 → `migration-journal.test.ts` 초록 → CI 한 번 → 사용자 머지. 07-21은 세션 머지(D-727) |
+| W4 | 07-13(PR-S) · 07-14 · 07-18 · 07-20 · 07-21 · 07-27 · 07-28 | PR-S = W4 끝 ready → 직전 origin/main 반영 · 번호 겹치면 07-02 → 07 → 11 → 13 순 재생성 → `migration-journal.test.ts` 초록 → CI 한 번 → 사용자 머지. 07-21은 세션 머지(D-727). 07-28(07-16 뒤 같은 폼 파일 — 체커 1회차 A2)은 무인 화면 PR · C3 게이트 · 세션 머지 |
 | W5 | 07-19 · 07-22 | 화면 PR마다 독립 DOM 감사(`CI=true`, 375 · 320 · 768 · 1280) → CI |
-| W6 | 07-23 · 07-24 | 같음. 07-24는 `+ /cso` |
+| W6 | 07-23 · 07-24 | 같음. 07-23 · 07-24는 `+ /cso` |
 | W7 | 07-25 | 최종 검수(N10 0 단언 · 계급 스모크 · 누수 스캔) |
 
 - 실행은 기다리지 않는다(아직 main에 없는 depends_on 브랜치를 머지 커밋으로 품고 일함). **머지는 기다린다** — depends_on 사슬 전부가 main에 들어간 뒤 그 PR을 ready로 바꾸고 CI를 한 번 돌린다. 그래서 웨이브 끝마다 전체 CI를 돌리지 않는다.
@@ -141,10 +146,12 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 | D-728 퇴직자 잠금 풀기 (L57@ee0899f) | 막 | U1 · D-728 행 |
 | C5 웨이브 8→7 (L135@ee0899f) | 참고 | 웨이브 표 7줄 |
 | 묶음 사이 맞춤(공유 플래너, fb46980 뒤) — 기준 5 행 · Wave 0이 07-03이 없앤 `test/unit/dto-registry-coverage.test.ts`를 참조 (07-03 K31) | P2 | 07-03 경로로 바꿈 — `test/integration/leak-scan.test.ts` 런타임 대조 describe · `test/unit/leak-scan-coverage.test.ts`. 07-RESEARCH · 07-PATTERNS의 같은 참조는 조사 산출물이라 두고 계약에 「낡은 참조 — 07-03 경로가 정본」 |
+| 체커 1회차 A4(경고) — Per-Task 지도에 07-26 `action-log-permission-changes` · 07-27 `private-file-flag` 행 없음 · W6 /cso에 07-23 빠짐 | 경고 | 기준 5 · R5 행(07-26) · R20 행(07-27) · Wave 0 목록 둘 · W6 행 「07-23 · 07-24는 `+ /cso`」 |
+| 체커 1회차 A2(경고) — 07-16 Task 4(J13 · N8)를 새 07-28로 뗌 | 경고 | J13 행을 07-28 단위 · E2E 명령으로 · Wave 0 줄 · W4 행에 07-28(세션 머지) · 「28개 플랜」 · 「7웨이브 28플랜」 |
 
 #### Review Feedback Deferred
 
 | Concern | Reason |
 |---|---|
 | `nyquist_compliant` · Sign-Off 체크 | validate-phase가 실행 뒤 판정하는 칸 — 계획 단계에서 바꾸지 않음(status draft 유지) |
-| 새 행의 정확한 파일 이름 일부(J13 단위 · D-728 통합 · N10 최종 검수) | 그 플랜(07-16 · 07-17 · 07-25)의 묶음 플래너가 같은 시간에 정함 — 공유 플래너가 이름을 지어내지 않음 |
+| 새 행의 정확한 파일 이름 일부(D-728 통합 · N10 최종 검수) | 그 플랜(07-17 · 07-25)의 묶음 플래너가 같은 시간에 정함 — 공유 플래너가 이름을 지어내지 않음. J13 단위는 체커 1회차 A2로 07-28이 정해 표에 넣음 |

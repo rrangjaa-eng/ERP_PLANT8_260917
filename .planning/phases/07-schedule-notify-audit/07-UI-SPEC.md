@@ -1,7 +1,7 @@
 ---
 phase: "07"
 slug: "schedule-notify-audit"
-status: draft
+status: approved
 reviewed_at: "2026-10-21"
 revised_at: "2026-10-21"
 revision: "Round 1 — ee0899f (07-REVIEWS 반영 · 아침 카드 D-726~D-748) — /plan-design-review 재검토 1회 뒤 approved"

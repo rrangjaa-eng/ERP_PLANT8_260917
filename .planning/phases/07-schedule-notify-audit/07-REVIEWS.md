@@ -450,6 +450,10 @@ README는 「사용액=실행가 합 등」 7개 중 두 가지만 구체로 적
 
 반영 안 함: X1(K22 잠김) · X2(미채택) · X3(07 밖 `/admin/vendors` 필터 격자 — quick 후보) · X4(결함 아님).
 
+반영 커밋: d59acfb(UI-SPEC U1~U18) · 0619214(플랜 R1~R15·C1~C3) · b82ddee(화면 플랜 U1~U18). 원장 「반영 위치」 오기는 파일 기준으로 정정(SC-22·SC-19→07-18, SC-05→07-19, SC-04 결과 줄→07-24, SC-10 화면→07-21, SC-18·SC-17 ⑨⑩→07-23, SC-09→07-21, U15→07-22). C1은 원 줄(205-232)이 맞아 바꾸지 않음. R10 대표 `action_log.detail`은 노출 부여라 07-05 D-722 카드 ⑧(사용자 결정, 기본 끔)로.
+
+재검토(게이트 최대 1회, gsd-plan-checker Opus · reviews 모드): ISSUES FOUND — BLOCKER 0 · WARNING 2(07-05 완료 조건이 카드 ⑧ 끔과 모순 · 07-19 `mobile-notify-inbox.spec.ts` files 누락) · INFO 1(07-18 grep -c 줄 단위). 셋 다 반영 → 게이트 통과, UI-SPEC status approved.
+
 ## Plan-Revision Conflicts
 
 <!-- gsd:plan-revision-conflicts:begin -->

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
+import { evidenceReturnHref } from "@/lib/evidence-return";
 import { formatCount, formatKrw } from "@/lib/format-number";
 import { Button } from "@/ui/button/Button";
 import { ListEmpty, type ListEmptyAction } from "@/ui/list-empty/ListEmpty";
@@ -302,8 +303,21 @@ type ArchiveLine = { kind: "archived"; record: { id: string; version: number }; 
 
 export type EvidenceTableProps = { viewerId: string; list: EvidenceRecordList; teams: readonly EvidenceTeamOption[]; filterOptions: EvidenceFilterOptions };
 
+// 주소는 라우터가 바꾼 뒤 렌더로 다시 읽힌다 — 구독할 바깥 저장소가 없다.
+const noSubscribe = () => () => undefined;
+
 export function EvidenceTable({ viewerId, list, teams, filterOptions }: EvidenceTableProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // G-06.1-40 — S8이 출발 목록(쿼리 순서 그대로 · registered 뺌)으로 닫히게 주소에 싣는다. SidePanel은 직전 기록과 글자가 같을 때 뒤로 가기로 닫는다.
+  // useSearchParams().toString()은 `%20`을 `+`로 바꿔 글자가 어긋난다 — 수화 뒤에는 주소창 글자(location.search)를 그대로 쓴다(PR #255 Codex P2).
+  const originSearch = useSyncExternalStore(
+    noSubscribe,
+    () => window.location.search.slice(1),
+    () => searchParams.toString(),
+  );
+  const proxyHref = (rowId: string) => `/cards?new=1&evidence=${rowId}&from=${encodeURIComponent(evidenceReturnHref(originSearch ? `${pathname}?${originSearch}` : pathname))}`;
   // 결과 0건일 때 `파일 받기`의 비활성 이유 = 빈 줄(검토 P3-5).
   const emptyReasonId = useId();
   const [overlay, setOverlay] = useState<SavedOverlay | null>(null);
@@ -795,7 +809,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                       {COPY.attach}
                     </RowAction>
                   ) : row.canProxy ? (
-                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} href={`/cards?new=1&evidence=${row.id}`}>
+                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} href={proxyHref(row.id)}>
                       {COPY.proxy}
                     </RowAction>
                   ) : row.actionBlockedReason ? (
@@ -848,7 +862,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   function runKeyAction(row: Row) {
     const action = keyActionOf(row);
     if (action === "attach") openAttach(row);
-    else if (action === "proxy") router.push(`/cards?new=1&evidence=${row.id}`);
+    else if (action === "proxy") router.push(proxyHref(row.id));
     else if (action === "restore") void runRowAction(row);
   }
   const shownKeyAction = rows.map(keyActionOf).find((action) => action !== null) ?? null;

@@ -18,7 +18,7 @@ import { createIntakeManager, insertLinkFixture, insertRecordFixture, setRecordV
 import { attachEvidence } from "@/test/integration/fixtures/expenses";
 import { archiveTempRoles, insertTempRole, setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { clearEvidence, loginAs } from "./helpers/evidence";
+import { clearEvidence, holdServerAction, loginAs } from "./helpers/evidence";
 
 // 06.1-08 독립 DOM 감사(실행자가 아닌 별도 에이전트). 판정은 CI=true 프로덕션 빌드의 DOM 실측값으로만 한다(스크린샷 육안 금지).
 // 케이스마다 증빙 표를 비우고 자기 자료를 만든다(케이스끼리 기대지 않는다 — 06.1-06 감사 스펙 A/B 흔들림의 교훈).
@@ -842,4 +842,99 @@ test("P5 구매 요청 목록 — 작성자 PC · 폰 시트 · ?status=전체 �
     record("구매 처리 자격(남의 요청만) — `증빙 고르기` 0", width, "구매처리", "/cards/purchases?status=전체", n, 0, n === 0);
   }
   await pp.context().close();
+});
+
+// 06.1-15 (G-06.1-29) — 고르기로 붙인 직후 · 마지막 떼기 뒤 같은 화면에서 제출 1차가 서버 판정과 맞는다. 폭마다 새 문서(같은 견적 줄을 두 번 못 쓴다).
+test("P6 (G-06.1-29) 작성자 — 고르기 붙인 직후 · 마지막 떼기 뒤 제출 1차 × 4폭", async ({ browser, baseURL }) => {
+  test.setTimeout(900_000);
+  const role = "1팀PM(작성자)";
+  for (const width of WIDTHS) {
+    await clearEvidence();
+    const fx = await setupExpenseE2E();
+    const manager = await createIntakeManager(`감사15경영${width}`);
+    await teamPublic(manager, fx.teamId, { nameOnDocument: fx.vendorName, issuedOn: seoulToday() });
+    const expenseId = await draftDocument(fx);
+    const url = `/expenses/${expenseId}`;
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.setViewportSize({ width, height: PHONE(width) ? 700 : 900 });
+    await page.goto(url);
+    const trigger = pickTrigger(page);
+    await waitForHydration(trigger);
+    await page.waitForLoadState("networkidle");
+    const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+    // 폰(<700)에서는 expense.module.css:193 @media 안 :253-256 `.formBar kbd, .evidencePick kbd { display: none }`이 키 힌트를 숨긴다(이 변경 전부터).
+    const reasonText = PHONE(width) ? "증빙 없음 · 증빙 올리기" : "증빙 없음 · 증빙 올리기 Ctrl+U";
+    const gate = () =>
+      submit.evaluate((el) => {
+        const ids = (el.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
+        return { ariaDisabled: el.getAttribute("aria-disabled"), reason: ids.map((id) => (document.getElementById(id)?.innerText ?? "").replace(/\s+/g, " ").trim()).join(" / ") };
+      });
+    const before = await gate();
+    record("⑴ 붙이기 전 1차 aria-disabled=true · 이유 줄(폭별 글자)", width, role, url, before, { ariaDisabled: "true", reason: reasonText }, before.ariaDisabled === "true" && before.reason === reasonText);
+
+    const memo = page.getByLabel("비고");
+    await memo.fill("저장 안 한 비고");
+    await trigger.click();
+    const picker = pickDialog(page);
+    await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+    // 미리보기 요청만 붙잡는다(고르기 · 떼기 액션은 통과) — 재판정 대기 구간이 폴링 지연과 상관없이 유지된다.
+    const preview = holdServerAction(page, "preview");
+    await preview.ready;
+    await page.keyboard.press("Enter");
+    await expect(picker).toBeHidden({ timeout: 15_000 });
+    const rows = page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible").filter({ hasText: "고름" });
+    await expect(rows).toHaveCount(1, { timeout: 15_000 });
+    await preview.arrived;
+    // ⑻ 미리보기 응답이 붙잡힌 동안 한 번 읽는다 — 재판정 대기 중이면 막힘.
+    const immediate = await submit.getAttribute("aria-disabled");
+    preview.release();
+    record("⑻ 붙인 읽기 행 직후 한 번 읽은 1차 aria-disabled(재판정 대기 중 true)", width, role, url, immediate, "true", immediate === "true");
+    const focusAfterPick = await activeDescription(page);
+    record("⑺ 고르기 모달 닫힘 뒤 document.activeElement(06.1-08: 트리거 또는 떼기)", width, role, url, focusAfterPick, "button«증빙 고르기 N» / button«떼기»", /^(button«(증빙 고르기 \d+|떼기)|body)/.test(focusAfterPick) && !focusAfterPick.startsWith("body"));
+
+    const samples: { t: string; ariaDisabled: string | null; reason: string }[] = [];
+    let elapsed = 0;
+    for (const at of [0, 1500, 4500]) {
+      await page.waitForTimeout(at - elapsed);
+      elapsed = at;
+      const g = await gate();
+      samples.push({ t: `${at / 1000}s`, ...g });
+    }
+    const open = (x: { ariaDisabled: string | null; reason: string }) => x.ariaDisabled !== "true" && x.reason === "";
+    // 0s = ⑻와 같은 시점: 붙임 수 재판정 중 1차 막기(73e6017)가 의도 — 막힘이면 이유 줄은 서고, 열렸어도 통과.
+    const s0 = samples[0] as { ariaDisabled: string | null; reason: string };
+    record("⑵ 붙인 직후 0s 1차 = 재판정 대기 중 막힘 허용(⑻) 또는 열림", width, role, url, s0, "막힘(이유 줄 있음) 또는 열림(이유 줄 없음)", open(s0) || (s0.ariaDisabled === "true" && s0.reason !== ""));
+    record("⑵ 붙인 직후 1.5s·4.5s 1차 aria-disabled≠true · 이유 줄 없음", width, role, url, samples.slice(1), "모두 열림 · 이유 줄 없음", samples.slice(1).every(open));
+    const memoValue = await memo.inputValue();
+    record("⑶ 비고 칸 값 그대로", width, role, url, memoValue, "저장 안 한 비고", memoValue === "저장 안 한 비고");
+    const primary1 = await page.locator('[data-ui="primary-button"]:visible').count();
+    record("⑸ 붙인 뒤 화면 1차 DOM 수(`[data-ui=\"primary-button\"]` 보이는 것)", width, role, url, primary1, 1, primary1 === 1);
+    const ov1 = await docOverflow(page);
+    record("⑹ 붙인 뒤 문서 scrollWidth <= clientWidth", width, role, url, ov1.join("/"), "scrollWidth <= clientWidth", ov1[0] <= ov1[1]);
+
+    await page.reload();
+    const detach = page.getByRole("table", { name: "붙은 증빙" }).getByRole("button", { name: "떼기" });
+    await waitForHydration(detach.first());
+    await page.waitForLoadState("networkidle");
+    await detach.first().click();
+    const dialog = page.getByRole("dialog", { name: "증빙 떼기" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("사유").fill("잘못 고름");
+    await dialog.getByRole("button", { name: /^증빙 떼기/ }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+    // ⑻ 붙은 표가 0이 된 바로 다음 줄.
+    const immediate2 = await submit.getAttribute("aria-disabled");
+    record("⑻ 붙은 표 0 직후 한 번 읽은 1차 aria-disabled(true)", width, role, url, immediate2, "true", immediate2 === "true");
+    await page.waitForTimeout(1500);
+    const after = await gate();
+    record("⑷ 마지막 기록 뗀 뒤 1차 aria-disabled=true · 이유 줄 `증빙 없음 · 증빙 올리기`(1280·768 +` Ctrl+U`)", width, role, url, after, { ariaDisabled: "true", reason: reasonText }, after.ariaDisabled === "true" && after.reason === reasonText);
+    const focusAfterDetach = await activeDescription(page);
+    record("⑺ 떼기 모달 닫힘 뒤 document.activeElement(06.1-08: 트리거 `증빙 고르기 N`)", width, role, url, focusAfterDetach, "button«증빙 고르기 N»", /^button«증빙 고르기 \d+/.test(focusAfterDetach));
+    const primary2 = await page.locator('[data-ui="primary-button"]:visible').count();
+    record("⑸ 뗀 뒤 화면 1차 DOM 수", width, role, url, primary2, 1, primary2 === 1);
+    const ov2 = await docOverflow(page);
+    record("⑹ 뗀 뒤 문서 scrollWidth <= clientWidth", width, role, url, ov2.join("/"), "scrollWidth <= clientWidth", ov2[0] <= ov2[1]);
+    await page.context().close();
+  }
 });

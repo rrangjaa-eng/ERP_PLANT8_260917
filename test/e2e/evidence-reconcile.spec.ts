@@ -129,10 +129,12 @@ test.describe("S8 대리 등록 · S2 행 행동 배타(06.1-09 Task 3)", () => 
     }
 
     const proxy = page.getByRole("link", { name: "대리 등록", exact: true });
-    await expect(proxy).toHaveAttribute("href", `/cards?new=1&evidence=${lonely}`);
+    // G-06.1-40: 출발 목록을 싣는다
+    await expect(proxy).toHaveAttribute("href", `/cards?new=1&evidence=${lonely}&from=${encodeURIComponent("/expenses/evidence?state=unmatched")}`);
     await waitForHydration(proxy);
     await proxy.click();
-    await expect(page).toHaveURL(new RegExp(`/cards\\?new=1&evidence=${lonely}$`));
+    // G-06.1-40: 출발 목록을 싣는다
+    await expect(page).toHaveURL(new RegExp(`/cards\\?new=1&evidence=${lonely}&from=${encodeURIComponent("/expenses/evidence?state=unmatched")}$`));
     const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByText(won(t), { exact: true })).toBeVisible();
@@ -175,7 +177,8 @@ test.describe("S8 대리 등록 · S2 행 행동 배타(06.1-09 Task 3)", () => 
       const cell = evidenceCell(page, 0, EVIDENCE_COL.date);
       await focusGridCell(cell);
       await page.keyboard.press("Control+e");
-      await expect(page).toHaveURL(new RegExp(`/cards\\?new=1&evidence=${lonely}$`));
+      // G-06.1-40: 출발 목록을 싣는다
+      await expect(page).toHaveURL(new RegExp(`/cards\\?new=1&evidence=${lonely}&from=${encodeURIComponent("/expenses/evidence?state=unmatched")}$`));
       await expect(sheet).toBeVisible();
       await waitForHydration(sheet.getByRole("radio", { name: "팀 비용" }));
       if (close === "Escape") await page.keyboard.press("Escape");
@@ -187,6 +190,144 @@ test.describe("S8 대리 등록 · S2 행 행동 배타(06.1-09 Task 3)", () => 
       await expect(evidenceRows(page).first().getByRole("link", { name: "대리 등록", exact: true })).toBeFocused();
     }
     expect(await usagesOn(last4, holder.id)).toHaveLength(0);
+  });
+
+  // 06.1 UAT #40 — 출발 목록(거르개 포함)으로 닫힘 · 포커스(.planning/debug/0601-proxy-return-origin.md)
+  test("(G-06.1-40) 출발 목록이 기본 할 일 · 전체+카드여도 Esc · `취소`(링크 · Ctrl+E)가 그 주소 그대로 · 그 행 `대리 등록` 포커스로", async ({ page }) => {
+    const holder = await cardHolder();
+    const last4 = await addLotteCard({ kind: "personal", holderUserId: holder.id });
+    const manager = await loginAs(page, await proxyRole());
+    const lonely = await line(manager, last4, { total: total(), date: "2026.03.22" });
+    const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
+    const proxyLink = page.locator(`a[href*="evidence=${lonely}"]`);
+
+    for (const origin of ["/expenses/evidence", "/expenses/evidence?state=all&type=card_receipt"]) {
+      for (const way of ["link-escape", "ctrl-e-cancel"] as const) {
+        await page.goto(origin);
+        await expect(proxyLink).toHaveCount(1);
+        // G-06.1-40: 출발 목록을 싣는다
+        await expect(proxyLink).toHaveAttribute("href", `/cards?new=1&evidence=${lonely}&from=${encodeURIComponent(origin)}`);
+        if (way === "link-escape") {
+          await waitForHydration(proxyLink);
+          await proxyLink.click();
+        } else {
+          await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.date));
+          await page.keyboard.press("Control+e");
+        }
+        await expect(page).toHaveURL(new RegExp(`/cards\\?new=1&evidence=${lonely}&from=`));
+        await expect(sheet).toBeVisible();
+        await waitForHydration(sheet.getByRole("radio", { name: "팀 비용" }));
+        if (way === "link-escape") await page.keyboard.press("Escape");
+        else await sheet.getByRole("button", { name: /^취소/ }).click();
+        await expect(sheet).toBeHidden();
+        await expect.poll(() => {
+          const url = new URL(page.url());
+          return url.pathname + url.search;
+        }).toBe(origin);
+        await expect(proxyLink).toBeFocused();
+      }
+    }
+    expect(await usagesOn(last4, holder.id)).toHaveLength(0);
+  });
+
+  // PR #255 Codex 봇 P2 — 주소창의 `%20`을 useSearchParams().toString()이 `+`로 바꿔 SidePanel 정확 일치가 어긋나던 건. 닫으면 replace가 아니라 history back이어야 한다.
+  test("(G-06.1-40 공백 거르개) 공백이 든 거르개 값(`%20`)으로 연 목록에서 연 S8을 닫으면 history back으로 돌아간다", async ({ page }) => {
+    const holder = await cardHolder();
+    const last4 = await addLotteCard({ kind: "personal", holderUserId: holder.id });
+    const manager = await loginAs(page, await proxyRole());
+    const lonely = await line(manager, last4, { total: total(), date: "2026.03.23" });
+    const origin = "/expenses/evidence?state=all&type=card_receipt&q=a%20b";
+    const proxyLink = page.locator(`a[href*="evidence=${lonely}"]`);
+    const entryIndex = () => page.evaluate(() => (window as unknown as { navigation: { currentEntry: { index: number } } }).navigation.currentEntry.index);
+
+    await page.goto(origin);
+    await expect(proxyLink).toHaveCount(1);
+    // G-06.1-40: 출발 목록을 주소창 글자 그대로 싣는다(`+`로 다시 쓰지 않는다)
+    await expect(proxyLink).toHaveAttribute("href", `/cards?new=1&evidence=${lonely}&from=${encodeURIComponent(origin)}`);
+    const listIndex = await entryIndex();
+    await waitForHydration(proxyLink);
+    await proxyLink.click();
+    const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
+    await expect(sheet).toBeVisible();
+    await waitForHydration(sheet.getByRole("radio", { name: "팀 비용" }));
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    await expect.poll(entryIndex).toBe(listIndex);
+    await expect.poll(() => {
+      const url = new URL(page.url());
+      return url.pathname + url.search;
+    }).toBe(origin);
+    await expect(proxyLink).toBeFocused();
+  });
+
+  // 【(a)】 G-06.1-40 결정 — 저장도 출발 목록으로 돌아오고, 토스트가 닫히면 registered만 걷힌다(거르개 그대로).
+  test("(G-06.1-40 저장) 전체+카드에서 연 S8 저장 → 출발 + registered · 토스트 `카드 사용 등록 · {합계}` → 토스트 뒤 출발 글자 그대로 · 그 줄 `붙음`", async ({ page }) => {
+    const holder = await cardHolder();
+    const last4 = await addLotteCard({ kind: "personal", holderUserId: holder.id });
+    const manager = await loginAs(page, await proxyRole());
+    const t = total();
+    const lonely = await line(manager, last4, { total: t, date: "2026.03.25" });
+    const origin = "/expenses/evidence?state=all&type=card_receipt";
+    const proxyLink = page.locator(`a[href*="evidence=${lonely}"]`);
+
+    await page.goto(origin);
+    await expect(proxyLink).toHaveCount(1);
+    await waitForHydration(proxyLink);
+    await proxyLink.click();
+    const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
+    await expect(sheet).toBeVisible();
+    const team = sheet.getByRole("radio", { name: "팀 비용" });
+    await waitForHydration(team);
+    await team.check();
+    await sheet.getByRole("button", { name: /^카드 사용 등록/ }).click();
+    await expect(page).toHaveURL(new RegExp(`${origin.replace("?", "\\?")}&registered=[0-9a-f-]{36}$`));
+    await expect(page.getByRole("status").filter({ hasText: `카드 사용 등록 · ${won(t)}` })).toBeVisible();
+    // 토스트가 4초 뒤 저절로 닫히면 registered만 걷힌다.
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return url.pathname + url.search;
+      }, { timeout: 15_000 })
+      .toBe(origin);
+    await expect(evidenceRows(page)).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "대리 등록", exact: true })).toHaveCount(0);
+    expect(await usagesOn(last4, holder.id)).toHaveLength(1);
+  });
+
+  // PR #256 Codex 봇 P2 — 토스트를 닫을 때 쿼리를 URLSearchParams로 다시 써 `%20`이 `+`로, 겹친 키 순서가 묶여 바뀌던 건. 날 쿼리에서 registered만 걷어야 한다.
+  test("(G-06.1-40 날 쿼리) `%20` · 섞인 겹친 키로 착지해 토스트를 닫으면 — registered만 걷히고 쿼리 글자는 그대로", async ({ page }) => {
+    const holder = await cardHolder();
+    const last4 = await addLotteCard({ kind: "personal", holderUserId: holder.id });
+    await loginAs(page, await proxyRole());
+    const registeredId = await cardUsage(holder, last4, 10_000, null);
+    const raw = "state=all&q=a%20b&x=1&type=card_receipt&x=2";
+
+    await page.goto(`/expenses/evidence?${raw}&registered=${registeredId}`);
+    const toast = page.getByRole("status").filter({ hasText: "카드 사용 등록 · " });
+    await expect(toast).toBeVisible();
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return url.pathname + url.search;
+      }, { timeout: 15_000 })
+      .toBe(`/expenses/evidence?${raw}`);
+  });
+
+  // 열린 리디렉션 — 남이 만든 `from`은 증빙 목록이 아니면 지금 닫을 곳으로 떨어진다(T-06.1-16-01).
+  test("(G-06.1-40 적대 from) `from=//evil.example/x`로 연 S8을 Esc로 닫으면 같은 출처 `/expenses/evidence?state=unmatched`", async ({ page }) => {
+    const holder = await cardHolder();
+    const last4 = await addLotteCard({ kind: "personal", holderUserId: holder.id });
+    const manager = await loginAs(page, await proxyRole());
+    const lonely = await line(manager, last4, { total: total(), date: "2026.03.24" });
+    await page.goto(`/cards?new=1&evidence=${lonely}&from=${encodeURIComponent("//evil.example/x")}`);
+    const appOrigin = new URL(page.url()).origin;
+    const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
+    await expect(sheet).toBeVisible();
+    await waitForHydration(sheet.getByRole("radio", { name: "팀 비용" }));
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    await expect(page).toHaveURL(/\/expenses\/evidence\?state=unmatched$/);
+    expect(new URL(page.url()).origin).toBe(appOrigin);
   });
 
   test("완화 후보가 전부 막힌 줄 → `붙이기` · `대리 등록` DOM 0 · 행 행동 자리 `증빙 있음 · {번호}` 글자", async ({ page }) => {

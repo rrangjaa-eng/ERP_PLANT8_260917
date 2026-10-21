@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { corpCardUsages, corpCards, evidenceRecordLinks, evidenceRecords } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
@@ -42,7 +42,7 @@ async function pageAs(browser: Browser, who: { email: string; password: string }
 }
 
 async function usage(holder: Viewer, last4: string, total: number, approvalNo: string | null, usedOn = "2026-04-30"): Promise<string> {
-  const [card] = await db.select({ id: corpCards.id }).from(corpCards).where(eq(corpCards.numberLast4, last4)).limit(1);
+  const [card] = await db.select({ id: corpCards.id }).from(corpCards).where(and(eq(corpCards.numberLast4, last4), eq(corpCards.holderUserId, holder.id))).limit(1);
   if (!card) throw new Error("카드 없음");
   const input: CardUsageInput = { corpCardId: card.id, usedOn, merchantVendorId: null, total: { currency: "KRW", amount: total, fxRate: 1 }, evidenceTypeCode: "card_receipt", linkKind: "team_cost" };
   const created = await createCardUsage(holder, input, await precheckCardUsage(holder, input));

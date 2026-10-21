@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { buildChanges } from "@/domain/action-log/changes";
 import { RETIRED_SETTING_KEYS, SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
@@ -10,9 +11,14 @@ import {
   listSettingHistory as defaultListSettingHistory,
   validateEffectiveFrom,
   assertNewPairsActive,
+  effectiveValueAt,
   SettingNotFoundError,
 } from "@/domain/settings/registry";
-import { applySettingsImport as defaultApplySettingsImport } from "@/repositories/settings";
+import {
+  applySettingsImport as defaultApplySettingsImport,
+  findSimpleValues as repoFindSimpleValues,
+  listHistory as repoListHistory,
+} from "@/repositories/settings";
 import { hasBusinessRecordsBefore } from "@/repositories/business-records";
 import { assertSeqStartNotLowered } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
@@ -203,15 +209,46 @@ export async function importSettings(
   // 트랜잭션에서 지난다. 하나라도 거부되면 트랜잭션 전체가 되돌아가 아무것도 적용되지 않는다.
   const applySettingsImport = deps?.applySettingsImport ?? defaultApplySettingsImport;
   const now = new Date();
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
     for (const item of simple) await assertSeqStartNotLowered(viewer, item.key, item.value, now, tx);
-    await applySettingsImport(viewer, { simple, historized }, tx);
-  });
 
-  const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, {
-    actionType: "settings_change",
-    entity: "settings",
-    detail: { format: "json", scope: "import" },
+    // 07-04(R5): 적용 전 값을 같은 tx에서 읽어 바뀐 키만 changes에 싣는다. 이력형은 「키@적용 시작일」 칸이고,
+    // 이미 있는 (키, 적용 시작일)은 가져오기가 건너뛰므로 싣지 않는다.
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    const storedRows = await repoFindSimpleValues(viewer, simple.map((item) => item.key), tx);
+    const stored = new Map(storedRows.map((row) => [row.key, row.value]));
+    for (const item of simple) {
+      const def = SETTING_DEFS.find((candidate) => candidate.key === item.key);
+      before[item.key] = stored.has(item.key) ? stored.get(item.key) : (def?.default ?? null);
+      after[item.key] = item.value;
+    }
+    for (const item of historized) {
+      const def = SETTING_DEFS.find((candidate) => candidate.key === item.key);
+      if (!def) continue;
+      const rows = await repoListHistory(viewer, item.key, tx);
+      if (rows.some((row) => row.effectiveFrom === item.effectiveFrom)) continue;
+      // PR #259 Codex P2: 이전 값은 저장된 행 + 같은 가져오기의 새 행(건너뛸 행 제외) 중 이 날짜 앞의 것으로 정한다 —
+      // 앞선 가져오기 행과 같은 값이면 buildChanges가 바뀐 칸으로 싣지 않는다.
+      const storedDates = new Set(rows.map((row) => row.effectiveFrom));
+      const earlier = [...rows, ...historized.filter((other) => other.key === item.key && !storedDates.has(other.effectiveFrom))]
+        .filter((row) => row.effectiveFrom < item.effectiveFrom)
+        .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+      const column = `${item.key}@${item.effectiveFrom}`;
+      before[column] = effectiveValueAt(def, earlier, item.effectiveFrom);
+      after[column] = item.value;
+    }
+
+    await applySettingsImport(viewer, { simple, historized }, tx);
+    await recordAction(
+      viewer,
+      {
+        actionType: "settings_change",
+        entity: "settings",
+        detail: { format: "json", scope: "import", changes: buildChanges(before, after) },
+      },
+      { tx },
+    );
   });
 }

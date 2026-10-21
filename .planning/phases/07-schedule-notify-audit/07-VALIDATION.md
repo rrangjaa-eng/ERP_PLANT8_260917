@@ -72,6 +72,18 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 | W4 · W5 · D-729 · D-730 · D-747 (Round 1) | 경영관리 예산 직접 수정(사유 필수 · 이력 `직접 수정` + 메모) · PO 감액은 예산 자동 반영 없음(증액만) · 원가율 첫 저장 → 진행 중 전부 첫 예산 줄 | V4 | `projects.budget` 쓰기 = 경영관리만, 서버 판정(D-722 표) | unit · integration · e2e | `pnpm exec vitest run --project unit test/unit/projects/budget.test.ts` · `test/integration/project-budget.test.ts` · `CI=true pnpm playwright test test/e2e/projects-budget.spec.ts` | ❌ | ⬜ pending |
 | U1 · D-728 (Round 1) | 퇴직자 행에는 잠겨 있어도 `잠금 풀기`가 렌더되지 않고, 서버 `unlockPerson`도 퇴직자를 거부 | V4 | 서버 거부(UI 숨김과 무관) | integration · e2e | 07-17이 정한 통합 파일 · `CI=true pnpm playwright test test/e2e/people-unlock-reset.spec.ts` | ❌ | ⬜ pending |
 | R1 · D-726 (Round 1) | PR 묶음 차이 검사 — 묶음 PR은 ready 전 `git diff --name-only origin/main`이 그 묶음 플랜 files_modified(+ `.planning/`)만, 무인 PR은 `git diff --name-only origin/main -- db/ domain/auth/ domain/permissions/`가 빈 출력 | V14 | 위험 경로가 세션 머지 PR에 섞이지 않음 | shell | `git diff --name-only origin/main -- db/ domain/auth/ domain/permissions/` (무인 PR: 빈 출력) | — | ⬜ pending |
+| EXP-12 · R15 (Round 2 — 07-01 · 07-16) | 일정 계산 상한 가드 오류가 그 행만 `failed`(대체 예정일 = 수동 ?? 기한 · gate `예정일 계산 실패` · 머리글 `예정일 계산 실패`)이고 다른 행은 정상 — 목록 전체 500 없음 · 화면은 그 행 2행(폰 P2 맨 앞)에 danger 글자 | — | N/A | unit · grep | `pnpm exec vitest run --project unit test/unit/payments/pay-cutoff.test.ts`(「상한 가드 오류 행만 failed」) · 07-16 `grep -c "paymentScheduleFailed" "app/(app)/expenses/payment-targets-table.tsx"` | ❌ W0 | ⬜ pending |
+| EXP-11 · R7 (Round 2 — 07-01 · 07-16) | W1 지급 목록 E2E는 예정일 값 · 순서만 — 배지 · 결재 중 · `합계 제외` 단언은 07-16이 처음 | — | N/A | grep | 07-01 `grep -cE "마감 지나 밀림\|수동 지정\|합계 제외" test/e2e/payment-schedule.spec.ts` == 0 · 07-16 `test/e2e/payment-move-this-week.spec.ts` >= 1 | ❌ | ⬜ pending |
+| D-726 · R2 (Round 2 — 07-01 · 07-02 · 07-13) | PR-S 재생성 뒤 custom SQL 본문 보존 — `pnpm db:generate` 「No schema changes」 + 번호 접두사를 뗀 재생성 전후 SQL 본문 diff 빈 출력 | — | N/A | shell | `pnpm db:generate`(마지막 줄 `No schema changes`) · 재생성 전 보관본과 `db/migrations/*_phase7_*.sql` 본문 `diff` 빈 출력(PR-S ready 단계) | — | ⬜ pending |
+| D-726 · R3 (Round 2 — 07-02) | 검증 마이그레이션 머리주석에 같은 Job 이유 · 잠금 상한 | — | N/A | grep | `grep -cE "statement_timeout\|같은 트랜잭션" db/migrations/*_phase7_payment_schedule_validate.sql` >= 2 | ❌ | ⬜ pending |
+| 기준 5 · R4 (Round 2 — 07-13) | 끌 수 없는 행동 종류(UNPRUNABLE 여섯) 행에 정리 표시 UPDATE → P0001 · 표류 가드(마이그레이션 SQL ⊇ `UNPRUNABLE_ACTION_TYPES`) | V7 | DB 트리거가 앱 밖 UPDATE도 거부 | integration | `pnpm exec vitest run --project integration test/integration/schema/action-log-immutable.test.ts` | ❌ | ⬜ pending |
+| NOTI-03 · R6 (Round 2 — 07-10) | 받는 계급 추가로 후보 대량 → tick당 insert ≤ batchMax(받는 사람 합 기준) · 나머지 다음 tick · 사람당 하루 메일 한 통 이하(동작 불변) | — | N/A | integration | `pnpm exec vitest run --project integration test/integration/notify/rules-merge.test.ts` | ❌ | ⬜ pending |
+| NOTI-03 · R8 (Round 2 — 07-10) | 종류 평가가 tick 잠금 tx 위에서 읽음(`ctx.tx` pid = 잠금 pid) | — | N/A | integration | `pnpm exec vitest run --project integration test/integration/notify/event-window.test.ts` | ❌ | ⬜ pending |
+| EXP-12 · R9 (Round 2 — 07-10) | 종류 하나가 던진 날 → `evaluation_failed` · 임박 알림 행은 생기고 메일 보류 → 같은 날 수동 재실행으로 풀림(보류 범위 불변) · `docs/OPERATIONS.md` 재실행 절차 | — | N/A | integration · grep | `pnpm exec vitest run --project integration test/integration/notify/pay-week-alert.test.ts` · `grep -c "notify.condition_failed" docs/OPERATIONS.md` >= 1 | ❌ | ⬜ pending |
+| 기준 5 · ADMN-10 · R10 (Round 2 — 07-25 · 07-05) | `admin.action-log` view 있고 `action_log.detail` 꺼진 계급 → 404(500 아님) · 스모크 대표 행동 로그 = 07-05 카드 ⑧ 켬이면 200 + 행 1개 이상 / 끔이면 404 | V4 | 정보 항목 없으면 조회 거부 → 404 | e2e | `CI=true pnpm playwright test --project=desktop test/e2e/action-log.spec.ts test/e2e/role-smoke.spec.ts` | ✅ 수정 | ⬜ pending |
+| U1 · D-728 · R11 (Round 2 — 07-17) | 퇴직 거부는 domain `unlockPerson` 안 — 퇴직 대상이면 `ForbiddenError` · 주입 `unlockAccount` 호출 0회 · 술어 `isRetiredOn` 하나를 `canUnlock` · 목록 `퇴직`이 공유 | V4 | 서버(domain) 거부 | unit | `pnpm exec vitest run --project unit test/unit/domain/people-unlock-retired.test.ts` | ❌ | ⬜ pending |
+| NOTI-03 · R12 (Round 2 — 07-19) | 알림함 결재 차례 50행 · 5행 쿼리 수 같음(N+1 없음) · 50행 < 5000ms | — | N/A | integration | `pnpm exec vitest run --project integration test/integration/notify/inbox-links.test.ts` | ❌ | ⬜ pending |
+| NOTI-03 · R13 (Round 2 — 07-22 · 07-23) | `CONDITION_KINDS` 순서 = SC-07 표 순서에서 등록된 것만(계좌 바뀜 = `quote-nudge` 뒤 · `orphan-evidence` 앞, 수금 지연 = 끝) | — | N/A | integration | `pnpm exec vitest run --project integration test/integration/notify/collection-overdue.test.ts test/integration/notify/vendor-account-changed.test.ts` | ❌ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -155,3 +167,12 @@ E2E(건드린 스펙만, CI=true): `flock /tmp/plant8-erp-test.lock sh -c 'pnpm 
 |---|---|
 | `nyquist_compliant` · Sign-Off 체크 | validate-phase가 실행 뒤 판정하는 칸 — 계획 단계에서 바꾸지 않음(status draft 유지) |
 | 새 행의 정확한 파일 이름 일부(D-728 통합 · N10 최종 검수) | 그 플랜(07-17 · 07-25)의 묶음 플래너가 같은 시간에 정함 — 공유 플래너가 이름을 지어내지 않음. J13 단위는 체커 1회차 A2로 07-28이 정해 표에 넣음 |
+
+### Round 2 — d9b427f
+
+#### Review Feedback Addressed
+
+| Concern | Severity | How Addressed |
+|---|---|---|
+| eng-review R2 · R3 · R4 · R6 · R7 · R8 · R9 · R10 · R11 · R12 · R13 · R15 — 새 시험 · 확인 명령 | 참고 | Per-Task 지도에 Round 2 행 열둘(R7 · R15 · R2 · R3 · R4 · R6 · R8 · R9 · R10 · R11 · R12 · R13) — 시험 파일 · 명령은 각 플랜 `<verify>` · 수락 기준과 같다 |
+| R1 · R5 · R14 · C1~C3 | 참고 | 시험 없음(문서 · 절차 · 사실 정정) — 지도 행 없음. R1은 07-01 지도 · ROADMAP, R5는 07-01 머지 규칙 |

@@ -59,6 +59,16 @@ import "@/domain/evidence-records/attach";
 import "@/domain/evidence-records/linked";
 import "@/domain/evidence-records/pool";
 import "@/app/(app)/expenses/evidence/attach/actions.registry";
+import "@/domain/action-log";
+import "@/domain/approvals/dto";
+import "@/domain/corp-card-usages/link-targets";
+import "@/domain/evidence/dto";
+import "@/domain/expenses/dto";
+import "@/domain/expenses/pick";
+import "@/domain/leave/dto";
+import "@/domain/pre-settle-check";
+import "@/domain/people/seat-rules";
+import "@/domain/settlements/dto";
 import {
   createFieldDefinition,
   FIELD_DEFINITION_ADMIN_DTO_FIELDS,
@@ -772,5 +782,119 @@ describe("직원 지급 계좌 축 — 계좌 칸은 지급 계좌 DTO에만, �
       expect(text).not.toMatch(/account(Bank|Holder|NumberEncrypted|NumberLast4)/);
       for (const value of ["누수은행", "누수예금주", "leak-cipher-text", "4321"]) expect(text).not.toContain(value);
     }
+  });
+});
+
+// 07-03(R1 · K31 · ROADMAP 기준 5 Issue 11) — `domain/`의 `export type …Dto`가 전부 DTO 레지스트리로 덮인다.
+// 등록 이름은 정적으로 긁지 않는다: registerDto는 객체 인자이고 domain/certs/events.ts는 반복문으로 등록한다.
+// 위쪽 import가 등록 모듈을 전부 로드한 뒤의 런타임 DTO_REGISTRY(배열)가 정본이다.
+// (모듈이 로드되는지는 test/unit/leak-scan-coverage.test.ts가 지킨다.)
+import { readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+// 규칙 ② 밖의 실제 다른 이름만: Dto 타입 이름 → 레지스트리 등록 이름.
+// 값은 그 타입이 실려 나가는(또는 그 타입을 감싸는) 등록 DTO다 — 필드의 정보 항목이 그 값을 거른다.
+const DTO_TYPE_TO_REGISTRY_NAME: Record<string, string> = {
+  CardOptionDto: "CardUsageCardOptionDto", // 같은 CARD_OPTION_SPEC으로 등록 — 이름만 다르다
+  IssueRequestBoardDto: "IssueRequestDto", // IssueRequestDto & { 프로젝트 · 요청자 · 그룹 } — 투영은 IssueRequestDto 명세
+  PreSettleExpenseRowDto: "PreSettleCheckDto", // 정산 전 점검 DTO의 행(금액 칸은 PRE_SETTLE_CHECK_DTO_SPEC)
+  PreSettleLineRowDto: "PreSettleCheckDto",
+  PreSettleRevenueDto: "PreSettleCheckDto",
+  RevenueEntryDto: "RevenueDto", // RevenueDto.issuedEntries · paidEntries의 원소
+  CertSubmissionGroupDto: "CertSubmissionReconcileDto", // 경품별 묶음 — 사람 값은 안의 대조 줄(rows)이 싣는다
+  MoneyDto: "QuoteLineDto", // 금액 값 객체 — QuoteLineDto · RevenueDto 안에서 실려 나간다
+  MoneyInputDto: "QuoteLineDto", // MoneyDto의 입력 쪽 부분(MoneyDto = MoneyInputDto & { amountKrw })
+  SeatHolderDto: "SeatDuplicatesDto", // SeatDuplicatesDto.teams · orgUnits의 원소
+};
+
+// 레지스트리에 올리지 않는 타입 → 이유(화면 내부 조립용 · 다른 DTO의 부분 타입 등). 이유 없는 면제는 허용하지 않는다.
+const DTO_COVERAGE_EXEMPT: Record<string, string> = {
+  FieldDefinitionAdminDto: "관리 메타데이터 — 정보 항목이 없고 위 MENU_GATED_DTOS 축(메뉴 view 게이트)이 계급마다 덮는다",
+  FieldDefinitionDto: "구조 메타데이터(어떤 칸이 있는지) — 사람 단위 값이 없고 project()를 거치지 않는다(domain/vendors/index.ts 주석)",
+  GridDto: "권한 · 노출 격자(계급 × 메뉴/정보 항목의 참/거짓) — 사람 단위 값이 없고 admin.permissions · admin.visibility 메뉴 view 뒤에서만 나간다",
+};
+
+function listDomainDtoTypeNames(): string[] {
+  const names = new Set<string>();
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+        for (const match of readFileSync(full, "utf8").matchAll(/export type (\w+Dto)\b/g)) names.add(match[1] as string);
+      }
+    }
+  };
+  walk(resolve(process.cwd(), "domain"));
+  return [...names].sort();
+}
+
+// 덮이지 않는 `*Dto` 타입 이름을 돌려준다 — 이름 그대로 · Dto를 뗀 첫 글자 소문자 · 명시 대응 표 · 이유 있는 면제 중 하나.
+function unmappedDtoTypes(
+  typeNames: readonly string[],
+  registeredNames: readonly string[],
+  typeMap: Record<string, string>,
+  exempt: Record<string, string>,
+): string[] {
+  const registered = new Set(registeredNames);
+  return typeNames.filter((type) => {
+    if (registered.has(type)) return false;
+    const stem = type.slice(0, -"Dto".length);
+    if (registered.has(stem.charAt(0).toLowerCase() + stem.slice(1))) return false;
+    if (typeMap[type] !== undefined && registered.has(typeMap[type])) return false;
+    if (exempt[type] !== undefined && exempt[type].trim() !== "") return false;
+    return true;
+  });
+}
+
+describe("`*Dto` 타입 ↔ DTO 레지스트리 대조 — 미매핑 0 (07-03 · K31)", () => {
+  const typeNames = listDomainDtoTypeNames();
+  const registeredNames = DTO_REGISTRY.map((entry) => entry.name);
+
+  it("검출기가 살아 있다 — 타입 이름 · 등록 이름을 모두 찾았다", () => {
+    expect(typeNames.length).toBeGreaterThan(0);
+    expect(registeredNames.length).toBeGreaterThan(0);
+  });
+
+  it("덮이지 않는 `*Dto` 타입이 없다", () => {
+    const unmapped = unmappedDtoTypes(typeNames, registeredNames, DTO_TYPE_TO_REGISTRY_NAME, DTO_COVERAGE_EXEMPT);
+    expect(unmapped, `레지스트리에 없는 *Dto 타입: ${unmapped.join(", ")}`).toEqual([]);
+  });
+
+  it("등록 하나를 빼면 그 이름을 쓰는 실제 타입이 미매핑으로 잡힌다(대조가 빈 시험이 아니다)", () => {
+    expect(typeNames).toContain("EvidenceFileDto");
+    expect(registeredNames).toContain("evidenceFile");
+    const without = registeredNames.filter((name) => name !== "evidenceFile");
+    expect(unmappedDtoTypes(typeNames, without, DTO_TYPE_TO_REGISTRY_NAME, DTO_COVERAGE_EXEMPT)).toContain("EvidenceFileDto");
+  });
+
+  it("대응 표 · 면제 표의 키가 실제 `*Dto` 타입 이름이다(죽은 항목 0)", () => {
+    const known = new Set(typeNames);
+    const dead = [...Object.keys(DTO_TYPE_TO_REGISTRY_NAME), ...Object.keys(DTO_COVERAGE_EXEMPT)].filter((name) => !known.has(name));
+    expect(dead, `죽은 항목: ${dead.join(", ")}`).toEqual([]);
+  });
+
+  it("대응 표의 값은 실제 등록 이름이고 면제마다 이유가 있다", () => {
+    const registered = new Set(registeredNames);
+    const badTargets = Object.entries(DTO_TYPE_TO_REGISTRY_NAME).filter(([, target]) => !registered.has(target));
+    expect(badTargets.map(([type]) => type), "등록 이름이 아닌 대응 값").toEqual([]);
+    const noReason = Object.entries(DTO_COVERAGE_EXEMPT).filter(([, reason]) => reason.trim() === "");
+    expect(noReason.map(([type]) => type), "이유 없는 면제").toEqual([]);
+  });
+
+  it("DTO_REGISTRY 길이가 registerDto( 정적 호출 지점 수 이상이다(반복문 등록이 있어 같거나 크다)", () => {
+    let callSites = 0;
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) && entry.name !== "dto-registry.ts") {
+          callSites += readFileSync(full, "utf8").match(/\bregisterDto\(/g)?.length ?? 0;
+        }
+      }
+    };
+    walk(resolve(process.cwd(), "domain"));
+    walk(resolve(process.cwd(), "app"));
+    expect(DTO_REGISTRY.length).toBeGreaterThanOrEqual(callSites);
   });
 });

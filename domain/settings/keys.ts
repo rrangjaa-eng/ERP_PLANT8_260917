@@ -1294,6 +1294,31 @@ export const PAYMENT_METHOD_EVIDENCE_PAIRS: SettingDef<{ method: string; evidenc
 
 SETTING_DEFS.push(EVIDENCE_REQUIRED, EVIDENCE_PREPAID_DUE_DAYS, PURCHASE_ONLINE_VENDOR_NAME, PAYMENT_METHOD_EVIDENCE_PAIRS);
 
+// 07-01(J2 · D-715): 자동 지급 예정일 · 결재 마감의 회사 기본값 — domain/payments/pay-schedule-load.ts가 읽는다(260907 050_seed_settings.sql:218-221 같은 이름).
+// 회사 기본 기한 1~365는 UI-SPEC SC-04(거래처 기한 1~180은 07-02 · 07-20).
+export const PAYMENT_TERM_DAYS: SettingDef<number> = {
+  key: "payment.term_days",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(365),
+  label: "지급 기한 일수",
+  hint: "1~365",
+  namespace: "지급",
+  unitLabel: "일",
+  default: 60,
+};
+
+export const PAYMENT_WEEKDAY: SettingDef<"mon" | "tue" | "wed" | "thu" | "fri"> = {
+  key: "payment.weekday",
+  kind: "simple",
+  schema: z.enum(["mon", "tue", "wed", "thu", "fri"]),
+  label: "지급 요일",
+  namespace: "지급",
+  optionLabels: { mon: "월", tue: "화", wed: "수", thu: "목", fri: "금" },
+  default: "fri",
+};
+
+SETTING_DEFS.push(PAYMENT_TERM_DAYS, PAYMENT_WEEKDAY);
+
 // 06.1-05(C3 · Q2 A · E19): 증빙 「본부 공개」가 열리는 본부 하나. 기본값이 없어 일반 시드 고리가 건너뛰고 seedMasterData가 기획본부를
 // 넣는다(없을 때만 — 운영 값을 덮지 않는다). 이력형이 아니다 — 바꾸면 그 뒤 저장하는 본부 공개 줄만 새 본부로 가고, 이미 저장한 줄은
 // 저장 당시 본부(visible_org_unit_id)에 남는다. 값이 없으면 증빙 화면이 본부 선택지를 숨긴다(06.1-05 PA-DIV-UNSET).

@@ -27,6 +27,8 @@ import { addDays, kstDayStart } from "@/lib/kst-date";
 import { findTransferFileTimes } from "@/repositories/action-log";
 import { canExportBankTransferFile } from "@/domain/payments/transfer-gate";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
+import { loadPaySchedules } from "@/domain/payments/pay-schedule-load";
+import type { PaySchedule } from "@/domain/payments/pay-schedule";
 
 // 06-15(EXP-09 · UI-SPEC S1): 지급 대상 목록 — 결재 통과 · 지급 전 · 종결 아님 지출결의. 행마다 고를 수 있는지(selectable)와 이유는
 // 06-04 resolveExpenseActionRow(P4 = 고를 수 있음)가 정하고, 그 입력은 문서 화면(getPaymentView)과 같은 게이트 둘(payment.evidence-required ·
@@ -65,6 +67,9 @@ export type JudgedPaymentTarget = {
   // 「파일만 있음」 — 파일 서식 증빙 종류 ∧ 살아 있는 파일 ≥ 1 ∧ 살아 있는 붙임 0 ∧ 면제 아님(06.1-10 · 06.1-12 묶음 읽기 결과만).
   fileOnly: boolean;
 };
+
+// 07-01(D-715): 지급 일정(유효 예정일 = 수동 지정 ?? 자동)이 붙은 판정 — 목록 · 정렬 · 묶음 · 「다음 확인 전」이 이 값 하나를 쓴다.
+export type ScheduledPaymentTarget = JudgedPaymentTarget & { schedule: PaySchedule };
 
 type JudgeContext = { shared: PaymentShared; today: string; amountVisible: boolean };
 
@@ -154,14 +159,26 @@ async function assertPayer(viewer: Viewer): Promise<void> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
 }
 
-export type PaymentTargetDeps = Partial<Pick<PaymentSharedDeps, "loadTaxRates">> & { today?: string; shared?: PaymentShared };
+export type PaymentTargetDeps = Partial<Pick<PaymentSharedDeps, "loadTaxRates">> & { today?: string; now?: Date; shared?: PaymentShared };
+
+// 07-01(D-715): 판정 행마다 지급 일정을 한 번에 붙이고 유효 예정일 → 번호 → id로 줄 세운다(목록이 메모리 전체라 도메인이 다시 정렬 —
+// repositories/payment-targets.ts의 SQL 순서는 저장 칸 기준 선순서일 뿐이다).
+async function withSchedules(viewer: Viewer, judged: readonly JudgedPaymentTarget[], today: string, now: Date): Promise<ScheduledPaymentTarget[]> {
+  const schedules = await loadPaySchedules(viewer, judged.map((target) => target.row), { today, now });
+  return judged
+    .flatMap((target) => {
+      const schedule = schedules.get(target.row.id);
+      return schedule ? [{ ...target, schedule }] : [];
+    })
+    .sort((a, b) => compareTargetKey(targetKeyOf(a), targetKeyOf(b)));
+}
 
 // 쪽 자르기 전 단계 전부(E-31) — 권한 · 공유 읽기 · 보임 · 판정 · 증빙 필터. 06-20 · 06-23이 쪽 없이 한 번 부른다.
 export async function listAllPaymentTargets(
   viewer: Viewer,
   input: { team?: string | null; evidence?: PaymentEvidenceFilter | null; q?: string | null },
   deps?: PaymentTargetDeps,
-): Promise<JudgedPaymentTarget[]> {
+): Promise<ScheduledPaymentTarget[]> {
   await assertPayer(viewer);
   const today = deps?.today ?? seoulToday();
   const shared = deps?.shared ?? (await loadPaymentShared(viewer, deps?.loadTaxRates ? { loadTaxRates: deps.loadTaxRates } : undefined));
@@ -169,7 +186,7 @@ export async function listAllPaymentTargets(
   // 06.5 D-6508: 검색 열은 지급 대상 보기의 DTO 열(기안자 이름 없음 — D2) × 정보 항목. 보는 범위는 visibleRows가 그 뒤에 거른다(AND).
   const search = await buildExpenseSearch(viewer, "paymentTargets", input.q);
   const rows = await visibleRows(viewer, await listPaymentTargetRows(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, teamId, ...(search ? { search } : {}) }), today);
-  const judged = await judgeTargets(viewer, rows, { shared, today, amountVisible: await visible(viewer, "expense.amount") });
+  const judged = await withSchedules(viewer, await judgeTargets(viewer, rows, { shared, today, amountVisible: await visible(viewer, "expense.amount") }), today, deps?.now ?? new Date());
   const filter = PAYMENT_EVIDENCE_FILTERS.find((candidate) => candidate.value === input.evidence);
   if (!filter) return judged;
   return filter.row === null ? judged.filter((target) => target.fileOnly) : judged.filter((target) => target.bar.row === filter.row);
@@ -196,7 +213,7 @@ function titleOf(
   return `${[row.projectName, row.itemName].filter(Boolean).join(" · ")}${seq}`;
 }
 
-function toDto(target: JudgedPaymentTarget, shared: PaymentShared, transferFileAt: ReadonlyMap<string, string>): PaymentTargetRowDto {
+function toDto(target: ScheduledPaymentTarget, shared: PaymentShared, transferFileAt: ReadonlyMap<string, string>): PaymentTargetRowDto {
   const { row } = target;
   return {
     id: row.id,
@@ -205,7 +222,7 @@ function toDto(target: JudgedPaymentTarget, shared: PaymentShared, transferFileA
     vendorName: row.vendorName,
     payeeUserName: row.payeeUserName,
     paymentMethodName: shared.paymentMethodName(row.paymentMethod),
-    scheduledPaymentDate: row.scheduledPaymentDate,
+    scheduledPaymentDate: target.schedule.payDate,
     evidenceStatus: target.evidenceStatus,
     payableKrw: target.payableKrw,
     transferKrw: target.payableKrw,
@@ -220,7 +237,7 @@ function toDto(target: JudgedPaymentTarget, shared: PaymentShared, transferFileA
 
 export async function projectPaymentTargets(
   viewer: Viewer,
-  targets: readonly JudgedPaymentTarget[],
+  targets: readonly ScheduledPaymentTarget[],
   shared: PaymentShared,
   transferFileAt: ReadonlyMap<string, string> = new Map(),
 ): Promise<Partial<PaymentTargetRowDto>[]> {
@@ -247,7 +264,7 @@ export async function listPaymentTargets(
   const page = clampPage(input.page, pageCount);
   const slice = all.slice((page - 1) * pageSize, page * pageSize);
   const dtos = await projectPaymentTargets(viewer, slice, shared, await transferFileTimes(viewer, slice, today));
-  const items = slice.map((target, index) => ({ groupRank: EXPENSE_GROUP_RANKS.approved, scheduledPaymentDate: target.row.scheduledPaymentDate, dto: dtos[index] ?? {} }));
+  const items = slice.map((target, index) => ({ groupRank: EXPENSE_GROUP_RANKS.approved, scheduledPaymentDate: target.schedule.payDate, dto: dtos[index] ?? {} }));
   const groups = groupExpenses(items, { status: "approved", todayKst: today }).map((group) => ({
     label: group.label,
     ...(group.tone ? { tone: group.tone } : {}),
@@ -597,13 +614,15 @@ export function parsePayReturn(searchParams: Readonly<Record<string, string | st
   return { backHref: `/expenses?${kept.toString()}`, docQuery: `from=pay&${kept.toString()}`, team, evidence, q };
 }
 
-// 정렬 키 = 지급 대상 원천의 정렬(지급 예정일 오름 · 없음은 뒤 → 번호 → id, repositories/payment-targets.ts selectRows).
-function compareTargetKey(a: PaymentTargetRow, b: PaymentTargetRow): number {
-  if (a.scheduledPaymentDate !== b.scheduledPaymentDate) {
-    if (a.scheduledPaymentDate === null) return 1;
-    if (b.scheduledPaymentDate === null) return -1;
-    return a.scheduledPaymentDate < b.scheduledPaymentDate ? -1 : 1;
-  }
+// 정렬 키 = 지급 대상 목록의 정렬(07-01: 유효 예정일 오름 → 번호 → id). 저장 칸(scheduled_payment_date)으로 비교하지 않는다(B-P2-2).
+type TargetKey = { payDate: string; number: string | null; id: string };
+
+function targetKeyOf(target: ScheduledPaymentTarget): TargetKey {
+  return { payDate: target.schedule.payDate, number: target.row.number, id: target.row.id };
+}
+
+function compareTargetKey(a: TargetKey, b: TargetKey): number {
+  if (a.payDate !== b.payDate) return a.payDate < b.payDate ? -1 : 1;
   if ((a.number ?? "") !== (b.number ?? "")) return (a.number ?? "") < (b.number ?? "") ? -1 : 1;
   if (a.id === b.id) return 0;
   return a.id < b.id ? -1 : 1;
@@ -620,6 +639,12 @@ export async function nextUnreviewedTarget(
   const [current] = await findPaymentTargetRowsByIds(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, ids: [input.afterExpenseId] });
   if (!current) return null;
   const all = await listAllPaymentTargets(viewer, { team: input.team, evidence: input.evidence, q: input.q }, deps);
-  const next = all.find((target) => target.bar.row === "P2" && target.row.number !== null && compareTargetKey(target.row, current) > 0);
+  // 그 문서가 필터에서 빠졌어도 같은 일정 함수로 키를 만든다.
+  const currentSchedule =
+    all.find((target) => target.row.id === current.id)?.schedule ??
+    (await loadPaySchedules(viewer, [current], { today: deps?.today ?? seoulToday(), now: deps?.now ?? new Date() })).get(current.id);
+  if (!currentSchedule) return null;
+  const currentKey: TargetKey = { payDate: currentSchedule.payDate, number: current.number, id: current.id };
+  const next = all.find((target) => target.bar.row === "P2" && target.row.number !== null && compareTargetKey(targetKeyOf(target), currentKey) > 0);
   return next?.row.number ? { id: next.row.id, number: next.row.number } : null;
 }

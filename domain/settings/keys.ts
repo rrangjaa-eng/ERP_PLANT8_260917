@@ -850,7 +850,7 @@ export const PROJECT_COST_RATE_PCT: SettingDef<number | null> = {
 export const PROJECT_COLLECTION_DUE_DAYS: SettingDef<number> = {
   key: "project.collection_due_days",
   kind: "simple",
-  schema: z.coerce.number().int().min(1).max(365),
+  schema: integerInRange(1, 365),
   label: "수금 기한 일수",
   hint: "1~365",
   namespace: "프로젝트",
@@ -1348,7 +1348,7 @@ SETTING_DEFS.push(EVIDENCE_REQUIRED, EVIDENCE_PREPAID_DUE_DAYS, PURCHASE_ONLINE_
 export const PAYMENT_TERM_DAYS: SettingDef<number> = {
   key: "payment.term_days",
   kind: "simple",
-  schema: z.coerce.number().int().min(1).max(365),
+  schema: integerInRange(1, 365),
   label: "지급 기한 일수",
   hint: "1~365",
   namespace: "지급",

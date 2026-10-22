@@ -159,6 +159,15 @@ describe("수금 기한 일수 키 (D-735)", () => {
   });
 });
 
+describe("기한 일수 범위 오류 문구 (감사 C2)", () => {
+  it("수금 기한 일수 · 지급 기한 일수 범위 밖은 잠금 · 원가율과 같은 「범위 a~b · 다시 입력」 꼴이다", () => {
+    for (const value of [0, 366, -1]) {
+      expect(rejectionOf(PROJECT_COLLECTION_DUE_DAYS.schema, value), String(value)).toBe("범위 1~365 · 다시 입력");
+      expect(rejectionOf(PAYMENT_TERM_DAYS.schema, value), String(value)).toBe("범위 1~365 · 다시 입력");
+    }
+  });
+});
+
 describe("지급 섹션 첫 칸 (SC-04 · J2)", () => {
   it("지급 기한 일수가 지급 섹션의 첫 키이고 지급 요일 · 결재 마감 시각이 같은 섹션에 있다", () => {
     const payment = SETTING_DEFS.filter((def) => def.namespace === "지급");

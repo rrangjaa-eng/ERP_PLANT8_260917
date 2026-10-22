@@ -168,10 +168,20 @@ describe("setSettingValue (비이력형 전용)", () => {
     const can = vi.fn().mockResolvedValue(true);
     const upsertSimpleValue = vi.fn().mockResolvedValue(undefined);
     const recordAction = vi.fn().mockResolvedValue(undefined);
-    await setSettingValue(viewer, SIMPLE_DEF, 0.4, { can, upsertSimpleValue, recordAction });
-    expect(upsertSimpleValue).toHaveBeenCalledWith(viewer, SIMPLE_DEF.key, 0.4, viewer.id);
+    const tx = { marker: "tx" } as never;
+    const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn(tx)) as never;
+    const findSimpleValue = vi.fn().mockResolvedValue({ value: 0.1 });
+    const lockSimpleKey = vi.fn().mockResolvedValue(undefined);
+    await setSettingValue(viewer, SIMPLE_DEF, 0.4, { can, upsertSimpleValue, recordAction, withTransaction, findSimpleValue, lockSimpleKey });
+    expect(lockSimpleKey).toHaveBeenCalledWith(viewer, SIMPLE_DEF.key, tx);
+    expect(lockSimpleKey.mock.invocationCallOrder[0]).toBeLessThan(findSimpleValue.mock.invocationCallOrder.at(-1)!);
+    expect(upsertSimpleValue).toHaveBeenCalledWith(viewer, SIMPLE_DEF.key, 0.4, viewer.id, tx);
     expect(recordAction).toHaveBeenCalledTimes(1);
-    expect(recordAction.mock.calls[0]?.[1]).toMatchObject({ actionType: "settings_change" });
+    expect(recordAction.mock.calls[0]?.[1]).toMatchObject({
+      actionType: "settings_change",
+      detail: { key: SIMPLE_DEF.key, changes: { value: [0.1, 0.4] } },
+    });
+    expect(recordAction.mock.calls[0]?.[2]).toEqual({ tx });
   });
 
   it("스키마 범위를 벗어난 값은 저장 전에 거부된다", async () => {
@@ -200,7 +210,9 @@ describe("setSettingValue — 짝 격자 키의 새 짝은 활성 코드값만",
     findSimpleValue: vi.fn().mockResolvedValue(stored === undefined ? null : { value: stored }),
     listActiveCodeValues: vi.fn(activeValues),
     upsertSimpleValue: vi.fn().mockResolvedValue(undefined),
+    lockSimpleKey: vi.fn().mockResolvedValue(undefined),
     recordAction: vi.fn().mockResolvedValue(undefined),
+    withTransaction: vi.fn((fn: (t: never) => Promise<unknown>) => fn({} as never)) as never,
   });
 
   it("보관(비활성) 증빙 종류로 새 짝을 더하면 거부하고 저장하지 않는다", async () => {
@@ -257,18 +269,19 @@ describe("addHistorizedValue / cancelHistorizedValue (이력형 전용)", () => 
       createdBy: viewer.id,
     });
     const recordAction = vi.fn().mockResolvedValue(undefined);
+    const tx = { marker: "tx" } as never;
+    const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn(tx)) as never;
     await addHistorizedValue(
       viewer,
       HISTORIZED_DEF,
       { effectiveFrom: "2026-06-01", value: 0.15 },
-      { can, insertHistorizedValue, recordAction },
+      { can, insertHistorizedValue, recordAction, listHistory: vi.fn().mockResolvedValue([]), withTransaction },
     );
-    expect(insertHistorizedValue).toHaveBeenCalledWith(viewer, {
-      key: HISTORIZED_DEF.key,
-      effectiveFrom: "2026-06-01",
-      value: 0.15,
-      by: viewer.id,
-    });
+    expect(insertHistorizedValue).toHaveBeenCalledWith(
+      viewer,
+      { key: HISTORIZED_DEF.key, effectiveFrom: "2026-06-01", value: 0.15, by: viewer.id },
+      tx,
+    );
     expect(recordAction).toHaveBeenCalledTimes(1);
   });
 
@@ -280,7 +293,12 @@ describe("addHistorizedValue / cancelHistorizedValue (이력형 전용)", () => 
         viewer,
         HISTORIZED_DEF,
         { effectiveFrom: "2026-06-01", value: 0.15 },
-        { can, insertHistorizedValue },
+        {
+          can,
+          insertHistorizedValue,
+          listHistory: vi.fn().mockResolvedValue([]),
+          withTransaction: vi.fn((fn: (t: never) => Promise<unknown>) => fn({} as never)) as never,
+        },
       ),
     ).rejects.toThrow(/duplicate/);
   });
@@ -300,12 +318,14 @@ describe("addHistorizedValue / cancelHistorizedValue (이력형 전용)", () => 
     const recordAction = vi.fn().mockResolvedValue(undefined);
     const tx = { marker: "tx" } as never;
     const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn(tx)) as never;
+    const listHistory = vi.fn().mockResolvedValue([]);
     const farFuture = "2999-01-01";
     await cancelHistorizedValue(viewer, HISTORIZED_DEF, farFuture, {
       can,
       deleteFutureHistorizedValue,
       recordAction,
       withTransaction,
+      listHistory,
     });
     expect(deleteFutureHistorizedValue).toHaveBeenCalledWith(viewer, HISTORIZED_DEF.key, farFuture, tx);
     expect(recordAction).toHaveBeenCalledTimes(1);

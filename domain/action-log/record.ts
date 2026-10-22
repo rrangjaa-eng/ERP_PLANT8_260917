@@ -58,6 +58,12 @@ export const CORE_ACTION_TYPES = [
   "evidence_vendor_create",
   "evidence_vendor_restore",
   "evidence_vendor_kind_change",
+  // 07-04 D7 · P8: 07 새 행동 유형 다섯 — 뒤 플랜(07-06 · 07-09 · 07-19 · 07-20 · 07-23)의 recordAction이 UnknownActionTypeError 없이 남긴다. 모두 끌 수 없다.
+  "payment_schedule_change",
+  "password_reset",
+  "vendor_account_change",
+  "vendor_confirm",
+  "notification_rule_change",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -101,6 +107,11 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   evidence_vendor_create: "증빙 거래처 생성",
   evidence_vendor_restore: "증빙 거래처 복원",
   evidence_vendor_kind_change: "증빙 거래처 구분 변경",
+  payment_schedule_change: "지급 예정일 변경",
+  password_reset: "비밀번호 초기화",
+  vendor_account_change: "거래처 계좌 변경",
+  vendor_confirm: "거래처 확인",
+  notification_rule_change: "알림 규칙 변경",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -144,6 +155,14 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "evidence_vendor_create",
   "evidence_vendor_restore",
   "evidence_vendor_kind_change",
+  // 07 D7(REPORT §9) — 설정 · 권한 변경 기록은 끌 수 없다
+  "settings_change",
+  // 07-04: 예정일 · 계좌는 돈 기록, 비밀번호 초기화는 인증 기록, 규칙 변경은 D7, 거래처 확인은 일하는 자리 등록의 사후 확인 흔적이라 끌 수 없다
+  "payment_schedule_change",
+  "password_reset",
+  "vendor_account_change",
+  "vendor_confirm",
+  "notification_rule_change",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

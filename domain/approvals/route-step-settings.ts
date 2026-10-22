@@ -54,7 +54,7 @@ export async function saveRouteStepSettings(
     { key: step.enabled.key, value: step.enabled.schema.parse(values.enabled), previous: (row?: { value: unknown }) => simpleValueOrDefault(step.enabled, row) },
     { key: step.roleId.key, value: step.roleId.schema.parse(values.roleId), previous: (row?: { value: unknown }) => simpleValueOrDefault(step.roleId, row) },
     { key: step.scope.key, value: step.scope.schema.parse(values.scope), previous: (row?: { value: unknown }) => simpleValueOrDefault(step.scope, row) },
-    { key: step.orgUnitId.key, value: step.orgUnitId.schema.parse(values.orgUnitId), previous: (row?: { value: unknown }) => simpleValueOrDefault(step.orgUnitId, row) },
+    { key: step.orgUnitId.key, value: step.orgUnitId.schema.parse(values.orgUnitId), previous: (row?: { value: unknown }) => simpleValueOrDefault(step.orgUnitId, row) ?? "" }, // quick 261022-cwp: 이전 값에도 새 값과 같은 빈 값 대체
   ];
 
   const upsertSimpleValue = deps?.upsertSimpleValue ?? defaultUpsertSimpleValue;

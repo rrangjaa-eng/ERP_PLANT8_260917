@@ -245,7 +245,9 @@ export async function setSettingValue<T>(
   await withTransaction(async (tx) => {
     // PR #259 Codex P2: 같은 키의 동시 저장이 둘 다 같은 이전 값을 읽지 않게 읽기 전에 키를 잠근다(같은 tx).
     await lockSimpleKey(viewer, def.key, tx);
-    const previous = (await findSimpleValue(SYSTEM_VIEWER, def.key, tx))?.value ?? null;
+    // quick 261022-cwp: 저장 행이 없으면 이전 값은 기본값(없으면 null) — 가져오기 경로 · effectiveValueAt과 같은 규칙.
+    const row = await findSimpleValue(SYSTEM_VIEWER, def.key, tx);
+    const previous = row ? row.value : (def.default ?? null);
     await upsertSimpleValue(viewer, def.key, parsed, viewer.id, tx);
     await recordAction(
       viewer,

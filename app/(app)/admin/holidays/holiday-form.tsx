@@ -1,11 +1,13 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Form } from "@/ui/form/Form";
+import { focusFirstInvalid } from "@/ui/form/focus-first-invalid";
+import { TextField } from "@/ui/input/TextField";
+import { Select } from "@/ui/select/Select";
 import { Button } from "@/ui/button/Button";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { addHolidayAction } from "./actions";
-import styles from "./holidays.module.css";
 
 type ManualKind = "temporary" | "election";
 
@@ -25,6 +27,11 @@ export function HolidayForm({ min, max }: { min: string; max: string }) {
   const [dateError, setDateError] = useState<string | undefined>();
   const [nameError, setNameError] = useState<string | undefined>();
   const [failed, setFailed] = useState(false);
+
+  // 서버 칸 오류가 돌아오면 포커스를 오류 난 첫 칸으로(07-08 감사 D1). 제출 시작에 오류를 비우므로 같은 오류가 다시 와도 변화로 잡힌다.
+  useEffect(() => {
+    if (dateError || nameError) focusFirstInvalid("holiday-form");
+  }, [dateError, nameError]);
 
   // §7-15 PARTIAL — 빈 필수 칸(날짜·이름)을 세어 1차 옆 이유 + 첫 빈 칸 다음 한 수.
   // 날짜는 네이티브 날짜 입력이라 다음 한 수가 「고르기」다(DECISIONS.md 2026-09-26 날짜 입력 네이티브 통일).
@@ -87,50 +94,43 @@ export function HolidayForm({ min, max }: { min: string; max: string }) {
       reason={reason}
       reasonId={REASON_ID}
     >
-      <Form.Field id="holiday-date" label="날짜" width="short">
-        <input
-          id="holiday-date"
-          name="date"
-          type="date"
-          min={min}
-          max={max}
-          className={styles.textInput}
-          value={date}
-          onChange={(event) => setDate(event.target.value)}
-          aria-invalid={dateError ? true : undefined}
-          aria-describedby={dateError ? "holiday-date-error" : undefined}
-        />
-        {dateError ? <Form.Error id="holiday-date-error">{dateError}</Form.Error> : null}
-      </Form.Field>
+      <TextField
+        id="holiday-date"
+        name="date"
+        label="날짜"
+        type="date"
+        min={min}
+        max={max}
+        value={date}
+        onChange={(event) => setDate(event.target.value)}
+        error={dateError}
+      />
 
       <Form.Field id="holiday-kind" label="종류" width="select">
-        <select
+        <Select
           id="holiday-kind"
           name="kind"
-          className={styles.textInput}
+          hideEmptyOption
           value={kind}
+          options={[
+            { value: "temporary", label: "임시공휴일" },
+            { value: "election", label: "선거일" },
+          ]}
           onChange={(event) => setKind(event.target.value === "election" ? "election" : "temporary")}
-        >
-          <option value="temporary">임시공휴일</option>
-          <option value="election">선거일</option>
-        </select>
+        />
       </Form.Field>
 
-      <Form.Field id="holiday-name" label="이름" width="long">
-        <input
-          id="holiday-name"
-          name="name"
-          type="text"
-          autoComplete="off"
-          maxLength={50}
-          className={styles.textInput}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          aria-invalid={nameError ? true : undefined}
-          aria-describedby={nameError ? "holiday-name-error" : undefined}
-        />
-        {nameError ? <Form.Error id="holiday-name-error">{nameError}</Form.Error> : null}
-      </Form.Field>
+      <TextField
+        id="holiday-name"
+        name="name"
+        label="이름"
+        type="text"
+        autoComplete="off"
+        maxLength={50}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        error={nameError}
+      />
     </PanelForm>
   );
 }

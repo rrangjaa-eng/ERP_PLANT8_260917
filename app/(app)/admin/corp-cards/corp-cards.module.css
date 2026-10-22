@@ -34,28 +34,6 @@
   margin: 0 0 var(--s-4);
 }
 
-/* 패널 안 select 높이는 같은 패널 입력과 같은 --field-h(D14 · ui/select와 같은 꼴). */
-.select {
-  box-sizing: border-box;
-  width: 100%;
-  height: var(--field-h, var(--control-h));
-  border: var(--line-w) solid var(--border-control);
-  border-radius: var(--radius-control);
-  background: var(--surface-base);
-  color: var(--text-strong);
-  padding: 0 var(--s-2);
-  font-size: var(--text-body);
-}
-
-.select:focus-visible {
-  outline: var(--focus-w) solid var(--focus);
-  outline-offset: var(--focus-offset);
-}
-
-.selectInvalid {
-  border-color: var(--status-danger);
-}
-
 /* 소유자 변경 패널의 대상 표시 한 줄. */
 .hint {
   font-size: var(--text-aux);

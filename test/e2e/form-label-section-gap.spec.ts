@@ -121,11 +121,11 @@ function expectTextFieldHintsUnderInput(page: Page, textFields: TextFieldRow[]):
   }
 }
 
-async function expectPcLabelColumn(page: Page, scope: string, requireTextFields: boolean): Promise<void> {
+async function expectPcLabelColumn(page: Page, scope: string, requireTextFields: boolean, byClass = true): Promise<void> {
   const labelW = await tokenNumber(page, "--label-w");
   const gap = await tokenNumber(page, "--s-2");
   const selectW = await tokenNumber(page, "--field-w-select");
-  const rows = await measureSelectRows(page, scope);
+  const rows = await measureSelectRows(page, scope, byClass);
   expect(rows.length).toBeGreaterThan(0);
   const textFields = await measureTextFieldRows(page, scope);
   if (requireTextFields) expect(textFields.length, `${scope} TextField 칸 있음`).toBeGreaterThan(0);
@@ -169,14 +169,15 @@ async function expectPhoneLabelAbove(page: Page, scope: string, byClass = true):
 }
 
 // 사람 상세는 첫 사람의 데이터에 따라 TextField가 없을 수 있어 requireTextFields를 끈다.
-async function expectLabelLayoutAtAllWidths(page: Page, scope: string, requireTextFields = true): Promise<void> {
+// byClass=false — `.selectLabel` 묶음이 없는 화면(설정: 07-08에서 `Form.Field` + `ui/select`로 이관)은 select와 그 라벨로 행을 찾는다.
+async function expectLabelLayoutAtAllWidths(page: Page, scope: string, requireTextFields = true, byClass = true): Promise<void> {
   for (const width of PC_WIDTHS) {
     await page.setViewportSize({ width, height: 900 });
-    await expectPcLabelColumn(page, scope, requireTextFields);
+    await expectPcLabelColumn(page, scope, requireTextFields, byClass);
   }
   for (const width of PHONE_WIDTHS) {
     await page.setViewportSize({ width, height: 900 });
-    await expectPhoneLabelAbove(page, scope);
+    await expectPhoneLabelAbove(page, scope, byClass);
   }
 }
 
@@ -274,7 +275,7 @@ test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.
   test("설정 화면 select 칸", async ({ page }) => {
     await loginAsSysadmin(page);
     await page.goto("/admin/settings");
-    await expectLabelLayoutAtAllWidths(page, "main");
+    await expectLabelLayoutAtAllWidths(page, "main", true, false);
   });
 
   // 옆 패널 폼(거래처 · 사람 · 팀 · 법인카드): 모든 폭에서 라벨이 칸 위 · select가 묶음 전폭 · 힌트가 묶음 왼쪽 · 가로 넘침 0

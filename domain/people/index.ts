@@ -23,6 +23,7 @@ import { kstToday } from "@/lib/kst-date";
 import { isCheckViolation } from "@/lib/pg-errors";
 import { listLockedEmails } from "@/repositories/login-attempts";
 import { withTransaction } from "@/lib/db-transaction";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
@@ -536,10 +537,24 @@ export async function archivePerson(
   await revokeAllSessions(viewer, userId);
 }
 
+// 07-17 독립 검토 L1: 잠금 풀기 · 초기화는 사람 키(seat:person:)를 쥔 tx 안에서 대상을 다시 읽고 상한을 본다 — 계급 변경
+// (`changePersonRole`)이 같은 키를 쥐므로 올리기 · 내리기와 줄 서고, 판정 뒤 외부 단계(07-09 unlockAccount · resetPassword)가
+// 끝날 때까지 키를 놓지 않는다(assignTeam과 같은 「잠금 → 재조회 → 상한」 순서). 외부 단계는 풀에서 따로 연결을 빌리지만
+// 사람 키 대기는 lock_timeout(5초) · 풀 대기는 connectionTimeoutMillis(5초)로 끝나 서로 영원히 막지 않는다.
+type PersonLock = <T>(viewer: Viewer, personId: string, fn: (tx: DbOrTx) => Promise<T>) => Promise<T>;
+
+async function defaultWithPersonLock<T>(viewer: Viewer, personId: string, fn: (tx: DbOrTx) => Promise<T>): Promise<T> {
+  return withTransaction(async (tx) => {
+    await lockSeatKeys(viewer, { personIds: [personId] }, tx);
+    return fn(tx);
+  });
+}
+
 export type UnlockPersonDeps = {
   can: typeof defaultCan;
-  loadTarget: (viewer: Viewer, personId: string) => Promise<Pick<UserRow, "id" | "email" | "roleId" | "resignationDate"> | null>;
-  assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[]) => Promise<void>;
+  withPersonLock: PersonLock;
+  loadTarget: (viewer: Viewer, personId: string, tx: DbOrTx) => Promise<Pick<UserRow, "id" | "email" | "roleId" | "resignationDate"> | null>;
+  assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[], tx: DbOrTx) => Promise<void>;
   unlockAccount: (viewer: Viewer, email: string) => Promise<{ resolved: number }>;
   now: () => Date;
 };
@@ -552,14 +567,17 @@ export async function unlockPerson(viewer: Viewer, personId: string, deps?: Part
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
     throw new ForbiddenError("잠금 풀기 권한 없음");
   }
-  const loadTarget = deps?.loadTarget ?? ((v: Viewer, id: string) => repoFindUserById(v, id));
-  const target = await loadTarget(viewer, personId);
-  if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
-  if (isRetiredOn(target.resignationDate, seoulTodayOf(deps))) {
-    throw new ForbiddenError("퇴직한 사람 · 잠금 풀기 없음");
-  }
-  await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId]);
-  await (deps?.unlockAccount ?? defaultUnlockAccount)(viewer, target.email);
+  const loadTarget = deps?.loadTarget ?? ((v: Viewer, id: string, tx: DbOrTx) => repoFindUserById(v, id, tx));
+  const today = seoulTodayOf(deps);
+  await (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
+    const target = await loadTarget(viewer, personId, tx);
+    if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
+    if (isRetiredOn(target.resignationDate, today)) {
+      throw new ForbiddenError("퇴직한 사람 · 잠금 풀기 없음");
+    }
+    await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId], tx);
+    await (deps?.unlockAccount ?? defaultUnlockAccount)(viewer, target.email);
+  });
 }
 
 // 07-17 SC-12 · D-P2-7: 비밀번호 초기화 결과 — 행 DTO가 아니라 일회성 비밀이라 `…Dto`로 짓지 않고 `registerDto`도 하지 않는다
@@ -568,8 +586,9 @@ export type TempPasswordResult = { tempPassword: string };
 
 export type ResetPersonPasswordDeps = {
   can: typeof defaultCan;
-  loadTarget: (viewer: Viewer, personId: string) => Promise<Pick<UserRow, "id" | "email" | "roleId"> | null>;
-  assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[]) => Promise<void>;
+  withPersonLock: PersonLock;
+  loadTarget: (viewer: Viewer, personId: string, tx: DbOrTx) => Promise<Pick<UserRow, "id" | "email" | "roleId"> | null>;
+  assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[], tx: DbOrTx) => Promise<void>;
   resetPassword: (viewer: Viewer, email: string) => Promise<{ tempPassword: string }>;
 };
 
@@ -583,13 +602,15 @@ export async function resetPersonPassword(
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
     throw new ForbiddenError("비밀번호 초기화 권한 없음");
   }
-  const loadTarget = deps?.loadTarget ?? ((v: Viewer, id: string) => repoFindUserById(v, id));
-  const target = await loadTarget(viewer, personId);
-  if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
-  if (target.id === viewer.id) throw new ForbiddenError("본인 비밀번호 초기화 없음 · 내 계정에서 변경");
-  await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId]);
-  const { tempPassword } = await (deps?.resetPassword ?? defaultResetPassword)(viewer, target.email);
-  return { tempPassword };
+  const loadTarget = deps?.loadTarget ?? ((v: Viewer, id: string, tx: DbOrTx) => repoFindUserById(v, id, tx));
+  return (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
+    const target = await loadTarget(viewer, personId, tx);
+    if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
+    if (target.id === viewer.id) throw new ForbiddenError("본인 비밀번호 초기화 없음 · 내 계정에서 변경");
+    await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId], tx);
+    const { tempPassword } = await (deps?.resetPassword ?? defaultResetPassword)(viewer, target.email);
+    return { tempPassword };
+  });
 }
 
 // 04.1-03(D-96 · D-97): 입사일·퇴직일. 쓰기 권한 · 날짜 형식 · 퇴직일 ≥ 입사일(같은 날 허용)을

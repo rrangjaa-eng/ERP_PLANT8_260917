@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { ForbiddenError, isRetiredOn, unlockPerson, UserNotFoundError } from "@/domain/people";
 import type { Viewer } from "@/domain/viewer";
+import type { DbOrTx } from "@/repositories/document-counters";
 
 // 07-17 R11(eng-review F-06) · D-728: 퇴직자 잠금 풀기 거부는 domain `unlockPerson` 안에 있다(액션 층이 아님).
 // 「퇴직」은 `isRetiredOn` 하나 — 07-09 D-743(퇴직일 당일까지 로그인 허용, 다음 날부터 막음)과 같은 날 비교.
 const viewer: Viewer = { id: "admin-1", roleId: "role-sysadmin" };
 const TODAY = "2026-10-22";
 const now = () => new Date("2026-10-22T03:00:00Z"); // KST 12:00
+
+// 사람 키 잠금(07-17 독립 검토 L1)은 통합 시험(admin-cap-person-lock)이 본다 — 여기서는 tx 표지만 넘긴다.
+const TX = {} as DbOrTx;
+const withPersonLock = <T>(_viewer: Viewer, _id: string, fn: (tx: DbOrTx) => Promise<T>) => fn(TX);
 
 function target(resignationDate: string | null) {
   return { id: "target-1", email: "kim@example.test", roleId: "role-employee", resignationDate, archivedAt: null };
@@ -15,6 +20,7 @@ function target(resignationDate: string | null) {
 function deps(resignationDate: string | null) {
   return {
     can: vi.fn(() => Promise.resolve(true)),
+    withPersonLock,
     loadTarget: vi.fn(() => Promise.resolve(target(resignationDate))),
     assertCanGrantRoles: vi.fn(() => Promise.resolve()),
     unlockAccount: vi.fn(() => Promise.resolve({ resolved: 3 })),
@@ -54,7 +60,7 @@ describe("unlockPerson — 퇴직자 거부(D-728 · R11)", () => {
   it("재직 대상은 상한 판정 뒤 unlockAccount 한 번", async () => {
     const d = deps(null);
     await unlockPerson(viewer, "target-1", d);
-    expect(d.assertCanGrantRoles).toHaveBeenCalledWith(viewer, ["role-employee"]);
+    expect(d.assertCanGrantRoles).toHaveBeenCalledWith(viewer, ["role-employee"], TX);
     expect(d.unlockAccount).toHaveBeenCalledTimes(1);
   });
 

@@ -1,16 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 import { ForbiddenError, resetPersonPassword, UserNotFoundError } from "@/domain/people";
 import type { Viewer } from "@/domain/viewer";
+import type { DbOrTx } from "@/repositories/document-counters";
 
 // 07-17 D-P2-7: 비밀번호 초기화 결과는 행 DTO가 아니라 일회성 비밀이다 — `admin.people` 쓰기 + 상한 안 + 자기 제외로만
 // 나가고(정보 노출표로 가릴 값이 아님) `registerDto`에 오르지 않는다. 결과 키는 정확히 `tempPassword` 하나.
 // 액션 등록 분류(dtoName null)는 test/unit/app/people-reset-password-registry.test.ts(domain 시험은 app을 들이지 않는다).
 const viewer: Viewer = { id: "admin-1", roleId: "role-sysadmin" };
 
+// 사람 키 잠금(07-17 독립 검토 L1)은 통합 시험(admin-cap-person-lock)이 본다 — 여기서는 tx 표지만 넘긴다.
+const TX = {} as DbOrTx;
+const withPersonLock = <T>(_viewer: Viewer, _id: string, fn: (tx: DbOrTx) => Promise<T>) => fn(TX);
+
 function deps(overrides: Partial<{ can: boolean; target: null | { id: string; email: string; roleId: string | null } }> = {}) {
   const target = overrides.target === undefined ? { id: "target-1", email: "kim@example.test", roleId: "role-employee" } : overrides.target;
   return {
     can: vi.fn(() => Promise.resolve(overrides.can ?? true)),
+    withPersonLock,
     loadTarget: vi.fn(() => Promise.resolve(target)),
     assertCanGrantRoles: vi.fn(() => Promise.resolve()),
     resetPassword: vi.fn(() => Promise.resolve({ userId: "target-1", tempPassword: "Tmp-7Q2x-9kLm" })),
@@ -24,7 +30,7 @@ describe("resetPersonPassword — 결과 분류(D-P2-7)", () => {
     expect(Object.keys(result)).toEqual(["tempPassword"]);
     expect(result.tempPassword).toBe("Tmp-7Q2x-9kLm");
     expect(d.resetPassword).toHaveBeenCalledWith(viewer, "kim@example.test");
-    expect(d.assertCanGrantRoles).toHaveBeenCalledWith(viewer, ["role-employee"]);
+    expect(d.assertCanGrantRoles).toHaveBeenCalledWith(viewer, ["role-employee"], TX);
   });
 
   it("쓰기 권한이 없으면 ForbiddenError, 대상도 읽지 않는다", async () => {

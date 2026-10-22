@@ -168,6 +168,15 @@ describe("action_log 불변 트리거 — 끌 수 없는 종류(R4)", () => {
   });
 });
 
+describe("action_log 불변 트리거 — 함수 search_path 고정", () => {
+  it("action_log_immutable()은 search_path = pg_catalog, pg_temp로 고정돼 public의 같은 이름 함수(to_jsonb 등)에 가려지지 않는다", async () => {
+    const result = await db.execute<{ proconfig: string[] | null }>(
+      sql`SELECT proconfig FROM pg_proc WHERE proname = 'action_log_immutable'`,
+    );
+    expect(result.rows.map((row) => row.proconfig)).toEqual([["search_path=pg_catalog, pg_temp"]]);
+  });
+});
+
 describe("시험 전용 시각 당기기 backdateActionLog", () => {
   it("그 행 occurred_at만 옮기고, 끝난 뒤 같은 연결의 다른 UPDATE는 여전히 거부된다(SET LOCAL이 새지 않음)", async () => {
     const seq = await insertRow("immutable_probe");

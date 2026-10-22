@@ -11,12 +11,14 @@
 -- INSERT는 막지도 늦추지도 않는다(행동 기록은 각 행동과 같은 트랜잭션 — INSERT 경로에 트리거를 두지 않는다).
 -- 우회는 시험 setup의 replica 트랜잭션(test/integration/setup.ts truncateAll · test/support/action-log-backdate.ts)뿐 — 운영 코드에는 없다.
 -- 트리거 생성은 action_log에 SHARE ROW EXCLUSIVE 잠금을 짧게 잡는다(데이터 훑기 없음) — 대기는 lock_timeout = 1s, 문장은 statement_timeout = 5s로 묶는다.
+-- 함수 search_path는 pg_catalog, pg_temp로 고정한다 — public에 CREATE 권한이 있는 역할이 to_jsonb 등 같은 이름 함수로 비교를 가려 정리 두 칸 밖 칸을 바꾸지 못하게(본문은 OLD · NEW · pg_catalog 함수만 쓴다).
 -- rollback-floor를 두지 않는다 — 옛 리비전은 action_log에 INSERT와 정리 UPDATE만 하고, 둘 다 트리거를 통과한다.
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '5s';
 --> statement-breakpoint
 CREATE FUNCTION action_log_immutable() RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
   IF TG_OP = 'UPDATE'

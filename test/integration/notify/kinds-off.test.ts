@@ -109,6 +109,7 @@ describe("정산 상신 재촉 (N13)", () => {
     await tick([settleNudgeKind], "2026-10-15");
     const first = await rowsOf(fx.pm, "settle-nudge");
     expect(first.map((row) => [row.round, row.message, row.entity, row.entityId])).toEqual([[1, "정산 상신 대기 · 가을 팝업 · 14일", "project", fx.projectId]]);
+    expect(first[0]?.referenceDate).toBe("2026-10-15");
     await tick([settleNudgeKind], "2026-10-20");
     expect((await rowsOf(fx.pm, "settle-nudge")).map((row) => row.round)).toEqual([1, 2]);
     expect((await rowsOf(fx.lead, "settle-nudge")).map((row) => [row.round, row.message])).toEqual([[2, "정산 상신 대기 · 가을 팝업 · 14일 · 2회차"]]);
@@ -155,6 +156,7 @@ describe("반려 방치 재촉 (N13)", () => {
     const rows = await rowsOf(fx.pm, "rejected-idle");
     expect(rows.map((row) => row.message)).toEqual(["반려 방치 · 가을 팝업 · 무대 제작 · 7일"]);
     expect(rows[0]?.entityId.startsWith(`${idle}:`)).toBe(true);
+    expect(rows[0]?.referenceDate).toBe("2026-10-12");
     expect(await rowsOf(fx.lead, "rejected-idle")).toHaveLength(0);
   });
 });
@@ -186,6 +188,7 @@ describe("견적 재촉 (N13)", () => {
     await tick([quoteNudgeKind], "2026-10-12");
     const rows = await rowsOf(fx.pm, "quote-nudge");
     expect(rows.map((row) => [row.entityId, row.message])).toEqual([[empty, "견적 작성 대기 · 빈 견적 · 7일"]]);
+    expect(rows[0]?.referenceDate).toBe("2026-10-12");
   });
 });
 

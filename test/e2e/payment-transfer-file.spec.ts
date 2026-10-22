@@ -318,7 +318,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 필터 줄 정렬 · �
     // 한 줄 — 높이가 줄 높이의 1.5배 미만(끝 링크 14px가 줄 상자를 조금 키울 수 있다).
     expect(blocked.height).toBeLessThan(blocked.lineHeight * 1.5);
     expect(note.height).toBeLessThan(note.lineHeight * 1.5);
-    // 주 행과 아래 줄은 한 행으로 읽힌다 — 행 선은 아래 줄 밑에만(표의 마지막 행이면 선 없음), 아래 줄은 고른 행 면(--accent-weak)을 잇는다.
+    // 주 행과 아래 줄은 한 행으로 읽힌다 — 행 선은 아래 줄 밑에만(표의 마지막 행이면 선 없음), 아래 줄은 고른 행 면(--surface-selected — 07 개정 11)을 잇는다.
     for (const row of [okRow, badRow]) {
       const borders = await row.evaluate((tr) => {
         const bodies = tr.closest("table")?.tBodies;

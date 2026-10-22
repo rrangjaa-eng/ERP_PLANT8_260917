@@ -108,6 +108,13 @@ describe("docs/design/SYSTEM.md — 확인 모달 SUCCESS · ERROR · 근거 칸
     expect(confirmSuccess).toContain("성공하면 바로 닫는다");
   });
 
+  // 07-12 개정 7(D-P2-1) — 위 「바로 닫는다」 단언은 그대로 두고, 일회성 값(결과 단계)만 예외로 두 자리에 적는다.
+  it("§7-7 · §7-17 SUCCESS — 일회성 값(결과 단계)은 같은 창에 값을 보이고 닫기로 닫는다는 예외가 두 자리에 있다", () => {
+    const exception = "단 일회성 값(결과 단계)은 같은 창에 값을 보이고 `닫기`로 닫는다";
+    expect(cell("SUCCESS")).toContain(exception);
+    expect(confirmSuccess).toContain(exception);
+  });
+
   it("§7-7 SUCCESS — 토스트는 화면에 드러나지 않는 결과에만, 1차 라벨과 같은 단어", () => {
     expect(cell("SUCCESS")).toContain("토스트 `{1차 라벨} · {결과}`(반려 · 회수 · 새 차수 만들기 · 상태 바꾸기)");
     expect(cell("SUCCESS")).toContain("토스트 없음(승인일 줄 · 지운 줄 · 입력 버리기의 이동)");

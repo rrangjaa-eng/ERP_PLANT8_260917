@@ -212,6 +212,19 @@ hook plant8-skill-gate.sh agent "$(payload_agent "$E2" gsd-executor)" "$projE2"
 expect_rc "D-04 E2: plan-eng-review 추가 뒤 -> exit 0" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
+# 플러그인 접두어(plant8:gsd-executor)도 gsd-executor와 같이 게이트한다
+projP="$(new_project)"
+SP="sid-prefix-$$"
+write_gate_line "$projP" plan-ceo-review "$SP"
+write_gate_line "$projP" plan-eng-review "$SP"
+hook plant8-skill-gate.sh agent "$(payload_agent "$SP" plant8:gsd-executor)" "$projP"
+expect_rc "P1: plant8:gsd-executor, gsd-execute-phase 미기록 -> exit 2" 2 "$HOOK_RC"
+expect_contains "P1: 기존 메시지(GSD 워크플로 안에서만)" "$HOOK_STDERR" "GSD 워크플로 안에서만"
+record_skill "$projP" "$SP" gsd-execute-phase
+hook plant8-skill-gate.sh agent "$(payload_agent "$SP" plant8:gsd-executor)" "$projP"
+expect_rc "P1: 기록 뒤 plant8:gsd-executor -> exit 0" 0 "$HOOK_RC"
+
+# ---------------------------------------------------------------------------
 # D-04, 검사 범위
 hook plant8-skill-gate.sh agent "$(payload_agent "$E1" gsd-executor sub1)" "$projE1"
 expect_rc "D-04 E1: 서브에이전트 payload는 무시 -> exit 0" 0 "$HOOK_RC"

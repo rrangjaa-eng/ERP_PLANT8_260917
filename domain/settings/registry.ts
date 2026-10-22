@@ -4,6 +4,7 @@ import type { Viewer } from "@/domain/viewer";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { buildChanges } from "@/domain/action-log/changes";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulToday } from "@/lib/dates";
 import { log } from "@/lib/log";
@@ -12,6 +13,7 @@ import {
   findSimpleValue as defaultFindSimpleValue,
   findSimpleValues as defaultFindSimpleValues,
   upsertSimpleValue as defaultUpsertSimpleValue,
+  lockSimpleKey as defaultLockSimpleKey,
   findEffectiveValue as defaultFindEffectiveValue,
   listHistory as defaultListHistory,
   insertHistorizedValue as defaultInsertHistorizedValue,
@@ -110,6 +112,7 @@ export type RegistryDeps = {
   recordAction: typeof defaultRecordAction;
   findSimpleValue: typeof defaultFindSimpleValue;
   upsertSimpleValue: typeof defaultUpsertSimpleValue;
+  lockSimpleKey: typeof defaultLockSimpleKey;
   findEffectiveValue: typeof defaultFindEffectiveValue;
   listHistory: typeof defaultListHistory;
   insertHistorizedValue: typeof defaultInsertHistorizedValue;
@@ -210,6 +213,12 @@ export async function assertNewPairsActive<T>(def: SettingDef<T>, value: T, deps
   if (stale) throw new UserFacingError("보관된 값으로 새 짝 불가 · 새로 고침");
 }
 
+// 07-04(R5): 이력 행 목록(적용 시작일 내림차순)에서 그 날짜에 유효한 값 — 없으면 기본값, 그것도 없으면 null.
+export function effectiveValueAt<T>(def: SettingDef<T>, rows: { effectiveFrom: string; value: unknown }[], date: string): unknown {
+  const row = rows.find((candidate) => candidate.effectiveFrom <= date);
+  return row ? row.value : (def.default ?? null);
+}
+
 // 비이력형 전용. 이력형 키에 부르면 거부한다.
 export async function setSettingValue<T>(
   viewer: Viewer,
@@ -228,14 +237,26 @@ export async function setSettingValue<T>(
   const parsed = def.schema.parse(value);
   await assertNewPairsActive(def, parsed, deps);
   const upsertSimpleValue = deps?.upsertSimpleValue ?? defaultUpsertSimpleValue;
-  await upsertSimpleValue(viewer, def.key, parsed, viewer.id);
-
+  const findSimpleValue = deps?.findSimpleValue ?? defaultFindSimpleValue;
+  const lockSimpleKey = deps?.lockSimpleKey ?? defaultLockSimpleKey;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, {
-    actionType: "settings_change",
-    entity: "settings_simple",
-    entityId: def.key,
-    detail: { key: def.key },
+  const withTransaction = deps?.withTransaction ?? defaultWithTransaction;
+  // 07-04(D7 · R4 · R5): 이전 값 읽기 · 저장 · 기록을 한 트랜잭션에 묶는다 — 기록이 실패하면 값도 그대로다.
+  await withTransaction(async (tx) => {
+    // PR #259 Codex P2: 같은 키의 동시 저장이 둘 다 같은 이전 값을 읽지 않게 읽기 전에 키를 잠근다(같은 tx).
+    await lockSimpleKey(viewer, def.key, tx);
+    const previous = (await findSimpleValue(SYSTEM_VIEWER, def.key, tx))?.value ?? null;
+    await upsertSimpleValue(viewer, def.key, parsed, viewer.id, tx);
+    await recordAction(
+      viewer,
+      {
+        actionType: "settings_change",
+        entity: "settings_simple",
+        entityId: def.key,
+        detail: { key: def.key, changes: buildChanges({ value: previous }, { value: parsed }) },
+      },
+      { tx },
+    );
   });
 }
 
@@ -260,19 +281,31 @@ export async function addHistorizedValue<T>(
   if (violation) throw new EffectiveFromRuleError(violation.message);
 
   const insertHistorizedValue = deps?.insertHistorizedValue ?? defaultInsertHistorizedValue;
-  await insertHistorizedValue(viewer, {
-    key: def.key,
-    effectiveFrom: input.effectiveFrom,
-    value: parsed,
-    by: viewer.id,
-  });
-
+  const listHistory = deps?.listHistory ?? defaultListHistory;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, {
-    actionType: "settings_change",
-    entity: "settings_historized",
-    entityId: def.key,
-    detail: { key: def.key, effectiveFrom: input.effectiveFrom },
+  const withTransaction = deps?.withTransaction ?? defaultWithTransaction;
+  // 07-04(D7 · R4 · R5): 직전 유효값 읽기 · 추가 · 기록을 한 트랜잭션에 묶는다.
+  await withTransaction(async (tx) => {
+    const previous = effectiveValueAt(def, await listHistory(viewer, def.key, tx), input.effectiveFrom);
+    await insertHistorizedValue(
+      viewer,
+      { key: def.key, effectiveFrom: input.effectiveFrom, value: parsed, by: viewer.id },
+      tx,
+    );
+    await recordAction(
+      viewer,
+      {
+        actionType: "settings_change",
+        entity: "settings_historized",
+        entityId: def.key,
+        detail: {
+          key: def.key,
+          effectiveFrom: input.effectiveFrom,
+          changes: buildChanges({ value: previous }, { value: parsed }),
+        },
+      },
+      { tx },
+    );
   });
 }
 
@@ -312,6 +345,14 @@ export async function cancelHistorizedValue<T>(
   const withTransaction = deps?.withTransaction ?? defaultWithTransaction;
   const listHistory = deps?.listHistory ?? defaultListHistory;
   await withTransaction(async (tx) => {
+    // 07-04(R5): 취소할 행 값 · 취소 뒤 그 날짜의 유효값을 같은 tx에서 지우기 전에 읽는다.
+    const rowsBefore = await listHistory(viewer, def.key, tx);
+    const cancelledValue = rowsBefore.find((row) => row.effectiveFrom === effectiveFrom)?.value ?? null;
+    const afterValue = effectiveValueAt(
+      def,
+      rowsBefore.filter((row) => row.effectiveFrom !== effectiveFrom),
+      effectiveFrom,
+    );
     const deleted = await deleteFutureHistorizedValue(viewer, def.key, effectiveFrom, tx);
     if (!deleted) {
       // quick 261002-3mx — 위 판정 뒤 KST 자정이 지나면 삭제 조건(DB 시각)이 막는다: 행이 있으면 방금 적용된 것이다.
@@ -326,7 +367,12 @@ export async function cancelHistorizedValue<T>(
         actionType: "settings_change",
         entity: "settings_historized",
         entityId: def.key,
-        detail: { key: def.key, effectiveFrom, cancelled: true },
+        detail: {
+          key: def.key,
+          effectiveFrom,
+          cancelled: true,
+          changes: buildChanges({ value: cancelledValue }, { value: afterValue }),
+        },
       },
       { tx },
     );

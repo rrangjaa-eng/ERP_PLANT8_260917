@@ -15,7 +15,10 @@ import { planAccountNumberUpdate } from "@/domain/vendors";
 import { AccountFieldsError, assertAccountFields } from "@/domain/vendors/account-fields";
 import { ACCOUNT_PROBLEMS, accountProblemText } from "@/domain/bank-transfer";
 import { isCheckViolation } from "@/lib/pg-errors";
+import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
+import { lockSeatKeys } from "@/repositories/seats";
 import {
+  findUserById as repoFindUserById,
   findUserPayoutAccount as repoFindUserPayoutAccount,
   updateUserPayoutAccount as repoUpdateUserPayoutAccount,
 } from "@/repositories/users";
@@ -126,6 +129,11 @@ export async function updatePersonPayoutAccount(
   const gate = await loadActionLogGate();
   try {
     await withTransaction(async (tx) => {
+      // 사용자 결정(2026-10-23): 지급처 변경도 대상 계급 상한 — 사람 키 잠금 → 재조회 → assertCanGrantRoles(07-17 상한 커밋들과 같은 꼴).
+      await lockSeatKeys(viewer, { personIds: [userId] }, tx);
+      const target = await repoFindUserById(viewer, userId, tx);
+      if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
+      await assertCanGrantRoles(viewer, [target.roleId], tx);
       await updateRow(
         viewer,
         userId,

@@ -180,8 +180,11 @@ export default async function PersonDetailPage({
         monthlyBlockedReason={blocked?.field === "bucket" ? blocked.message : null}
       />
 
-      {payoutView ? <PayoutAccountSection userId={id} account={payoutView} canReveal={canRevealAccount} editHref={editAccountHref} /> : null}
-      {payoutView && query.editAccount === "1" ? (
+      {/* 사용자 결정(2026-10-23): 상한 밖 대상은 지급 계좌를 바꾸지 못한다 — `계좌 바꾸기` · 패널 없음(서버 updatePersonPayoutAccount 상한). */}
+      {payoutView ? (
+        <PayoutAccountSection userId={id} account={payoutView} canReveal={canRevealAccount} editHref={targetOutOfCeiling ? null : editAccountHref} />
+      ) : null}
+      {payoutView && !targetOutOfCeiling && query.editAccount === "1" ? (
         <SidePanel title="지급 계좌 수정" closeHref={baseHref}>
           <PayoutAccountPanel userId={id} account={payoutView} />
         </SidePanel>

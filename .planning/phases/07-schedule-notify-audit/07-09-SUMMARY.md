@@ -45,11 +45,13 @@ key-files:
     - lib/env.ts
     - .env.example
     - docs/OPERATIONS.md
+    - docs/ARCHITECTURE.md
     - test/integration/lockout.test.ts
     - test/integration/rate-limit.test.ts
 
 key-decisions:
-  - "/qa ISSUE-002(N번째 응답 403 잠금 문구) 미룸 — better-auth 1.7.5 dispatch가 after 훅 APIError의 상태를 원래 401로 덮는다. 플랜 지시(우회 구현 금지)대로 멈추고 기록"
+  - "/qa ISSUE-002(사용자 결정 2026-10-22, 후속 수정): N번째 틀린 시도부터 403 잠금 문구 — after 훅이 요청형 문맥에서는 403 Response를 반환(공개 훅 반환 계약), auth.api 직접 호출에서는 APIError(FORBIDDEN)를 던진다. 본문은 로그인 전 훅 잠금 403과 같은 꼴({message})"
+  - "퇴직 · 보관 계정(사용자 결정 2026-10-22, 후속 수정): 거부 전에 같은 잠금 계수를 지난다 — 퇴직 · 보관 · 재직 · 없는 이메일이 같은 횟수에 같은 상태 · 본문. 플랜 behavior 「퇴직 시도는 실패 수에 넣지 않는다」를 대체"
   - "미리 기록 행의 attempted_at은 DB 기본값(트랜잭션 시작 시각) — action_log.occurred_at과 같은 시계로 「잠금 기록 확인」 비교"
 
 duration: ~2h
@@ -58,7 +60,7 @@ completed: 2026-10-22
 
 # Phase 7 Plan 09: 인증 묶음(PR-AUTH) Summary
 
-퇴직일이 지난 사람의 로그인 · 세션 차단(D-743), 상한 판정을 거친 비밀번호 초기화가 잠금까지 풀며 끌 수 없는 `password_reset`을 남기고, 로그인 잠금 확인-후-기록 경쟁(F1)을 기존 `lockLoginEmail` 한 키로 직렬화했으며, 로그인 IP 한도 기본값을 60으로 올렸다. N번째 시도 403(ISSUE-002)은 better-auth 제약으로 미뤘다.
+퇴직일이 지난 사람의 로그인 · 세션 차단(D-743), 상한 판정을 거친 비밀번호 초기화가 잠금까지 풀며 끌 수 없는 `password_reset`을 남기고, 로그인 잠금 확인-후-기록 경쟁(F1)을 기존 `lockLoginEmail` 한 키로 직렬화했으며, 로그인 IP 한도 기본값을 60으로 올렸다. 후속 수정(독립 검토 · 사용자 결정)에서 N번째 틀린 시도부터 403 잠금 문구(ISSUE-002), 퇴직 · 보관 거부의 같은 잠금 계수, 해제 · 초기화의 이메일 잠금 직렬화를 넣었다.
 
 ## Tasks
 
@@ -85,17 +87,17 @@ completed: 2026-10-22
 ## 알려진 대가
 
 - **동시 시도 중 맞는 비밀번호가 잠깐 「잠김」을 볼 수 있다**(부록 NA): 다른 동시 시도의 미리 기록 행이 임계를 채우면 맞는 비밀번호도 before에서 403 — 미리 기록한 시도가 성공하면 곧 풀린다.
-- 「잠금 기록 확인」은 DB 시각(트랜잭션 시작) 비교다. 한 트랜잭션이 BEGIN을 먼저 하고도 이메일 잠금을 임계 수의 다른 시도보다 늦게 얻는 극단적 경합에서는 `account_lock`이 한 행 더 남을 수 있다(기록 누락 쪽이 아니라 중복 쪽, 경합한 트랜잭션 수로 유한). 시험의 동시 8건은 정확히 1행.
+- 「잠금 기록 확인」은 DB 시각(트랜잭션 시작) 비교다. 한 트랜잭션이 BEGIN을 먼저 하고도 이메일 잠금을 임계 수의 다른 시도보다 늦게 얻는 극단적 경합에서는 `account_lock`이 한 행 더 남을 수 있다(경합한 트랜잭션 수로 유한). 시험의 동시 8건은 정확히 1행.
+  - **정정(독립 검토):** 처음 적은 「누락이 아니라 중복 쪽만」은 틀렸다. 해제 · 초기화가 끼어들면 누락도 이론상 가능하다 — ① 해제가 잠금 기록 tx 사이에 해소 · `account_unlock`을 커밋해 행동 로그가 「해제 → 잠금」 순인데 실제로는 풀려 있는 오도, ② 직전 `account_lock` tx보다 먼저 시작한 미리 기록 tx가 해제 뒤에 행을 넣으면(attempted_at이 그 `account_lock`보다 이름) 다음 잠금의 기록이 빠질 수 있음(추정, 극히 좁음). 후속 수정이 해제 · 초기화의 해소 tx에 `lockLoginEmail`을 쥐게 해 ①을 닫았다. ②는 tx 시작 시각 비교라 남는다(추정 · 미재현).
 - before 훅이 사용자를 한 번 더 읽는다(`reserveLoginAttempt`가 eng E5대로 tx 전에 `findUserByEmail`) — 로그인당 쿼리 하나.
 
 ## Deviations from Plan
 
 ### 멈추고 기록(플랜 지시)
 
-**1. /qa ISSUE-002 — N번째 시도 응답을 403 잠금 문구로 바꾸지 못함**
-- **근거(systematic-debugging):** `better-auth/dist/api/dispatch.mjs:245-260` — after 훅이 던진 `APIError`는 `result.response`만 바꾸고, 요청형 경로(`auth.handler`)는 `toResponse(result.response, { status: result.status })`로 응답을 만든다. better-call `toResponse`는 `status: init?.status ?? data.statusCode` — 원래 엔드포인트 실패의 401이 403을 덮는다. 실측: after에서 `APIError("FORBIDDEN")`을 던져도 N번째 응답 401(본문만 잠금 문구). 화면(`app/(auth)/login/login-error.ts:23`)은 `status === 403`일 때만 잠금 문구를 보여 준다.
-- **한 일:** after 실패 경로는 `settleLoginFailure`로 잠금 기록만 확인하고 응답은 바꾸지 않는다(본문만 바뀐 401 반쪽 상태를 만들지 않음). lockout 사례 E는 원래 꼴 그대로, G는 「N번째에 account_lock 1행 · 뒤 403에도 1행」으로, H는 「임계 밖 3건 403」으로 고정. 플랜 truth 「N번째 시도의 응답이 이미 잠금 문구다」는 **미충족**.
-- **선택지(사용자 · 오케스트레이터 결정):** (a) after 훅이 `APIError` 대신 `new Response(JSON, { status: 403 })`를 돌려줌 — `toResponse`가 Response를 그대로 통과시켜 요청형 경로는 403이 되지만, `auth.api.signInEmail` 직접 호출 경로에는 Response 객체가 값으로 새어 나가는 우회(플랜이 금지한 「우회 구현」에 해당한다고 봄) · (b) 화면 `login-error.ts`가 401 + 잠금 문구도 잠김으로 읽음(app/ 화면 플랜 몫) · (c) better-auth 판 올림 · 상류 이슈 · (d) 미룸 유지.
+**1. /qa ISSUE-002 — 실행 때 멈춤 → 후속 수정에서 해결(사용자 결정 2026-10-22)**
+- **실행 때 근거와 정정:** 「after 훅이 던진 `APIError`의 상태는 HTTP 경로에서 반영되지 않는다」는 맞다 — `better-auth/dist/api/dispatch.mjs`는 `result.response`만 바꾸고 상태는 핸들러의 401로 남으며, better-call `toResponse`는 `init.status ?? data.statusCode`라 401이 이긴다. 그러나 이를 「after 훅은 응답 상태를 못 바꾼다」로 일반화한 것은 **틀렸다**(독립 검토 판정) — `runAfterHooks`는 훅의 반환값을 응답으로 갈아 끼우고 `toResponse`는 `Response`를 그대로 통과시킨다. 또 앱의 로그인 경로는 `authClient.signIn.email`(HTTP) 하나뿐이라, 값으로 `Response`가 새는 곳은 시험의 `auth.api.signInEmail` 직접 호출뿐이었다.
+- **해결:** after 실패 경로에서 `settleLoginFailure`가 잠김이면 요청형 문맥(`ctx.request` 있음)은 403 `Response`(본문 = 로그인 전 훅 잠금 403과 같은 `{message: lockedMessage(분)}`)를 반환하고, 그 밖은 `APIError("FORBIDDEN")`을 던진다. 의존성 수정 · 패치 없음, `login-error.ts`(403 + `isLockedMessage`) 계약 그대로. 시험 G는 `auth.handler`(HTTP)로 N번째 상태 403 · 본문이 이후 잠금 403과 같음을, G2는 직접 호출 경로 403을 잰다(둘 다 RED 확인 뒤 GREEN). 플랜 truth 「N번째 시도의 응답이 이미 잠금 문구다」 충족.
 
 ### Auto-fixed
 
@@ -109,14 +111,33 @@ completed: 2026-10-22
 
 ## Deferred
 
-- /qa ISSUE-002(위 선택지) — `.planning/WINDOWS.md` 기록은 오케스트레이터 몫(공유 파일).
+- ~~/qa ISSUE-002~~ — 후속 수정에서 해결.
+- 독립 검토 [P3 추정] 미리 기록 행 `attempted_at`(DB `now()`, `timestamp without time zone`)은 DB 세션 TimeZone = UTC를 가정한다(Cloud SQL 기본 · 로컬 모두 UTC, action_log도 같은 가정). 이번 후속 지시 목록 밖이라 손대지 않음 — OPERATIONS 한 줄 또는 수용은 결정 사항.
 
 ## Next
 
 - 07-17(사람 화면 잠금 풀기 · 초기화)은 `resetPassword(viewer, email)` · `unlockAccount(viewer, email)`를 그대로 부르면 상한 판정이 따라온다 — `RoleGrantForbiddenError`를 화면 문구로 바꾸는 처리는 07-17 몫.
 - PR-AUTH 게이트: `/review` + `/cso` + 독립 검토 1 → 사용자 머지(D-726).
 
+## 후속 수정 (독립 검토 · 사용자 결정 2026-10-22)
+
+결정 두 건:
+1. ISSUE-002 = 「403 Response 반환」(위 Deviations 1).
+2. 퇴직 · 보관 계정 = 「같은 잠금 계수」 — 로그인 전 훅이 미리 기록(`reserveLoginAttempt`) → 잠김이면 403 → 퇴직 · 보관이면 더미 해시 → `settleLoginFailure` → 잠김이면 403 잠금 문구, 아니면 기존 401 일반 문구. 재직자의 before → 핸들러 → after와 같은 순서. 시험: 퇴직 · 보관 · 재직 · 없는 이메일 네 경우가 임계 + 1번 시도에서 상태 · 본문 순서열이 같다(`[401×(N-1), 403, 403]`).
+
+고친 것(독립 검토 P3):
+- 해제 · 초기화의 해소 tx 첫 줄 `lockLoginEmail`(새 키 없음) — 시험: 이메일 잠금을 쥔 동안 `unlockAccount` · `resetPassword`가 해소하지 않음(RED 확인).
+- `lockout.ts` `settleLoginFailure` 주석을 실제 동작과 맞춤.
+- 퇴직 KST 경계 시험: 시각을 UTC 16:00으로 고정, 퇴직일 = UTC 날짜(KST 어제) → 거부(UTC 판정으로 바꾸면 실패 — 변이 확인).
+- D-712 자가 회복 시험: settle 잠금 기록 실패 주입 → 0행 → 다음 시도 403 · 1행(잠금 기록 확인을 빼면 실패 — 변이 확인).
+- `docs/ARCHITECTURE.md` IP 속도 제한 60초 60회(D-723). `docs/OPERATIONS.md` §11 문단을 앞 문단에 이어 302 → 300줄(문장 그대로, docs-limits 녹색).
+
+커밋(first-parent 8da6d3cb..: 6 — origin/main 머지 1 포함): 43a3b57e 머지 · 492c716a ISSUE-002 · f59ff4a1 퇴직 · 보관 계수 · 50abae06 해제 · 초기화 직렬화 · f3436de9 시험 · ffd07051 문서.
+
+검증(전용 DB erp_w0709_test): 통합 lockout · retiree-login · reset-unlocks · action-log · account-cli · archived-session · auth · rate-limit · archive · people-login-status 10파일 91/91 · 단위 docs-limits · env · env-login-limit 121/121 · `pnpm typecheck` 0 · `pnpm lint` 0. 로그인 화면 E2E 중 잠금 문구를 다루는 스펙 없음(`login-logout.spec.ts`에 잠금 사례 없음) — E2E 미실행.
+
 ## Self-Check: PASSED
 
 - 파일: retiree-login.test.ts · reset-unlocks.test.ts · env-login-limit.test.ts 있음
 - 커밋: 739358f7 · 2d096e41 · c9864ef2 있음
+- 후속 커밋: 43a3b57e · 492c716a · f59ff4a1 · 50abae06 · f3436de9 · ffd07051 있음

@@ -6,6 +6,7 @@ import { MENUS, PERMISSION_ACTIONS, type PermissionAction } from "@/domain/permi
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { customFieldColumns } from "@/domain/custom-fields/visibility";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { buildChanges } from "@/domain/action-log/changes";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday } from "@/lib/kst-date";
@@ -134,6 +135,9 @@ export async function setPermissionCell(
       }
     }
 
+    // 07-26(R5): 같은 tx에서 이전 값을 읽어 전후 값을 남긴다.
+    const previous = await findPermission(viewer, input.roleId, input.menu, input.action, tx);
+
     await upsertPermission(viewer, {
       roleId: input.roleId,
       menu: input.menu,
@@ -148,7 +152,13 @@ export async function setPermissionCell(
         actionType: "permission_change",
         entity: "permission_matrix",
         entityId: input.roleId,
-        detail: { roleId: input.roleId, menu: input.menu, action: input.action, allowed: input.allowed },
+        detail: {
+          roleId: input.roleId,
+          menu: input.menu,
+          action: input.action,
+          allowed: input.allowed,
+          changes: buildChanges({ allowed: previous?.allowed ?? null }, { allowed: input.allowed }),
+        },
       },
       { tx },
     );

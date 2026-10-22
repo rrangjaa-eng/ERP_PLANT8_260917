@@ -24,8 +24,7 @@ export const ROLE_DEFAULT_PERMISSIONS: readonly RoleDefaultPermission[] = [
   ]),
   // 04-20: 대표는 정산 → 완료(projects.complete 쓰기)까지.
   { roleId: CEO_ROLE_ID, menu: "projects.complete", action: "write", allowed: true },
-  // D-722 확인 카드 2026-10-22 ①(ADMN-10 갭): 대표 행동 로그 보기. ⑧ 끔 — 상세 노출(action_log.detail)은 켜지 않는다(R10, 404는 07-25).
-  { roleId: CEO_ROLE_ID, menu: "admin.action-log", action: "view", allowed: true },
+  // D-722 ①(대표 admin.action-log 보기)은 ⑧(대표 action_log.detail)과 함께 켠다 — ⑧ 끔 동안 보류(사용자 결정 2026-10-22).
   // 06.2(D-6210): ROADMAP 06.2 성공 기준 5(담당 PM · 팀장이 붙인다) + D-6210(관리 권리가 전사인 계급도 키가 있어야 붙인다).
   // 260907은 기획팀장만이었다(`O: docs/06_업무/02_프로젝트.md:401`).
   ...[CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID].map((roleId) => ({

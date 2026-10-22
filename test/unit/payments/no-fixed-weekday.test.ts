@@ -6,8 +6,9 @@ import { describe, expect, it } from "vitest";
 // 흩어져 지급 요일 설정을 따르지 않음) 재발 금지. 허용 목록은 파일 · 함수 이름으로 고정한다(줄 번호 아님): pay-schedule.ts 전체 +
 // targets.ts `payWeekLabel`(지급 완료 목록의 주 시작 월요일 셈) 한 줄. 다른 파일이 걸리면 그 코드를 pay-schedule 호출로 바꾼다.
 // domain/next-turn: 홈 「내 차례」 지급 묶음의 「이번 주」도 지급 주다(D-715) — 07-06 검토 F(sundayOf).
+// domain/expenses: 승인 보기의 「이번 주 지급 · 다음 주」 구간도 지급 주다(D-715) — 07-06 /review(paymentBand).
 const ROOT = process.cwd();
-const SCANNED = ["domain/payments", "domain/rules", "domain/notify", "domain/next-turn"];
+const SCANNED = ["domain/payments", "domain/rules", "domain/notify", "domain/next-turn", "domain/expenses"];
 const WEEKDAY_CALL = /getU?T?C?Day\(|isodow/;
 const PAY_SCHEDULE = "domain/payments/pay-schedule.ts";
 const TARGETS = "domain/payments/targets.ts";
@@ -47,7 +48,7 @@ function payWeekLabelRange(): { from: number; to: number } {
 }
 
 describe("요일 셈은 pay-schedule.ts 한 곳 (D-715 · K7)", () => {
-  it("domain/payments · rules · notify · next-turn에서 getDay( · getUTCDay( · isodow는 pay-schedule.ts와 payWeekLabel 한 줄뿐", () => {
+  it("domain/payments · rules · notify · next-turn · expenses에서 getDay( · getUTCDay( · isodow는 pay-schedule.ts와 payWeekLabel 한 줄뿐", () => {
     const range = payWeekLabelRange();
     const found = hits();
     const outside = found.filter((hit) => hit.file !== PAY_SCHEDULE && !(hit.file === TARGETS && hit.line >= range.from && hit.line <= range.to));

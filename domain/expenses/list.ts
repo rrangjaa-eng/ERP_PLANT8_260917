@@ -1,6 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
-import { addDays } from "@/lib/kst-date";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { projectMany } from "@/domain/permissions/project";
@@ -9,7 +8,7 @@ import { moneyFromRow } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
 import { EXPENSE_LIST_ROW_DTO_SPEC, type ExpenseListRowDto } from "@/domain/expenses/dto";
 import { loadExpenseSchedules, scheduleOf, TEAM_EXPENSE_KIND_LABELS, type TeamExpenseKind } from "@/domain/expenses";
-import type { PaySchedule } from "@/domain/payments/pay-schedule";
+import { payWeekIndex, type PaySchedule } from "@/domain/payments/pay-schedule";
 import {
   EXPENSE_GROUP_RANKS,
   listExpensePage,
@@ -77,11 +76,10 @@ export type ExpenseListGroup<Row> = { label: string; tone?: "warning"; rows: Row
 // 지급 끝난 건은 SQL이 미지급 건 뒤(실제 지급일 순)로 보내므로 예정일과 무관하게 맨 뒤 「지급 완료」 한 구간이다(07-06 검토 P3).
 function paymentBand(date: string, todayKst: string): { label: string; tone?: "warning" } {
   if (date < todayKst) return { label: "예정일 지남", tone: "warning" };
-  const [year, month, day] = todayKst.split("-").map(Number) as [number, number, number];
-  const daysFromMonday = (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7;
-  const thisSunday = addDays(todayKst, 6 - daysFromMonday);
-  if (date <= thisSunday) return { label: "이번 주 지급" };
-  if (date <= addDays(thisSunday, 7)) return { label: "다음 주" };
+  // 주 셈은 지급 주 한 곳(D-715 payWeekIndex).
+  const week = payWeekIndex(date, todayKst);
+  if (week <= 0) return { label: "이번 주 지급" };
+  if (week === 1) return { label: "다음 주" };
   return { label: "그 뒤" };
 }
 

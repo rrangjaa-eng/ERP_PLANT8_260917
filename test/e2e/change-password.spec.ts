@@ -54,6 +54,8 @@ test.describe("비밀번호 변경 + 임시 비밀번호 배너 (AUTH-03, D-08, 
     await expect(page.getByLabel("새 비밀번호")).toHaveAttribute("aria-invalid", "true");
     await expect(page.getByLabel("새 비밀번호")).toHaveAttribute("aria-describedby", "newPassword-error");
     await expect(page.locator("#newPassword-error")).toHaveText("8자 미만 · 8자 이상으로");
+    // 감사 D1 — 제출 폼은 서버 검증 오류 뒤 포커스가 오류 난 칸으로 간다(제출 버튼에 남지 않는다).
+    await expect(page.getByLabel("새 비밀번호")).toBeFocused();
     await expect(page).toHaveURL(/\/account$/);
 
     // 로그아웃한다.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import {
   createCorpCardAction,
@@ -10,6 +10,7 @@ import {
 } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Form } from "@/ui/form/Form";
+import { focusFirstInvalid } from "@/ui/form/focus-first-invalid";
 import { Select } from "@/ui/select/Select";
 import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
@@ -69,6 +70,11 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
   });
 
   const ownerError = result.validationErrors?.holderUserId?._errors?.[0];
+
+  // 서버 검증 오류가 돌아오면 포커스를 오류 난 첫 칸으로(07-08 감사 D1).
+  useEffect(() => {
+    if (result.validationErrors !== undefined) focusFirstInvalid("corp-card-form");
+  }, [result]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -201,6 +207,11 @@ export function CardOwnerForm({
   }
 
   const ownerError = result.validationErrors?.holderUserId?._errors?.[0];
+
+  // 서버 검증 오류가 돌아오면 포커스를 오류 난 첫 칸으로(07-08 감사 D1).
+  useEffect(() => {
+    if (result.validationErrors !== undefined) focusFirstInvalid("corp-card-owner-form");
+  }, [result]);
 
   return (
     <PanelForm

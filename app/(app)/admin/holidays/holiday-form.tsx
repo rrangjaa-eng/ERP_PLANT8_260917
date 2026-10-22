@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Form } from "@/ui/form/Form";
+import { focusFirstInvalid } from "@/ui/form/focus-first-invalid";
 import { TextField } from "@/ui/input/TextField";
 import { Select } from "@/ui/select/Select";
 import { Button } from "@/ui/button/Button";
@@ -26,6 +27,11 @@ export function HolidayForm({ min, max }: { min: string; max: string }) {
   const [dateError, setDateError] = useState<string | undefined>();
   const [nameError, setNameError] = useState<string | undefined>();
   const [failed, setFailed] = useState(false);
+
+  // 서버 칸 오류가 돌아오면 포커스를 오류 난 첫 칸으로(07-08 감사 D1). 제출 시작에 오류를 비우므로 같은 오류가 다시 와도 변화로 잡힌다.
+  useEffect(() => {
+    if (dateError || nameError) focusFirstInvalid("holiday-form");
+  }, [dateError, nameError]);
 
   // §7-15 PARTIAL — 빈 필수 칸(날짜·이름)을 세어 1차 옆 이유 + 첫 빈 칸 다음 한 수.
   // 날짜는 네이티브 날짜 입력이라 다음 한 수가 「고르기」다(DECISIONS.md 2026-09-26 날짜 입력 네이티브 통일).

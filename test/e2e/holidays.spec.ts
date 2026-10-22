@@ -743,6 +743,8 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
       await expect(panel.getByText(error, { exact: true })).toBeVisible();
       await expect(date).toHaveValue(value);
       await expect(date).toHaveAttribute("aria-invalid", "true");
+      // 감사 D1 — 서버 검증 오류 뒤 포커스가 제출 버튼이 아니라 오류 난 날짜 칸에 있다.
+      await expect(date).toBeFocused();
     }
     expect(await holidayCount(LUNAR_TABLE_LAST_YEAR + 1)).toBe(0);
   });

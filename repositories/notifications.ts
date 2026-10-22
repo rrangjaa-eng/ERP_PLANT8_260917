@@ -489,6 +489,8 @@ async function claimNextEmailBundleTx(
         from notification_log n
         join users u on u.id = n.recipient_id
         where n.email_status = 'pending'
+          -- 07-14 P3-4: 처리돼 읽음이 된 결재 차례 행은 메일로 내보내지 않는다(pending 그대로 남는다).
+          and not (n.condition_kind = 'approval-waiting' and n.read_at is not null)
           and u.archived_at is null
           and not (n.recipient_id = any(${sql.param(incomplete)}::text[]))
           and not exists (
@@ -505,6 +507,7 @@ async function claimNextEmailBundleTx(
         set email_status = 'sending', email_attempted_at = ${opts.now.toISOString()}::timestamp
         where recipient_id = (select recipient_id from target)
           and email_status = 'pending'
+          and not (condition_kind = 'approval-waiting' and read_at is not null)
         returning id, recipient_id, message, condition_kind, entity, entity_id, created_at
       )
       select id, recipient_id, message, condition_kind, entity, entity_id from claimed order by created_at desc, id desc

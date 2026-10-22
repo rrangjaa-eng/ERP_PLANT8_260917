@@ -434,6 +434,24 @@ describe("이메일 묶음 규칙 (엣지 #14~#18)", () => {
     await runTick({ conditionKinds: [emptyKind()], now: () => new Date("2026-10-07T01:00:00Z"), emailSender: fake.sender });
     expect(fake.sent.map((m) => m.to)).toEqual([b.email, a.email]);
   });
+
+  it("읽은 결재 차례(07-14 P3-4) — 자동 읽음된 approval-waiting 행은 pending이어도 묶음에서 빠진다 · 다른 종류의 읽은 행은 그대로 나간다", async () => {
+    const a = await createUser("read-a");
+    const b = await createUser("read-b");
+    const readAt = new Date("2026-10-06T03:00:00Z");
+    await db.insert(notificationLog).values([
+      { conditionKind: "approval-waiting", entity: "approval-step", entityId: randomUUID(), recipientId: a.id, round: 1, referenceDate: "2026-10-01", message: "결재 차례 · 처리된 문서", createdAt: new Date("2026-10-06T01:00:00Z"), readAt },
+      { conditionKind: "approval-waiting", entity: "approval-step", entityId: randomUUID(), recipientId: b.id, round: 1, referenceDate: "2026-10-01", message: "결재 차례 · 처리된 문서 B", createdAt: new Date("2026-10-06T01:00:00Z"), readAt },
+    ]);
+    await insertPending(a.id, "T-READ-OTHER", new Date("2026-10-06T02:00:00Z"));
+    await db.update(notificationLog).set({ readAt }).where(eq(notificationLog.entityId, "T-READ-OTHER"));
+    const fake = createFakeEmailSender();
+    await runTick({ conditionKinds: [emptyKind()], now: kst(WED), emailSender: fake.sender });
+
+    expect(fake.sent.map((m) => m.to)).toEqual([a.email]);
+    expect(fake.sent[0]?.text).toContain("T-READ-OTHER");
+    expect(fake.sent[0]?.text).not.toContain("결재 차례");
+  });
 });
 
 // ── Task 3: 결과 불명 · 겹친 tick · 요청 예산 · 대기 한도 (D-4216 · Codex 2차 #1·#2·#3·#6 · 3차 · 4차) ──

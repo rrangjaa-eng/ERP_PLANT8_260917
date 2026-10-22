@@ -1,6 +1,6 @@
 import { and, eq, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { codeItems } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
@@ -104,6 +104,18 @@ export async function findEvidenceTypeByValue(viewer: Viewer, value: string): Pr
     .where(and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, value)))
     .limit(1);
   return row ?? null;
+}
+
+// 07-27(R20): 업로드 완료 tx 안에서 종류 항목의 비공개 칸을 다시 읽는다 — FOR SHARE로 잡아 커밋 전까지 칸을 바꾸는 쓰기가 끼지 못한다.
+// 코드표 쓰기는 모두 단일 UPDATE(문서 행을 잡지 않는다)라 문서 → 코드 항목 순서로 잡아도 교착이 없다.
+export async function lockEvidenceTypePrivateByValue(viewer: Viewer, value: string, tx: DbOrTx): Promise<boolean | null> {
+  void viewer;
+  const [row] = await tx
+    .select({ privateToOwner: codeItems.privateToOwner })
+    .from(codeItems)
+    .where(and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, value)))
+    .for("share");
+  return row ? row.privateToOwner : null;
 }
 
 // 03-06: 세금 규칙 컬럼 쓰기 — 증빙 종류(evidence_type) 항목에만 허용한다는

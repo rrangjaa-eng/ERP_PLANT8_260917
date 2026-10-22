@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
 import { actionLog, corpCardUsages, corpCards, expenseEvidenceReviews, expenses, files, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { upsertVisibility } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertRole } from "@/repositories/roles";
+import { makePerson } from "./approvals-fixtures";
 import { completeExpensePayment, getPaymentView, previewPayable, supplyCorrectionCap } from "@/domain/payments";
 import { confirmEvidence, EvidenceReviewConflictError, SupplyCorrectionCapError } from "@/domain/evidence-reviews";
 import { approveDocument } from "@/domain/approvals";
@@ -415,6 +417,26 @@ describe("증빙 확인 — 공급가액 고쳐 확인 · 거부 (06-06 Task 3 �
     expect(freshStamp).not.toBe(oldStamp);
     const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version: current, evidenceStamp: freshStamp ?? "" });
     expect(result.evidenceStatus).toBe("확인됨");
+  });
+
+  it("숨은 파일이 지문을 바꾸면(07-27 L-3) 전사 범위가 아닌 지급 권한자의 거부 문구에 그 파일 올린 사람 이름 · 시각이 없다", async () => {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀지급-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
+    for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    const payer = await makePerson("팀지급자", role.id, "기획1팀");
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    const oldStamp = (await getPaymentView(payer, doc.expenseId))?.evidenceStamp;
+    expect(typeof oldStamp).toBe("string");
+
+    const hidden = await attachEvidence(fx.pm, doc.expenseId);
+    await db.update(files).set({ privateToOwner: true }).where(eq(files.id, hidden.id));
+
+    const current = (await docRow(doc.expenseId)).version;
+    const error = await errorOf(confirmEvidence(payer, { expenseId: doc.expenseId, version: current, evidenceStamp: oldStamp ?? "" }));
+    expect(error).toBeInstanceOf(EvidenceReviewConflictError);
+    expect(error.message).toBe("다른 사람이 증빙을 바꿈 · 새로 고침");
   });
 });
 

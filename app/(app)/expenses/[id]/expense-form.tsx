@@ -105,6 +105,8 @@ let refocusLineTrigger = false;
 
 export type ExpenseFormProps = {
   data: ExpenseFormData;
+  /** 07-16 감사 #7: 오늘(KST, 서버 seoulToday) — 희망 지급일 칸 min. */
+  today: string;
   evidenceOptions: SelectOption[];
   // 06.5 V15: 세금 규칙이 회사 대납인 증빙 코드 — 이 증빙 종류에서만 받는 인원 칸이 선다.
   companyBorneEvidence: string[];
@@ -160,7 +162,7 @@ function FxField({ initial, error, onRaw, below }: { initial: number; error: str
   );
 }
 
-export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords, linkedEvidenceCount = 0 }: ExpenseFormProps) {
+export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords, linkedEvidenceCount = 0 }: ExpenseFormProps) {
   const router = useRouter();
   const [evidenceType, setEvidenceType] = useState(data.evidenceType ?? "");
   const [paymentMethod, setPaymentMethod] = useState(data.paymentMethod ?? "");
@@ -1063,6 +1065,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
             id="requestedPaymentDate"
             ref={hopeDateRef}
             type="date"
+            min={today}
             value={hopeDate}
             onChange={(event) => {
               setHopeDate(event.target.value);

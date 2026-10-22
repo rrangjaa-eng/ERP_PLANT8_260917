@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { seoulToday } from "@/lib/dates";
 import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, previewRoute, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE, RouteBlockedError } from "@/domain/approvals";
@@ -259,6 +260,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
       >
         {readRows.length > 0 ? <KvList items={readRows} /> : null}
         <ExpenseForm
+          today={seoulToday()}
           key={expense.quoteLineId ?? expense.itemName ?? "team"}
           data={{
             id,

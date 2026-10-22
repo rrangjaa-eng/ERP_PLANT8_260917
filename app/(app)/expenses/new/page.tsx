@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { seoulToday } from "@/lib/dates";
 import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { previewRoute, RouteBlockedError } from "@/domain/approvals";
@@ -37,6 +38,7 @@ export default async function NewExpensePage() {
     <div className={styles.column}>
       <DetailScreen title={defaults.teamName ? `지출결의 — ${defaults.teamName}` : "지출결의"}>
         <ExpenseForm
+          today={seoulToday()}
           data={{
             id: "",
             version: 0,

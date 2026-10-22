@@ -81,6 +81,8 @@ test.describe("지출결의 폼 — 지급 예정일 읽기 줄 · 희망 지급
     // 07-28 결합(실행 순서) — 제출 흐름은 상세(비고)를 먼저 채운다.
     await page.getByLabel("비고", { exact: true }).fill("행사 운영비");
     await expect(reason).toHaveCount(0);
+    // 감사 #7(P3): 입력 칸이 형식을 잡는다 — 오늘(KST)보다 앞 날짜는 고를 수 없다.
+    await expect(date).toHaveAttribute("min", cal.today);
     await date.fill(hope);
     await expect(reason).toBeVisible();
     await expect(date).toBeFocused();

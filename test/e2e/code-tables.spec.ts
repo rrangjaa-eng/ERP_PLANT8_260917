@@ -527,3 +527,28 @@ test.describe("코드표 프로젝트 상태 — 이름 읽기 전용 (04.6-10)"
     await expect(page.locator('input[aria-label$=" 이름"]').first()).toBeVisible();
   });
 });
+
+// 감사 C3 — 증빙 종류 세금 규칙 줄은 표 안 셀이 아니라 폼이다(플랜 07-08 :267): ui/select · ui/input 스킨(1px 테두리 · radius · 흰 면)이 나오고,
+// 같은 표의 이름 칸(표 안 셀)은 밑줄 스킨 그대로다.
+test.describe("증빙 종류 세금 규칙 칸 스킨 (07-08 감사 C3)", () => {
+  test("규칙 종류 select는 폼 스킨(1px 테두리 · radius 6 · 흰 면)이고 이름 칸 셀 스킨은 그대로다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/admin/code-tables?tableKey=evidence_type");
+    const detailSelect = page.locator('main table tbody tr[data-ui="static-table-detail"] select').first();
+    await expect(detailSelect).toBeVisible();
+    const form = await detailSelect.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { top: cs.borderTopWidth, bottom: cs.borderBottomWidth, radius: cs.borderTopLeftRadius, bg: cs.backgroundColor };
+    });
+    expect(form).toEqual({ top: "1px", bottom: "1px", radius: "6px", bg: "rgb(255, 255, 255)" });
+
+    const nameCell = page.locator('input[aria-label$=" 이름"]').first();
+    await expect(nameCell).toBeVisible();
+    const cell = await nameCell.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { top: cs.borderTopWidth, bottom: cs.borderBottomWidth, radius: cs.borderTopLeftRadius };
+    });
+    expect(cell).toEqual({ top: "0px", bottom: "1px", radius: "0px" });
+  });
+});

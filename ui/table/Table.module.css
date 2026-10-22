@@ -73,15 +73,16 @@
 }
 
 /* §7-2 「표 안 입력: 테두리 없이 아래 1px --accent 밑줄 + focus 링. 셀 배경 --g-50」 — 입력 칸이 있는 정적 표(코드표 · 계급, `StaticTable editable`).
-   호출부 입력 클래스(.labelInput · .select — 패널 폼과 공유)보다 앞서도록 표 안 후손 선택자로 건다. 오류(aria-invalid)는 밑줄 색만 위험 색이다. */
-.inputCells :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select) {
+   호출부 입력 클래스(.labelInput · .select — 패널 폼과 공유)보다 앞서도록 표 안 후손 선택자로 건다. 오류(aria-invalid)는 밑줄 색만 위험 색이다.
+   `detail` 줄(static-table-detail — 코드표 증빙 종류 세금 규칙)은 표 안 셀이 아니라 폼이다 — :where()라 특이도를 올리지 않고 그 줄 후손만 ui/input · ui/select 스킨 그대로 둔다. */
+.inputCells :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select):not(:where([data-ui="static-table-detail"] *)) {
   border: 0;
   border-bottom: var(--line-w) solid var(--accent);
   border-radius: 0;
   background: var(--accent-weak);
 }
 
-.inputCells :is(input, select)[aria-invalid="true"] {
+.inputCells :is(input, select)[aria-invalid="true"]:not(:where([data-ui="static-table-detail"] *)) {
   border-bottom-color: var(--status-danger);
 }
 

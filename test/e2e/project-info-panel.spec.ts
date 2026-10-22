@@ -504,6 +504,22 @@ test.describe("정보 면 손익 · 금액 글자 (07-18 사후 고침)", () => 
     await expect(target).toBeVisible();
     await expect(target).toHaveText("계산 불가 · 견적 없음");
   });
+
+  test("PO 금액과 손익 값은 공용 Num(고정폭 숫자)이다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makePm(team, { amount: true, pnl: true });
+    const project = await seedProject({ teamId: team, pmUserId: pm.userId, status: "bidding", lines: ONE_LINE });
+    await db.update(projects).set({ preEstimateAmountKrw: 5_000_000 }).where(eq(projects.id, project.id));
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expandProjectInfo(page);
+
+    for (const text of ["5,000,000", "200,000 · 20.0%"]) {
+      const value = projectInfo(page).getByText(text, { exact: true });
+      await expect(value).toBeVisible();
+      expect(await value.evaluate((node) => getComputedStyle(node).fontVariantNumeric)).toContain("tabular-nums");
+    }
+  });
 });
 
 test.describe("견적 줄 문 칸 이유 글자 (S4 · SC-22)", () => {

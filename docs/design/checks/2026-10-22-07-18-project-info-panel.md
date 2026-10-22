@@ -34,3 +34,4 @@
 ## 사후 고침 (독립 DOM 감사 · 260907 비교 반영)
 - [x] 폰 터치 44: `계산 불가` 배지 버튼이 폰(<700)에서 `min-width/min-height: var(--touch-min)`이고 `aria-controls` 대상은 닫혀도 DOM에 있다 — 근거: project-detail.module.css `.infoReasonButton` 미디어 규칙, E2E `계산 불가 배지는 폰에서 44×44 이상`이 boundingBox와 대상 존재를 확인(375)
 - [x] 새 색·서체·radius를 만들지 않았다 — 근거: 추가한 CSS는 `var(--touch-min)`뿐
+- [x] 금액은 `Num`: PO 금액 · 손익 값이 공용 Num(tabular-nums) — 근거: quote-table.tsx 정보 면 세 곳, E2E `PO 금액과 손익 값은 공용 Num`이 computed `font-variant-numeric`을 확인

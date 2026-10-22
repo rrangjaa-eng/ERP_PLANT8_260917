@@ -2880,7 +2880,7 @@ export function QuoteLedger({
             <span />
           ) : preEstimateBase !== null ? (
             <span className={styles.infoSummary}>
-              PO 금액 · {preEstimateValue(preEstimateBase) ?? <span className={styles.infoNone}>없음</span>}
+              PO 금액 · {preEstimateValue(preEstimateBase) !== null ? <Num value={preEstimateValue(preEstimateBase)} /> : <span className={styles.infoNone}>없음</span>}
             </span>
           ) : (
             <span className={styles.infoSummary}>기간 · {periodShortText(periodBaseline.startDate, periodBaseline.endDate)}</span>
@@ -2951,7 +2951,9 @@ export function QuoteLedger({
                   <p className={styles.infoItem}>
                     <span className={styles.infoLabel}>PO 금액</span>
                     {preEstimateValue(preEstimateBase) ? (
-                      <span className={styles.infoValue}>{preEstimateValue(preEstimateBase)}</span>
+                      <span className={styles.infoValue}>
+                        <Num value={preEstimateValue(preEstimateBase)} />
+                      </span>
                     ) : (
                       <span className={styles.infoNone}>없음</span>
                     )}
@@ -2989,7 +2991,9 @@ export function QuoteLedger({
                   <p className={styles.infoItem}>
                     <span className={styles.infoLabel}>수익</span>
                     {profit.kind === "ok" ? (
-                      <span className={styles.infoValue}>{`${formatKrw(profit.profitKrw)} · ${formatPercent(profit.ratePct)}`}</span>
+                      <span className={styles.infoValue}>
+                        <Num value={`${formatKrw(profit.profitKrw)} · ${formatPercent(profit.ratePct)}`} />
+                      </span>
                     ) : (
                       <>
                         <span className={styles.infoNone}>—</span>

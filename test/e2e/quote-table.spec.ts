@@ -1932,7 +1932,7 @@ test.describe("견적 줄 표 — 묶음 ④ /qa 포커스", () => {
     await expect(page.getByText(/저장됨/)).toBeVisible();
   });
 
-  test("편집 가능한 견적 표의 머리글은 --g-100 면 + --g-950 글자다 (SYSTEM 894)", async ({ page }) => {
+  test("편집 가능한 견적 표의 머리글은 --surface-selected 면 + --g-950 글자다 (SYSTEM 894 · 07 개정 11)", async ({ page }) => {
     await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "머리글줄", amount: 1000 }]);
     const header = quoteTable(page).locator("thead th").first();
     await expect(header).toBeVisible();
@@ -1949,7 +1949,7 @@ test.describe("견적 줄 표 — 묶음 ④ /qa 포커스", () => {
         [property, token] as const,
       );
     const actual = await header.evaluate((th) => ({ bg: getComputedStyle(th).backgroundColor, color: getComputedStyle(th).color }));
-    expect(actual.bg, "머리글 면").toBe(await resolved("backgroundColor", "--g-100"));
+    expect(actual.bg, "머리글 면").toBe(await resolved("backgroundColor", "--surface-selected"));
     expect(actual.color, "머리글 글자").toBe(await resolved("color", "--g-950"));
   });
 });

@@ -213,14 +213,23 @@ describe("tokens.css — ③ 글자 × 면 대비 쌍(허용 쌍 표 · 금지 �
     expect(allowedPairs).toContainEqual(["--text-strong", "--surface-base"]);
   });
 
+  // 07 개정 11 — 표 면 역할 토큰 셋이 중립 원시 값(n-50 · n-100 · n-60)을 가리킨 뒤의 실측(소수 둘째 자리).
+  it("개정 11 새 면 위 실측: text-on-tint × selected(n-100) 13.95 · text-faint × selected 4.39 · status-warning × group(n-50) 5.56", () => {
+    const measured = (fg: string, bg: string) => Math.round(ratio(fg, bg) * 100) / 100;
+    expect(measured("--text-on-tint", "--surface-selected")).toBe(13.95);
+    expect(measured("--text-faint", "--surface-selected")).toBe(4.39);
+    expect(measured("--status-success", "--surface-selected")).toBe(4.31);
+    expect(measured("--status-warning", "--surface-group")).toBe(5.56);
+  });
+
   // 금지 쌍 — 4.5 미만이라 쓰지 않는다. 표에 있는 이유 = 실측 증거(값이 4.5 미만이어야 표에 둘 수 있다).
   const FORBIDDEN: Array<[string, string]> = [
-    ["--text-faint", "--surface-selected"], // 4.26
-    ["--status-success", "--surface-selected"], // 4.18
+    ["--text-faint", "--surface-selected"], // 4.39 (07 개정 11 — n-100 위. 옛 g-100 위 4.26)
+    ["--status-success", "--surface-selected"], // 4.31 (07 개정 11 — 옛 4.18)
     ["--status-success", "--status-danger-weak"], // 4.49
   ];
 
-  it("금지 쌍 표에 --text-faint × --surface-selected(4.26)가 있다", () => {
+  it("금지 쌍 표에 --text-faint × --surface-selected(4.39)가 있다", () => {
     expect(FORBIDDEN).toContainEqual(["--text-faint", "--surface-selected"]);
   });
 
@@ -386,8 +395,7 @@ describe("tokens.css — UQ-4 완화 후보(5 · 7 · 8 넣음 / 4 · 6 · 9 뺌
     expect(PRINT.get("--shadow-pop")).toBe("none");
   });
 
-  it("후보 7 — 저장 대기 칸 면 --surface-dirty 는 --g-100 계열(--surface-selected 와 같은 값)이다", () => {
-    expect(finalValue("--surface-dirty")).toBe(finalValue("--g-100"));
+  it("후보 7 — 저장 대기 칸 면 --surface-dirty 는 인쇄에서 흰색이다(07 개정 11: 화면 값은 n-60 중립 — 아래 개정 11 절)", () => {
     expect(PRINT.get("--surface-dirty")).toBe("#FFFFFF");
   });
 
@@ -404,4 +412,101 @@ describe("tokens.css — UQ-4 완화 후보(5 · 7 · 8 넣음 / 4 · 6 · 9 뺌
     expect(ALL.has("--text-number-lead")).toBe(false);
     expect(ALL.has("--text-numbers")).toBe(false);
   });
+});
+
+// 07-12 개정 11(N9 · 사용자 10/7 13:04 · 13:09 · 13:12) — 표 안에 초록 면이 없다. 표 면 역할 토큰 셋은 중립 원시 값을 가리키고
+// 표 CSS는 강조 약한 면(--accent-weak, g-50)을 배경으로 쓰지 않으며 포커스 칸은 흰 바탕 + 안쪽 2px --accent 선이다.
+describe("tokens.css · ui/table — 개정 11 표 모양 확정(표 안 초록 면 0)", () => {
+  it("--surface-group → n-50 · --surface-selected → n-100 · --surface-dirty → n-60", () => {
+    expect(ROLE.get("--surface-group")).toBe("var(--n-50)");
+    expect(ROLE.get("--surface-selected")).toBe("var(--n-100)");
+    expect(ROLE.get("--surface-dirty")).toBe("var(--n-60)");
+  });
+
+  it("셋 다 원시 초록(--g-*)을 가리키지 않는다", () => {
+    for (const name of ["--surface-group", "--surface-selected", "--surface-dirty"]) {
+      expect(ROLE.get(name), name).not.toMatch(/var\(--g-/);
+    }
+  });
+
+  const TABLE_CSS = stripComments(readFileSync(resolve(process.cwd(), "ui", "table", "Table.module.css"), "utf8"));
+  const backgrounds = [...TABLE_CSS.matchAll(/(?:^|[\s;{])background(?:-color)?\s*:\s*([^;}]+)[;}]/g)].map((m) => (m[1] as string).trim());
+
+  it("Table.module.css의 background 선언을 모았다(공허 방지)", () => {
+    expect(backgrounds.length).toBeGreaterThan(10);
+  });
+
+  it("Table.module.css 배경이 강조 약한 면(--accent-weak) · 원시 초록을 쓰지 않는다", () => {
+    expect(backgrounds.filter((v) => /--accent-weak|--g-\d+/.test(v))).toEqual([]);
+  });
+
+  // 07-12 D1 — 고른 행 면 위 금지 쌍(--status-success 4.31 · --text-faint 4.39)을 시스템 규칙으로 막는다:
+  // .selectedRow가 두 역할을 더 진한 기존 역할로 다시 가리키고, 그 대체 쌍이 4.5 이상임을 토큰 수학으로 잠근다.
+  it("고른 행(.selectedRow)은 --status-success → --status-accent · --text-faint → --text-muted로 다시 가리킨다", () => {
+    const rule = /(?:^|\n)\.selectedRow\s*\{([^}]*)\}/.exec(TABLE_CSS)?.[1] ?? "";
+    expect(rule).toMatch(/background:\s*var\(--surface-selected\)/);
+    expect(rule).toMatch(/--status-success:\s*var\(--status-accent\)/);
+    expect(rule).toMatch(/--text-faint:\s*var\(--text-muted\)/);
+  });
+
+  // 07-12 게이트 /review — 같은 면(--surface-selected)인 범위 선택 칸(.selectedCell, Shift+화살표)에서도 「확인됨」이 4.31로 렌더됐다(지급 대상 표 DOM 실측).
+  it("범위 선택 칸(.selectedCell)도 --status-success → --status-accent · --text-faint → --text-muted로 다시 가리킨다", () => {
+    const rule = /(?:^|\n)\.selectedCell\s*\{([^}]*)\}/.exec(TABLE_CSS)?.[1] ?? "";
+    expect(rule).toMatch(/background:\s*var\(--surface-selected\)/);
+    expect(rule).toMatch(/--status-success:\s*var\(--status-accent\)/);
+    expect(rule).toMatch(/--text-faint:\s*var\(--text-muted\)/);
+  });
+
+  it("고른 행 면 위 대체 쌍 실측: status-accent 7.31 · text-muted 5.34, 모두 4.5 이상", () => {
+    const measured = (fg: string, bg: string) => Math.round(ratio(fg, bg) * 100) / 100;
+    expect(ratio("--status-accent", "--surface-selected")).toBeGreaterThanOrEqual(4.5);
+    expect(ratio("--text-muted", "--surface-selected")).toBeGreaterThanOrEqual(4.5);
+    expect(measured("--text-muted", "--surface-selected")).toBe(5.34);
+    expect(measured("--status-accent", "--surface-selected")).toBe(7.31);
+    // 오류 · 충돌 칸 면(고정 빨강)에서도 대체 글자는 4.5 이상이다 — 옛 --status-success는 4.49였다.
+    expect(ratio("--status-accent", "--status-danger-weak")).toBeGreaterThanOrEqual(4.5);
+    expect(ratio("--text-muted", "--status-danger-weak")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("포커스 칸은 흰 바탕(--surface-base) + 안쪽 --focus-w --accent 선이다", () => {
+    const rule = /\.cell:focus-visible[^{]*\{([^}]*)\}/.exec(TABLE_CSS)?.[1] ?? "";
+    expect(rule).toMatch(/background:\s*var\(--surface-base\)/);
+    expect(rule).toMatch(/outline:\s*var\(--focus-w\) solid var\(--accent\)/);
+    expect(rule).toMatch(/outline-offset:\s*calc\(-1 \* var\(--focus-w\)\)/);
+  });
+});
+
+// 07-12 검토 3회차(Codex P2 · Table.module.css:81) — 개정 11은 시스템 규칙이다. `.inputCells`는 정적 표에만 붙으므로
+// 동적 편집 표(견적 · 매출 · 발행 요청 · 리저브 · 지출 지급 대상 · 증빙 · 경품)의 칸 편집기도 같은 모양을 지켜야 한다:
+// 쉬는 면 투명(초록 면 없음) · 포커스 = 흰 바탕 + 안쪽 --focus-w --accent 선(바깥 링 없음).
+describe("화면 표 칸 편집기(.cellInput · .cellInputNumeric · .cellSelect) — 개정 11", () => {
+  const MODULES = [
+    "app/(app)/projects/[id]/project-detail.module.css",
+    "app/(app)/pnl/reserves/reserves.module.css",
+    "app/(app)/expenses/expenses.module.css",
+    "app/(app)/expenses/evidence/evidence-table.module.css",
+    "app/(app)/certs/events/[id]/event-detail.module.css",
+  ] as const;
+  const EDITOR = /^\.cell(?:Select|Input|InputNumeric)(?::focus-visible)?$/;
+
+  for (const path of MODULES) {
+    const css = stripComments(readFileSync(resolve(process.cwd(), path), "utf8"));
+    const rules = [...css.matchAll(/(?<=^|\})\s*([^{}@]+?)\s*\{([^}]*)\}/g)]
+      .map((m) => ({ selectors: (m[1] as string).split(",").map((s) => s.trim()), body: m[2] as string }))
+      .filter((rule) => rule.selectors.every((s) => EDITOR.test(s)));
+    const rest = rules.filter((rule) => rule.selectors.every((s) => !s.endsWith(":focus-visible")) && /background/.test(rule.body));
+    const focus = rules.filter((rule) => rule.selectors.every((s) => s.endsWith(":focus-visible")));
+
+    it(`${path} — 쉬는 칸 면 투명 · 포커스 칸 흰 바탕 + 안쪽 accent 선`, () => {
+      expect(rest.length, "쉬는 칸 규칙").toBeGreaterThan(0);
+      expect(focus.length, "포커스 칸 규칙").toBeGreaterThan(0);
+      for (const rule of rest) expect(rule.body).toMatch(/background:\s*transparent/);
+      for (const rule of [...rest, ...focus]) expect(rule.body).not.toMatch(/--accent-weak|--g-\d+/);
+      for (const rule of focus) {
+        expect(rule.body).toMatch(/background:\s*var\(--surface-base\)/);
+        expect(rule.body).toMatch(/outline:\s*var\(--focus-w\) solid var\(--accent\)/);
+        expect(rule.body).toMatch(/outline-offset:\s*calc\(-1 \* var\(--focus-w\)\)/);
+      }
+    });
+  }
 });

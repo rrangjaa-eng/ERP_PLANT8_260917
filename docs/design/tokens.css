@@ -57,19 +57,19 @@
   --surface-base:     var(--n-0);     /* 표·폼·패널·모달 면 */
   --surface-head:     var(--n-50);    /* 표 머리글 */
   --surface-foot:     var(--n-50);    /* 합계 줄 */
-  --surface-group:    var(--g-50);    /* 그룹 줄 */
+  --surface-group:    var(--n-50);    /* 그룹 줄 — 07 개정 11: 표 안 초록 면 없음(중립 n-50) */
   --surface-actions:  var(--n-25);    /* 패널 행동 줄 */
   --surface-muted:    var(--n-60);    /* 비활성·뼈대 행 */
-  --surface-selected: var(--g-100);   /* 선택 범위 — 위에 --text-faint 금지(4.26) */
-  --surface-dirty:    var(--g-100);   /* 저장 대기 편집 칸 면(UQ-4 후보 7) — 위에 --text-faint 금지(4.26) */
+  --surface-selected: var(--n-100);   /* 선택 범위 — 07 개정 11: 중립 n-100. 위에 --text-faint 금지(4.39) */
+  --surface-dirty:    var(--n-60);    /* 저장 대기 편집 칸 면(UQ-4 후보 7) — 07 개정 11: 중립 n-60 */
 
   /* 글자 */
   --text-strong:    var(--n-900);   /* on canvas 15.3 · on base 16.8 */
   --text-muted:     var(--n-700);   /* on canvas 5.94 · on head 6.11 · on actions 6.16 */
-  --text-faint:     var(--n-600);   /* on canvas 4.88 · on base 5.35 · --surface-selected 위 금지 */
+  --text-faint:     var(--n-600);   /* on canvas 4.88 · on base 5.35 · --surface-selected(n-100) 위 금지(4.39) */
   --text-group:     var(--g-800);   /* on group 9.79 */
   --text-on-accent: var(--n-0);     /* on accent 8.91 */
-  --text-on-tint:   var(--g-950);   /* on --surface-selected(g-100) 13.5 — 편집 표 머리글 글자(SYSTEM 894) */
+  --text-on-tint:   var(--g-950);   /* on --surface-selected(n-100) 13.95 — 편집 표 머리글 글자(SYSTEM 894) */
   --text-link:      var(--accent);
 
   /* 선 */

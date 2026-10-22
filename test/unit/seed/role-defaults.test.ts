@@ -23,6 +23,15 @@ describe("ROLE_DEFAULT_PERMISSIONS(07-05 D-722)", () => {
   it("시스템 관리자 줄이 없다 — 시스템 관리자는 seedMasterData의 MENUS 루프가 맡는다", () => {
     expect(ROLE_DEFAULT_PERMISSIONS.filter((row) => row.roleId === SYSADMIN_ROLE_ID)).toEqual([]);
   });
+
+  // 사용자 결정 2026-10-22: ① 행동 로그 메뉴 보기는 ⑧ 상세 노출(action_log.detail)과 함께 켠다 — 하나만 켜면 메뉴에 못 쓰는 링크가 생긴다.
+  it("admin.action-log 보기를 켠 계급은 action_log.detail 노출도 켜져 있다", () => {
+    const detailVisible = new Set(
+      ROLE_DEFAULT_VISIBILITY.filter((row) => row.infoItem === "action_log.detail" && row.visible).map((row) => row.roleId),
+    );
+    const menuOn = ROLE_DEFAULT_PERMISSIONS.filter((row) => row.menu === "admin.action-log" && row.action === "view" && row.allowed);
+    expect(menuOn.filter((row) => !detailVisible.has(row.roleId))).toEqual([]);
+  });
 });
 
 describe("ROLE_DEFAULT_VISIBILITY(07-05 D-722)", () => {

@@ -272,7 +272,6 @@ describe("개인카드 전표 증빙 종류 시드(06.1 G15)", () => {
 // 고정값은 리팩터 전 main(4f6236ee)으로 시드한 DB에서 뽑았다 — 시드 계급 4종 줄만(시스템 관리자는 MENUS · INFO_ITEMS 루프 사례가 따로 본다).
 // 시드 계급 기본값을 바꾸는 플랜은 이 고정값을 바꾼 줄만 고친다(diff가 확인 카드의 바꿀 칸과 1:1).
 const SEED_ROLE_PERMISSIONS_BEFORE_0705 = [
-  "role-ceo|admin.action-log|view|true", // D-722 확인 카드 2026-10-22 ①
   "role-ceo|expenses|view|true",
   "role-ceo|expenses|write|true",
   "role-ceo|leave|view|true",
@@ -351,26 +350,17 @@ describe("시드 계급 기본값 표 리팩터 전후 행 집합(07-05 D-722)",
 
     // 재시드는 행을 바꾸지 않고, 반환 카운트는 리팩터 전 값과 같다(시스템 관리자 루프 + 시드 계급 표).
     const result = await seedMasterData(SYSTEM_VIEWER);
-    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 125, visibility: 180 });
+    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 124, visibility: 180 });
   });
 });
 
-// 07-05(D-722 확인 카드 2026-10-22 답 A · ⑧ 끔): ① 대표 행동 로그 보기를 시드가 켠다(ADMN-10 갭) — 없을 때만, 관리자가 끈 값은 그대로.
-// ⑧ 끔이라 대표 정보 항목 action_log.detail은 시드 false 그대로다(위 행 집합 고정값의 hidden 목록).
-describe("대표 행동 로그 보기 시드(07-05 D-722 ①)", () => {
-  it("빈 DB 첫 시드 뒤 대표 admin.action-log 보기가 켜져 있고 본부 책임자 · 팀장 · 기획 PM은 행이 없다", async () => {
-    expect((await findPermission(SYSTEM_VIEWER, CEO_ROLE_ID, "admin.action-log", "view"))?.allowed).toBe(true);
-    for (const roleId of [DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID]) {
+// 07-05(D-722 확인 카드 2026-10-22 답 A · ⑧ 끔 · 사용자 결정 2026-10-22): ⑧(대표 action_log.detail)이 꺼진 동안 ① 대표 행동 로그 보기
+// 시드를 보류한다 — ①만 켜면 대표 사이드바에 「관리 › 행동 로그」가 생기고 누르면 queryActionLog가 막는다(독립 검토 P2). ⑧과 함께 켠다.
+describe("대표 행동 로그 보기 시드 보류(07-05 D-722 ① · ⑧ 끔)", () => {
+  it("빈 DB 첫 시드 뒤 시드 계급 4종 모두 admin.action-log 보기 행이 없고 대표 action_log.detail은 숨김이다", async () => {
+    for (const roleId of [CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID]) {
       expect(await findPermission(SYSTEM_VIEWER, roleId, "admin.action-log", "view")).toBeNull();
     }
     expect((await findVisibility(SYSTEM_VIEWER, CEO_ROLE_ID, "action_log.detail"))?.visible).toBe(false);
-  });
-
-  it("대표 admin.action-log 보기를 권한표에서 끈 뒤 시드를 다시 돌려도 꺼진 채다(운영 값 보존)", async () => {
-    await upsertPermission(SYSTEM_VIEWER, { roleId: CEO_ROLE_ID, menu: "admin.action-log", action: "view", allowed: false });
-
-    await seedMasterData(SYSTEM_VIEWER);
-
-    expect((await findPermission(SYSTEM_VIEWER, CEO_ROLE_ID, "admin.action-log", "view"))?.allowed).toBe(false);
   });
 });

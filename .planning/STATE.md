@@ -5,10 +5,10 @@ current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
 current_plan: 37
 status: executing
 stopped_at: Completed 06-39-PLAN.md
-last_updated: "2026-10-22T05:47:45.753Z"
+last_updated: "2026-10-22T11:29:23.536Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 06 execution started
-state_head: daa8e7db36ef1aefe19703824d563c27d762176c
+state_head: cc67d0877a0de941395fa5764c816b3aeac54fcc
 progress:
   total_phases: 22
   completed_phases: 7
@@ -454,6 +454,7 @@ Recent decisions affecting current work:
 | 261003-40w | DEF-1 보관함 500 수정 + SYSTEM 폼 간격 24 | 2026-10-03 | af018d7 | [261003-40w-def-1-500-system-24](./quick/261003-40w-def-1-500-system-24/) |
 | 261004-51o | 프로젝트 목록 수익률 기준선 색 — 설정 키(기본 15%)와 목록 위험 색 | 2026-10-04 | dd7ea069 | [261004-51o-profit-rate-threshold-color-on-project-l](./quick/261004-51o-profit-rate-threshold-color-on-project-l/) |
 | 261022-7n2 | firstCandidate no-slot 경계 수정(D-749) — 지급 요일을 영업일로 맞춘 날이 기준일 이하면 no-slot | 2026-10-22 | daa8e7d | [261022-7n2-firstcandidate-no-slot-boundary-fix-d-74](./quick/261022-7n2-firstcandidate-no-slot-boundary-fix-d-74/) |
+| 261022-fc0 | E2E 카드 도우미 흔들림 고치기 — addCard 빈 번호 선택·회귀 시험 정리 afterEach | 2026-10-22 | cc67d087 | [261022-fc0-e2e](./quick/261022-fc0-e2e/) |
 | 261022-cwp | 07 사후 검토 main 결함 4건 — 설정 첫 저장 이전 값=기본값 · 결재선 바뀌지 않은 빈 부서 칸 기록 안 함 · 원가율 공백=비움 · role-smoke 최종 경로 단언 | 2026-10-22 | 2c8dfed | [261022-cwp-07-post-review-main-defect-fixes-setting](./quick/261022-cwp-07-post-review-main-defect-fixes-setting/) |
 
 ### Roadmap Evolution

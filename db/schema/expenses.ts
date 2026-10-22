@@ -39,7 +39,14 @@ export const expenses = pgTable(
     supplyAmountKrw: bigint("supply_amount_krw", { mode: "number" }),
     installment: boolean("installment").notNull().default(false),
     installmentSeq: integer("installment_seq"),
+    // 07 D-714 · D-740: 지급 권한자가 정한 수동 값 — null이면 자동(domain/payments/pay-schedule.ts). 기록 칸(set_by · set_at)이 비었는데 값이 있으면 07 전 기존 값.
     scheduledPaymentDate: date("scheduled_payment_date"),
+    // 07 C6: 수동 지정을 누가 · 언제 했는지 — 둘이 함께 있거나 함께 없고, 있으면 예정일도 있다. 쓰는 길은 07-06 지급 권한자 길뿐.
+    scheduledPaymentSetBy: text("scheduled_payment_set_by").references(() => users.id),
+    scheduledPaymentSetAt: timestamp("scheduled_payment_set_at", { withTimezone: true }),
+    // 07 D-714 · D18: 기안자가 적는 희망 지급일 + 사유 — 한 쌍이라 한쪽만 적으면 막는다.
+    requestedPaymentDate: date("requested_payment_date"),
+    requestedPaymentReason: text("requested_payment_reason"),
     note: text("note"),
     taxRuleKind: text("tax_rule_kind"),
     taxRate: numeric("tax_rate", { precision: 7, scale: 6 }),
@@ -93,6 +100,11 @@ export const expenses = pgTable(
     check(
       "expenses_prepaid_reason_check",
       sql`${table.prepaid} = false OR (${table.prepaidReason} IS NOT NULL AND char_length(btrim(${table.prepaidReason})) > 0)`,
+    ),
+    check("expenses_requested_payment_pair_check", sql`(${table.requestedPaymentDate} IS NULL) = (${table.requestedPaymentReason} IS NULL)`),
+    check(
+      "expenses_scheduled_payment_set_check",
+      sql`(${table.scheduledPaymentSetBy} IS NULL AND ${table.scheduledPaymentSetAt} IS NULL) OR (${table.scheduledPaymentSetBy} IS NOT NULL AND ${table.scheduledPaymentSetAt} IS NOT NULL AND ${table.scheduledPaymentDate} IS NOT NULL)`,
     ),
     check(
       "expenses_closed_check",

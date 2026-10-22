@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { auth } from "@/lib/auth";
+import { env } from "@/lib/env";
 import { createAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 
@@ -22,13 +23,13 @@ async function signIn(email: string, password: string, headers: Record<string, s
 // Eng Issue 1: rateLimit은 x-client-ip(proxy.ts가 고정한 단일 헤더)만 읽는다 —
 // x-forwarded-for를 직접 읽으면 클라이언트가 위조한 항목을 끼워 넣어 우회할 수 있다.
 describe("IP 속도 제한 (/sign-in/email)", () => {
-  it("같은 IP에서 60초 안에 RATE_LIMIT_LOGIN_MAX(10)회 넘게 부르면 429가 온다", async () => {
+  it("같은 IP에서 60초 안에 RATE_LIMIT_LOGIN_MAX(기본 60)회 넘게 부르면 429가 온다", async () => {
     const email = uniqueEmail("ratelimit");
     await createAccount(SYSTEM_VIEWER, { email, name: "Rate Limit" });
     const ip = "203.0.113.9";
 
     let last: Response | undefined;
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < env.RATE_LIMIT_LOGIN_MAX + 1; i++) {
       last = await signIn(email, "wrong-password", { "x-client-ip": ip });
     }
     expect(last!.status).toBe(429);

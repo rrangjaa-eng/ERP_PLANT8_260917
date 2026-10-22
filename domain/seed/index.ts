@@ -307,7 +307,8 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   // 여기 등록돼 있어 설정 화면의 키 0개 상태가 성립하지 않는다.
   let settingsCount = 0;
   for (const def of SETTING_DEFS) {
-    if (def.default === undefined) continue;
+    // 기본값 null = 「비움」(원가율 등 07-08) — 행을 두지 않는다. 읽기는 기본값 null이고, JSON null 행을 시드하면 저장값과 구분이 안 된다.
+    if (def.default === undefined || def.default === null) continue;
     if (def.kind === "historized") {
       const inserted = await seedHistorizedValue(viewer, def.key, SEED_HISTORIZED_EFFECTIVE_FROM, def.default);
       if (inserted) settingsCount++;

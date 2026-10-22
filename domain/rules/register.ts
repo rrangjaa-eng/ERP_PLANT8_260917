@@ -23,6 +23,7 @@ import type { Money, MoneyInput } from "@/domain/money";
 import { formatKrw } from "@/lib/format-number";
 import type { LineLinks } from "@/repositories/quote-line-links";
 import { preSettleBlockReason } from "@/domain/pre-settle-check/summary";
+import type { PaySchedule } from "@/domain/payments/pay-schedule";
 
 // Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
 // 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13 · 06-07 D-47 ③ 갈래), `quote.line-cap`(04-26),
@@ -364,6 +365,21 @@ registerGateRule<unknown, EvidenceGateInput>({
 registerGateRule<unknown, PairGateInput>({
   name: "payment.method-evidence-mismatch",
   check: (_doc, ctx) => pairGateDecision(ctx),
+});
+
+// 07 D-703 — 그 주 소속만 정한다. 지급 처리 동작은 막지 않는다(single · batch 액션은 이 gate를 부르지 않음).
+// 원래 지급일의 마감을 넘겼는지는 pushReason으로만 읽는다 — 밀린 뒤 주의 cutoffAt으로 다시 비교하면 다음 주로 민 건이 통과한다(K30).
+export type PaymentCutoffCtx = Pick<PaySchedule, "manual" | "approvedAt" | "pushReason" | "failed">;
+
+registerGateRule<unknown, PaymentCutoffCtx>({
+  name: "payment.cutoff",
+  check: (_doc, ctx) => {
+    if (ctx.failed) return { allowed: false, reason: "예정일 계산 실패" };
+    if (ctx.manual) return { allowed: true };
+    if (ctx.approvedAt === null) return { allowed: false, reason: "결재 중" };
+    if (ctx.pushReason === "cutoff") return { allowed: false, reason: "마감 지나 밀림" };
+    return { allowed: true };
+  },
 });
 
 // 06-07(D-609) — 견적 줄 하나는 지출결의 쪽 또는 카드 쪽(카드 사용 · 구매 요청) 한 쪽에만 잇는다. 같은 쪽 여러 건은 통과.

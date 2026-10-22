@@ -349,6 +349,22 @@ test.describe("법인카드 옆 패널 (04.6-15)", () => {
 const KIND_CELL = 3;
 const OWNER_CELL = 4;
 
+test.describe("법인카드 등록 폼 오류 포커스 (07-08 감사 D1)", () => {
+  test("뒤 4자리를 잘못 넣고 등록하면 포커스가 제출 버튼이 아니라 뒤 4자리 칸으로 간다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAsSysadmin(page);
+    await page.goto("/admin/corp-cards?new=1");
+    const dialog = page.locator(PANEL);
+    await dialog.getByLabel("발급사").fill(`포커스카드사-${randomUUID().slice(0, 8)}`);
+    await dialog.getByLabel("뒤 4자리").fill("12");
+    await dialog.getByLabel("별칭").fill("포커스확인");
+    await dialog.getByLabel("종류").selectOption("shared");
+    await dialog.getByRole("button", { name: "법인카드 등록" }).click();
+    await expect(dialog.locator("#numberLast4")).toHaveAttribute("aria-invalid", "true");
+    await expect(dialog.locator("#numberLast4")).toBeFocused();
+  });
+});
+
 test.describe("공용 법인카드 (06-30 · Q5 · C8)", () => {
   test("새 카드 폼에서 종류 「공용」을 고르면 소유 칸이 사라지고, 등록하면 목록 종류 「공용」 · 소유 「—」다", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -431,6 +447,8 @@ test.describe("공용 법인카드 (06-30 · Q5 · C8)", () => {
       await submit.click();
       await expect(dialog).toBeVisible();
       await expect(dialog.locator("#owner-holderUserId")).toHaveAttribute("aria-invalid", "true");
+      // 감사 D1 — 서버 검증 오류 뒤 포커스가 제출 버튼이 아니라 오류 난 소지자 칸에 있다.
+      await expect(dialog.locator("#owner-holderUserId")).toBeFocused();
       await expect(dialog.locator("#corp-card-owner-form-reason")).toHaveText("소지자·팀 중 하나 필요 · 하나만 선택");
       await expect(submit).toHaveAccessibleDescription(/소지자·팀/);
       const cells = page.locator("tr", { hasText: card.label }).locator("td");

@@ -153,20 +153,3 @@
   color: var(--status-danger);
   white-space: nowrap;
 }
-
-/* 증빙 종류 세금 규칙 select(페이지 폼 모양) — 같은 줄 입력과 높이를 맞춘다. */
-.select {
-  box-sizing: border-box;
-  height: var(--field-h);
-  border: var(--line-w) solid var(--border-control);
-  border-radius: var(--radius-control);
-  background: var(--surface-base);
-  color: var(--text-strong);
-  padding: 0 var(--s-2);
-  font-size: var(--text-body);
-}
-
-.select:focus-visible {
-  outline: var(--focus-w) solid var(--focus);
-  outline-offset: var(--focus-offset);
-}

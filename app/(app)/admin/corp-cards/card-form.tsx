@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import {
   createCorpCardAction,
@@ -10,6 +10,8 @@ import {
 } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Form } from "@/ui/form/Form";
+import { focusFirstInvalid } from "@/ui/form/focus-first-invalid";
+import { Select } from "@/ui/select/Select";
 import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { SidePanel, editLinkFor } from "@/ui/side-panel/SidePanel";
@@ -26,6 +28,12 @@ function getStringField(formData: FormData, key: string): string {
 
 // 06-30(Q5 · C8): 종류는 사람이 고른 값 — 공용(shared)은 소지자 · 팀 칸이 없다.
 type OwnerKind = "personal" | "team" | "shared";
+
+const OWNER_KIND_OPTIONS = [
+  { value: "personal", label: "개인" },
+  { value: "team", label: "팀" },
+  { value: "shared", label: "공용" },
+];
 
 function toOwnerKind(value: string): OwnerKind {
   return value === "team" || value === "shared" ? value : "personal";
@@ -62,7 +70,11 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
   });
 
   const ownerError = result.validationErrors?.holderUserId?._errors?.[0];
-  const ownerSelectClass = ownerError ? `${styles.select} ${styles.selectInvalid}` : styles.select;
+
+  // 서버 검증 오류가 돌아오면 포커스를 오류 난 첫 칸으로(07-08 감사 D1).
+  useEffect(() => {
+    if (result.validationErrors !== undefined) focusFirstInvalid("corp-card-form");
+  }, [result]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -110,20 +122,17 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
 
       <div className={styles.field}>
         <Form.Field id="card-kind" label="종류">
-          <select
+          <Select
             id="card-kind"
             name="kind"
-            className={styles.select}
+            hideEmptyOption
             value={kind}
+            options={OWNER_KIND_OPTIONS}
             onChange={(event) => {
               setKind(toOwnerKind(event.target.value));
               reset();
             }}
-          >
-            <option value="personal">개인</option>
-            <option value="team">팀</option>
-            <option value="shared">공용</option>
-          </select>
+          />
         </Form.Field>
       </div>
 
@@ -131,49 +140,29 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
       {kind === "personal" ? (
         <div key="personal" className={styles.field}>
           <Form.Field id="holderUserId" label="소지자">
-            <select
+            <Select
               id="holderUserId"
               name="holderUserId"
-              className={ownerSelectClass}
               required
-              aria-invalid={ownerError ? true : undefined}
-              aria-describedby={ownerError ? "card-owner-error" : undefined}
+              hideEmptyOption
+              error={ownerError}
               defaultValue=""
-            >
-              <option value="" disabled>
-                소지자 선택
-              </option>
-              {holders.map((holder) => (
-                <option key={holder.id} value={holder.id}>
-                  {holder.name}
-                </option>
-              ))}
-            </select>
-            {ownerError ? <Form.Error id="card-owner-error">{ownerError}</Form.Error> : null}
+              options={[{ value: "", label: "소지자 선택" }, ...holders.map((item) => ({ value: item.id, label: item.name }))]}
+            />
           </Form.Field>
         </div>
       ) : kind === "team" ? (
         <div key="team" className={styles.field}>
           <Form.Field id="teamId" label="팀">
-            <select
+            <Select
               id="teamId"
               name="teamId"
-              className={ownerSelectClass}
               required
-              aria-invalid={ownerError ? true : undefined}
-              aria-describedby={ownerError ? "card-owner-error" : undefined}
+              hideEmptyOption
+              error={ownerError}
               defaultValue=""
-            >
-              <option value="" disabled>
-                팀 선택
-              </option>
-              {teams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.orgUnitName} · {team.name}
-                </option>
-              ))}
-            </select>
-            {ownerError ? <Form.Error id="card-owner-error">{ownerError}</Form.Error> : null}
+              options={[{ value: "", label: "팀 선택" }, ...teams.map((item) => ({ value: item.id, label: `${item.orgUnitName} · ${item.name}` }))]}
+            />
           </Form.Field>
         </div>
       ) : null}
@@ -218,7 +207,11 @@ export function CardOwnerForm({
   }
 
   const ownerError = result.validationErrors?.holderUserId?._errors?.[0];
-  const ownerSelectClass = ownerError ? `${styles.select} ${styles.selectInvalid}` : styles.select;
+
+  // 서버 검증 오류가 돌아오면 포커스를 오류 난 첫 칸으로(07-08 감사 D1).
+  useEffect(() => {
+    if (result.validationErrors !== undefined) focusFirstInvalid("corp-card-owner-form");
+  }, [result]);
 
   return (
     <PanelForm
@@ -235,20 +228,17 @@ export function CardOwnerForm({
 
       <div className={styles.field}>
         <Form.Field id="owner-kind" label="종류">
-          <select
+          <Select
             id="owner-kind"
             name="kind"
-            className={styles.select}
+            hideEmptyOption
             value={kind}
+            options={OWNER_KIND_OPTIONS}
             onChange={(event) => {
               setKind(toOwnerKind(event.target.value));
               reset();
             }}
-          >
-            <option value="personal">개인</option>
-            <option value="team">팀</option>
-            <option value="shared">공용</option>
-          </select>
+          />
         </Form.Field>
       </div>
 
@@ -258,49 +248,29 @@ export function CardOwnerForm({
       {kind === "personal" ? (
         <div key="personal" className={styles.field}>
           <Form.Field id="owner-holderUserId" label="소지자">
-            <select
+            <Select
               id="owner-holderUserId"
               name="holderUserId"
-              className={ownerSelectClass}
               required
-              aria-invalid={ownerError ? true : undefined}
-              aria-describedby={ownerError ? "owner-error" : undefined}
+              hideEmptyOption
+              error={ownerError}
               defaultValue={holders.some((holder) => holder.id === card.holderUserId) ? (card.holderUserId ?? "") : ""}
-            >
-              <option value="" disabled>
-                소지자 선택
-              </option>
-              {holders.map((holder) => (
-                <option key={holder.id} value={holder.id}>
-                  {holder.name}
-                </option>
-              ))}
-            </select>
-            {ownerError ? <Form.Error id="owner-error">{ownerError}</Form.Error> : null}
+              options={[{ value: "", label: "소지자 선택" }, ...holders.map((item) => ({ value: item.id, label: item.name }))]}
+            />
           </Form.Field>
         </div>
       ) : kind === "team" ? (
         <div key="team" className={styles.field}>
           <Form.Field id="owner-teamId" label="팀">
-            <select
+            <Select
               id="owner-teamId"
               name="teamId"
-              className={ownerSelectClass}
               required
-              aria-invalid={ownerError ? true : undefined}
-              aria-describedby={ownerError ? "owner-error" : undefined}
+              hideEmptyOption
+              error={ownerError}
               defaultValue={teams.some((team) => team.id === card.teamId) ? (card.teamId ?? "") : ""}
-            >
-              <option value="" disabled>
-                팀 선택
-              </option>
-              {teams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.orgUnitName} · {team.name}
-                </option>
-              ))}
-            </select>
-            {ownerError ? <Form.Error id="owner-error">{ownerError}</Form.Error> : null}
+              options={[{ value: "", label: "팀 선택" }, ...teams.map((item) => ({ value: item.id, label: `${item.orgUnitName} · ${item.name}` }))]}
+            />
           </Form.Field>
         </div>
       ) : null}

@@ -340,7 +340,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(page.getByLabel("공급가액")).toHaveValue("12,400,000");
   });
 
-  test("웨이브 9 D1 — 저장된 문서에서 줄을 바꾸면 저장 안 한 비고 · 지급 예정일이 먼저 저장돼 남는다", async ({ browser, baseURL }) => {
+  test("웨이브 9 D1 — 저장된 문서에서 줄을 바꾸면 저장 안 한 비고가 먼저 저장돼 남는다 · 작성자가 적은 지급 예정일은 칸에 쓰이지 않는다(07-01 D-714)", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openDraft(page, fx, "tracer");
@@ -353,10 +353,10 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.phone.itemName}`);
     await expect(page.getByLabel("비고", { exact: true })).toHaveValue("웨이브9 저장 안 한 메모");
-    await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue("2026-10-17");
+    await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue("");
   });
 
-  test("05-16 — /expenses/new에서 비고 · 지급 예정일을 적고 줄을 고르면 지워짐 글자 없이 만들어진 문서에 그대로 남는다", async ({ browser, baseURL }) => {
+  test("05-16 — /expenses/new에서 비고 · 지급 예정일을 적고 줄을 고르면 지워짐 글자 없이 비고가 만들어진 문서에 남고, 지급 예정일은 다시 열면 빈 칸(07-01 D-714)", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openNew(page);
@@ -372,7 +372,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.hold.itemName}`);
     await expect(page.getByLabel("비고", { exact: true })).toHaveValue("새 문서 메모");
-    await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue("2026-10-17");
+    await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue("");
   });
 
   test("웨이브 9 D2 · D3 · D5 — 1차 버튼 설명은 결과 줄 · 검색 칸은 거르는 동안 제자리 · 부제 `프로젝트 N · 고를 수 있는 줄 M` · `지급처 N`", async ({ browser, baseURL }) => {

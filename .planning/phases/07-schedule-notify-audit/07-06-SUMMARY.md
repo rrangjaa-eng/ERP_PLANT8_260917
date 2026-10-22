@@ -156,11 +156,10 @@ completed: 2026-10-22
 - 반려 · 회수 뒤 증빙 없이 재제출하면 기준일이 옛 submittedAt이라 같은 갈림이 생길 수 있다.
 - 승인 시점에 스냅숏을 다시 잡는 것은 이 플랜 범위 밖이다.
 
-### 후속 메모 — pushReason null로 규칙 줄이 「마지막 금요일」
+### 후속 메모 — pushReason null로 규칙 줄이 「마지막 금요일」 — #269(636296e)로 해소
 
-- domain/payments/pay-schedule.ts:96-99(firstCandidate): 기한 창(기준일, 기준일+기한] 안 지급 요일을 영업일로 당긴 결과가 창 밖(기준일 당일 · 그 앞)이어도 pushReason이 null이다. 창 안 영업일이 0이면 규칙 줄이 「기한 N일 안 마지막 금요일」로 나온다. D-749 · D-741 문맥이면 no-slot(「마지막 영업일」)이 맞아 보인다.
-- 예: 기준 07-09(목) · 기한 1 · 07-10 공휴일. J5로 거래처 기한 1~180일이 열려 짧은 기한에서 실제로 닿는다. 날짜 자체는 D-749와 맞다.
-- 사용자 결정: 별도 quick에서 D-749 해석을 확인하고 고친다. 이 PR에서는 고치지 않는다. 고치면 test/unit/payments/pay-schedule.test.ts의 해당 사례 pushReason 기대를 no-slot으로 바꾼다.
+- #269(636296e, D-749 firstCandidate no-slot 수정)로 해소. main 머지 뒤 firstCandidate는 영업일로 맞춘 날이 기준일 이하이면 no-slot(「기한 N일 안 마지막 영업일」)을 돌려준다.
+- test/unit/payments/pay-schedule.test.ts의 휴일 주 사례(기준 07-09(목) · 기한 1 · 07-10 공휴일) 기대를 no-slot으로 바꿨다. 날짜(07-09 · 07-08)는 그대로다.
 
 ### 작은 견고성 넷 — 지금 닿는 경로 없음(고치지 않음)
 
@@ -175,6 +174,14 @@ completed: 2026-10-22
 - 단위: row-scope-disposition · domain/expenses/list-groups — 2파일 26 통과.
 - E2E(desktop, flock · CI=true): expense-new · expense-list · expense-auto-date — 30 통과(skipped 18은 visual 프로젝트 몫).
 - P3 RED: 새 단위 사례가 「다음 주」 뒤 「예정일 지남」 · 「그 뒤」 · 「이번 주 지급」 머리글 되풀이로 실패. approved-sort 새 단언은 고치기 전 list.ts로 `expected { label: '예정일 지남' } to match { label: '지급 완료' }` 실패 → 고친 뒤 통과.
+
+## 실행 검토 round2 반영 (2026-10-22, #267)
+
+- 호출한 스킬: superpowers:systematic-debugging · test-driven-development · verification-before-completion.
+- F-267-1 · F-267-2: origin/main(#269 포함)을 머지 커밋으로 반영했다. pay-schedule.ts는 main판 그대로다. 휴일 주 사례의 이전 기대(null)가 main판에서 실패함을 먼저 재현했고(RED), 기대를 no-slot으로 바꿨다(GREEN).
+- 「내 차례」 지급 묶음: main(phase6-items.ts — `row.scheduledPaymentDate`)은 예정일을 적지 않은 새 승인 건을 세지 않는다. 07-06이 유효 예정일(`schedule.payDate`)로 바꿔 덮는다. 그 줄만 main판으로 되돌리면 payments/effective-date 「내 차례」 사례가 `expected +0 to be 1`로 실패하는 것을 확인했다.
+- sundayOf(D-715): 지급 묶음의 「이번 주」가 pay-schedule 밖에서 getUTCDay로 셈해졌다. domain/next-turn이 no-fixed-weekday 검사 범위 밖이라 걸리지 않았다. 검사 범위에 domain/next-turn을 더해 RED를 확인했다. 그 뒤 `payWeekIndex(date, today) <= 0`으로 바꿨다(GREEN — 일요일 경계 단위 사례 유지).
+- 검증: 단위 payments · rules/payment-cutoff · domain/next-turn-phase6 — 5파일 71 통과. 통합 next-turn · payments — 6파일 77 통과. typecheck 통과. eslint는 바뀐 파일 통과다. 저장소 전체 eslint는 이 머신 메모리 부족(OOM 134/137)으로 끝나지 않았다. 전체 실행은 CI가 맡는다.
 
 ## Known Stubs
 

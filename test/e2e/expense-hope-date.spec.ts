@@ -4,7 +4,7 @@ import { db } from "@/db/client";
 import { expenses } from "@/db/schema";
 import { createExpenseFromLines, getExpense, submitExpense } from "@/domain/expenses";
 import { isBusinessDay } from "@/domain/holidays/business-day";
-import { REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
+import { REQUESTED_DATE_PASSED, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { attachEvidence } from "../integration/fixtures/expenses";
 import { delayServerActions, loginPage, waitForHydration } from "./leave-org";
 import { setupExpenseE2E, type ExpenseE2E, type LineKey } from "./expense-fixture";
@@ -116,6 +116,36 @@ test.describe("지출결의 폼 — 지급 예정일 읽기 줄 · 희망 지급
     // 감사 #8(P3): 표 밖 날짜는 ISO(SYSTEM §2-4).
     await expect(page.locator("dt", { hasText: /^희망 지급일$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText(hope);
     await expect(page.locator("dt", { hasText: /^희망 사유$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText("행사 전 선금");
+    await page.context().close();
+  });
+
+  test("희망일이 지난 작성 중 문서 — 비고만 고친 임시 저장은 된다 · 제출은 희망 지급일 칸 `희망일 지남`(사용자 결정 2026-10-23)", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+    const id = created.created[0]?.expenseId ?? "";
+    await attachEvidence(fx.pm.viewer, id);
+    const past = addDays(cal.today, -2);
+    // 저장할 때는 미래였던 희망일이 날이 지나 과거가 된 문서.
+    await db.update(expenses).set({ requestedPaymentDate: past, requestedPaymentReason: "행사 전 선금" }).where(eq(expenses.id, id));
+
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${id}`);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    await expect(page.getByLabel("희망 지급일")).toHaveValue(past);
+
+    await page.getByLabel("비고", { exact: true }).fill("행사 운영비");
+    await page.getByRole("button", { name: /^임시 저장/ }).click();
+    await expect
+      .poll(async () => (await db.select({ note: expenses.note, date: expenses.requestedPaymentDate }).from(expenses).where(eq(expenses.id, id)))[0])
+      .toEqual({ note: "행사 운영비", date: past });
+    await expect(page.locator("#requestedPaymentDate-error")).toHaveCount(0);
+
+    await page.getByRole("button", { name: /^지출결의 제출/ }).click();
+    await expect(page.getByText("제출 실패 · 희망 지급일 1칸")).toBeVisible();
+    await expect(page.locator("#requestedPaymentDate-error")).toHaveText(REQUESTED_DATE_PASSED);
+    await expect(page.getByLabel("희망 지급일")).toHaveAttribute("aria-invalid", "true");
+    expect((await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, id)))[0]?.number).toBeNull();
     await page.context().close();
   });
 });

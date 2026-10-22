@@ -10,7 +10,7 @@ import { KvList } from "@/ui/kv-list/KvList";
 import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { parseNumberInput } from "@/lib/format-number";
-import { PREPAID_REASON_REQUIRED, REQUESTED_DATE_MISSING, REQUESTED_DATE_PAST, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
+import { PREPAID_REASON_REQUIRED, REQUESTED_DATE_MISSING, REQUESTED_DATE_PASSED, REQUESTED_DATE_PAST, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { BANK_TRANSFER_PAYMENT_METHOD } from "@/domain/expenses/payee";
 import { isCtrlCombo } from "@/lib/shortcut";
@@ -131,7 +131,7 @@ const DATE_EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
 
 // 07-16: 서버 희망 칸 오류(ExpenseFieldError)는 글자만 온다 — 어느 칸인지는 그 글자로 가른다(선결제 사유와 같은 꼴).
 function hopeErrorOf(message: string | undefined): { requestedPaymentDate: string } | { requestedPaymentReason: string } | null {
-  if (message === REQUESTED_DATE_PAST || message === REQUESTED_DATE_MISSING) return { requestedPaymentDate: message };
+  if (message === REQUESTED_DATE_PAST || message === REQUESTED_DATE_MISSING || message === REQUESTED_DATE_PASSED) return { requestedPaymentDate: message };
   if (message === REQUESTED_REASON_REQUIRED) return { requestedPaymentReason: message };
   return null;
 }
@@ -684,6 +684,14 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
       return;
     }
     const message = result?.serverError ?? "제출 실패 · 다시 제출";
+    // 사용자 결정 2026-10-23: 지난 희망일(`희망일 지남`)은 희망 지급일 칸 오류다.
+    const hopeError = hopeErrorOf(message);
+    if (hopeError) {
+      setErrors(hopeError);
+      setFailure(failureLine(hopeError, "submit"));
+      release();
+      return;
+    }
     if (message.startsWith("남은 실행가")) setErrors({ supplyAmount: message });
     setFailure(message);
     release();

@@ -537,10 +537,10 @@ export async function archivePerson(
   await revokeAllSessions(viewer, userId);
 }
 
-// 07-17 독립 검토 L1: 잠금 풀기 · 초기화는 사람 키(seat:person:)를 쥔 tx 안에서 대상을 다시 읽고 상한을 본다 — 계급 변경
-// (`changePersonRole`)이 같은 키를 쥐므로 올리기 · 내리기와 줄 서고, 판정 뒤 외부 단계(07-09 unlockAccount · resetPassword)가
-// 끝날 때까지 키를 놓지 않는다(assignTeam과 같은 「잠금 → 재조회 → 상한」 순서). 외부 단계는 풀에서 따로 연결을 빌리지만
-// 사람 키 대기는 lock_timeout(5초) · 풀 대기는 connectionTimeoutMillis(5초)로 끝나 서로 영원히 막지 않는다.
+// 07-17 독립 검토 L1 · /review(풀 고갈): 잠금 풀기 · 초기화는 사람 키(seat:person:)를 쥔 짧은 tx 안에서 대상을 다시 읽고 상한을
+// 본 뒤 키를 놓고 나서 외부 단계(07-09 unlockAccount · resetPassword)를 부른다 — 계급 변경(`changePersonRole`)이 같은 키를 쥐므로
+// 진행 중인 올리기 · 내리기의 커밋을 기다려 새 계급으로 판정한다(assignTeam과 같은 「잠금 → 재조회 → 상한」 순서). 키를 쥔 채
+// 외부 단계가 풀에서 연결을 하나 더 빌리면 풀 크기 이상 동시 요청이 5초 뒤 실패하므로 쥐지 않는다(연결은 한 번에 하나).
 type PersonLock = <T>(viewer: Viewer, personId: string, fn: (tx: DbOrTx) => Promise<T>) => Promise<T>;
 
 async function defaultWithPersonLock<T>(viewer: Viewer, personId: string, fn: (tx: DbOrTx) => Promise<T>): Promise<T> {
@@ -560,7 +560,7 @@ export type UnlockPersonDeps = {
   ) => Promise<Pick<UserRow, "id" | "email" | "roleId" | "resignationDate" | "archivedAt"> | null>;
   assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[], tx: DbOrTx) => Promise<void>;
   lockedNow: (email: string, tx: DbOrTx) => Promise<boolean>;
-  unlockAccount: (viewer: Viewer, email: string) => Promise<{ resolved: number }>;
+  unlockAccount: (viewer: Viewer, email: string, opts: { recordAction: typeof defaultRecordAction }) => Promise<{ resolved: number }>;
   now: () => Date;
 };
 
@@ -568,8 +568,8 @@ export type UnlockPersonDeps = {
 // 07-09 `unlockAccount`(해소 + account_unlock 기록 · 상한 재확인)를 부른다. 퇴직 거부는 여기(domain)에만 있다 —
 // `unlockAccount` 자체와 CLI 경로는 퇴직을 보지 않는다(PR-AUTH 범위, 관리자 화면 경로만 막는다).
 // 07-17 독립 검토 L3: 지금 잠긴 사람만 푼다(화면이 `잠금 풀기`를 그리는 조건과 같은 판정) — 잠기지 않았으면 아무것도 하지 않고
-// `{ unlocked: false }`(account_unlock 「해소 0건」 기록 · 임계 미만 실패 지우기 없음). 두 관리자가 동시에 누르면 사람 키에서 줄 서
-// 뒤 요청은 이미 풀린 것을 본다.
+// `{ unlocked: false }`(account_unlock 「해소 0건」 기록 · 임계 미만 실패 지우기 없음). 두 관리자가 동시에 누르면 뒤 요청은 판정
+// tx(사람 키) 또는 해소 tx(이메일 키 · 해소 0건)에서 이미 풀린 것을 본다.
 export async function unlockPerson(
   viewer: Viewer,
   personId: string,
@@ -583,7 +583,7 @@ export async function unlockPerson(
   const today = seoulTodayOf(deps);
   // 설정 읽기는 잠금 전에 — 잠금 중에는 tx로만 센다(로그인 거부와 같은 임계 · 창).
   const lockedNow = deps?.lockedNow ?? (await defaultLockedNow(deps?.now?.() ?? new Date()));
-  return (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
+  const email = await (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
     const target = await loadTarget(viewer, personId, tx);
     if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
     // 07-17 독립 검토 L2: 보관된 사람은 화면이 행동을 그리지 않는다 — 직접 호출도 거부(260907 `archived_at is null`과 같은 판정).
@@ -592,11 +592,32 @@ export async function unlockPerson(
       throw new ForbiddenError("퇴직한 사람 · 잠금 풀기 없음");
     }
     await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId], tx);
-    if (!(await lockedNow(target.email, tx))) return { unlocked: false };
-    await (deps?.unlockAccount ?? defaultUnlockAccount)(viewer, target.email);
-    return { unlocked: true };
+    return (await lockedNow(target.email, tx)) ? target.email : null;
   });
+  if (email === null) return { unlocked: false };
+  // 해소 tx 안 재판정 — 07-09 `unlockAccount`의 account_unlock 기록 자리(해소와 같은 tx)에서 사람 키를 잡고 다시 읽어 상한을 본다.
+  // 판정 뒤 올라간 대상이면 해소째 되돌린다. 그 사이 다른 요청이 이미 풀었으면(해소 0건) 기록 없이 되돌린다(L3).
+  const assertCeiling = deps?.assertCanGrantRoles ?? assertCanGrantRoles;
+  const recheckThenRecord: typeof defaultRecordAction = async (v, entry, options) => {
+    const tx = options?.tx;
+    if (!tx) throw new Error("account_unlock 기록은 해소 tx 안이어야 함");
+    await lockSeatKeys(viewer, { personIds: [personId] }, tx);
+    const target = await loadTarget(viewer, personId, tx);
+    if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
+    await assertCeiling(viewer, [target.roleId], tx);
+    if (entry.detail?.resolved === 0) throw new AlreadyUnlocked();
+    return defaultRecordAction(v, entry, options);
+  };
+  try {
+    await (deps?.unlockAccount ?? defaultUnlockAccount)(viewer, email, { recordAction: recheckThenRecord });
+  } catch (error) {
+    if (error instanceof AlreadyUnlocked) return { unlocked: false };
+    throw error;
+  }
+  return { unlocked: true };
 }
+
+class AlreadyUnlocked extends Error {}
 
 async function defaultLockedNow(now: Date): Promise<(email: string, tx: DbOrTx) => Promise<boolean>> {
   const { threshold, windowMinutes } = await lockoutConfig();
@@ -627,15 +648,16 @@ export async function resetPersonPassword(
     throw new ForbiddenError("비밀번호 초기화 권한 없음");
   }
   const loadTarget = deps?.loadTarget ?? ((v: Viewer, id: string, tx: DbOrTx) => repoFindUserById(v, id, tx));
-  return (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
+  const email = await (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
     const target = await loadTarget(viewer, personId, tx);
     if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
     if (target.archivedAt) throw new ForbiddenError("보관된 사람 · 비밀번호 초기화 없음");
     if (target.id === viewer.id) throw new ForbiddenError("본인 비밀번호 초기화 없음 · 내 계정에서 변경");
     await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId], tx);
-    const { tempPassword } = await (deps?.resetPassword ?? defaultResetPassword)(viewer, target.email);
-    return { tempPassword };
+    return target.email;
   });
+  const { tempPassword } = await (deps?.resetPassword ?? defaultResetPassword)(viewer, email);
+  return { tempPassword };
 }
 
 // 04.1-03(D-96 · D-97): 입사일·퇴직일. 쓰기 권한 · 날짜 형식 · 퇴직일 ≥ 입사일(같은 날 허용)을

@@ -55,7 +55,7 @@ describe("unlockPerson — 퇴직자 거부(D-728 · R11)", () => {
     const d = deps(TODAY);
     await unlockPerson(viewer, "target-1", d);
     expect(d.unlockAccount).toHaveBeenCalledTimes(1);
-    expect(d.unlockAccount).toHaveBeenCalledWith(viewer, "kim@example.test");
+    expect(d.unlockAccount.mock.lastCall?.slice(0, 2)).toEqual([viewer, "kim@example.test"]);
   });
 
   it("재직 대상은 상한 판정 뒤 unlockAccount 한 번", async () => {

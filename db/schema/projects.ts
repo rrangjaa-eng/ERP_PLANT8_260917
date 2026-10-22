@@ -31,6 +31,8 @@ export const projects = pgTable(
     endDate: date("end_date"),
     // D-52: 사전 견적 = 프로젝트의 총 매출 예상가 한 칸(견적 줄 없는 프로젝트 속성, 선택 입력).
     ...moneyColumns("preEstimate"),
+    // 07 W2 · D-737: 고객 PO 번호 — 같은 값이 여러 프로젝트에 있어도 된다(유일 제약 · 경고 없음). 예산 값은 이 표에 두지 않는다(project_budget_entries).
+    poNumber: text("po_number"),
     // Eng OV-1: 전환 전 새 시스템 입력은 source='demo'뿐.
     source: text("source").notNull().default("demo"),
     customFields: jsonb("custom_fields").notNull().default({}),

@@ -48,7 +48,7 @@ export const notificationLog = pgTable(
     index("notification_log_recipient_created_idx").on(table.recipientId, table.createdAt, table.id),
     check(
       "notification_log_email_status_check",
-      sql`${table.emailStatus} in ('pending', 'sending', 'sent', 'failed', 'unknown', 'skipped_no_smtp')`,
+      sql`${table.emailStatus} in ('pending', 'sending', 'sent', 'failed', 'unknown', 'skipped_no_smtp', 'skipped_rule_off')`,
     ),
   ],
 );
@@ -76,3 +76,25 @@ export const notifyTickRuns = pgTable("notify_tick_runs", {
     .default(sql`'{}'::text[]`),
   evaluationFailed: boolean("evaluation_failed").notNull().default(false),
 });
+
+// 07 NOTI-03 · D-717 — 조건 종류(코드 등록)마다 관리자가 바꾼 것만. NULL 칸 = 종류 기본값.
+// enabled_at = 끔 → 켬 마지막 시각(07-10 사건 창 하한). 받는 계급 = 회사 전체(D-748).
+// 시드 행 없음(기본값은 domain/notify 조건 종류). 사람별 끄기 · 즉시 경로 칸 없음(D-719 · D-716).
+export const notificationRules = pgTable(
+  "notification_rules",
+  {
+    kind: text("kind").primaryKey(),
+    enabled: boolean("enabled"),
+    days: integer("days"),
+    extraRoleIds: text("extra_role_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    emailEnabled: boolean("email_enabled"),
+    enabledAt: timestamp("enabled_at"),
+    version: integer("version").notNull().default(1),
+    updatedBy: text("updated_by").references(() => users.id),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [check("notification_rules_days_check", sql`${table.days} IS NULL OR ${table.days} >= 0`)],
+);

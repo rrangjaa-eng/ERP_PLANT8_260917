@@ -29,7 +29,8 @@ export async function countOpenFailures(
 
 export async function recordAttempt(
   viewer: Viewer,
-  row: { email: string; success: boolean; ip: string | null; attemptedAt: Date },
+  // attemptedAt을 빼면 DB 기본값(트랜잭션 시작 시각) — 07-09 미리 기록 행이 action_log.occurred_at과 같은 시계를 쓴다.
+  row: { email: string; success: boolean; ip: string | null; attemptedAt?: Date },
   tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
@@ -39,7 +40,7 @@ export async function recordAttempt(
 export async function resolveOpenFailures(
   viewer: Viewer,
   email: string,
-  reason: "success" | "admin_unlock",
+  reason: "success" | "admin_unlock" | "admin_reset",
   tx: DbOrTx = db,
 ): Promise<number> {
   void viewer;
@@ -55,6 +56,23 @@ export async function resolveOpenFailures(
     )
     .returning({ id: loginAttempts.id });
   return resolved.length;
+}
+
+// 07-09 FA-1: 창 안 열린 실패 중 가장 이른 시각 — 「잠금 기록 확인」이 이 시각 이후의 account_lock만 지금 잠금의 기록으로 본다.
+export async function firstOpenFailureAt(viewer: Viewer, email: string, since: Date, tx: DbOrTx): Promise<Date | null> {
+  void viewer;
+  const [row] = await tx
+    .select({ first: sql<Date | null>`min(${loginAttempts.attemptedAt})`.mapWith(loginAttempts.attemptedAt) })
+    .from(loginAttempts)
+    .where(
+      and(
+        eq(loginAttempts.email, email),
+        eq(loginAttempts.success, false),
+        isNull(loginAttempts.resolvedAt),
+        gte(loginAttempts.attemptedAt, since),
+      ),
+    );
+  return row?.first ?? null;
 }
 
 // 04.2-03(D-712): 같은 이메일의 실패 기록 트랜잭션을 줄 세운다 — 동시 실패

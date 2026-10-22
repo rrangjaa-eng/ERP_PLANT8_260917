@@ -288,6 +288,41 @@
       "when": 1792587644700,
       "tag": "0040_phase7_payment_schedule_validate",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792630775537,
+      "tag": "0041_phase7_notification_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792632313245,
+      "tag": "0042_phase7_notification_rules_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792659423330,
+      "tag": "0043_phase7_file_private_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792659814518,
+      "tag": "0044_phase7_vendor_project_docs",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792661722285,
+      "tag": "0045_phase7_vendor_project_docs_validate",
+      "breakpoints": true
     }
   ]
 }

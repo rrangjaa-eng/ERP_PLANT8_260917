@@ -2,12 +2,13 @@ import { createAuthMiddleware, APIError } from "better-auth/api";
 import { log } from "@/lib/log";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { countOpenFailures, recordAttempt, resolveOpenFailures } from "@/repositories/login-attempts";
-import { isLocked, lockoutConfig, recordLoginFailure, windowStart } from "@/domain/auth/lockout";
+import { recordAttempt, resolveOpenFailures } from "@/repositories/login-attempts";
+import { reserveLoginAttempt, settleLoginFailure } from "@/domain/auth/lockout";
 import { lockedMessage } from "@/domain/auth/locked-message";
 import { findUserByEmail, setFirstLoginAtIfUnset } from "@/repositories/users";
 import { recordAction } from "@/domain/action-log/record";
 import type { Viewer } from "@/domain/viewer";
+import { toKstDate } from "@/domain/holidays/business-day";
 
 // AUTH-01·Eng Issue 5: better-auth에는 계정 잠금이 없다(rateLimit은 IP 단위일 뿐).
 // before가 로그인 시도 전에 login_attempts를 확인해 거부하고, after가 결과를
@@ -57,16 +58,25 @@ export const before = createAuthMiddleware(async (ctx) => {
   // 무관하게 동일하게 동작한다는 10행 원칙을 상태·본문·응답 시간 셋에서
   // 지킨다 — 거부 직전에 핸들러의 사용자 부재 경로와 같은 더미 해시를
   // 수행해 해시 비교 전에 짧게 끊는 시간 측면 채널을 막는다.
+  // 07-09 D-743: 퇴직일이 오늘(KST)보다 앞이면 보관과 같은 거부 — 당일까지는 로그인된다.
+  // 퇴직 여부를 문구로 드러내지 않는다(SC-14). 사용자 결정 2026-10-22: 퇴직 · 보관 거부도 같은 잠금 계수를 지난다 —
+  // 미리 기록 → 더미 해시 → 다시 세기가 재직자의 before → 핸들러 → after와 같은 순서라, 잠기는 횟수 · 상태 · 문구로도
+  // 계정 상태가 드러나지 않는다.
   const user = await findUserByEmail(SYSTEM_VIEWER, email);
-  if (user?.archivedAt) {
-    await ctx.context.password.hash(getBodyPassword(ctx.body));
-    throw APIError.from("UNAUTHORIZED", INVALID_EMAIL_OR_PASSWORD);
+  const resigned = Boolean(user?.resignationDate && user.resignationDate < toKstDate(new Date()));
+
+  // 07-09 FA-1(/cso F1): 잠금 확인과 실패 행 미리 기록이 이메일 잠금 아래 한 트랜잭션 — 동시 시도도 임계를 넘어 검사되지 않는다.
+  const ip = ctx.headers?.get(CLIENT_IP_HEADER) ?? null;
+  const { locked, windowMinutes } = await reserveLoginAttempt(email, ip);
+  if (locked) {
+    throw new APIError("FORBIDDEN", { message: lockedMessage(windowMinutes) });
   }
 
-  const { threshold, windowMinutes } = await lockoutConfig();
-  const count = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes));
-  if (isLocked(count, threshold)) {
-    throw new APIError("FORBIDDEN", { message: lockedMessage(windowMinutes) });
+  if (user?.archivedAt || resigned) {
+    await ctx.context.password.hash(getBodyPassword(ctx.body));
+    const settled = await settleLoginFailure(email);
+    if (settled.locked) throw new APIError("FORBIDDEN", { message: lockedMessage(settled.windowMinutes) });
+    throw APIError.from("UNAUTHORIZED", INVALID_EMAIL_OR_PASSWORD);
   }
 });
 
@@ -107,9 +117,19 @@ export const after = createAuthMiddleware(async (ctx) => {
     return;
   }
 
-  // 같은 이메일의 실패는 이메일 키 잠금으로 줄을 서 잠금 기록이 정확히 1회 남는다.
+  // 07-09 FA-1: 실패 행은 before가 미리 남겼다 — 여기서는 다시 세어 임계에 닿았으면 잠금 기록을 확인한다.
   // 잠긴 뒤에는 before 훅이 거부해 after가 돌지 않는다.
-  await recordLoginFailure(email, ip);
+  // /qa ISSUE-002(사용자 결정 2026-10-22): 임계에 닿은 N번째 실패부터 403 잠금 문구 — 로그인 전 훅의 잠금 403과 같은
+  // 본문. after가 던진 APIError는 HTTP 경로에서 상태가 핸들러의 401로 남으므로, 요청형 문맥에서는 훅 반환 계약대로
+  // Response를 돌려준다(응답을 갈아 끼운다). 요청 없는 auth.api 직접 호출은 값으로 Response가 새지 않게 던진다.
+  const { locked, windowMinutes } = await settleLoginFailure(email);
+  if (!locked) return;
+  const error = new APIError("FORBIDDEN", { message: lockedMessage(windowMinutes) });
+  if (!ctx.request) throw error;
+  return new Response(JSON.stringify(error.body), {
+    status: error.statusCode,
+    headers: { "content-type": "application/json" },
+  });
 });
 
 // D8-07: better-auth databaseHooks.session.create.after의 처리 함수(lib/auth.ts가 등록). 로그인 방식·경로·

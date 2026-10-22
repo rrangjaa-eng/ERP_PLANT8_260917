@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { log } from "@/lib/log";
 import type { Viewer } from "@/domain/viewer";
 import { memoizeRowScopeForRequest } from "@/domain/permissions/scope-for";
+import { toKstDate } from "@/domain/holidays/business-day";
 
 export type SessionUser = {
   id: string;
@@ -21,6 +22,7 @@ type SessionUserFields = {
   roleId?: string | null;
   passwordIsTemporary: boolean;
   archivedAt?: Date | string | null;
+  resignationDate?: string | null;
 };
 
 // D-36 이관(03-02): 계급 식별자가 없는 세션(백필 누락)을 DEFAULT_ROLE_ID로
@@ -44,6 +46,13 @@ export async function getSession(): Promise<{ viewer: Viewer; user: SessionUser 
   // 정본 게이트인 여기서 판정해야 fail-closed가 된다.
   if (rawUser.archivedAt) {
     log.warn("session.archived_user", { userId: rawUser.id });
+    return null;
+  }
+
+  // 07-09 D-743: 퇴직일이 오늘(KST)보다 앞이면 기존 세션도 다음 요청에서 끊는다(당일까지는 살아 있다).
+  // 값은 lib/auth.ts additionalFields.resignationDate 등록으로 실려 오는 YYYY-MM-DD 문자열이다.
+  if (rawUser.resignationDate && rawUser.resignationDate < toKstDate(new Date())) {
+    log.warn("session.resigned_user", { userId: rawUser.id });
     return null;
   }
 

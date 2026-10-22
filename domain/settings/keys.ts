@@ -12,24 +12,35 @@ import { normalizeContactPhone } from "@/domain/certs/format";
 
 // 로그인 잠금 — domain/auth/lockout.ts의 lockoutConfig()가 환경 변수 대신
 // 이 두 키를 읽는다. 환경 변수는 이 default의 출처로만 남는다.
+// 07-08(D-723 · U4): 범위 횟수 3~10 · 시간 1~60분. 범위를 좁혀도 범위 밖 옛 저장값 때문에 로그인 판정이 깨지지 않게
+// readInvalidAsDefault로 읽기는 기본값으로 대체한다(C-P1-2) — 저장 검사만 새 범위를 따른다.
+const integerInRange = (min: number, max: number) =>
+  z.coerce
+    .number()
+    .int()
+    .refine((value) => value >= min && value <= max, { message: `범위 ${min}~${max} · 다시 입력` });
+
 export const AUTH_LOCKOUT_THRESHOLD: SettingDef<number> = {
   key: "auth.lockout.threshold",
   kind: "simple",
-  schema: z.coerce.number().int().min(1),
-  label: "로그인 잠금 임계값",
-  hint: "이 횟수만큼 연속 실패하면 로그인을 잠급니다.",
+  schema: integerInRange(3, 10),
+  label: "잠금 횟수",
+  hint: "3~10",
   namespace: "로그인 잠금",
   default: env.LOCKOUT_THRESHOLD,
+  readInvalidAsDefault: true,
 };
 
 export const AUTH_LOCKOUT_WINDOW_MINUTES: SettingDef<number> = {
   key: "auth.lockout.window_minutes",
   kind: "simple",
-  schema: z.coerce.number().int().min(1),
-  label: "로그인 잠금 창(분)",
-  hint: "이 시간(분) 안의 실패만 잠금 판정에 셉니다.",
+  schema: integerInRange(1, 60),
+  label: "잠금 시간",
+  hint: "1~60",
   namespace: "로그인 잠금",
+  unitLabel: "분",
   default: env.LOCKOUT_WINDOW_MINUTES,
+  readInvalidAsDefault: true,
 };
 
 // 로그인 속도 제한 최대치(RATE_LIMIT_LOGIN_MAX)는 등록하지 않는다(planner

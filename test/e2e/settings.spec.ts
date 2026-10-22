@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { documentCounters, settingsSimple } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { DOCUMENT_NUMBER_PROJECT_SEQ_START, DOCUMENT_NUMBER_PROJECT_SEPARATOR, EVIDENCE_MAX_SIZE_MB, SETTING_DEFS } from "@/domain/settings/keys";
+import { AUTH_LOCKOUT_THRESHOLD, DOCUMENT_NUMBER_PROJECT_SEQ_START, DOCUMENT_NUMBER_PROJECT_SEPARATOR, EVIDENCE_MAX_SIZE_MB, SETTING_DEFS } from "@/domain/settings/keys";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { findDocumentCounter, upsertDocumentCounter } from "@/repositories/document-counters";
 import { kstYear } from "@/lib/kst-date";
@@ -31,7 +31,7 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
     // 섹션(namespace)과 필드(label)가 보인다 — 화면 코드가 아니라 레지스트리가
     // 만든 것이다.
     await expect(page.getByRole("heading", { name: "로그인 잠금" })).toBeVisible();
-    const thresholdInput = page.getByLabel("로그인 잠금 임계값");
+    const thresholdInput = page.getByLabel("잠금 횟수");
     await expect(thresholdInput).toBeVisible();
 
     // 「일괄 저장」·별도 「저장」 버튼이 없다 — blur 자체가 저장이다.
@@ -44,8 +44,54 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
     // 안정될 때까지 폴링한다.
     await expect(async () => {
       await page.reload();
-      await expect(page.getByLabel("로그인 잠금 임계값")).toHaveValue("9");
+      await expect(page.getByLabel("잠금 횟수")).toHaveValue("9");
     }).toPass();
+  });
+
+  // 07-08 트레이서(D-723 · U4): 잠금 횟수 범위 3~10 — 범위 밖 값은 칸 바로 아래 §7-2 오류 줄(칸에 aria-describedby로 묶임)이고
+  // 값은 저장되지 않으며, 범위 안으로 고쳐 blur하면 오류 줄이 사라지고 저장된다. 칸은 ui/input(`data-ui="field-row"`)이다.
+  test("잠금 횟수에 11을 넣고 blur하면 칸 아래 「범위 3~10 · 다시 입력」 · aria-invalid · 값 그대로, 5로 고치면 저장된다", async ({ page }) => {
+    const key = AUTH_LOCKOUT_THRESHOLD.key;
+    const original = await findSimpleValue(SYSTEM_VIEWER, key);
+    try {
+      const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+      await page.goto("/login");
+      await page.getByLabel("이메일").fill(admin.email);
+      await page.getByLabel("비밀번호").fill(admin.password);
+      await page.getByRole("button", { name: "로그인" }).click();
+      await expect(page).toHaveURL(/\/account$/);
+      await page.goto("/admin/settings");
+
+      const field = page.getByLabel("잠금 횟수", { exact: true });
+      await expect(field.locator("xpath=ancestor::*[@data-ui='field-row']")).toHaveCount(1);
+      const isServerAction = (response: { request: () => { method: () => string; headers: () => Record<string, string> } }) =>
+        response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined;
+
+      await field.fill("11");
+      let saved = page.waitForResponse(isServerAction);
+      await field.blur();
+      await saved;
+      const errorLine = page.locator(`[id="setting-${key}-error"]`);
+      await expect(errorLine).toContainText("범위 3~10 · 다시 입력");
+      await expect(field).toHaveAttribute("aria-invalid", "true");
+      await expect(field).toHaveAttribute("aria-describedby", `setting-${key}-error setting-${key}-hint`);
+      await expect(field).toHaveValue("11");
+      const fieldBox = await field.boundingBox();
+      const errorBox = await errorLine.boundingBox();
+      expect(fieldBox && errorBox && errorBox.y >= fieldBox.y + fieldBox.height).toBe(true);
+      expect((await findSimpleValue(SYSTEM_VIEWER, key))?.value).not.toBe(11);
+
+      await field.fill("5");
+      saved = page.waitForResponse(isServerAction);
+      await field.blur();
+      await saved;
+      await expect(errorLine).toHaveCount(0);
+      await expect(field).not.toHaveAttribute("aria-invalid", "true");
+      await expect.poll(async () => (await findSimpleValue(SYSTEM_VIEWER, key))?.value).toBe(5);
+    } finally {
+      if (original) await upsertSimpleValue(SYSTEM_VIEWER, key, original.value, original.updatedBy);
+      else await db.delete(settingsSimple).where(eq(settingsSimple.key, key));
+    }
   });
 
   test("이력형 키에 미래 날짜로 새 이력을 추가하면 「예정」 태그가 붙는다", async ({ page }) => {
@@ -233,7 +279,7 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
 
   test("ISSUE-001 — 오류 없는 텍스트 칸(잠금 임계값)의 aria-describedby는 힌트 id 하나다", async ({ page }) => {
     await openSettings(page);
-    await expect(page.getByLabel("로그인 잠금 임계값")).toHaveAttribute("aria-describedby", "setting-auth.lockout.threshold-hint");
+    await expect(page.getByLabel("잠금 횟수")).toHaveAttribute("aria-describedby", "setting-auth.lockout.threshold-hint");
   });
 
   test("ISSUE-001 — 구분자 칸에 허용 밖 글자를 넣고 blur하면 aria-describedby가 오류 id 다음 힌트 id이고 저장은 거부된다", async ({ page }) => {

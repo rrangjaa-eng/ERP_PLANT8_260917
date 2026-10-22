@@ -59,19 +59,24 @@ export const before = createAuthMiddleware(async (ctx) => {
   // 지킨다 — 거부 직전에 핸들러의 사용자 부재 경로와 같은 더미 해시를
   // 수행해 해시 비교 전에 짧게 끊는 시간 측면 채널을 막는다.
   // 07-09 D-743: 퇴직일이 오늘(KST)보다 앞이면 보관과 같은 거부 — 당일까지는 로그인된다.
-  // 퇴직 여부를 문구로 드러내지 않고(SC-14), 잠금 실패 수에도 넣지 않는다(잠금 확인보다 앞).
+  // 퇴직 여부를 문구로 드러내지 않는다(SC-14). 사용자 결정 2026-10-22: 퇴직 · 보관 거부도 같은 잠금 계수를 지난다 —
+  // 미리 기록 → 더미 해시 → 다시 세기가 재직자의 before → 핸들러 → after와 같은 순서라, 잠기는 횟수 · 상태 · 문구로도
+  // 계정 상태가 드러나지 않는다.
   const user = await findUserByEmail(SYSTEM_VIEWER, email);
   const resigned = Boolean(user?.resignationDate && user.resignationDate < toKstDate(new Date()));
-  if (user?.archivedAt || resigned) {
-    await ctx.context.password.hash(getBodyPassword(ctx.body));
-    throw APIError.from("UNAUTHORIZED", INVALID_EMAIL_OR_PASSWORD);
-  }
 
   // 07-09 FA-1(/cso F1): 잠금 확인과 실패 행 미리 기록이 이메일 잠금 아래 한 트랜잭션 — 동시 시도도 임계를 넘어 검사되지 않는다.
   const ip = ctx.headers?.get(CLIENT_IP_HEADER) ?? null;
   const { locked, windowMinutes } = await reserveLoginAttempt(email, ip);
   if (locked) {
     throw new APIError("FORBIDDEN", { message: lockedMessage(windowMinutes) });
+  }
+
+  if (user?.archivedAt || resigned) {
+    await ctx.context.password.hash(getBodyPassword(ctx.body));
+    const settled = await settleLoginFailure(email);
+    if (settled.locked) throw new APIError("FORBIDDEN", { message: lockedMessage(settled.windowMinutes) });
+    throw APIError.from("UNAUTHORIZED", INVALID_EMAIL_OR_PASSWORD);
   }
 });
 

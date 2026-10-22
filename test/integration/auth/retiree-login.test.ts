@@ -8,8 +8,7 @@ import { log } from "@/lib/log";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
-import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
-import { countOpenFailures } from "@/repositories/login-attempts";
+import { lockoutConfig } from "@/domain/auth/lockout";
 import { toKstDate } from "@/domain/holidays/business-day";
 
 // lib/viewer.ts는 server-only · next/headers 사슬이라 그대로는 Vitest에서 못 읽는다 — 둘만 바꿔 끼우고
@@ -86,12 +85,30 @@ describe("퇴직자 로그인 막기 (D-743)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("퇴직자 로그인 시도는 잠금 실패 수를 늘리지 않는다", async () => {
-    const retiree = await person("retiree-nocount", kstDay(-1));
-    await signIn(retiree.email, retiree.tempPassword, "198.51.100.144");
-    await signIn(retiree.email, "wrong-password", "198.51.100.144");
-    const { windowMinutes } = await lockoutConfig();
-    expect(await countOpenFailures(SYSTEM_VIEWER, retiree.email, windowStart(new Date(), windowMinutes))).toBe(0);
+  // 사용자 결정 2026-10-22: 퇴직 · 보관 거부도 같은 잠금 계수를 지난다 — 잠기는지로 계정 상태가 드러나지 않게.
+  it("퇴직 · 보관 · 재직 · 없는 이메일 네 경우가 같은 횟수에 같은 상태 · 본문", async () => {
+    const retiree = await person("retiree-lock", kstDay(-1));
+    const archived = await person("archived-lock", null);
+    await db.update(users).set({ archivedAt: new Date() }).where(eq(users.email, archived.email));
+    const active = await person("active-lock", null);
+    const missing = `missing-lock-${randomUUID()}@example.test`;
+    const { threshold } = await lockoutConfig();
+
+    const runs = await Promise.all(
+      [retiree.email, archived.email, active.email, missing].map(async (email, index) => {
+        const steps: { status: number; body: unknown }[] = [];
+        for (let i = 0; i < threshold + 1; i++) {
+          const res = await signIn(email, "wrong-password", `198.51.100.${150 + index}`);
+          steps.push({ status: res.status, body: await res.json() });
+        }
+        return steps;
+      }),
+    );
+
+    expect(runs[2]!.map((step) => step.status)).toEqual([...Array<number>(threshold - 1).fill(401), 403, 403]);
+    expect(runs[0]).toEqual(runs[2]);
+    expect(runs[1]).toEqual(runs[2]);
+    expect(runs[3]).toEqual(runs[2]);
   });
 });
 

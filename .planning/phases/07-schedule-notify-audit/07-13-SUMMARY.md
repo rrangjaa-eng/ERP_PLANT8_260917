@@ -95,6 +95,18 @@ actuals:
 
 없음.
 
+## 받아들인 위험
+
+- 처음 정리 표시의 `pruned_at` · `pruned_by` 값 위조(예: `'1970-01-01'` · `''`)는 받아들인다(독립 검토 P3-1) — 같은 권한이면 `DROP TRIGGER`도 가능하고(T-07-13-04 accept), 행은 남아 「정리 포함」 조회에 보인다.
+- 배포 순서: PR-LOG는 PR-S 배포가 초록으로 끝난 뒤에만 머지한다 — 0046이 혼자 적용되게(독립 검토 P3-2 · D-726).
+
+## 독립 검토 P3 수정(246d31be)
+
+- P3-4 표류 가드를 SQL `NOT IN` 목록 = `UNPRUNABLE_ACTION_TYPES` 같음 단언으로 바꿈 · P3-5 비우기 사례를 한 `it` 안에서 행 넣기 → `resetDatabase()` → 0건으로 바꿈. 마이그레이션 SQL 그대로.
+- RED: `'cert_purge'`를 코드에서 빼면 옛 가드 녹색 · 새 가드 실패. 비우기가 조용히 실패하는 변이에서 옛 사례는 단독 실행 녹색 · 새 사례 실패. 변이는 원복.
+- 검증(DB `erp_w0713_test`): 통합 7파일 108건 · 불변 시험 shuffle 15건 · migration-journal 7건 · `lint:sql` 0 issues · typecheck 0 · eslint(바뀐 파일) 0 오류. 로그 `/home/user/wt/logs/07-13-fix/`.
+- 호출한 스킬: `superpowers:test-driven-development` · `superpowers:verification-before-completion`.
+
 ## 열린 결정(사용자 확인 필요 — 추천안으로 진행함)
 
 - Phase 8 데모 정리 · 복구 리허설이 action_log 행을 지워야 하는지(플랜 AQ-17 「아침 확인 필요」). 추천: 지우지 않는다 — 필요하면 그 페이즈가 260907처럼 정리 동안만 트리거를 끄는 길을 따로 정한다.

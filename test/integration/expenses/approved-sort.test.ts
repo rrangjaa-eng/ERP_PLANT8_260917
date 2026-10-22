@@ -82,6 +82,9 @@ describe("승인 묶음 유효 예정일 정렬 (07-06 Task 2 · AQ-01 · B-P2-1
     expect(rowOf(b)).toMatchObject({ scheduledPaymentDate: "2026-08-05", scheduledPaymentManual: true });
     expect(rowOf(c)).toMatchObject({ scheduledPaymentDate: "2026-08-14", scheduledPaymentManual: false });
     expect(all.groups.map((group) => group.label)).not.toContain("지급 예정일 없음");
+    // 07-06 검토 P3: 지급 끝난 건은 예정일 구간이 아니라 맨 뒤 「지급 완료」 한 구간 — 머리글이 되풀이되지 않는다.
+    expect(all.groups.at(-1)).toMatchObject({ label: "지급 완료", rows: [{ id: paidD }, { id: paidE }] });
+    expect(new Set(all.groups.map((group) => group.label)).size).toBe(all.groups.length);
 
     expect(idsOf(await listExpenses(payer, { status: "approved", q, page: 1 }, { pageSize: 2 }))).toEqual([a, b]);
     expect(idsOf(await listExpenses(payer, { status: "approved", q, page: 2 }, { pageSize: 2 }))).toEqual([c, paidD]);

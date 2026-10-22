@@ -113,10 +113,18 @@ export const after = createAuthMiddleware(async (ctx) => {
   }
 
   // 07-09 FA-1: 실패 행은 before가 미리 남겼다 — 여기서는 다시 세어 임계에 닿았으면 잠금 기록을 확인한다.
-  // 잠긴 뒤에는 before 훅이 거부해 after가 돌지 않는다. N번째 응답을 403으로 바꾸는 것(/qa ISSUE-002)은
-  // 하지 않는다 — better-auth 1.7.5 dispatch가 after 훅이 던진 APIError의 본문만 쓰고 상태는 원래 401로
-  // 덮는다(toResponse의 init.status 우선). 07-09 SUMMARY 「Deferred」.
-  await settleLoginFailure(email);
+  // 잠긴 뒤에는 before 훅이 거부해 after가 돌지 않는다.
+  // /qa ISSUE-002(사용자 결정 2026-10-22): 임계에 닿은 N번째 실패부터 403 잠금 문구 — 로그인 전 훅의 잠금 403과 같은
+  // 본문. after가 던진 APIError는 HTTP 경로에서 상태가 핸들러의 401로 남으므로, 요청형 문맥에서는 훅 반환 계약대로
+  // Response를 돌려준다(응답을 갈아 끼운다). 요청 없는 auth.api 직접 호출은 값으로 Response가 새지 않게 던진다.
+  const { locked, windowMinutes } = await settleLoginFailure(email);
+  if (!locked) return;
+  const error = new APIError("FORBIDDEN", { message: lockedMessage(windowMinutes) });
+  if (!ctx.request) throw error;
+  return new Response(JSON.stringify(error.body), {
+    status: error.statusCode,
+    headers: { "content-type": "application/json" },
+  });
 });
 
 // D8-07: better-auth databaseHooks.session.create.after의 처리 함수(lib/auth.ts가 등록). 로그인 방식·경로·

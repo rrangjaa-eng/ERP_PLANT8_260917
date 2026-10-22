@@ -143,11 +143,14 @@ describe("계정 잠금 (login_attempts)", () => {
     await setSettingValue(SYSTEM_VIEWER, AUTH_LOCKOUT_WINDOW_MINUTES, 20);
     try {
       const { threshold } = await lockoutConfig();
-      for (let i = 0; i < threshold; i++) {
+      for (let i = 0; i < threshold - 1; i++) {
         const res = await signIn(email, "wrong-password", ip);
         const body = (await res.json()) as { message?: string };
         expect(body.message ?? "").not.toContain("로그인 시도 과다");
       }
+      const nth = await signIn(email, "wrong-password", ip);
+      expect(nth.status).toBe(403);
+      expect(((await nth.json()) as { message?: string }).message).toBe(lockedMessage(20));
 
       const locked = await signIn(email, "wrong-password", ip);
       expect(locked.status).toBe(403);
@@ -172,23 +175,44 @@ describe("계정 잠금 (login_attempts)", () => {
     expect(body.message).toBe(lockedMessage(windowMinutes));
   });
 
-  // 07-09 D-712: N번째 틀린 시도에 account_lock 한 행 — 그 뒤 잠긴 시도(403)는 행을 더하지 않는다.
-  // N번째 응답 자체를 403 잠금 문구로 바꾸는 것(/qa ISSUE-002)은 better-auth after 훅이 상태를 바꾸지 못해 미뤘다(07-09 SUMMARY).
-  it("G: N번째 틀린 시도에 account_lock 1행 · 그 뒤 잠금 403이 이어져도 여전히 1행", async () => {
+  // 07-09 D-712 · ISSUE-002(사용자 결정 2026-10-22): N번째 틀린 시도의 HTTP 응답이 이미 403 잠금 문구이고 account_lock
+  // 한 행 — 본문은 로그인 전 훅의 잠금 403과 같은 꼴(화면 login-error.ts의 403 + isLockedMessage 계약). 그 뒤 잠긴
+  // 시도(403)는 행을 더하지 않는다.
+  it("G: N번째 틀린 시도 HTTP 응답이 403 잠금 문구 · account_lock 1행 · 그 뒤 잠금 403이 이어져도 여전히 1행", async () => {
     const email = uniqueEmail("lockout-g");
     const ip = "198.51.100.7";
     const { threshold, windowMinutes } = await lockoutConfig();
-    for (let i = 0; i < threshold; i++) {
+    for (let i = 0; i < threshold - 1; i++) {
       expect((await signIn(email, "wrong-password", ip)).status).toBe(401);
     }
+    const nth = await signIn(email, "wrong-password", ip);
+    expect(nth.status).toBe(403);
+    const nthBody = (await nth.json()) as { message?: string };
+    expect(nthBody.message).toBe(lockedMessage(windowMinutes));
     expect(await accountLocks(email)).toBe(1);
 
     for (let i = 0; i < 2; i++) {
       const locked = await signIn(email, "wrong-password", ip);
       expect(locked.status).toBe(403);
-      expect(((await locked.json()) as { message?: string }).message).toBe(lockedMessage(windowMinutes));
+      expect(await locked.json()).toEqual(nthBody);
     }
     expect(await accountLocks(email)).toBe(1);
+  });
+
+  // 요청 없이 auth.api를 직접 부르는 경로는 Response 대신 FORBIDDEN을 던진다(값으로 Response가 새지 않게).
+  it("G2: auth.api 직접 호출의 N번째 틀린 시도는 403 잠금 문구로 던져진다", async () => {
+    const email = uniqueEmail("lockout-g2");
+    const headers = new Headers({ "x-client-ip": "198.51.100.12" });
+    const { threshold, windowMinutes } = await lockoutConfig();
+    for (let i = 0; i < threshold - 1; i++) {
+      await expect(auth.api.signInEmail({ body: { email, password: "wrong-password" }, headers })).rejects.toMatchObject({
+        statusCode: 401,
+      });
+    }
+    await expect(auth.api.signInEmail({ body: { email, password: "wrong-password" }, headers })).rejects.toMatchObject({
+      statusCode: 403,
+      message: lockedMessage(windowMinutes),
+    });
   });
 
   // 07-09 /cso F1: 잠금 확인과 실패 기록 사이 경쟁 — 동시 시도가 임계를 넘어 검사되지 않는다.
@@ -203,7 +227,8 @@ describe("계정 잠금 (login_attempts)", () => {
     expect(await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes))).toBe(threshold);
     const statuses = responses.map((res) => res.status);
     expect(statuses.every((status) => status === 401 || status === 403)).toBe(true);
-    expect(statuses.filter((status) => status === 403).length).toBe(8 - threshold);
+    // 임계 밖 시도는 검사 전 403이고, 임계 안 시도 중 로그인 뒤 훅이 열린 실패 = 임계를 본 것도 403이다(ISSUE-002).
+    expect(statuses.filter((status) => status === 403).length).toBeGreaterThanOrEqual(8 - threshold + 1);
     expect(await accountLocks(email)).toBe(1);
   });
 

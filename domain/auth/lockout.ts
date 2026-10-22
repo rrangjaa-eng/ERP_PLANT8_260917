@@ -111,7 +111,8 @@ export async function reserveLoginAttempt(
 }
 
 // 07-09 FA-1(/qa ISSUE-002): 로그인 실패 뒤 훅 — 미리 기록한 행까지 다시 세어(count+1 셈 없음) 임계에 닿았으면
-// 잠금 기록 확인 뒤 잠김을 돌려준다. 훅이 그 응답을 잠금 문구로 바꾼다.
+// 잠금 기록 확인 뒤 잠김을 돌려준다. 잠김이면 hooks.ts가 그 시도의 응답을 403 잠금 문구로 낸다(after는 HTTP 경로에서
+// Response 반환 · 직접 호출에서 FORBIDDEN, 퇴직 · 보관 거부는 before에서 FORBIDDEN).
 export async function settleLoginFailure(
   email: string,
   deps?: LockDeps,

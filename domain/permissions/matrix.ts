@@ -15,6 +15,7 @@ import { assertCanEditRole, visibilityKey } from "@/domain/permissions/grant-cei
 import { lockSeatKeys } from "@/repositories/seats";
 import {
   findPermission,
+  findVisibility,
   listPermissions as defaultListPermissions,
   upsertPermission as defaultUpsertPermission,
   listVisibility as defaultListVisibility,
@@ -217,17 +218,31 @@ export async function setVisibilityCell(
     return { ...before, keys };
   });
 
-  await upsertVisibility(viewer, {
-    roleId: input.roleId,
-    infoItem: input.infoItem,
-    visible: input.visible,
-    updatedBy: viewer.id,
-  });
+  // 07-26(R5): 이전 값 읽기 · 저장 · 기록을 한 tx로 — 기록이 실패하면 노출 값도 그대로다.
+  await withTransaction(async (tx) => {
+    const previous = await findVisibility(viewer, input.roleId, input.infoItem, tx);
 
-  await recordAction(viewer, {
-    actionType: "permission_change",
-    entity: "visibility_matrix",
-    entityId: input.roleId,
-    detail: { roleId: input.roleId, infoItem: input.infoItem, visible: input.visible },
+    await upsertVisibility(viewer, {
+      roleId: input.roleId,
+      infoItem: input.infoItem,
+      visible: input.visible,
+      updatedBy: viewer.id,
+    }, tx);
+
+    await recordAction(
+      viewer,
+      {
+        actionType: "permission_change",
+        entity: "visibility_matrix",
+        entityId: input.roleId,
+        detail: {
+          roleId: input.roleId,
+          infoItem: input.infoItem,
+          visible: input.visible,
+          changes: buildChanges({ visible: previous?.visible ?? null }, { visible: input.visible }),
+        },
+      },
+      { tx },
+    );
   });
 }

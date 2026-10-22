@@ -117,6 +117,7 @@ case "$event" in
   agent)
     [ "$agent" = "main" ] || exit 0
     sub="$(printf '%s' "$payload" | jq -r '.tool_input.subagent_type // empty')"
+    sub="${sub##*:}"
     case "$sub" in gsd-*) ;; *) exit 0 ;; esac
     case "$sub" in
       gsd-executor) need="gsd-execute-phase|gsd-quick|gsd-quick-batch|gsd-autonomous|gsd-fast" ;;

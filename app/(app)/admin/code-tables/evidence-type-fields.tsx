@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { setEvidenceTypePrivateToOwnerAction, setEvidenceTypeTaxRuleAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
+import { Select } from "@/ui/select/Select";
 import { parseNumberInput } from "@/lib/format-number";
 import { PcOnly, PhoneOnly } from "../pc-only";
 import styles from "./code-tables.module.css";
@@ -25,6 +26,11 @@ const RULE_KIND_OPTIONS: { value: RuleKind; label: string }[] = [
   { value: "vat_surcharge", label: "부가세 가산율" },
   { value: "withholding", label: "원천징수율과 면제 기준" },
   { value: "company_borne", label: "원천징수 회사 대납" },
+];
+
+const ROUNDING_UNIT_OPTIONS = [
+  { value: "1", label: "1원" },
+  { value: "10", label: "10원" },
 ];
 
 const ROUNDING_METHOD_OPTIONS: { value: RoundingMethod; label: string }[] = [
@@ -95,9 +101,10 @@ export function EvidenceTypeFields({ itemId, initialValue, initialPrivate = fals
 
           <div className={styles.selectLabel}>
             <label htmlFor={`rule-kind-${itemId}`}>규칙 종류</label>
-            <select
+            <Select
               id={`rule-kind-${itemId}`}
-              className={styles.select}
+              hideEmptyOption
+              options={RULE_KIND_OPTIONS}
               value={value.ruleKind}
               onChange={(event) => {
                 const ruleKind = event.target.value as RuleKind;
@@ -113,44 +120,31 @@ export function EvidenceTypeFields({ itemId, initialValue, initialPrivate = fals
                   basisDate: value.basisDate ?? "payment_date",
                 });
               }}
-            >
-              {RULE_KIND_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           {value.ruleKind !== "none" ? (
             <>
               <div className={styles.selectLabel}>
                 <label htmlFor={`rounding-unit-${itemId}`}>절사 단위</label>
-                <select
+                <Select
                   id={`rounding-unit-${itemId}`}
-                  className={styles.select}
-                  value={value.roundingUnit ?? 1}
+                  hideEmptyOption
+                  options={ROUNDING_UNIT_OPTIONS}
+                  value={String(value.roundingUnit ?? 1)}
                   onChange={(event) => save({ ...value, roundingUnit: Number(event.target.value) as 1 | 10 })}
-                >
-                  <option value={1}>1원</option>
-                  <option value={10}>10원</option>
-                </select>
+                />
               </div>
 
               <div className={styles.selectLabel}>
                 <label htmlFor={`rounding-method-${itemId}`}>절사 방식</label>
-                <select
+                <Select
                   id={`rounding-method-${itemId}`}
-                  className={styles.select}
+                  hideEmptyOption
+                  options={ROUNDING_METHOD_OPTIONS}
                   value={value.roundingMethod ?? "round"}
                   onChange={(event) => save({ ...value, roundingMethod: event.target.value as RoundingMethod })}
-                >
-                  {ROUNDING_METHOD_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
 
               <TextField
@@ -170,18 +164,13 @@ export function EvidenceTypeFields({ itemId, initialValue, initialPrivate = fals
 
               <div className={styles.selectLabel}>
                 <label htmlFor={`basis-date-${itemId}`}>적용 기준일 종류</label>
-                <select
+                <Select
                   id={`basis-date-${itemId}`}
-                  className={styles.select}
+                  hideEmptyOption
+                  options={BASIS_DATE_OPTIONS}
                   value={value.basisDate ?? "payment_date"}
                   onChange={(event) => save({ ...value, basisDate: event.target.value as BasisDate })}
-                >
-                  {BASIS_DATE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             </>
           ) : null}

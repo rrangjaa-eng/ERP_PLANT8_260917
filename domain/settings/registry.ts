@@ -412,6 +412,16 @@ function unwrapPipe(schema: unknown): unknown {
   return schema;
 }
 
+// 07-08(C-P2-10): null 허용 · 선택 래퍼는 안쪽 종류로 서술한다 — 원가율(null 허용 숫자)이 숫자 칸이 되게.
+function unwrapNullable(schema: unknown): unknown {
+  const typeName = zodTypeName(schema);
+  if ((typeName === "nullable" || typeName === "optional") && schema && typeof schema === "object" && "def" in schema) {
+    const def = schema.def;
+    if (def && typeof def === "object" && "innerType" in def) return def.innerType;
+  }
+  return schema;
+}
+
 function zodArrayElement(schema: unknown): unknown {
   if (schema && typeof schema === "object" && "element" in schema) {
     return schema.element;
@@ -421,7 +431,7 @@ function zodArrayElement(schema: unknown): unknown {
 
 export function describeSettingField(def: SettingDef<unknown>): SettingFieldDescriptor {
   if (def.pairGrid) return { kind: "pair-grid", ...def.pairGrid };
-  const schema = unwrapPipe(def.schema);
+  const schema = unwrapNullable(unwrapPipe(def.schema));
   const typeName = zodTypeName(schema);
   if (typeName === "boolean") return { kind: "boolean" };
   if (typeName === "number") return { kind: "number", numberKind: def.numberKind };

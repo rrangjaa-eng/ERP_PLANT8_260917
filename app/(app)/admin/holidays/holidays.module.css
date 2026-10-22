@@ -102,29 +102,6 @@
   color: var(--status-danger);
 }
 
-/* 옆 패널 폼 안 네이티브 입력·선택 — 높이는 패널의 --field-h(D14), 거래처·프로젝트 패널의 .textInput과 같은 모양. */
-.textInput {
-  box-sizing: border-box;
-  width: 100%;
-  height: var(--field-h, var(--control-h));
-  padding: 0 var(--s-2);
-  border: var(--line-w) solid var(--border-control);
-  border-radius: var(--radius-control);
-  background: var(--surface-base);
-  color: var(--text-strong);
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-}
-
-.textInput[aria-invalid="true"] {
-  border-color: var(--status-danger);
-}
-
-.textInput:focus-visible {
-  outline: var(--focus-w) solid var(--focus);
-  outline-offset: var(--focus-offset);
-}
-
 /* §3 터치 목표: 폰에서 짧은 글자 링크의 히트 영역만 44×44로 키운다. */
 @media (max-width: 699.98px) {
   /* S2-b: 폰 확정 버튼은 상태 줄 아래 전폭(보이는 높이 40 그대로). */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HolidayLookup } from "@/domain/holidays/business-day";
 import { HolidayYearNotLoadedError } from "@/domain/holidays/calendar";
-import { prevBusinessOnOrBefore, resolvePaySchedule, type PayScheduleConfig } from "@/domain/payments/pay-schedule";
+import { payRuleLine, prevBusinessOnOrBefore, resolvePaySchedule, type PayScheduleConfig } from "@/domain/payments/pay-schedule";
 
 // 07-01 Task 1(D-715 · D-741 · D-749): 자동 지급 예정일 — 기한 창(기준일 < d ≤ 기준일 + 기한) 안 마지막 지급 요일을 영업일로 맞춘 날,
 // 창에 지급 요일이 없으면 기한 이하 마지막 영업일(no-slot). 공휴일은 고정 Set을 HolidayLookup 꼴로 주입한다(DB 없음).
@@ -87,13 +87,25 @@ describe("resolvePaySchedule — 기한 안 지급 요일 없음 (D-741 · D-749
     expect(resolve({ baseDate: "2026-07-03", termDays: 6 }).autoPayDate).not.toBe("2026-07-03");
   });
 
-  // 07-06 경계 고정(firstCandidate의 `anchor > baseDate` 갈래): 창 안 금요일이 공휴일이면 앞 영업일로 맞추므로, 휴일 주에는 지급일이
-  // 기준일 당일이거나 그 앞일 수 있다(no-slot이 아니라 pushReason null).
-  it("휴일 주: 기준 07-09(목) · 기한 1 → 창 안 금요일 07-10이 공휴일이면 기준일 당일, 목요일도 공휴일이면 기준일 앞 07-08", () => {
+  it("D-749: 기준 07-01(수) · 기한 2 · 07-02 · 07-03 공휴일 → 금요일 07-03을 맞추면 기준일 → 창에 영업일 0 → 기준일 당일 07-01 · no-slot", () => {
+    const schedule = resolve({ baseDate: "2026-07-01", termDays: 2, lookup: holidays(["2026-07-02", "2026-07-03"]) });
+    expect(schedule).toMatchObject({ payDate: "2026-07-01", autoPayDate: "2026-07-01", pushReason: "no-slot" });
+    expect(payRuleLine(schedule, 2, CFG)).toBe("결재 마감 06-30 14:00 · 기한 2일 안 마지막 영업일");
+  });
+
+  it("D-741: 기준 07-01(수) · 기한 5 · 07-02 · 07-03 공휴일 → 금요일을 맞추면 창 밖 → 기한 안 마지막 영업일 07-06(월) · no-slot", () => {
+    const schedule = resolve({ baseDate: "2026-07-01", termDays: 5, lookup: holidays(["2026-07-02", "2026-07-03"]) });
+    expect(schedule).toMatchObject({ payDate: "2026-07-06", autoPayDate: "2026-07-06", pushReason: "no-slot" });
+    expect(payRuleLine(schedule, 5, CFG)).toBe("결재 마감 07-01 14:00 · 기한 5일 안 마지막 영업일");
+  });
+
+  // 07-06 경계 고정(D-749): 창 안 금요일이 공휴일이라 앞 영업일로 맞춘 날이 기준일 이하이면 창 밖이므로 no-slot —
+  // 기한 이하 마지막 영업일(기준일 당일이거나 그 앞).
+  it("D-749 휴일 주: 기준 07-09(목) · 기한 1 → 창 안 금요일 07-10이 공휴일이면 기준일 당일 · no-slot, 목요일도 공휴일이면 기준일 앞 07-08 · no-slot", () => {
     const early = new Date("2026-07-01T00:00:00+09:00");
     const at = (lookup: HolidayLookup) => resolvePaySchedule({ baseDate: "2026-07-09", termDays: 1, manualDate: null, approvedAt: early, now: early, lookup, cfg: CFG });
-    expect(at(holidays(["2026-07-10"]))).toMatchObject({ autoPayDate: "2026-07-09", pushReason: null });
-    expect(at(holidays(["2026-07-09", "2026-07-10"]))).toMatchObject({ autoPayDate: "2026-07-08", pushReason: null });
+    expect(at(holidays(["2026-07-10"]))).toMatchObject({ autoPayDate: "2026-07-09", pushReason: "no-slot" });
+    expect(at(holidays(["2026-07-09", "2026-07-10"]))).toMatchObject({ autoPayDate: "2026-07-08", pushReason: "no-slot" });
   });
 });
 

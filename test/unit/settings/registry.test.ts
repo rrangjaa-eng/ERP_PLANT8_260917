@@ -14,7 +14,7 @@ import {
   FutureValueNotFoundError,
   type SettingDef,
 } from "@/domain/settings/registry";
-import { SETTING_DEFS } from "@/domain/settings/keys";
+import { PAYMENT_TERM_DAYS, SETTING_DEFS } from "@/domain/settings/keys";
 import type { Viewer } from "@/domain/viewer";
 import { log } from "@/lib/log";
 
@@ -189,6 +189,37 @@ describe("setSettingValue (비이력형 전용)", () => {
     const upsertSimpleValue = vi.fn();
     await expect(setSettingValue(viewer, SIMPLE_DEF, 5, { can, upsertSimpleValue })).rejects.toThrow();
     expect(upsertSimpleValue).not.toHaveBeenCalled();
+  });
+
+  // quick 261022-cwp(round2-money F1): 저장 행이 없으면 이전 값은 화면이 보인 기본값이다.
+  function firstSaveDeps() {
+    const tx = { marker: "tx" } as never;
+    return {
+      can: vi.fn().mockResolvedValue(true),
+      upsertSimpleValue: vi.fn().mockResolvedValue(undefined),
+      recordAction: vi.fn().mockResolvedValue(undefined),
+      withTransaction: vi.fn((fn: (t: never) => Promise<unknown>) => fn(tx)) as never,
+      findSimpleValue: vi.fn().mockResolvedValue(undefined),
+      lockSimpleKey: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  it("저장 행이 없는 키의 첫 저장은 기본값을 이전 값으로 기록한다", async () => {
+    const deps = firstSaveDeps();
+    await setSettingValue(viewer, PAYMENT_TERM_DAYS, 30, deps);
+    expect(deps.recordAction).toHaveBeenCalledTimes(1);
+    expect(deps.recordAction.mock.calls[0]?.[1]).toMatchObject({
+      detail: { key: "payment.term_days", changes: { value: [60, 30] } },
+    });
+  });
+
+  it("저장 행이 없는 키에 기본값과 같은 값을 저장하면 changes가 비어 있다", async () => {
+    const deps = firstSaveDeps();
+    await setSettingValue(viewer, PAYMENT_TERM_DAYS, 60, deps);
+    expect(deps.recordAction).toHaveBeenCalledTimes(1);
+    expect(deps.recordAction.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ detail: { key: "payment.term_days", changes: {} } }),
+    );
   });
 });
 

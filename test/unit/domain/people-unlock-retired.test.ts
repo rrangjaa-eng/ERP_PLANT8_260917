@@ -87,3 +87,13 @@ describe("unlockPerson — 퇴직자 거부(D-728 · R11)", () => {
     expect(d.unlockAccount).not.toHaveBeenCalled();
   });
 });
+
+// 07-17 독립 검토 L2: 보관된 사람은 화면이 `잠금 풀기`를 그리지 않는다 — 서버도 같은 판정(page.tsx 주석 「서버 unlockPerson이 같은 판정」).
+describe("unlockPerson — 보관된 사람 거부(07-17 L2)", () => {
+  it("보관된 대상이면 ForbiddenError, unlockAccount를 부르지 않는다", async () => {
+    const d = deps(null);
+    d.loadTarget.mockResolvedValue({ ...target(null), archivedAt: new Date("2026-10-01T00:00:00Z") } as never);
+    await expect(unlockPerson(viewer, "target-1", d)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(d.unlockAccount).not.toHaveBeenCalled();
+  });
+});

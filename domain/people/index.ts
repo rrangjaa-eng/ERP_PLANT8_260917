@@ -553,7 +553,11 @@ async function defaultWithPersonLock<T>(viewer: Viewer, personId: string, fn: (t
 export type UnlockPersonDeps = {
   can: typeof defaultCan;
   withPersonLock: PersonLock;
-  loadTarget: (viewer: Viewer, personId: string, tx: DbOrTx) => Promise<Pick<UserRow, "id" | "email" | "roleId" | "resignationDate"> | null>;
+  loadTarget: (
+    viewer: Viewer,
+    personId: string,
+    tx: DbOrTx,
+  ) => Promise<Pick<UserRow, "id" | "email" | "roleId" | "resignationDate" | "archivedAt"> | null>;
   assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[], tx: DbOrTx) => Promise<void>;
   unlockAccount: (viewer: Viewer, email: string) => Promise<{ resolved: number }>;
   now: () => Date;
@@ -572,6 +576,8 @@ export async function unlockPerson(viewer: Viewer, personId: string, deps?: Part
   await (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
     const target = await loadTarget(viewer, personId, tx);
     if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
+    // 07-17 독립 검토 L2: 보관된 사람은 화면이 행동을 그리지 않는다 — 직접 호출도 거부(260907 `archived_at is null`과 같은 판정).
+    if (target.archivedAt) throw new ForbiddenError("보관된 사람 · 잠금 풀기 없음");
     if (isRetiredOn(target.resignationDate, today)) {
       throw new ForbiddenError("퇴직한 사람 · 잠금 풀기 없음");
     }
@@ -587,7 +593,7 @@ export type TempPasswordResult = { tempPassword: string };
 export type ResetPersonPasswordDeps = {
   can: typeof defaultCan;
   withPersonLock: PersonLock;
-  loadTarget: (viewer: Viewer, personId: string, tx: DbOrTx) => Promise<Pick<UserRow, "id" | "email" | "roleId"> | null>;
+  loadTarget: (viewer: Viewer, personId: string, tx: DbOrTx) => Promise<Pick<UserRow, "id" | "email" | "roleId" | "archivedAt"> | null>;
   assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[], tx: DbOrTx) => Promise<void>;
   resetPassword: (viewer: Viewer, email: string) => Promise<{ tempPassword: string }>;
 };
@@ -606,6 +612,7 @@ export async function resetPersonPassword(
   return (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
     const target = await loadTarget(viewer, personId, tx);
     if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
+    if (target.archivedAt) throw new ForbiddenError("보관된 사람 · 비밀번호 초기화 없음");
     if (target.id === viewer.id) throw new ForbiddenError("본인 비밀번호 초기화 없음 · 내 계정에서 변경");
     await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId], tx);
     const { tempPassword } = await (deps?.resetPassword ?? defaultResetPassword)(viewer, target.email);

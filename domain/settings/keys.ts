@@ -832,7 +832,8 @@ export const PROJECT_COST_RATE_PCT: SettingDef<number | null> = {
   key: "project.cost_rate_pct",
   kind: "simple",
   schema: z.preprocess(
-    (raw) => (raw === "" || raw === null || raw === undefined ? null : raw),
+    // quick 261022-cwp: 공백만 있는 문자열도 비움 — z.coerce.number()가 0으로 바꾸지 않게.
+    (raw) => ((typeof raw === "string" && raw.trim() === "") || raw === null || raw === undefined ? null : raw),
     z.coerce
       .number()
       .refine((value) => value >= 0 && value <= 100 && atMostOneDecimal(value), { message: "범위 0~100 · 다시 입력" })

@@ -4,8 +4,9 @@ import { log } from "@/lib/log";
 import type { Viewer } from "@/domain/viewer";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { can } from "@/domain/permissions/can";
+import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { findUserByEmail, setPasswordTemporary } from "@/repositories/users";
-import { resolveOpenFailures } from "@/repositories/login-attempts";
+import { lockLoginEmail, resolveOpenFailures } from "@/repositories/login-attempts";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
@@ -69,9 +70,19 @@ export async function createAccount(
 // AUTH-03·D-10: 관리자 재발급 — 새 임시 비밀번호 발급, 다른 세션 전부 만료,
 // password_is_temporary=true. 세 동작 모두 better-auth에 자동 연동이 없어
 // 순서대로 직접 호출한다(01-RESEARCH.md Pattern 3).
+//
+// 07-09 G38 · K33 · A-P2-8: 단계 순서 ① 권한 ② 대상 ③ 상한 ④ 외부 세 단계 ⑤ tx { 잠금 해소(admin_reset) +
+// password_reset }. 외부 단계를 먼저 둔다 — 기록 · 해소를 앞에 두면 외부 단계가 실패했을 때 「일어나지 않은
+// 초기화」 기록과 풀린 잠금이 남는다. ⑤가 실패하면 비밀번호만 바뀌고 기록이 없으므로 에러 로그를 남기고
+// 다시 던진다(임시 비밀번호는 돌려주지 않는다 — 아무도 모르는 값이 된다). deps는 실패 주입용이다.
 export async function resetPassword(
   viewer: Viewer,
   email: string,
+  deps?: {
+    updatePassword?: (userId: string, hash: string) => Promise<unknown>;
+    deleteUserSessions?: (userId: string) => Promise<unknown>;
+    recordAction?: typeof defaultRecordAction;
+  },
 ): Promise<{ userId: string; tempPassword: string }> {
   if (!(await can(viewer, "admin.people", "write"))) {
     throw new UserFacingError("비밀번호 재발급 권한 없음");
@@ -81,16 +92,36 @@ export async function resetPassword(
   if (!user) {
     throw new UserFacingError("사용자 찾을 수 없음");
   }
+  await assertCanGrantRoles(viewer, [user.roleId]);
 
   const tempPassword = generateTempPassword();
   const ctx = await auth.$context;
   const hash = await ctx.password.hash(tempPassword);
+  const updatePassword = deps?.updatePassword ?? ((userId: string, h: string) => ctx.internalAdapter.updatePassword(userId, h));
+  const deleteUserSessions = deps?.deleteUserSessions ?? ((userId: string) => ctx.internalAdapter.deleteUserSessions(userId));
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
 
-  await ctx.internalAdapter.updatePassword(user.id, hash);
+  await updatePassword(user.id, hash);
   // D-10: 재발급 순간 다른 기기의 세션까지 전부 만료(현재 세션 구분 없음 — CLI에는 "현재 세션" 개념이 없다).
-  await ctx.internalAdapter.deleteUserSessions(user.id);
+  await deleteUserSessions(user.id);
   // D-08: 관리자가 발급한 비밀번호를 쓰고 있다는 표시.
   await setPasswordTemporary(viewer, user.id, true);
+
+  try {
+    await withTransaction(async (tx) => {
+      // 검토 P3: 로그인 잠금 판정 · 기록과 같은 이메일 잠금 아래에서 해소한다 — 행동 로그 순서가 실제 상태와 어긋나지 않게.
+      await lockLoginEmail(SYSTEM_VIEWER, email, tx);
+      const resolved = await resolveOpenFailures(SYSTEM_VIEWER, email, "admin_reset", tx);
+      await recordAction(
+        viewer,
+        { actionType: "password_reset", entity: "user", entityId: user.id, detail: { email, resolved } },
+        { tx },
+      );
+    });
+  } catch (e) {
+    log.error("auth.password_reset_audit_failed", { userId: user.id, name: e instanceof Error ? e.name : typeof e });
+    throw e;
+  }
 
   log.info("auth.password_reset", { userId: user.id });
 
@@ -113,8 +144,12 @@ export async function unlockAccount(
   const recordAction = opts?.recordAction ?? defaultRecordAction;
   // eng E5: 전역 db를 쓰는 사용자 조회는 트랜잭션 전에 끝낸다 — 콜백 안에서는 tx 호출만.
   const user = await findUserByEmail(SYSTEM_VIEWER, email);
+  // 07-09 A-P2-8: 대상 계급이 행위자 상한 안이어야 한다(SYSTEM_VIEWER — CLI — 는 통과).
+  await assertCanGrantRoles(viewer, [user?.roleId ?? null]);
 
   const resolved = await withTransaction(async (tx) => {
+    // 검토 P3: 로그인 잠금 판정 · 기록과 같은 이메일 잠금 아래에서 해소한다 — 「해제 → 잠금」 순 기록 오도를 막는다.
+    await lockLoginEmail(SYSTEM_VIEWER, email, tx);
     const count = await resolveOpenFailures(SYSTEM_VIEWER, email, "admin_unlock", tx);
     await recordAction(
       viewer,

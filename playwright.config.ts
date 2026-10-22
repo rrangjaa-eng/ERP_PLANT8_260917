@@ -63,9 +63,11 @@ const VISUAL_SPEC_PATTERNS = ["visual.spec.ts", "visual-390.spec.ts"];
 const DESKTOP_SETTINGS_SPECS = ["settings-approval-route.spec.ts", "phase6-keys.spec.ts", "evidence-private-type.spec.ts", "evidence-private-type-audit.spec.ts"];
 // 증빙 표 셋(기록 · 붙임 · 묶음)을 통째로 비우고(clearEvidence) 회사 전체 목록을 세는 스펙 — 두 워커에서 겹치면 서로의 기록을
 // 지우고 남의 기록을 센다(PR #253 CI e2e (1): 표 없음 · 11줄 대 1줄 · 묶음 FK 위반). desktop에서 빼고 desktop-evidence에서 한 워커로 돈다.
+// evidence-card-fixture.regression-1은 clearEvidence 대신 롯데카드 채움 카드 약 9000장을 넣어 /admin/corp-cards 스펙과 겹치므로 같은 줄에 둔다.
 const EVIDENCE_WIPE_SPECS = [
   "evidence-attach-audit.spec.ts",
   "evidence-attach.spec.ts",
+  "evidence-card-fixture.regression-1.spec.ts",
   "evidence-export.spec.ts",
   "evidence-intake.spec.ts",
   "evidence-list-audit.spec.ts",

@@ -1,15 +1,32 @@
 import { and, eq, isNull } from "drizzle-orm";
+import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { auth } from "@/lib/auth";
 import { db } from "@/db/client";
 import { loginAttempts } from "@/db/schema";
 import { createAccount, unlockAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { backdateOpenFailures, countOpenFailures } from "@/repositories/login-attempts";
-import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
+import { backdateOpenFailures, countOpenFailures, lockLoginEmail } from "@/repositories/login-attempts";
+import { lockoutConfig, reserveLoginAttempt, settleLoginFailure, windowStart } from "@/domain/auth/lockout";
 import { setSettingValue } from "@/domain/settings/registry";
 import { AUTH_LOCKOUT_WINDOW_MINUTES } from "@/domain/settings/keys";
 import { lockedMessage } from "@/domain/auth/locked-message";
+import { queryActionLog } from "@/repositories/action-log";
+import { env } from "@/lib/env";
+import { deferred, waitForLockWaiter } from "./lock-race";
+
+// Codex 지적 (2): 잠금 기록(account_lock) 실패를 흉내 낼 스위치. 꺼져 있으면 실제 recordAction을 그대로 부른다.
+const failLockRecord = vi.hoisted(() => ({ on: false }));
+vi.mock("@/domain/action-log/record", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/action-log/record")>();
+  return {
+    ...actual,
+    recordAction: (...args: Parameters<typeof actual.recordAction>) => {
+      if (failLockRecord.on && args[1].actionType === "account_lock") return Promise.reject(new Error("injected"));
+      return actual.recordAction(...args);
+    },
+  };
+});
 
 const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3000";
 
@@ -142,11 +159,14 @@ describe("계정 잠금 (login_attempts)", () => {
     await setSettingValue(SYSTEM_VIEWER, AUTH_LOCKOUT_WINDOW_MINUTES, 20);
     try {
       const { threshold } = await lockoutConfig();
-      for (let i = 0; i < threshold; i++) {
+      for (let i = 0; i < threshold - 1; i++) {
         const res = await signIn(email, "wrong-password", ip);
         const body = (await res.json()) as { message?: string };
         expect(body.message ?? "").not.toContain("로그인 시도 과다");
       }
+      const nth = await signIn(email, "wrong-password", ip);
+      expect(nth.status).toBe(403);
+      expect(((await nth.json()) as { message?: string }).message).toBe(lockedMessage(20));
 
       const locked = await signIn(email, "wrong-password", ip);
       expect(locked.status).toBe(403);
@@ -170,4 +190,160 @@ describe("계정 잠금 (login_attempts)", () => {
     const body = (await locked.json()) as { message?: string };
     expect(body.message).toBe(lockedMessage(windowMinutes));
   });
+
+  // 07-09 D-712 · ISSUE-002(사용자 결정 2026-10-22): N번째 틀린 시도의 HTTP 응답이 이미 403 잠금 문구이고 account_lock
+  // 한 행 — 본문은 로그인 전 훅의 잠금 403과 같은 꼴(화면 login-error.ts의 403 + isLockedMessage 계약). 그 뒤 잠긴
+  // 시도(403)는 행을 더하지 않는다.
+  it("G: N번째 틀린 시도 HTTP 응답이 403 잠금 문구 · account_lock 1행 · 그 뒤 잠금 403이 이어져도 여전히 1행", async () => {
+    const email = uniqueEmail("lockout-g");
+    const ip = "198.51.100.7";
+    const { threshold, windowMinutes } = await lockoutConfig();
+    for (let i = 0; i < threshold - 1; i++) {
+      expect((await signIn(email, "wrong-password", ip)).status).toBe(401);
+    }
+    const nth = await signIn(email, "wrong-password", ip);
+    expect(nth.status).toBe(403);
+    const nthBody = (await nth.json()) as { message?: string };
+    expect(nthBody.message).toBe(lockedMessage(windowMinutes));
+    expect(await accountLocks(email)).toBe(1);
+
+    for (let i = 0; i < 2; i++) {
+      const locked = await signIn(email, "wrong-password", ip);
+      expect(locked.status).toBe(403);
+      expect(await locked.json()).toEqual(nthBody);
+    }
+    expect(await accountLocks(email)).toBe(1);
+  });
+
+  // 요청 없이 auth.api를 직접 부르는 경로는 Response 대신 FORBIDDEN을 던진다(값으로 Response가 새지 않게).
+  it("G2: auth.api 직접 호출의 N번째 틀린 시도는 403 잠금 문구로 던져진다", async () => {
+    const email = uniqueEmail("lockout-g2");
+    const headers = new Headers({ "x-client-ip": "198.51.100.12" });
+    const { threshold, windowMinutes } = await lockoutConfig();
+    for (let i = 0; i < threshold - 1; i++) {
+      await expect(auth.api.signInEmail({ body: { email, password: "wrong-password" }, headers })).rejects.toMatchObject({
+        statusCode: 401,
+      });
+    }
+    await expect(auth.api.signInEmail({ body: { email, password: "wrong-password" }, headers })).rejects.toMatchObject({
+      statusCode: 403,
+      message: lockedMessage(windowMinutes),
+    });
+  });
+
+  // D-712 자가 회복: 로그인 뒤 훅의 잠금 기록이 실패해 롤백돼도, 다음 시도가 잠금 기록 확인을 다시 지나 한 행을 채운다.
+  // Codex 지적 (2)(사용자 결정 2026-10-22): 기록 실패는 잡아 log.error로 남기고 잠김 판정은 그대로 돌려준다.
+  it("K: settle의 잠금 기록 실패 뒤 다음 시도에서 account_lock 1행", async () => {
+    const email = uniqueEmail("lockout-k");
+    const ip = "198.51.100.13";
+    const { threshold, windowMinutes } = await lockoutConfig();
+    for (let i = 0; i < threshold; i++) await reserveLoginAttempt(email, ip);
+    const failing = vi.fn().mockRejectedValue(new Error("injected"));
+    await expect(settleLoginFailure(email, { recordAction: failing })).resolves.toEqual({ locked: true, windowMinutes });
+    expect(failing).toHaveBeenCalledTimes(1);
+    expect(await accountLocks(email)).toBe(0);
+
+    expect((await signIn(email, "wrong-password", ip)).status).toBe(403);
+    expect(await accountLocks(email)).toBe(1);
+  });
+
+  // Codex 지적 (2): HTTP 경로에서 N번째 틀린 시도의 잠금 기록이 실패해도 응답은 403 잠금 문구이고 log.error가 남는다.
+  it("K2: N번째 틀린 시도의 잠금 기록 실패 → HTTP 403 잠금 문구 · log.error · 다음 시도가 account_lock 1행", async () => {
+    const email = uniqueEmail("lockout-k2");
+    const ip = "198.51.100.14";
+    const { threshold, windowMinutes } = await lockoutConfig();
+    for (let i = 0; i < threshold - 1; i++) {
+      expect((await signIn(email, "wrong-password", ip)).status).toBe(401);
+    }
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    failLockRecord.on = true;
+    let nth: Response;
+    let calls: unknown[][];
+    try {
+      nth = await signIn(email, "wrong-password", ip);
+    } finally {
+      failLockRecord.on = false;
+      calls = [...logSpy.mock.calls];
+      logSpy.mockRestore();
+    }
+    expect(nth.status).toBe(403);
+    expect(((await nth.json()) as { message?: string }).message).toBe(lockedMessage(windowMinutes));
+    const lines = calls.map(([line]) => (typeof line === "string" ? line : ""));
+    expect(lines.filter((line) => line.includes('"event":"auth.lockout_record_failed"') && line.includes('"severity":"ERROR"')).length).toBe(1);
+    expect(lines.some((line) => line.includes('"event":"auth.lockout"'))).toBe(false);
+    expect(await accountLocks(email)).toBe(0);
+
+    expect((await signIn(email, "wrong-password", ip)).status).toBe(403);
+    expect(await accountLocks(email)).toBe(1);
+  });
+
+  // 07-09 /cso F1: 잠금 확인과 실패 기록 사이 경쟁 — 동시 시도가 임계를 넘어 검사되지 않는다.
+  it("H: 같은 이메일로 틀린 비밀번호 8건을 동시에 → 열린 실패 = 임계 · 임계 밖 시도는 검사 전 403 · account_lock 정확히 1행", async () => {
+    const email = uniqueEmail("lockout-h");
+    await createAccount(SYSTEM_VIEWER, { email, name: "Lockout H" });
+    const ip = "198.51.100.8";
+    const { threshold, windowMinutes } = await lockoutConfig();
+
+    // lock-race 도우미(07-09-PLAN 수락 기준): 시험이 같은 이메일 잠금을 먼저 쥐고 8건을 보낸 뒤, 잠금 대기가
+    // 실제로 생긴 것을 확인하고 푼다 — 이메일 잠금이 빠지면 대기가 생기지 않아 waitForLockWaiter가 실패한다.
+    // 앱 풀(DB_POOL_MAX)은 잠금 대기 연결로 찰 수 있어 대기 확인은 따로 연 연결 하나로 한다.
+    const observer = new Pool({ connectionString: env.DATABASE_URL, max: 1 });
+    const locked = deferred();
+    const release = deferred();
+    const holder = db.transaction(async (tx) => {
+      await lockLoginEmail(SYSTEM_VIEWER, email, tx);
+      locked.resolve();
+      await release.promise;
+    });
+    let responses: Response[];
+    try {
+      await locked.promise;
+      const sending = Promise.all(Array.from({ length: 8 }, () => signIn(email, "wrong-password", ip)));
+      try {
+        await waitForLockWaiter(observer);
+      } finally {
+        release.resolve();
+      }
+      await holder;
+      responses = await sending;
+    } finally {
+      release.resolve();
+      await observer.end();
+    }
+
+    expect(await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes))).toBe(threshold);
+    const statuses = responses.map((res) => res.status);
+    expect(statuses.every((status) => status === 401 || status === 403)).toBe(true);
+    // 임계 밖 시도는 검사 전 403이고, 임계 안 시도 중 로그인 뒤 훅이 열린 실패 = 임계를 본 것도 403이다(ISSUE-002).
+    expect(statuses.filter((status) => status === 403).length).toBeGreaterThanOrEqual(8 - threshold + 1);
+    expect(await accountLocks(email)).toBe(1);
+  });
+
+  // 「잠금 기록 확인」은 창 시작이 아니라 열린 실패의 처음 이후를 본다 — 풀린 뒤 같은 창에서 다시 잠기면 새 행.
+  it("I: 잠김 → 관리자 해제 → 같은 창 안에서 다시 잠김 → account_lock 2행", async () => {
+    const email = uniqueEmail("lockout-i");
+    await createAccount(SYSTEM_VIEWER, { email, name: "Lockout I" });
+    const { threshold } = await lockoutConfig();
+    for (let i = 0; i < threshold; i++) await signIn(email, "wrong-password", "198.51.100.9");
+    expect(await accountLocks(email)).toBe(1);
+
+    await unlockAccount(SYSTEM_VIEWER, email);
+    for (let i = 0; i < threshold; i++) await signIn(email, "wrong-password", "198.51.100.10");
+    expect(await accountLocks(email)).toBe(2);
+  });
+
+  it("J: 성공 로그인은 그 시도가 미리 남긴 실패 행까지 해소해 열린 실패 0", async () => {
+    const email = uniqueEmail("lockout-j");
+    const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "Lockout J" });
+    const ip = "198.51.100.11";
+    await signIn(email, "wrong-password", ip);
+    expect((await signIn(email, tempPassword, ip)).status).toBe(200);
+    expect(await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), 15))).toBe(0);
+  });
 });
+
+async function accountLocks(email: string): Promise<number> {
+  const rows = await queryActionLog(SYSTEM_VIEWER, { actionType: "account_lock" });
+  return rows.filter((row) => (row.detail as { email?: unknown }).email === email).length;
+}

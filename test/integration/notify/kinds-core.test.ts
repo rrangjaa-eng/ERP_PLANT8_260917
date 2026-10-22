@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import {
@@ -10,13 +10,15 @@ import {
   expenseEvidenceReviews,
   expensePayments,
   expenses,
+  files,
   notificationLog,
   notificationRules,
   projects,
   users,
 } from "@/db/schema";
 import { approveDocument, rejectDocument } from "@/domain/approvals";
-import { createExpenseFromLines, submitExpense } from "@/domain/expenses";
+import { voidEvidence } from "@/domain/evidence";
+import { createExpenseFromLines } from "@/domain/expenses";
 import { CONDITION_KINDS, type ConditionKind } from "@/domain/notify/condition-kinds";
 import { approvalWaitingKind } from "@/domain/notify/kinds/approval-waiting";
 import { paidNoEvidenceKind } from "@/domain/notify/kinds/paid-no-evidence";
@@ -33,7 +35,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { attachEvidence, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "../fixtures/expenses";
+import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "../fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence } from "../fixtures/payments";
 
 // 07-10 Task 2·3: 켜진 기본 종류 여섯 — 결재 차례(열린 시각 · 후보 전원 · N=0 · 다시 올림 · 사다리) 외.
@@ -215,7 +217,7 @@ describe("결재 차례 (N6 · K17 · C-P2-4)", () => {
     await rejectDocument(fx.lead, { instanceId: doc.instanceId, expectedVersion: doc.version, reason: "자료 보강" });
     const [row] = await db.select({ version: approvalInstances.version }).from(approvalInstances).where(eq(approvalInstances.id, doc.instanceId));
     expect(row).toBeDefined();
-    const again = await submitExpense(fx.pm, { expenseId: doc.expenseId, expectedVersion: await expenseVersion(doc.expenseId) });
+    const again = await submitReadyDraft(fx.pm, doc.expenseId);
     expect(again.kind).toBe("submitted");
     await setSubmittedAt(doc.instanceId, "2026-10-07T10:00:00+09:00");
     await tick([approvalWaitingKind], "2026-10-08");
@@ -236,12 +238,6 @@ describe("결재 차례 (N6 · K17 · C-P2-4)", () => {
     expect(await db.select().from(notificationLog)).toHaveLength(0);
   });
 });
-
-async function expenseVersion(expenseId: string): Promise<number> {
-  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
-  if (!row) throw new Error("지출결의 없음");
-  return row.version;
-}
 
 // ── Task 3: 나머지 넷 ────────────────────────────────────────────────
 
@@ -355,6 +351,22 @@ describe("증빙 없음 재촉 (N7)", () => {
 
   });
 
+  it("증빙이 무효 처리돼 0이 된 건은 재촉한다(SUMMARY 결정 3)", async () => {
+    const fx = await setupExpenseProject();
+    const voider = await makeEvidenceManager();
+    const doc = await approvedExpenseWithEvidence(fx);
+    await payOn(doc.expenseId, "2026-10-01", fx.ceo.id);
+    await tick([paidNoEvidenceKind], "2026-10-08");
+    expect(await rowsOf(fx.pm)).toHaveLength(0);
+    const alive = await db.select({ id: files.id }).from(files).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, doc.expenseId), isNull(files.removedAt), isNull(files.voidedAt)));
+    expect(alive.length).toBeGreaterThan(0);
+    for (const file of alive) await voidEvidence(voider, { fileId: file.id, reason: "다른 건 영수증" });
+    await tick([paidNoEvidenceKind], "2026-10-12");
+    const rows = await rowsOf(fx.pm);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ entity: "expense", entityId: doc.expenseId, round: 1 });
+  });
+
   it("증빙 면제된 건은 0행", async () => {
     const fx = await setupExpenseProject();
     const doc = await approvedExpenseWithoutEvidence(fx);
@@ -416,17 +428,19 @@ describe("선결제 증빙 독촉 (N8)", () => {
 });
 
 describe("대리 등록 (N9 · D-716 사건 창)", () => {
-  async function proxyFixture() {
+  async function proxyFixture(options: { pmRegisters?: boolean; teamCost?: boolean } = {}) {
     const orgUnit = await (await import("@/domain/org")).createOrgUnit(SYSTEM_VIEWER, { name: `대리본부-${randomUUID()}` });
     const team = await (await import("@/domain/org")).createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `대리팀-${randomUUID()}` });
     const visible = ["team.value", "card_usage.value", "card_usage.amount", "project.value", "quote.amount"];
     const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `대리-${randomUUID().slice(0, 8)}`, workScope: "team" });
     for (const menu of ["cards.proxy"]) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action: "write", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    if (options.pmRegisters) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
     for (const infoItem of visible) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-    const pm = await makePerson("박서연", DEFAULT_ROLE_ID, team.name);
-    const proxy = await makePerson("경영관리", role.id, team.name);
-    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "카드사", numberLast4: String(Math.floor(1000 + Math.random() * 9000)), label: "개인 카드", kind: "personal", holderUserId: pm.id });
+    const pm = await makePerson("박서연", options.pmRegisters ? role.id : DEFAULT_ROLE_ID, team.name);
+    const proxy = options.pmRegisters ? pm : await makePerson("경영관리", role.id, team.name);
+    const holder = options.pmRegisters ? await makePerson("카드주인", DEFAULT_ROLE_ID, team.name) : pm;
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "카드사", numberLast4: String(Math.floor(1000 + Math.random() * 9000)), label: "개인 카드", kind: "personal", holderUserId: holder.id });
     if (!card.id) throw new Error("카드 id 없음");
     const client = await (await import("@/repositories/vendors")).insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
     const { createProject } = await import("@/domain/projects");
@@ -455,8 +469,7 @@ describe("대리 등록 (N9 · D-716 사건 창)", () => {
       merchantVendorId: null,
       total: { currency: "KRW", amount: 300_000, fxRate: 1 },
       evidenceTypeCode: "invoice",
-      linkKind: "quote_line",
-      lineId,
+      ...(options.teamCost ? { linkKind: "team_cost" as const } : { linkKind: "quote_line" as const, lineId }),
       memo: null,
     };
     const created = await createCardUsage(proxy, input, await precheckCardUsage(proxy, input));
@@ -478,6 +491,20 @@ describe("대리 등록 (N9 · D-716 사건 창)", () => {
     await tick([proxyRegisteredKind], "2026-10-20");
     expect(await rowsOf(fx.pm)).toHaveLength(1);
     expect(await rowsOf(fx.proxy)).toHaveLength(0);
+  });
+
+  it("담당 PM이 직접 한 대리 등록은 자기 행동이라 알리지 않는다", async () => {
+    const fx = await proxyFixture({ pmRegisters: true });
+    await setCreatedAt(fx.usageId, "2026-10-16T19:00:00+09:00");
+    await tick([proxyRegisteredKind], "2026-10-19");
+    expect(await rowsOf(fx.pm)).toHaveLength(0);
+  });
+
+  it("팀 비용 대리 등록은 담당 PM이 없어 아무에게도 알리지 않는다(열린 질문 1 — 현재 동작 고정)", async () => {
+    const fx = await proxyFixture({ teamCost: true });
+    await setCreatedAt(fx.usageId, "2026-10-16T19:00:00+09:00");
+    await tick([proxyRegisteredKind], "2026-10-19");
+    expect(await db.select().from(notificationLog)).toHaveLength(0);
   });
 
   it("15일 전 대리 등록은 0행", async () => {

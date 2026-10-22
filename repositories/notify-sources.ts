@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import {
   approvalInstances,
@@ -213,7 +213,7 @@ export async function listPaidExpenseCandidates(
     .limit(limit + 1);
 }
 
-// 대리 등록(N9 · D-716) — since 이후 대리 등록(registered_via = proxy) 카드 사용 중 견적 줄에 묶인 것(담당 PM이 있는 것). 팀 비용 연결은 담당 PM이 없어 뺀다.
+// 대리 등록(N9 · D-716) — since 이후 대리 등록(registered_via = proxy) 카드 사용 중 견적 줄에 묶인 것(담당 PM이 있는 것). 팀 비용 연결은 담당 PM이 없어 뺀다. 담당 PM 본인이 등록한 건은 자기 행동이라 뺀다.
 export type ProxyRegistrationRow = { id: string; number: string | null; usedOn: string; createdAt: Date; projectName: string; pmUserId: string };
 
 export async function listProxyRegistrations(viewer: Viewer, since: Date, limit: number, tx: DbOrTx = db): Promise<ProxyRegistrationRow[]> {
@@ -234,6 +234,7 @@ export async function listProxyRegistrations(viewer: Viewer, since: Date, limit:
     .where(
       and(
         eq(corpCardUsages.registeredVia, "proxy"),
+        ne(corpCardUsages.registeredBy, projects.pmUserId),
         isNull(corpCardUsages.archivedAt),
         sql`${corpCardUsages.createdAt} >= ${since.toISOString()}::timestamp`,
       ),

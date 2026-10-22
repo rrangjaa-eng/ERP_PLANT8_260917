@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
-import { registerPerson, changePersonRole, archivePerson } from "@/domain/people";
+import { registerPerson, changePersonRole, archivePerson, unlockPerson } from "@/domain/people";
 import { assignTeam, cancelFutureAssignment, createOrgUnit, renameOrgUnit, createTeam, renameTeam } from "@/domain/org";
 import { createRole, renameRole, setRoleWorkScope, setRoleViewScope, ROLE_VIEW_SCOPES, ROLE_WORK_SCOPES } from "@/domain/permissions/roles";
 import { archive } from "@/domain/archive";
@@ -134,6 +134,15 @@ export const archivePersonAction = authedActionClient
     revalidatePath("/admin/people");
     revalidatePath("/admin/people/org");
     revalidatePath("/admin/archive");
+  });
+
+// 07-17 SC-11 · SC-12: 사람 목록 · 상세의 `잠금 풀기` — 판정(권한 · 상한 · 대상)은 domain `unlockPerson`이 한다.
+export const unlockPersonAction = authedActionClient
+  .schema(z.object({ personId: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await unlockPerson(ctx.viewer, parsedInput.personId);
+    revalidatePath("/admin/people");
+    revalidatePath(`/admin/people/${parsedInput.personId}`);
   });
 
 export const archiveOrgUnitAction = authedActionClient

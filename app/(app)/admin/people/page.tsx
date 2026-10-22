@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { Fragment } from "react";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
-import { listPeople } from "@/domain/people";
+import { isRetiredOn, listPeople } from "@/domain/people";
 import { assignableRoleIds, listAssignableRoles } from "@/domain/permissions/roles";
 import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
 import { listOrgUnits, listTeams } from "@/domain/org";
@@ -14,6 +14,8 @@ import { StaticTable, type StaticTableColumn } from "@/ui/table/StaticTable";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { PersonForm, PersonDeleteButton } from "./person-form";
 import { personLoginStatus } from "./person-status";
+import { UnlockAction, UnlockResultSection } from "./unlock-result";
+import { kstToday } from "@/lib/kst-date";
 import styles from "./people.module.css";
 
 const NEW_PERSON_HREF = "/admin/people?new=1";
@@ -59,6 +61,16 @@ export default async function PeoplePage({
         [...new Set(people.flatMap((person) => (!person.archivedAt && person.roleId ? [person.roleId] : [])))],
       )
     : new Set<string>();
+  // 07-17 SC-11(D-728 · R15): `잠금 풀기`는 쓰기 권한 · 잠긴 비퇴직 · 보관 안 됨 · 대상 계급이 상한 안일 때만(서버 unlockPerson이 같은 판정).
+  const today = kstToday(new Date());
+  const unlockCandidates = people.filter(
+    (person) => canWrite && person.id && person.locked === true && !person.archivedAt && !isRetiredOn(person.resignationDate ?? null, today),
+  );
+  const unlockableRoles = unlockCandidates.length
+    ? await assignableRoleIds(session.viewer, [...new Set(unlockCandidates.flatMap((person) => (person.roleId ? [person.roleId] : [])))])
+    : new Set<string>();
+  const canUnlock = (person: (typeof people)[number]) =>
+    unlockCandidates.includes(person) && (!person.roleId || unlockableRoles.has(person.roleId));
 
   const orgUnitNameById = new Map(orgUnits.map((org) => [org.id, org.name]));
   const teamOptions = teams.map((team) => ({
@@ -84,7 +96,7 @@ export default async function PeoplePage({
   if (has("currentTeamName")) {
     textColumns.push({ key: "team", label: "현재 소속", value: (person) => person.currentTeamName ?? "—" });
   }
-  const showStatus = has("archivedAt") || has("firstLoginAt") || has("passwordIsTemporary");
+  const showStatus = has("archivedAt") || has("firstLoginAt") || has("passwordIsTemporary") || has("locked");
   const showActions = has("id");
 
   const columns: StaticTableColumn[] = [
@@ -128,57 +140,62 @@ export default async function PeoplePage({
         // 사람이 없다는 말이 아니다(보는 사람 자신이 늘 1행 — SYSTEM.md §7-3 · §8-3, DECISIONS.md 2026-09-30).
         <ListEmpty message="정보 노출표 · 사람 정보 잠김" />
       ) : (
-        <StaticTable
-          caption="사람"
-          columns={columns}
-          rows={people.map((person, index) => {
-            // 행 머리글 id는 순번으로 — person.value가 꺼진 계급의 DTO에는 id가 없다(UI-SPEC 접근성 관계 ①).
-            const nameId = `people-row-${index}-name`;
-            const loginStatus = personLoginStatus(person);
-            return {
-              key: person.id ?? nameId,
-              headerId: nameId,
-              cells: [
-                ...textColumns.map((column) => column.value(person)),
-                ...(showStatus
-                  ? [
-                      loginStatus.kind === "archived" ? (
-                        <StatusTag key="status" status="보관됨" variant="text" />
-                      ) : loginStatus.badges.length === 0 ? (
-                        "—"
-                      ) : (
-                        // D8-07: PC는 · 로 한 줄, 폰은 구분자를 숨기고 세로로 쌓는다.
-                        <span key="status" className={styles.badges}>
-                          {loginStatus.badges.map((badge, badgeIndex) => (
-                            <Fragment key={badge}>
-                              {badgeIndex > 0 ? <span className={styles.badgeSep}> · </span> : null}
-                              <StatusTag status={badge} variant="text" />
-                            </Fragment>
-                          ))}
-                        </span>
-                      ),
-                    ]
-                  : []),
-                ...(showActions
-                  ? [
-                      // person.value가 꺼진 계급의 DTO에는 id가 없다 — 갈 상세·보관할 대상이 없어 「상세」·삭제를 그리지 않는다.
-                      person.id ? (
-                        <RowActions key="actions">
-                          <RowAction href={`/admin/people/${person.id}`}>상세</RowAction>
-                          {!person.archivedAt &&
-                          canDelete &&
-                          person.id !== session.viewer.id &&
-                          (!person.roleId || archivableRoles.has(person.roleId)) ? (
-                            <PersonDeleteButton userId={person.id} name={person.name} />
-                          ) : null}
-                        </RowActions>
-                      ) : null,
-                    ]
-                  : []),
-              ],
-            };
-          })}
-        />
+        <UnlockResultSection>
+          <StaticTable
+            caption="사람"
+            columns={columns}
+            rows={people.map((person, index) => {
+              // 행 머리글 id는 순번으로 — person.value가 꺼진 계급의 DTO에는 id가 없다(UI-SPEC 접근성 관계 ①).
+              const nameId = `people-row-${index}-name`;
+              const loginStatus = personLoginStatus(person, today);
+              return {
+                key: person.id ?? nameId,
+                headerId: nameId,
+                cells: [
+                  ...textColumns.map((column) => column.value(person)),
+                  ...(showStatus
+                    ? [
+                        loginStatus.kind === "archived" ? (
+                          <StatusTag key="status" status="보관됨" variant="text" />
+                        ) : loginStatus.kind === "word" ? (
+                          <StatusTag key="status" status={loginStatus.word} variant="text" />
+                        ) : loginStatus.badges.length === 0 ? (
+                          "—"
+                        ) : (
+                          // D8-07: PC는 · 로 한 줄, 폰은 구분자를 숨기고 세로로 쌓는다.
+                          <span key="status" className={styles.badges}>
+                            {loginStatus.badges.map((badge, badgeIndex) => (
+                              <Fragment key={badge}>
+                                {badgeIndex > 0 ? <span className={styles.badgeSep}> · </span> : null}
+                                <StatusTag status={badge} variant="text" />
+                              </Fragment>
+                            ))}
+                          </span>
+                        ),
+                      ]
+                    : []),
+                  ...(showActions
+                    ? [
+                        // person.value가 꺼진 계급의 DTO에는 id가 없다 — 갈 상세·보관할 대상이 없어 「상세」·삭제를 그리지 않는다.
+                        person.id ? (
+                          <RowActions key="actions">
+                            <RowAction href={`/admin/people/${person.id}`}>상세</RowAction>
+                            {canUnlock(person) ? <UnlockAction id={person.id} name={person.name ?? ""} /> : null}
+                            {!person.archivedAt &&
+                            canDelete &&
+                            person.id !== session.viewer.id &&
+                            (!person.roleId || archivableRoles.has(person.roleId)) ? (
+                              <PersonDeleteButton userId={person.id} name={person.name} />
+                            ) : null}
+                          </RowActions>
+                        ) : null,
+                      ]
+                    : []),
+                ],
+              };
+            })}
+          />
+        </UnlockResultSection>
       )}
     </ListScreen>
   );

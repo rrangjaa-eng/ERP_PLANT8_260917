@@ -186,3 +186,15 @@
 .payoutAction {
   margin: var(--s-4) 0 0;
 }
+
+/* 07-17 SC-11 표 위 결과 줄(`잠금 풀기 · {이름}`) — 04.2-09 목록 결과 줄과 같은 꼴(되돌리기 없음). */
+.resultLine {
+  margin: 0 0 var(--s-3);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.resultFailed {
+  color: var(--status-danger);
+}

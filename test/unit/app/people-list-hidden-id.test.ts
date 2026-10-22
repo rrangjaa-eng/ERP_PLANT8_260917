@@ -26,7 +26,15 @@ vi.mock("@/domain/permissions/can", () => ({
   can: (_viewer: unknown, menu: string, action: string) =>
     Promise.resolve(menu === "admin.people" && action === "write" ? writeAllowed : true),
 }));
-vi.mock("@/domain/people", () => ({ listPeople: () => Promise.resolve(people) }));
+vi.mock("@/domain/people", () => ({
+  listPeople: () => Promise.resolve(people),
+  isRetiredOn: (date: string | null, today: string) => date !== null && date < today,
+}));
+// 07-17: 잠금 풀기 결과 줄은 액션(server-only 체인)을 import한다 — 이 테스트의 관심 밖이라 자리만 둔다.
+vi.mock("@/app/(app)/admin/people/unlock-result", () => ({
+  UnlockResultSection: ({ children }: { children: ReactNode }) => children,
+  UnlockAction: () => null,
+}));
 vi.mock("@/domain/permissions/roles", () => ({
   listAssignableRoles: () => Promise.resolve([{ id: "role-pm", name: "기획 PM" }]),
   // 06.4 D-6417: 상한 판정은 이 테스트의 관심 밖 — 넘긴 계급을 모두 통과로 둔다.

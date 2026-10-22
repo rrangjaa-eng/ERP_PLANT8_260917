@@ -7,7 +7,8 @@ import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { buildChanges } from "@/domain/action-log/changes";
 import { registerDto } from "@/domain/permissions/dto-registry";
-import { createAccount as defaultCreateAccount } from "@/domain/auth/accounts";
+import { createAccount as defaultCreateAccount, unlockAccount as defaultUnlockAccount } from "@/domain/auth/accounts";
+import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
 import { archive as defaultArchive } from "@/domain/archive";
 import { revokeAllSessions as defaultRevokeAllSessions } from "@/domain/auth/password";
 import { findRoleById as defaultFindRoleById, findRolesByIds as defaultFindRolesByIds } from "@/repositories/roles";
@@ -16,6 +17,7 @@ import { findOrgUnitById as repoFindOrgUnitById } from "@/repositories/org-units
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { kstToday } from "@/lib/kst-date";
 import { isCheckViolation } from "@/lib/pg-errors";
+import { listLockedEmails } from "@/repositories/login-attempts";
 import { withTransaction } from "@/lib/db-transaction";
 import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
@@ -72,9 +74,17 @@ export type PersonDto = {
   currentTeamName: string | null;
   firstLoginAt: Date | null;
   passwordIsTemporary: boolean;
+  // 07-17 SC-11: 퇴직 낱말(isRetiredOn)과 로그인 잠김(로그인 거부와 같은 판정 — 창 안 열린 실패 수 ≥ 임계).
+  resignationDate: string | null;
+  locked: boolean;
 };
 
-type PersonSource = UserRow & { roleName: string | null; currentTeamId: string | null; currentTeamName: string | null };
+type PersonSource = UserRow & {
+  roleName: string | null;
+  currentTeamId: string | null;
+  currentTeamName: string | null;
+  locked: boolean;
+};
 
 export const PERSON_DTO_SPEC: DtoSpec<PersonSource, PersonDto> = {
   fields: [
@@ -88,6 +98,8 @@ export const PERSON_DTO_SPEC: DtoSpec<PersonSource, PersonDto> = {
     { key: "currentTeamName", from: "currentTeamName", infoItem: "team.value" },
     { key: "firstLoginAt", from: "firstLoginAt", infoItem: "person.value" },
     { key: "passwordIsTemporary", from: "passwordIsTemporary", infoItem: "person.value" },
+    { key: "resignationDate", from: "resignationDate", infoItem: "person.value" },
+    { key: "locked", from: "locked", infoItem: "person.value" },
   ],
 };
 
@@ -103,6 +115,7 @@ async function projectPerson(
   row: UserRow,
   team: TeamDto | null | undefined,
   roleName: string | null,
+  locked: boolean,
   deps?: Partial<ProjectDeps>,
 ): Promise<PersonDto> {
   const source: PersonSource = {
@@ -110,16 +123,30 @@ async function projectPerson(
     roleName,
     currentTeamId: team?.id ?? null,
     currentTeamName: team?.name ?? null,
+    locked,
   };
   return (await project(viewer, source, PERSON_DTO_SPEC, deps)) as PersonDto;
 }
 
 async function toPersonDto(viewer: Viewer, row: UserRow, today: string): Promise<PersonDto> {
-  const [team, role] = await Promise.all([
+  const [team, role, lockedEmails] = await Promise.all([
     defaultTeamAtDate(viewer, row.id, today),
     row.roleId ? defaultFindRoleById(viewer, row.roleId) : Promise.resolve(null),
+    lockedEmailSet(viewer),
   ]);
-  return projectPerson(viewer, row, team, role?.name ?? null);
+  return projectPerson(viewer, row, team, role?.name ?? null, lockedEmails.has(row.email.toLowerCase()));
+}
+
+// 07-17 SC-11: 잠김 = 로그인 거부와 같은 판정(임계 · 창은 설정값 — D-723). 한 질의로 잠긴 이메일(소문자) 묶음.
+async function lockedEmailSet(viewer: Viewer): Promise<Set<string>> {
+  const { threshold, windowMinutes } = await lockoutConfig();
+  return listLockedEmails(viewer, { threshold, since: windowStart(new Date(), windowMinutes) });
+}
+
+// 07-17 R11 · D-728: 「퇴직」 술어 하나 — 07-09 D-743과 같은 경계(퇴직일 당일까지 재직, 다음 날부터 퇴직).
+// `unlockPerson` 거부 · 목록 `잠금 풀기` 표지 · person-status.ts `퇴직` 낱말이 함께 부른다.
+export function isRetiredOn(resignationDate: string | null, today: string): boolean {
+  return resignationDate !== null && resignationDate < today;
 }
 
 // 이슈 #56: 사람마다 팀·계급·노출표를 따로 조회하던 N+1을 묶음 조회 + 호출
@@ -155,6 +182,7 @@ export async function listPeople(viewer: Viewer, deps?: Partial<PeopleReadDeps>)
     defaultFindRolesByIds(viewer, roleIds),
   ]);
   const roleNameMap = new Map(roleRows.map((role) => [role.id, role.name]));
+  const lockedEmails = await lockedEmailSet(viewer);
 
   return Promise.all(
     rows.map((row) =>
@@ -163,6 +191,7 @@ export async function listPeople(viewer: Viewer, deps?: Partial<PeopleReadDeps>)
         row,
         teamMap.get(row.id),
         row.roleId ? (roleNameMap.get(row.roleId) ?? null) : null,
+        lockedEmails.has(row.email.toLowerCase()),
         { visible: memoizedVisible },
       ),
     ),
@@ -429,6 +458,32 @@ export async function archivePerson(
 
   const revokeAllSessions = deps?.revokeAllSessions ?? defaultRevokeAllSessions;
   await revokeAllSessions(viewer, userId);
+}
+
+export type UnlockPersonDeps = {
+  can: typeof defaultCan;
+  loadTarget: (viewer: Viewer, personId: string) => Promise<Pick<UserRow, "id" | "email" | "roleId" | "resignationDate"> | null>;
+  assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[]) => Promise<void>;
+  unlockAccount: (viewer: Viewer, email: string) => Promise<{ resolved: number }>;
+  now: () => Date;
+};
+
+// 07-17 SC-11 · SC-12 · D-728 · R11: 사람 화면의 잠금 풀기 — `admin.people` 쓰기 · 대상 상한 안 · 퇴직자 아님을 본 뒤
+// 07-09 `unlockAccount`(해소 + account_unlock 기록 · 상한 재확인)를 부른다. 퇴직 거부는 여기(domain)에만 있다 —
+// `unlockAccount` 자체와 CLI 경로는 퇴직을 보지 않는다(PR-AUTH 범위, 관리자 화면 경로만 막는다).
+export async function unlockPerson(viewer: Viewer, personId: string, deps?: Partial<UnlockPersonDeps>): Promise<void> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
+    throw new ForbiddenError("잠금 풀기 권한 없음");
+  }
+  const loadTarget = deps?.loadTarget ?? ((v: Viewer, id: string) => repoFindUserById(v, id));
+  const target = await loadTarget(viewer, personId);
+  if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
+  if (isRetiredOn(target.resignationDate, seoulTodayOf(deps))) {
+    throw new ForbiddenError("퇴직한 사람 · 잠금 풀기 없음");
+  }
+  await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId]);
+  await (deps?.unlockAccount ?? defaultUnlockAccount)(viewer, target.email);
 }
 
 // 04.1-03(D-96 · D-97): 입사일·퇴직일. 쓰기 권한 · 날짜 형식 · 퇴직일 ≥ 입사일(같은 날 허용)을

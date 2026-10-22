@@ -170,6 +170,13 @@ describe("RowAction button 형 — pending · autoFocus · disabled + disabledRe
     expect(button({})).not.toContain("…");
   });
 
+  // 07-17 UI-SPEC 공통 계약 10 — 즉시 저장 컨트롤은 요청 중 aria-busy + aria-disabled. busy(다른 행동 대기)는 글자 그대로 aria-disabled만.
+  it("pending이면 aria-busy, 아니면(busy 포함) 없다", () => {
+    expect(button({ pending: true })).toContain('aria-busy="true"');
+    expect(button({})).not.toContain("aria-busy");
+    expect(button({ busy: true })).not.toContain("aria-busy");
+  });
+
   it("disabled + disabledReason이면 이유 글자 요소가 렌더되고 버튼 aria-describedby가 그 id를 가리킨다", () => {
     const markup = button({ disabled: true, disabledReason: "사용 중인 날짜" });
     expect(markup).toContain('aria-disabled="true"');

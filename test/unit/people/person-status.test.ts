@@ -33,4 +33,29 @@ describe("personLoginStatus", () => {
   it("두 키가 없으면(노출표가 가림) 배지 0개", () => {
     expect(personLoginStatus({ archivedAt: null })).toEqual({ kind: "badges", badges: [] });
   });
+
+  // 07-17 SC-11(U2 · D-728): 퇴직 > 잠김 > 기존 로그인 배지 — 퇴직자는 잠겨 있어도 `퇴직`(할 일 없는 빨간 `잠김`을 남기지 않는다).
+  it("퇴직(퇴직일이 오늘 전)이면 잠겨 있어도 퇴직만", () => {
+    expect(
+      personLoginStatus({ archivedAt: null, firstLoginAt: null, passwordIsTemporary: true, resignationDate: "2026-10-21", locked: true }, "2026-10-22"),
+    ).toEqual({ kind: "word", word: "퇴직" });
+  });
+
+  it("퇴직일이 오늘이면 아직 퇴직이 아니다 — 잠김이면 잠김만", () => {
+    expect(
+      personLoginStatus({ archivedAt: null, firstLoginAt: null, passwordIsTemporary: true, resignationDate: "2026-10-22", locked: true }, "2026-10-22"),
+    ).toEqual({ kind: "word", word: "잠김" });
+  });
+
+  it("잠기지 않은 재직자는 기존 배지 조합 그대로", () => {
+    expect(
+      personLoginStatus({ archivedAt: null, firstLoginAt: null, passwordIsTemporary: true, resignationDate: null, locked: false }, "2026-10-22"),
+    ).toEqual({ kind: "badges", badges: ["첫 로그인 전", "임시 비밀번호 사용 중"] });
+  });
+
+  it("보관이 퇴직 · 잠김보다 먼저", () => {
+    expect(
+      personLoginStatus({ archivedAt: new Date(), resignationDate: "2026-01-01", locked: true }, "2026-10-22"),
+    ).toEqual({ kind: "archived" });
+  });
 });

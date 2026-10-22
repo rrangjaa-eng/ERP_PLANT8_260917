@@ -27,6 +27,24 @@ export async function countOpenFailures(
   return row?.count ?? 0;
 }
 
+// 07-17 SC-11: 창 안 열린 실패 수가 임계 이상인 이메일(소문자) 묶음 — 사람 목록이 사람마다 묻지 않게 한 질의로.
+// 묶기 · 비교 모두 lower(email) — 시도 행 이메일의 대소문자가 사람 이메일과 다를 수 있다(부록 ND).
+export async function listLockedEmails(
+  viewer: Viewer,
+  opts: { threshold: number; since: Date },
+  tx: DbOrTx = db,
+): Promise<Set<string>> {
+  void viewer;
+  const email = sql<string>`lower(${loginAttempts.email})`;
+  const rows = await tx
+    .select({ email })
+    .from(loginAttempts)
+    .where(and(eq(loginAttempts.success, false), isNull(loginAttempts.resolvedAt), gte(loginAttempts.attemptedAt, opts.since)))
+    .groupBy(email)
+    .having(sql`count(*) >= ${opts.threshold}`);
+  return new Set(rows.map((row) => row.email));
+}
+
 export async function recordAttempt(
   viewer: Viewer,
   // attemptedAt을 빼면 DB 기본값(트랜잭션 시작 시각) — 07-09 미리 기록 행이 action_log.occurred_at과 같은 시계를 쓴다.

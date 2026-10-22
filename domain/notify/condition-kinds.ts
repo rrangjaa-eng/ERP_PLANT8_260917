@@ -1,12 +1,16 @@
 // 알림 조건 종류 등록부(NOTI-03). tick이 종류마다 규칙(기본값 ⊕ notification_rules 행)을 합쳐 evaluate(ctx)로 후보를 모은다.
 import { approvalWaitingKind } from "@/domain/notify/kinds/approval-waiting";
 import { expenseResultKind } from "@/domain/notify/kinds/expense-result";
+import { orphanEvidenceKind } from "@/domain/notify/kinds/orphan-evidence";
 import { paidNoEvidenceKind } from "@/domain/notify/kinds/paid-no-evidence";
 import { preCutoffUnapprovedKind } from "@/domain/notify/kinds/pre-cutoff-unapproved";
 import { payWeekAlertKind } from "@/domain/notify/kinds/pay-week-alert";
 import { prepaidEvidenceKind } from "@/domain/notify/kinds/prepaid-evidence";
 import { projectEndNoExpenseKind } from "@/domain/notify/kinds/project-end-no-expense";
 import { proxyRegisteredKind } from "@/domain/notify/kinds/proxy-registered";
+import { quoteNudgeKind } from "@/domain/notify/kinds/quote-nudge";
+import { rejectedIdleKind } from "@/domain/notify/kinds/rejected-idle";
+import { settleNudgeKind } from "@/domain/notify/kinds/settle-nudge";
 import type { NotifyTx } from "@/repositories/notifications";
 
 export { NOTIFY_EVENT_LOOKBACK_DAYS, NOTIFY_KIND_EVAL_MAX } from "@/domain/notify/limits";
@@ -60,4 +64,8 @@ export const CONDITION_KINDS: readonly ConditionKind[] = [
   // 07-14 꺼 둔 종류(D17 · 시드 끔) — SC-07 표 순서.
   expenseResultKind,
   preCutoffUnapprovedKind,
+  settleNudgeKind,
+  rejectedIdleKind,
+  quoteNudgeKind,
+  orphanEvidenceKind,
 ];

@@ -346,3 +346,137 @@ export async function listExpenseAmountChanges(viewer: Viewer, since: Date, limi
     .limit(limit + 1);
   return rows.map((row) => ({ expenseId: row.expenseId, drafterId: row.drafterId, eventId: `amount-${row.seq}`, at: row.at }));
 }
+
+// ── 07-14 재촉 셋(N13) · 임자 없는 증빙 받는 사람(AQ-25) · 착지 링크 재료 ──────────────
+
+// 메뉴 × 쓰기 권한을 가진 계급의 활성 사용자(경영관리 판정 listPaymentManagerIds와 같은 꼴 — 권한표로 해석).
+export async function listMenuWriterIds(viewer: Viewer, menu: string, today: string, tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  const rows = await tx
+    .select({ id: users.id })
+    .from(users)
+    .innerJoin(roles, and(eq(roles.id, users.roleId), isNull(roles.archivedAt)))
+    .innerJoin(
+      permissionMatrix,
+      and(eq(permissionMatrix.roleId, roles.id), eq(permissionMatrix.menu, menu), eq(permissionMatrix.action, "write"), eq(permissionMatrix.allowed, true)),
+    )
+    .where(activeUser(today))
+    .groupBy(users.id)
+    .orderBy(users.id);
+  return rows.map((row) => row.id);
+}
+
+// 정산 상신 재촉 — 정산 중(settling) · 보관 아님 · 정산 결재가 올라가 있지 않은(제출 · 결재 중 · 승인 아님) 프로젝트 중 종료일이 [from, to]인 것.
+export type SettlingProjectRow = { id: string; name: string; pmUserId: string; endDate: string };
+
+export async function listSettlingProjectsNotSubmitted(
+  viewer: Viewer,
+  window: { from: string; to: string },
+  limit: number,
+  tx: DbOrTx = db,
+): Promise<SettlingProjectRow[]> {
+  void viewer;
+  const rows = await tx
+    .select({ id: projects.id, name: projects.name, pmUserId: projects.pmUserId, endDate: projects.endDate })
+    .from(projects)
+    .where(
+      and(
+        isNull(projects.archivedAt),
+        eq(projects.status, "settling"),
+        isNotNull(projects.endDate),
+        gte(projects.endDate, window.from),
+        lte(projects.endDate, window.to),
+        sql`not exists (select 1 from ${settlementApprovals} sa join ${approvalInstances} i on i.document_kind = 'settlement' and i.document_id = sa.id where sa.project_id = ${projects.id} and i.status in ('submitted', 'in_review', 'approved'))`,
+      ),
+    )
+    .orderBy(asc(projects.endDate), asc(projects.id))
+    .limit(limit + 1);
+  return rows.flatMap((row) => (row.endDate === null ? [] : [{ id: row.id, name: row.name, pmUserId: row.pmUserId, endDate: row.endDate }]));
+}
+
+// 반려 방치 재촉 — 지금도 반려 상태(다시 제출 · 회수 · 종결 · 삭제 아님)인 지출결의의 지금 차수 반려 단계가 [from, before) 사이에 반려된 것.
+export type RejectedExpenseRow = { expenseId: string; drafterId: string; stepId: string; rejectedAt: Date };
+
+export async function listRejectedIdleExpenses(
+  viewer: Viewer,
+  window: { from: Date; before: Date },
+  limit: number,
+  tx: DbOrTx = db,
+): Promise<RejectedExpenseRow[]> {
+  void viewer;
+  return tx
+    .select({ expenseId: expenses.id, drafterId: expenses.drafterId, stepId: approvalSteps.id, rejectedAt: sql<Date>`${approvalSteps.actedAt}`.mapWith(approvalSteps.actedAt) })
+    .from(approvalInstances)
+    .innerJoin(approvalRoutes, and(eq(approvalRoutes.instanceId, approvalInstances.id), eq(approvalRoutes.round, approvalInstances.currentRound)))
+    .innerJoin(approvalSteps, and(eq(approvalSteps.routeId, approvalRoutes.id), eq(approvalSteps.action, "rejected")))
+    .innerJoin(expenses, eq(expenses.id, approvalInstances.documentId))
+    .where(
+      and(
+        eq(approvalInstances.documentKind, "expense"),
+        eq(approvalInstances.status, "rejected"),
+        isNull(expenses.deletedAt),
+        isNull(expenses.closedAt),
+        sql`${approvalSteps.actedAt} >= ${window.from.toISOString()}::timestamp`,
+        sql`${approvalSteps.actedAt} < ${window.before.toISOString()}::timestamp`,
+      ),
+    )
+    .orderBy(asc(approvalSteps.actedAt), asc(approvalSteps.id))
+    .limit(limit + 1);
+}
+
+// 견적 재촉 — 보관 · 미수주(lost) · 완료(completed)가 아니고 어느 차수에도 살아 있는 견적 줄이 없는 프로젝트 중 생성이 [from, before)인 것.
+export type QuotelessProjectRow = { id: string; name: string; pmUserId: string; createdAt: Date };
+
+export async function listProjectsWithoutQuote(
+  viewer: Viewer,
+  window: { from: Date; before: Date },
+  limit: number,
+  tx: DbOrTx = db,
+): Promise<QuotelessProjectRow[]> {
+  void viewer;
+  return tx
+    .select({ id: projects.id, name: projects.name, pmUserId: projects.pmUserId, createdAt: projects.createdAt })
+    .from(projects)
+    .where(
+      and(
+        isNull(projects.archivedAt),
+        notInArray(projects.status, ["lost", "completed"]),
+        sql`${projects.createdAt} >= ${window.from.toISOString()}::timestamp`,
+        sql`${projects.createdAt} < ${window.before.toISOString()}::timestamp`,
+        sql`not exists (select 1 from ${quoteLines} ql join ${quoteRevisions} qr on qr.id = ql.revision_id where qr.project_id = ${projects.id} and ql.archived_at is null)`,
+      ),
+    )
+    .orderBy(asc(projects.createdAt), asc(projects.id))
+    .limit(limit + 1);
+}
+
+// 착지 링크(07-14 N25): 결재 단계 id → 문서(종류 · id · 기안자 · 정산이면 프로젝트). 대표 폴백 자리 키(`{차수 id}:fallback`)는 차수로 찾는다.
+export type StepDocumentRow = { key: string; documentKind: string; documentId: string; drafterId: string; projectId: string | null };
+
+export async function listStepDocuments(viewer: Viewer, stepKeys: readonly string[], tx: DbOrTx = db): Promise<StepDocumentRow[]> {
+  void viewer;
+  if (stepKeys.length === 0) return [];
+  const result = await tx.execute<{ key: string; document_kind: string; document_id: string; drafter_id: string; project_id: string | null }>(sql`
+    select k.key, i.document_kind, i.document_id::text as document_id, i.drafter_id, sa.project_id::text as project_id
+    from unnest(${sql.param([...stepKeys])}::text[]) as k(key)
+    join approval_routes r on r.id = (
+      case
+        when k.key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          then (select s.route_id from approval_steps s where s.id = k.key::uuid)
+        when k.key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:fallback$'
+          then split_part(k.key, ':', 1)::uuid
+      end
+    )
+    join approval_instances i on i.id = r.instance_id
+    left join settlement_approvals sa on i.document_kind = 'settlement' and sa.id = i.document_id
+  `);
+  return result.rows.map((row) => ({ key: row.key, documentKind: row.document_kind, documentId: row.document_id, drafterId: row.drafter_id, projectId: row.project_id }));
+}
+
+// 착지 링크: 보관된 프로젝트 id(canOpenProject의 보관 조건 재료).
+export async function listArchivedProjectIds(viewer: Viewer, ids: readonly string[], tx: DbOrTx = db): Promise<Set<string>> {
+  void viewer;
+  if (ids.length === 0) return new Set();
+  const rows = await tx.select({ id: projects.id }).from(projects).where(and(inArray(projects.id, [...ids]), isNotNull(projects.archivedAt)));
+  return new Set(rows.map((row) => row.id));
+}

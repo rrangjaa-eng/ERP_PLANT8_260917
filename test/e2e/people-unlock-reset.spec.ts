@@ -363,7 +363,8 @@ test.describe("사람 상세 로그인 섹션 · 비밀번호 초기화 (SC-12 T
     expect(await openFailures(a.email)).toBe(0);
   });
 
-  test("D-728 — 퇴직 + 잠김은 값 `퇴직` · `잠금 풀기` 없음, 정상(안 잠김)도 `잠금 풀기` 없음", async ({ page }) => {
+  // 사용자 결정(2026-10-23): 퇴직자는 `비밀번호 초기화`도 없다(서버 resetPersonPassword도 거부 — 단위 people-temp-password-result).
+  test("D-728 — 퇴직 + 잠김은 값 `퇴직` · `잠금 풀기` · `비밀번호 초기화` 없음, 정상(안 잠김)도 `잠금 풀기` 없음", async ({ page }) => {
     const token = `상세E2E${randomUUID().slice(0, 6)}`;
     const retiree = await makePerson(token, "퇴");
     const free = await makePerson(token, "정");
@@ -373,6 +374,7 @@ test.describe("사람 상세 로그인 섹션 · 비밀번호 초기화 (SC-12 T
     await page.goto(`/admin/people/${retiree.userId}`);
     await expect(loginStatusValue(page)).toHaveText("퇴직");
     await expect(page.getByRole("button", { name: "잠금 풀기" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "비밀번호 초기화" })).toHaveCount(0);
     await page.goto(`/admin/people/${free.userId}`);
     await expect(loginStatusValue(page)).toHaveText("임시 비밀번호 사용 중");
     await expect(page.getByRole("button", { name: "잠금 풀기" })).toHaveCount(0);

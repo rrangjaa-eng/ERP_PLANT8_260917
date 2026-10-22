@@ -104,8 +104,10 @@ export default async function PersonDetailPage({
   const lockedReason = targetOutOfCeiling || roles.length === 0 ? GRANT_FORBIDDEN_MESSAGE : null;
   // 07-17 SC-12 · R15 · D-728: 로그인 섹션 — `로그인 상태` 한 값(노출표가 잠김 키를 가리면 섹션 없음). 두 행동은 쓰기 · 자기 아님 ·
   // 보관 아님 · 상한 안에서만, `잠금 풀기`는 잠긴 재직자에게만(퇴직자는 값 `퇴직`). 상한 밖이면 연차 조정 · 이력 추가 · 날짜 칸도 그리지 않는다.
+  // 사용자 결정(2026-10-23): 퇴직자는 `비밀번호 초기화`도 없다(서버 resetPersonPassword가 같은 판정으로 거부).
   const loginWord = "locked" in detail.person ? personLoginWord(personLoginStatus(detail.person, today)) : null;
-  const loginWritable = canWrite && session.viewer.id !== id && !detail.person.archivedAt && !targetOutOfCeiling;
+  const loginWritable =
+    canWrite && session.viewer.id !== id && !detail.person.archivedAt && !targetOutOfCeiling && loginWord !== "퇴직";
   const balanceLines = balance.annual
     ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null, resignation: balance.resignation ?? null }).map((line) => line.text)
     : [];

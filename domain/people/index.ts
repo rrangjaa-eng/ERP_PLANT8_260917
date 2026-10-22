@@ -632,9 +632,14 @@ export type TempPasswordResult = { tempPassword: string };
 export type ResetPersonPasswordDeps = {
   can: typeof defaultCan;
   withPersonLock: PersonLock;
-  loadTarget: (viewer: Viewer, personId: string, tx: DbOrTx) => Promise<Pick<UserRow, "id" | "email" | "roleId" | "archivedAt"> | null>;
+  loadTarget: (
+    viewer: Viewer,
+    personId: string,
+    tx: DbOrTx,
+  ) => Promise<Pick<UserRow, "id" | "email" | "roleId" | "archivedAt" | "resignationDate"> | null>;
   assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[], tx: DbOrTx) => Promise<void>;
   resetPassword: (viewer: Viewer, email: string) => Promise<{ tempPassword: string }>;
+  now: () => Date;
 };
 
 // 권한 · 대상 · 자기 제외 · 상한을 본 뒤 07-09 `resetPassword`(새 임시 비밀번호 · 세션 만료 · 잠금 해소 + password_reset 기록)를 부른다.
@@ -648,10 +653,13 @@ export async function resetPersonPassword(
     throw new ForbiddenError("비밀번호 초기화 권한 없음");
   }
   const loadTarget = deps?.loadTarget ?? ((v: Viewer, id: string, tx: DbOrTx) => repoFindUserById(v, id, tx));
+  const today = seoulTodayOf(deps);
   const email = await (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
     const target = await loadTarget(viewer, personId, tx);
     if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
     if (target.archivedAt) throw new ForbiddenError("보관된 사람 · 비밀번호 초기화 없음");
+    // 사용자 결정(2026-10-23): 퇴직한 사람은 초기화하지 않는다 — 260907 409와 같은 판정. 초기화는 잠금도 풀므로 D-728 우회도 막는다.
+    if (isRetiredOn(target.resignationDate, today)) throw new ForbiddenError("퇴직한 사람 · 비밀번호 초기화 없음");
     if (target.id === viewer.id) throw new ForbiddenError("본인 비밀번호 초기화 없음 · 내 계정에서 변경");
     await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId], tx);
     return target.email;

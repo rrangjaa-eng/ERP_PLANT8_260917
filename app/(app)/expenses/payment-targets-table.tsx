@@ -112,13 +112,13 @@ function downloadBase64(base64: string, filename: string) {
 
 const NO_RESPONSE = "결과를 받지 못함 · 새로 고침";
 
-// 07-16(J9 · K6 · N4 · U8): 「이번 주로」 결과 — 옮긴 건(되돌리기 재료: 이전 값 · 새 version) · 막힌 건 수. 전부 거부면 실패 꼴(첫 사유 · 다시 보낼 입력),
-// 되돌리기 거부면 그 사유(원인 없으면 null = 다시 시도). 결과 줄은 다음 제자리 행동이나 화면 이탈까지 남는다(U7 — 시간으로 지우지 않음).
+// 07-16(J9 · K6 · N4 · U8): 「이번 주로」 결과 — 옮긴 건(되돌리기 재료: 이전 값 · 새 version) · 막힌 건 수. 전부 거부 · 응답 없음은 실패 꼴(사유 · 다시 보낼
+// 입력 — 요청째 서버 거부일 때만, 그 밖은 null). 되돌리기도 같은 꼴. 결과 줄은 다음 제자리 행동이나 화면 이탈까지 남는다(U7 — 시간으로 지우지 않음).
 type MovedItem = { expenseId: string; before: string | null; version: number };
 type MoveResult =
   | { kind: "moved"; moved: MovedItem[]; blocked: number }
-  | { kind: "failed"; reason: string; retry: { expenseId: string; version: number }[] }
-  | { kind: "revertFailed"; reason: string | null; items: { expenseId: string; date: string | null; version: number }[] }
+  | { kind: "failed"; reason: string; retry: { expenseId: string; version: number }[] | null }
+  | { kind: "revertFailed"; reason: string; retry: { expenseId: string; date: string | null; version: number }[] | null }
   // 검토 M-1: 되돌리기 일부 거부 — 되돌린 건수 · 막힌 건수(막힌 건은 행 오류 줄).
   | { kind: "revertPartial"; reverted: number; blocked: number };
 
@@ -856,7 +856,11 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     const data = response?.data;
     if (!data) {
       setMoveBlocked(new Map());
-      setMoveResult({ kind: "failed", reason: response?.serverError ?? NO_RESPONSE, retry: items });
+      // 검토 L-1: 응답이 끊기면 서버는 저장했을 수 있다 — 옛 version으로 다시 보내지 않고(전부 충돌) 목록을 다시 받는다.
+      // `다시 시도`는 서버가 요청째 거부한 때(아무것도 저장 안 됨)만.
+      const serverError = response?.serverError;
+      setMoveResult({ kind: "failed", reason: serverError ?? NO_RESPONSE, retry: serverError ? items : null });
+      if (!serverError) router.refresh();
       return;
     }
     setMoveBlocked(new Map(data.rejected.map((item) => [item.expenseId, moveReasonText(item.reason)])));
@@ -883,7 +887,10 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setReverting(false);
     const data = response?.data;
     if (!data) {
-      setMoveResult({ kind: "revertFailed", reason: response?.serverError ?? null, items });
+      // 검토 L-1: 이번 주로와 같은 갈래 — 끊긴 응답은 다시 받기, `다시 시도`는 요청째 거부만.
+      const serverError = response?.serverError;
+      setMoveResult({ kind: "revertFailed", reason: serverError ?? NO_RESPONSE, retry: serverError ? items : null });
+      if (!serverError) router.refresh();
       return;
     }
     setMoveBlocked(new Map(data.rejected.map((item) => [item.expenseId, moveReasonText(item.reason)])));
@@ -893,7 +900,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
         ? null
         : data.reverted.length > 0
           ? { kind: "revertPartial", reverted: data.reverted.length, blocked: data.rejected.length }
-          : { kind: "revertFailed", reason: first.reason, items },
+          : { kind: "revertFailed", reason: first.reason, retry: null },
     );
     focusRevertedRef.current = data.reverted[0]?.expenseId ?? null;
     router.refresh();
@@ -1206,10 +1213,15 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           </>
         ) : moveResult?.kind === "failed" ? (
           <span className={styles.batchBlocked}>
-            {`이번 주로 실패 · ${moveResult.reason} · `}
-            <Button variant="tertiary" pending={movingIds.size > 0} onClick={() => void moveRows(moveResult.retry)}>
-              다시 시도
-            </Button>
+            {`이번 주로 실패 · ${moveResult.reason}`}
+            {moveResult.retry ? (
+              <>
+                {" · "}
+                <Button variant="tertiary" pending={movingIds.size > 0} onClick={() => void moveRows(moveResult.retry ?? [])}>
+                  다시 시도
+                </Button>
+              </>
+            ) : null}
           </span>
         ) : moveResult?.kind === "revertPartial" ? (
           <>
@@ -1218,16 +1230,17 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
             <span className={styles.batchBlocked}>{`막힘 ${moveResult.blocked}건`}</span>
           </>
         ) : moveResult?.kind === "revertFailed" ? (
-          moveResult.reason ? (
-            <span className={styles.batchBlocked}>{`되돌리기 실패 · ${moveResult.reason}`}</span>
-          ) : (
-            <span className={styles.batchBlocked}>
-              {"되돌리기 실패 · "}
-              <Button variant="tertiary" pending={reverting} onClick={() => void revertMoved(moveResult.items)}>
-                다시 시도
-              </Button>
-            </span>
-          )
+          <span className={styles.batchBlocked}>
+            {`되돌리기 실패 · ${moveResult.reason}`}
+            {moveResult.retry ? (
+              <>
+                {" · "}
+                <Button variant="tertiary" pending={reverting} onClick={() => void revertMoved(moveResult.retry ?? [])}>
+                  다시 시도
+                </Button>
+              </>
+            ) : null}
+          </span>
         ) : result ? (
           <>
             <span className={styles.batchDone}>{`${result.time} 지급 완료 ${result.processed}건`}</span>

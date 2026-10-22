@@ -142,6 +142,34 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     await page.context().close();
   });
 
+  test("L-1 — 저장 뒤 응답이 끊기면 `다시 시도` 없이 실패 줄 + 목록을 다시 받아 옮겨진 상태를 보인다", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    test.skip(cal.today > cal.thisPay, "이번 주 지급일이 지남 — 숨김 갈래가 덮는다");
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    await pushedDoc(fx, "phone", payer, cal);
+    const itemName = fx.lines.phone.itemName;
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await openTargets(page);
+    let dropped = false;
+    await page.route("**/expenses**", async (route) => {
+      const request = route.request();
+      if (!dropped && request.method() === "POST" && request.headers()["next-action"]) {
+        dropped = true;
+        await route.fetch(); // 서버는 저장(커밋)하고 응답만 브라우저에 닿지 않는다.
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    });
+    await targetRow(page, itemName).getByRole("button", { name: `${itemName} 이번 주로` }).click();
+    await expect(moveStatus(page)).toHaveText("이번 주로 실패 · 결과를 받지 못함 · 새로 고침");
+    await expect(moveStatus(page).getByRole("button")).toHaveCount(0);
+    await expect(targetRow(page, itemName).getByText("수동 지정", { exact: true })).toBeVisible();
+    await page.context().close();
+  });
+
   test("U6 — `이번 주로` 두 번 빠르게 눌러도 서버 요청 한 번 · 요청 중 aria-busy", async ({ browser, baseURL }) => {
     const cal = await payCalendar();
     test.skip(cal.today > cal.thisPay, "이번 주 지급일이 지남 — 숨김 갈래가 덮는다");

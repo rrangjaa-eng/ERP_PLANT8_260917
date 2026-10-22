@@ -44,6 +44,3 @@ cso 2026-10-14T01:31Z session=0592c76f-6b2e-5528-b811-98e2202c45bd (PR #214 묶�
 design-review 2026-10-14T01:36Z session=0592c76f-6b2e-5528-b811-98e2202c45bd (PR #214 묶음 /design-review — Codex 28화면 지적 0, DOM 실측 결함 0, 동적 경로·대화상자는 플랜별 DOM 감사+/qa로, 보고서 /mnt/project-files/06-review/pr-e/bundle-codex/design-review.md)
 qa 2026-10-14T02:00Z session=0592c76f-6b2e-5528-b811-98e2202c45bd (PR #214 묶음 /qa 812da08 — CI=true 흐름 desktop 188·mobile 13 통과, 데이터 채운 DOM 실측 16상태×4폭 결함 0, 건강 99(잠정), 보고서 /mnt/project-files/06-review/pr-e/qa/qa-report.md)
 review 2026-10-16T05:19Z session=0e0eb4e2-f6d0-5610-be1a-3aa1adc3845b (PR #237 시험 고침 e669757·0b52710 /review — 뒤 4자리 오판 정규식 고침, 지적 1 자동 고침(대표 화면 평문 검사), 남은 결함 0, Codex 없음(R3), 훅 미기록이라 손 기록(10/16 16:14 KST 사용자 카드 「손 기록」), 보고서 /mnt/project-files/06-review/g5/237-review.md)
-review 2026-10-22T05:51Z session=72fe922e-f0f6-59a0-a2a5-2d07ab1eec50
-cso 2026-10-22T05:58Z session=72fe922e-f0f6-59a0-a2a5-2d07ab1eec50
-cso 2026-10-22T06:06Z session=72fe922e-f0f6-59a0-a2a5-2d07ab1eec50 (PR #269 quick 261022-7n2 /cso 돈 경로 domain/payments/pay-schedule.ts firstCandidate — 헬퍼가 저장소 64MiB 한도로 거부(MISSING_INPUT) → 같은 기준(OWASP · STRIDE, diff 범위) Opus 독립 대체 검토, 뒷받침되는 결함 0 · 사용자 승인 2026-10-22 질문 카드 「대체 검토 승인」 · 손 기록)

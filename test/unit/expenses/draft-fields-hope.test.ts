@@ -20,8 +20,9 @@ describe("requestedPaymentErrors — 희망 지급일 · 사유 한 쌍", () => 
     expect(REQUESTED_REASON_REQUIRED).toBe("희망 사유 · 입력");
   });
 
-  it("사유만 → 사유 칸 거부(한쪽만 적는 상태를 저장하지 않는다)", () => {
-    expect(requestedPaymentErrors({ requestedPaymentDate: null, requestedPaymentReason: "행사 전 선금" }, TODAY)).toEqual({ requestedPaymentReason: REQUESTED_DATE_MISSING });
+  // 감사 #9(P3): 다음 행동이 「날짜 선택」이고 날짜가 비면 사유 칸은 그려지지 않는다 — 오류는 희망일 칸으로.
+  it("사유만 → 희망일 칸 거부(한쪽만 적는 상태를 저장하지 않는다)", () => {
+    expect(requestedPaymentErrors({ requestedPaymentDate: null, requestedPaymentReason: "행사 전 선금" }, TODAY)).toEqual({ requestedPaymentDate: REQUESTED_DATE_MISSING });
   });
 
   it("어제 → 희망일 칸 `오늘 이후 날짜 · 다시 선택`", () => {

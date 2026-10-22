@@ -131,8 +131,8 @@ const DATE_EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
 
 // 07-16: 서버 희망 칸 오류(ExpenseFieldError)는 글자만 온다 — 어느 칸인지는 그 글자로 가른다(선결제 사유와 같은 꼴).
 function hopeErrorOf(message: string | undefined): { requestedPaymentDate: string } | { requestedPaymentReason: string } | null {
-  if (message === REQUESTED_DATE_PAST) return { requestedPaymentDate: message };
-  if (message === REQUESTED_REASON_REQUIRED || message === REQUESTED_DATE_MISSING) return { requestedPaymentReason: message };
+  if (message === REQUESTED_DATE_PAST || message === REQUESTED_DATE_MISSING) return { requestedPaymentDate: message };
+  if (message === REQUESTED_REASON_REQUIRED) return { requestedPaymentReason: message };
   return null;
 }
 const FX_ERROR = "환율 형식 오류 · 1,318.4처럼";

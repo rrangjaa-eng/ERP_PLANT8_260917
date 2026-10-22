@@ -58,7 +58,7 @@ export function requestedPaymentErrors(
 ): RequestedPaymentErrors {
   const date = fields.requestedPaymentDate ?? null;
   const reason = fields.requestedPaymentReason?.trim() ? fields.requestedPaymentReason : null;
-  if (date === null) return reason === null ? {} : { requestedPaymentReason: REQUESTED_DATE_MISSING };
+  if (date === null) return reason === null ? {} : { requestedPaymentDate: REQUESTED_DATE_MISSING };
   if (date < todayKst) return { requestedPaymentDate: REQUESTED_DATE_PAST };
   return reason === null ? { requestedPaymentReason: REQUESTED_REASON_REQUIRED } : {};
 }

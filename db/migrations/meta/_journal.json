@@ -309,6 +309,13 @@
       "when": 1792659423330,
       "tag": "0043_phase7_file_private_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792659814518,
+      "tag": "0044_phase7_vendor_project_docs",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,7 @@ import { pgTable, text, integer, boolean, timestamp, uuid, index, check } from "
 import { users } from "./auth";
 
 // 05-04(EVID-01): 증빙 파일과 업로드 의도. 파일 바이트는 저장소(GCS · 로컬 드라이버)에 있고 이 표는 메타데이터만 둔다.
-// owner_id에는 외래 키를 두지 않는다 — 주인 종류가 여럿이다(Phase 6이 owner_kind 값을 더한다).
+// owner_id에는 외래 키를 두지 않는다 — 주인 종류가 여럿이다(Phase 6이 owner_kind 값을 더한다 · 07 S3: 거래처 서류 · 프로젝트 서류 · 매출 줄 계산서 — V8 · W3 · W7).
 // sha256에는 UNIQUE를 두지 않는다 — 중복 검사는 사람을 돕는 안내이고, 삭제 · 무효 뒤 같은 파일을 다시 올릴 수 있어야 한다.
 // 「살아 있는 파일」 = removed_at IS NULL AND voided_at IS NULL. 무효 처리 열 셋은 05-09가 쓴다(승인 뒤 무효 처리 — 사용자 결정).
 export const files = pgTable(
@@ -34,7 +34,7 @@ export const files = pgTable(
   (table) => [
     index("files_owner_idx").on(table.ownerKind, table.ownerId),
     index("files_sha256_idx").on(table.sha256),
-    check("files_owner_kind_check", sql`${table.ownerKind} IN ('expense','quote_revision','reserve_entry','corp_card_usage')`),
+    check("files_owner_kind_check", sql`${table.ownerKind} IN ('expense','quote_revision','reserve_entry','corp_card_usage','vendor_document','project_document','revenue_entry')`),
     check("files_sha256_check", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
     check("files_size_bytes_check", sql`${table.sizeBytes} > 0`),
     check(

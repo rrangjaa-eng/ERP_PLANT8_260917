@@ -229,22 +229,25 @@ test.describe("로그인한 뒤", () => {
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.closest("table"))).toBeNull();
 
-    // 활성 셀 행에서 Space → 그 행 체크 · 행 면 = --accent-weak · 1차 `지급 완료 1`.
+    // 활성 셀 행에서 Space → 그 행 체크 · 행 면 = --surface-selected(07 개정 11) · 활성 칸은 --surface-base · 1차 `지급 완료 1`.
     await bodyRows.first().locator("td").nth(1).click();
     await page.keyboard.press("Space");
     await expect(bodyRows.first().getByRole("checkbox")).toBeChecked();
     await expect(primary).toContainText("지급 완료 1");
     await expect(primary).not.toHaveAttribute("aria-disabled", "true");
-    const accentWeak = await page.evaluate(() => {
-      const probe = document.createElement("div");
-      probe.style.background = "var(--accent-weak)";
-      document.body.append(probe);
-      const color = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return color;
-    });
+    const surface = (token: string) =>
+      page.evaluate((value) => {
+        const probe = document.createElement("div");
+        probe.style.background = `var(${value})`;
+        document.body.append(probe);
+        const color = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return color;
+      }, token);
     await page.mouse.move(0, 0);
-    expect(await bodyRows.first().locator("td").nth(1).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(accentWeak);
+    // SYSTEM §7-3 개정 11 — 고른 행의 다른 칸은 --surface-selected, 포커스 칸(활성 칸)은 --surface-base 바탕.
+    expect(await bodyRows.first().locator("td").nth(2).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await surface("--surface-selected"));
+    expect(await bodyRows.first().locator("td").nth(1).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await surface("--surface-base"));
 
     // 머리글 — 일부만 고른 상태면 indeterminate, 누르면 고를 수 있는 행 전부.
     expect(await headBox.evaluate((el: HTMLInputElement) => el.indeterminate)).toBe(true);

@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import type { visible as defaultVisible } from "@/domain/permissions/visible";
 import { project, projectMany } from "@/domain/permissions/project";
 import { getSettingValue } from "@/domain/settings/registry";
@@ -306,6 +307,8 @@ export async function addLeaveAdjustment(
   const bucket = input.bucket as LeaveBucket;
   const user = await findUserById(viewer, input.userId);
   if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
+  // 07-17 R15: 대상 계급이 내 상한 밖이면 거부 — 화면 숨김은 UX일 뿐(사람 잠금 풀기 · 초기화와 같은 관문).
+  await assertCanGrantRoles(viewer, [user.roleId]);
   const error = checkLeaveAdjustment({
     bucket,
     fiscalYear: input.fiscalYear,

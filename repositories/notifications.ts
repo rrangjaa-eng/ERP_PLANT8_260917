@@ -368,8 +368,10 @@ export async function markPendingEmailSkipped(viewer: Viewer, opts?: { deadlineM
 export type EmailBundle = {
   recipientId: string;
   email: string;
-  // 최신 먼저(created_at DESC, id DESC) — 알림함과 같은 순서.
-  rows: Array<{ id: number; message: string }>;
+  // 07-14 C-P2-5: 받는 사람 계급 — 이메일 단계가 { id: recipientId, roleId }로 줄 끝 `열기` 링크를 판정한다(계급 없으면 링크 없음).
+  roleId: string | null;
+  // 최신 먼저(created_at DESC, id DESC) — 알림함과 같은 순서. entity · entityId는 착지 링크 재료(domain/notify/href.ts).
+  rows: Array<{ id: number; message: string; conditionKind: string; entity: string; entityId: string }>;
 };
 
 // D-4203: 받는 사람 한 명의 묶음을 선점한다. 알림함 삽입과 같은 tick 잠금 키를 기다리는
@@ -420,7 +422,7 @@ async function claimNextEmailBundleTx(
     if (run?.evaluation_failed) return null;
     const incomplete = run?.incomplete_recipient_ids ?? [];
 
-    const claimed = await tx.execute<{ id: number; recipient_id: string; message: string }>(sql`
+    const claimed = await tx.execute<{ id: number; recipient_id: string; message: string; condition_kind: string; entity: string; entity_id: string }>(sql`
       with target as (
         select n.recipient_id
         from notification_log n
@@ -442,9 +444,9 @@ async function claimNextEmailBundleTx(
         set email_status = 'sending', email_attempted_at = ${opts.now.toISOString()}::timestamp
         where recipient_id = (select recipient_id from target)
           and email_status = 'pending'
-        returning id, recipient_id, message, created_at
+        returning id, recipient_id, message, condition_kind, entity, entity_id, created_at
       )
-      select id, recipient_id, message from claimed order by created_at desc, id desc
+      select id, recipient_id, message, condition_kind, entity, entity_id from claimed order by created_at desc, id desc
     `);
     const first = claimed.rows[0];
     if (!first) return null;
@@ -453,13 +455,20 @@ async function claimNextEmailBundleTx(
       .update(notifyTickRuns)
       .set({ emailClaimed: sql`${notifyTickRuns.emailClaimed} + 1` })
       .where(eq(notifyTickRuns.id, opts.runId));
-    const [user] = await tx.select({ email: users.email }).from(users).where(eq(users.id, first.recipient_id));
+    const [user] = await tx.select({ email: users.email, roleId: users.roleId }).from(users).where(eq(users.id, first.recipient_id));
     if (!user) throw new Error("claimNextEmailBundle: 받는 사람 행이 없습니다.");
 
     return {
       recipientId: first.recipient_id,
       email: user.email,
-      rows: claimed.rows.map((row) => ({ id: Number(row.id), message: row.message })),
+      roleId: user.roleId,
+      rows: claimed.rows.map((row) => ({
+        id: Number(row.id),
+        message: row.message,
+        conditionKind: row.condition_kind,
+        entity: row.entity,
+        entityId: row.entity_id,
+      })),
     };
   });
 }

@@ -249,3 +249,31 @@ export async function listProxyRegistrations(viewer: Viewer, since: Date, limit:
     .limit(limit + 1);
   return rows.flatMap((row) => (row.recipientId === null || row.projectName === null ? [] : [{ ...row, recipientId: row.recipientId, projectName: row.projectName }]));
 }
+
+// 07-14 결재 결과(N11 · N19 · D-716 · D-744) 사건 — 원천은 행동 로그가 아니라 도메인 표(결재 단계 acted_at)다. since 이후 사건을 사건 id(단계 id)로 돌려준다.
+// 최종 승인 = 승인으로 끝난 지출결의 인스턴스의 지금 차수에서 단계 번호가 가장 큰 처리된 승인 단계. 본인 승인(처리자 = 기안자)은 자기 행동이라 뺀다. limit + 1행까지.
+export type ExpenseResultEventRow = { expenseId: string; drafterId: string; eventId: string; at: Date };
+
+export async function listExpenseFinalApprovals(viewer: Viewer, since: Date, limit: number, tx: DbOrTx = db): Promise<ExpenseResultEventRow[]> {
+  void viewer;
+  return tx
+    .select({ expenseId: expenses.id, drafterId: approvalInstances.drafterId, eventId: approvalSteps.id, at: sql<Date>`${approvalSteps.actedAt}`.mapWith(approvalSteps.actedAt) })
+    .from(approvalSteps)
+    .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+    .innerJoin(approvalInstances, and(eq(approvalInstances.id, approvalRoutes.instanceId), eq(approvalInstances.currentRound, approvalRoutes.round)))
+    .innerJoin(expenses, eq(expenses.id, approvalInstances.documentId))
+    .where(
+      and(
+        eq(approvalInstances.documentKind, "expense"),
+        eq(approvalInstances.status, "approved"),
+        isNull(expenses.deletedAt),
+        eq(approvalSteps.action, "approved"),
+        sql`${approvalSteps.actedBy} <> ${approvalInstances.drafterId}`,
+        sql`${approvalSteps.actedAt} >= ${since.toISOString()}::timestamp`,
+        // 결재선 순서상 마지막 처리 단계(대표 폴백 행도 차수 끝 번호) — 처리 시각 순서가 아니라 단계 번호로 고른다.
+        sql`not exists (select 1 from approval_steps later where later.route_id = ${approvalSteps.routeId} and later.acted_at is not null and later.step_index > ${approvalSteps.stepIndex})`,
+      ),
+    )
+    .orderBy(asc(approvalSteps.actedAt), asc(approvalSteps.id))
+    .limit(limit + 1);
+}

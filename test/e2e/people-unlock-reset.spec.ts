@@ -336,7 +336,7 @@ test.describe("사람 상세 로그인 섹션 · 비밀번호 초기화 (SC-12 T
     await expect(loginStatusValue(page)).toHaveText("잠김");
     await expect(loginSection(page).getByRole("button", { name: "비밀번호 초기화" })).toBeVisible();
     await loginSection(page).getByRole("button", { name: "잠금 풀기" }).click();
-    await expect(loginStatusValue(page)).toHaveText("첫 로그인 전");
+    await expect(loginStatusValue(page)).toHaveText("임시 비밀번호 사용 중");
     await expect(loginSection(page).getByRole("button", { name: "잠금 풀기" })).toHaveCount(0);
     await expect(page.locator("[class*='Toast-module__']")).toHaveCount(0);
     await expect(loginSection(page).getByRole("button", { name: "비밀번호 초기화" })).toBeFocused();
@@ -354,7 +354,7 @@ test.describe("사람 상세 로그인 섹션 · 비밀번호 초기화 (SC-12 T
     await expect(loginStatusValue(page)).toHaveText("퇴직");
     await expect(page.getByRole("button", { name: "잠금 풀기" })).toHaveCount(0);
     await page.goto(`/admin/people/${free.userId}`);
-    await expect(loginStatusValue(page)).toHaveText("첫 로그인 전");
+    await expect(loginStatusValue(page)).toHaveText("임시 비밀번호 사용 중");
     await expect(page.getByRole("button", { name: "잠금 풀기" })).toHaveCount(0);
     await expect(loginSection(page).getByRole("button", { name: "비밀번호 초기화" })).toBeVisible();
   });

@@ -60,13 +60,14 @@ describe("personLoginStatus", () => {
   });
 });
 
-// 07-17 SC-12: 상세 로그인 섹션 `로그인 상태`는 한 값 — 보관됨 > 퇴직 > 잠김 > 첫 로그인 전 > 임시 비밀번호 사용 중 > 정상.
+// 07-17 SC-12: 상세 로그인 섹션 `로그인 상태`는 한 값 — 보관됨 > 퇴직 > 잠김 > 임시 비밀번호 사용 중 > 첫 로그인 전 > 정상(플랜 :205 순서).
 describe("personLoginWord", () => {
   it.each([
     [{ archivedAt: new Date() }, "보관됨"],
     [{ archivedAt: null, resignationDate: "2026-10-21", locked: true }, "퇴직"],
     [{ archivedAt: null, resignationDate: null, locked: true, firstLoginAt: null, passwordIsTemporary: true }, "잠김"],
-    [{ archivedAt: null, resignationDate: null, locked: false, firstLoginAt: null, passwordIsTemporary: true }, "첫 로그인 전"],
+    [{ archivedAt: null, resignationDate: null, locked: false, firstLoginAt: null, passwordIsTemporary: true }, "임시 비밀번호 사용 중"],
+    [{ archivedAt: null, resignationDate: null, locked: false, firstLoginAt: null, passwordIsTemporary: false }, "첫 로그인 전"],
     [{ archivedAt: null, resignationDate: null, locked: false, firstLoginAt: new Date(), passwordIsTemporary: true }, "임시 비밀번호 사용 중"],
     [{ archivedAt: null, resignationDate: null, locked: false, firstLoginAt: new Date(), passwordIsTemporary: false }, "정상"],
   ] as const)("%o → %s", (person, word) => {

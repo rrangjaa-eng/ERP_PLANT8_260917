@@ -25,11 +25,12 @@ export function personLoginStatus(
   return { kind: "badges", badges };
 }
 
-// 07-17 SC-12: 상세 로그인 섹션 `로그인 상태` 한 값 — 목록 판정을 그대로 쓰고 배지가 둘이면 앞의 것(첫 로그인 전), 없으면 `정상`.
+// 07-17 SC-12: 상세 로그인 섹션 `로그인 상태` 한 값 — 목록 판정을 그대로 쓰고, 배지는 `임시 비밀번호 사용 중` > `첫 로그인 전`(플랜 한 값 순서), 없으면 `정상`.
 export type PersonLoginWord = "보관됨" | "퇴직" | "잠김" | PersonLoginBadge | "정상";
 
 export function personLoginWord(status: PersonLoginStatus): PersonLoginWord {
   if (status.kind === "archived") return "보관됨";
   if (status.kind === "word") return status.word;
+  if (status.badges.includes("임시 비밀번호 사용 중")) return "임시 비밀번호 사용 중";
   return status.badges[0] ?? "정상";
 }

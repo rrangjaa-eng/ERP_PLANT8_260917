@@ -1,5 +1,10 @@
 // 알림 조건 종류 등록부(NOTI-03). tick이 종류마다 규칙(기본값 ⊕ notification_rules 행)을 합쳐 evaluate(ctx)로 후보를 모은다.
+import { approvalWaitingKind } from "@/domain/notify/kinds/approval-waiting";
+import { paidNoEvidenceKind } from "@/domain/notify/kinds/paid-no-evidence";
 import { payWeekAlertKind } from "@/domain/notify/kinds/pay-week-alert";
+import { prepaidEvidenceKind } from "@/domain/notify/kinds/prepaid-evidence";
+import { projectEndNoExpenseKind } from "@/domain/notify/kinds/project-end-no-expense";
+import { proxyRegisteredKind } from "@/domain/notify/kinds/proxy-registered";
 import type { NotifyTx } from "@/repositories/notifications";
 
 export { NOTIFY_EVENT_LOOKBACK_DAYS, NOTIFY_KIND_EVAL_MAX } from "@/domain/notify/limits";
@@ -43,4 +48,11 @@ export type ConditionKind = {
 
 // 실제 조건 종류는 Phase 7(NOTI-03)이 더한다 — 테스트 종류는 여기 등록하지 않는다.
 // evaluate는 today까지 기한이 된 발생을 모두 안정된 키로 돌려준다 — 그날 기한만 돌려주면 주말·상한 초과분을 잃는다. 평가량 한도는 종류가 자기 쿼리에 둔다.
-export const CONDITION_KINDS: readonly ConditionKind[] = [payWeekAlertKind];
+export const CONDITION_KINDS: readonly ConditionKind[] = [
+  projectEndNoExpenseKind,
+  payWeekAlertKind,
+  approvalWaitingKind,
+  paidNoEvidenceKind,
+  prepaidEvidenceKind,
+  proxyRegisteredKind,
+];

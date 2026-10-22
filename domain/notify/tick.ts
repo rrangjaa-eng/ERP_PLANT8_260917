@@ -5,7 +5,9 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { toKstDate } from "@/domain/holidays/business-day";
 import { isBusinessDayKst } from "@/domain/holidays/calendar";
 import { ensureHolidayCandidates } from "@/domain/holidays/candidates";
+import { LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
 import { CONDITION_KINDS, type ConditionKind } from "@/domain/notify/condition-kinds";
+import { loadRoleUsers, withExtraRoleRecipients } from "@/domain/notify/recipients";
 import { effectiveRules, eventWindowSince } from "@/domain/notify/rules";
 import { NOTIFY_TICK_BATCH_MAX } from "@/domain/settings/keys";
 import { getSettingValue } from "@/domain/settings/registry";
@@ -87,6 +89,8 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
   const businessDay = await isBusinessDay(today);
   // 다음 해 후보도 미리 시도한다 — 실패(예: 음력 표 밖)는 경고만 남기고 tick은 계속한다.
   const nextYear = Number(today.slice(0, 4)) + 1;
+  // P3 #6: 음력 표 마지막 해(LUNAR_TABLE_LAST_YEAR)가 다음 해로 다가오면 표 연장 경고를 남긴다.
+  if (nextYear >= LUNAR_TABLE_LAST_YEAR) log.warn("holiday.lunar_table_ending", { year: nextYear - 1, lastYear: LUNAR_TABLE_LAST_YEAR });
   try {
     await ensureHolidayCandidates(nextYear);
   } catch (error) {
@@ -110,6 +114,12 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
         const candidates: NotificationInsert[] = [];
         // D-717: 종류 코드 기본값 ⊕ notification_rules 행 — 잠금 tx 안에서 한 번 읽는다.
         const rules = effectiveRules(conditionKinds, await listNotificationRules(SYSTEM_VIEWER, tx));
+        // D-748: 켜진 종류 규칙의 받는 계급 사용자를 tick마다 한 번에 읽는다.
+        const roleUsers = await loadRoleUsers(
+          [...new Set(conditionKinds.flatMap((kind) => (rules.get(kind.kind)?.enabled ? (rules.get(kind.kind)?.extraRoleIds ?? []) : [])))],
+          today,
+          tx,
+        );
         // 종류별 격리 — 한 종류의 예외가 다른 종류의 후보를 막지 않는다. 실패한 종류가
         // 누구의 알림을 덜 만들었는지 모르므로 실행 기록에 evaluation_failed를 남긴다
         // (04.2-10 이메일 선점이 전원 보류한다).
@@ -135,8 +145,12 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
             const ms = performance.now() - startedMs;
             spentMs += ms;
             log.info("notify.condition_ms", { kind: kind.kind, ms: Math.round(ms), count: produced.length });
-            for (const candidate of produced) {
-              candidates.push({ ...candidate, conditionKind: kind.kind });
+            for (const candidate of withExtraRoleRecipients(produced, rule.extraRoleIds, roleUsers)) {
+              candidates.push({
+                ...candidate,
+                conditionKind: kind.kind,
+                ...(rule.emailEnabled ? {} : { emailStatus: "skipped_rule_off" as const }),
+              });
             }
           } catch (error) {
             spentMs += performance.now() - startedMs;

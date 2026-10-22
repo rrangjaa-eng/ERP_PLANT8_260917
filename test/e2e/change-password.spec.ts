@@ -50,6 +50,10 @@ test.describe("비밀번호 변경 + 임시 비밀번호 배너 (AUTH-03, D-08, 
     await page.getByLabel("새 비밀번호").fill("short12");
     await page.getByRole("button", { name: "비밀번호 변경" }).click();
     await expect(page.getByText("8자 미만 · 8자 이상으로")).toBeVisible();
+    // 07-08 SC-15 — 칸 오류는 칸 아래 §7-2 줄이고 aria-describedby로 칸에 묶인다.
+    await expect(page.getByLabel("새 비밀번호")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByLabel("새 비밀번호")).toHaveAttribute("aria-describedby", "newPassword-error");
+    await expect(page.locator("#newPassword-error")).toHaveText("8자 미만 · 8자 이상으로");
     await expect(page).toHaveURL(/\/account$/);
 
     // 로그아웃한다.

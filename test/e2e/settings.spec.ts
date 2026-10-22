@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { documentCounters, settingsSimple } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { AUTH_LOCKOUT_THRESHOLD, DOCUMENT_NUMBER_PROJECT_SEQ_START, DOCUMENT_NUMBER_PROJECT_SEPARATOR, EVIDENCE_MAX_SIZE_MB, SETTING_DEFS } from "@/domain/settings/keys";
+import { AUTH_LOCKOUT_THRESHOLD, PAYMENT_CUTOFF_TIME, PAYMENT_WEEKDAY, PROJECT_COLLECTION_DUE_DAYS, PROJECT_COST_RATE_PCT, DOCUMENT_NUMBER_PROJECT_SEQ_START, DOCUMENT_NUMBER_PROJECT_SEPARATOR, EVIDENCE_MAX_SIZE_MB, SETTING_DEFS } from "@/domain/settings/keys";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { findDocumentCounter, upsertDocumentCounter } from "@/repositories/document-counters";
 import { kstYear } from "@/lib/kst-date";
@@ -226,6 +226,114 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
 
     const response = await page.goto("/admin/settings");
     expect(response?.status()).toBe(404);
+  });
+});
+
+// 07-08(SC-04 · D-734 · D-735): 지급 3키 · 원가율(비움 ≠ 0) · 수금 기한 일수가 설정 화면에서 바뀐다.
+test.describe("07-08 — 지급 · 프로젝트 새 설정 항목 (SC-04)", () => {
+  async function openSettingsAsAdmin(page: import("@playwright/test").Page) {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/admin/settings");
+    await expect(page.getByRole("heading", { name: "지급", exact: true })).toBeVisible();
+  }
+  const isServerAction = (response: { request: () => { method: () => string; headers: () => Record<string, string> } }) =>
+    response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined;
+  const section = (page: import("@playwright/test").Page, name: string) =>
+    page.locator("section").filter({ has: page.getByRole("heading", { name, exact: true }) });
+
+  async function restore(key: string, original: Awaited<ReturnType<typeof findSimpleValue>>) {
+    if (original) await upsertSimpleValue(SYSTEM_VIEWER, key, original.value, original.updatedBy);
+    else await db.delete(settingsSimple).where(eq(settingsSimple.key, key));
+  }
+
+  test("지급 섹션 첫 칸은 지급 기한 일수이고, 지급 요일은 월~금, 결재 마감 시각 15:00은 저장 뒤 다시 열어도 15:00이다", async ({ page }) => {
+    const originalCutoff = await findSimpleValue(SYSTEM_VIEWER, PAYMENT_CUTOFF_TIME.key);
+    const originalWeekday = await findSimpleValue(SYSTEM_VIEWER, PAYMENT_WEEKDAY.key);
+    try {
+      await openSettingsAsAdmin(page);
+      const payment = section(page, "지급");
+      await expect(payment.locator("label").first()).toHaveText("지급 기한 일수");
+      await expect(payment.getByLabel("지급 기한 일수")).toHaveValue("60");
+      await expect(payment.getByLabel("지급 요일").locator("option")).toHaveText(["월", "화", "수", "목", "금"]);
+
+      const cutoff = payment.getByLabel("결재 마감 시각");
+      await cutoff.fill("15:00");
+      let saved = page.waitForResponse(isServerAction);
+      await cutoff.blur();
+      await saved;
+      saved = page.waitForResponse(isServerAction);
+      await payment.getByLabel("지급 요일").selectOption({ label: "수" });
+      await saved;
+
+      await page.reload();
+      await expect(section(page, "지급").getByLabel("결재 마감 시각")).toHaveValue("15:00");
+      await expect(section(page, "지급").getByLabel("지급 요일")).toHaveValue("wed");
+    } finally {
+      await restore(PAYMENT_CUTOFF_TIME.key, originalCutoff);
+      await restore(PAYMENT_WEEKDAY.key, originalWeekday);
+    }
+  });
+
+  test("원가율은 기본 빈 칸 → 12.5 저장 → 비우고 저장하면 빈 칸(0 아님) → 0 저장하면 0이다", async ({ page }) => {
+    const key = PROJECT_COST_RATE_PCT.key;
+    const original = await findSimpleValue(SYSTEM_VIEWER, key);
+    await db.delete(settingsSimple).where(eq(settingsSimple.key, key));
+    try {
+      await openSettingsAsAdmin(page);
+      const label = PROJECT_COST_RATE_PCT.label;
+      const field = () => section(page, "프로젝트").getByLabel(label, { exact: true });
+      await expect(field()).toHaveValue("");
+      await expect(section(page, "프로젝트").getByText("%", { exact: true })).toBeVisible();
+
+      const save = async (value: string) => {
+        await field().fill(value);
+        const saved = page.waitForResponse(isServerAction);
+        await field().blur();
+        await saved;
+        await page.reload();
+      };
+
+      await save("12.5");
+      await expect(field()).toHaveValue("12.5");
+      await save("");
+      await expect(field()).toHaveValue("");
+      expect((await findSimpleValue(SYSTEM_VIEWER, key))?.value).toBeNull();
+      await save("0");
+      await expect(field()).toHaveValue("0");
+      expect((await findSimpleValue(SYSTEM_VIEWER, key))?.value).toBe(0);
+
+      await field().fill("100.1");
+      const rejected = page.waitForResponse(isServerAction);
+      await field().blur();
+      await rejected;
+      await expect(page.locator(`[id="setting-${key}-error"]`)).toContainText("범위 0~100 · 다시 입력");
+      await expect(field()).toHaveAttribute("aria-invalid", "true");
+    } finally {
+      await restore(key, original);
+    }
+  });
+
+  test("수금 기한 일수는 프로젝트 섹션에 기본 60 · 단위 일이고 90을 저장하면 남는다", async ({ page }) => {
+    const key = PROJECT_COLLECTION_DUE_DAYS.key;
+    const original = await findSimpleValue(SYSTEM_VIEWER, key);
+    try {
+      await openSettingsAsAdmin(page);
+      const field = () => section(page, "프로젝트").getByLabel(PROJECT_COLLECTION_DUE_DAYS.label, { exact: true });
+      await expect(field()).toHaveValue("60");
+      await field().fill("90");
+      const saved = page.waitForResponse(isServerAction);
+      await field().blur();
+      await saved;
+      await page.reload();
+      await expect(field()).toHaveValue("90");
+    } finally {
+      await restore(key, original);
+    }
   });
 });
 

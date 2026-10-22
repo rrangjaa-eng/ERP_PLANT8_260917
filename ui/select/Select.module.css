@@ -18,6 +18,13 @@
   outline-offset: var(--focus-offset);
 }
 
+/* 07-08(SC-15): 설정 폼이 옮겨 오며 가져온 규칙 — SYSTEM.md §1-2 비활성 글자는 --text-faint on --surface-muted, UA 반투명(opacity)은 끈다. */
+.select:disabled {
+  color: var(--text-faint);
+  background: var(--surface-muted);
+  opacity: 1;
+}
+
 .selectError {
   border-color: var(--status-danger);
 }

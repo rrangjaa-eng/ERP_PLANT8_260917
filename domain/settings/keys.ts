@@ -36,9 +36,8 @@ export const AUTH_LOCKOUT_WINDOW_MINUTES: SettingDef<number> = {
   kind: "simple",
   schema: integerInRange(1, 60),
   label: "잠금 시간",
-  hint: "1~60",
+  hint: "1~60분",
   namespace: "로그인 잠금",
-  unitLabel: "분",
   default: env.LOCKOUT_WINDOW_MINUTES,
   readInvalidAsDefault: true,
 };
@@ -824,6 +823,44 @@ export const PROJECT_PROFIT_RATE_THRESHOLD: SettingDef<number> = {
 
 SETTING_DEFS.push(PROJECT_PROFIT_RATE_THRESHOLD);
 
+// 07-08(D-734 · C-P2-10): 프로젝트 원가율(%) — 기본 비움(null). 비운 채 저장하면 null이고 0은 0이다(빈 입력이 0으로 저장되면
+// 예산이 0이 된다). 빈 문자열 · null을 숫자 강제 변환 전에 null로 바꾼다. 0.1 단위는 소수 자릿수 검사로 판정한다(multipleOf는 부동소수 오차).
+// 계산은 07-24(예산 생성)가 읽는다.
+const atMostOneDecimal = (value: number) => Math.abs(value * 10 - Math.round(value * 10)) < 1e-9;
+
+export const PROJECT_COST_RATE_PCT: SettingDef<number | null> = {
+  key: "project.cost_rate_pct",
+  kind: "simple",
+  schema: z.preprocess(
+    (raw) => (raw === "" || raw === null || raw === undefined ? null : raw),
+    z.coerce
+      .number()
+      .refine((value) => value >= 0 && value <= 100 && atMostOneDecimal(value), { message: "범위 0~100 · 다시 입력" })
+      .nullable(),
+  ),
+  label: "원가율",
+  hint: "0~100",
+  namespace: "프로젝트",
+  unitLabel: "%",
+  default: null,
+  readBy: { phase: "7" },
+};
+
+// 07-08(D-735): 수금 예정일 = 발행일 + 이 일수. 고객별 칸은 없다(D-720). 07-22(수금 예정일 계산)가 읽는다.
+export const PROJECT_COLLECTION_DUE_DAYS: SettingDef<number> = {
+  key: "project.collection_due_days",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(365),
+  label: "수금 기한 일수",
+  hint: "1~365",
+  namespace: "프로젝트",
+  unitLabel: "일",
+  default: 60,
+  readBy: { phase: "7" },
+};
+
+SETTING_DEFS.push(PROJECT_COST_RATE_PCT, PROJECT_COLLECTION_DUE_DAYS);
+
 // ── 05-03 지출결의 결재선(EXP-01 · UI-SPEC S13) · 지출결의 문서 번호 ───────────
 // 연차 결재선 17키와 같은 꼴 · 같은 라벨(namespace만 다르다). 기본값도 연차와 같은 4단이고(1단 범위만 행사 담당 팀 — 06.2 D-6216) 3단 특정 부서만
 // 기본값 없음(시드가 경영관리본부로 채운다 — domain/seed/expenses.ts). 자기 승인 기본 = 본인 승인(입력 §3).
@@ -1303,7 +1340,8 @@ export const PAYMENT_METHOD_EVIDENCE_PAIRS: SettingDef<{ method: string; evidenc
   default: [],
 };
 
-SETTING_DEFS.push(EVIDENCE_REQUIRED, EVIDENCE_PREPAID_DUE_DAYS, PURCHASE_ONLINE_VENDOR_NAME, PAYMENT_METHOD_EVIDENCE_PAIRS);
+// 07-08(SC-04): 짝 격자(PAYMENT_METHOD_EVIDENCE_PAIRS)는 아래 07-01 지급 키 셋 뒤에 등록한다 — 지급 섹션 첫 칸이 지급 기한 일수가 되게.
+SETTING_DEFS.push(EVIDENCE_REQUIRED, EVIDENCE_PREPAID_DUE_DAYS, PURCHASE_ONLINE_VENDOR_NAME);
 
 // 07-01(J2 · D-715): 자동 지급 예정일 · 결재 마감의 회사 기본값 — domain/payments/pay-schedule-load.ts가 읽는다(260907 050_seed_settings.sql:218-221 같은 이름).
 // 회사 기본 기한 1~365는 UI-SPEC SC-04(거래처 기한 1~180은 07-02 · 07-20).
@@ -1341,7 +1379,7 @@ export const PAYMENT_CUTOFF_TIME: SettingDef<string> = {
   readInvalidAsDefault: true,
 };
 
-SETTING_DEFS.push(PAYMENT_TERM_DAYS, PAYMENT_WEEKDAY, PAYMENT_CUTOFF_TIME);
+SETTING_DEFS.push(PAYMENT_TERM_DAYS, PAYMENT_WEEKDAY, PAYMENT_CUTOFF_TIME, PAYMENT_METHOD_EVIDENCE_PAIRS);
 
 // 06.1-05(C3 · Q2 A · E19): 증빙 「본부 공개」가 열리는 본부 하나. 기본값이 없어 일반 시드 고리가 건너뛰고 seedMasterData가 기획본부를
 // 넣는다(없을 때만 — 운영 값을 덮지 않는다). 이력형이 아니다 — 바꾸면 그 뒤 저장하는 본부 공개 줄만 새 본부로 가고, 이미 저장한 줄은

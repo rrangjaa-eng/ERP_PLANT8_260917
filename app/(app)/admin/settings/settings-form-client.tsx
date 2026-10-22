@@ -4,6 +4,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExtern
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { TextField } from "@/ui/input/TextField";
+import { Form } from "@/ui/form/Form";
+import { Select } from "@/ui/select/Select";
 import { Button } from "@/ui/button/Button";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
@@ -134,7 +136,7 @@ function SimpleFieldEditor({
           {label}
         </label>
         {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
-        {error ? <p id={errorId} className={styles.error}>{error}</p> : null}
+        {error ? <Form.Error id={errorId}>{error}</Form.Error> : null}
       </div>
     );
   }
@@ -142,28 +144,23 @@ function SimpleFieldEditor({
   if (descriptor.kind === "enum" || options) {
     return (
       <div className={styles.field}>
-        <label className={styles.selectLabel}>
-          {label}
-          <select
-            className={styles.select}
+        <Form.Field id={`setting-${fieldKey}`} label={label} width="select">
+          <Select
+            id={`setting-${fieldKey}`}
             value={selected}
             disabled={disabled}
-            aria-describedby={fieldDescribedBy}
+            hideEmptyOption
+            aria-describedby={hint ? hintId : undefined}
+            options={options ?? (descriptor.kind === "enum" ? descriptor.options.map((option) => ({ value: option, label: option })) : [])}
+            error={error ?? undefined}
             onChange={(event) => {
               setSelected(event.target.value);
               execute({ key: fieldKey, value: event.target.value });
             }}
-          >
-            {(options ?? (descriptor.kind === "enum" ? descriptor.options.map((option) => ({ value: option, label: option })) : [])).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </Form.Field>
         {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
         {warning ? <p className={styles.warning}>{warning}</p> : null}
-        {error ? <p id={errorId} className={styles.error}>{error}</p> : null}
       </div>
     );
   }
@@ -189,7 +186,7 @@ function SimpleFieldEditor({
           </label>
         ))}
         {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
-        {error ? <p id={errorId} className={styles.error}>{error}</p> : null}
+        {error ? <Form.Error id={errorId}>{error}</Form.Error> : null}
       </fieldset>
     );
   }
@@ -452,22 +449,17 @@ function RouteStepEditor({
         const showWarning = Boolean(field.warning) && !disabled && value === base[field.key];
         return (
           <div key={field.key} className={styles.field}>
-            <label className={styles.selectLabel}>
-              {field.label}
-              <select
-                className={styles.select}
+            <Form.Field id={`setting-${field.key}`} label={field.label} width="select">
+              <Select
+                id={`setting-${field.key}`}
                 value={typeof value === "string" ? value : ""}
                 disabled={disabled || isExecuting}
+                hideEmptyOption
                 aria-describedby={field.hint ? `setting-${field.key}-hint` : undefined}
+                options={field.options ?? []}
                 onChange={(event) => change(field.key, event.target.value)}
-              >
-                {(field.options ?? []).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+              />
+            </Form.Field>
             {field.hint ? <p id={`setting-${field.key}-hint`} className={styles.hint}>{field.hint}</p> : null}
             {showWarning ? <p className={styles.warning}>{field.warning}</p> : null}
           </div>
@@ -486,9 +478,7 @@ function RouteStepEditor({
           {stepIndex}단 저장
         </Button>
         {error ? (
-          <p id={errorId} role="alert" className={styles.error}>
-            {error}
-          </p>
+          <Form.Error id={errorId}>{error}</Form.Error>
         ) : null}
       </div>
     </div>

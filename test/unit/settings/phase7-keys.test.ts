@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AUTH_LOCKOUT_THRESHOLD, AUTH_LOCKOUT_WINDOW_MINUTES } from "@/domain/settings/keys";
-import { getSettingValue } from "@/domain/settings/registry";
+import {
+  AUTH_LOCKOUT_THRESHOLD,
+  AUTH_LOCKOUT_WINDOW_MINUTES,
+  PAYMENT_CUTOFF_TIME,
+  PAYMENT_TERM_DAYS,
+  PAYMENT_WEEKDAY,
+  PROJECT_COLLECTION_DUE_DAYS,
+  PROJECT_COST_RATE_PCT,
+  SETTING_DEFS,
+} from "@/domain/settings/keys";
+import { describeSettingField, getSettingValue } from "@/domain/settings/registry";
 import { lockoutConfig } from "@/domain/auth/lockout";
 import { koreanZodErrorMessage } from "@/lib/actions/zod-error-message";
 import { log } from "@/lib/log";
@@ -34,8 +43,7 @@ describe("로그인 잠금 설정 범위 (D-723)", () => {
     expect(AUTH_LOCKOUT_THRESHOLD.label).toBe("잠금 횟수");
     expect(AUTH_LOCKOUT_THRESHOLD.hint).toBe("3~10");
     expect(AUTH_LOCKOUT_WINDOW_MINUTES.label).toBe("잠금 시간");
-    expect(AUTH_LOCKOUT_WINDOW_MINUTES.hint).toBe("1~60");
-    expect(AUTH_LOCKOUT_WINDOW_MINUTES.unitLabel).toBe("분");
+    expect(AUTH_LOCKOUT_WINDOW_MINUTES.hint).toBe("1~60분");
   });
 
   it("기본값은 각 스키마를 통과한다(시험 환경 env 기본값이 범위 안)", () => {
@@ -92,5 +100,73 @@ describe("범위 밖 옛 저장값 읽기 (C-P1-2 · T-07-08-04)", () => {
         getSettingValue(def, undefined, { findSimpleValue })) as typeof getSettingValue,
     });
     expect(config).toEqual({ threshold: AUTH_LOCKOUT_THRESHOLD.default, windowMinutes: AUTH_LOCKOUT_WINDOW_MINUTES.default });
+  });
+});
+
+// 07-08 D-734 · D-735 — 원가율(비움 ≠ 0)과 수금 기한 일수 키, null 허용 숫자 칸 서술.
+describe("원가율 키 (D-734 · C-P2-10)", () => {
+  it("기본값은 null(비움)이고 프로젝트 섹션 · % · 힌트 0~100이다", () => {
+    expect(PROJECT_COST_RATE_PCT.key).toBe("project.cost_rate_pct");
+    expect(PROJECT_COST_RATE_PCT.default).toBeNull();
+    expect(PROJECT_COST_RATE_PCT.namespace).toBe("프로젝트");
+    expect(PROJECT_COST_RATE_PCT.label).toBe("원가율");
+    expect(PROJECT_COST_RATE_PCT.unitLabel).toBe("%");
+    expect(PROJECT_COST_RATE_PCT.hint).toBe("0~100");
+  });
+
+  it("빈 문자열 · null은 null로 저장되고 0은 0으로 저장된다(비움과 0은 다르다)", () => {
+    expect(PROJECT_COST_RATE_PCT.schema.parse("")).toBeNull();
+    expect(PROJECT_COST_RATE_PCT.schema.parse(null)).toBeNull();
+    expect(PROJECT_COST_RATE_PCT.schema.parse(0)).toBe(0);
+    expect(PROJECT_COST_RATE_PCT.schema.parse("0")).toBe(0);
+  });
+
+  it("0~100을 0.1 단위로 받는다(12.5 · 12.3 · 100 통과)", () => {
+    for (const value of [12.5, 12.3, "12.3", 100, 0.1, 99.9]) {
+      expect(PROJECT_COST_RATE_PCT.schema.safeParse(value).success, String(value)).toBe(true);
+    }
+  });
+
+  it("-1 · 100.1 · 12.55는 「범위 0~100 · 다시 입력」으로 거부한다", () => {
+    for (const value of [-1, 100.1, 12.55, 0.05]) {
+      expect(rejectionOf(PROJECT_COST_RATE_PCT.schema, value), String(value)).toBe("범위 0~100 · 다시 입력");
+    }
+  });
+
+  it("설정 화면은 null 허용 숫자 키를 숫자 칸으로 서술한다 — 기존 키 서술은 그대로", () => {
+    expect(describeSettingField(PROJECT_COST_RATE_PCT)).toEqual({ kind: "number", numberKind: undefined });
+    expect(describeSettingField(AUTH_LOCKOUT_THRESHOLD)).toEqual({ kind: "number", numberKind: undefined });
+    expect(describeSettingField(PAYMENT_CUTOFF_TIME)).toEqual({ kind: "string" });
+    expect(describeSettingField(PAYMENT_WEEKDAY)).toEqual({ kind: "enum", options: ["mon", "tue", "wed", "thu", "fri"] });
+  });
+
+  it("두 키가 설정 목록에 들어 있다", () => {
+    expect(SETTING_DEFS).toContain(PROJECT_COST_RATE_PCT);
+    expect(SETTING_DEFS).toContain(PROJECT_COLLECTION_DUE_DAYS);
+  });
+});
+
+describe("수금 기한 일수 키 (D-735)", () => {
+  it("기본 60 · 1~365 · 단위 일 · 프로젝트 섹션이다", () => {
+    expect(PROJECT_COLLECTION_DUE_DAYS.key).toBe("project.collection_due_days");
+    expect(PROJECT_COLLECTION_DUE_DAYS.default).toBe(60);
+    expect(PROJECT_COLLECTION_DUE_DAYS.namespace).toBe("프로젝트");
+    expect(PROJECT_COLLECTION_DUE_DAYS.label).toBe("수금 기한 일수");
+    expect(PROJECT_COLLECTION_DUE_DAYS.unitLabel).toBe("일");
+    expect(PROJECT_COLLECTION_DUE_DAYS.hint).toBe("1~365");
+    for (const value of [1, 365, "60"]) expect(PROJECT_COLLECTION_DUE_DAYS.schema.safeParse(value).success).toBe(true);
+    for (const value of [0, 366, 1.5, ""]) expect(PROJECT_COLLECTION_DUE_DAYS.schema.safeParse(value).success).toBe(false);
+  });
+});
+
+describe("지급 섹션 첫 칸 (SC-04 · J2)", () => {
+  it("지급 기한 일수가 지급 섹션의 첫 키이고 지급 요일 · 결재 마감 시각이 같은 섹션에 있다", () => {
+    const payment = SETTING_DEFS.filter((def) => def.namespace === "지급");
+    expect(payment[0]).toBe(PAYMENT_TERM_DAYS);
+    expect(payment).toContain(PAYMENT_WEEKDAY);
+    expect(payment).toContain(PAYMENT_CUTOFF_TIME);
+    expect(PAYMENT_TERM_DAYS.label).toBe("지급 기한 일수");
+    expect(PAYMENT_WEEKDAY.label).toBe("지급 요일");
+    expect(PAYMENT_CUTOFF_TIME.label).toBe("결재 마감 시각");
   });
 });

@@ -8,6 +8,7 @@ import { UNPRUNABLE_ACTION_TYPES } from "@/domain/action-log/prune-scope";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { markActionLogRowsPruned } from "@/repositories/action-log";
 import { backdateActionLog } from "@/test/support/action-log-backdate";
+import { resetDatabase } from "@/test/integration/setup";
 
 // 07-13(R6 · D7) — 행동 로그 불변 트리거. 앱 코드를 거치지 않는 문장(psql과 같은 길)으로 DB가 직접 막는지 본다.
 // 단언 규칙(E-42): drizzle 0.45는 pg 오류를 DrizzleQueryError로 감싸 원본을 .cause에 두므로 cause.code · cause.message로 본다.
@@ -49,7 +50,10 @@ describe("action_log 불변 트리거 — DELETE", () => {
     expect(await countRows("immutable_probe")).toBe(1);
   });
 
-  it("매 테스트 비우기는 그대로 돈다 — 앞 테스트의 행이 보이지 않는다", async () => {
+  it("시험 비우기(resetDatabase — 매 테스트 전과 같은 문장)는 트리거를 건너뛰어 action_log 행을 지운다", async () => {
+    await insertRow("immutable_probe");
+    expect(await countRows("immutable_probe")).toBe(1);
+    await resetDatabase();
     expect(await countRows("immutable_probe")).toBe(0);
   });
 });
@@ -152,13 +156,15 @@ describe("action_log 불변 트리거 — 끌 수 없는 종류(R4)", () => {
     expect((await readRow(prunable)).prunedAt).not.toBeNull();
   });
 
-  it("표류 가드 — 불변 트리거 마이그레이션이 UNPRUNABLE_ACTION_TYPES 원소를 모두 담는다(목록이 늘면 새 마이그레이션)", () => {
+  it("표류 가드 — 불변 트리거의 NOT IN 목록이 UNPRUNABLE_ACTION_TYPES와 같다(목록이 바뀌면 새 마이그레이션)", () => {
     const dir = path.join(process.cwd(), "db/migrations");
     const file = readdirSync(dir).find((name) => name.endsWith("_phase7_action_log_immutable.sql"));
     if (!file) throw new Error("*_phase7_action_log_immutable.sql 마이그레이션이 없습니다");
     const body = readFileSync(path.join(dir, file), "utf8");
-    const missing = UNPRUNABLE_ACTION_TYPES.filter((type) => !body.includes(`'${type}'`));
-    expect(missing).toEqual([]);
+    const list = /NEW\.action_type NOT IN \(([^)]*)\)/.exec(body)?.[1];
+    if (list === undefined) throw new Error("마이그레이션에 NEW.action_type NOT IN (...) 목록이 없습니다");
+    const sqlTypes = list.split(",").map((item) => item.trim().replace(/^'|'$/g, ""));
+    expect([...sqlTypes].sort()).toEqual([...UNPRUNABLE_ACTION_TYPES].sort());
   });
 });
 

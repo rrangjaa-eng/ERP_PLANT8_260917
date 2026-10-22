@@ -118,14 +118,28 @@ export async function settleLoginFailure(
   deps?: LockDeps,
 ): Promise<{ locked: boolean; windowMinutes: number }> {
   const ctx = await loadLockContext(email, deps?.now?.() ?? new Date(), deps);
-  const result = await withTransaction(async (tx) => {
-    await lockLoginEmail(SYSTEM_VIEWER, email, tx);
-    const count = await countOpenFailures(SYSTEM_VIEWER, email, ctx.since, tx);
-    if (!isLocked(count, ctx.threshold)) return { locked: false, recorded: false };
-    return { locked: true, recorded: await ensureLockRecorded(ctx, tx) };
-  });
-  logLockout(ctx, result.recorded);
-  return { locked: result.locked, windowMinutes: ctx.windowMinutes };
+  // Codex 지적 (2)(사용자 결정 2026-10-22): 잠금 기록 확인만 실패하면 tx는 롤백되고(다음 시도가 채운다 — D-712)
+  // 오류 로그를 남긴 뒤 잠김을 그대로 돌려준다 — N번째 응답이 500이 아니라 403 잠금 문구다. 다른 오류는 그대로 던진다.
+  let lockRecordFailed = false;
+  try {
+    const result = await withTransaction(async (tx) => {
+      await lockLoginEmail(SYSTEM_VIEWER, email, tx);
+      const count = await countOpenFailures(SYSTEM_VIEWER, email, ctx.since, tx);
+      if (!isLocked(count, ctx.threshold)) return { locked: false, recorded: false };
+      try {
+        return { locked: true, recorded: await ensureLockRecorded(ctx, tx) };
+      } catch (e) {
+        lockRecordFailed = true;
+        throw e;
+      }
+    });
+    logLockout(ctx, result.recorded);
+    return { locked: result.locked, windowMinutes: ctx.windowMinutes };
+  } catch (e) {
+    if (!lockRecordFailed) throw e;
+    log.error("auth.lockout_record_failed", { email, name: e instanceof Error ? e.name : typeof e });
+    return { locked: true, windowMinutes: ctx.windowMinutes };
+  }
 }
 
 // D-712·D-4220(Codex #12): 실패 기록·세기·잠금 로그가 한 트랜잭션이다 —

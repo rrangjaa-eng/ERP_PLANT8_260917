@@ -343,7 +343,7 @@ export function PaymentScheduleValue({ date, manual, autoDate, pushReason, ruleL
 // 희망 지급일 · 희망 사유(기안자가 적은 값 — 있을 때만 줄이 선다). 지급 예정일 줄 바로 앞(지급 섹션 없는 문서는 expense-document.tsx가 같은 두 줄).
 function requestedPaymentItems(requested: { date: string | null; reason: string | null }): KvItem[] {
   const items: KvItem[] = [];
-  if (requested.date) items.push({ label: "희망 지급일", value: requested.date.slice(5) });
+  if (requested.date) items.push({ label: "희망 지급일", value: requested.date });
   if (requested.reason) items.push({ label: "희망 사유", value: <span className={styles.subLine}>{requested.reason}</span> });
   return items;
 }

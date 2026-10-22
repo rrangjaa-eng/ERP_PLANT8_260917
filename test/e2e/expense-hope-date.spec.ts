@@ -111,7 +111,8 @@ test.describe("지출결의 폼 — 지급 예정일 읽기 줄 · 희망 지급
     const submitted = await submitExpense(fx.pm.viewer, { expenseId: id, expectedVersion: saved?.version ?? 0 });
     expect(submitted.kind).toBe("submitted");
     await page.goto(`/expenses/${id}`);
-    await expect(page.locator("dt", { hasText: /^희망 지급일$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText(hope.slice(5));
+    // 감사 #8(P3): 표 밖 날짜는 ISO(SYSTEM §2-4).
+    await expect(page.locator("dt", { hasText: /^희망 지급일$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText(hope);
     await expect(page.locator("dt", { hasText: /^희망 사유$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText("행사 전 선금");
     await page.context().close();
   });

@@ -274,7 +274,8 @@ test.describe("상세 지급 예정일 표시 · 수정 (07-16 Task 2 · SC-03)"
 
     const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 900 });
     await page.goto(`/expenses/${id}`);
-    await expect(page.locator("dt", { hasText: /^희망 지급일$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText(hope.slice(5));
+    // 감사 #8(P3): 표 밖 날짜는 ISO(SYSTEM §2-4) — 바로 아래 `지급 예정일` 값과 같은 꼴.
+    await expect(page.locator("dt", { hasText: /^희망 지급일$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText(hope);
     await expect(page.locator("dt", { hasText: /^희망 사유$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText("행사 전 선금");
     const value = scheduleRow(page);
     await expect(value).toContainText(`${schedule.payDate} (자동)`);

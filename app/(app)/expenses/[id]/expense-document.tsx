@@ -181,7 +181,7 @@ export function ExpenseDocument({
   };
   const requested = { date: expense.requestedPaymentDate ?? null, reason: expense.requestedPaymentReason ?? null };
   if (!paymentView || paymentView === "error") {
-    if (requested.date) items.push({ label: "희망 지급일", value: requested.date.slice(5) });
+    if (requested.date) items.push({ label: "희망 지급일", value: requested.date });
     if (requested.reason) items.push({ label: "희망 사유", value: <span className={styles.subLine}>{requested.reason}</span> });
     items.push({ label: "지급 예정일", value: <PaymentScheduleValue {...scheduleValueProps} /> }, { label: "지급 방식", value: expense.paymentMethodName ?? dash });
   }

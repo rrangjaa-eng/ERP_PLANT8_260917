@@ -3,12 +3,13 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { expenses } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { createExpenseFromLines } from "@/domain/expenses";
+import { createExpenseFromLines, saveExpenseDraft } from "@/domain/expenses";
 import { listCodeItems } from "@/repositories/code-tables";
 import { setupExpenseProject } from "./fixtures/expenses";
 
 // 05-16 — `/expenses/new`에서 비고 · 지급 예정일 · 지급 방식을 적은 뒤 견적 줄을 고르면 그 값이 만들어지는 작성 중 문서에 같이 저장된다
 // (줄 값만으로 만들고 적은 칸을 지우던 것을 고침). 저장은 insert 한 번이라 값과 문서가 함께 생기거나 함께 안 생긴다.
+// 07-01(D-714 · D-742 계약 변경): 지급 예정일 수동 지정은 지급 권한자 길뿐 — 작성자가 보낸 지급 예정일은 형식만 검증하고 칸에 쓰지 않는다.
 
 async function rowOf(expenseId: string) {
   const [row] = await db.select().from(expenses).where(eq(expenses.id, expenseId)).limit(1);
@@ -24,7 +25,7 @@ async function lastPaymentMethod(): Promise<string> {
 }
 
 describe("줄에서 만들 때 적어 둔 칸을 같이 저장", () => {
-  it("비고 · 지급 예정일 · 지급 방식이 새 작성 중 문서에 저장된다", async () => {
+  it("비고 · 지급 방식은 새 작성 중 문서에 저장되고, 지급 예정일을 보내도 칸은 NULL(D-714)", async () => {
     const fx = await setupExpenseProject();
     const paymentMethod = await lastPaymentMethod();
     const result = await createExpenseFromLines(fx.pm, {
@@ -34,7 +35,7 @@ describe("줄에서 만들 때 적어 둔 칸을 같이 저장", () => {
     const expenseId = result.created[0]?.expenseId ?? "";
     const row = await rowOf(expenseId);
     expect(row.note).toBe("현장 정산 건");
-    expect(row.scheduledPaymentDate).toBe("2026-11-20");
+    expect(row.scheduledPaymentDate).toBeNull();
     expect(row.paymentMethod).toBe(paymentMethod);
     expect(row.quoteLineId).toBe(fx.lines.withVendor);
   });
@@ -71,5 +72,19 @@ describe("줄에서 만들 때 적어 둔 칸을 같이 저장", () => {
     const second = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { note: "나중 비고" } });
     expect(second.created[0]?.expenseId).toBe(first.created[0]?.expenseId);
     expect((await rowOf(first.created[0]?.expenseId ?? "")).note).toBe("처음 비고");
+  });
+
+  it("임시 저장(saveExpenseDraft)에 지급 예정일을 실어도 칸은 그대로 — 새 문서는 NULL, D-740 기존 값은 그 값 · 형식 오류는 여전히 거부", async () => {
+    const fx = await setupExpenseProject();
+    const result = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = result.created[0]?.expenseId ?? "";
+    const saved = await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: (await rowOf(expenseId)).version, fields: { note: "고친 비고", scheduledPaymentDate: "2026-07-10" } });
+    expect(await rowOf(expenseId)).toMatchObject({ note: "고친 비고", scheduledPaymentDate: null });
+
+    await db.update(expenses).set({ scheduledPaymentDate: "2026-07-17" }).where(eq(expenses.id, expenseId));
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: saved.version, fields: { scheduledPaymentDate: "2026-07-10" } });
+    expect((await rowOf(expenseId)).scheduledPaymentDate).toBe("2026-07-17");
+
+    await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: (await rowOf(expenseId)).version, fields: { scheduledPaymentDate: "2026/07/10" } })).rejects.toThrow();
   });
 });

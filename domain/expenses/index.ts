@@ -803,7 +803,6 @@ export async function createExpenseFromLines(
       vendorId: line.vendorId,
       evidenceType: vendor?.defaultEvidenceType ?? null,
       paymentMethod: typed.paymentMethod ?? paymentMethod,
-      scheduledPaymentDate: typed.scheduledPaymentDate ?? null,
       note: typed.note ?? null,
       supplyCurrency: supply.currency,
       supplyForeignAmount: supply.foreignAmount,
@@ -825,14 +824,17 @@ const draftFieldsSchema = expenseDraftFieldsSchema;
 
 export type ExpenseDraftInput = z.input<typeof draftFieldsSchema>;
 
-// 05-16 `/expenses/new`에서 줄을 고르기 전에 적어 둔 칸 — 줄이 정하지 않는 비고 · 지급 예정일 · 지급 방식만 새 작성 중 문서의 insert에 같이 싣는다
+// 05-16 `/expenses/new`에서 줄을 고르기 전에 적어 둔 칸 — 줄이 정하지 않는 비고 · 지급 방식만 새 작성 중 문서의 insert에 같이 싣는다
 // (검증은 임시 저장과 같은 draftFieldsSchema). 이미 그 줄의 작성 중 문서가 있으면 그 문서를 그대로 열고 덮어쓰지 않는다.
+// 07 D-714 · D-742 — 지급 예정일 수동 지정은 지급 권한자 길(07-06 saveScheduledPayDate)뿐. 작성자 입력은 검증만 하고 칸에 쓰지 않는다(07-16이 폼에서 걷고 희망 지급일로 바꿈).
 const lineDraftFieldsSchema = draftFieldsSchema.pick({ note: true, scheduledPaymentDate: true, paymentMethod: true });
 
 export type LineDraftFieldsInput = z.input<typeof lineDraftFieldsSchema>;
 
 function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraftFields {
-  const { supply, content, prepaidReason, ...others } = fields;
+  // 07 D-714 · D-742: 지급 예정일은 칸 묶음에서 걸러 낸다 — 갱신에서 빠지므로 D-740 기존 값은 그대로 남는다.
+  const { supply, content, prepaidReason, scheduledPaymentDate, ...others } = fields;
+  void scheduledPaymentDate;
   // 공백뿐인 내용은 비운 것과 같다.
   const withContent = content === undefined ? others : { ...others, content: content?.trim() ? content.trim() : null };
   // 06-10: 선결제를 끄면 적은 사유는 버린다(S6) — 사유는 앞뒤 공백을 뗀다. 받는 인원(06.5)은 칸 이름이 같아 그대로 실린다.

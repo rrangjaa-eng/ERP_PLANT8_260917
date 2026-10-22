@@ -62,7 +62,7 @@ export default async function PersonDetailPage({
 
   const { id } = await params;
   const [detail, roles, orgUnits, teams] = await Promise.all([
-    getPerson(session.viewer, id),
+    getPerson(session.viewer, id, { withLock: true }),
     listAssignableRoles(session.viewer),
     listOrgUnits(session.viewer),
     listTeams(session.viewer),

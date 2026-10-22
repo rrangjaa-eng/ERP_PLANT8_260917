@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { listPeople, listPeoplePage } from "@/domain/people";
+import { getPerson, listPeople, listPeoplePage } from "@/domain/people";
 import { lockoutConfig } from "@/domain/auth/lockout";
 import { recordAttempt } from "@/repositories/login-attempts";
 import { insertRole } from "@/repositories/roles";
@@ -93,6 +93,17 @@ describe("listPeoplePage — 쪽 · 검색 · 잠김(실제 Postgres)", () => {
     await lock(person!.email.toUpperCase());
     const page = await listPeoplePage(SYSTEM_VIEWER, { locked: true });
     expect(page.rows.map((row) => row.id)).toContain(person!.id);
+  });
+
+  it("잠김은 사람 화면만 싣는다 — 상세는 withLock일 때만, listPeople · 기본 getPerson은 잠김을 묻지 않아 키가 없다", async () => {
+    const [person] = await insertPeople([{ name: `잠상${randomUUID().slice(0, 6)}` }]);
+    await lock(person!.email);
+    const detail = await getPerson(SYSTEM_VIEWER, person!.id, { withLock: true });
+    expect(detail?.person.locked).toBe(true);
+    const plain = await getPerson(SYSTEM_VIEWER, person!.id);
+    expect(plain && "locked" in plain.person).toBe(false);
+    const listed = (await listPeople(SYSTEM_VIEWER)).find((row) => row.id === person!.id);
+    expect(listed && "locked" in listed).toBe(false);
   });
 
   it("정렬은 지금 목록(listPeople)과 같다", async () => {

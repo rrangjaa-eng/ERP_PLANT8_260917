@@ -89,7 +89,8 @@ type PersonSource = UserRow & {
   roleName: string | null;
   currentTeamId: string | null;
   currentTeamName: string | null;
-  locked: boolean;
+  // 잠김을 묻지 않은 호출(listPeople · 기본 getPerson)은 키를 빼서 project가 건너뛴다.
+  locked?: boolean;
 };
 
 export const PERSON_DTO_SPEC: DtoSpec<PersonSource, PersonDto> = {
@@ -121,7 +122,7 @@ async function projectPerson(
   row: UserRow,
   team: TeamDto | null | undefined,
   roleName: string | null,
-  locked: boolean,
+  locked: boolean | null,
   deps?: Partial<ProjectDeps>,
 ): Promise<PersonDto> {
   const source: PersonSource = {
@@ -129,21 +130,23 @@ async function projectPerson(
     roleName,
     currentTeamId: team?.id ?? null,
     currentTeamName: team?.name ?? null,
-    locked,
+    ...(locked === null ? {} : { locked }),
   };
   return (await project(viewer, source, PERSON_DTO_SPEC, deps)) as PersonDto;
 }
 
-async function toPersonDto(viewer: Viewer, row: UserRow, today: string): Promise<PersonDto> {
+async function toPersonDto(viewer: Viewer, row: UserRow, today: string, withLock: boolean): Promise<PersonDto> {
   const [team, role, lockedEmails] = await Promise.all([
     defaultTeamAtDate(viewer, row.id, today),
     row.roleId ? defaultFindRoleById(viewer, row.roleId) : Promise.resolve(null),
-    lockedEmailSet(viewer),
+    withLock ? lockedEmailSet(viewer) : Promise.resolve(null),
   ]);
-  return projectPerson(viewer, row, team, role?.name ?? null, lockedEmails.has(row.email.toLowerCase()));
+  return projectPerson(viewer, row, team, role?.name ?? null, lockedEmails ? lockedEmails.has(row.email.toLowerCase()) : null);
 }
 
-// 07-17 SC-11: 잠김 = 로그인 거부와 같은 판정(임계 · 창은 설정값 — D-723). 한 질의로 잠긴 이메일(소문자) 묶음.
+// 07-17 SC-11: 잠김은 사람 화면(listPeoplePage · 상세 withLock)만 묻는다 — listPeople(카드 · 기록 고르기)에
+// 고정 조회 3번(설정 둘 + 잠긴 이메일)을 더하지 않는다(이슈 #56 조회 수 계약).
+// 잠김 = 로그인 거부와 같은 판정(임계 · 창은 설정값 — D-723). 한 질의로 잠긴 이메일(소문자) 묶음.
 async function lockedEmailSet(viewer: Viewer): Promise<Set<string>> {
   const { threshold, windowMinutes } = await lockoutConfig();
   return listLockedEmails(viewer, { threshold, since: windowStart(new Date(), windowMinutes) });
@@ -162,7 +165,7 @@ export function isRetiredOn(resignationDate: string | null, today: string): bool
 export async function listPeople(viewer: Viewer, deps?: Partial<PeopleReadDeps>): Promise<PersonDto[]> {
   const scope = await scopeFor(viewer, "user");
   const rows = await repoListUsers(viewer, { scope, includeArchived: scope.includeArchived });
-  return projectPeople(viewer, rows, seoulTodayOf(deps), await lockedEmailSet(viewer), memoizeVisible());
+  return projectPeople(viewer, rows, seoulTodayOf(deps), null, memoizeVisible());
 }
 
 // viewer가 호출 동안 고정이라 infoItem만 키로 쓴다. 캐시는 이 함수 호출
@@ -184,7 +187,7 @@ async function projectPeople(
   viewer: Viewer,
   rows: UserRow[],
   today: string,
-  lockedEmails: ReadonlySet<string>,
+  lockedEmails: ReadonlySet<string> | null,
   memoizedVisible: typeof defaultVisible,
 ): Promise<PersonDto[]> {
   const roleIds = [...new Set(rows.map((row) => row.roleId).filter((id): id is string => id !== null))];
@@ -206,7 +209,7 @@ async function projectPeople(
         row,
         teamMap.get(row.id),
         row.roleId ? (roleNameMap.get(row.roleId) ?? null) : null,
-        lockedEmails.has(row.email.toLowerCase()),
+        lockedEmails ? lockedEmails.has(row.email.toLowerCase()) : null,
         { visible: memoizedVisible },
       ),
     ),
@@ -274,12 +277,12 @@ export async function listPeoplePage(
 export async function getPerson(
   viewer: Viewer,
   userId: string,
-  deps?: Partial<PeopleReadDeps>,
+  deps?: Partial<PeopleReadDeps> & { withLock?: boolean },
 ): Promise<{ person: PersonDto; assignments: TeamAssignmentDto[] } | null> {
   const row = await repoFindUserById(viewer, userId);
   if (!row) return null;
 
-  const person = await toPersonDto(viewer, row, seoulTodayOf(deps));
+  const person = await toPersonDto(viewer, row, seoulTodayOf(deps), deps?.withLock === true);
   const assignments = await defaultListAssignments(viewer, userId);
   return { person, assignments };
 }

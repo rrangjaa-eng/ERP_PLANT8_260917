@@ -130,8 +130,8 @@ function movable(row: PaymentTargetScreenRow): boolean {
   return row.paymentPushReason === "cutoff" && row.paymentScheduleFailed !== true && typeof row.version === "number";
 }
 
-// 07-16(J11 · K9): 결재 중 하위 그룹 — 같은 라벨 지급 대상 그룹 맨 아래 `결재 중 · 합계 제외`. 이 쪽에 그 주 그룹이 없으면 첫 쪽에만
-// 머리글 `{주 라벨} · 결재 중 · 합계 제외`로 주 차례(이번 주 → 다음 주) 자리에 선다.
+// 07-16(J11 · K9): 결재 중 하위 그룹 — 서버가 정한 쪽(week.page — 그 주 그룹이 끝나는 쪽, 그 주 지급 대상이 없으면 1쪽) 하나에만 선다(감사 #4).
+// 같은 라벨 지급 대상 그룹 맨 아래 `결재 중 · 합계 제외`, 그 주 그룹이 없으면 머리글 `{주 라벨} · 결재 중 · 합계 제외`로 주 차례(이번 주 → 다음 주) 자리에.
 const APPROVING_HEADER = "결재 중 · 합계 제외";
 
 function weekRank(label: string): number {
@@ -151,15 +151,15 @@ function approvingRows(week: ApprovingPaymentWeek, header: string): PaymentTarge
   }));
 }
 
-function withApproving(rows: readonly PaymentTargetScreenRow[], weeks: readonly ApprovingPaymentWeek[], firstPage: boolean): PaymentTargetScreenRow[] {
+function withApproving(rows: readonly PaymentTargetScreenRow[], weeks: readonly ApprovingPaymentWeek[], page: number): PaymentTargetScreenRow[] {
   const out = [...rows];
   for (const week of weeks) {
+    if (week.page !== page) continue;
     const last = out.findLastIndex((row) => !row.approving && row.group === week.label);
     if (last >= 0) {
       out.splice(last + 1, 0, ...approvingRows(week, APPROVING_HEADER));
       continue;
     }
-    if (!firstPage) continue;
     const rank = weekRank(week.label);
     const at = out.findIndex((row) => !row.approving && weekRank(row.group) > rank);
     out.splice(at < 0 ? out.length : at, 0, ...approvingRows(week, `${week.label} · ${APPROVING_HEADER}`));
@@ -1226,7 +1226,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   );
 
   // 07-16(J11): 결재 중 하위 그룹을 끼운 표 행(선택 · 합 · 편집은 rows만 — 결재 중 행은 표에만 선다).
-  const tableRows = withApproving(rows, props.approvingByWeek, props.page.page === 1);
+  const tableRows = withApproving(rows, props.approvingByWeek, props.page.page);
   const approvingCount = props.approvingByWeek.reduce((count, week) => count + week.count, 0);
   const approvingSum = props.approvingByWeek.every((week) => week.sumKrw !== null) ? props.approvingByWeek.reduce((sum, week) => sum + (week.sumKrw ?? 0), 0) : null;
   // K9 — 합계 면 아래 한 줄 `결재 중 N건 · 합계 제외 {합}`(통화 기호 없음 — SYSTEM §2-4). 금액 권한이 없으면 합 없이.

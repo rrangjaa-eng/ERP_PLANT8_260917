@@ -125,6 +125,25 @@ describe("지급 주 묶음 · 마감 gate (07-01 Task 2)", () => {
     expect(after.approvingByWeek.map((week) => [week.label, week.rows.map((row) => row.id)])).toEqual([["다음 주 금 08-14 · 마감 08-13 14:00", [approving.expenseId]]]);
   }, 30_000);
 
+  // 감사 #4(P2): 그 주 그룹이 두 쪽에 걸치면 결재 중 하위 그룹이 쪽마다 되풀이됐다 — 그 주 그룹이 실제로 끝나는 쪽 하나(그룹이 없으면 첫 쪽)를 서버가 정한다.
+  it("결재 중 하위 그룹이 설 쪽(page) — 그 주 그룹의 마지막 행이 있는 쪽 · 그 주 지급 대상이 없으면 1쪽, 어느 쪽을 읽어도 같다", async () => {
+    const payer = await makePayer();
+    await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-08-05T10:00") });
+    await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-08-05T11:00") });
+    await inReview(payer, "2026-06-08");
+    await inReview(payer, "2026-06-15");
+
+    const first = await listPaymentTargets(payer, { page: 1 }, { today: TODAY, now: BEFORE_CUTOFF, pageSize: 1 });
+    const second = await listPaymentTargets(payer, { page: 2 }, { today: TODAY, now: BEFORE_CUTOFF, pageSize: 1 });
+    expect(first.page.pageCount).toBe(2);
+    const expected = [
+      ["이번 주 금 08-07 · 마감 08-06 14:00", 2],
+      ["다음 주 금 08-14 · 마감 08-13 14:00", 1],
+    ];
+    expect(first.approvingByWeek.map((week) => [week.label, week.page])).toEqual(expected);
+    expect(second.approvingByWeek.map((week) => [week.label, week.page])).toEqual(expected);
+  }, 30_000);
+
   it("「다음 확인 전」은 유효 예정일 순서를 따른다(저장 칸 순서 아님 — B-P2-2)", async () => {
     const payer = await makePayer();
     await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-08-05T10:00") });

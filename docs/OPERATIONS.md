@@ -256,9 +256,7 @@ JSON 구조화 로그(`severity`·`message`·`event`·필드), Cloud Logging에�
 신뢰 — `proxy.ts`가 그 값을 **`x-client-ip`** 헤더로 고정하고, better-auth·잠금 훅은
 `x-forwarded-for`를 직접 읽지 않는다(위조 방지, Eng Issue 1). Phase 2~3에서 로드밸런서를
 앞에 두면 `lib/client-ip.ts` 한 곳만 "마지막에서 두 번째"로 바꾼다. `login_attempts`·
-`rate_limits` 행 정리는 Phase 7 tick에 붙인다.
-
-로그인 IP 한도 기본 IP당 분당 60(D-723) — 계정별 잠금은 한 IP가 여러 이메일에 같은 비밀번호를 뿌리는 시도(스프레이)를 막지 못하므로 그 여유가 10일 때보다 6배다. 이상 징후(`auth.lockout` 급증 · 같은 IP 여러 이메일)가 보이면 배포 환경 변수 `RATE_LIMIT_LOGIN_MAX`를 낮춘다.
+`rate_limits` 행 정리는 Phase 7 tick에 붙인다. 로그인 IP 한도 기본 IP당 분당 60(D-723) — 계정별 잠금은 한 IP가 여러 이메일에 같은 비밀번호를 뿌리는 시도(스프레이)를 막지 못하므로 그 여유가 10일 때보다 6배다. 이상 징후(`auth.lockout` 급증 · 같은 IP 여러 이메일)가 보이면 배포 환경 변수 `RATE_LIMIT_LOGIN_MAX`를 낮춘다.
 
 ## 12. 설정 가져오기 (ADMN-06)
 

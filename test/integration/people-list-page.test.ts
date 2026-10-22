@@ -5,7 +5,7 @@ import { users } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { getPerson, listPeople, listPeoplePage } from "@/domain/people";
 import { lockoutConfig } from "@/domain/auth/lockout";
-import { recordAttempt } from "@/repositories/login-attempts";
+import { listLockedEmails, recordAttempt } from "@/repositories/login-attempts";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 
@@ -93,6 +93,17 @@ describe("listPeoplePage — 쪽 · 검색 · 잠김(실제 Postgres)", () => {
     await lock(person!.email.toUpperCase());
     const page = await listPeoplePage(SYSTEM_VIEWER, { locked: true });
     expect(page.rows.map((row) => row.id)).toContain(person!.id);
+  });
+
+  it("사용자가 없는 이메일의 실패 기록은 잠긴 이메일 묶음에 넣지 않는다(07-17 Codex P2)", async () => {
+    const [person] = await insertPeople([{ name: `묶음${randomUUID().slice(0, 6)}` }]);
+    const ghost = `ghost-${randomUUID()}@example.test`;
+    await lock(person!.email);
+    await lock(ghost);
+    const { threshold } = await lockoutConfig();
+    const set = await listLockedEmails(SYSTEM_VIEWER, { threshold, since: new Date(0) });
+    expect(set.has(person!.email.toLowerCase())).toBe(true);
+    expect(set.has(ghost)).toBe(false);
   });
 
   it("잠김은 사람 화면만 싣는다 — 상세는 withLock일 때만, listPeople · 기본 getPerson은 잠김을 묻지 않아 키가 없다", async () => {

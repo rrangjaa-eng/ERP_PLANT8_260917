@@ -7,7 +7,9 @@ import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { loadHolidayLookup } from "@/domain/holidays/calendar";
-import { resolvePaySchedule } from "@/domain/payments/pay-schedule";
+import { payRuleLine, payWeekGroupLabel, payWeekIndex, resolvePaySchedule, type PaySchedule } from "@/domain/payments/pay-schedule";
+import { saveScheduledPayDate } from "@/domain/payments";
+import { isBusinessDay } from "@/domain/holidays/business-day";
 import { loadPayScheduleConfig } from "@/domain/payments/pay-schedule-load";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
@@ -16,6 +18,17 @@ import { submitReadyDraft } from "../integration/fixtures/expenses";
 import { insertLinkFixture, insertRecordFixture } from "../integration/fixtures/evidence";
 import { loginPage, makePerson, type Person } from "./leave-org";
 import { setupExpenseE2E, type ExpenseE2E, archiveTempRoles, insertTempRole } from "./expense-fixture";
+import {
+  approvedDoc,
+  expectTokenColor,
+  groupOf,
+  payCalendar,
+  pushedDoc,
+  setVendorTerm,
+  submittedDoc,
+  targetsGrid,
+  type PayCalendar,
+} from "./pay-schedule-e2e";
 
 // 07-01 Task 1 트레이서(D-715 · D-741): 지급 예정일을 비워 둔 승인 지출결의가 지급 대상 목록 예정일 칸에 자동 날짜(증빙 작성일 + 기한 안 마지막
 // 지급 요일)로 보인다 — 화면(.tsx)은 바꾸지 않았다. 기대값은 같은 순수 함수와 시험 DB의 실제 공휴일 표로 셈한다.
@@ -99,6 +112,256 @@ test.describe("지급 예정일 자동 계산 (07-01 트레이서)", () => {
     await page.goto("/expenses");
     await expect(page.getByLabel("상태")).toHaveValue("지급 대상");
     expect(await scheduledCellText(page, fx.lines.tracer.itemName)).toBe(expected.payDate.slice(5));
+    await page.context().close();
+  });
+});
+
+// ── 07-16 Task 2(D-741 · J11 · K9 · SC-03 · D-731 · N4 · U13) ───────────────────────────────────────────────
+
+function payDateOf(cal: PayCalendar, manualDate: string): PaySchedule {
+  return resolvePaySchedule({ baseDate: cal.today, termDays: cal.cfg.termDays, manualDate, approvedAt: null, now: new Date(), lookup: cal.lookup, cfg: cal.cfg });
+}
+
+async function docVersion(id: string): Promise<number> {
+  const [doc] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, id));
+  if (!doc) throw new Error("문서 없음");
+  return doc.version;
+}
+
+// 그 날 이후 첫 영업일 중 조건에 맞는 날.
+function firstDay(cal: PayCalendar, from: string, ok: (date: string) => boolean): string {
+  let date = from;
+  for (let step = 0; step < 40 && !ok(date); step += 1) date = addDays(date, 1);
+  return date;
+}
+
+function isFriday(date: string): boolean {
+  return new Date(`${date}T12:00:00Z`).getUTCDay() === 5;
+}
+
+test.describe("지급 대상 머리글 · 결재 중 하위 그룹 (07-16 Task 2)", () => {
+  test("이번 주 · 다음 주 머리글 = 07-01 라벨 그대로 · 규칙 줄 없음", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const { schedule: next } = await pushedDoc(fx, "hold", payer, cal);
+    const { id } = await approvedDoc(fx, "retry", payer, { issuedOn: addDays(cal.today, -3) });
+    const manual = firstDay(cal, cal.today, (date) => isBusinessDay(date, cal.lookup) && payWeekIndex(date, cal.today) === 0);
+    await saveScheduledPayDate(payer.viewer, { expenseId: id, scheduledPayDate: manual, version: await docVersion(id) });
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await expect(targetsGrid(page)).toBeVisible();
+    expect(await groupOf(page, fx.lines.hold.itemName)).toBe(payWeekGroupLabel(next, cal.today).label);
+    expect(await groupOf(page, fx.lines.retry.itemName)).toBe(payWeekGroupLabel(payDateOf(cal, manual), cal.today).label);
+    await expect(targetsGrid(page).getByText(/결재 마감/)).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("D-741 — 같은 주 금요일 건과 기한 안 마지막 영업일 건은 머리글 둘(각 실제 요일)", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    await setVendorTerm(fx, 6);
+    const now = Date.now();
+    let base = cal.today;
+    for (let step = 0; step < 21; step += 1) {
+      const probe = resolvePaySchedule({ baseDate: base, termDays: 6, manualDate: null, approvedAt: null, now: new Date(), lookup: cal.lookup, cfg: cal.cfg });
+      const friday = addDays(probe.payDate, 1);
+      if (probe.pushReason === "no-slot" && probe.cutoffAt.getTime() > now + 3_600_000 && isFriday(friday) && isBusinessDay(friday, cal.lookup)) break;
+      base = addDays(base, 1);
+    }
+    const { approvedAt } = await approvedDoc(fx, "worst", payer, { issuedOn: base });
+    const noSlot = resolvePaySchedule({ baseDate: base, termDays: 6, manualDate: null, approvedAt, now: new Date(), lookup: cal.lookup, cfg: cal.cfg });
+    expect(noSlot.pushReason).toBe("no-slot");
+    const friday = addDays(noSlot.payDate, 1);
+    const { id } = await approvedDoc(fx, "retry", payer, { issuedOn: addDays(cal.today, -3) });
+    await saveScheduledPayDate(payer.viewer, { expenseId: id, scheduledPayDate: friday, version: await docVersion(id) });
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await expect(targetsGrid(page)).toBeVisible();
+    const noSlotLabel = payWeekGroupLabel(noSlot, cal.today).label;
+    const fridayLabel = payWeekGroupLabel(payDateOf(cal, friday), cal.today).label;
+    expect(noSlotLabel).not.toBe(fridayLabel);
+    expect(await groupOf(page, fx.lines.worst.itemName)).toBe(noSlotLabel);
+    expect(await groupOf(page, fx.lines.retry.itemName)).toBe(fridayLabel);
+    await page.context().close();
+  });
+
+  test("J11 · K9 — 그 주 결재 중 건은 그룹 맨 아래 `결재 중 · 합계 제외` · 체크박스 없음 · 합계에서 빠지고 `결재 중 1건 · 합계 제외 {합}`(₩ 없음)", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const issuedOn = addDays(cal.today, 7 - cal.cfg.termDays);
+    await submittedDoc(fx, "phone", issuedOn);
+    const approving = resolvePaySchedule({ baseDate: issuedOn, termDays: cal.cfg.termDays, manualDate: null, approvedAt: null, now: new Date(), lookup: cal.lookup, cfg: cal.cfg });
+    const week = payWeekIndex(approving.payDate, cal.today);
+    test.skip(week !== 0 && week !== 1, "결재 중 건이 이번 주 · 다음 주 밖");
+    const { id } = await approvedDoc(fx, "retry", payer, { issuedOn: addDays(cal.today, -3) });
+    await saveScheduledPayDate(payer.viewer, { expenseId: id, scheduledPayDate: approving.payDate, version: await docVersion(id) });
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const grid = targetsGrid(page);
+    await expect(grid).toBeVisible();
+    const label = payWeekGroupLabel(approving, cal.today).label;
+    expect(await groupOf(page, fx.lines.retry.itemName)).toBe(label);
+    const approvingRow = grid.locator("tbody tr").filter({ hasText: fx.lines.phone.itemName });
+    await expect(approvingRow).toHaveCount(1);
+    expect(await approvingGroupOf(page, fx.lines.phone.itemName)).toBe("결재 중 · 합계 제외");
+    await expect(approvingRow.getByRole("checkbox")).toHaveCount(0);
+    await expect(approvingRow.getByRole("link")).toHaveCount(0);
+    await expect(approvingRow.getByText("결재 중", { exact: true })).toBeVisible();
+    const totals = page.getByRole("region", { name: "합계" });
+    await expect(totals).toContainText("합계 (지급 대상 · 1건)");
+    const line = page.getByText(/^결재 중 1건 · 합계 제외/);
+    await expect(line).toHaveText(/^결재 중 1건 · 합계 제외 [\d,]+$/);
+    await expect(line).not.toContainText("₩");
+    await page.context().close();
+  });
+
+  test("결재 중만 있으면 `이번 주 지급 대상 없음` + 하위 그룹", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const issuedOn = addDays(cal.today, 7 - cal.cfg.termDays);
+    await submittedDoc(fx, "phone", issuedOn);
+    const approving = resolvePaySchedule({ baseDate: issuedOn, termDays: cal.cfg.termDays, manualDate: null, approvedAt: null, now: new Date(), lookup: cal.lookup, cfg: cal.cfg });
+    const week = payWeekIndex(approving.payDate, cal.today);
+    test.skip(week !== 0 && week !== 1, "결재 중 건이 이번 주 · 다음 주 밖");
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await expect(page.getByText("이번 주 지급 대상 없음", { exact: true })).toBeVisible();
+    const table = page.getByRole("table", { name: "지급 대상" }).or(targetsGrid(page));
+    await expect(table.locator("tbody tr").filter({ hasText: fx.lines.phone.itemName })).toHaveCount(1);
+    expect(await approvingGroupOf(page, fx.lines.phone.itemName)).toBe(`${payWeekGroupLabel(approving, cal.today).label} · 결재 중 · 합계 제외`);
+    await page.context().close();
+  });
+});
+
+// 결재 중 행(링크 없음)의 가장 가까운 그룹 머리글.
+async function approvingGroupOf(page: Page, itemName: string): Promise<string> {
+  return page.locator("table").first().evaluate((table, name) => {
+    const rows = [...table.querySelectorAll("tr")];
+    const at = rows.findIndex((tr) => tr.textContent?.includes(name) && tr.querySelectorAll(":scope > td, :scope > th").length > 1);
+    for (let index = at - 1; index >= 0; index -= 1) {
+      const tr = rows[index];
+      if (!tr || !(tr instanceof HTMLElement) || tr.offsetParent === null) continue;
+      const cells = tr.querySelectorAll(":scope > td, :scope > th");
+      const only = cells[0];
+      if (cells.length === 1 && only && (only as HTMLTableCellElement).colSpan > 1) return (only.textContent ?? "").trim();
+    }
+    return "";
+  }, itemName);
+}
+
+// 보이는 `지급 예정일` 값 칸 — 문서 화면에는 숨은 행 시트(domain/expenses/detail.ts) 줄도 같은 라벨로 있다(expense-auto-date.spec.ts 「값 칸 전부」).
+function scheduleRow(page: Page) {
+  return page.locator("dt:visible", { hasText: /^지급 예정일$/ }).locator("xpath=following-sibling::dd[1]");
+}
+
+test.describe("상세 지급 예정일 표시 · 수정 (07-16 Task 2 · SC-03)", () => {
+  test("기안자 · 결재 중 문서 — 희망 두 줄 · `YYYY-MM-DD (자동)` · 값 아래 규칙 줄 · 따로 선 결재 마감 줄 없음 · 바꾸기 없음", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const issuedOn = addDays(cal.today, -3);
+    const id = await submittedDoc(fx, "tracer", issuedOn);
+    const hope = addDays(cal.today, 10);
+    await db.update(expenses).set({ requestedPaymentDate: hope, requestedPaymentReason: "행사 전 선금" }).where(eq(expenses.id, id));
+    const schedule = resolvePaySchedule({ baseDate: issuedOn, termDays: cal.cfg.termDays, manualDate: null, approvedAt: null, now: new Date(), lookup: cal.lookup, cfg: cal.cfg });
+
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 900 });
+    await page.goto(`/expenses/${id}`);
+    await expect(page.locator("dt", { hasText: /^희망 지급일$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText(hope.slice(5));
+    await expect(page.locator("dt", { hasText: /^희망 사유$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText("행사 전 선금");
+    const value = scheduleRow(page);
+    await expect(value).toContainText(`${schedule.payDate} (자동)`);
+    await expect(value).toContainText(payRuleLine(schedule, cal.cfg.termDays, cal.cfg));
+    await expect(page.locator("dt", { hasText: /^결재 마감$/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "지급 예정일 바꾸기" })).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("경영관리 · 결재 통과 문서 — 토요일 거부 · 목요일 저장 → `수동 지정` · `결재 마감 면제` · `자동 계산` · `금요일 아님` · 편집 중 1차 하나 · 자동으로 되돌리기 결과 줄 · 되돌리기", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    test.skip(cal.cfg.payWeekday !== "fri", "설정 지급 요일이 금요일이 아님");
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const { id } = await approvedDoc(fx, "tracer", payer, { issuedOn: addDays(cal.today, -3) });
+    const saturday = firstDay(cal, addDays(cal.today, 1), (date) => new Date(`${date}T12:00:00Z`).getUTCDay() === 6);
+    const thursday = firstDay(cal, addDays(cal.today, 1), (date) => new Date(`${date}T12:00:00Z`).getUTCDay() === 4 && isBusinessDay(date, cal.lookup));
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto(`/expenses/${id}`);
+    const primaries = page.locator('main [data-ui="primary-button"]:visible');
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toBeVisible();
+    await page.getByRole("button", { name: "지급 예정일 바꾸기" }).click();
+    await expect(page.locator("#payment-scheduled-date")).toBeFocused();
+    await expect(primaries).toHaveCount(1);
+    await expect(primaries).toContainText("예정일 저장");
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).not.toHaveAttribute("data-ui", "primary-button");
+
+    await page.locator("#payment-scheduled-date").fill(saturday);
+    await page.getByRole("button", { name: /^예정일 저장/ }).click();
+    await expect(page.getByText("영업일만 선택 · 다시 선택")).toBeVisible();
+
+    await page.locator("#payment-scheduled-date").fill(thursday);
+    await page.getByRole("button", { name: /^예정일 저장/ }).click();
+    const value = scheduleRow(page);
+    await expect(value).toContainText(thursday);
+    await expect(value.getByText("수동 지정", { exact: true })).toBeVisible();
+    await expect(value).toContainText("결재 마감 면제");
+    await expect(value).toContainText(/자동 계산 \d{2}-\d{2}/);
+    const offWeekday = value.getByText("금요일 아님", { exact: true });
+    await expect(offWeekday).toBeVisible();
+    await expectTokenColor(offWeekday, "--status-warning");
+    await expect(primaries).toHaveCount(1);
+    await expect(primaries).toContainText("지급 완료");
+
+    await value.getByRole("button", { name: "자동으로 되돌리기" }).click();
+    const result = page.locator('[role="status"]').filter({ hasText: "자동 계산으로 복귀" });
+    await expect(result).toBeVisible();
+    await expect(result.getByRole("button", { name: "되돌리기" })).toBeFocused();
+    await expect(value).toContainText("(자동)");
+    await expect(page.getByRole("status").filter({ hasText: "자동 계산으로 복귀" })).toHaveCount(1);
+    await result.getByRole("button", { name: "되돌리기" }).click();
+    await expect(value.getByText("수동 지정", { exact: true })).toBeVisible();
+    await expect(value).toContainText(thursday);
+    await page.context().close();
+  });
+
+  test("밀린 건 상세 — 값 뒤 `마감 지나 밀림` · 규칙 줄 `결재 마감 MM-DD HH:MM`", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const { id, schedule } = await pushedDoc(fx, "hold", payer, cal);
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto(`/expenses/${id}`);
+    const value = scheduleRow(page);
+    await expect(value.getByText("마감 지나 밀림", { exact: true })).toBeVisible();
+    await expect(value).toContainText(payRuleLine(schedule, cal.cfg.termDays, cal.cfg));
+    await expect(value).not.toContainText("(자동)");
+    await page.context().close();
+  });
+
+  test("키보드 — `지급 예정일 바꾸기` Enter → 칸 포커스 · Esc → 취소 · 포커스가 버튼으로", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const { id } = await approvedDoc(fx, "retry", payer, { issuedOn: addDays(cal.today, -3) });
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto(`/expenses/${id}`);
+    const open = page.getByRole("button", { name: "지급 예정일 바꾸기" });
+    await open.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#payment-scheduled-date")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#payment-scheduled-date")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "지급 예정일 바꾸기" })).toBeFocused();
     await page.context().close();
   });
 });

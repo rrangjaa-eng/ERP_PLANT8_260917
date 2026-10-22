@@ -277,6 +277,7 @@ async function PaymentTargets({
       canExportTransferFile={canExportTransferFile}
       evidenceLink={evidenceLink}
       thisWeekMove={list.thisWeekMove}
+      approvingByWeek={list.approvingByWeek}
     />
   );
 }

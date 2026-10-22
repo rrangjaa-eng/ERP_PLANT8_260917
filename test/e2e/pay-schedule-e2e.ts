@@ -90,6 +90,18 @@ export async function approvedDoc(
   return { id, approvedAt: new Date(Math.max(...steps.map((step) => step.actedAt?.getTime() ?? 0))) };
 }
 
+// 제출만 한(결재 중) 문서 — 지급 대상이 아니라 그 주 「결재 중 · 합계 제외」 하위 그룹 재료(07-01 approvingByWeek).
+export async function submittedDoc(fx: ExpenseE2E, key: LineKey, issuedOn: string): Promise<string> {
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  const id = created.created[0]?.expenseId;
+  if (!id) throw new Error("작성 중 문서를 만들지 못했다");
+  const recordId = await insertRecordFixture(fx.pm.viewer, { issuedOn });
+  await insertLinkFixture({ recordId, ownerId: id, attachedBy: fx.pm.viewer.id });
+  const submitted = await submitReadyDraft(fx.pm.viewer, id);
+  if (submitted.kind !== "submitted") throw new Error("제출 실패");
+  return id;
+}
+
 // 마감 지나 다음 주로 밀린 승인 건(pushReason cutoff) — 기준일은 기한보다 2주 더 앞(첫 후보가 이미 지남), 승인은 이번 주 지급일 마감 1분 뒤.
 export async function pushedDoc(fx: ExpenseE2E, key: LineKey, payer: Person, cal: PayCalendar): Promise<{ id: string; schedule: PaySchedule }> {
   const issuedOn = addDays(cal.today, -(cal.cfg.termDays + 14));

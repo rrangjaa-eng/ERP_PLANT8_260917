@@ -27,6 +27,7 @@ import { EvidenceReviewBlock, PrepaidReasonLine } from "./evidence-review-sectio
 import { SubmittedUndoToast } from "./submitted-undo-toast";
 import { TaxParts } from "./tax-parts";
 import { PaymentActionRow, PaymentLoadError, PaymentPanelProvider, PaymentSection } from "./payment-action-row";
+import { PaymentScheduleValue, type PaymentScheduleValueProps } from "./payment-section";
 import { CloseExpenseButton } from "./close-expense-button";
 import styles from "./expense.module.css";
 
@@ -169,8 +170,20 @@ export function ExpenseDocument({
   // 06.5 V15: 받는 인원 — 회사 대납 문서에서 투영에 칸이 있을 때만(금액을 못 보는 계급은 빠진다), 공급가액 다음(폼의 칸 순서).
   if (expense.taxRuleKind === "company_borne" && expense.recipientCount !== undefined) items.push({ label: "받는 인원", value: `${expense.recipientCount}명` });
   // 06-03: 지급 섹션이 서면 지급 예정일 · 지급 방식은 그 섹션 한 자리에만(같은 사실 두 자리 금지 — UI-SPEC S5).
+  // 07-16(SC-03 · D-731): 지급 예정일 값은 지급 섹션과 같은 PaymentScheduleValue(태그 · 규칙 줄 · 자동 계산 · 요일 경고), 앞에 희망 두 줄(있을 때만).
+  const scheduleValueProps: PaymentScheduleValueProps = {
+    date: expense.scheduledPaymentDate ?? null,
+    manual: expense.scheduledPaymentManual ?? false,
+    autoDate: expense.autoPaymentDate ?? null,
+    pushReason: expense.paymentPushReason ?? null,
+    ruleLine: expense.paymentRuleLine ?? null,
+    offWeekday: expense.paymentOffWeekday ?? null,
+  };
+  const requested = { date: expense.requestedPaymentDate ?? null, reason: expense.requestedPaymentReason ?? null };
   if (!paymentView || paymentView === "error") {
-    items.push({ label: "지급 예정일", value: expense.scheduledPaymentDate ?? dash }, { label: "지급 방식", value: expense.paymentMethodName ?? dash });
+    if (requested.date) items.push({ label: "희망 지급일", value: requested.date.slice(5) });
+    if (requested.reason) items.push({ label: "희망 사유", value: <span className={styles.subLine}>{requested.reason}</span> });
+    items.push({ label: "지급 예정일", value: <PaymentScheduleValue {...scheduleValueProps} /> }, { label: "지급 방식", value: expense.paymentMethodName ?? dash });
   }
   items.push(
     { label: "비고", value: expense.note || dash },
@@ -241,7 +254,13 @@ export function ExpenseDocument({
           // 06-06: 결재 통과 문서는 패널 상태가 증빙 섹션 확인부(S4)까지 감싼다 — 공급가액 고침 칸 · 1차 확인이 같은 상태를 쓴다(06.5 D-6520 — 문서 공급가를 함께 넘긴다).
           <PaymentPanelProvider view={paymentView} supply={supply}>
             {evidenceSection(<EvidenceReviewBlock waiveSubtitle={[expense.number, target, amountText].filter(Boolean).join(" · ")} />)}
-            <PaymentSection paymentMethod={expense.paymentMethod ?? null} paymentMethodName={expense.paymentMethodName ?? null} scheduledPaymentDate={expense.scheduledPaymentDate ?? null} />
+            <PaymentSection
+              paymentMethod={expense.paymentMethod ?? null}
+              paymentMethodName={expense.paymentMethodName ?? null}
+              scheduledPaymentDate={expense.scheduledPaymentDate ?? null}
+              scheduleValueProps={scheduleValueProps}
+              requested={requested}
+            />
             <PaymentActionRow />
           </PaymentPanelProvider>
         ) : (

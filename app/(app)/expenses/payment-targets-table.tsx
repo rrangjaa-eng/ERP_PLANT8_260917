@@ -15,11 +15,11 @@ import { useCommaInput } from "@/ui/input/use-comma-input";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import type { StatusWord } from "@/ui/status-tag/status-map";
+import { STATUS_KIND, type StatusWord } from "@/ui/status-tag/status-map";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import type { PaymentTargetRowDto } from "@/domain/expenses/dto";
 import type { BatchPaymentResult } from "@/domain/payments/batch";
-import type { SelectedTransferSum } from "@/domain/payments/targets";
+import type { ApprovingPaymentWeek, SelectedTransferSum } from "@/domain/payments/targets";
 import type { ConfirmEvidenceResult } from "@/domain/evidence-reviews";
 import type { PaymentAccount } from "@/domain/payments";
 import { AccountNumberCell } from "@/app/(app)/admin/vendors/account-number";
@@ -71,7 +71,13 @@ import styles from "./expenses.module.css";
 // 서버 액션(sumSelectedTransfersAction) 응답 — 합계 번호(고른 id 집합 · 고른 행 이체액이 바뀔 때만 +1)로 낡은 응답을 버린다(O-18 — 화면은 금액을
 // 셈하지 않고 건수만 센다). 06-20: 지급 방식 칸의 계좌(PaymentAccountValue) — 「지급 완료」 보기는 paid-list.tsx.
 
-export type PaymentTargetScreenRow = Partial<PaymentTargetRowDto> & { id: string; group: string; groupTone?: "warning" };
+// 07-16(J11): approving = 그 주 결재 중 참고 행(07-01 approvingByWeek) — 하위 그룹 머리글 · 상태 낱말. 고를 수 없고(체크박스 없음) 합계에 들지 않는다.
+export type PaymentTargetScreenRow = Partial<PaymentTargetRowDto> & {
+  id: string;
+  group: string;
+  groupTone?: "warning";
+  approving?: { header: string; status: string };
+};
 
 // 06.5-06: 이체 파일 막힘도 같은 맵 · 같은 줄 자리 — 끝 링크(link)가 있고, 지급 게이트가 아니라 selectable은 참이다(UI-SPEC V5 「막힌 건」).
 type Blocked = {
@@ -122,6 +128,47 @@ function moveReasonText(reason: string): string {
 // 「이번 주로」로 옮길 수 있는 행 — 마감 지나 밀린 건(07-01 pushReason cutoff)만. 계산 실패 행(R15)은 없다.
 function movable(row: PaymentTargetScreenRow): boolean {
   return row.paymentPushReason === "cutoff" && row.paymentScheduleFailed !== true && typeof row.version === "number";
+}
+
+// 07-16(J11 · K9): 결재 중 하위 그룹 — 같은 라벨 지급 대상 그룹 맨 아래 `결재 중 · 합계 제외`. 이 쪽에 그 주 그룹이 없으면 첫 쪽에만
+// 머리글 `{주 라벨} · 결재 중 · 합계 제외`로 주 차례(이번 주 → 다음 주) 자리에 선다.
+const APPROVING_HEADER = "결재 중 · 합계 제외";
+
+function weekRank(label: string): number {
+  if (label.startsWith("이번 주")) return 0;
+  if (label.startsWith("다음 주")) return 1;
+  return label === "그 뒤" ? 2 : -1;
+}
+
+function approvingRows(week: ApprovingPaymentWeek, header: string): PaymentTargetScreenRow[] {
+  return week.rows.map((row) => ({
+    id: row.id ?? "",
+    group: week.label,
+    ...(row.number !== undefined ? { number: row.number } : {}),
+    ...(row.title !== undefined ? { title: row.title } : {}),
+    ...(row.payableKrw !== undefined ? { payableKrw: row.payableKrw } : {}),
+    approving: { header, status: row.status ?? "결재 중" },
+  }));
+}
+
+function withApproving(rows: readonly PaymentTargetScreenRow[], weeks: readonly ApprovingPaymentWeek[], firstPage: boolean): PaymentTargetScreenRow[] {
+  const out = [...rows];
+  for (const week of weeks) {
+    const last = out.findLastIndex((row) => !row.approving && row.group === week.label);
+    if (last >= 0) {
+      out.splice(last + 1, 0, ...approvingRows(week, APPROVING_HEADER));
+      continue;
+    }
+    if (!firstPage) continue;
+    const rank = weekRank(week.label);
+    const at = out.findIndex((row) => !row.approving && weekRank(row.group) > rank);
+    out.splice(at < 0 ? out.length : at, 0, ...approvingRows(week, `${week.label} · ${APPROVING_HEADER}`));
+  }
+  return out;
+}
+
+function ApprovingStatus({ status }: { status: string }) {
+  return Object.hasOwn(STATUS_KIND, status) ? <StatusTag status={status as StatusWord} variant="text" /> : <span className={styles.approvingText}>{status}</span>;
 }
 
 // 합 요청 모음(계획 판단 — reversible): 고른 행 · 이체액이 바뀐 뒤 이만큼 모아 마지막 합계 번호 하나만 보낸다.
@@ -325,6 +372,8 @@ export type PaymentTargetsScreenProps = {
   evidenceLink?: { label: string; href: string };
   /** 07-06(K6) — 이번 주 지급일. 그 날이 지났으면 null이고 `이번 주로`를 어디에도 그리지 않는다. */
   thisWeekMove: { payDate: string } | null;
+  /** 07-01(J11) — 지금 승인되면 이번 주 · 다음 주에 들어갈 결재 중 건(주 라벨별). 지급 대상 · 합계에는 들지 않는다. */
+  approvingByWeek: ApprovingPaymentWeek[];
 };
 
 export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
@@ -912,7 +961,11 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       collapseBelow: 1280,
       // 식별자형 링크 3차(H-2) — 문서 화면 왕복 `from=pay`. 격자 칸 Enter = 이 링크(pressCellAction).
       cell: (row) =>
-        row.number ? (
+        row.approving ? (
+          <span className={styles.approvingText}>
+            <Num value={row.number ?? null} />
+          </span>
+        ) : row.number ? (
           <Link href={docHref(row.id, props.query, props.page.page)} className={styles.link} aria-label={`${row.number} 지출결의 열기`} data-cell-action="">
             <Num value={row.number} />
           </Link>
@@ -926,20 +979,24 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       priority: "p1",
       // 이 1행도 같은 문서 화면 왕복 링크(H-2 — 번호가 숨는 <1280에서는 이것이 유일한 길). 폰은 06-15 행 링크 그대로(`from=pay` 없음 — 일괄 지급이 없다).
       // 폰은 한 줄 말줄임이라 전체 값을 title로도(검토 D-6). PC는 줄바꿈(SYSTEM §7-3 「항목명은 줄바꿈 허용」)이라 다 보인다.
-      cell: (row) => (
-        <span className={styles.titleCell} data-row-id={row.id}>
-          <Link
-            href={phone ? `/expenses/${row.id}` : docHref(row.id, props.query, props.page.page)}
-            className={styles.link}
-            title={phone ? (row.title ?? undefined) : undefined}
-            data-row-link=""
-            data-cell-action=""
-          >
-            {row.title ?? "—"}
-          </Link>
-          {titleSecondLine(row)}
-        </span>
-      ),
+      // 07-16(J11): 결재 중 참고 행은 링크 · 행동 없이 muted 글자만.
+      cell: (row) =>
+        row.approving ? (
+          <span className={`${styles.titleCell} ${styles.approvingText}`}>{row.title ?? "—"}</span>
+        ) : (
+          <span className={styles.titleCell} data-row-id={row.id}>
+            <Link
+              href={phone ? `/expenses/${row.id}` : docHref(row.id, props.query, props.page.page)}
+              className={styles.link}
+              title={phone ? (row.title ?? undefined) : undefined}
+              data-row-link=""
+              data-cell-action=""
+            >
+              {row.title ?? "—"}
+            </Link>
+            {titleSecondLine(row)}
+          </span>
+        ),
     },
     {
       key: "vendor",
@@ -995,6 +1052,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       priority: "p1",
       cell: (row) => (
         <span className={styles.evidenceCell}>
+          {row.approving ? <ApprovingStatus status={row.approving.status} /> : null}
           {row.evidenceStatus ? <StatusTag status={row.evidenceStatus as StatusWord} variant="text" /> : null}
           {evidenceAction(row)}
         </span>
@@ -1002,7 +1060,13 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     },
     ...(amountColumn
       ? ([
-          { key: "payable", header: PAYMENT_TARGET_COLUMN_LABELS.payable, priority: "p1", align: "right", cell: (row) => <Num value={row.payableKrw ?? null} /> },
+          {
+            key: "payable",
+            header: PAYMENT_TARGET_COLUMN_LABELS.payable,
+            priority: "p1",
+            align: "right",
+            cell: (row) => (row.approving ? <span className={styles.approvingText}><Num value={row.payableKrw ?? null} /></span> : <Num value={row.payableKrw ?? null} />),
+          },
           {
             key: "transfer",
             header: PAYMENT_TARGET_COLUMN_LABELS.transfer,
@@ -1152,6 +1216,43 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     </>
   );
 
+  // 07-16(J11): 결재 중 하위 그룹을 끼운 표 행(선택 · 합 · 편집은 rows만 — 결재 중 행은 표에만 선다).
+  const tableRows = withApproving(rows, props.approvingByWeek, props.page.page === 1);
+  const approvingCount = props.approvingByWeek.reduce((count, week) => count + week.count, 0);
+  const approvingSum = props.approvingByWeek.every((week) => week.sumKrw !== null) ? props.approvingByWeek.reduce((sum, week) => sum + (week.sumKrw ?? 0), 0) : null;
+  // K9 — 합계 면 아래 한 줄 `결재 중 N건 · 합계 제외 {합}`(통화 기호 없음 — SYSTEM §2-4). 금액 권한이 없으면 합 없이.
+  const approvingLine =
+    approvingCount > 0 ? (
+      <p className={styles.approvingTotal}>
+        {`결재 중 ${approvingCount}건 · 합계 제외`}
+        {approvingSum !== null ? (
+          <>
+            {" "}
+            <Num value={approvingSum} />
+          </>
+        ) : null}
+      </p>
+    ) : null;
+  const groupKey = (row: PaymentTargetScreenRow) => (row.approving ? `${row.group}\u0000${row.approving.header}` : row.group);
+  const groupHeader = (row: PaymentTargetScreenRow) =>
+    row.approving ? (
+      <span className={styles.approvingText}>{row.approving.header}</span>
+    ) : row.groupTone === "warning" ? (
+      <span className={styles.warningGroup}>{row.group}</span>
+    ) : (
+      row.group
+    );
+
+  // 지급 대상 없이 결재 중만 — 빈 화면 글자 + 하위 그룹 표(고르기 · 1차 없음).
+  if (!props.hasAny && rows.length === 0 && tableRows.length > 0) {
+    return (
+      <ListScreen title="지출결의" filters={filters} summary={approvingLine}>
+        <ListEmpty message="이번 주 지급 대상 없음" action={{ label: "지급 완료 보기", href: props.paidHref }} />
+        <Table caption="지급 대상" columns={columns} rows={tableRows} getRowId={(row) => row.id} groupBy={groupKey} groupHeader={groupHeader} />
+      </ListScreen>
+    );
+  }
+
   if (!props.hasAny && rows.length === 0) {
     return (
       <ListScreen title="지출결의" filters={filters} empty={<ListEmpty message="지급할 건이 없습니다" action={{ label: "지급 완료 보기", href: props.paidHref }} />}>
@@ -1203,6 +1304,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
                 {"지급 총액 "}
                 <Num value={props.total.sumKrw} />
               </p>
+              {approvingLine}
               {/* 보기 전용 폭(<1024)에는 선택 열 · 1차가 없으므로 고른 건 합계 줄도 없다(검토 D-9). */}
               {wide && chosen.length > 0 ? (
                 <p className={styles.selectedSum}>
@@ -1222,7 +1324,9 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
                 </p>
               ) : null}
             </section>
-          ) : undefined
+          ) : (
+            (approvingLine ?? undefined)
+          )
         }
         pagination={
           <Pagination
@@ -1238,10 +1342,10 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           <Table
             caption="지급 대상"
             columns={columns}
-            rows={rows}
+            rows={tableRows}
             getRowId={(row) => row.id}
-            groupBy={(row) => row.group}
-            groupHeader={(row) => (row.groupTone === "warning" ? <span className={styles.warningGroup}>{row.group}</span> : row.group)}
+            groupBy={groupKey}
+            groupHeader={groupHeader}
             phoneRowLink
             enableGridKeyboard={wide}
             onCellCommit={commitCell}
@@ -1277,6 +1381,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
                     },
                     noteReason: (row: PaymentTargetScreenRow) => (row.transferFileAt ? `${row.transferFileAt} 이체 파일에 담김` : null),
                     onPrimary: openDialog,
+                    hidden: (row: PaymentTargetScreenRow) => row.approving !== undefined,
                   },
                 }
               : {})}

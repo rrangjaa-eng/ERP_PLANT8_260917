@@ -134,6 +134,18 @@
   color: var(--status-danger);
 }
 
+/* 07-16(SC-01 J11 · K9) — 결재 중 하위 그룹 행 글자(muted) · 합계 면 아래 한 줄 `결재 중 N건 · 합계 제외 {합}`. */
+.approvingText {
+  color: var(--text-muted);
+}
+
+.approvingTotal {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
 /* 거래처 — 한 줄 말줄임. */
 .vendorCell {
   display: block;

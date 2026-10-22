@@ -381,6 +381,8 @@ function toSource(row: ExpenseSummaryRow, payment: PaymentFields, extras: Source
     evidenceType: row.evidenceType,
     paymentMethod: row.paymentMethod,
     ...payment,
+    requestedPaymentDate: row.requestedPaymentDate,
+    requestedPaymentReason: row.requestedPaymentReason,
     note: row.note,
     installment: row.installment,
     version: row.version,

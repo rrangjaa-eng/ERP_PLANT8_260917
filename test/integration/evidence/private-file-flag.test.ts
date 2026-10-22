@@ -2,7 +2,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { randomBytes } from "node:crypto";
 import { db, pool } from "@/db/client";
-import { expenses, files } from "@/db/schema";
+import { codeItems, expenses, files } from "@/db/schema";
 import { createVisibleMemo, loadKindDetails } from "@/domain/approvals";
 import { completeEvidenceUpload, createEvidenceViewUrl, EvidenceUploadRefusedError, listEvidence, privateEvidenceNotice, requestEvidenceUpload } from "@/domain/evidence";
 import { fileVisibilityFor } from "@/domain/evidence/private-files";
@@ -165,5 +165,39 @@ describe("07-27 업로드 중 종류 변경", () => {
     const moved = storage.moves.at(-1)?.to;
     expect(moved).toBeDefined();
     expect(storage.deletes).toContain(moved);
+  });
+
+  it("업로드를 시작한 뒤 종류 코드 항목의 비공개 칸이 켜지면 잠금 재확인이 다시 하기로 거부하고 파일 행 0", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await createDraftExpenseFixture(fx);
+    await setEvidenceType(expenseId, PUBLIC_TYPE);
+    const storage = createMemoryStorage();
+    const declared = { size: 212_000, contentType: "image/jpeg", sha256: randomBytes(32).toString("hex"), name: "칸 경합 전표.jpg" };
+    const intent = await requestEvidenceUpload(fx.pm, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: expenseId, ...declared }, { storage });
+    storage.put(intent.url, { size: declared.size, contentType: declared.contentType, sha256: declared.sha256 });
+    const publicType = and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, PUBLIC_TYPE));
+
+    // 완료가 tx 밖에서 칸(false)을 읽고 문서 행을 잡은 뒤, 관리자가 다른 연결로 그 종류의 비공개 칸을 켜고 커밋한다(문서 행은 건드리지 않아 막히지 않는다).
+    try {
+      const refused = await completeEvidenceUpload(
+        fx.pm,
+        { intentId: intent.intentId },
+        {
+          storage,
+          afterLock: async () => {
+            await db.update(codeItems).set({ privateToOwner: true }).where(publicType);
+          },
+        },
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(refused).toBeInstanceOf(EvidenceUploadRefusedError);
+      expect((refused as EvidenceUploadRefusedError).retry).toBe("restart");
+    } finally {
+      await db.update(codeItems).set({ privateToOwner: false }).where(publicType);
+    }
+
+    expect(await db.select().from(files).where(eq(files.ownerId, expenseId))).toHaveLength(0);
   });
 });

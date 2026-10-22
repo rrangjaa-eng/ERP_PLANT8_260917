@@ -37,6 +37,7 @@ import {
 } from "@/domain/reserves";
 import { CARD_USAGE_ENTITY, cardSlipNotFound, cardSlipOwner, cardSlipRights, cardSlipWriteOpen, denyCardSlipWrite, type CardSlipOwner } from "@/domain/corp-card-usages";
 import { bumpInstanceVersion } from "@/repositories/approvals";
+import { lockEvidenceTypePrivateByValue } from "@/repositories/code-tables";
 import { clearEvidenceValues, deleteReviewByExpense, type EvidenceReviewStatus } from "@/repositories/expense-evidence-reviews";
 import { bumpExpenseVersion, findLivePayment } from "@/repositories/expense-payments";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
@@ -466,7 +467,7 @@ export async function completeEvidenceUpload(
   const adder = before && !rule.rights && (await rule.canSee(viewer, before)) ? await adderOf(viewer, rule, before) : null;
 
   // 07-27(R20): 비공개 증빙 종류로 올린 파일은 파일 칸에 찍어 둔다. 종류 코드표는 전역 풀 읽기라 tx 전에 읽고, tx 안에서 잠근 문서의 종류가
-  // 읽은 종류와 같은지 다시 본다(그 사이 종류가 바뀌었으면 다시 하기).
+  // 읽은 종류와 같은지, 그 종류 항목의 비공개 칸이 읽은 값과 같은지(tx 연결 FOR SHARE로 잡아) 다시 본다(그 사이 바뀌었으면 다시 하기).
   const stampedType = intent.ownerKind === EXPENSE_DOCUMENT_KIND ? (before?.evidenceType ?? null) : null;
   const stampPrivate = (await privateEvidenceTypeOf(viewer, stampedType))?.privateToOwner === true;
 
@@ -485,6 +486,9 @@ export async function completeEvidenceUpload(
       const open = rule.rights ? rights !== null && rights.write && rule.writeOpen?.(owner, viewer.id) === true : adder !== null && addOpen(rule, owner, adder);
       if (!open) throw new EvidenceUploadRefusedError("restart");
       if (intent.ownerKind === EXPENSE_DOCUMENT_KIND && (owner.evidenceType ?? null) !== stampedType) throw new EvidenceUploadRefusedError("restart");
+      if (stampedType !== null && ((await lockEvidenceTypePrivateByValue(viewer, stampedType, tx)) === true) !== stampPrivate) {
+        throw new EvidenceUploadRefusedError("restart");
+      }
       // 잠근 사이 최종 승인이 커밋돼 결재 통과가 된 문서 — 프로젝트 행을 잡지 않았으니 거꾸로 잡지 않고 다시 하기로 거부한다(05 N-3 방향).
       if (rule.approved(owner) && !approvedBefore) throw new EvidenceUploadRefusedError("restart");
       const completed = await completeIntentIfOpen(viewer, { id: intent.id, createdBy: viewer.id, now }, tx);

@@ -2,8 +2,8 @@ import { createAuthMiddleware, APIError } from "better-auth/api";
 import { log } from "@/lib/log";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { countOpenFailures, recordAttempt, resolveOpenFailures } from "@/repositories/login-attempts";
-import { isLocked, lockoutConfig, recordLoginFailure, windowStart } from "@/domain/auth/lockout";
+import { recordAttempt, resolveOpenFailures } from "@/repositories/login-attempts";
+import { reserveLoginAttempt, settleLoginFailure } from "@/domain/auth/lockout";
 import { lockedMessage } from "@/domain/auth/locked-message";
 import { findUserByEmail, setFirstLoginAtIfUnset } from "@/repositories/users";
 import { recordAction } from "@/domain/action-log/record";
@@ -67,9 +67,10 @@ export const before = createAuthMiddleware(async (ctx) => {
     throw APIError.from("UNAUTHORIZED", INVALID_EMAIL_OR_PASSWORD);
   }
 
-  const { threshold, windowMinutes } = await lockoutConfig();
-  const count = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes));
-  if (isLocked(count, threshold)) {
+  // 07-09 FA-1(/cso F1): 잠금 확인과 실패 행 미리 기록이 이메일 잠금 아래 한 트랜잭션 — 동시 시도도 임계를 넘어 검사되지 않는다.
+  const ip = ctx.headers?.get(CLIENT_IP_HEADER) ?? null;
+  const { locked, windowMinutes } = await reserveLoginAttempt(email, ip);
+  if (locked) {
     throw new APIError("FORBIDDEN", { message: lockedMessage(windowMinutes) });
   }
 });
@@ -111,9 +112,11 @@ export const after = createAuthMiddleware(async (ctx) => {
     return;
   }
 
-  // 같은 이메일의 실패는 이메일 키 잠금으로 줄을 서 잠금 기록이 정확히 1회 남는다.
-  // 잠긴 뒤에는 before 훅이 거부해 after가 돌지 않는다.
-  await recordLoginFailure(email, ip);
+  // 07-09 FA-1: 실패 행은 before가 미리 남겼다 — 여기서는 다시 세어 임계에 닿았으면 잠금 기록을 확인한다.
+  // 잠긴 뒤에는 before 훅이 거부해 after가 돌지 않는다. N번째 응답을 403으로 바꾸는 것(/qa ISSUE-002)은
+  // 하지 않는다 — better-auth 1.7.5 dispatch가 after 훅이 던진 APIError의 본문만 쓰고 상태는 원래 401로
+  // 덮는다(toResponse의 init.status 우선). 07-09 SUMMARY 「Deferred」.
+  await settleLoginFailure(email);
 });
 
 // D8-07: better-auth databaseHooks.session.create.after의 처리 함수(lib/auth.ts가 등록). 로그인 방식·경로·

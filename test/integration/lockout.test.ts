@@ -10,6 +10,7 @@ import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
 import { setSettingValue } from "@/domain/settings/registry";
 import { AUTH_LOCKOUT_WINDOW_MINUTES } from "@/domain/settings/keys";
 import { lockedMessage } from "@/domain/auth/locked-message";
+import { queryActionLog } from "@/repositories/action-log";
 
 const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3000";
 
@@ -170,4 +171,66 @@ describe("계정 잠금 (login_attempts)", () => {
     const body = (await locked.json()) as { message?: string };
     expect(body.message).toBe(lockedMessage(windowMinutes));
   });
+
+  // 07-09 D-712: N번째 틀린 시도에 account_lock 한 행 — 그 뒤 잠긴 시도(403)는 행을 더하지 않는다.
+  // N번째 응답 자체를 403 잠금 문구로 바꾸는 것(/qa ISSUE-002)은 better-auth after 훅이 상태를 바꾸지 못해 미뤘다(07-09 SUMMARY).
+  it("G: N번째 틀린 시도에 account_lock 1행 · 그 뒤 잠금 403이 이어져도 여전히 1행", async () => {
+    const email = uniqueEmail("lockout-g");
+    const ip = "198.51.100.7";
+    const { threshold, windowMinutes } = await lockoutConfig();
+    for (let i = 0; i < threshold; i++) {
+      expect((await signIn(email, "wrong-password", ip)).status).toBe(401);
+    }
+    expect(await accountLocks(email)).toBe(1);
+
+    for (let i = 0; i < 2; i++) {
+      const locked = await signIn(email, "wrong-password", ip);
+      expect(locked.status).toBe(403);
+      expect(((await locked.json()) as { message?: string }).message).toBe(lockedMessage(windowMinutes));
+    }
+    expect(await accountLocks(email)).toBe(1);
+  });
+
+  // 07-09 /cso F1: 잠금 확인과 실패 기록 사이 경쟁 — 동시 시도가 임계를 넘어 검사되지 않는다.
+  it("H: 같은 이메일로 틀린 비밀번호 8건을 동시에 → 열린 실패 = 임계 · 임계 밖 시도는 검사 전 403 · account_lock 정확히 1행", async () => {
+    const email = uniqueEmail("lockout-h");
+    await createAccount(SYSTEM_VIEWER, { email, name: "Lockout H" });
+    const ip = "198.51.100.8";
+    const { threshold, windowMinutes } = await lockoutConfig();
+
+    const responses = await Promise.all(Array.from({ length: 8 }, () => signIn(email, "wrong-password", ip)));
+
+    expect(await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes))).toBe(threshold);
+    const statuses = responses.map((res) => res.status);
+    expect(statuses.every((status) => status === 401 || status === 403)).toBe(true);
+    expect(statuses.filter((status) => status === 403).length).toBe(8 - threshold);
+    expect(await accountLocks(email)).toBe(1);
+  });
+
+  // 「잠금 기록 확인」은 창 시작이 아니라 열린 실패의 처음 이후를 본다 — 풀린 뒤 같은 창에서 다시 잠기면 새 행.
+  it("I: 잠김 → 관리자 해제 → 같은 창 안에서 다시 잠김 → account_lock 2행", async () => {
+    const email = uniqueEmail("lockout-i");
+    await createAccount(SYSTEM_VIEWER, { email, name: "Lockout I" });
+    const { threshold } = await lockoutConfig();
+    for (let i = 0; i < threshold; i++) await signIn(email, "wrong-password", "198.51.100.9");
+    expect(await accountLocks(email)).toBe(1);
+
+    await unlockAccount(SYSTEM_VIEWER, email);
+    for (let i = 0; i < threshold; i++) await signIn(email, "wrong-password", "198.51.100.10");
+    expect(await accountLocks(email)).toBe(2);
+  });
+
+  it("J: 성공 로그인은 그 시도가 미리 남긴 실패 행까지 해소해 열린 실패 0", async () => {
+    const email = uniqueEmail("lockout-j");
+    const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "Lockout J" });
+    const ip = "198.51.100.11";
+    await signIn(email, "wrong-password", ip);
+    expect((await signIn(email, tempPassword, ip)).status).toBe(200);
+    expect(await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), 15))).toBe(0);
+  });
 });
+
+async function accountLocks(email: string): Promise<number> {
+  const rows = await queryActionLog(SYSTEM_VIEWER, { actionType: "account_lock" });
+  return rows.filter((row) => (row.detail as { email?: unknown }).email === email).length;
+}

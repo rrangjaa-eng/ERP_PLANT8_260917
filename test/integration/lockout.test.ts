@@ -1,16 +1,19 @@
 import { and, eq, isNull } from "drizzle-orm";
+import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { auth } from "@/lib/auth";
 import { db } from "@/db/client";
 import { loginAttempts } from "@/db/schema";
 import { createAccount, unlockAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { backdateOpenFailures, countOpenFailures } from "@/repositories/login-attempts";
+import { backdateOpenFailures, countOpenFailures, lockLoginEmail } from "@/repositories/login-attempts";
 import { lockoutConfig, reserveLoginAttempt, settleLoginFailure, windowStart } from "@/domain/auth/lockout";
 import { setSettingValue } from "@/domain/settings/registry";
 import { AUTH_LOCKOUT_WINDOW_MINUTES } from "@/domain/settings/keys";
 import { lockedMessage } from "@/domain/auth/locked-message";
 import { queryActionLog } from "@/repositories/action-log";
+import { env } from "@/lib/env";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 // Codex 지적 (2): 잠금 기록(account_lock) 실패를 흉내 낼 스위치. 꺼져 있으면 실제 recordAction을 그대로 부른다.
 const failLockRecord = vi.hoisted(() => ({ on: false }));
@@ -282,7 +285,32 @@ describe("계정 잠금 (login_attempts)", () => {
     const ip = "198.51.100.8";
     const { threshold, windowMinutes } = await lockoutConfig();
 
-    const responses = await Promise.all(Array.from({ length: 8 }, () => signIn(email, "wrong-password", ip)));
+    // lock-race 도우미(07-09-PLAN 수락 기준): 시험이 같은 이메일 잠금을 먼저 쥐고 8건을 보낸 뒤, 잠금 대기가
+    // 실제로 생긴 것을 확인하고 푼다 — 이메일 잠금이 빠지면 대기가 생기지 않아 waitForLockWaiter가 실패한다.
+    // 앱 풀(DB_POOL_MAX)은 잠금 대기 연결로 찰 수 있어 대기 확인은 따로 연 연결 하나로 한다.
+    const observer = new Pool({ connectionString: env.DATABASE_URL, max: 1 });
+    const locked = deferred();
+    const release = deferred();
+    const holder = db.transaction(async (tx) => {
+      await lockLoginEmail(SYSTEM_VIEWER, email, tx);
+      locked.resolve();
+      await release.promise;
+    });
+    let responses: Response[];
+    try {
+      await locked.promise;
+      const sending = Promise.all(Array.from({ length: 8 }, () => signIn(email, "wrong-password", ip)));
+      try {
+        await waitForLockWaiter(observer);
+      } finally {
+        release.resolve();
+      }
+      await holder;
+      responses = await sending;
+    } finally {
+      release.resolve();
+      await observer.end();
+    }
 
     expect(await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes))).toBe(threshold);
     const statuses = responses.map((res) => res.status);

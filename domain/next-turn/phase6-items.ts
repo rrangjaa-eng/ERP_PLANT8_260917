@@ -86,9 +86,10 @@ export async function listPhase6NextTurnItems(viewer: Viewer, today: string): Pr
   const entries: NextTurnEntry[] = [];
   if (await can(viewer, "expenses.payments", "write")) {
     // 06-15 지급 대상 정의 그대로 — 쪽 없는 함수 한 번(E-31). 묶음은 필터 전체 행으로 센다.
+    // 07-06(D-715): 예정일 = 그 목록이 이미 셈한 유효 예정일(PaySchedule — 로더를 다시 부르지 않는다).
     const targets = await listAllPaymentTargets(viewer, {}, { today });
     const bundle = buildPaymentBundle(
-      targets.map((target) => ({ scheduledPaymentDate: target.row.scheduledPaymentDate, evidenceStatus: target.evidenceStatus, payableKrw: target.payableKrw })),
+      targets.map((target) => ({ scheduledPaymentDate: target.schedule.payDate, evidenceStatus: target.evidenceStatus, payableKrw: target.payableKrw })),
       today,
       await visible(viewer, "expense.amount"),
     );

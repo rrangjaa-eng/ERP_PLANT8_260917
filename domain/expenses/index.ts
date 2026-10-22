@@ -320,8 +320,7 @@ function supplyMoney(row: Pick<ExpenseRow, "supplyCurrency" | "supplyForeignAmou
 // 07 D-715 · D-704: 지출결의 DTO의 지급 예정일 = 유효 예정일(07-01 로더 — 행 묶음 한 번). 자동값은 읽을 때 셈하고 저장하지 않는다.
 type ExpenseSchedules = { schedules: Map<string, PaySchedule>; cfg: PayScheduleConfig };
 
-export async function loadExpenseSchedules(viewer: Viewer, rows: readonly PayScheduleSource[]): Promise<ExpenseSchedules> {
-  const now = new Date();
+export async function loadExpenseSchedules(viewer: Viewer, rows: readonly PayScheduleSource[], now: Date = new Date()): Promise<ExpenseSchedules> {
   const [schedules, cfg] = await Promise.all([loadPaySchedules(viewer, rows, { today: seoulToday(now), now }), loadPayScheduleConfig()]);
   return { schedules, cfg };
 }
@@ -330,6 +329,12 @@ export function scheduleOf(loaded: ExpenseSchedules, id: string): PaySchedule {
   const schedule = loaded.schedules.get(id);
   if (!schedule) throw new Error(`지급 일정 없음: ${id}`);
   return schedule;
+}
+
+// 07 P1 · B-P1-3: 세금 기준일 사슬의 「지급 예정일」 자리 = 유효 예정일 — computeExpenseTax 호출처 넷(목록 차이 · 제출 스냅숏 · 미리보기 · 상세 차이)이
+// 같은 로더 값을 넘겨 승인 스냅숏 세액 = 지급 때 세액이 된다(domain/expenses/tax.ts는 그대로).
+function withEffectiveDate<Row extends { id: string; scheduledPaymentDate: string | null }>(row: Row, loaded: ExpenseSchedules): Row {
+  return { ...row, scheduledPaymentDate: scheduleOf(loaded, row.id).payDate };
 }
 
 type PaymentFields = Pick<
@@ -476,7 +481,7 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
   );
   // 번호 있는 문서는 지금 설정 · 기준일로 다시 계산해 저장값과 다르면 세율 바뀜(문서 화면 getExpense와 같은 값 비교). 문서마다 동시에.
   const currents = await Promise.all(
-    rows.map(async (row) => (supplyMoney(row) && storedTaxResult(row) !== null && row.number !== null ? computeExpenseTax(viewer, row) : null)),
+    rows.map(async (row) => (supplyMoney(row) && storedTaxResult(row) !== null && row.number !== null ? computeExpenseTax(viewer, withEffectiveDate(row, loaded)) : null)),
   );
   const result = new Map<string, ExpenseDetailDto>();
   for (const [index, row] of rows.entries()) {
@@ -1134,7 +1139,7 @@ export async function submitExpense(
   const projectRow = row.projectId ? await findProjectById(viewer, row.projectId) : null;
   if (!projectRow && !isTeamCostRow(row)) throw new ExpenseNotFoundError();
 
-  const tax = await computeExpenseTax(viewer, row);
+  const tax = await computeExpenseTax(viewer, withEffectiveDate(row, await loadExpenseSchedules(viewer, [row], deps?.now)));
   const pre = projectRow ? await loadSubmitPre(viewer, projectRow) : null;
   const codes = await loadSubmitCodes(viewer);
   const prepared = await prepareSubmission(viewer, {
@@ -1608,7 +1613,7 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
 
   // 증빙 종류 이름 표는 제출 코드 사실(짝 단계)과 같은 읽기 하나다.
   const codes = await loadSubmitCodes(viewer);
-  const tax = await computeExpenseTax(viewer, row);
+  const tax = await computeExpenseTax(viewer, withEffectiveDate(row, await loadExpenseSchedules(viewer, [row])));
   const evidenceTypeName = row.evidenceType ? (codes.evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
   const taxLine = supply ? taxLineText(tax, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
 
@@ -1738,7 +1743,7 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
   // 05-09: 기안자가 고치는 반려 · 회수 문서는 작성 중처럼 지금 기준 계산(다시 제출이 새로 저장한다).
   const editable = isEditableByDrafter(viewer.id, row, row.status);
   const stored = editable ? null : storedTaxResult(row);
-  const current = supply && (stored === null || row.number !== null) ? await computeExpenseTax(viewer, row) : null;
+  const current = supply && (stored === null || row.number !== null) ? await computeExpenseTax(viewer, withEffectiveDate(row, loaded)) : null;
   // 06.5 D-6520(UI-SPEC V8 「고친 뒤 문서 화면」): 증빙 확인에서 공급가액을 고친 문서는 고친 공급가로 지금 기준 다시 셈한 한 줄이고
   // 세율 바뀜이 없다(결재 때 값과의 차이가 세율이 아니라 고침에서 온다). 세금 스냅숏 칸은 그대로다.
   const corrected = stored !== null && row.supplyAmountKrw !== null && snapshotSupplyDiffers(stored, row.supplyAmountKrw);

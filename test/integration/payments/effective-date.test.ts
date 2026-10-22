@@ -4,13 +4,23 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { approvalInstances, approvalRoutes, approvalSteps, expenses } from "@/db/schema";
 import { approveDocument } from "@/domain/approvals";
-import { getExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { createExpenseFromLines, getExpense, previewExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { computeExpenseTax } from "@/domain/expenses/tax";
+import { loadKindDetails } from "@/domain/approvals";
+import { listPaymentTargets } from "@/domain/payments/targets";
+import { listPhase6NextTurnItems } from "@/domain/next-turn/phase6-items";
+import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
+import { TAX_VAT_RATE } from "@/domain/settings/keys";
+import { visible } from "@/domain/permissions/visible";
+import { seedCodeItem } from "@/repositories/code-tables";
+import { seoulToday } from "@/lib/dates";
+import { addDays } from "@/lib/kst-date";
 import { loadHolidayLookup } from "@/domain/holidays/calendar";
 import { payRuleLine, resolvePaySchedule } from "@/domain/payments/pay-schedule";
 import { loadPayScheduleConfig } from "@/domain/payments/pay-schedule-load";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
-import { setupExpenseProject, type ExpenseFixture } from "../fixtures/expenses";
+import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "../fixtures/expenses";
 import { createDraftExpenseFixture, createInReviewExpenseFixture, insertLinkFixture, insertRecordFixture } from "../fixtures/evidence";
 import { makePaymentManager } from "../fixtures/payments";
 
@@ -104,5 +114,78 @@ describe("07-06 Task 1 — 상세 DTO 유효 예정일 (D-715 · D-714)", () => 
       paymentOffWeekday: "금요일 아님",
     });
     expect(await getExpense(payer, { expenseId: friday.expenseId })).toMatchObject({ scheduledPaymentManual: true, paymentOffWeekday: null });
+  }, 60_000);
+});
+
+async function approveAll(fx: ExpenseFixture, instanceId: string): Promise<void> {
+  const [instance] = await db.select({ version: approvalInstances.version }).from(approvalInstances).where(eq(approvalInstances.id, instanceId));
+  let version = instance?.version ?? 0;
+  for (const approver of [fx.lead, fx.ceo]) version = (await approveDocument(approver, { instanceId, expectedVersion: version })).version;
+}
+
+describe("07-06 Task 2 — 세금 기준일 · 홈 지급 묶음 = 유효 예정일 (P1 · B-P1-3)", () => {
+  it("기준일 「지급 예정일」 규칙: 세율이 바뀌는 날을 사이에 둬도 제출 스냅숏 · 미리보기 · 상세 · 결재 시트 · 지급 대상이 모두 유효 예정일 세율(오늘 기준과 다름)", async () => {
+    const payer = await makePayer();
+    const evidenceType = `t0706_${randomUUID().slice(0, 8)}`;
+    await seedCodeItem(SYSTEM_VIEWER, {
+      tableKey: "evidence_type",
+      value: evidenceType,
+      label: `예정일 부가세 ${evidenceType}`,
+      sortOrder: 99,
+      taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "scheduled_payment_date" },
+    });
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId;
+    if (!expenseId) throw new Error("작성 중 문서 없음");
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { evidenceType } });
+    await insertLinkFixture({ recordId: await insertRecordFixture(payer, { issuedOn: addDays(seoulToday(), -10) }), ownerId: expenseId, attachedBy: fx.pm.id });
+    const effective = (await getExpense(fx.pm, { expenseId }))?.scheduledPaymentDate;
+    if (!effective || effective <= seoulToday()) throw new Error(`유효 예정일이 미래가 아님: ${effective}`);
+
+    // 유효 예정일부터 17%(오늘은 그 전 세율). 공급가 12,400,000 → 부가세 2,108,000 · 지급 총액 14,508,000.
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: effective, value: 0.17 });
+    try {
+      const preview = await previewExpense(fx.pm, { expenseId, fields: {} });
+      expect(preview.taxLine?.text).toContain("지급 총액 14,508,000");
+
+      const submitted = await submitReadyDraft(fx.pm, expenseId);
+      if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+      const [snapshot] = await db.select().from(expenses).where(eq(expenses.id, expenseId));
+      expect(snapshot).toMatchObject({ taxRate: "0.170000", vatKrw: 2_108_000, payableKrw: 14_508_000, scheduledPaymentDate: null });
+      if (!snapshot) throw new Error("행 없음");
+      const todayBased = await computeExpenseTax(fx.pm, { ...snapshot, scheduledPaymentDate: null });
+      if (todayBased.unavailable) throw new Error("오늘 기준 계산 불가");
+      expect(todayBased.payableKrw).not.toBe(14_508_000);
+
+      await approveAll(fx, submitted.instanceId);
+      const doc = await getExpense(payer, { expenseId });
+      expect(doc?.scheduledPaymentDate).toBe(effective);
+      expect(doc?.taxLine?.text).toContain("지급 총액 14,508,000");
+      expect(doc?.taxDrift).toBeNull();
+
+      const sheet = (await loadKindDetails(payer, "expense", [expenseId], { visible })).get(expenseId);
+      const supplyRows = sheet?.rows.filter((row) => row.label === "공급가액") ?? [];
+      expect(supplyRows.filter((row) => row.tone === "warning")).toEqual([]);
+      expect(supplyRows.some((row) => row.value.includes("지급 총액 14,508,000"))).toBe(true);
+      expect(sheet?.rows.find((row) => row.label === "지급 예정일")?.value).toBe(effective);
+
+      const targets = await listPaymentTargets(payer, {}, { pageSize: 10_000 });
+      expect(targets.groups.flatMap((group) => group.rows).find((row) => row.id === expenseId)).toMatchObject({ scheduledPaymentDate: effective, payableKrw: 14_508_000 });
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, effective);
+    }
+  }, 60_000);
+
+  it("홈 「내 차례」 지급 묶음이 예정일을 적지 않은 승인 건을 유효 예정일로 센다(지남 · 오늘)", async () => {
+    const payer = await makePayer();
+    const count = async () => {
+      const entry = (await listPhase6NextTurnItems(payer, seoulToday())).find((item) => item.key === "phase6-payment");
+      const match = entry ? /예정일 지남·오늘 (\d+)건/.exec(entry.label) : null;
+      return match ? Number(match[1]) : 0;
+    };
+    const before = await count();
+    await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-08-01T10:00") });
+    expect(await count()).toBe(before + 1);
   }, 60_000);
 });

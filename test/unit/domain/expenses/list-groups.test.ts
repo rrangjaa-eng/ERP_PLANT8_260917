@@ -2,22 +2,22 @@ import { describe, expect, it } from "vitest";
 import { groupExpenses } from "@/domain/expenses/list";
 
 // 05-08 Task 2(UI-SPEC S8 그룹 머리글 · M2): groupExpenses는 SQL이 정한 순서를 바꾸지 않고 연속한 같은 그룹에 머리글만 붙인다.
-// 승인 보기는 지급 예정일 서울 날짜 구간(주 = 월요일 시작) — 예정일 지남(warning) · 이번 주 지급 · 다음 주 · 그 뒤 · 지급 예정일 없음.
+// 승인 보기는 지급 예정일 서울 날짜 구간(주 = 월요일 시작) — 예정일 지남(warning) · 이번 주 지급 · 다음 주 · 그 뒤.
+// 07-06(D-715): 예정일은 늘 유효값(수동 ?? 자동)이라 「지급 예정일 없음」 구간은 없다.
 
-type Row = { id: string; groupRank: number; scheduledPaymentDate: string | null };
+type Row = { id: string; groupRank: number; scheduledPaymentDate: string };
 
-const row = (id: string, groupRank: number, scheduledPaymentDate: string | null = null): Row => ({ id, groupRank, scheduledPaymentDate });
+const row = (id: string, groupRank: number, scheduledPaymentDate = "2026-09-25"): Row => ({ id, groupRank, scheduledPaymentDate });
 
 describe("groupExpenses — 승인 보기 날짜 구간", () => {
-  it("2026-09-26(토) 기준 — 지남 · 이번 주(일요일까지) · 다음 주(월요일부터) · 그 뒤 · 없음, 비는 구간은 없다", () => {
-    const rows = [row("a", 4, "2026-09-25"), row("b", 4, "2026-09-27"), row("c", 4, "2026-09-28"), row("d", 4, "2026-10-06"), row("e", 4, null)];
+  it("2026-09-26(토) 기준 — 지남 · 이번 주(일요일까지) · 다음 주(월요일부터) · 그 뒤, 비는 구간은 없다", () => {
+    const rows = [row("a", 4, "2026-09-25"), row("b", 4, "2026-09-27"), row("c", 4, "2026-09-28"), row("d", 4, "2026-10-06")];
     const groups = groupExpenses(rows, { status: "approved", todayKst: "2026-09-26" });
     expect(groups.map((g) => [g.label, g.tone ?? null, g.rows.map((r) => r.id)])).toEqual([
       ["예정일 지남", "warning", ["a"]],
       ["이번 주 지급", null, ["b"]],
       ["다음 주", null, ["c"]],
       ["그 뒤", null, ["d"]],
-      ["지급 예정일 없음", null, ["e"]],
     ]);
   });
 
@@ -58,7 +58,7 @@ describe("groupExpenses — 순서 보존 · 머리글", () => {
   });
 
   it("전체 보기 — 승인 행은 날짜 구간 없이 `승인` 한 그룹", () => {
-    const rows = [row("d1", 1), row("s1", 3), row("a1", 4, "2026-09-25"), row("a2", 4, "2026-10-30"), row("a3", 4, null)];
+    const rows = [row("d1", 1), row("s1", 3), row("a1", 4, "2026-09-25"), row("a2", 4, "2026-10-30"), row("a3", 4, "2026-11-30")];
     const groups = groupExpenses(rows, { status: "all", todayKst: "2026-09-26" });
     expect(groups.map((g) => [g.label, g.rows.length])).toEqual([
       ["작성 중", 1],

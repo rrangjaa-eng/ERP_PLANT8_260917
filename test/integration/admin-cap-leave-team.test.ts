@@ -4,7 +4,9 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
 import { addLeaveAdjustment } from "@/domain/leave/balance-service";
 import { assignTeam, cancelFutureAssignment } from "@/domain/org";
+import { setHireDate } from "@/domain/people";
 import { listMemberships } from "@/repositories/team-memberships";
+import { findUserById } from "@/repositories/users";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { countRows, makePerson, NOW_2026 } from "./approvals-fixtures";
 import { makeAdmin, makeDelegatedRole, makeOrgTeam } from "./admin-cap-fixtures";
@@ -110,5 +112,27 @@ describe("미래 발령 취소의 대상 상한(07-17 R15)", () => {
     await cancelFutureAssignment(d, { userId: p.id, effectiveFrom: "2026-12-01" }, { now: () => NOW_2026 });
 
     expect(await listMemberships(SYSTEM_VIEWER, p.id)).toEqual([]);
+  });
+});
+
+describe("입사일 변경의 대상 상한(07-17 독립 검토 M1)", () => {
+  it("위임자가 상한 밖(시스템 관리자) 대상의 입사일을 바꾸면 거부 · 입사일 그대로", async () => {
+    const d = await delegate();
+    const a = await makeAdmin("관리자 A");
+    const before = (await findUserById(SYSTEM_VIEWER, a.id))?.hireDate;
+
+    const error = await refusal(setHireDate(d, a.id, "2020-01-02", { now: () => NOW_2026 }), RoleGrantForbiddenError);
+
+    expect(error.message).toBe(GRANT_FORBIDDEN);
+    expect((await findUserById(SYSTEM_VIEWER, a.id))?.hireDate).toBe(before);
+  });
+
+  it("위임자가 상한 안(PM) 대상의 입사일을 바꾸면 성공", async () => {
+    const d = await delegate();
+    const p = await makePerson("대상 P", DEFAULT_ROLE_ID, null);
+
+    await setHireDate(d, p.id, "2020-01-02", { now: () => NOW_2026 });
+
+    expect((await findUserById(SYSTEM_VIEWER, p.id))?.hireDate).toBe("2020-01-02");
   });
 });

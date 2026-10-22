@@ -697,17 +697,19 @@ test.describe("삭제 · 퇴직일 칸 상태와 삭제 사유 (06.4 D-6417 · D
     await context.close();
   });
 
-  test("퇴직일 칸(D-6417): 상한 밖 대상 상세에는 퇴직일 칸이 없고 입사일 칸은 있다 · PM 대상은 둘 다", async ({ page }) => {
+  // 07-17 독립 검토 M1: 서버 setHireDate도 상한을 보게 되어 입사일 칸도 같이 숨긴다(D-6417 「입사일 칸 그대로」를 바꿈).
+  test("날짜 칸(D-6417 · 07-17 M1): 상한 밖 대상 상세에는 퇴직일 · 입사일 칸이 없다 · PM 대상은 둘 다", async ({ page }) => {
     const delegate = await createDelegatedAccount({ menus: ARCHIVE_DELEGATE_MENUS });
     const admin = await makeListedAccount("E2E퇴직일상한밖", SYSADMIN_ROLE_ID);
     const pm = await makeListedAccount("E2E퇴직일대상", DEFAULT_ROLE_ID);
 
     await loginWith(page, delegate);
     await page.goto(`/admin/people/${admin.userId}`);
-    await expect(page.locator("#hireDate")).toHaveCount(1);
+    await expect(page.locator("#hireDate")).toHaveCount(0);
     await expect(page.locator("#resignationDate")).toHaveCount(0);
 
     await page.goto(`/admin/people/${pm.userId}`);
+    await expect(page.locator("#hireDate")).toHaveCount(1);
     await expect(page.locator("#resignationDate")).toHaveCount(1);
   });
 

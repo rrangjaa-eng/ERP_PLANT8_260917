@@ -35,8 +35,8 @@ export type LeaveSectionProps = {
   datesVisible: boolean;
   adjustments: LeaveAdjustmentRow[];
   canWrite: boolean;
-  // 06.4(D-6417 · R2): 대상 계급이 상한 밖이면 퇴직일 칸만 그리지 않는다(입사일 칸은 그대로) — 기본 참.
-  resignationWritable?: boolean;
+  // 06.4(D-6417 · R2) · 07-17 독립 검토 M1: 대상 계급이 상한 밖이면 입사일 · 퇴직일 칸을 그리지 않는다 — 기본 참.
+  datesWritable?: boolean;
   // 07-17 R15: 대상 계급이 상한 밖이면 연차 조정 추가 폼도 그리지 않는다 — 기본 참.
   adjustWritable?: boolean;
   // 오늘 기준 월차 조정 거부 이유(04.1-03 checkLeaveAdjustment 문구 그대로) — 있으면 `월차` 옵션을 뺀다(CX-R5).
@@ -56,7 +56,7 @@ const COLUMNS: TableColumn<LeaveAdjustmentRow>[] = [
 ];
 
 function EmploymentDate({ userId, id, label, initial, kind }: { userId: string; id: string; label: string; initial: string | null; kind: "hire" | "resignation" }) {
-  // 06.4(D-6417 · R2): 상한 밖 대상은 퇴직일 칸 없음 · 거부되면 저장값으로
+  // 06.4(D-6417 · R2) · 07-17 M1: 상한 밖 대상은 날짜 칸 없음 · 거부되면 저장값으로
   const savedRef = useRef(initial ?? "");
   const [value, setValue] = useState(initial ?? "");
   const callbacks = {
@@ -122,12 +122,10 @@ export function LeaveSection(props: LeaveSectionProps) {
     <div role="region" aria-label="연차">
       <DetailScreen.Section title="연차">
         <div className="single-column">
-          {canWrite && props.datesVisible ? (
+          {canWrite && props.datesVisible && props.datesWritable !== false ? (
             <Form onSubmit={(event) => event.preventDefault()}>
               <EmploymentDate userId={userId} id="hireDate" label="입사일" initial={props.hireDate} kind="hire" />
-              {props.resignationWritable !== false ? (
-                <EmploymentDate userId={userId} id="resignationDate" label="퇴직일" initial={props.resignationDate} kind="resignation" />
-              ) : null}
+              <EmploymentDate userId={userId} id="resignationDate" label="퇴직일" initial={props.resignationDate} kind="resignation" />
             </Form>
           ) : null}
           {/* `잔고` 줄 — 사람 상세 위 KvList와 dl을 겹치지 않게(단일 기둥 단언은 main의 dl 하나를 잰다) 라벨 · 값 한 묶음으로. */}

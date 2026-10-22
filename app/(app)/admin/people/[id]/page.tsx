@@ -103,7 +103,7 @@ export default async function PersonDetailPage({
   const targetOutOfCeiling = currentRoleId !== null && !assignableCurrent.has(currentRoleId);
   const lockedReason = targetOutOfCeiling || roles.length === 0 ? GRANT_FORBIDDEN_MESSAGE : null;
   // 07-17 SC-12 · R15 · D-728: 로그인 섹션 — `로그인 상태` 한 값(노출표가 잠김 키를 가리면 섹션 없음). 두 행동은 쓰기 · 자기 아님 ·
-  // 보관 아님 · 상한 안에서만, `잠금 풀기`는 잠긴 재직자에게만(퇴직자는 값 `퇴직`). 상한 밖이면 연차 조정 · 이력 추가도 그리지 않는다.
+  // 보관 아님 · 상한 안에서만, `잠금 풀기`는 잠긴 재직자에게만(퇴직자는 값 `퇴직`). 상한 밖이면 연차 조정 · 이력 추가 · 날짜 칸도 그리지 않는다.
   const loginWord = "locked" in detail.person ? personLoginWord(personLoginStatus(detail.person, today)) : null;
   const loginWritable = canWrite && session.viewer.id !== id && !detail.person.archivedAt && !targetOutOfCeiling;
   const balanceLines = balance.annual
@@ -173,7 +173,7 @@ export default async function PersonDetailPage({
         adjustments={adjustmentRows}
         // 사용자 결정(2026-09-29 A) — 자기 연차 · 입사일 · 퇴직일은 바꾸지 못한다(서버도 거부) — 쓰기 칸을 그리지 않는다.
         canWrite={canWrite && session.viewer.id !== id}
-        resignationWritable={!targetOutOfCeiling}
+        datesWritable={!targetOutOfCeiling}
         adjustWritable={!targetOutOfCeiling}
         monthlyBlockedReason={blocked?.field === "bucket" ? blocked.message : null}
       />

@@ -672,12 +672,13 @@ async function setEmploymentDate(
       // 늘어나는 사람은 260907 재개와 같은 자리 검사를 받는다(`O: server/src/people-rules.ts:68-78` `rejoinSeatWhy`, 문구 :75 ·
       // 재개 라우트 `people.ts:1155` 인덱스 충돌 409 `:1258-1264`). O3 사용자 확정(2026-10-11 카드): 마지막 재직 관리자에게는
       // 어떤 날짜의 퇴직일도 넣지 않는다 — 미래 날짜는 시간 경과로 0명이 되는 시한폭탄(RESEARCH Pitfall 7).
+      // 07-17 독립 검토 M1: 입사일도 같은 잠금 → 재조회 → 대상 계급 상한(관리자 키는 마지막 관리자 판정이 있는 퇴직일만).
+      await lockSeatKeys(viewer, { personIds: [userId], admin: field === "resignation_date" }, tx);
+      const fresh = await repoFindUserById(viewer, userId, tx);
+      if (!fresh) throw new UserNotFoundError("사람 찾을 수 없음");
+      // K-R1 사용자 확정(2026-10-11 카드 「막기」) · D-6411: 대상 계급 C가 내 상한 밖이면 날짜를 넣지도 지우지도 못한다.
+      await assertCanGrantRoles(viewer, [fresh.roleId], tx);
       if (field === "resignation_date") {
-        await lockSeatKeys(viewer, { personIds: [userId], admin: true }, tx);
-        const fresh = await repoFindUserById(viewer, userId, tx);
-        if (!fresh) throw new UserNotFoundError("사람 찾을 수 없음");
-        // K-R1 사용자 확정(2026-10-11 카드 「막기」) · D-6411: 대상 계급 C가 내 상한 밖이면 퇴직일을 넣지도 지우지도 못한다.
-        await assertCanGrantRoles(viewer, [fresh.roleId], tx);
         if (value !== null) await assertNotLastAdmin(viewer, { userId, asOf: today }, tx);
         if (fresh.roleId !== null) {
           // 조건 분기 없이 늘 계산 — newSeats가 늘어난 날짜만 돌려주므로 당기기 · 같은 값은 빈 결과로 잠금 · 쿼리 없이 지나간다.

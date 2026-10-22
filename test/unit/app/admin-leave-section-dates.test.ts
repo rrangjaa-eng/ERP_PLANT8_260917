@@ -39,3 +39,12 @@ describe("관리자 연차 섹션 — 입사일 · 퇴직일 칸", () => {
     expect(html).not.toContain('id="resignationDate"');
   });
 });
+
+// 07-17 독립 검토 M1: 대상 계급이 상한 밖이면 입사일 칸도 퇴직일 칸과 같이 그리지 않는다(서버 setHireDate도 상한으로 거부).
+describe("관리자 연차 섹션 — 상한 밖 대상의 날짜 칸", () => {
+  it("datesWritable=false면 입사일 · 퇴직일 두 칸 모두 없다", () => {
+    const html = renderToStaticMarkup(createElement(LeaveSection, { ...base, hireDate: "2025-01-01", datesVisible: true, datesWritable: false }));
+    expect(html).not.toContain('id="hireDate"');
+    expect(html).not.toContain('id="resignationDate"');
+  });
+});

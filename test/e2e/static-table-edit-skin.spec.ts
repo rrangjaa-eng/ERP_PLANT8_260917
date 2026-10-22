@@ -38,12 +38,25 @@ for (const width of [1280, 768]) {
       const sides = await controls.evaluateAll((nodes) =>
         nodes.map((node) => {
           const cs = getComputedStyle(node);
-          return { label: node.getAttribute("aria-label") ?? node.tagName, top: cs.borderTopWidth, left: cs.borderLeftWidth, right: cs.borderRightWidth, bottom: cs.borderBottomWidth, bottomColor: cs.borderBottomColor };
+          return {
+            label: node.getAttribute("aria-label") ?? node.tagName,
+            inDetail: node.closest('[data-ui="static-table-detail"]') !== null,
+            top: cs.borderTopWidth,
+            left: cs.borderLeftWidth,
+            right: cs.borderRightWidth,
+            bottom: cs.borderBottomWidth,
+            bottomColor: cs.borderBottomColor,
+          };
         }),
       );
-      expect(sides.length).toBeGreaterThan(0);
-      for (const side of sides) {
+      // 07-08 C3: detail 줄(증빙 종류 세금 규칙)은 표 안 셀이 아니라 폼이다 — 밑줄 스킨 대신 ui/input · ui/select 테두리를 그대로 둔다.
+      const cellSides = sides.filter((side) => !side.inDetail);
+      expect(cellSides.length).toBeGreaterThan(0);
+      for (const side of cellSides) {
         expect(side, `${side.label} 테두리`).toMatchObject({ top: "0px", left: "0px", right: "0px", bottom: "1px", bottomColor: accent });
+      }
+      for (const side of sides.filter((entry) => entry.inDetail)) {
+        expect([side.top, side.left, side.right], `${side.label} 폼 테두리`).not.toContain("0px");
       }
       const header = await page.locator("main table thead th").first().evaluate((th) => ({ bg: getComputedStyle(th).backgroundColor, color: getComputedStyle(th).color }));
       expect(header.bg, "머리글 면").toBe(await resolved(page, "backgroundColor", "--surface-selected"));

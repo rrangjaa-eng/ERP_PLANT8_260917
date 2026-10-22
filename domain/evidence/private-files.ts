@@ -29,7 +29,7 @@ export async function privateEvidenceTypeOf(viewer: Viewer, evidenceType: string
 }
 
 export type FileVisibility = {
-  /** 파일 행마다 — 05 파일은 `uploadedBy`와 파일 칸 `privateToOwner`, 붙은 기록은 uploadedBy null(올린 사람 갈래 없음 — PA-G15-LINKED) · 칸 없음(false로 본다). */
+  /** 파일 행마다 — 05 파일은 `uploadedBy`와 파일 칸 `privateToOwner`, 붙은 기록은 uploadedBy null(올린 사람 갈래 없음 — PA-G15-LINKED). 칸은 필수(cso 대체 L-1). */
   visible(file: { uploadedBy: string | null; privateToOwner: boolean }): boolean;
   /** 숨길 수 있는 종류면 그 이름(잠김 줄 글자), 아니면 null. */
   privateTypeName: string | null;

@@ -313,19 +313,19 @@ const SEED_ROLE_PERMISSIONS_BEFORE_0705 = [
 const SEED_ROLE_VISIBLE_ITEMS_BEFORE_0705: Record<string, { visible: string[]; hidden: string[] }> = {
   "role-ceo": {
     visible: ["approval.value", "card_usage.amount", "card_usage.value", "cert_event.value", "code_item.label", "code_item.value", "corp_card.value", "evidence.amount", "evidence.value", "expense.amount", "expense.value", "leave.value", "org_unit.value", "person.value", "project.value", "purchase_request.amount", "purchase_request.value", "quote.amount", "revenue.issued_amount", "revenue.paid_amount", "role.value", "team.value", "team_assignment.value", "vendor.value"],
-    hidden: ["action_log.detail", "archive.value", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "pnl.amount", "reserve.amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
+    hidden: ["action_log.detail", "archive.value", "budget.amount", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "notification_rule.value", "pnl.amount", "reserve.amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
   },
   "role-division-head": {
     visible: ["approval.value", "card_usage.amount", "card_usage.value", "cert_event.value", "code_item.label", "code_item.value", "corp_card.value", "evidence.amount", "evidence.value", "expense.amount", "expense.value", "leave.value", "org_unit.value", "person.value", "project.value", "purchase_request.amount", "purchase_request.value", "quote.amount", "role.value", "team.value", "team_assignment.value", "vendor.value"],
-    hidden: ["action_log.detail", "archive.value", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "pnl.amount", "reserve.amount", "revenue.issued_amount", "revenue.paid_amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
+    hidden: ["action_log.detail", "archive.value", "budget.amount", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "notification_rule.value", "pnl.amount", "reserve.amount", "revenue.issued_amount", "revenue.paid_amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
   },
   "role-pm": {
     visible: ["approval.value", "card_usage.amount", "card_usage.value", "cert_event.value", "code_item.label", "code_item.value", "corp_card.value", "evidence.amount", "evidence.value", "expense.amount", "expense.value", "leave.value", "org_unit.value", "person.value", "project.value", "purchase_request.amount", "purchase_request.value", "quote.amount", "revenue.issued_amount", "role.value", "team.value", "team_assignment.value", "vendor.value"],
-    hidden: ["action_log.detail", "archive.value", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "pnl.amount", "reserve.amount", "revenue.paid_amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
+    hidden: ["action_log.detail", "archive.value", "budget.amount", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "notification_rule.value", "pnl.amount", "reserve.amount", "revenue.paid_amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
   },
   "role-team-lead": {
     visible: ["approval.value", "card_usage.amount", "card_usage.value", "cert_event.value", "code_item.label", "code_item.value", "corp_card.value", "evidence.amount", "evidence.value", "expense.amount", "expense.value", "leave.value", "org_unit.value", "person.value", "project.value", "purchase_request.amount", "purchase_request.value", "quote.amount", "role.value", "team.value", "team_assignment.value", "vendor.value"],
-    hidden: ["action_log.detail", "archive.value", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "pnl.amount", "reserve.amount", "revenue.issued_amount", "revenue.paid_amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
+    hidden: ["action_log.detail", "archive.value", "budget.amount", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "notification_rule.value", "pnl.amount", "reserve.amount", "revenue.issued_amount", "revenue.paid_amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
   },
 };
 
@@ -350,7 +350,7 @@ describe("시드 계급 기본값 표 리팩터 전후 행 집합(07-05 D-722)",
 
     // 재시드는 행을 바꾸지 않고, 반환 카운트는 리팩터 전 값과 같다(시스템 관리자 루프 + 시드 계급 표).
     const result = await seedMasterData(SYSTEM_VIEWER);
-    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 124, visibility: 180 });
+    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 127, visibility: 190 });
   });
 });
 
@@ -362,5 +362,74 @@ describe("대표 행동 로그 보기 시드 보류(07-05 D-722 ① · ⑧ 끔)"
       expect(await findPermission(SYSTEM_VIEWER, roleId, "admin.action-log", "view")).toBeNull();
     }
     expect((await findVisibility(SYSTEM_VIEWER, CEO_ROLE_ID, "action_log.detail"))?.visible).toBe(false);
+  });
+});
+
+// 07-15(D-722 · 07-05 「07-15 입력」 ⑤ · D-739 · PC-08): 07 새 메뉴 키 셋 · 정보 항목 둘. 시드 계급 중 시스템 관리자만 MENUS · INFO_ITEMS 루프로 켠다.
+describe("07 새 권한 키 · 정보 항목 시드(07-15)", () => {
+  const SEED_ROLES_4 = [CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID];
+
+  it("빈 DB 첫 시드 뒤 projects.budget 보기는 시스템 관리자만 참이고 시드 계급 4종은 거짓", async () => {
+    expect(MENUS.find((menu) => menu.key === "projects.budget")?.label).toBe("예산 현황");
+    expect(await can({ id: "viewer-admin", roleId: SYSADMIN_ROLE_ID }, "projects.budget", "view")).toBe(true);
+    for (const roleId of SEED_ROLES_4) {
+      expect(await can({ id: `viewer-${roleId}`, roleId }, "projects.budget", "view"), roleId).toBe(false);
+    }
+  });
+
+  it("운영에서 켠 시드 계급의 projects.budget 보기 · 끈 시스템 관리자 밖 값은 재시드가 바꾸지 않는다(insert-if-absent)", async () => {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: CEO_ROLE_ID, menu: "projects.budget", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, menu: "vendors.account", action: "write", allowed: false });
+
+    await seedMasterData(SYSTEM_VIEWER);
+
+    expect((await findPermission(SYSTEM_VIEWER, CEO_ROLE_ID, "projects.budget", "view"))?.allowed).toBe(true);
+    expect((await findPermission(SYSTEM_VIEWER, TEAM_LEAD_ROLE_ID, "vendors.account", "write"))?.allowed).toBe(false);
+  });
+
+  it("vendors.account는 admin. 접두가 아니고 시스템 관리자만 쓰기가 켜진다(AQ-16 · 07-05 표)", async () => {
+    const keys = MENUS.map((menu) => menu.key);
+    expect(keys).toContain("vendors.account");
+    expect(keys.filter((key) => key.startsWith("admin.") && key.includes("account"))).toEqual([]);
+    expect(await can({ id: "viewer-admin", roleId: SYSADMIN_ROLE_ID }, "vendors.account", "write")).toBe(true);
+    for (const roleId of SEED_ROLES_4) {
+      expect(await can({ id: `viewer-${roleId}`, roleId }, "vendors.account", "write"), roleId).toBe(false);
+    }
+  });
+
+  it("admin.notification-rules는 MENUS에 있지만 빈 DB 시드 뒤 어느 계급에도 켜진 행이 없다(PC-08 — 07-19가 시드 예외를 지운다)", async () => {
+    expect(MENUS.find((menu) => menu.key === "admin.notification-rules")?.label).toBe("알림 규칙");
+    const rows = (await db.select().from(permissionMatrix)).filter((row) => row.menu === "admin.notification-rules" && row.allowed);
+    expect(rows).toEqual([]);
+  });
+
+  it("시스템 관리자 행: vendors.account는 write 한 줄 · admin.vendors는 view · write 두 줄만(정의 밖 칸 행 없음 — K24 · D-739)", async () => {
+    const rows = await listPermissions(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID });
+    const actionsOf = (menu: string) => rows.filter((row) => row.menu === menu).map((row) => row.action).sort();
+    expect(actionsOf("vendors.account")).toEqual(["write"]);
+    expect(actionsOf("admin.vendors")).toEqual(["view", "write"]);
+  });
+
+  it("이미 있는 admin.vendors 승인 행은 재시드가 지우지 않는다", async () => {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: "admin.vendors", action: "approve", allowed: true });
+
+    await seedMasterData(SYSTEM_VIEWER);
+
+    expect((await findPermission(SYSTEM_VIEWER, SYSADMIN_ROLE_ID, "admin.vendors", "approve"))?.allowed).toBe(true);
+  });
+
+  it("정보 항목 notification_rule.value · budget.amount가 staffDefault 거짓으로 있고 시스템 관리자만 보임", async () => {
+    expect(INFO_ITEMS.find((item) => item.key === "notification_rule.value")).toEqual({
+      key: "notification_rule.value",
+      label: "알림 규칙 정보",
+      staffDefault: false,
+    });
+    expect(INFO_ITEMS.find((item) => item.key === "budget.amount")).toEqual({ key: "budget.amount", label: "예산", staffDefault: false });
+    for (const item of ["notification_rule.value", "budget.amount"]) {
+      expect(await visible(SYSADMIN_ROLE_ID, item), item).toBe(true);
+      for (const roleId of SEED_ROLES_4) {
+        expect((await findVisibility(SYSTEM_VIEWER, roleId, item))?.visible, `${roleId} ${item}`).toBe(false);
+      }
+    }
   });
 });

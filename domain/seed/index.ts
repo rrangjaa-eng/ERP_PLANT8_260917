@@ -1,6 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { SEED_ROLES, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
-import { MENUS, PERMISSION_ACTIONS } from "@/domain/permissions/menus";
+import { MENUS, menuActions } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT, SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
 import { seedRole } from "@/repositories/roles";
@@ -200,7 +200,9 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   for (const menu of MENUS) {
     // 04.5-09: 화면 항목 메뉴는 아래에서 insert-if-absent로 준다 — 관리자가 권한표에서 끈 값을 재시드가 되살리지 않는다.
     if (menu.key === "admin.field-definitions") continue;
-    for (const action of PERMISSION_ACTIONS) {
+    // 07-15(PC-08): 알림 규칙 화면이 07-19에 들어오기 전에 켜면 관리 인덱스 링크가 404로 간다 — 07-19가 화면과 같은 PR에서 이 줄을 지운다.
+    if (menu.key === "admin.notification-rules") continue;
+    for (const action of menuActions(menu)) {
       // certs.submissions는 확인증 개인정보 열람 메뉴라 다른 새 메뉴처럼 시드가 자동으로 켜지 않는다 —
       // 소유자가 시스템 관리자 계급에서 끄면 배포가 되살리지 않는다(E3-13).
       if (menu.key === "certs.submissions") {

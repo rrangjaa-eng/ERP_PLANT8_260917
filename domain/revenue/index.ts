@@ -18,10 +18,14 @@ import { rememberFxRate } from "@/domain/money/currency";
 import { rememberFxAfterCommit, SaveRejectedError, type CellFormatError, type FxToRemember } from "@/domain/quotes/lines";
 import { denyWrite } from "@/domain/rules/deny-write";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
-import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
-import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT } from "@/domain/settings/keys";
+import { getSettingValue as defaultGetSettingValue, type SettingDef } from "@/domain/settings/registry";
+import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT, PROJECT_COLLECTION_DUE_DAYS } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
-import { kstDateOf } from "@/lib/kst-date";
+import { kstDateOf, kstToday } from "@/lib/kst-date";
+import type { HolidayLookup } from "@/domain/holidays/business-day";
+import { loadHolidayLookup as defaultLoadHolidayLookup } from "@/domain/holidays/calendar";
+import { LUNAR_TABLE_FIRST_YEAR, LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
+import { collectionStatus, type CollectionIssue, type CollectionStatus } from "@/domain/revenue/collection";
 import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR, EMPTY_ERROR as DATE_EMPTY_ERROR } from "@/domain/projects/period";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { projectRowScope } from "@/domain/projects/visibility";
@@ -31,6 +35,7 @@ import {
   insertRevenueEntry as repoInsertRevenueEntry,
   findRevenueEntryById as repoFindRevenueEntryById,
   updateRevenueEntryIfVersionMatches as repoUpdateRevenueEntryIfVersionMatches,
+  listCollectionRows as repoListCollectionRows,
   type RevenueEntryRow,
 } from "@/repositories/revenue-entries";
 import { findLatestQuoteRevision as repoFindLatestQuoteRevision } from "@/repositories/quote-revisions";
@@ -134,6 +139,8 @@ type RevenueProjectable = {
   issuedTotalKrw: number;
   paidGrossTotalKrw: number;
   balanceKrw: number;
+  /** 07-22(N22 · SC-20) — 수금 지연(collectionStatus). 잔액과 같은 입금 항목으로 게이트한다. */
+  collectionOverdue: boolean;
 };
 
 export type RevenueDto = Partial<RevenueProjectable>;
@@ -146,6 +153,7 @@ export const REVENUE_DTO_SPEC: DtoSpec<RevenueProjectable, RevenueDto> = {
     { key: "issuedTotalKrw", from: "issuedTotalKrw", infoItem: "revenue.issued_amount" },
     { key: "paidGrossTotalKrw", from: "paidGrossTotalKrw", infoItem: "revenue.paid_amount" },
     { key: "balanceKrw", from: "balanceKrw", infoItem: "revenue.paid_amount" },
+    { key: "collectionOverdue", from: "collectionOverdue", infoItem: "revenue.paid_amount" },
   ],
 };
 
@@ -244,6 +252,8 @@ export async function listRevenue(viewer: Viewer, projectId: string, deps?: Part
   const paidGrossTotalKrw = paidEntries.reduce((sum, entry) => sum + (entry.computedGrossKrw ?? 0), 0);
   const balanceKrw = paidGrossTotalKrw - issuedTotalKrw;
 
+  const collection = (await collectionOverdueByProject(viewer, [projectId], {}, deps)).get(projectId);
+
   const projectable: RevenueProjectable = {
     contract,
     issuedEntries,
@@ -251,9 +261,86 @@ export async function listRevenue(viewer: Viewer, projectId: string, deps?: Part
     issuedTotalKrw,
     paidGrossTotalKrw,
     balanceKrw,
+    collectionOverdue: collection?.overdue ?? false,
   };
 
   return project(viewer, projectable, REVENUE_DTO_SPEC);
+}
+
+export type CollectionOverdueDeps = Partial<RevenueDeps> & {
+  loadHolidayLookup?: (years: number[]) => Promise<HolidayLookup>;
+  listCollectionRows?: typeof repoListCollectionRows;
+};
+
+const NO_HOLIDAY_DATES: ReadonlySet<string> = new Set();
+
+// 07-22(D-746 · D-735 · C-P2-11) — 수금 지연 읽기 입구. 판정은 collection.ts 한 벌이고, 여기는 재료를 모은다: 설정 `수금 기한 일수` 한 번 ·
+// 저장소 한 질의 · 공휴일 한 번(프로젝트 수와 무관). 입금은 상세 잔액 줄과 같은 공급가액(computeGrossFromPayment — paidGrossTotalKrw와 같은 식)이고,
+// 같은 날짜의 세율 · 절사 단위 읽기는 한 호출 안에서 한 번이다. 공휴일은 덜 받은 줄이 될 수 있는 해 [최소 발행 해, 최대 발행 해 + 1]을 음력 표
+// 범위로 잘라 읽고, 표 밖 해는 주말만 뺀다(domain/payments/pay-schedule-load.ts · domain/leave/guard.ts D-6306 꼴 — 목록이 깨지지 않게).
+// 프로젝트 id는 호출자가 범위를 판정한 뒤의 것이다.
+export async function collectionOverdueByProject(
+  viewer: Viewer,
+  projectIds: readonly string[],
+  opts: { today?: string } = {},
+  deps?: CollectionOverdueDeps,
+): Promise<Map<string, CollectionStatus>> {
+  const result = new Map<string, CollectionStatus>();
+  if (projectIds.length === 0) return result;
+  const getValue = deps?.getSettingValue ?? defaultGetSettingValue;
+  const [dueDays, rows] = await Promise.all([
+    getValue(PROJECT_COLLECTION_DUE_DAYS),
+    (deps?.listCollectionRows ?? repoListCollectionRows)(viewer, projectIds),
+  ]);
+
+  // 같은 날짜의 세율 · 절사 단위 읽기를 한 번으로(T-07-22-05).
+  const memo = new Map<string, Promise<unknown>>();
+  function memoGetValue<T>(def: SettingDef<T>, readOpts?: { asOf?: Date }): Promise<T> {
+    const key = `${def.key}@${readOpts?.asOf?.toISOString() ?? ""}`;
+    let cached = memo.get(key);
+    if (!cached) {
+      cached = getValue(def, readOpts);
+      memo.set(key, cached);
+    }
+    return cached as Promise<T>;
+  }
+
+  const issuesByProject = new Map<string, CollectionIssue[]>();
+  const paidByProject = new Map<string, number>();
+  const issueYears: number[] = [];
+  for (const row of rows) {
+    if (row.kind === "issue") {
+      const list = issuesByProject.get(row.projectId) ?? [];
+      list.push({ entryDate: row.entryDate, amountKrw: row.amountAmountKrw, createdAt: row.createdAt, id: row.id });
+      issuesByProject.set(row.projectId, list);
+      issueYears.push(Number(row.entryDate.slice(0, 4)));
+    }
+  }
+  for (const row of rows) {
+    if (row.kind !== "payment") continue;
+    const gross = await computeGrossFromPayment(row.amountAmountKrw, new Date(row.entryDate), { getSettingValue: memoGetValue });
+    paidByProject.set(row.projectId, (paidByProject.get(row.projectId) ?? 0) + gross.grossKrw);
+  }
+
+  let lookup: HolidayLookup = () => NO_HOLIDAY_DATES;
+  if (issueYears.length > 0) {
+    const inTable: number[] = [];
+    const to = Math.min(Math.max(...issueYears) + 1, LUNAR_TABLE_LAST_YEAR);
+    for (let year = Math.max(Math.min(...issueYears), LUNAR_TABLE_FIRST_YEAR); year <= to; year += 1) inTable.push(year);
+    if (inTable.length > 0) {
+      const loaded = await (deps?.loadHolidayLookup ?? defaultLoadHolidayLookup)(inTable);
+      lookup = (year) => (year < LUNAR_TABLE_FIRST_YEAR || year > LUNAR_TABLE_LAST_YEAR ? NO_HOLIDAY_DATES : loaded(year));
+    }
+  }
+
+  const today = opts.today ?? kstToday(new Date());
+  for (const projectId of projectIds) {
+    result.set(
+      projectId,
+      collectionStatus({ issues: issuesByProject.get(projectId) ?? [], paidSupplyKrw: paidByProject.get(projectId) ?? 0, dueDays, today, lookup }),
+    );
+  }
+  return result;
 }
 
 export type RevenueEntryWriteRow = {

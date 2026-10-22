@@ -835,3 +835,39 @@ test.describe("매출 입력을 연 채 1024 미만 전환 — 값 유지 (G-04-
     await expect(issuedTable.getByLabel("발행액")).toHaveValue(formatted);
   });
 });
+
+// 07-22(N22 · SC-20) — 상세 매출 면 잔액 줄 옆 `수금 지연`(warning · text). 입금 항목을 볼 때만 HTML에 있다.
+test.describe("매출 면 수금 지연 (07-22)", () => {
+  test("발행 70일 전 · 입금 0 → 잔액 줄 옆 수금 지연 / 입금을 다 채움 → 없음", async ({ page }) => {
+    const today = kstToday(new Date());
+    await grantFinanceRole();
+    const late = await seedRevenueProject({ pmRoleId: "role-ceo", issued: [{ entryDate: addDays(today, -70), amount: krw(1_000_000) }] });
+    await login(page, late.email, late.password);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(late.projectUrl);
+    const footer = revenueTable(page, "입금 줄").locator("tfoot");
+    await expect(footer.getByText("미수 1,000,000", { exact: true })).toBeVisible();
+    const tag = footer.getByText("수금 지연", { exact: true });
+    await expect(tag).toBeVisible();
+    expect(await tag.evaluate((node) => getComputedStyle(node).color)).toBe(await cssColor(page, "--status-warning"));
+
+    const paid = await seedRevenueProject({
+      pmRoleId: "role-ceo",
+      issued: [{ entryDate: addDays(today, -70), amount: krw(1_000_000) }],
+      paid: [{ entryDate: addDays(today, -65), amount: krw(1_100_000) }],
+    });
+    await login(page, paid.email, paid.password);
+    await page.goto(paid.projectUrl);
+    await expect(revenueTable(page, "입금 줄")).toBeVisible();
+    await expect(revenueSection(page).getByText("수금 지연", { exact: true })).toHaveCount(0);
+  });
+
+  test("입금을 못 보는 담당 PM에게는 수금 지연이 HTML에 없다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const late = await seedRevenueProject({ issued: [{ entryDate: addDays(today, -70), amount: krw(1_000_000) }] });
+    await login(page, late.email, late.password);
+    await page.goto(late.projectUrl);
+    await expect(revenueSection(page)).toBeVisible();
+    expect(await page.content()).not.toContain("수금 지연");
+  });
+});

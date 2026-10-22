@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -18,6 +18,26 @@ export async function listRevenueEntriesByProject(viewer: Viewer, projectId: str
     .from(revenueEntries)
     .where(and(eq(revenueEntries.projectId, projectId)))
     .orderBy(asc(revenueEntries.kind), asc(revenueEntries.entryDate));
+}
+
+export type CollectionRow = Pick<RevenueEntryRow, "id" | "projectId" | "kind" | "entryDate" | "amountAmountKrw" | "createdAt">;
+
+// 07-22(D-746) — 수금 지연 판정 재료. 주어진 프로젝트들의 보관 안 된 발행 · 입금 줄을 한 질의로(N+1 없음). 프로젝트 id는 호출자가 범위를
+// 판정한 뒤의 것(목록 쪽 · 상세 · 알림 종류의 SYSTEM_VIEWER).
+export async function listCollectionRows(viewer: Viewer, projectIds: readonly string[], tx: DbOrTx = db): Promise<CollectionRow[]> {
+  void viewer;
+  if (projectIds.length === 0) return [];
+  return tx
+    .select({
+      id: revenueEntries.id,
+      projectId: revenueEntries.projectId,
+      kind: revenueEntries.kind,
+      entryDate: revenueEntries.entryDate,
+      amountAmountKrw: revenueEntries.amountAmountKrw,
+      createdAt: revenueEntries.createdAt,
+    })
+    .from(revenueEntries)
+    .where(and(inArray(revenueEntries.projectId, [...projectIds]), isNull(revenueEntries.archivedAt)));
 }
 
 export async function findRevenueEntryById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<RevenueEntryRow | null> {

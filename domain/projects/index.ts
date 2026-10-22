@@ -38,6 +38,7 @@ import { validatePreEstimateChange } from "@/domain/projects/pre-estimate";
 import { validateNewProjectPeriod } from "@/domain/projects/period";
 import { summarizeProjectProfit, type ProjectProfitSummary } from "@/domain/projects/profit-summary";
 import { rememberFxAfterCommit } from "@/domain/quotes/lines";
+import { collectionOverdueByProject } from "@/domain/revenue";
 import {
   listProjectsPage as repoListProjectsPage,
   aggregateProjects as repoAggregateProjects,
@@ -189,6 +190,8 @@ export type ProjectListItemDto = {
   profitRate?: number | null;
   /** 04-18(D-81) — 수주중이면서 종료일이 KST 오늘보다 앞(상세와 같은 isEndDatePassed). */
   endDatePassed?: boolean;
+  /** 07-22(N22 · SC-20) — 수금 지연(collectionStatus — 상세 매출 면과 같은 판정). revenue.paid_amount를 볼 때만. */
+  collectionOverdue?: boolean;
 };
 
 // 04-17(D-90) — attributionLabel: 보기 범위 밖에서 끝나는 행의 기간 칸 2행(`2027 귀속`), 범위 안이면 null.
@@ -197,7 +200,7 @@ export type ProjectListItemWithGroup = ProjectListItemDto & { groupLabel: string
 const PROFIT_INFO_ITEMS = ["quote.amount", "revenue.issued_amount"] as const;
 
 // 04-18 — 투영 원본은 리포지토리 행 + 요청당 한 번 구한 KST 오늘로 판정한 종료일 지남.
-type ProjectListSource = ProjectListRow & { endDatePassed: boolean };
+type ProjectListSource = ProjectListRow & { endDatePassed: boolean; collectionOverdue: boolean };
 
 const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListSource, ProjectListItemDto> = {
   fields: [
@@ -217,6 +220,7 @@ const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListSource, ProjectListItemDto> = {
     { key: "profitKrw", from: "netProfitKrw", infoItem: PROFIT_INFO_ITEMS },
     { key: "profitRate", from: "profitRate", infoItem: PROFIT_INFO_ITEMS },
     { key: "endDatePassed", from: "endDatePassed", infoItem: "project.value" },
+    { key: "collectionOverdue", from: "collectionOverdue", infoItem: "revenue.paid_amount" },
   ],
 };
 
@@ -433,7 +437,16 @@ export async function loadProjectList(
   )) as ProjectListTotals;
 
   const todayKst = kstToday(now());
-  const sources = rows.map((row) => ({ ...row, endDatePassed: isEndDatePassed({ status: row.status, endDate: row.endDate, todayKst }) }));
+  // 07-22(SC-20) — 수금 지연은 입금을 볼 수 있을 때만 판정한다(못 보면 읽지도 않는다 — 칸은 투영이 뺀다).
+  const collection =
+    rows.length > 0 && (await (deps?.visible ?? defaultVisible)(viewer, "revenue.paid_amount"))
+      ? await collectionOverdueByProject(viewer, rows.map((row) => row.id), { today: todayKst })
+      : null;
+  const sources = rows.map((row) => ({
+    ...row,
+    endDatePassed: isEndDatePassed({ status: row.status, endDate: row.endDate, todayKst }),
+    collectionOverdue: collection?.get(row.id)?.overdue ?? false,
+  }));
   const dtos = (await projectMany(viewer, sources, PROJECT_LIST_DTO_SPEC, projectDeps)) as ProjectListItemDto[];
   const hasFilter = isUserFiltered(params, thisYear);
   return {

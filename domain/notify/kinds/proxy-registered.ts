@@ -1,4 +1,4 @@
-// 대리 등록(N9 · D-710 · D-716) — 남이 대신 등록한 법인카드 사용을 담당 PM에게. 사건 종류라 고정 되돌아보기 창(ctx.since) 안 사건을 사건 id 키로 모두 돌려주고
+// 대리 등록(N9 · D-710 · D-716) — 남이 대신 등록한 법인카드 사용을 담당 PM에게(팀 비용 연결은 PM이 없어 카드 보유자에게 — 사용자 결정 2026-10-22). 사건 종류라 고정 되돌아보기 창(ctx.since) 안 사건을 사건 id 키로 모두 돌려주고
 // 중복은 dedup 키가 막는다(주말 · 연휴 뒤에도 한 번 나간다). 일수 칸 없음 · 사다리 없음.
 import { toKstDate } from "@/domain/holidays/business-day";
 import type { ConditionKind, NotificationCandidate } from "@/domain/notify/condition-kinds";
@@ -22,11 +22,11 @@ export const proxyRegisteredKind: ConditionKind = {
     const active = new Set((await listOrgSnapshot(SYSTEM_VIEWER, ctx.today, ctx.tx)).map((person) => person.id));
     const candidates: NotificationCandidate[] = [];
     for (const row of rows) {
-      if (!active.has(row.pmUserId)) continue;
+      if (!active.has(row.recipientId)) continue;
       candidates.push({
         entity: "card-usage",
         entityId: row.id,
-        recipientId: row.pmUserId,
+        recipientId: row.recipientId,
         round: 1,
         referenceDate: toKstDate(row.createdAt),
         message: `대리 등록 · ${row.projectName} · ${row.number ?? row.usedOn.slice(5)}`,

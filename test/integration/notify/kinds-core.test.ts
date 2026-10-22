@@ -7,6 +7,7 @@ import {
   approvalRoutes,
   approvalSteps,
   corpCardUsages,
+  corpCards,
   expenseEvidenceReviews,
   expensePayments,
   expenses,
@@ -269,6 +270,15 @@ describe("종료 후 지출결의 없음 (N4)", () => {
     }
   });
 
+  it("수주중(bidding) 프로젝트는 종료일이 지나고 지출결의가 없어도 알리지 않는다(사용자 결정 2026-10-22)", async () => {
+    const fx = await endedProject();
+    await db.update(projects).set({ status: "bidding" }).where(eq(projects.id, fx.projectId));
+    await tick([projectEndNoExpenseKind], "2026-10-08");
+    await tick([projectEndNoExpenseKind], "2026-10-14");
+    expect(await rowsOf(fx.pm)).toHaveLength(0);
+    expect(await rowsOf(fx.lead)).toHaveLength(0);
+  });
+
   it("지출결의가 하나라도 있으면 0행", async () => {
     const fx = await endedProject();
     await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
@@ -473,7 +483,7 @@ describe("대리 등록 (N9 · D-716 사건 창)", () => {
       memo: null,
     };
     const created = await createCardUsage(proxy, input, await precheckCardUsage(proxy, input));
-    return { pm, proxy, usageId: created.id };
+    return { pm, proxy, holder, cardId: card.id, usageId: created.id };
   }
 
   async function setCreatedAt(usageId: string, iso: string): Promise<void> {
@@ -500,9 +510,29 @@ describe("대리 등록 (N9 · D-716 사건 창)", () => {
     expect(await rowsOf(fx.pm)).toHaveLength(0);
   });
 
-  it("팀 비용 대리 등록은 담당 PM이 없어 아무에게도 알리지 않는다(열린 질문 1 — 현재 동작 고정)", async () => {
+  it("팀 비용 대리 등록은 담당 PM이 없어 카드 보유자에게 알린다(사용자 결정 2026-10-22)", async () => {
     const fx = await proxyFixture({ teamCost: true });
     await setCreatedAt(fx.usageId, "2026-10-16T19:00:00+09:00");
+    await tick([proxyRegisteredKind], "2026-10-19");
+    const rows = await rowsOf(fx.holder);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ entity: "card-usage", entityId: fx.usageId });
+    expect(rows[0]?.message.startsWith("대리 등록 · ")).toBe(true);
+    expect(await rowsOf(fx.proxy)).toHaveLength(0);
+  });
+
+  it("팀 비용 대리 등록을 카드 보유자가 직접 했으면 알리지 않는다(등록자 제외)", async () => {
+    const fx = await proxyFixture({ teamCost: true, pmRegisters: true });
+    await setCreatedAt(fx.usageId, "2026-10-16T19:00:00+09:00");
+    await db.update(corpCards).set({ holderUserId: fx.proxy.id }).where(eq(corpCards.id, fx.cardId));
+    await tick([proxyRegisteredKind], "2026-10-19");
+    expect(await db.select().from(notificationLog)).toHaveLength(0);
+  });
+
+  it("팀 비용 대리 등록인데 카드에 보유자가 없으면(공용 카드) 아무에게도 알리지 않는다", async () => {
+    const fx = await proxyFixture({ teamCost: true });
+    await setCreatedAt(fx.usageId, "2026-10-16T19:00:00+09:00");
+    await db.update(corpCards).set({ kind: "shared", holderUserId: null, teamId: null }).where(eq(corpCards.id, fx.cardId));
     await tick([proxyRegisteredKind], "2026-10-19");
     expect(await db.select().from(notificationLog)).toHaveLength(0);
   });

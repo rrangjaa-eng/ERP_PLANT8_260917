@@ -1,10 +1,11 @@
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import {
   approvalInstances,
   approvalRoutes,
   approvalSteps,
   corpCardUsages,
+  corpCards,
   expensePayments,
   expenses,
   leaveRequests,
@@ -154,7 +155,7 @@ export async function listCurrentRouteSteps(
   return byDocument;
 }
 
-// 종료 후 지출결의 없음(N4) — 종료일이 [from, to]인 프로젝트 중 보관 · 미수주(lost) · 완료(completed)가 아니고 지출결의(삭제 아님)가 하나도 없는 것.
+// 종료 후 지출결의 없음(N4) — 종료일이 [from, to]인 프로젝트 중 보관 · 수주중(bidding) · 미수주(lost) · 완료(completed)가 아니고 지출결의(삭제 아님)가 하나도 없는 것.
 // 날짜 창은 사다리가 끝나는 때까지만 읽는다(부르는 쪽이 계산). limit + 1행까지 읽어 넘침을 알린다.
 export type EndedProjectRow = { id: string; name: string; pmUserId: string; endDate: string };
 
@@ -171,7 +172,7 @@ export async function listProjectsEndedWithoutExpense(
     .where(
       and(
         isNull(projects.archivedAt),
-        notInArray(projects.status, ["lost", "completed"]),
+        notInArray(projects.status, ["bidding", "lost", "completed"]),
         isNotNull(projects.endDate),
         gte(projects.endDate, window.from),
         lte(projects.endDate, window.to),
@@ -213,32 +214,38 @@ export async function listPaidExpenseCandidates(
     .limit(limit + 1);
 }
 
-// 대리 등록(N9 · D-716) — since 이후 대리 등록(registered_via = proxy) 카드 사용 중 견적 줄에 묶인 것(담당 PM이 있는 것). 팀 비용 연결은 담당 PM이 없어 뺀다. 담당 PM 본인이 등록한 건은 자기 행동이라 뺀다.
-export type ProxyRegistrationRow = { id: string; number: string | null; usedOn: string; createdAt: Date; projectName: string; pmUserId: string };
+// 대리 등록(N9 · D-716 · 사용자 결정 2026-10-22) — since 이후 대리 등록(registered_via = proxy) 카드 사용. 받는 사람은 견적 줄 연결이면 담당 PM,
+// 팀 비용 연결이면 카드 보유자(corp_cards.holder_user_id). 보유자가 없는 카드(공용)는 받는 사람이 없어 뺀다. 받는 사람 본인이 등록한 건은 자기 행동이라 뺀다.
+export type ProxyRegistrationRow = { id: string; number: string | null; usedOn: string; createdAt: Date; projectName: string; recipientId: string };
 
 export async function listProxyRegistrations(viewer: Viewer, since: Date, limit: number, tx: DbOrTx = db): Promise<ProxyRegistrationRow[]> {
   void viewer;
-  return tx
+  const recipientId = sql<string | null>`case when ${corpCardUsages.linkKind} = 'quote_line' then ${projects.pmUserId} else ${corpCards.holderUserId} end`;
+  const rows = await tx
     .select({
       id: corpCardUsages.id,
       number: corpCardUsages.number,
       usedOn: corpCardUsages.usedOn,
       createdAt: corpCardUsages.createdAt,
-      projectName: projects.name,
-      pmUserId: projects.pmUserId,
+      projectName: sql<string | null>`coalesce(${projects.name}, ${teams.name})`,
+      recipientId,
     })
     .from(corpCardUsages)
-    .innerJoin(quoteLines, eq(quoteLines.id, corpCardUsages.quoteLineId))
-    .innerJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
-    .innerJoin(projects, eq(projects.id, quoteRevisions.projectId))
+    .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))
+    .leftJoin(quoteLines, eq(quoteLines.id, corpCardUsages.quoteLineId))
+    .leftJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
+    .leftJoin(projects, eq(projects.id, quoteRevisions.projectId))
+    .leftJoin(teams, eq(teams.id, corpCardUsages.teamId))
     .where(
       and(
         eq(corpCardUsages.registeredVia, "proxy"),
-        ne(corpCardUsages.registeredBy, projects.pmUserId),
+        sql`${recipientId} is not null`,
+        sql`${corpCardUsages.registeredBy} <> ${recipientId}`,
         isNull(corpCardUsages.archivedAt),
         sql`${corpCardUsages.createdAt} >= ${since.toISOString()}::timestamp`,
       ),
     )
     .orderBy(asc(corpCardUsages.createdAt), asc(corpCardUsages.id))
     .limit(limit + 1);
+  return rows.flatMap((row) => (row.recipientId === null || row.projectName === null ? [] : [{ ...row, recipientId: row.recipientId, projectName: row.projectName }]));
 }

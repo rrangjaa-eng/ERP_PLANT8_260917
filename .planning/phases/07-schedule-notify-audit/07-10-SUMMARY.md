@@ -65,10 +65,10 @@ files_modified:
 - `docs/OPERATIONS.md`에 평가 실패일 재실행 절차(R9).
 
 ## 열린 질문 · 결정(추천안으로 진행)
-1. **대리 등록 팀 비용 연결**: 담당 PM이 없어 알림 대상에서 뺐다(견적 줄 연결만). 추천 유지. 필요하면 팀 비용 대리 등록은 경영관리/팀장 수신으로 별도 결정.
+1. **대리 등록 팀 비용 연결**: **[사용자 결정 2026-10-22 20:52 KST]** 담당 PM이 없는 팀 비용 대리 등록은 카드 보유자(`corp_cards.holder_user_id`)에게 알린다. 보유자가 등록자 본인이면 보내지 않고(행동자 제외 규칙과 동일), 보유자 없는 카드(공용)는 받는 사람이 없어 보내지 않는다. 견적 줄 연결은 그대로 담당 PM. (이전 「수신자 없음」 고정 시험은 새 결정 시험으로 교체)
 2. **선결제 독촉의 「기준 지급일」**: 살아 있는 지급 기록의 `pay_date` + 일수. 지급 취소 뒤 재지급하면 새 지급일 기준.
 3. **N7에서 선결제 문서 제외**(N8이 맡음) · **증빙 면제(`waived`) 제외** · 증빙 무효 처리로 0이 된 건은 재촉 대상(증빙 0).
-4. **종료 후 지출결의 없음에서 수주중(bidding) 프로젝트**는 플랜 문구대로 제외하지 않았다(보관 · 미수주 · 완료만 제외). 수주중에 종료일이 지난 건을 재촉할지는 결정 필요.
+4. **종료 후 지출결의 없음에서 수주중(bidding) 프로젝트**: **[사용자 결정 2026-10-22 20:51 KST]** 수주중(`projects.status = 'bidding'`) 프로젝트는 종료일이 지나고 지출결의가 없어도 알리지 않는다(보관 · 수주중 · 미수주 · 완료 제외).
 5. 첫 배포일 대리 등록 건수: 운영 데이터라 측정 불가 — 시험으로만 고정(지난 14일 건이 건마다 한 행, 하루 한 통 묶음 안).
 
 ## Deviations from Plan
@@ -98,3 +98,7 @@ files_modified:
 
 ## Self-Check: PASSED
 - 커밋 a0191d7f · efab1237 존재, 새 파일 전부 존재, 위 시험 결과는 이 세션에서 실행한 출력.
+
+## 2026-10-22 사용자 결정 반영 (fix2)
+- 위 결정 1 · 4 반영. 시험 먼저(RED 2건 확인) → 구현 → GREEN. 호출한 스킬: `superpowers:test-driven-development` · `superpowers:verification-before-completion`.
+- 변경: `repositories/notify-sources.ts`(`listProjectsEndedWithoutExpense`에 `bidding` 제외, `listProxyRegistrations`가 `recipientId` 반환 — 견적 줄=PM · 팀 비용=카드 보유자), `domain/notify/kinds/proxy-registered.ts`, `test/integration/notify/kinds-core.test.ts`.

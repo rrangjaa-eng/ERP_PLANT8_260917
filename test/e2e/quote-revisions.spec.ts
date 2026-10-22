@@ -465,10 +465,15 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
 
     // 다음 한 수 3차 「새로 고침」 — 화면을 다시 받고 패널을 닫는다(SYSTEM.md §7-17 ERROR, 2026-10-01).
     // 새로 받은 기준값(합계 · 내용 토큰)이 도착한 뒤에 다시 제출한다 — 화면 다시 받기 응답을 끝까지 기다린다.
-    const refreshed = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
+    const refreshed = page.waitForResponse((response) => {
+      const headers = response.request().headers();
+      return response.request().method() === "GET" && headers["rsc"] === "1" && headers["next-router-prefetch"] === undefined;
+    });
     await sheet.getByRole("button", { name: "새로 고침" }).click();
-    await (await refreshed).finished();
+    await refreshed;
     await expect(sheet).toBeHidden();
+    // 응답이 화면에 반영되는 두 프레임을 기다린다.
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     sheet = await openApprovalSheet(page);
     await chooseApprovalBasis(sheet, "verbal");
     await submitApproval(page, sheet.getByRole("button", { name: /^승인 표시/ }));

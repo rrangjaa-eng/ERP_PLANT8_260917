@@ -141,7 +141,8 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
           try {
             const params = rule.days === undefined ? {} : { days: rule.days };
             const since = eventWindowSince(today, rule);
-            const produced = await kind.evaluate({ today, params, since, tx });
+            // 종류마다 SAVEPOINT — SQL 오류(문장 시한 포함)가 잠금 tx 전체를 중단시키지 않고 그 종류만 되돌린다.
+            const produced = await tx.transaction((kindTx) => kind.evaluate({ today, params, since, tx: kindTx }));
             const ms = performance.now() - startedMs;
             spentMs += ms;
             log.info("notify.condition_ms", { kind: kind.kind, ms: Math.round(ms), count: produced.length });

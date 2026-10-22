@@ -231,3 +231,14 @@ export async function setVendorArchived(viewer: Viewer, id: string, value: boole
         .returning({ id: vendors.id });
   return rows.length > 0;
 }
+
+// 07-06(J5): 지급 일정 계산의 거래처 지급 기한 — 협력사 갈래(supplier · both) · 칸 있는 것만(id → 일수). 보관 · 숨김도 읽는다(이미 고른 거래처).
+export async function listPaymentTermDays(viewer: Viewer, vendorIds: readonly string[]): Promise<Map<string, number>> {
+  void viewer;
+  if (vendorIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: vendors.id, days: vendors.paymentTermDays })
+    .from(vendors)
+    .where(and(inArray(vendors.id, [...vendorIds]), inArray(vendors.kind, ["supplier", "both"]), isNotNull(vendors.paymentTermDays)));
+  return new Map(rows.flatMap((row) => (row.days === null ? [] : [[row.id, row.days] as const])));
+}

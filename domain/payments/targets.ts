@@ -42,8 +42,8 @@ import { addDays, kstDayStart } from "@/lib/kst-date";
 import { findTransferFileTimes } from "@/repositories/action-log";
 import { canExportBankTransferFile } from "@/domain/payments/transfer-gate";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
-import { loadPaySchedules } from "@/domain/payments/pay-schedule-load";
-import { payWeekGroupLabel, payWeekIndex, type PaySchedule } from "@/domain/payments/pay-schedule";
+import { loadPayCalendar, loadPaySchedules } from "@/domain/payments/pay-schedule-load";
+import { payWeekGroupLabel, payWeekIndex, thisWeekPayDate, type PaySchedule } from "@/domain/payments/pay-schedule";
 
 // 06-15(EXP-09 · UI-SPEC S1): 지급 대상 목록 — 결재 통과 · 지급 전 · 종결 아님 지출결의. 행마다 고를 수 있는지(selectable)와 이유는
 // 06-04 resolveExpenseActionRow(P4 = 고를 수 있음)가 정하고, 그 입력은 문서 화면(getPaymentView)과 같은 게이트 둘(payment.evidence-required ·
@@ -235,6 +235,8 @@ export type PaymentTargetList = {
   // S2 결과 줄 ② `선결제 N건 · 증빙 기한 지급일부터 N일`의 날수(설정).
   prepaidDueDays: number;
   approvingByWeek: ApprovingPaymentWeek[];
+  // 07-06(J9 · K6): 「이번 주로」가 옮길 이번 주 지급일 — 그 날이 지났으면(오늘 > 이번 주 지급일) null(07-16이 `이번 주로`를 숨긴다).
+  thisWeekMove: { payDate: string } | null;
 };
 
 function titleOf(
@@ -320,7 +322,14 @@ export async function listPaymentTargets(
     page: { page, pageCount, total: all.length, pageSize },
     prepaidDueDays: all.some((target) => target.row.prepaid) ? await loadPrepaidDueDays() : 0,
     approvingByWeek: await listApprovingByWeek(viewer, input, { shared, today, now: deps?.now ?? new Date(), amountVisible }),
+    thisWeekMove: await thisWeekMoveOf(today),
   };
+}
+
+async function thisWeekMoveOf(today: string): Promise<{ payDate: string } | null> {
+  const { cfg, lookup } = await loadPayCalendar([Number(today.slice(0, 4))]);
+  const payDate = thisWeekPayDate(today, cfg, lookup);
+  return today > payDate ? null : { payDate };
 }
 
 // 07-01(J11 데이터): 같은 팀 · 검색 조건 · 같은 보임 범위의 결재 중 지출결의를 「지금 승인되면」 일정(approvedAt null → now 기준)으로 셈해

@@ -86,6 +86,15 @@ describe("resolvePaySchedule — 기한 안 지급 요일 없음 (D-741 · D-749
   it("기준일 당일이 지급 요일이어도 창 밖이다 — 기한 6일 · 기준 금요일은 그 금요일이 아니라 no-slot", () => {
     expect(resolve({ baseDate: "2026-07-03", termDays: 6 }).autoPayDate).not.toBe("2026-07-03");
   });
+
+  // 07-06 경계 고정(firstCandidate의 `anchor > baseDate` 갈래): 창 안 금요일이 공휴일이면 앞 영업일로 맞추므로, 휴일 주에는 지급일이
+  // 기준일 당일이거나 그 앞일 수 있다(no-slot이 아니라 pushReason null).
+  it("휴일 주: 기준 07-09(목) · 기한 1 → 창 안 금요일 07-10이 공휴일이면 기준일 당일, 목요일도 공휴일이면 기준일 앞 07-08", () => {
+    const early = new Date("2026-07-01T00:00:00+09:00");
+    const at = (lookup: HolidayLookup) => resolvePaySchedule({ baseDate: "2026-07-09", termDays: 1, manualDate: null, approvedAt: early, now: early, lookup, cfg: CFG });
+    expect(at(holidays(["2026-07-10"]))).toMatchObject({ autoPayDate: "2026-07-09", pushReason: null });
+    expect(at(holidays(["2026-07-09", "2026-07-10"]))).toMatchObject({ autoPayDate: "2026-07-08", pushReason: null });
+  });
 });
 
 describe("resolvePaySchedule — 해 경계 · 수동 값", () => {

@@ -67,8 +67,8 @@ import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateDocumentNumber, allocateExpenseNumber, loadDocumentNumberFormat, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { loadPaySchedules, loadPayScheduleConfig, type PayScheduleSource } from "@/domain/payments/pay-schedule-load";
-import { payOffWeekdayText, payRuleLine, type PaySchedule, type PayScheduleConfig } from "@/domain/payments/pay-schedule";
+import { loadPaySchedules, loadPayScheduleConfig, type LoadedPaySchedule, type PayScheduleSource } from "@/domain/payments/pay-schedule-load";
+import { payOffWeekdayText, payRuleLine, type PayScheduleConfig } from "@/domain/payments/pay-schedule";
 import { computeExpenseTax, snapshotSupplyDiffers, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { BANK_TRANSFER_PAYMENT_METHOD, documentPayee, hasUsableAccount, PAYEE_ACCOUNT_MISSING_FIXABLE, type ExpensePayee } from "@/domain/expenses/payee";
@@ -318,14 +318,14 @@ function supplyMoney(row: Pick<ExpenseRow, "supplyCurrency" | "supplyForeignAmou
 }
 
 // 07 D-715 · D-704: 지출결의 DTO의 지급 예정일 = 유효 예정일(07-01 로더 — 행 묶음 한 번). 자동값은 읽을 때 셈하고 저장하지 않는다.
-type ExpenseSchedules = { schedules: Map<string, PaySchedule>; cfg: PayScheduleConfig };
+type ExpenseSchedules = { schedules: Map<string, LoadedPaySchedule>; cfg: PayScheduleConfig };
 
 export async function loadExpenseSchedules(viewer: Viewer, rows: readonly PayScheduleSource[], now: Date = new Date()): Promise<ExpenseSchedules> {
   const [schedules, cfg] = await Promise.all([loadPaySchedules(viewer, rows, { today: seoulToday(now), now }), loadPayScheduleConfig()]);
   return { schedules, cfg };
 }
 
-export function scheduleOf(loaded: ExpenseSchedules, id: string): PaySchedule {
+export function scheduleOf(loaded: ExpenseSchedules, id: string): LoadedPaySchedule {
   const schedule = loaded.schedules.get(id);
   if (!schedule) throw new Error(`지급 일정 없음: ${id}`);
   return schedule;
@@ -350,7 +350,7 @@ function paymentFieldsOf(loaded: ExpenseSchedules, id: string): PaymentFields {
     scheduledPaymentManual: schedule.manual,
     autoPaymentDate: schedule.autoPayDate,
     paymentPushReason: schedule.pushReason,
-    paymentRuleLine: payRuleLine(schedule, loaded.cfg.termDays, loaded.cfg),
+    paymentRuleLine: payRuleLine(schedule, schedule.termDays, loaded.cfg),
     paymentOffWeekday: schedule.manual ? payOffWeekdayText(schedule.payDate, loaded.cfg) : null,
   };
 }

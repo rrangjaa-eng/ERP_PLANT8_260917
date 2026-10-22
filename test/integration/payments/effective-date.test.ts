@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { approvalInstances, approvalRoutes, approvalSteps, expenses } from "@/db/schema";
+import { approvalInstances, approvalRoutes, approvalSteps, expensePayments, expenses, vendors } from "@/db/schema";
 import { approveDocument } from "@/domain/approvals";
 import { createExpenseFromLines, getExpense, previewExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { computeExpenseTax } from "@/domain/expenses/tax";
 import { loadKindDetails } from "@/domain/approvals";
+import { completeExpensePayment, previewPayable } from "@/domain/payments";
+import { confirmEvidence } from "@/domain/evidence-reviews";
 import { listPaymentTargets } from "@/domain/payments/targets";
 import { listPhase6NextTurnItems } from "@/domain/next-turn/phase6-items";
 import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
@@ -172,10 +174,42 @@ describe("07-06 Task 2 — 세금 기준일 · 홈 지급 묶음 = 유효 예정
 
       const targets = await listPaymentTargets(payer, {}, { pageSize: 10_000 });
       expect(targets.groups.flatMap((group) => group.rows).find((row) => row.id === expenseId)).toMatchObject({ scheduledPaymentDate: effective, payableKrw: 14_508_000 });
+
+      // Task 3(P1 짝): 지급 처리 미리보기 · 잠금 뒤 판정도 유효 예정일 세율 — 오늘 지급해도 지급 총액은 승인 스냅숏과 같다.
+      expect((await previewPayable(payer, { expenseId, payDate: seoulToday() })).payableKrw).toBe(14_508_000);
+      const confirmed = await confirmEvidence(payer, { expenseId, version: (await columnsOf(expenseId)).version });
+      await completeExpensePayment(payer, { expenseId, expectedPayableKrw: 14_508_000, version: confirmed.version });
+      const [payment] = await db.select({ payableKrw: expensePayments.payableKrw }).from(expensePayments).where(eq(expensePayments.expenseId, expenseId));
+      expect(payment?.payableKrw).toBe(14_508_000);
+      expect(await columnsOf(expenseId)).toMatchObject({ date: null, setBy: null, setAt: null });
     } finally {
       await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, effective);
     }
   }, 60_000);
+
+  it("거래처 지급 기한(J5): 협력사 기한 30일이면 자동 예정일 · 규칙 줄 N이 30, 칸이 비면 회사 기본", async () => {
+    const payer = await makePayer();
+    const cfg = await loadPayScheduleConfig();
+    const vendorOf = async (paymentTermDays: number | null) => {
+      const name = `기한-${randomUUID()}`;
+      const [row] = await db.insert(vendors).values({ name, normalizedName: name, kind: "supplier", paymentTermDays }).returning({ id: vendors.id });
+      if (!row) throw new Error("거래처 없음");
+      return row.id;
+    };
+    // 기준 2026-06-08 + 30 = 07-08(수) → 그 이하 마지막 금요일 07-03 · 승인 06-10이라 밀림 없음.
+    const termed = await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-06-10T10:00") });
+    const blank = await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-06-10T10:00") });
+    await db.update(expenses).set({ vendorId: await vendorOf(30), payeeUserId: null }).where(eq(expenses.id, termed.expenseId));
+    await db.update(expenses).set({ vendorId: await vendorOf(null), payeeUserId: null }).where(eq(expenses.id, blank.expenseId));
+
+    const termedDoc = await getExpense(payer, { expenseId: termed.expenseId });
+    expect(termedDoc).toMatchObject({ scheduledPaymentDate: "2026-07-03", autoPaymentDate: "2026-07-03", scheduledPaymentManual: false });
+    expect(termedDoc?.paymentRuleLine).toContain("기한 30일 안");
+    const blankDoc = await getExpense(payer, { expenseId: blank.expenseId });
+    expect(blankDoc).toMatchObject({ scheduledPaymentDate: "2026-08-07", autoPaymentDate: "2026-08-07" });
+    expect(blankDoc?.paymentRuleLine).toContain(`기한 ${cfg.termDays}일 안`);
+    for (const id of [termed.expenseId, blank.expenseId]) expect(await columnsOf(id)).toMatchObject({ date: null, setBy: null, setAt: null });
+  }, 30_000);
 
   it("홈 「내 차례」 지급 묶음이 예정일을 적지 않은 승인 건을 유효 예정일로 센다(지남 · 오늘)", async () => {
     const payer = await makePayer();

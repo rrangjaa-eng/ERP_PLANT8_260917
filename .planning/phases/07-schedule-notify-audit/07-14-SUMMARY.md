@@ -170,3 +170,12 @@ completed: 2026-10-22
 - 07-23: 계좌 바뀜 종류는 등록부에서 quote-nudge와 orphan-evidence 사이에 끼운다. 자리는 시험 주석에 표시했다.
 
 ## Self-Check: PASSED
+
+## 사후 고침 (게이트 P3 반영, 2026-10-22)
+
+호출한 스킬: superpowers:test-driven-development · systematic-debugging(실패 없음, 미사용) · verification-before-completion. DB `erp_w0714_test`, 로그 `/home/user/wt/logs/07-14-fix/`.
+
+- `cf23a8f9` P3-1 — 재촉 셋 1회차 `referenceDate` 단언(정산 10-15 · 반려 방치 10-12 · 견적 10-12). 첫 기한 하루 앞당김 변이 셋 모두 새 단언에서 실패(`ref-mut-*.log`), 원래 코드 9/9.
+- `16cdd901` P3-2 — tick의 결재 차례 정리를 `tx.transaction` savepoint로 감싸고 실패는 `notify.auto_read_failed` 로그만. 시험: 읽음 표시를 막는 트리거로 정리를 실패시켜도 tick ok · 종류 행 · 실행 기록 커밋(고치기 전 P0001로 tick 전체 실패).
+- `2464706d` P3-4 — 메일 선점이 읽음 된 approval-waiting 행을 뺀다(다른 종류의 읽은 행은 그대로). 계획 · CONTEXT에 반대 결정 없음. 빠진 행은 pending으로 남는다(SMTP 미설정 tick이 skipped_no_smtp로 정리).
+- P3-3(잠금 tx 안 전역 풀 읽기)은 손대지 않음 — 기존 선례.

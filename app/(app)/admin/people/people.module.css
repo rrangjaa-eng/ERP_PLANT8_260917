@@ -189,6 +189,14 @@
   margin: var(--s-4) 0 0;
 }
 
+/* 07-17 SC-12 사람 상세 로그인 섹션의 3차 둘(`잠금 풀기` · `비밀번호 초기화`) — 지급 계좌 3차와 같은 위 여백. */
+.loginActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin: var(--s-4) 0 0;
+}
+
 /* 07-17 SC-11 표 위 결과 줄(`잠금 풀기 · {이름}`) — 04.2-09 목록 결과 줄과 같은 꼴(되돌리기 없음). */
 .resultLine {
   margin: 0 0 var(--s-3);

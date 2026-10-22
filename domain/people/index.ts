@@ -7,7 +7,11 @@ import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { buildChanges } from "@/domain/action-log/changes";
 import { registerDto } from "@/domain/permissions/dto-registry";
-import { createAccount as defaultCreateAccount, unlockAccount as defaultUnlockAccount } from "@/domain/auth/accounts";
+import {
+  createAccount as defaultCreateAccount,
+  resetPassword as defaultResetPassword,
+  unlockAccount as defaultUnlockAccount,
+} from "@/domain/auth/accounts";
 import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
 import { archive as defaultArchive } from "@/domain/archive";
 import { revokeAllSessions as defaultRevokeAllSessions } from "@/domain/auth/password";
@@ -553,6 +557,36 @@ export async function unlockPerson(viewer: Viewer, personId: string, deps?: Part
   }
   await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId]);
   await (deps?.unlockAccount ?? defaultUnlockAccount)(viewer, target.email);
+}
+
+// 07-17 SC-12 · D-P2-7: 비밀번호 초기화 결과 — 행 DTO가 아니라 일회성 비밀이라 `…Dto`로 짓지 않고 `registerDto`도 하지 않는다
+// (정보 노출표로 가릴 값이 아니라 `admin.people` 쓰기 + 상한 안 + 자기 제외로만 나간다). 키는 `tempPassword` 하나.
+export type TempPasswordResult = { tempPassword: string };
+
+export type ResetPersonPasswordDeps = {
+  can: typeof defaultCan;
+  loadTarget: (viewer: Viewer, personId: string) => Promise<Pick<UserRow, "id" | "email" | "roleId"> | null>;
+  assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[]) => Promise<void>;
+  resetPassword: (viewer: Viewer, email: string) => Promise<{ tempPassword: string }>;
+};
+
+// 권한 · 대상 · 자기 제외 · 상한을 본 뒤 07-09 `resetPassword`(새 임시 비밀번호 · 세션 만료 · 잠금 해소 + password_reset 기록)를 부른다.
+export async function resetPersonPassword(
+  viewer: Viewer,
+  personId: string,
+  deps?: Partial<ResetPersonPasswordDeps>,
+): Promise<TempPasswordResult> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
+    throw new ForbiddenError("비밀번호 초기화 권한 없음");
+  }
+  const loadTarget = deps?.loadTarget ?? ((v: Viewer, id: string) => repoFindUserById(v, id));
+  const target = await loadTarget(viewer, personId);
+  if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
+  if (target.id === viewer.id) throw new ForbiddenError("본인 비밀번호 초기화 없음 · 내 계정에서 변경");
+  await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId]);
+  const { tempPassword } = await (deps?.resetPassword ?? defaultResetPassword)(viewer, target.email);
+  return { tempPassword };
 }
 
 // 04.1-03(D-96 · D-97): 입사일·퇴직일. 쓰기 권한 · 날짜 형식 · 퇴직일 ≥ 입사일(같은 날 허용)을

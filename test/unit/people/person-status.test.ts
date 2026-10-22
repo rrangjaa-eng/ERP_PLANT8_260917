@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { personLoginStatus } from "@/app/(app)/admin/people/person-status";
+import { personLoginStatus, personLoginWord } from "@/app/(app)/admin/people/person-status";
 
 // D8-07 · UI-SPEC 배지 조합 규칙: 두 칼럼에서 독립적으로 배지를 만들고, 보관된 사람은 「보관됨」만.
 // 정보 노출표가 가린 필드는 DTO에 키가 없다 — NULL/false로 오인하지 않는다.
@@ -57,5 +57,19 @@ describe("personLoginStatus", () => {
     expect(
       personLoginStatus({ archivedAt: new Date(), resignationDate: "2026-01-01", locked: true }, "2026-10-22"),
     ).toEqual({ kind: "archived" });
+  });
+});
+
+// 07-17 SC-12: 상세 로그인 섹션 `로그인 상태`는 한 값 — 보관됨 > 퇴직 > 잠김 > 첫 로그인 전 > 임시 비밀번호 사용 중 > 정상.
+describe("personLoginWord", () => {
+  it.each([
+    [{ archivedAt: new Date() }, "보관됨"],
+    [{ archivedAt: null, resignationDate: "2026-10-21", locked: true }, "퇴직"],
+    [{ archivedAt: null, resignationDate: null, locked: true, firstLoginAt: null, passwordIsTemporary: true }, "잠김"],
+    [{ archivedAt: null, resignationDate: null, locked: false, firstLoginAt: null, passwordIsTemporary: true }, "첫 로그인 전"],
+    [{ archivedAt: null, resignationDate: null, locked: false, firstLoginAt: new Date(), passwordIsTemporary: true }, "임시 비밀번호 사용 중"],
+    [{ archivedAt: null, resignationDate: null, locked: false, firstLoginAt: new Date(), passwordIsTemporary: false }, "정상"],
+  ] as const)("%o → %s", (person, word) => {
+    expect(personLoginWord(personLoginStatus(person, "2026-10-22"))).toBe(word);
   });
 });

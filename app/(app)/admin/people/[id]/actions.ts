@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
 import { seoulToday } from "@/lib/dates";
-import { setHireDate, setResignationDate } from "@/domain/people";
+import { resetPersonPassword, setHireDate, setResignationDate } from "@/domain/people";
 import { revealPersonAccountNumber, updatePersonPayoutAccount } from "@/domain/people/account";
 import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { addLeaveAdjustment, LeaveAdjustmentValidationError } from "@/domain/leave/balance-service";
@@ -103,3 +103,9 @@ export const revealPersonAccountNumberAction = authedActionClient
     const value = await revealPersonAccountNumber(ctx.viewer, parsedInput.id);
     return { value };
   });
+
+// 07-17 SC-12 · D-P2-7: 비밀번호 초기화 — 판정(권한 · 상한 · 자기 제외)은 domain `resetPersonPassword`. 임시 비밀번호는 이 반환값으로만
+// 나가 결과 단계 클라이언트 상태에만 산다(토스트 · URL · 로그에 넣지 않는다). 재검증은 하지 않는다 — 화면은 `router.refresh`로 다시 받는다.
+export const resetPersonPasswordAction = authedActionClient
+  .schema(z.object({ personId: z.string().min(1).max(64) }))
+  .action(async ({ parsedInput, ctx }) => resetPersonPassword(ctx.viewer, parsedInput.personId));

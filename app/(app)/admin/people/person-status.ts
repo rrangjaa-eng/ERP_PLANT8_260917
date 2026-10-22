@@ -24,3 +24,12 @@ export function personLoginStatus(
   if (person.passwordIsTemporary === true) badges.push("임시 비밀번호 사용 중");
   return { kind: "badges", badges };
 }
+
+// 07-17 SC-12: 상세 로그인 섹션 `로그인 상태` 한 값 — 목록 판정을 그대로 쓰고 배지가 둘이면 앞의 것(첫 로그인 전), 없으면 `정상`.
+export type PersonLoginWord = "보관됨" | "퇴직" | "잠김" | PersonLoginBadge | "정상";
+
+export function personLoginWord(status: PersonLoginStatus): PersonLoginWord {
+  if (status.kind === "archived") return "보관됨";
+  if (status.kind === "word") return status.word;
+  return status.badges[0] ?? "정상";
+}

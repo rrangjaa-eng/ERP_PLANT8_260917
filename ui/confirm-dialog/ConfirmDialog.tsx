@@ -72,6 +72,11 @@ type ConfirmDialogBaseProps = {
    * 호출자는 새 props(새 증빙)로 칸을 다시 그리고, 새 거부가 오기 전에 자기 거부 상태를 비운다. 기본(거짓)은 새 화면을 받은 뒤 닫는다.
    */
   refreshKeepsOpen?: boolean;
+  /**
+   * 07-17(SYSTEM §7-17 결과 단계 · 개정 7) — 실행 뒤 같은 창에 일회성 값(예: 임시 비밀번호). 값 한 줄(선택된 채 · 첫 포커스) ·
+   * 3차 `복사` · aux `닫으면 다시 볼 수 없음` · 1차 `닫기`만 서고, Esc · 바깥 누름 · 닫기 x로는 닫히지 않는다. `닫기` = onClose(값 파기는 호출자).
+   */
+  result?: { value: string };
 };
 
 export type ConfirmDialogProps = ConfirmDialogBaseProps &
@@ -129,20 +134,71 @@ function returnFocus(trigger: HTMLElement | null) {
   }
 }
 
-// 열릴 때 첫 포커스 — 확인 근거 칸 → 없으면 1차(막혔어도) → 목록형이면 첫 행.
+// 열릴 때 첫 포커스 — 결과 단계면 값 → 확인 근거 칸 → 없으면 1차(막혔어도) → 목록형이면 첫 행.
 export function initialFocusTarget(args: {
+  hasResult?: boolean;
   hasEvidence?: boolean;
   hasPrimary?: boolean;
   primaryBlocked?: boolean;
   optionCount?: number;
-}): "evidence" | "primary" | "firstOption" {
+}): "resultValue" | "evidence" | "primary" | "firstOption" {
+  if (args.hasResult) return "resultValue";
   if (args.hasEvidence) return "evidence";
   if (args.hasPrimary) return "primary";
   return "firstOption";
 }
 
+// Esc · 바깥 누름 · 닫기 x가 닫을 수 있나 — 제출 중과 결과 단계(07-17 — `닫기`로만 닫힌다)에서는 닫지 않는다.
+export function canDismiss(args: { submitting: boolean; hasResult: boolean }): boolean {
+  return !args.submitting && !args.hasResult;
+}
+
+// 결과 단계 값을 포커스하고 글자 전체를 고른다(열릴 때 · 복사 실패 뒤).
+function selectValue(element: HTMLElement | null) {
+  if (!element) return;
+  element.focus();
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+// 07-17 결과 단계 본문 — 값 한 줄 + 같은 자리 `복사` → `복사됨` / `복사 실패 · 직접 선택`(값 다시 고름) · aux. 값이 바뀌면(key) 복사 상태도 처음으로.
+function ResultBody({ value, valueRef }: { value: string; valueRef: React.RefObject<HTMLParagraphElement | null> }) {
+  const [copy, setCopy] = useState<"idle" | "done" | "failed">("idle");
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopy("done");
+    } catch {
+      setCopy("failed");
+      selectValue(valueRef.current);
+    }
+  }
+  return (
+    <div className={styles.body}>
+      <div className={styles.resultRow}>
+        <p ref={valueRef} tabIndex={0} className={styles.resultValue} data-ui="confirm-result-value">
+          {value}
+        </p>
+        <span role="status">
+          {copy === "failed" ? (
+            <span className={styles.copyFailed}>복사 실패 · 직접 선택</span>
+          ) : (
+            <Button variant="tertiary" onClick={() => void handleCopy()}>
+              {copy === "done" ? "복사됨" : "복사"}
+            </Button>
+          )}
+        </span>
+      </div>
+      <p className={styles.resultLine}>닫으면 다시 볼 수 없음</p>
+    </div>
+  );
+}
+
 export function ConfirmDialog(props: ConfirmDialogProps) {
-  const { open, onClose, title, subtitle, resultLines, evidenceField, secondaryLabel, attachments, subtotals, loading = false, refreshKeepsOpen = false } = props;
+  const { open, onClose, title, subtitle, resultLines, evidenceField, secondaryLabel, attachments, subtotals, loading = false, refreshKeepsOpen = false, result } = props;
   const primary = props.primary;
   const options = props.options;
 
@@ -150,6 +206,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const evidenceRef = useRef<HTMLDivElement>(null);
   const primaryWrapRef = useRef<HTMLSpanElement>(null);
   const firstOptionRef = useRef<HTMLButtonElement>(null);
+  const resultValueRef = useRef<HTMLParagraphElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   // close()가 부르는 close 이벤트는 따로 줄 선 작업이라, 입력 작업(예: Esc
   // 직후의 Delete)이 그보다 먼저 처리될 수 있다. 이 컴포넌트가 직접 닫을 때는
@@ -186,7 +243,11 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   if (open && !keepBlockerRow && (disabledReason || primary?.failure)) setKeepBlockerRow(true);
   if (!open && keepBlockerRow) setKeepBlockerRow(false);
 
+  const hasResult = result !== undefined;
+  const dismissible = canDismiss({ submitting, hasResult });
+
   const focusTarget = initialFocusTarget({
+    hasResult,
     hasEvidence: Boolean(evidenceField),
     hasPrimary: Boolean(primary),
     primaryBlocked: Boolean(disabledReason),
@@ -199,7 +260,9 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     if (open && !dialog.open) {
       previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
       dialog.showModal();
-      if (focusTarget === "evidence") {
+      if (focusTarget === "resultValue") {
+        selectValue(resultValueRef.current);
+      } else if (focusTarget === "evidence") {
         evidenceRef.current?.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
       } else if (focusTarget === "firstOption") {
         firstOptionRef.current?.focus();
@@ -212,6 +275,11 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     // focusTarget은 open이 바뀌는 순간의 슬롯 구성에서만 다시 계산하면 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // 확인 단계에서 실행해 결과가 온 순간 — 같은 창의 값으로 포커스 · 선택(1차는 사라졌다).
+  useEffect(() => {
+    if (hasResult && dialogRef.current?.open) selectValue(resultValueRef.current);
+  }, [hasResult]);
 
   // 열린 채로 사라질 때(예: 「새로 고침」 뒤 호스트 목록이 비어 빈 화면으로 바뀜)도 포커스를 닫힘 규칙대로 돌린다.
   // 문서에서 실제로 빠졌을 때만 — StrictMode의 가짜 언마운트는 노드가 남아 있어 열릴 때 포커스를 건드리지 않는다.
@@ -243,6 +311,12 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       closedByUsRef.current = false;
       return;
     }
+    // 결과 단계는 `닫기`로만 닫힌다 — 브라우저가 cancel을 막지 못하고 닫은 경우(연속 Esc의 닫기 요청)에도 값과 함께 다시 연다.
+    if (hasResult) {
+      dialogRef.current?.showModal();
+      selectValue(resultValueRef.current);
+      return;
+    }
     finishClose();
   }
 
@@ -254,12 +328,12 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   function handleCancelNative(event: React.SyntheticEvent<HTMLDialogElement>) {
     // 네이티브 Esc(cancel 이벤트) — 제출 중에는 무시한다.
     event.preventDefault();
-    if (submitting) return;
+    if (!dismissible) return;
     closeNow();
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDialogElement>) {
-    if (primary && !submitting && !loading && !disabledReason && !primary.blockedBy && isCtrlCombo(event, "Enter")) {
+    if (primary && !hasResult && !submitting && !loading && !disabledReason && !primary.blockedBy && isCtrlCombo(event, "Enter")) {
       event.preventDefault();
       primary.onConfirm();
     }
@@ -267,13 +341,13 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 
   function handleBackdropClick(event: React.MouseEvent<HTMLDialogElement>) {
     // dialog 요소 자체를 눌렀을 때만 가림막 클릭이다(내용 클릭과 구분).
-    if (event.target === dialogRef.current && !submitting) {
+    if (event.target === dialogRef.current && dismissible) {
       closeNow();
     }
   }
 
   function handleCloseButtonClick() {
-    if (submitting) return;
+    if (!dismissible) return;
     closeNow();
   }
 
@@ -313,119 +387,134 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           </h2>
           {subtitle && !loading ? <p className={styles.subtitle} title={subtitle}>{subtitle}</p> : null}
         </div>
-        <button type="button" className={styles.close} aria-label="닫기" onClick={handleCloseButtonClick}>
-          <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.closeIcon}>
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-          </svg>
-        </button>
-      </div>
-
-      <div className={styles.body} aria-busy={loading ? "true" : undefined}>
-        {loading ? (
-          <p id={loadingId} className={styles.loadingMark}>
-            …
-          </p>
-        ) : null}
-
-        {attachments && !loading ? <div className={styles.attachments} data-ui="confirm-attachments">
-            {attachments}
-          </div> : null}
-
-        {subtotals && subtotals.lines.length > 0 && !loading ? (
-          <div className={styles.subtotals} data-ui="confirm-subtotals" tabIndex={0} role="group" aria-label={subtotals.label}>
-            <ul>
-              {subtotals.lines.map((line, index) => (
-                <li key={index}>
-                  {line}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {resultLines && resultLines.length > 0 && !loading ? (
-          <div className={styles.resultLines}>
-            {resultLines.map((line, index) => (
-              <p key={index} className={styles.resultLine}>
-                {line}
-              </p>
-            ))}
-          </div>
-        ) : null}
-
-        {evidenceField ? (
-          <div
-            ref={evidenceRef}
-            className={styles.evidence}
-            aria-disabled={submitting ? "true" : undefined}
-          >
-            {evidenceField}
-          </div>
-        ) : null}
-
-        {options ? (
-          <ul className={styles.options}>
-            {options.map((option, index) => (
-              <li key={option.label}>
-                <button
-                  type="button"
-                  ref={index === 0 ? firstOptionRef : undefined}
-                  className={styles.optionButton}
-                  aria-disabled={submitting ? "true" : undefined}
-                  onClick={(event) => {
-                    if (submitting) {
-                      event.preventDefault();
-                      return;
-                    }
-                    option.onSelect();
-                  }}
-                >
-                  <span className={styles.optionLabel}>{option.label}</span>
-                  {option.description ? <span className={styles.optionDescription}>{option.description}</span> : null}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-
-      <div className={styles.actions}>
-        {primary ? (
-          <>
-            {disabledReason || primary.failure || nextStep || keepBlockerRow ? (
-              // 막힘 이유(또는 다시 보낼 실패) + 다음 한 수 한 묶음 — PC는 행동 줄 왼쪽 그대로(display: contents), 폰은 버튼 윗줄(사용자 결정 2026-10-01).
-              <span className={styles.blocker}>
-                {disabledReason ? (
-                  <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>{disabledReason}</span>
-                ) : primary.failure ? (
-                  <span className={styles.reason} role="alert">
-                    {primary.failure}
-                  </span>
-                ) : null}
-                {nextStep ? <span className={styles.nextStep}>{nextStep}</span> : null}
-              </span>
-            ) : null}
-            {secondaryButton}
-            <span ref={primaryWrapRef} className={styles.primaryWrap}>
-              <Button
-                variant="primary"
-                shortcut={primary.shortcut ?? "Ctrl+Enter"}
-                pending={primary.pending}
-                disabled={Boolean(disabledReason || primary.blockedBy || loading)}
-                disabledReason={disabledReason}
-                aria-describedby={disabledReason ? undefined : loading ? loadingId : primary.blockedBy}
-                reasonTone={primary.reasonTone}
-                onClick={primary.onConfirm}
-              >
-                {primary.label}
-              </Button>
-            </span>
-          </>
-        ) : (
-          secondaryButton
+        {hasResult ? null : (
+          <button type="button" className={styles.close} aria-label="닫기" onClick={handleCloseButtonClick}>
+            <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.closeIcon}>
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </button>
         )}
       </div>
+
+      {result ? (
+        <>
+          <ResultBody key={result.value} value={result.value} valueRef={resultValueRef} />
+          <div className={styles.actions}>
+            <Button variant="primary" onClick={closeNow}>
+              닫기
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className={styles.body} aria-busy={loading ? "true" : undefined}>
+            {loading ? (
+              <p id={loadingId} className={styles.loadingMark}>
+                …
+              </p>
+            ) : null}
+
+            {attachments && !loading ? <div className={styles.attachments} data-ui="confirm-attachments">
+                {attachments}
+              </div> : null}
+
+            {subtotals && subtotals.lines.length > 0 && !loading ? (
+              <div className={styles.subtotals} data-ui="confirm-subtotals" tabIndex={0} role="group" aria-label={subtotals.label}>
+                <ul>
+                  {subtotals.lines.map((line, index) => (
+                    <li key={index}>
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {resultLines && resultLines.length > 0 && !loading ? (
+              <div className={styles.resultLines}>
+                {resultLines.map((line, index) => (
+                  <p key={index} className={styles.resultLine}>
+                    {line}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+
+            {evidenceField ? (
+              <div
+                ref={evidenceRef}
+                className={styles.evidence}
+                aria-disabled={submitting ? "true" : undefined}
+              >
+                {evidenceField}
+              </div>
+            ) : null}
+
+            {options ? (
+              <ul className={styles.options}>
+                {options.map((option, index) => (
+                  <li key={option.label}>
+                    <button
+                      type="button"
+                      ref={index === 0 ? firstOptionRef : undefined}
+                      className={styles.optionButton}
+                      aria-disabled={submitting ? "true" : undefined}
+                      onClick={(event) => {
+                        if (submitting) {
+                          event.preventDefault();
+                          return;
+                        }
+                        option.onSelect();
+                      }}
+                    >
+                      <span className={styles.optionLabel}>{option.label}</span>
+                      {option.description ? <span className={styles.optionDescription}>{option.description}</span> : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+
+          <div className={styles.actions}>
+            {primary ? (
+              <>
+                {disabledReason || primary.failure || nextStep || keepBlockerRow ? (
+                  // 막힘 이유(또는 다시 보낼 실패) + 다음 한 수 한 묶음 — PC는 행동 줄 왼쪽 그대로(display: contents), 폰은 버튼 윗줄(사용자 결정 2026-10-01).
+                  <span className={styles.blocker}>
+                    {disabledReason ? (
+                      <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>{disabledReason}</span>
+                    ) : primary.failure ? (
+                      <span className={styles.reason} role="alert">
+                        {primary.failure}
+                      </span>
+                    ) : null}
+                    {nextStep ? <span className={styles.nextStep}>{nextStep}</span> : null}
+                  </span>
+                ) : null}
+                {secondaryButton}
+                <span ref={primaryWrapRef} className={styles.primaryWrap}>
+                  <Button
+                    variant="primary"
+                    shortcut={primary.shortcut ?? "Ctrl+Enter"}
+                    pending={primary.pending}
+                    disabled={Boolean(disabledReason || primary.blockedBy || loading)}
+                    disabledReason={disabledReason}
+                    aria-describedby={disabledReason ? undefined : loading ? loadingId : primary.blockedBy}
+                    reasonTone={primary.reasonTone}
+                    onClick={primary.onConfirm}
+                  >
+                    {primary.label}
+                  </Button>
+                </span>
+              </>
+            ) : (
+              secondaryButton
+            )}
+          </div>
+        </>
+      )}
     </dialog>
   );
 }

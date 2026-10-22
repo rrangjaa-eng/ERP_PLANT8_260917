@@ -37,6 +37,8 @@ export type LeaveSectionProps = {
   canWrite: boolean;
   // 06.4(D-6417 · R2): 대상 계급이 상한 밖이면 퇴직일 칸만 그리지 않는다(입사일 칸은 그대로) — 기본 참.
   resignationWritable?: boolean;
+  // 07-17 R15: 대상 계급이 상한 밖이면 연차 조정 추가 폼도 그리지 않는다 — 기본 참.
+  adjustWritable?: boolean;
   // 오늘 기준 월차 조정 거부 이유(04.1-03 checkLeaveAdjustment 문구 그대로) — 있으면 `월차` 옵션을 뺀다(CX-R5).
   monthlyBlockedReason: string | null;
 };
@@ -156,7 +158,7 @@ export function LeaveSection(props: LeaveSectionProps) {
               </div>
             </div>
           </div>
-          {canWrite ? (
+          {canWrite && props.adjustWritable !== false ? (
             <Form id="leave-adjustment-form" onSubmit={handleSubmit}>
               <Form.Field id="adjustBucket" label="잔고" width="select">
                 <Select

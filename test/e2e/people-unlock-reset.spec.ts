@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Page, type Request } from "@playwright/test";
 import { createAccount } from "@/domain/auth/accounts";
 import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { countOpenFailures, recordAttempt } from "@/repositories/login-attempts";
 import { updateUserResignationDate } from "@/repositories/users";
@@ -319,5 +319,140 @@ test.describe("사람 목록 잠김 N · 검색 · 쪽 (SC-11 Task 2)", () => {
     await nav.getByRole("link", { name: "2", exact: true }).click();
     await expect(page).toHaveURL(/[?&]page=2/);
     await expect(page.locator("tbody tr:has(th[scope='row'])")).toHaveCount(1);
+  });
+});
+
+// 07-17 Task 3(U1 · U2 · R15 · SC-12 · D-P2-2 · D-P2-7 · N4): 사람 상세 로그인 섹션 · 비밀번호 초기화 결과 단계 · 상한 밖 숨김.
+test.describe("사람 상세 로그인 섹션 · 비밀번호 초기화 (SC-12 Task 3)", () => {
+  const loginSection = (page: Page) => page.getByRole("region", { name: "로그인" });
+  const loginStatusValue = (page: Page) => loginSection(page).locator("dt:text-is('로그인 상태') + dd");
+
+  test("잠김 → 3차 `잠금 풀기` → 값만 바뀐다(토스트 · 결과 줄 없음), 포커스는 `비밀번호 초기화`", async ({ page }) => {
+    const token = `상세E2E${randomUUID().slice(0, 6)}`;
+    const a = await makePerson(token, "가");
+    await lock(a.email);
+    await loginAsAdmin(page);
+    await page.goto(`/admin/people/${a.userId}`);
+    await expect(loginStatusValue(page)).toHaveText("잠김");
+    await expect(loginSection(page).getByRole("button", { name: "비밀번호 초기화" })).toBeVisible();
+    await loginSection(page).getByRole("button", { name: "잠금 풀기" }).click();
+    await expect(loginStatusValue(page)).toHaveText("첫 로그인 전");
+    await expect(loginSection(page).getByRole("button", { name: "잠금 풀기" })).toHaveCount(0);
+    await expect(page.locator("[class*='Toast-module__']")).toHaveCount(0);
+    await expect(loginSection(page).getByRole("button", { name: "비밀번호 초기화" })).toBeFocused();
+    expect(await openFailures(a.email)).toBe(0);
+  });
+
+  test("D-728 — 퇴직 + 잠김은 값 `퇴직` · `잠금 풀기` 없음, 정상(안 잠김)도 `잠금 풀기` 없음", async ({ page }) => {
+    const token = `상세E2E${randomUUID().slice(0, 6)}`;
+    const retiree = await makePerson(token, "퇴");
+    const free = await makePerson(token, "정");
+    await updateUserResignationDate(SYSTEM_VIEWER, retiree.userId, addDays(seoulToday(), -1));
+    await lock(retiree.email);
+    await loginAsAdmin(page);
+    await page.goto(`/admin/people/${retiree.userId}`);
+    await expect(loginStatusValue(page)).toHaveText("퇴직");
+    await expect(page.getByRole("button", { name: "잠금 풀기" })).toHaveCount(0);
+    await page.goto(`/admin/people/${free.userId}`);
+    await expect(loginStatusValue(page)).toHaveText("첫 로그인 전");
+    await expect(page.getByRole("button", { name: "잠금 풀기" })).toHaveCount(0);
+    await expect(loginSection(page).getByRole("button", { name: "비밀번호 초기화" })).toBeVisible();
+  });
+
+  test("U1 — 결과 단계: 값 선택된 채 · Esc · 바깥 누름 무시 · `복사됨` · `복사 실패 · 직접 선택` · `닫기` 뒤 값 파기 · 임시 비밀번호로 로그인(잠금도 풀림)", async ({ page, browser, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const token = `상세E2E${randomUUID().slice(0, 6)}`;
+    const a = await makePerson(token, "가");
+    await lock(a.email);
+    await loginAsAdmin(page);
+    await page.goto(`/admin/people/${a.userId}`);
+    const trigger = loginSection(page).getByRole("button", { name: "비밀번호 초기화" });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "비밀번호 초기화" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("기존 비밀번호는 쓸 수 없게 됨 · 잠금도 풀림");
+    await dialog.getByRole("button", { name: /^비밀번호 초기화/ }).click();
+
+    const value = dialog.locator("[data-ui='confirm-result-value']");
+    await expect(value).toBeVisible();
+    const temp = (await value.textContent())?.trim() ?? "";
+    expect(temp.length).toBeGreaterThan(5);
+    await expect(value).toBeFocused();
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(temp);
+    await expect(dialog).toContainText("닫으면 다시 볼 수 없음");
+    await expect(dialog.getByRole("button", { name: "닫기" })).toHaveCount(1);
+
+    // Esc(두 번 — 브라우저 닫기 요청 연타 포함) · 바깥 누름 → 창 · 값 그대로.
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    await expect(value).toHaveText(temp);
+    await page.mouse.click(5, 5);
+    await expect(dialog).toBeVisible();
+    await expect(value).toHaveText(temp);
+
+    await dialog.getByRole("button", { name: "복사" }).click();
+    await expect(dialog.getByRole("status")).toHaveText("복사됨");
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(temp);
+
+    // 클립보드 거부 주입 → 같은 자리 실패 aux · 값 다시 선택.
+    await page.evaluate(() => {
+      navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
+    });
+    await dialog.getByRole("button", { name: "복사됨" }).click();
+    await expect(dialog.getByRole("status")).toHaveText("복사 실패 · 직접 선택");
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(temp);
+
+    // 값은 URL · 토스트 · 페이지 HTML 재요청 · 행동 로그 화면에 없다.
+    expect(page.url()).not.toContain(temp);
+    await expect(page.locator("[class*='Toast-module__']")).toHaveCount(0);
+    expect(await (await page.request.get(`/admin/people/${a.userId}`)).text()).not.toContain(temp);
+    expect(await (await page.request.get("/admin/action-log")).text()).not.toContain(temp);
+
+    await dialog.getByRole("button", { name: "닫기" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("[data-ui='confirm-result-value']")).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: /^비밀번호 초기화/ })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    expect(await openFailures(a.email)).toBe(0);
+    const personPage = await loginAs(browser, a.email, temp);
+    await personPage.goto("/account");
+    await expect(personPage.getByText("임시 비밀번호를 쓰고 있습니다 — 바꾸세요.")).toBeVisible();
+    await personPage.context().close();
+  });
+
+  test("R15 — 상한 밖 대상 상세에는 쓰기 버튼(연차 조정 추가 · 새 이력 추가 · 잠금 풀기 · 비밀번호 초기화)이 없고 이유 한 줄, 직접 호출은 거부", async ({ page, browser }) => {
+    const token = `상세E2E${randomUUID().slice(0, 6)}`;
+    const victim = await makePerson(token, "가");
+    const email = `e2e-unlock-${randomUUID()}@example.test`;
+    const { userId: adminId } = await createAccount(SYSTEM_VIEWER, { email, name: `${token}관리자`, roleId: SYSADMIN_ROLE_ID });
+    await lock(email);
+
+    // 관리자 화면에서 상한 안 대상의 초기화 요청 꼴을 잡는다.
+    await loginAsAdmin(page);
+    await page.goto(`/admin/people/${victim.userId}`);
+    await loginSection(page).getByRole("button", { name: "비밀번호 초기화" }).click();
+    const dialog = page.getByRole("dialog", { name: "비밀번호 초기화" });
+    const captured = page.waitForRequest(isActionPost);
+    await dialog.getByRole("button", { name: /^비밀번호 초기화/ }).click();
+    const request = await captured;
+    await expect(dialog.locator("[data-ui='confirm-result-value']")).toBeVisible();
+
+    const delegate = await createDelegatedAccount();
+    const delegatePage = await loginAs(browser, delegate.email, delegate.password);
+    await delegatePage.goto(`/admin/people/${adminId}`);
+    await expect(delegatePage.getByText("계급 지정 권한 없음 · 시스템 관리자", { exact: true })).toBeVisible();
+    for (const name of ["연차 조정 추가", "새 이력 추가", "잠금 풀기", "비밀번호 초기화"]) {
+      await expect(delegatePage.getByRole("button", { name })).toHaveCount(0);
+    }
+    await replay(delegatePage, request, victim.userId, adminId);
+    // 거부되면 초기화(잠금 해소 포함)가 일어나지 않는다 — 열린 실패가 그대로다.
+    expect(await openFailures(email)).toBeGreaterThan(0);
+    await delegatePage.context().close();
   });
 });

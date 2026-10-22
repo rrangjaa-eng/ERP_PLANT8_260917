@@ -10,7 +10,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { createProject, loadProjectList } from "@/domain/projects";
+import { createProject, loadProjectList, loadProjectProfit } from "@/domain/projects";
 import { profitBasisFor } from "@/domain/projects/list-view";
 import { PROJECT_STATUSES, type ProjectStatus } from "@/domain/projects/status-transitions";
 import {
@@ -898,5 +898,65 @@ describe("loadProjectList — 파라미터 정규화 · 빈 갈래 (04-48, 실�
     expect(filtered.emptyKind).toBe("filtered");
     expect(filtered.hasFilter).toBe(true);
     expect((await loadProjectList(SYSTEM_VIEWER, { year: "all" })).emptyKind).toBeNull();
+  });
+});
+
+// 07-18 사후 고침 — 상세 정보 면의 손익은 목록의 한 정의(기준 = 정산·완료에 발행 줄이 있으면 발행 합계, 아니면 견적 합계 ·
+// 수익금 = 기준 − 실행가 · 수익률 = 수익금 ÷ 기준, 기준 ≤ 0이면 계산 불가)를 그대로 쓴다. 같은 프로젝트는 두 화면에서 같은 값이다.
+describe("상세 손익은 목록 손익과 같은 정의다 (07-18, 실제 Postgres)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function listRow(marker: string, id: string) {
+    const rows = await repoRows({ search: marker });
+    const row = rows.find((candidate) => candidate.id === id);
+    if (!row) throw new Error("목록에 프로젝트가 없습니다");
+    return row;
+  }
+
+  it("정산 + 발행 줄이 있으면 발행 합계가 기준이고, 목록과 같은 수익금 · 수익률이다", async () => {
+    const base = await makeBase();
+    const marker = `상세손익-정산-${randomUUID().slice(0, 8)}`;
+    const project = await makeProject(base, marker, { status: "settling", line: { quote: 1_000_000, execution: 400_000 }, issues: [1_500_000] });
+    const row = await listRow(marker, project.id);
+    expect(row.profitBasis).toBe("issued");
+
+    const detail = await loadProjectProfit(SYSTEM_VIEWER, project.id);
+    expect(detail).toEqual({ kind: "ok", profitKrw: 1_100_000, ratePct: (row.profitRate ?? 0) * 100 });
+    expect(detail).toMatchObject({ profitKrw: row.netProfitKrw });
+  });
+
+  it("진행 중이면 발행 줄이 있어도 견적 합계가 기준이다", async () => {
+    const base = await makeBase();
+    const marker = `상세손익-견적-${randomUUID().slice(0, 8)}`;
+    const project = await makeProject(base, marker, { status: "bidding", line: { quote: 1_000_000, execution: 400_000 }, issues: [1_500_000] });
+    const row = await listRow(marker, project.id);
+    expect(row.profitBasis).toBe("quote");
+
+    const detail = await loadProjectProfit(SYSTEM_VIEWER, project.id);
+    expect(detail).toEqual({ kind: "ok", profitKrw: 600_000, ratePct: (row.profitRate ?? 0) * 100 });
+    expect(detail).toMatchObject({ profitKrw: row.netProfitKrw });
+  });
+
+  it("정산인데 발행 줄이 없으면 견적 합계가 기준이다", async () => {
+    const base = await makeBase();
+    const marker = `상세손익-미발행-${randomUUID().slice(0, 8)}`;
+    const project = await makeProject(base, marker, { status: "settling", line: { quote: 2_000_000, execution: 500_000 } });
+    const row = await listRow(marker, project.id);
+    expect(row.profitBasis).toBe("quote");
+
+    const detail = await loadProjectProfit(SYSTEM_VIEWER, project.id);
+    expect(detail).toEqual({ kind: "ok", profitKrw: 1_500_000, ratePct: (row.profitRate ?? 0) * 100 });
+  });
+
+  it("기준이 0이면 목록 수익률은 비고 상세는 계산 불가 · 견적 없음이다", async () => {
+    const base = await makeBase();
+    const marker = `상세손익-없음-${randomUUID().slice(0, 8)}`;
+    const project = await makeProject(base, marker, { status: "bidding" });
+    const row = await listRow(marker, project.id);
+    expect(row.profitRate).toBeNull();
+
+    expect(await loadProjectProfit(SYSTEM_VIEWER, project.id)).toEqual({ kind: "unavailable", reason: "견적 없음" });
   });
 });

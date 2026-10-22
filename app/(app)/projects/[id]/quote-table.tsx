@@ -23,7 +23,7 @@ import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { savedNoticeText, type FooterNoticeItem } from "@/ui/table/footer-notice";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
-import { formatKrw, formatForeignLine, formatQuantity, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
+import { formatKrw, formatForeignLine, formatPercent, formatQuantity, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { kstToday } from "@/lib/kst-date";
 import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
 import { useCommaInput } from "@/ui/input/use-comma-input";
@@ -2989,7 +2989,7 @@ export function QuoteLedger({
                   <p className={styles.infoItem}>
                     <span className={styles.infoLabel}>수익</span>
                     {profit.kind === "ok" ? (
-                      <span className={styles.infoValue}>{`${formatKrw(profit.profitKrw)} · ${profit.ratePct}%`}</span>
+                      <span className={styles.infoValue}>{`${formatKrw(profit.profitKrw)} · ${formatPercent(profit.ratePct)}`}</span>
                     ) : (
                       <>
                         <span className={styles.infoNone}>—</span>

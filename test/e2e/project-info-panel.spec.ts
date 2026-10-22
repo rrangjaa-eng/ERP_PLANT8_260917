@@ -457,7 +457,7 @@ test.describe("고객 승인 섹션 · 승인 표시 패널 (W6 · SC-19)", () =
     await page.goto(`/projects/${withLines.id}`);
     await expandProjectInfo(page);
     const profit = projectInfo(page).getByRole("group", { name: "손익" });
-    await expect(profit.getByText("200,000 · 20%", { exact: true })).toBeVisible();
+    await expect(profit.getByText("200,000 · 20.0%", { exact: true })).toBeVisible();
 
     await page.goto(`/projects/${empty.id}`);
     await expandProjectInfo(page);

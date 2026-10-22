@@ -36,11 +36,13 @@ import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/
 import { moneyFromRow, moneyToColumns, normalizeMoneyInput, MoneyInputError, type Currency, type Money, type MoneyInput } from "@/domain/money";
 import { validatePreEstimateChange } from "@/domain/projects/pre-estimate";
 import { validateNewProjectPeriod } from "@/domain/projects/period";
+import { summarizeProjectProfit, type ProjectProfitSummary } from "@/domain/projects/profit-summary";
 import { rememberFxAfterCommit } from "@/domain/quotes/lines";
 import {
   listProjectsPage as repoListProjectsPage,
   aggregateProjects as repoAggregateProjects,
   findProjectInScope,
+  getProjectProfitRow,
   insertProject as repoInsertProject,
   PROJECT_SORT_KEYS,
   type ProjectListFilter,
@@ -479,6 +481,12 @@ export async function findProject(
   if (row.archivedAt !== null && !scope.includeArchived) return null;
 
   return (await project(viewer, withPreEstimate(row), PROJECT_DTO_SPEC)) as ProjectDto;
+}
+
+// 07-18 사후 고침 — 상세 정보 면 `손익`. 목록과 같은 행 식을 한 프로젝트에 적용한다(호출한 화면이 보기 범위를 이미 판정했다).
+export async function loadProjectProfit(viewer: Viewer, projectId: string): Promise<ProjectProfitSummary | null> {
+  const row = await getProjectProfitRow(viewer, projectId);
+  return row ? summarizeProjectProfit(row) : null;
 }
 
 // 04-11(A-07 · 엔지 리뷰 A P3): 목록 요청의 자동 정산 입구 — 요청당 한 번, loadProjectList가

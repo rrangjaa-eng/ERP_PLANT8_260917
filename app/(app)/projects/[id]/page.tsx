@@ -3,7 +3,7 @@ import { getSession } from "@/lib/viewer";
 import { log } from "@/lib/log";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
-import { findProject } from "@/domain/projects";
+import { findProject, loadProjectProfit } from "@/domain/projects";
 import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import { lineCardSideFacts } from "@/domain/corp-card-usages/link-targets";
@@ -41,7 +41,6 @@ import type { StatusChangeProps } from "./status-change";
 import type { CustomerApprovalProps, NewRevisionProps } from "./revision-dialogs";
 import { getPerson } from "@/domain/people";
 import { projectHasPurchaseOrder } from "@/domain/projects/documents";
-import { summarizeProjectProfit } from "@/domain/projects/profit-summary";
 import { listLineDoors } from "@/domain/expenses";
 import "@/app/(app)/document-kinds";
 import { getSettlementHeader } from "@/domain/settlements";
@@ -151,7 +150,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   ]);
   const currentSummary = revisionSummaries.find((row) => row.revisionId === revision.id);
   // 07-18(SC-19 · U16) — `손익` 섹션은 손익 메뉴를 볼 수 있는 계급이 금액도 볼 수 있을 때만(서버가 거른다).
-  const profit = canSeeAmount && (await can(session.viewer, "pnl", "view")) ? summarizeProjectProfit(lines) : null;
+  const profit = canSeeAmount && (await can(session.viewer, "pnl", "view")) ? await loadProjectProfit(session.viewer, project.id) : null;
   // /qa ISSUE-002 · /design-review — 「프로젝트 복사」는 목록 등록 진입점과 같은 규칙(업무 범위로 좁힌 팀 · 담당 PM).
   const scopedCreateReferences =
     canWrite && project.archivedAt === null ? await scopeCreateFormReferences(session.viewer, references, { todayKst }) : null;

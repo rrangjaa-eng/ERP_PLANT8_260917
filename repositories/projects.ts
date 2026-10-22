@@ -339,6 +339,32 @@ export async function aggregateProjects(
     .groupBy(sql`1`);
 }
 
+// 07-18 사후 고침 — 상세 정보 면 `손익`용 한 프로젝트의 기준 · 수익금 · 수익률. 목록과 같은 조인 · 같은 행 식(rowMoneyExpressions)이다.
+// 보기 범위는 호출한 상세 화면이 이미 판정했다(목록의 scope 조건을 다시 걸지 않는다).
+export type ProjectProfitRow = { profitBasis: ProfitBasis; basisKrw: number; profitKrw: number; profitRate: number | null };
+
+export async function getProjectProfitRow(viewer: Viewer, projectId: string): Promise<ProjectProfitRow | null> {
+  void viewer;
+  const currentRevisions = currentRevisionsSubquery();
+  const lineSums = lineSumsSubquery();
+  const issued = issuedSumsLateral();
+  const money = rowMoneyExpressions(lineSums, issued);
+  const [row] = await db
+    .select({
+      profitBasis: sql<ProfitBasis>`${money.profitBasis}`,
+      basisKrw: sql<number>`${money.basis}::bigint`.mapWith(Number),
+      profitKrw: sql<number>`${money.profit}::bigint`.mapWith(Number),
+      profitRate: sql<number | null>`${money.rate}`.mapWith(Number),
+    })
+    .from(projects)
+    .leftJoin(currentRevisions, eq(currentRevisions.projectId, projects.id))
+    .leftJoin(lineSums, eq(lineSums.revisionId, currentRevisions.revisionId))
+    .leftJoinLateral(issued, sql`true`)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function findProjectById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<ProjectRow | null> {
   void viewer;
   const [row] = await tx.select().from(projects).where(eq(projects.id, id)).limit(1);

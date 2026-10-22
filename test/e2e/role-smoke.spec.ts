@@ -52,6 +52,13 @@ async function loginAs(page: Page, email: string, password: string): Promise<voi
   await expect(page).toHaveURL(/\/account$/);
 }
 
+async function expectRow(page: Page, row: { path: string; expect: Expectation }, label: string): Promise<void> {
+  const response = await page.goto(row.path);
+  expect(response?.status(), `${label} ${row.path}`).toBe(row.expect === "open" ? 200 : 404);
+  // quick 261022-cwp: page.goto는 리다이렉트를 따라간 최종 응답을 준다 — 열림은 그 경로에 머문 것이어야 한다.
+  if (row.expect === "open") expect(new URL(page.url()).pathname, `${label} ${row.path}`).toBe(row.path);
+}
+
 test.describe("계급 × 경로 노출 스모크 (07 기준 5)", () => {
   test("표가 시드 계급 다섯을 모두 덮는다", () => {
     const covered = new Set(ROLE_SMOKE.map((row) => row.roleId));
@@ -63,10 +70,7 @@ test.describe("계급 × 경로 노출 스모크 (07 기준 5)", () => {
     test(`${seedRole.name} — 열림 ${rows.filter((row) => row.expect === "open").length} · 404 ${rows.filter((row) => row.expect === "404").length}`, async ({ page }) => {
       const user = await createFixtureUser({ roleId: seedRole.id, withTeam: true });
       await loginAs(page, user.email, user.password);
-      for (const row of rows) {
-        const response = await page.goto(row.path);
-        expect(response?.status(), `${seedRole.name} ${row.path}`).toBe(row.expect === "open" ? 200 : 404);
-      }
+      for (const row of rows) await expectRow(page, row, seedRole.name);
     });
   }
 });

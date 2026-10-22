@@ -1008,6 +1008,7 @@ export function QuoteLedger({
   lockReason,
   emptyState,
   revenue,
+  invoiceFiles,
   issueRequests,
   canWriteEntries,
   usdDefaultFxRate,
@@ -1078,6 +1079,8 @@ export function QuoteLedger({
   /** 04-30 — 0줄 표의 한 줄과 다음 한 수(서버 quoteTableEmptyState). */
   emptyState: QuoteTableEmptyState;
   revenue: RevenueDto;
+  /** 07-22(W7 · SC-20) — 저장된 발행 줄 id → 살아 있는 계산서 파일(listInvoiceFiles). 발행 줄을 못 보면 빈 객체. */
+  invoiceFiles?: Record<string, { fileId: string; name: string }>;
   /** 06-18(S16) — 매출 섹션 「발행 요청」 표(서버가 칸 노출 · 권리를 가려 보낸다). */
   issueRequests: IssueRequestsProps;
   canWriteEntries: boolean;
@@ -3256,6 +3259,7 @@ export function QuoteLedger({
         canWriteEntries={canWriteEntries}
         balanceKrw={balanceKrw}
         collectionOverdue={collectionOverdue}
+        invoiceFiles={invoiceFiles}
         saveLocked={saveLocked}
         saveButtonId={saveButtonId}
         editableWidth={editableWidth}

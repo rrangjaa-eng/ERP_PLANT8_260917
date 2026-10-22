@@ -33,6 +33,9 @@ import { currentHolderNames, projectActionResult } from "@/domain/approvals";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement, withdrawSettlement } from "@/domain/settlements";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { log } from "@/lib/log";
+import { getOwnedEvidence, requestEvidenceUpload } from "@/domain/evidence";
+import { requestProjectDocumentUpload } from "@/domain/projects/document-upload";
+import { REVENUE_INVOICE_KIND } from "@/domain/revenue/invoice-file";
 import "./actions.registry";
 
 // PROJ-01·PROJ-02: domain/projects·domain/quotes/lines만 부른다. 등록은
@@ -398,3 +401,32 @@ export const restoreProjectMemberAction = authedActionClient
     revalidatePath(`/projects/${parsedInput.projectId}`);
     return { restored: true };
   });
+
+// 07-22(W3 · SC-20) 프로젝트 서류 붙이기 시작 — 종류 · 선언만 받는다. 권리(07-18 정보 면 저장 권리) · 서류 행은 domain이 정한다.
+// 마침 · 지우기 · 보기는 05 증빙 액션(completeEvidenceUploadAction · removeEvidenceAction · createEvidenceViewUrlAction) 그대로다.
+const uploadDeclarationSchema = {
+  size: z.number().int().min(0),
+  contentType: z.string().min(1).max(100),
+  sha256: z.string().max(64),
+  name: z.string().min(1).max(255),
+};
+
+export const requestProjectDocumentUploadAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid(), kind: z.enum(["purchase_order", "other"]), ...uploadDeclarationSchema }))
+  .action(async ({ parsedInput, ctx }) => {
+    const intent = await requestProjectDocumentUpload(ctx.viewer, parsedInput);
+    return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });
+
+// 07-22(W7 · SC-20) 매출 발행 줄 계산서 — 한 자리(교체는 domain 주인 규칙이 같은 트랜잭션에서 이전 파일을 뗀다). 저장된 발행 줄 id만 받는다.
+export const requestInvoiceFileUploadAction = authedActionClient
+  .schema(z.object({ entryId: z.string().uuid(), ...uploadDeclarationSchema }))
+  .action(async ({ parsedInput, ctx }) => {
+    const { entryId, ...declaration } = parsedInput;
+    const intent = await requestEvidenceUpload(ctx.viewer, { ownerKind: REVENUE_INVOICE_KIND, ownerId: entryId, ...declaration });
+    return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });
+
+export const getInvoiceFileAction = authedActionClient
+  .schema(z.object({ entryId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => getOwnedEvidence(ctx.viewer, { ownerKind: REVENUE_INVOICE_KIND, ownerId: parsedInput.entryId }));

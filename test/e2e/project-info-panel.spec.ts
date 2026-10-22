@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, projectDocuments, projects, quoteLines, quoteRevisions } from "@/db/schema";
+import { codeItems, files, projectDocuments, projects, quoteLines, quoteRevisions } from "@/db/schema";
 import { and, asc, isNull } from "drizzle-orm";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
@@ -397,7 +397,21 @@ test.describe("고객 승인 섹션 · 승인 표시 패널 (W6 · SC-19)", () =
     expect(stored?.customerApprovalMemo).toBe("메일로 받은 발주서");
 
     // 발주서 서류가 생기면 경고가 사라진다(저장은 처음부터 막지 않았다).
-    await db.insert(projectDocuments).values({ projectId: project.id, kind: "purchase_order", createdBy: pm.userId });
+    // 07-22(W3): 살아 있는 파일이 붙은 서류만 센다.
+    const [doc] = await db.insert(projectDocuments).values({ projectId: project.id, kind: "purchase_order", createdBy: pm.userId }).returning();
+    if (!doc) throw new Error("서류 행을 넣지 못했습니다");
+    const fileId = randomUUID();
+    await db.insert(files).values({
+      id: fileId,
+      ownerKind: "project_document",
+      ownerId: doc.id,
+      objectKey: `evidence/${fileId}`,
+      sha256: "0".repeat(64),
+      sizeBytes: 120_000,
+      contentType: "application/pdf",
+      originalName: "발주서.pdf",
+      uploadedBy: pm.userId,
+    });
     await page.reload();
     await expandProjectInfo(page);
     await expect(projectInfo(page).getByText("승인됨 · 발주서", { exact: true })).toBeVisible();

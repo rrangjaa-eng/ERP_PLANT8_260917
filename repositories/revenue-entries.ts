@@ -46,6 +46,23 @@ export async function findRevenueEntryById(viewer: Viewer, id: string, tx: DbOrT
   return row ?? null;
 }
 
+// 07-22(W7) — 계산서 파일 붙이기 · 교체가 매출 줄 한 행을 잠근다(같은 줄의 교체 두 건이 차례로 — 살아 있는 파일 하나).
+export async function lockRevenueEntryForUpdate(viewer: Viewer, id: string, tx: DbOrTx): Promise<RevenueEntryRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(revenueEntries).where(eq(revenueEntries.id, id)).for("update");
+  return row ?? null;
+}
+
+// 07-22(W7) — 프로젝트의 보관 안 된 발행 줄 id(계산서 링크 재료).
+export async function listLiveIssueEntryIds(viewer: Viewer, projectId: string): Promise<string[]> {
+  void viewer;
+  const rows = await db
+    .select({ id: revenueEntries.id })
+    .from(revenueEntries)
+    .where(and(eq(revenueEntries.projectId, projectId), eq(revenueEntries.kind, "issue"), isNull(revenueEntries.archivedAt)));
+  return rows.map((row) => row.id);
+}
+
 export type RevenueEntryInsertInput = {
   /** 04-41(ENG-D10) — 화면이 만든 uuid. 이미 있으면 넣지 않는다(null). */
   id?: string;

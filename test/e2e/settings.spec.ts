@@ -335,6 +335,27 @@ test.describe("07-08 — 지급 · 프로젝트 새 설정 항목 (SC-04)", () =
       await restore(key, original);
     }
   });
+
+  // 감사 C1 — 설정 숫자 · 텍스트 칸 폭은 §7-15 칸 폭 셋(200 · 280 · 480) 안이다(616 · 597이던 칸이 없다). 폰(<700)은 전폭.
+  test("C1 — 숫자 · 텍스트 칸 폭이 칸 폭 토큰(짧은 칸 280)이다: PC 1280 · 768, 폰 375는 전폭", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openSettingsAsAdmin(page);
+    const ids = [
+      AUTH_LOCKOUT_THRESHOLD.key,
+      PROJECT_COST_RATE_PCT.key,
+      PROJECT_COLLECTION_DUE_DAYS.key,
+      PAYMENT_CUTOFF_TIME.key,
+      DOCUMENT_NUMBER_PROJECT_SEPARATOR.key,
+      EVIDENCE_MAX_SIZE_MB.key,
+    ];
+    const widthOf = async (key: string) => (await page.locator(`[id="setting-${key}"]`).boundingBox())?.width ?? 0;
+    for (const size of [{ width: 1280, height: 900 }, { width: 768, height: 900 }]) {
+      await page.setViewportSize(size);
+      for (const key of ids) expect(Math.round(await widthOf(key)), `${key} @${size.width}`).toBe(280);
+    }
+    await page.setViewportSize({ width: 375, height: 800 });
+    for (const key of ids) expect(await widthOf(key), `${key} @375`).toBeGreaterThan(280);
+  });
 });
 
 // PR #104 후속 F(2) — ISSUE-001(/qa): 설정 칸의 힌트 <p>가 id를 갖고 칸(또는 묶음)의 aria-describedby가 그 id를 가리킨다.

@@ -196,7 +196,7 @@ function SimpleFieldEditor({
   // (parseNumberInput이 쉼표를 지우므로 rawValue를 따로 넘기지 않아도 된다).
   if (descriptor.kind === "number" && descriptor.numberKind) {
     return (
-      <div className={styles.field}>
+      <div className={`${styles.field} ${styles.shortField}`}>
         <TextField
           id={`setting-${fieldKey}`}
           label={label}
@@ -234,7 +234,7 @@ function SimpleFieldEditor({
     />
   );
   return (
-    <div className={styles.field}>
+    <div className={`${styles.field} ${styles.shortField}`}>
       {unitLabel ? (
         <div className={styles.withUnit}>
           {input}

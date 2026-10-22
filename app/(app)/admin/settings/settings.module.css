@@ -72,6 +72,14 @@
   min-width: 0;
 }
 
+/* §6-3 · §7-15 칸 폭 — 숫자 · 텍스트 칸은 짧은 칸(--field-w-short 280). TextField가 자기 라벨 줄을 가져 Form.Field(라벨 중복)를 못 쓰므로 입력 칸 묶음(줄의 둘째 자식)의 폭만 건다.
+   폰(<700px)은 전폭이 기본값이다. 단위가 붙은 칸(.withUnit)도 줄이 display: contents라 같은 선택자가 입력 칸 묶음에 닿는다(위 `.withUnit > :first-child > :nth-child(2)`와 특이도가 같아 그 뒤에 둔다). */
+@media (min-width: 700px) {
+  .shortField [data-ui="field-row"] > :nth-child(2) {
+    flex: 0 1 var(--field-w-short);
+  }
+}
+
 .unit {
   display: flex;
   align-items: center;

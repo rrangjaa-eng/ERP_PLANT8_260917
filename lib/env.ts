@@ -63,7 +63,8 @@ const rawSchema = z.object({
   GOOGLE_CLIENT_SECRET: optionalString(),
   LOCKOUT_THRESHOLD: numberWithDefault(5),
   LOCKOUT_WINDOW_MINUTES: numberWithDefault(15),
-  RATE_LIMIT_LOGIN_MAX: numberWithDefault(10),
+  // 07 D-723 — 사무실 30명 동시 출근에도 막히지 않게. 추측은 계정별 잠금(3~10회)이 막는다. 운영 값은 배포 환경 변수
+  RATE_LIMIT_LOGIN_MAX: numberWithDefault(60),
   APP_DATA_KEY_v1: optionalString(),
   // Phase 3(03-06): 키 회전용 두 번째 버전 키. 선택 문자열이라 값이 없어도
   // 앱이 뜬다(Phase 1 계약 그대로) — lib/crypto.ts가 있으면 새 암호화에 이

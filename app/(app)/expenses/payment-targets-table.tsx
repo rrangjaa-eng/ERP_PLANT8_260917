@@ -118,7 +118,9 @@ type MovedItem = { expenseId: string; before: string | null; version: number };
 type MoveResult =
   | { kind: "moved"; moved: MovedItem[]; blocked: number }
   | { kind: "failed"; reason: string; retry: { expenseId: string; version: number }[] }
-  | { kind: "revertFailed"; reason: string | null; items: { expenseId: string; date: string | null; version: number }[] };
+  | { kind: "revertFailed"; reason: string | null; items: { expenseId: string; date: string | null; version: number }[] }
+  // 검토 M-1: 되돌리기 일부 거부 — 되돌린 건수 · 막힌 건수(막힌 건은 행 오류 줄).
+  | { kind: "revertPartial"; reverted: number; blocked: number };
 
 // 막힌 행 오류 줄 낱말 — 영업일 · 과거(이번 주 지급일 지남) 거부는 UI-SPEC SC-01 낱말 `영업일이 아닌 날`, 그 밖(version 충돌 등)은 서버 사유 그대로.
 function moveReasonText(reason: string): string {
@@ -866,7 +868,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     router.refresh();
   }
 
-  // 되돌리기 — 옮긴 건만 이전 값(자동이면 null)으로. 다 되면 결과 줄이 사라지고, 거부되면 `되돌리기 실패 · {원인}`(되돌리기 없음 — SYSTEM §7-8).
+  // 되돌리기 — 옮긴 건만 이전 값(자동이면 null)으로. 다 되면 결과 줄이 사라지고, 일부 거부면 `되돌림 N건 · 막힘 M건`(막힌 행 오류 줄), 전부 거부면 `되돌리기 실패 · {원인}`(되돌리기 없음 — SYSTEM §7-8).
   async function revertMoved(items: { expenseId: string; date: string | null; version: number }[]) {
     if (items.length === 0 || movingRef.current) return;
     movingRef.current = true;
@@ -884,10 +886,16 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       setMoveResult({ kind: "revertFailed", reason: response?.serverError ?? null, items });
       return;
     }
-    setMoveBlocked(new Map());
+    setMoveBlocked(new Map(data.rejected.map((item) => [item.expenseId, moveReasonText(item.reason)])));
     const first = data.rejected[0];
-    setMoveResult(first ? { kind: "revertFailed", reason: first.reason, items } : null);
-    focusRevertedRef.current = first ? null : (data.reverted[0]?.expenseId ?? null);
+    setMoveResult(
+      !first
+        ? null
+        : data.reverted.length > 0
+          ? { kind: "revertPartial", reverted: data.reverted.length, blocked: data.rejected.length }
+          : { kind: "revertFailed", reason: first.reason, items },
+    );
+    focusRevertedRef.current = data.reverted[0]?.expenseId ?? null;
     router.refresh();
   }
 
@@ -1203,6 +1211,12 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
               다시 시도
             </Button>
           </span>
+        ) : moveResult?.kind === "revertPartial" ? (
+          <>
+            <span className={styles.batchDone}>{`되돌림 ${moveResult.reverted}건`}</span>
+            {" · "}
+            <span className={styles.batchBlocked}>{`막힘 ${moveResult.blocked}건`}</span>
+          </>
         ) : moveResult?.kind === "revertFailed" ? (
           moveResult.reason ? (
             <span className={styles.batchBlocked}>{`되돌리기 실패 · ${moveResult.reason}`}</span>

@@ -113,6 +113,35 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     await page.context().close();
   });
 
+  test("M-1 — 되돌리기 일부 거부 → `되돌림 1건 · 막힘 1건`(다시 시도 없음) · 막힌 행 오류 줄 · 되돌린 행은 밀림 복귀 + 포커스", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    test.skip(cal.today > cal.thisPay, "이번 주 지급일이 지남 — 숨김 갈래가 덮는다");
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    await pushedDoc(fx, "hold", payer, cal);
+    const changed = await pushedDoc(fx, "retry", payer, cal);
+    const back = fx.lines.hold.itemName;
+    const stale = fx.lines.retry.itemName;
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await openTargets(page);
+    await targetsGrid(page).getByRole("checkbox", { name: `${back} 고르기` }).check();
+    await targetsGrid(page).getByRole("checkbox", { name: `${stale} 고르기` }).check();
+    await page.getByRole("button", { name: "이번 주로", exact: true }).click();
+    await expect(moveStatus(page)).toHaveText(/^이번 주로 · 2건 옮김\s*되돌리기$/);
+    // 옮긴 뒤 다른 쪽에서 한 건을 바꿈 — 되돌리기는 그 건만 거부하고 나머지는 되돌린다.
+    await db.update(expenses).set({ version: sql`${expenses.version} + 1` }).where(eq(expenses.id, changed.id));
+
+    await moveStatus(page).getByRole("button", { name: "되돌리기" }).click();
+    const line = page.locator('p[role="status"]').filter({ hasText: "되돌림" });
+    await expect(line).toHaveText("되돌림 1건 · 막힘 1건");
+    await expect(line.getByRole("button")).toHaveCount(0);
+    await expect(targetRow(page, stale).getByText(/바꿈 · 새로 고침$/)).toBeVisible();
+    await expect(targetRow(page, back).getByText("마감 지나 밀림", { exact: true })).toBeVisible();
+    await expect(targetRow(page, back).getByRole("button", { name: `${back} 이번 주로` })).toBeFocused();
+    await page.context().close();
+  });
+
   test("U6 — `이번 주로` 두 번 빠르게 눌러도 서버 요청 한 번 · 요청 중 aria-busy", async ({ browser, baseURL }) => {
     const cal = await payCalendar();
     test.skip(cal.today > cal.thisPay, "이번 주 지급일이 지남 — 숨김 갈래가 덮는다");

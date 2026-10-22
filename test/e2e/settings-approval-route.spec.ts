@@ -124,7 +124,8 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     try {
       await openSettings(page);
       const step3OrgUnit = leaveRoute(page).getByLabel("3단 특정 부서");
-      const field = step3OrgUnit.locator("xpath=ancestor::div[1]");
+      // 07-08: select는 Form.Field(.row > .control) 안에 있다 — 칸 묶음(.field)은 세 번째 조상 div.
+      const field = step3OrgUnit.locator("xpath=ancestor::div[3]");
       await expect(field.getByText("부서 없음 · 이 단계는 빈 자리로 건너뜀")).toHaveCount(0);
 
       await step3OrgUnit.selectOption({ label: "—" });
@@ -209,7 +210,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       const save = leaveRoute(page).getByRole("button", { name: "2단 저장" });
       await save.click();
       const reason = "저장 실패 · 다른 저장이 먼저 됨 · 새로 고침";
-      await expect(page.getByRole("alert").filter({ hasText: reason })).toBeVisible();
+      await expect(leaveRoute(page).getByText(reason)).toBeVisible();
       await expect(save).toHaveAccessibleDescription(reason);
       await expect(save).not.toHaveAttribute("aria-disabled", "true");
       expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);

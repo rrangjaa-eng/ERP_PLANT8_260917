@@ -16,6 +16,11 @@ export async function findSimpleValue(viewer: Viewer, key: string, tx?: DbOrTx):
   return row ?? null;
 }
 
+// 07-08(C-P2-10): 비움(null)은 JSON null로 저장한다 — drizzle은 JS null을 SQL NULL로 보내 NOT NULL 열이 거부한다.
+function storedJson(value: unknown): unknown {
+  return value === null ? sql`'null'::jsonb` : value;
+}
+
 // 복합 UNIQUE가 아니라 PK(key) 대상 onConflictDoUpdate — 같은 키를 같은
 // 값으로 두 번 저장해도 행이 하나로 유지되고, 다른 값이면 마지막 쓰기가
 // 이긴다(동시 저장 안전).
@@ -27,12 +32,13 @@ export async function upsertSimpleValue(
   tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
+  const stored = storedJson(value);
   await tx
     .insert(settingsSimple)
-    .values({ key, value, updatedBy: by })
+    .values({ key, value: stored, updatedBy: by })
     .onConflictDoUpdate({
       target: settingsSimple.key,
-      set: { value, updatedAt: new Date(), updatedBy: by },
+      set: { value: stored, updatedAt: new Date(), updatedBy: by },
     });
 }
 
@@ -150,12 +156,13 @@ export async function applySettingsImport(viewer: Viewer, input: SettingsImportI
   void viewer;
   const apply = async (tx: DbOrTx) => {
     for (const item of input.simple) {
+      const stored = storedJson(item.value);
       await tx
         .insert(settingsSimple)
-        .values({ key: item.key, value: item.value, updatedBy: item.by })
+        .values({ key: item.key, value: stored, updatedBy: item.by })
         .onConflictDoUpdate({
           target: settingsSimple.key,
-          set: { value: item.value, updatedAt: new Date(), updatedBy: item.by },
+          set: { value: stored, updatedAt: new Date(), updatedBy: item.by },
         });
     }
     for (const item of input.historized) {

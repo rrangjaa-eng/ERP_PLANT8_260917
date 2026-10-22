@@ -1,9 +1,10 @@
 "use client";
 
-import type { FormEvent } from "react";
+import { useEffect, type FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { changePasswordAction } from "./actions";
 import { Form } from "@/ui/form/Form";
+import { focusFirstInvalid } from "@/ui/form/focus-first-invalid";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
@@ -21,6 +22,11 @@ function getStringField(formData: FormData, key: string): string {
 export function ChangePasswordForm() {
   const { execute, result, isExecuting } = useAction(changePasswordAction);
 
+  // 서버 검증 오류가 돌아오면 포커스를 오류 난 첫 칸으로(07-08 감사 D1).
+  useEffect(() => {
+    if (result.validationErrors !== undefined) focusFirstInvalid("change-password-form");
+  }, [result]);
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -34,7 +40,7 @@ export function ChangePasswordForm() {
   const newPasswordError = result.validationErrors?.newPassword?._errors?.[0];
 
   return (
-    <Form layout="page" className={styles.passwordForm} onSubmit={handleSubmit}>
+    <Form id="change-password-form" layout="page" className={styles.passwordForm} onSubmit={handleSubmit}>
       <TextField
         id="currentPassword"
         name="currentPassword"

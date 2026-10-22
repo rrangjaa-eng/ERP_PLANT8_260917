@@ -54,7 +54,7 @@ export function Select({ id, options, groups, error, hideEmptyOption, className,
           onChange?.(event);
         }}
         aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : description ? hintId : undefined}
+        aria-describedby={[error ? errorId : description ? hintId : undefined, rest["aria-describedby"]].filter(Boolean).join(" ") || undefined}
         className={[styles.select, error ? styles.selectError : "", className].filter(Boolean).join(" ")}
       >
         {hideEmptyOption ? null : <option value="">—</option>}

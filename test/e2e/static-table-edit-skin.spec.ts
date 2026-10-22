@@ -4,7 +4,7 @@ import { createRole } from "@/domain/permissions/roles";
 import { loginAsSysadmin } from "./row-actions-helpers";
 
 // 웨이브 6 DOM 감사 P1 · P2 — 코드표 · 계급의 편집 표(StaticTable `editable`).
-// SYSTEM §7-2(801) 「표 안 입력: 테두리 없이 아래 1px --accent 밑줄」 · §7-3(894) · §7-13(1095) 「편집할 수 있는 셀이 하나라도 있으면 머리글 --g-100 + --g-950」(Table `.editable`과 같은 값 — 견적 표 · 코드표 · 계급 모두).
+// SYSTEM §7-2(801) 「표 안 입력: 테두리 없이 아래 1px --accent 밑줄」 · §7-3(894) · §7-13(1095) 「편집할 수 있는 셀이 하나라도 있으면 머리글 --surface-selected + --g-950」(07 개정 11 — 옛 --g-100)(Table `.editable`과 같은 값 — 견적 표 · 코드표 · 계급 모두).
 // 기대 값은 리터럴 rgb가 아니라 계산된 역할 토큰 값이다.
 const SCREENS = [
   { name: "코드표 프로젝트 상태", url: "/admin/code-tables?tableKey=project_status" },
@@ -28,7 +28,7 @@ async function resolved(page: Page, property: "backgroundColor" | "color", token
 
 for (const width of [1280, 768]) {
   for (const screen of SCREENS) {
-    test(`${screen.name} ${width} — 표 안 입력은 아래 1px --accent 밑줄뿐이고 머리글 면은 --g-100이다`, async ({ page }) => {
+    test(`${screen.name} ${width} — 표 안 입력은 아래 1px --accent 밑줄뿐이고 머리글 면은 --surface-selected다`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await loginAsSysadmin(page);
       await page.goto(screen.url);
@@ -38,22 +38,35 @@ for (const width of [1280, 768]) {
       const sides = await controls.evaluateAll((nodes) =>
         nodes.map((node) => {
           const cs = getComputedStyle(node);
-          return { label: node.getAttribute("aria-label") ?? node.tagName, top: cs.borderTopWidth, left: cs.borderLeftWidth, right: cs.borderRightWidth, bottom: cs.borderBottomWidth, bottomColor: cs.borderBottomColor };
+          return {
+            label: node.getAttribute("aria-label") ?? node.tagName,
+            inDetail: node.closest('[data-ui="static-table-detail"]') !== null,
+            top: cs.borderTopWidth,
+            left: cs.borderLeftWidth,
+            right: cs.borderRightWidth,
+            bottom: cs.borderBottomWidth,
+            bottomColor: cs.borderBottomColor,
+          };
         }),
       );
-      expect(sides.length).toBeGreaterThan(0);
-      for (const side of sides) {
+      // 07-08 C3: detail 줄(증빙 종류 세금 규칙)은 표 안 셀이 아니라 폼이다 — 밑줄 스킨 대신 ui/input · ui/select 테두리를 그대로 둔다.
+      const cellSides = sides.filter((side) => !side.inDetail);
+      expect(cellSides.length).toBeGreaterThan(0);
+      for (const side of cellSides) {
         expect(side, `${side.label} 테두리`).toMatchObject({ top: "0px", left: "0px", right: "0px", bottom: "1px", bottomColor: accent });
       }
+      for (const side of sides.filter((entry) => entry.inDetail)) {
+        expect([side.top, side.left, side.right], `${side.label} 폼 테두리`).not.toContain("0px");
+      }
       const header = await page.locator("main table thead th").first().evaluate((th) => ({ bg: getComputedStyle(th).backgroundColor, color: getComputedStyle(th).color }));
-      expect(header.bg, "머리글 면").toBe(await resolved(page, "backgroundColor", "--g-100"));
+      expect(header.bg, "머리글 면").toBe(await resolved(page, "backgroundColor", "--surface-selected"));
       expect(header.color, "머리글 글자").toBe(await resolved(page, "color", "--g-950"));
     });
   }
 }
 
 // 웨이브 6 재검사 N1 · Q1 — 폰(<700)은 읽기 전용 표다(편집 칸 0).
-// N1: 편집 셀이 0이면 머리글은 읽기 표 면(--surface-head + --text-muted)이다(SYSTEM 894) — 편집 신호 면(--g-100)이 아니다. 서버 렌더부터(CSS 미디어쿼리) 맞는다.
+// N1: 편집 셀이 0이면 머리글은 읽기 표 면(--surface-head + --text-muted)이다(SYSTEM 894) — 편집 신호 면(--surface-selected)이 아니다. 서버 렌더부터(CSS 미디어쿼리) 맞는다.
 // Q1: SYSTEM 876 「동작 열(「비활성화」·「삭제」)은 Q4 A대로 44px로 보인다」 — 폰에서도 동작 버튼이 44px 이상으로 보이고 320에서 가로 넘침이 없다.
 const PHONE_WIDTHS = [375, 320] as const;
 
@@ -71,7 +84,7 @@ for (const width of PHONE_WIDTHS) {
       expect(headers.length).toBeGreaterThan(0);
       const readBg = await resolved(page, "backgroundColor", "--surface-head");
       const readColor = await resolved(page, "color", "--text-muted");
-      const editBg = await resolved(page, "backgroundColor", "--g-100");
+      const editBg = await resolved(page, "backgroundColor", "--surface-selected");
       expect(readBg).not.toBe(editBg);
       for (const header of headers) {
         expect(header.bg, "폰 머리글 면").toBe(readBg);

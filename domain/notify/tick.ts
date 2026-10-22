@@ -16,6 +16,7 @@ import {
   findExistingDedupKeys,
   insertNotifications,
   insertTickRun,
+  markHandledStepNotificationsRead,
   markPendingEmailSkipped,
   NOTIFY_TX_DEADLINE_MS,
   recordEmailOutcome,
@@ -108,6 +109,8 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
       let remaining = 0;
       let incompleteRecipientIds: string[] = [];
       let evaluationFailed = false;
+      // 07-14 K25: 결재 처리 자동 읽음이 건너뛴(메일 단계가 잡고 있던) 결재 차례 행을 tick마다(비영업일 포함) 읽음으로 — 방문 없이 최종 읽음.
+      const autoRead = await markHandledStepNotificationsRead(SYSTEM_VIEWER, tx);
 
       if (businessDay) {
         const max = await batchMax(tx);
@@ -196,14 +199,14 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
         },
         tx,
       );
-      return { sent, skipped, remaining, incompleteRecipientIds, runId };
+      return { sent, skipped, remaining, incompleteRecipientIds, runId, autoRead };
     },
     { deadlineMs: txDeadlineMs },
   );
 
   if (!locked.acquired) return { status: "locked" };
 
-  const { sent, skipped, remaining, incompleteRecipientIds, runId } = locked.value;
+  const { sent, skipped, remaining, incompleteRecipientIds, runId, autoRead } = locked.value;
 
   // 잠금 트랜잭션이 커밋된 뒤 — 영업일에만 이메일 단계(D-709). 선점은 미완 목록을
   // 실행 기록에서 읽는다(Codex 2차 #3).
@@ -219,6 +222,6 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
     }
   }
 
-  log.info("notify.tick", { ok: true, sent, skipped, remaining, businessDay, ...email });
+  log.info("notify.tick", { ok: true, sent, skipped, remaining, businessDay, autoRead, ...email });
   return { status: "ok", sent, skipped, remaining, businessDay, incompleteRecipientIds, runId };
 }

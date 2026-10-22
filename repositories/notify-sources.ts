@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import {
+  actionLog,
   approvalInstances,
   approvalRoutes,
   approvalSteps,
@@ -276,4 +277,72 @@ export async function listExpenseFinalApprovals(viewer: Viewer, since: Date, lim
     )
     .orderBy(asc(approvalSteps.actedAt), asc(approvalSteps.id))
     .limit(limit + 1);
+}
+
+// 반려 — 지출결의 결재 단계가 반려된 사건(차수 무관 — 반려 뒤 다시 제출해 또 반려되면 각자 한 번). 사건 id = 단계 id.
+export async function listExpenseRejections(viewer: Viewer, since: Date, limit: number, tx: DbOrTx = db): Promise<ExpenseResultEventRow[]> {
+  void viewer;
+  return tx
+    .select({ expenseId: expenses.id, drafterId: approvalInstances.drafterId, eventId: approvalSteps.id, at: sql<Date>`${approvalSteps.actedAt}`.mapWith(approvalSteps.actedAt) })
+    .from(approvalSteps)
+    .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+    .innerJoin(approvalInstances, eq(approvalInstances.id, approvalRoutes.instanceId))
+    .innerJoin(expenses, eq(expenses.id, approvalInstances.documentId))
+    .where(
+      and(
+        eq(approvalInstances.documentKind, "expense"),
+        isNull(expenses.deletedAt),
+        eq(approvalSteps.action, "rejected"),
+        sql`${approvalSteps.actedBy} <> ${approvalInstances.drafterId}`,
+        sql`${approvalSteps.actedAt} >= ${since.toISOString()}::timestamp`,
+      ),
+    )
+    .orderBy(asc(approvalSteps.actedAt), asc(approvalSteps.id))
+    .limit(limit + 1);
+}
+
+// 지급 완료(지급 기록 처리 시각) · 지급 취소(취소 시각) — 지급 행 하나가 두 사건을 가질 수 있어 사건 id에 갈래를 붙인다(`paid-{지급 id}` · `cancel-{지급 id}`).
+// 기안자 본인이 처리 · 취소한 건은 자기 행동이라 뺀다.
+export async function listExpensePaymentEvents(
+  viewer: Viewer,
+  input: { since: Date; cancelled: boolean },
+  limit: number,
+  tx: DbOrTx = db,
+): Promise<ExpenseResultEventRow[]> {
+  void viewer;
+  const at = input.cancelled ? expensePayments.cancelledAt : expensePayments.processedAt;
+  const actor = input.cancelled ? expensePayments.cancelledBy : expensePayments.processedBy;
+  const rows = await tx
+    .select({ expenseId: expenses.id, drafterId: expenses.drafterId, paymentId: expensePayments.id, at: sql<Date>`${at}`.mapWith(expensePayments.processedAt) })
+    .from(expensePayments)
+    .innerJoin(expenses, eq(expenses.id, expensePayments.expenseId))
+    .where(and(isNull(expenses.deletedAt), sql`${actor} <> ${expenses.drafterId}`, sql`${at} >= ${input.since.toISOString()}::timestamp`))
+    .orderBy(asc(at), asc(expensePayments.id))
+    .limit(limit + 1);
+  const prefix = input.cancelled ? "cancel" : "paid";
+  return rows.map((row) => ({ expenseId: row.expenseId, drafterId: row.drafterId, eventId: `${prefix}-${row.paymentId}`, at: row.at }));
+}
+
+// 금액 바뀜(AQ-24) — 기안자가 아닌 사람이 제출 뒤 지출결의 금액을 바꾼 사건. 확인 기록(expense_evidence_reviews)은 문서마다 한 행이라 고칠 때마다
+// 덮여 사건마다 키를 못 만든다 → 원천은 그 고침이 같은 tx로 남기는 끌 수 없는 행동 로그 evidence_amount_change(ALWAYS_ON_ACTION_TYPES —
+// 관리자가 꺼서 이 갈래가 조용히 비는 일이 없다). 사건 id = `amount-{로그 seq}`.
+export async function listExpenseAmountChanges(viewer: Viewer, since: Date, limit: number, tx: DbOrTx = db): Promise<ExpenseResultEventRow[]> {
+  void viewer;
+  const rows = await tx
+    .select({ expenseId: expenses.id, drafterId: expenses.drafterId, seq: actionLog.seq, at: actionLog.occurredAt })
+    .from(actionLog)
+    .innerJoin(expenses, sql`${expenses.id}::text = ${actionLog.entityId}`)
+    .where(
+      and(
+        eq(actionLog.actionType, "evidence_amount_change"),
+        eq(actionLog.entity, "expense"),
+        isNull(actionLog.prunedAt),
+        isNull(expenses.deletedAt),
+        sql`${actionLog.actorId} is distinct from ${expenses.drafterId}`,
+        sql`${actionLog.occurredAt} >= ${since.toISOString()}::timestamp`,
+      ),
+    )
+    .orderBy(asc(actionLog.occurredAt), asc(actionLog.seq))
+    .limit(limit + 1);
+  return rows.map((row) => ({ expenseId: row.expenseId, drafterId: row.drafterId, eventId: `amount-${row.seq}`, at: row.at }));
 }

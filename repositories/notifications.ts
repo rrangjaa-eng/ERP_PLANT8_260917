@@ -155,6 +155,67 @@ export async function hasEventNotification(
   return rows.length > 0;
 }
 
+// ── 결재 처리 자동 읽음 (07-14 N16 · G33 · K25) ───────────────────────
+
+// 결재 차례 알림(approval-waiting · entity approval-step · entityId = 단계 id, 대표 폴백 자리는 `{차수 id}:fallback`) 중 이 단계들의 안 읽은 행을
+// 받는 사람 가리지 않고(그 단계 후보 전원 · 2회차 팀장 — 단계가 닫히면 모두 할 일 없음) 읽음으로. 결재 트랜잭션 안에서 부른다.
+// 다른 트랜잭션(이메일 선점)이 잡은 행은 SKIP LOCKED로 건너뛴다 — 결재가 메일 트랜잭션을 기다리지 않는다. 건너뛴 행은 다음 tick이 정리한다.
+// read_at은 UTC 저장(openInbox와 같은 꼴). 돌려준 수 = 읽음으로 바꾼 행 수.
+export async function markStepNotificationsRead(viewer: Viewer, input: { stepIds: readonly string[] }, tx: DbOrTx): Promise<number> {
+  void viewer;
+  if (input.stepIds.length === 0) return 0;
+  const marked = await tx.execute<{ id: number }>(sql`
+    update notification_log
+    set read_at = now() at time zone 'UTC'
+    where id in (
+      select id from notification_log
+      where condition_kind = 'approval-waiting'
+        and entity = 'approval-step'
+        and entity_id = any(${sql.param([...input.stepIds])}::text[])
+        and read_at is null
+      FOR UPDATE SKIP LOCKED
+    )
+    returning id
+  `);
+  return marked.rows.length;
+}
+
+// K25: 다음 tick 시작 때(영업일 여부와 무관) 잠금 tx 안에서 — 안 읽은 결재 차례 행 중 그 단계가 이미 처리됐거나(acted_at), 인스턴스가 진행 중
+// (submitted · in_review)이 아니거나, 지난 차수의 단계인 것을 읽음으로(사람 방문에 기대지 않는 최종 읽음). 대표 폴백 자리 키는 그 차수에 처리된
+// 폴백 행이 있거나 같은 조건이면 읽음. 다른 트랜잭션이 잡은 행은 건너뛴다(다음 tick).
+export async function markHandledStepNotificationsRead(viewer: Viewer, tx: DbOrTx): Promise<number> {
+  void viewer;
+  const marked = await tx.execute<{ id: number }>(sql`
+    update notification_log
+    set read_at = now() at time zone 'UTC'
+    where id in (
+      select n.id from notification_log n
+      left join approval_steps s
+        on n.entity_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and s.id = (case when n.entity_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then n.entity_id::uuid end)
+      left join approval_routes r
+        on r.id = coalesce(
+          s.route_id,
+          case when n.entity_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:fallback$' then split_part(n.entity_id, ':', 1)::uuid end
+        )
+      left join approval_instances i on i.id = r.instance_id
+      where n.condition_kind = 'approval-waiting'
+        and n.entity = 'approval-step'
+        and n.read_at is null
+        and (
+          r.id is null
+          or i.status not in ('submitted', 'in_review')
+          or r.round <> i.current_round
+          or s.acted_at is not null
+          or (s.id is null and exists (select 1 from approval_steps f where f.route_id = r.id and f.is_fallback and f.acted_at is not null))
+        )
+      FOR UPDATE OF n SKIP LOCKED
+    )
+    returning id
+  `);
+  return marked.rows.length;
+}
+
 // ── 알림함 읽기 (04.2-07, D-4218) ──────────────────────────────────────
 
 export type InboxCursor = { createdAt: string; id: string };

@@ -1,15 +1,22 @@
 import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { approvalRoutes, approvalSteps, notificationLog, notificationRules } from "@/db/schema";
-import { approveDocument } from "@/domain/approvals";
+import { actionLog, approvalRoutes, approvalSteps, expensePayments, expenses, notificationLog, notificationRules } from "@/db/schema";
+import { approveDocument, rejectDocument } from "@/domain/approvals";
+import { confirmEvidence } from "@/domain/evidence-reviews";
+import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
+import { preCutoffUnapprovedKind } from "@/domain/notify/kinds/pre-cutoff-unapproved";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { seoulToday } from "@/lib/dates";
+import { upsertVisibility } from "@/repositories/permissions";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { CONDITION_KINDS, type ConditionKind } from "@/domain/notify/condition-kinds";
 import { expenseResultKind } from "@/domain/notify/kinds/expense-result";
 import { runTick } from "@/domain/notify/tick";
 import type { Viewer } from "@/domain/viewer";
 import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "../fixtures/expenses";
-import { approvedExpenseWithEvidence } from "../fixtures/payments";
+import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired } from "../fixtures/payments";
 
 // 07-14 결재 결과(N11 · N19 · D-716 · D-744) — 꺼 둔 사건 종류. 켠 규칙의 고정 되돌아보기 창(하한 enabled_at) 안 사건을 사건 id 키로 한 번.
 // 2026-10-16 금 · 17 토 · 19 월 · 20 화.
@@ -22,13 +29,13 @@ async function tick(kinds: readonly ConditionKind[], date: string) {
   await runTick({ conditionKinds: kinds, now: at(date), emailSender: null });
 }
 
-async function rowsOf(user: Viewer) {
+async function rowsOf(user: Viewer, kind = "expense-result") {
   const rows = await db.select().from(notificationLog).where(eq(notificationLog.recipientId, user.id)).orderBy(notificationLog.id);
-  return rows.filter((row) => row.conditionKind === "expense-result");
+  return rows.filter((row) => row.conditionKind === kind);
 }
 
-async function enableRule(enabledAt: string) {
-  await db.insert(notificationRules).values({ kind: "expense-result", enabled: true, enabledAt: new Date(enabledAt) });
+async function enableRule(enabledAt: string, kind = "expense-result", days?: number) {
+  await db.insert(notificationRules).values({ kind, enabled: true, enabledAt: new Date(enabledAt), ...(days === undefined ? {} : { days }) });
 }
 
 // 마지막으로 처리된 단계(최종 승인 단계) — id와 처리 시각을 테스트 날짜로 옮긴다(서버 시각 칸이라 도메인 경로로는 날짜를 못 정한다).
@@ -134,5 +141,198 @@ describe("결재 결과 — 최종 승인 (N11 · D-716)", () => {
     await db.update(approvalSteps).set({ actedBy: fx.pm.id, selfApproved: true }).where(eq(approvalSteps.id, stepId));
     await tick([expenseResultKind], "2026-10-19");
     expect(await rowsOf(fx.pm)).toHaveLength(0);
+  });
+});
+
+// ── Task 2: 반려 · 금액 바뀜 · 지급 완료 · 지급 취소 갈래(D-744 · K13 · AQ-24) ──────────────
+
+async function submitOne(fx: ExpenseFixture) {
+  const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("지출결의 없음");
+  const submitted = await submitReadyDraft(fx.pm, expenseId);
+  if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+  return { expenseId, instanceId: submitted.instanceId, version: submitted.version };
+}
+
+// 지급 권한자 + 금액 · 값 정보 항목 노출(evidence-reviews.test.ts와 같은 꼴).
+async function makePayer(): Promise<Viewer> {
+  const payer = await makePaymentManager();
+  if (!payer.roleId) throw new Error("계급 없음");
+  for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem, visible: true });
+  return payer;
+}
+
+async function versionOf(expenseId: string): Promise<number> {
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row) throw new Error("지출결의 없음");
+  return row.version;
+}
+
+async function payNow(payer: Viewer, expenseId: string, correctedSupplyAmount?: number) {
+  const confirmed = await confirmEvidence(payer, { expenseId, version: await versionOf(expenseId), ...(correctedSupplyAmount === undefined ? {} : { correctedSupplyAmount }) });
+  const preview = await previewPayable(payer, { expenseId, payDate: seoulToday() });
+  if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+  await completeExpensePayment(payer, { expenseId, expectedPayableKrw: preview.payableKrw, version: confirmed.version });
+}
+
+const byWord = (rows: Awaited<ReturnType<typeof rowsOf>>, word: string) => rows.filter((row) => row.message.startsWith(`${word} · `));
+
+describe("결재 결과 — 반려 · 금액 바뀜 · 지급 완료 · 지급 취소 (N11 · N19 · D-744 · K13)", () => {
+  it("반려 사건 → 기안자 `반려 · {문서 제목}` 한 번", async () => {
+    const fx = await setupExpenseProject();
+    await enableRule("2026-10-01T00:00:00+09:00");
+    const doc = await submitOne(fx);
+    await rejectDocument(fx.lead, { instanceId: doc.instanceId, expectedVersion: doc.version, reason: "견적 다시" });
+    const stepId = await moveActedAt(doc.instanceId, "2026-10-16T15:00:00+09:00");
+    await tick([expenseResultKind], "2026-10-19");
+    await tick([expenseResultKind], "2026-10-20");
+    const rows = await rowsOf(fx.pm);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ entityId: `${doc.expenseId}:${stepId}`, message: `반려 · ${TITLE}` });
+  });
+
+  it("금액 바뀜(경영관리가 공급가액을 고쳐 확인 — 끌 수 없는 evidence_amount_change) → `금액 바뀜 · {문서 제목}` 한 번 · 금액 숫자 없음", async () => {
+    await setEvidenceRequired(false);
+    const fx = await setupExpenseProject();
+    await enableRule("2026-10-01T00:00:00+09:00");
+    const doc = await approvedExpenseWithEvidence(fx);
+    await moveActedAt(doc.instanceId, "2026-10-10T15:00:00+09:00");
+    const payer = await makePayer();
+    await confirmEvidence(payer, { expenseId: doc.expenseId, version: await versionOf(doc.expenseId), correctedSupplyAmount: 12_000_000 });
+    await db.update(actionLog).set({ occurredAt: new Date("2026-10-16T15:00:00+09:00") }).where(and(eq(actionLog.actionType, "evidence_amount_change"), eq(actionLog.entityId, doc.expenseId)));
+    await tick([expenseResultKind], "2026-10-19");
+    await tick([expenseResultKind], "2026-10-20");
+    const changed = byWord(await rowsOf(fx.pm), "금액 바뀜");
+    expect(changed).toHaveLength(1);
+    expect(changed[0]?.message).toBe(`금액 바뀜 · ${TITLE}`);
+    expect(changed[0]?.entityId.startsWith(`${doc.expenseId}:`)).toBe(true);
+  });
+
+  it("지급 완료 → `지급 완료 · {문서 제목}` · 지급 취소 → `지급 취소 · {문서 제목}` — 각 한 번, `지급됨` 없음", async () => {
+    await setEvidenceRequired(false);
+    const fx = await setupExpenseProject();
+    await enableRule("2026-10-01T00:00:00+09:00");
+    const doc = await approvedExpenseWithEvidence(fx);
+    await moveActedAt(doc.instanceId, "2026-10-10T15:00:00+09:00");
+    const payer = await makePayer();
+    await payNow(payer, doc.expenseId);
+    await db.update(expensePayments).set({ processedAt: new Date("2026-10-15T15:00:00+09:00") }).where(eq(expensePayments.expenseId, doc.expenseId));
+    await cancelExpensePayment(payer, { expenseId: doc.expenseId, reason: "계좌 틀림", version: await versionOf(doc.expenseId) });
+    await db.update(expensePayments).set({ cancelledAt: new Date("2026-10-16T15:00:00+09:00") }).where(eq(expensePayments.expenseId, doc.expenseId));
+    await tick([expenseResultKind], "2026-10-19");
+    await tick([expenseResultKind], "2026-10-20");
+    const rows = await rowsOf(fx.pm);
+    expect(byWord(rows, "지급 완료").map((row) => row.message)).toEqual([`지급 완료 · ${TITLE}`]);
+    expect(byWord(rows, "지급 취소").map((row) => row.message)).toEqual([`지급 취소 · ${TITLE}`]);
+    for (const row of rows) {
+      expect(row.message).not.toContain("지급됨");
+      expect(row.message).not.toMatch(/[0-9]/);
+    }
+  });
+
+  it("규칙 끔(행 없음)이면 지급 완료 · 지급 취소도 0 — 합친 종류 하나가 끔(D-744)", async () => {
+    await setEvidenceRequired(false);
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    const payer = await makePayer();
+    await payNow(payer, doc.expenseId);
+    await db.update(expensePayments).set({ processedAt: new Date("2026-10-16T15:00:00+09:00") }).where(eq(expensePayments.expenseId, doc.expenseId));
+    await tick([expenseResultKind], "2026-10-19");
+    expect(await rowsOf(fx.pm)).toHaveLength(0);
+  });
+
+  it("지급 · 취소는 따로 된 종류 파일이 없다(D-744)", () => {
+    const files = readdirSync("domain/notify/kinds");
+    expect(files.filter((name) => /payment/i.test(name))).toEqual([]);
+    expect(readFileSync("domain/notify/kinds/expense-result.ts", "utf8")).not.toContain("지급됨");
+  });
+});
+
+// ── Task 2: 마감 전 미승인(N12 · C-P2-1 · D-715) ──────────────
+// 수동 지정일 2026-10-23(금) → 마감 = 10-22(목) 14:00(resolvePaySchedule). 10-21 수 · 22 목 · 29 목.
+
+async function setManualPayDate(fx: ExpenseFixture, expenseId: string, date: string) {
+  await db
+    .update(expenses)
+    .set({ scheduledPaymentDate: date, scheduledPaymentSetBy: fx.pm.id, scheduledPaymentSetAt: new Date() })
+    .where(eq(expenses.id, expenseId));
+}
+
+describe("마감 전 미승인 (N12 · C-P2-1)", () => {
+  it("등록부 — 기본 끔 · 영업일 · 일수 0 · 범위 0~3 · 기안자", () => {
+    expect(CONDITION_KINDS).toContain(preCutoffUnapprovedKind);
+    expect(preCutoffUnapprovedKind).toMatchObject({
+      kind: "pre-cutoff-unapproved",
+      label: "마감 전 미승인",
+      dateUnit: "business",
+      defaults: { enabled: false, days: 0, emailEnabled: true },
+      daysRange: { min: 0, max: 3 },
+      defaultRecipientLabel: "기안자",
+    });
+  });
+
+  it("켬(일수 0) — 결재 중 지출결의는 마감 날 9시 tick에 기안자 `마감 전 미승인 · {문서 제목} · MM-DD HH:MM` 한 번 · 전날 tick은 없음", async () => {
+    const fx = await setupExpenseProject();
+    await enableRule("2026-10-01T00:00:00+09:00", "pre-cutoff-unapproved");
+    const doc = await submitOne(fx);
+    await setManualPayDate(fx, doc.expenseId, "2026-10-23");
+    await tick([preCutoffUnapprovedKind], "2026-10-21");
+    expect(await rowsOf(fx.pm, "pre-cutoff-unapproved")).toHaveLength(0);
+    await tick([preCutoffUnapprovedKind], "2026-10-22");
+    await tick([preCutoffUnapprovedKind], "2026-10-22");
+    const rows = await rowsOf(fx.pm, "pre-cutoff-unapproved");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ entity: "expense", entityId: `${doc.expenseId}:2026-10-22`, referenceDate: "2026-10-22", message: `마감 전 미승인 · ${TITLE} · 10-22 14:00` });
+    expect(await rowsOf(fx.lead, "pre-cutoff-unapproved")).toHaveLength(0);
+  });
+
+  it("규칙 없음(끔) · 최종 승인된 건 · 다른 주 건은 없음", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await submitOne(fx);
+    await setManualPayDate(fx, doc.expenseId, "2026-10-23");
+    await tick([preCutoffUnapprovedKind], "2026-10-22");
+    expect(await rowsOf(fx.pm, "pre-cutoff-unapproved")).toHaveLength(0);
+
+    await enableRule("2026-10-01T00:00:00+09:00", "pre-cutoff-unapproved");
+    const approved = await approvedExpenseWithEvidence(fx, fx.lines.split);
+    await setManualPayDate(fx, approved.expenseId, "2026-10-23");
+    const other = await setupExpenseProject();
+    const later = await submitOne(other);
+    await setManualPayDate(other, later.expenseId, "2026-10-30");
+    await tick([preCutoffUnapprovedKind], "2026-10-22");
+    const ids = (await rowsOf(fx.pm, "pre-cutoff-unapproved")).map((row) => row.entityId);
+    expect(ids).toEqual([`${doc.expenseId}:2026-10-22`]);
+    expect(await rowsOf(other.pm, "pre-cutoff-unapproved")).toHaveLength(0);
+  });
+
+  it("일수 1 — 마감 전 영업일 tick에 한 번 · 그날 tick을 놓치면 마감 날 tick에 한 번 · 두 날 다 돌아도 합 한 번", async () => {
+    const fx = await setupExpenseProject();
+    await enableRule("2026-10-01T00:00:00+09:00", "pre-cutoff-unapproved", 1);
+    const both = await submitOne(fx);
+    await setManualPayDate(fx, both.expenseId, "2026-10-23");
+    await tick([preCutoffUnapprovedKind], "2026-10-20");
+    expect(await rowsOf(fx.pm, "pre-cutoff-unapproved")).toHaveLength(0);
+    await tick([preCutoffUnapprovedKind], "2026-10-21");
+    expect((await rowsOf(fx.pm, "pre-cutoff-unapproved")).map((row) => row.entityId)).toEqual([`${both.expenseId}:2026-10-22`]);
+    await tick([preCutoffUnapprovedKind], "2026-10-22");
+    expect(await rowsOf(fx.pm, "pre-cutoff-unapproved")).toHaveLength(1);
+
+    const missed = await setupExpenseProject();
+    const doc = await submitOne(missed);
+    await setManualPayDate(missed, doc.expenseId, "2026-10-23");
+    await tick([preCutoffUnapprovedKind], "2026-10-22");
+    expect((await rowsOf(missed.pm, "pre-cutoff-unapproved")).map((row) => row.entityId)).toEqual([`${doc.expenseId}:2026-10-22`]);
+  });
+
+  it("마감이 다음 주로 밀리면 새 마감에 다시 한 번", async () => {
+    const fx = await setupExpenseProject();
+    await enableRule("2026-10-01T00:00:00+09:00", "pre-cutoff-unapproved");
+    const doc = await submitOne(fx);
+    await setManualPayDate(fx, doc.expenseId, "2026-10-23");
+    await tick([preCutoffUnapprovedKind], "2026-10-22");
+    await setManualPayDate(fx, doc.expenseId, "2026-10-30");
+    await tick([preCutoffUnapprovedKind], "2026-10-29");
+    expect((await rowsOf(fx.pm, "pre-cutoff-unapproved")).map((row) => row.entityId)).toEqual([`${doc.expenseId}:2026-10-22`, `${doc.expenseId}:2026-10-29`]);
   });
 });

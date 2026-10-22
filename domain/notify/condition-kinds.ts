@@ -2,6 +2,7 @@
 import { approvalWaitingKind } from "@/domain/notify/kinds/approval-waiting";
 import { expenseResultKind } from "@/domain/notify/kinds/expense-result";
 import { paidNoEvidenceKind } from "@/domain/notify/kinds/paid-no-evidence";
+import { preCutoffUnapprovedKind } from "@/domain/notify/kinds/pre-cutoff-unapproved";
 import { payWeekAlertKind } from "@/domain/notify/kinds/pay-week-alert";
 import { prepaidEvidenceKind } from "@/domain/notify/kinds/prepaid-evidence";
 import { projectEndNoExpenseKind } from "@/domain/notify/kinds/project-end-no-expense";
@@ -58,4 +59,5 @@ export const CONDITION_KINDS: readonly ConditionKind[] = [
   proxyRegisteredKind,
   // 07-14 꺼 둔 종류(D17 · 시드 끔) — SC-07 표 순서.
   expenseResultKind,
+  preCutoffUnapprovedKind,
 ];

@@ -59,7 +59,7 @@ DB 세션 발급(30일 sliding, `updateAge` 1일 — 쿠키 연장은 `app/sessi
 - 세션 30일 sliding, 로그아웃은 현재 기기만(D-10). 비밀번호 변경·관리자 재발급 시 그
   사용자의 모든 세션 만료
 - 잠금: `login_attempts` 표 + before/after 훅, 15분 창 5회 실패(env로 조정), 관리자 CLI로
-  즉시 해제. IP 속도 제한(60초 10회)은 better-auth `rateLimit`(DB 저장)
+  즉시 해제. IP 속도 제한(60초 60회, D-723)은 better-auth `rateLimit`(DB 저장)
 - 클라이언트 IP는 `x-forwarded-for`의 **마지막** 항목 하나만 신뢰 — `proxy.ts`가
   `x-client-ip`로 고정하고 훅·better-auth는 그 헤더만 읽는다. 헤더 없으면 500(fail-closed)
 - 계급은 Phase 1엔 `users.is_admin` 하나. `password_is_temporary`가 임시 비밀번호 배너를

@@ -1,12 +1,15 @@
 import { and, eq, ne } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { db } from "@/db/client";
+import { randomBytes } from "node:crypto";
+import { db, pool } from "@/db/client";
 import { expenses, files } from "@/db/schema";
 import { createVisibleMemo, loadKindDetails } from "@/domain/approvals";
-import { createEvidenceViewUrl, listEvidence, privateEvidenceNotice } from "@/domain/evidence";
+import { completeEvidenceUpload, createEvidenceViewUrl, EvidenceUploadRefusedError, listEvidence, privateEvidenceNotice, requestEvidenceUpload } from "@/domain/evidence";
 import { fileVisibilityFor } from "@/domain/evidence/private-files";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import type { Viewer } from "@/domain/viewer";
+import { createMemoryStorage } from "../fakes/memory-storage";
+import { waitForLockWaiter } from "../lock-race";
 import { createDraftExpenseFixture, createIntakeManager } from "../fixtures/evidence";
 import { attachEvidence, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "../fixtures/expenses";
 
@@ -124,5 +127,43 @@ describe("07-27 남은 판정 길", () => {
 
     expect(visibility.visible({ uploadedBy: doc.manager.id, privateToOwner: true })).toBe(true);
     expect(visibility.privateTypeName).toBeNull();
+  });
+});
+
+describe("07-27 업로드 중 종류 변경", () => {
+  it("업로드를 시작한 뒤 문서 종류가 바뀌면 잠금 재확인이 다시 하기로 거부하고 파일 행 0 · 옮긴 객체 삭제", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await createDraftExpenseFixture(fx);
+    await setEvidenceType(expenseId, PUBLIC_TYPE);
+    const storage = createMemoryStorage();
+    const declared = { size: 212_000, contentType: "image/jpeg", sha256: randomBytes(32).toString("hex"), name: "경합 전표.jpg" };
+    const intent = await requestEvidenceUpload(fx.pm, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: expenseId, ...declared }, { storage });
+    storage.put(intent.url, { size: declared.size, contentType: declared.contentType, sha256: declared.sha256 });
+
+    // 다른 연결이 문서 행을 잡고 종류를 바꾼 채 쥐고 있는 동안 완료를 시작한다 — 완료는 종류를 tx 밖에서 읽은 뒤 잠금 앞에서 기다린다.
+    // (`afterLock`은 문서 행을 잡은 뒤에 불려 그 안에서는 종류를 바꿀 수 없다 — 바꾸는 쓰기가 같은 행 잠금에 막힌다.)
+    const holder = await pool.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM expenses WHERE id = $1 FOR UPDATE", [expenseId]);
+      const completing = completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await waitForLockWaiter(pool);
+      await holder.query("UPDATE expenses SET evidence_type = $1 WHERE id = $2", [PRIVATE_TYPE, expenseId]);
+      await holder.query("COMMIT");
+
+      const refused = await completing;
+      expect(refused).toBeInstanceOf(EvidenceUploadRefusedError);
+      expect((refused as EvidenceUploadRefusedError).retry).toBe("restart");
+    } finally {
+      holder.release();
+    }
+
+    expect(await db.select().from(files).where(eq(files.ownerId, expenseId))).toHaveLength(0);
+    const moved = storage.moves.at(-1)?.to;
+    expect(moved).toBeDefined();
+    expect(storage.deletes).toContain(moved);
   });
 });

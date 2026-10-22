@@ -9,7 +9,8 @@ import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
 import { createAccount, resetPassword, unlockAccount } from "@/domain/auth/accounts";
 import { lockoutConfig, recordLoginFailure, windowStart } from "@/domain/auth/lockout";
-import { countOpenFailures } from "@/repositories/login-attempts";
+import { countOpenFailures, lockLoginEmail } from "@/repositories/login-attempts";
+import { withTransaction } from "@/lib/db-transaction";
 import { queryActionLog } from "@/repositories/action-log";
 import { setSettingValue } from "@/domain/settings/registry";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
@@ -211,6 +212,43 @@ describe("잠금 해제의 상한 판정 (A-P2-8)", () => {
     const t = await lockedTarget("unlock-system", SYSADMIN_ROLE_ID, "198.51.100.159");
     const { threshold } = await lockoutConfig();
     await expect(unlockAccount(SYSTEM_VIEWER, t.email)).resolves.toEqual({ resolved: threshold });
+    expect(await openFailures(t.email)).toBe(0);
+  });
+});
+
+// 검토 P3: 해제 · 초기화의 해소 tx도 로그인 잠금 판정과 같은 이메일 잠금(lockLoginEmail)을 쥔다 — 잠금 기록 tx와
+// 줄을 서서, 행동 로그가 「해제 → 잠금」 순인데 실제로는 풀려 있는 오도가 생기지 않는다.
+describe("해제 · 초기화는 이메일 잠금 뒤에 줄 선다", () => {
+  it.each([
+    ["unlockAccount", (email: string) => unlockAccount(SYSTEM_VIEWER, email)],
+    ["resetPassword", (email: string) => resetPassword(SYSTEM_VIEWER, email)],
+  ] as const)("%s는 같은 이메일 잠금이 풀릴 때까지 해소하지 않는다", async (_label, run) => {
+    const t = await lockedTarget("serialize", DEFAULT_ROLE_ID, "198.51.100.160");
+    const { threshold } = await lockoutConfig();
+    let held!: () => void;
+    let release!: () => void;
+    const holding = new Promise<void>((resolve) => (held = resolve));
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const holder = withTransaction(async (tx) => {
+      await lockLoginEmail(SYSTEM_VIEWER, t.email, tx);
+      held();
+      await gate;
+    });
+    await holding;
+
+    let done = false;
+    const pending = run(t.email).then(() => {
+      done = true;
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(done).toBe(false);
+      expect(await openFailures(t.email)).toBe(threshold);
+    } finally {
+      release();
+      await holder;
+      await pending;
+    }
     expect(await openFailures(t.email)).toBe(0);
   });
 });

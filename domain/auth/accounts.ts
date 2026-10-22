@@ -6,7 +6,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { can } from "@/domain/permissions/can";
 import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { findUserByEmail, setPasswordTemporary } from "@/repositories/users";
-import { resolveOpenFailures } from "@/repositories/login-attempts";
+import { lockLoginEmail, resolveOpenFailures } from "@/repositories/login-attempts";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
@@ -109,6 +109,8 @@ export async function resetPassword(
 
   try {
     await withTransaction(async (tx) => {
+      // 검토 P3: 로그인 잠금 판정 · 기록과 같은 이메일 잠금 아래에서 해소한다 — 행동 로그 순서가 실제 상태와 어긋나지 않게.
+      await lockLoginEmail(SYSTEM_VIEWER, email, tx);
       const resolved = await resolveOpenFailures(SYSTEM_VIEWER, email, "admin_reset", tx);
       await recordAction(
         viewer,
@@ -146,6 +148,8 @@ export async function unlockAccount(
   await assertCanGrantRoles(viewer, [user?.roleId ?? null]);
 
   const resolved = await withTransaction(async (tx) => {
+    // 검토 P3: 로그인 잠금 판정 · 기록과 같은 이메일 잠금 아래에서 해소한다 — 「해제 → 잠금」 순 기록 오도를 막는다.
+    await lockLoginEmail(SYSTEM_VIEWER, email, tx);
     const count = await resolveOpenFailures(SYSTEM_VIEWER, email, "admin_unlock", tx);
     await recordAction(
       viewer,

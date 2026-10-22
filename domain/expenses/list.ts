@@ -8,8 +8,18 @@ import { visible } from "@/domain/permissions/visible";
 import { moneyFromRow } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
 import { EXPENSE_LIST_ROW_DTO_SPEC, type ExpenseListRowDto } from "@/domain/expenses/dto";
-import { TEAM_EXPENSE_KIND_LABELS, type TeamExpenseKind } from "@/domain/expenses";
-import { EXPENSE_GROUP_RANKS, listExpensePage, summarizeExpenseList, type ExpenseListRow as RepoRow, type ExpenseSearch, type ExpenseSearchField } from "@/repositories/expenses";
+import { loadExpenseSchedules, scheduleOf, TEAM_EXPENSE_KIND_LABELS, type TeamExpenseKind } from "@/domain/expenses";
+import type { PaySchedule } from "@/domain/payments/pay-schedule";
+import {
+  EXPENSE_GROUP_RANKS,
+  listExpensePage,
+  listUnpaidApprovedScheduleSources,
+  summarizeExpenseList,
+  type ExpenseListRow as RepoRow,
+  type ExpenseScope,
+  type ExpenseSearch,
+  type ExpenseSearchField,
+} from "@/repositories/expenses";
 import { statusStepLabel, type CurrentStep } from "@/domain/approvals";
 import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { loadPrepaidDueDays } from "@/domain/evidence-reviews";
@@ -20,6 +30,7 @@ export type { ExpenseListRowDto } from "@/domain/expenses/dto";
 
 // 05-08(UI-SPEC S8 · §6-1 원장): 지출결의 목록 — 보임 범위(access.ts) 안의 문서를 보기(상태 select) 하나로 거른다. 그룹 순서 · 그룹 안
 // 정렬 · 쪽 나눔은 리포지토리 쿼리의 SQL 한 곳(ORDER BY group_rank, …, id → LIMIT)이 정하고, 이 파일은 받은 순서 그대로 머리글만 붙인다.
+// 07-06(AQ-01): 승인 묶음의 미지급 건 순서만 도메인이 유효 예정일로 셈해 id 배열로 넘긴다(approvedOrder).
 
 export type ExpenseListStatus = "open" | "approved" | "all";
 
@@ -62,9 +73,9 @@ const RANK_LABELS: Record<number, string> = { 1: "작성 중", 2: "반려 · 회
 
 export type ExpenseListGroup<Row> = { label: string; tone?: "warning"; rows: Row[] };
 
-// 승인 보기의 지급 예정일 구간(서울 날짜, 주 = 월요일 시작). SQL이 지급 예정일 오름차순 · 없음 끝으로 주므로 구간은 이미 연속한다.
-function paymentBand(date: string | null, todayKst: string): { label: string; tone?: "warning" } {
-  if (date === null) return { label: "지급 예정일 없음" };
+// 승인 보기의 지급 예정일 구간(서울 날짜, 주 = 월요일 시작). 미지급 승인 건은 유효 예정일 오름차순(07-06)이라 구간이 연속한다.
+// 지급 끝난 건은 SQL이 미지급 건 뒤(실제 지급일 순)로 보내므로 예정일과 무관하게 맨 뒤 「지급 완료」 한 구간이다(07-06 검토 P3).
+function paymentBand(date: string, todayKst: string): { label: string; tone?: "warning" } {
   if (date < todayKst) return { label: "예정일 지남", tone: "warning" };
   const [year, month, day] = todayKst.split("-").map(Number) as [number, number, number];
   const daysFromMonday = (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7;
@@ -75,7 +86,7 @@ function paymentBand(date: string | null, todayKst: string): { label: string; to
 }
 
 // 받은 행 순서를 바꾸지 않고 연속한 같은 그룹에 머리글 하나를 붙인다 — 쪽의 첫 행이 앞 쪽 그룹의 이어짐이어도 첫 머리글을 그 그룹으로 그린다.
-export function groupExpenses<Row extends { groupRank: number; scheduledPaymentDate: string | null }>(
+export function groupExpenses<Row extends { groupRank: number; scheduledPaymentDate: string; paid: boolean }>(
   rows: readonly Row[],
   opts: { status: ExpenseListStatus; todayKst: string },
 ): ExpenseListGroup<Row>[] {
@@ -83,7 +94,9 @@ export function groupExpenses<Row extends { groupRank: number; scheduledPaymentD
   for (const row of rows) {
     const band =
       opts.status === "approved" && row.groupRank === EXPENSE_GROUP_RANKS.approved
-        ? paymentBand(row.scheduledPaymentDate, opts.todayKst)
+        ? row.paid
+          ? { label: "지급 완료" }
+          : paymentBand(row.scheduledPaymentDate, opts.todayKst)
         : { label: RANK_LABELS[row.groupRank] ?? "" };
     const last = groups.at(-1);
     if (last && last.label === band.label) last.rows.push(row);
@@ -144,7 +157,7 @@ function statusOf(row: RepoRow, currentSteps: Map<string, CurrentStep>, payment?
   return { statusWord: "승인", statusDate: date };
 }
 
-function toSource(row: RepoRow, currentSteps: Map<string, CurrentStep>, payment?: PaymentStatus): ExpenseListRowDto {
+function toSource(row: RepoRow, schedule: PaySchedule, currentSteps: Map<string, CurrentStep>, payment?: PaymentStatus): ExpenseListRowDto {
   const teamCost = row.projectId === null && row.quoteLineId === null;
   const seq = row.installment && row.installmentSeq ? ` ${row.installmentSeq}회차` : "";
   const title = teamCost ? [row.teamName, row.content].filter(Boolean).join(" · ") : `${[row.projectName, row.itemName].filter(Boolean).join(" · ")}${seq}`;
@@ -160,10 +173,21 @@ function toSource(row: RepoRow, currentSteps: Map<string, CurrentStep>, payment?
       row.supplyAmountKrw === null
         ? null
         : moneyFromRow({ currency: row.supplyCurrency, foreignAmount: row.supplyForeignAmount, fxRate: row.supplyFxRate, amountKrw: row.supplyAmountKrw }),
-    scheduledPaymentDate: row.scheduledPaymentDate,
+    scheduledPaymentDate: schedule.payDate,
+    scheduledPaymentManual: schedule.manual,
     drafterName: row.drafterName,
     ...statusOf(row, currentSteps, payment),
   };
+}
+
+// 07-06(AQ-01 · B-P2-1): 보이는 미지급 승인 건(검색 포함)의 유효 예정일 ↑ → 번호 → id 순 id 배열. 승인 묶음이 보기에 없으면 읽지 않는다.
+async function approvedOrderOf(viewer: Viewer, input: { scope: ExpenseScope; ranks: readonly number[]; search?: ExpenseSearch }): Promise<string[]> {
+  if (!input.ranks.includes(EXPENSE_GROUP_RANKS.approved)) return [];
+  const sources = await listUnpaidApprovedScheduleSources(viewer, { scope: input.scope, documentKind: EXPENSE_DOCUMENT_KIND, ...(input.search ? { search: input.search } : {}) });
+  const loaded = await loadExpenseSchedules(viewer, sources);
+  const keyed = sources.map((source) => ({ id: source.id, number: source.number ?? "", payDate: scheduleOf(loaded, source.id).payDate }));
+  keyed.sort((a, b) => (a.payDate !== b.payDate ? (a.payDate < b.payDate ? -1 : 1) : a.number !== b.number ? (a.number < b.number ? -1 : 1) : a.id < b.id ? -1 : 1));
+  return keyed.map((item) => item.id);
 }
 
 export async function listExpenses(
@@ -185,16 +209,28 @@ export async function listExpenses(
   const page = clampPage(input.page, pageCount);
   const rows =
     summary.viewCount > 0
-      ? await listExpensePage(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, limit: pageSize, offset: (page - 1) * pageSize, ...(search ? { search } : {}) })
+      ? await listExpensePage(viewer, {
+          scope,
+          ranks,
+          documentKind: EXPENSE_DOCUMENT_KIND,
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
+          ...(search ? { search } : {}),
+          approvedOrder: await approvedOrderOf(viewer, { scope, ranks, ...(search ? { search } : {}) }),
+        })
       : [];
   const drafterColumn =
     scope.rowScope.rows === "all" || (scope.rowScope.rows === "limited" && scope.rowScope.by.kind !== "own") || summary.othersCount > 0;
-  const payments = await paymentStatuses(viewer, rows, today);
-  const projected = await projectMany(viewer, rows.map((row) => toSource(row, scope.currentSteps, payments.get(row.id))), EXPENSE_LIST_ROW_DTO_SPEC);
+  const [payments, loaded] = await Promise.all([paymentStatuses(viewer, rows, today), loadExpenseSchedules(viewer, rows)]);
+  const projected = await projectMany(
+    viewer,
+    rows.map((row) => toSource(row, scheduleOf(loaded, row.id), scope.currentSteps, payments.get(row.id))),
+    EXPENSE_LIST_ROW_DTO_SPEC,
+  );
   const items = rows.map((row, index) => {
     const dto = { ...projected[index] };
     if (!drafterColumn) delete dto.drafterName;
-    return { groupRank: row.groupRank, scheduledPaymentDate: row.scheduledPaymentDate, dto };
+    return { groupRank: row.groupRank, scheduledPaymentDate: scheduleOf(loaded, row.id).payDate, paid: Boolean(payments.get(row.id)?.payDate), dto };
   });
   const groups = groupExpenses(items, { status: input.status, todayKst: today }).map((group) => ({
     label: group.label,

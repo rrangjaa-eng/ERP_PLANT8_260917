@@ -394,6 +394,13 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
   const [moveResult, setMoveResult] = useState<MoveResult | null>(null);
+  // 감사 #5: 옮긴 행의 `이번 주로`는 그 행과 함께 사라진다 — 결과 줄을 그린 뒤 `되돌리기`로 포커스(rAF가 렌더보다 먼저 돌면 body로 빠진다).
+  const focusUndoRef = useRef(false);
+  useEffect(() => {
+    if (!focusUndoRef.current) return;
+    focusUndoRef.current = false;
+    document.getElementById("payment-move-undo")?.focus();
+  }, [moveResult]);
   // 막힌 행(id → 오류 줄 낱말) — 다음 이번 주로 · 지급 · 이체 파일 때 지운다.
   const [moveBlocked, setMoveBlocked] = useState<ReadonlyMap<string, string>>(new Map());
   // 요청 중인 행 id(U6 — 그 컨트롤 aria-busy) · 연타 이중 요청 막기는 ref(같은 렌더 안 두 번째 누름도 막는다).
@@ -842,6 +849,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     }
     setMoveBlocked(new Map(data.rejected.map((item) => [item.expenseId, moveReasonText(item.reason)])));
     const first = data.rejected[0];
+    focusUndoRef.current = data.moved.length > 0;
     setMoveResult(data.moved.length === 0 && first ? { kind: "failed", reason: moveReasonText(first.reason), retry: items } : { kind: "moved", moved: data.moved, blocked: data.rejected.length });
     const movedIds = new Set(data.moved.map((item) => item.expenseId));
     if (movedIds.size > 0) setSelection((current) => ({ ...current, selectedIds: current.selectedIds.filter((id) => !movedIds.has(id)) }));
@@ -1169,6 +1177,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
               </>
             ) : null}{" "}
             <Button
+              id="payment-move-undo"
               variant="tertiary"
               pending={reverting}
               onClick={() => void revertMoved(moveResult.moved.map((item) => ({ expenseId: item.expenseId, date: item.before, version: item.version })))}

@@ -59,6 +59,8 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     page.on("dialog", () => (dialogs += 1));
     await row.getByRole("button", { name: `${itemName} 이번 주로` }).click();
     await expect(moveStatus(page)).toHaveText(/^이번 주로 · 1건 옮김\s*되돌리기$/);
+    // 감사 #5(P2): 옮긴 행의 버튼이 사라져도 포커스가 body로 빠지지 않는다 — 결과 줄 `되돌리기`로(상세 `자동으로 되돌리기`와 같은 꼴, SYSTEM §10).
+    await expect(moveStatus(page).getByRole("button", { name: "되돌리기" })).toBeFocused();
     expect(dialogs).toBe(0);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     // 토스트 없음(N4) — 이 동작의 role=status는 표 위 결과 줄 하나뿐이다.

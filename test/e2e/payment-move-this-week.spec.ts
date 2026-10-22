@@ -142,6 +142,23 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     await page.context().close();
   });
 
+  test("L-2 — 전부 거부(같은 이유로 또 실패할 거부)면 `다시 시도` 없이 실패 줄만", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    test.skip(cal.today > cal.thisPay, "이번 주 지급일이 지남 — 숨김 갈래가 덮는다");
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const doc = await pushedDoc(fx, "tracer", payer, cal);
+    const itemName = fx.lines.tracer.itemName;
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await openTargets(page);
+    await db.update(expenses).set({ version: sql`${expenses.version} + 1` }).where(eq(expenses.id, doc.id));
+    await targetRow(page, itemName).getByRole("button", { name: `${itemName} 이번 주로` }).click();
+    await expect(moveStatus(page)).toHaveText(/^이번 주로 실패 · .*바꿈 · 새로 고침$/);
+    await expect(moveStatus(page).getByRole("button")).toHaveCount(0);
+    await page.context().close();
+  });
+
   test("L-1 — 저장 뒤 응답이 끊기면 `다시 시도` 없이 실패 줄 + 목록을 다시 받아 옮겨진 상태를 보인다", async ({ browser, baseURL }) => {
     const cal = await payCalendar();
     test.skip(cal.today > cal.thisPay, "이번 주 지급일이 지남 — 숨김 갈래가 덮는다");

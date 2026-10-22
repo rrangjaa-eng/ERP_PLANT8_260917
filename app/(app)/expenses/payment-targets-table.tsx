@@ -866,7 +866,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setMoveBlocked(new Map(data.rejected.map((item) => [item.expenseId, moveReasonText(item.reason)])));
     const first = data.rejected[0];
     focusUndoRef.current = data.moved.length > 0;
-    setMoveResult(data.moved.length === 0 && first ? { kind: "failed", reason: moveReasonText(first.reason), retry: items } : { kind: "moved", moved: data.moved, blocked: data.rejected.length });
+    // 검토 L-2: 건마다 거부(영업일 · 지남 · 밀림 아님 · version 충돌)는 같은 입력으로 다시 보내도 같은 이유로 거부된다 — `다시 시도` 없음.
+    setMoveResult(data.moved.length === 0 && first ? { kind: "failed", reason: moveReasonText(first.reason), retry: null } : { kind: "moved", moved: data.moved, blocked: data.rejected.length });
     const movedIds = new Set(data.moved.map((item) => item.expenseId));
     if (movedIds.size > 0) setSelection((current) => ({ ...current, selectedIds: current.selectedIds.filter((id) => !movedIds.has(id)) }));
     router.refresh();

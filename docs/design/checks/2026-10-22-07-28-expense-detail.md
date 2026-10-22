@@ -26,5 +26,5 @@
 
 ## 시스템
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: 이 변경은 .tsx 문자열 · 오류 상태 속성(aria-invalid · aria-describedby → 기존 Form.Error)뿐, CSS 파일 변경 0
-- [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 칸은 기존 Form.Field width="long" 그대로 · 접힌 영역 밖이다 — 375 · 320 실측은 독립 DOM 감사(07-28-dom-audit.md) 몫
-- [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 해당 없음(육안 금지) — CI=true E2E DOM 단언(expense-detail-required.spec.ts) · 독립 DOM 감사 대상
+- [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: test/e2e/expense-detail-widths.spec.ts(CI=true 프로덕션 빌드)가 375 · 320 · 768 · 1280에서 `#note`가 details/hidden 밖(inCollapsed false) · 칸 오른쪽 ≤ 화면 폭(375→359 · 320→304) · 제출 막힘 뒤 `#note-error` 높이 21 · 잘림 false · 문서 가로 스크롤 false를 실측해 통과 — 칸은 기존 Form.Field width="long" 그대로, 독립 DOM 감사 보고서는 오케스트레이터 몫
+- [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 해당 없음(육안 금지) — CI=true DOM 실측 expense-detail-widths.spec.ts · expense-detail-required.spec.ts 단언

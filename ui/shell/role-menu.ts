@@ -116,6 +116,13 @@ const ADMIN_MENUS: ReadonlyArray<{ key: string; label: string; href: string; gro
     href: "/admin/settings",
     group: ADMIN_GROUP_SETTINGS_PERMISSIONS,
   },
+  // 07-12 AQ-06: 키 시드는 07-15, 화면 · §6-10 표 줄(개정 4) · 관리 메뉴 키 목록은 07-19 — 그 전에는 키를 가진 계급이 없어 걸러져 안 보인다.
+  {
+    key: "admin.notification-rules",
+    label: "알림 규칙",
+    href: "/admin/notification-rules",
+    group: ADMIN_GROUP_SETTINGS_PERMISSIONS,
+  },
   {
     key: "admin.system-status",
     label: "시스템 상태",

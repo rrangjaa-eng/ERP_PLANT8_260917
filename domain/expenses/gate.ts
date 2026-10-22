@@ -18,11 +18,12 @@ export type ExpenseSubmitTarget =
   | "supplyAmount"
   | "evidenceType"
   | "paymentMethod"
+  | "note"
   | "payeeAccount"
   | "prepaidReason"
   | "evidence";
 
-type FieldTarget = Extract<ExpenseSubmitTarget, "teamExpenseKind" | "content" | "supplyAmount" | "evidenceType" | "paymentMethod">;
+type FieldTarget = Extract<ExpenseSubmitTarget, "teamExpenseKind" | "content" | "supplyAmount" | "evidenceType" | "paymentMethod" | "note">;
 
 export type ExpenseRequiredField = { target: FieldTarget; label: string; next: string };
 
@@ -36,7 +37,11 @@ export const EXPENSE_REQUIRED_FIELDS: readonly ExpenseRequiredField[] = [
   { target: "supplyAmount", label: "공급가액", next: "적기" },
   { target: "evidenceType", label: "증빙 종류", next: "고르기" },
   { target: "paymentMethod", label: "지급 방식", next: "고르기" },
+  { target: "note", label: "상세", next: "입력" },
 ];
+
+// 07-28(J13 · N8): 폼 `상세` 칸 아래 오류 — 칸 이름은 이미 라벨이라 `비어 있음`을 뗀 한 줄(제출 막힘 이유와 같은 라벨 · 다음 한 수).
+export const NOTE_REQUIRED = "상세 · 입력";
 
 export const PROJECT_COMPLETED = "완료 프로젝트 · 새 지출결의 없음";
 export const TAX_UNAVAILABLE = "세금 계산 불가 · 세율은 경영관리";
@@ -68,6 +73,8 @@ export type ExpenseSubmitFacts = {
   supplyAmountKrw: number | null;
   evidenceType: string | null;
   paymentMethod: string | null;
+  // 07-28: 상세(DB 칸 note) — 제출 때 필수. trim 뒤 빈 값 = 비어 있음.
+  note: string | null;
   // ⑥ 뒤 — 저장된 값이 그 뒤 보관 · 비활성된 코드(폼에는 이름으로 보이므로 빈 칸이 아니다).
   evidenceTypeInactive: boolean;
   paymentMethodInactive: boolean;
@@ -94,6 +101,7 @@ function emptyFields(facts: ExpenseSubmitFacts): ExpenseRequiredField[] {
     supplyAmount: facts.supplyAmountKrw,
     evidenceType: facts.evidenceType,
     paymentMethod: facts.paymentMethod,
+    note: facts.note?.trim() ?? null,
   };
   const fields = facts.teamCost ? [...TEAM_COST_FIELDS, ...EXPENSE_REQUIRED_FIELDS] : EXPENSE_REQUIRED_FIELDS;
   return fields.filter((field) => values[field.target] === null || values[field.target] === "");

@@ -10,7 +10,7 @@ import { KvList } from "@/ui/kv-list/KvList";
 import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { parseNumberInput } from "@/lib/format-number";
-import { PREPAID_REASON_REQUIRED, REQUESTED_DATE_MISSING, REQUESTED_DATE_PASSED, REQUESTED_DATE_PAST, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
+import { NOTE_REQUIRED, PREPAID_REASON_REQUIRED, REQUESTED_DATE_MISSING, REQUESTED_DATE_PASSED, REQUESTED_DATE_PAST, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { BANK_TRANSFER_PAYMENT_METHOD } from "@/domain/expenses/payee";
 import { isCtrlCombo } from "@/lib/shortcut";
@@ -98,6 +98,7 @@ const TARGET_FIELD: Record<string, string> = {
   vendor: "vendor-pick",
   quoteLine: "line-pick",
   prepaidReason: "prepaidReason",
+  note: "note",
 };
 const NEXT_STEP_ID = "expense-next-step";
 // 견적 줄 바꾸기가 끝나면 페이지가 폼을 새로 그린다(key) — 트리거 `바꾸기`가 새 요소라 포커스를 잃지 않게 새 폼이 한 번 거기로 돌려놓는다.
@@ -301,6 +302,7 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
     picked ? `${picked.kind}:${picked.id}` : "",
     prepaid,
     prepaid && prepaidReason.trim() !== "",
+    note.trim() !== "",
     headcountShown ? headcountRaw : "",
   ]);
   const firstPreviewKey = useRef(previewKey);
@@ -407,6 +409,7 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
   // 1차를 눌렀는데 막혀 있을 때 — 선결제 사유가 막힘이면 칸 오류도 같은 서버 글자로 세우고(S6: 1차 옆 이유와 칸 `Form.Error`) 그 칸으로 포커스.
   function pressBlocked() {
     if (block?.target === "prepaidReason") setErrors((current) => ({ ...current, prepaidReason: block.reason }));
+    if (block?.target === "note") setErrors((current) => ({ ...current, note: NOTE_REQUIRED }));
     focusBlockTarget();
   }
 
@@ -506,6 +509,7 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
       installment: data.installmentMode === "none" ? false : installment,
       prepaid,
       prepaidReason: prepaid ? prepaidReason.trim() || null : null,
+      note: note || null,
       ...(headcountShown && headcountRaw !== "" ? headcountFields() : {}),
       ...(team && usageDate !== "" && !usageDateRef.current?.validity.badInput ? teamFields() : {}),
     };
@@ -517,7 +521,7 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
       fxRate: "환율",
       requestedPaymentDate: "희망 지급일",
       requestedPaymentReason: "희망 사유",
-      note: "비고",
+      note: "상세",
       usageDate: "사용일",
       prepaidReason: "선결제 사유",
       headcount: "받는 인원",
@@ -1112,14 +1116,17 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
           <Select id="paymentMethod" options={paymentOptions} value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} />
         </Form.Field>
 
-        <Form.Field id="note" label="비고" width="long">
+        <Form.Field id="note" label="상세" width="long">
           <input
             id="note"
             type="text"
             maxLength={480}
             autoComplete="off"
             value={note}
-            onChange={(event) => setNote(event.target.value)}
+            onChange={(event) => {
+              setNote(event.target.value);
+              if (errors.note) setErrors((current) => ({ ...current, note: undefined }));
+            }}
             className={styles.textInput}
             aria-invalid={errors.note ? true : undefined}
             aria-describedby={errors.note ? "note-error" : undefined}

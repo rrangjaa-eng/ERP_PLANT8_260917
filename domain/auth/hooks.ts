@@ -8,6 +8,7 @@ import { lockedMessage } from "@/domain/auth/locked-message";
 import { findUserByEmail, setFirstLoginAtIfUnset } from "@/repositories/users";
 import { recordAction } from "@/domain/action-log/record";
 import type { Viewer } from "@/domain/viewer";
+import { toKstDate } from "@/domain/holidays/business-day";
 
 // AUTH-01·Eng Issue 5: better-auth에는 계정 잠금이 없다(rateLimit은 IP 단위일 뿐).
 // before가 로그인 시도 전에 login_attempts를 확인해 거부하고, after가 결과를
@@ -57,8 +58,11 @@ export const before = createAuthMiddleware(async (ctx) => {
   // 무관하게 동일하게 동작한다는 10행 원칙을 상태·본문·응답 시간 셋에서
   // 지킨다 — 거부 직전에 핸들러의 사용자 부재 경로와 같은 더미 해시를
   // 수행해 해시 비교 전에 짧게 끊는 시간 측면 채널을 막는다.
+  // 07-09 D-743: 퇴직일이 오늘(KST)보다 앞이면 보관과 같은 거부 — 당일까지는 로그인된다.
+  // 퇴직 여부를 문구로 드러내지 않고(SC-14), 잠금 실패 수에도 넣지 않는다(잠금 확인보다 앞).
   const user = await findUserByEmail(SYSTEM_VIEWER, email);
-  if (user?.archivedAt) {
+  const resigned = Boolean(user?.resignationDate && user.resignationDate < toKstDate(new Date()));
+  if (user?.archivedAt || resigned) {
     await ctx.context.password.hash(getBodyPassword(ctx.body));
     throw APIError.from("UNAUTHORIZED", INVALID_EMAIL_OR_PASSWORD);
   }

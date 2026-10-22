@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, timestamp, uuid, index, check } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, uuid, index, check } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 
 // 05-04(EVID-01): 증빙 파일과 업로드 의도. 파일 바이트는 저장소(GCS · 로컬 드라이버)에 있고 이 표는 메타데이터만 둔다.
@@ -28,6 +28,8 @@ export const files = pgTable(
     voidedAt: timestamp("voided_at"),
     voidedBy: text("voided_by").references(() => users.id),
     voidReason: text("void_reason"),
+    // 07 R20 · AQ-15 — 올릴 때 문서 증빙 종류가 비공개면 true(찍기 · 판정은 07-27). 보임 = 이 칸 OR 지금 종류.
+    privateToOwner: boolean("private_to_owner").notNull().default(false),
   },
   (table) => [
     index("files_owner_idx").on(table.ownerKind, table.ownerId),

@@ -20,6 +20,7 @@ vi.mock("@/domain/permissions/visible", () => ({ visible: () => Promise.resolve(
 vi.mock("@/domain/projects", () => ({
   findProject: () =>
     Promise.resolve({ id: PROJECT_ID, number: "26001", name: "프로젝트", status: "in_progress", pmUserId: "u1", startDate: "2026-09-01", endDate: "2026-12-31", archivedAt: null, preEstimate: null }),
+  loadProjectProfit: () => Promise.resolve(null),
 }));
 vi.mock("@/domain/projects/references", () => ({
   listProjectFormReferences: () => Promise.resolve({ clients: [], vendors: [], vendorShown: true, subcategories: [], subcategoryLabels: {} }),

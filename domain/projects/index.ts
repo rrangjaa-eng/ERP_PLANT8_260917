@@ -483,9 +483,10 @@ export async function findProject(
   return (await project(viewer, withPreEstimate(row), PROJECT_DTO_SPEC)) as ProjectDto;
 }
 
-// 07-18 사후 고침 — 상세 정보 면 `손익`. 목록과 같은 행 식을 한 프로젝트에 적용한다(호출한 화면이 보기 범위를 이미 판정했다).
+// 07-18 사후 고침 — 상세 정보 면 `손익`. 목록과 같은 행 식을 한 프로젝트에 적용한다(보기 범위 조건을 목록과 같이 건다).
 export async function loadProjectProfit(viewer: Viewer, projectId: string): Promise<ProjectProfitSummary | null> {
-  const row = await getProjectProfitRow(viewer, projectId);
+  const scope = await projectRowScope(viewer);
+  const row = await getProjectProfitRow(viewer, scope, projectId);
   return row ? summarizeProjectProfit(row) : null;
 }
 

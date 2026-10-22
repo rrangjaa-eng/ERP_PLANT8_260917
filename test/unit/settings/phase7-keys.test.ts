@@ -121,6 +121,13 @@ describe("원가율 키 (D-734 · C-P2-10)", () => {
     expect(PROJECT_COST_RATE_PCT.schema.parse("0")).toBe(0);
   });
 
+  // quick 261022-cwp(round2-ui F2): 공백만 있는 문자열이 숫자 강제 변환에서 0이 되지 않는다.
+  it("공백만 있는 문자열은 비움(null)이다", () => {
+    for (const value of [" ", "\t", "   "]) {
+      expect(PROJECT_COST_RATE_PCT.schema.parse(value), JSON.stringify(value)).toBeNull();
+    }
+  });
+
   it("0~100을 0.1 단위로 받는다(12.5 · 12.3 · 100 통과)", () => {
     for (const value of [12.5, 12.3, "12.3", 100, 0.1, 99.9]) {
       expect(PROJECT_COST_RATE_PCT.schema.safeParse(value).success, String(value)).toBe(true);

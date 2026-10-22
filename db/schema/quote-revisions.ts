@@ -1,4 +1,5 @@
-import { pgTable, text, integer, timestamp, uuid, unique, index } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, integer, timestamp, uuid, unique, index, check } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 import { projects } from "./projects";
 
@@ -16,6 +17,9 @@ export const quoteRevisions = pgTable(
     seq: integer("seq").notNull(),
     customerApprovedAt: timestamp("customer_approved_at"),
     customerApprovedBy: text("customer_approved_by").references(() => users.id),
+    // 07 W6: 고객 승인 근거(발주서 · 이메일 · 구두) + 메모 — 이미 승인된 옛 차수는 NULL, 새 승인의 근거 필수는 도메인(07-18).
+    customerApprovalBasis: text("customer_approval_basis").$type<"purchase_order" | "email" | "verbal">(),
+    customerApprovalMemo: text("customer_approval_memo"),
     source: text("source").notNull().default("demo"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -23,5 +27,9 @@ export const quoteRevisions = pgTable(
   (table) => [
     unique("quote_revisions_project_seq_key").on(table.projectId, table.seq),
     index("quote_revisions_project_id_idx").on(table.projectId),
+    check(
+      "quote_revisions_customer_approval_basis_check",
+      sql`${table.customerApprovalBasis} IS NULL OR ${table.customerApprovalBasis} IN ('purchase_order','email','verbal')`,
+    ),
   ],
 );

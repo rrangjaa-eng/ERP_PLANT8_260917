@@ -154,6 +154,8 @@ completed: 2026-10-22
 
 검증(전용 DB erp_w0709_test): 통합 lockout · retiree-login · reset-unlocks · auth 4파일 44/44 · `pnpm typecheck` 0 · `pnpm lint` 0.
 
+- 검토 지적 d-1(2026-10-22, 시험만): 시험 H가 수락 기준(PLAN:205)대로 lock-race 도우미를 쓴다 — 같은 이메일 잠금(`lockLoginEmail`)을 시험이 먼저 쥐고 8건을 보낸 뒤 `waitForLockWaiter`(별도 연결)로 대기를 확인하고 푼다. reserve · settle의 `lockLoginEmail` 호출을 잠시 지우면 「잠금 대기 연결이 생기지 않았다」로 RED, 원복 뒤 GREEN(lockout · action-log 30/30). TDD · verification-before-completion 스킬 호출.
+
 ## Self-Check: PASSED
 
 - 파일: retiree-login.test.ts · reset-unlocks.test.ts · env-login-limit.test.ts 있음

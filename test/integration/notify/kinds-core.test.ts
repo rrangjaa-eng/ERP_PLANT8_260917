@@ -17,7 +17,7 @@ import {
   projects,
   users,
 } from "@/db/schema";
-import { approveDocument, rejectDocument } from "@/domain/approvals";
+import { approveDocument, listMyInbox, rejectDocument } from "@/domain/approvals";
 import { voidEvidence } from "@/domain/evidence";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { CONDITION_KINDS, type ConditionKind } from "@/domain/notify/condition-kinds";
@@ -226,6 +226,25 @@ describe("결재 차례 (N6 · K17 · C-P2-4)", () => {
     expect(rows).toHaveLength(2);
     expect(rows[1]?.message).toBe("결재 차례 · 가을 팝업 · 무대 제작 · 0영업일");
     expect(rows[1]?.entityId).not.toBe(rows[0]?.entityId);
+  });
+
+  it("설정 단계가 전부 빈 자리라 결재함이 대표 폴백 단계를 처리 가능으로 보면, 대표에게 차례 알림이 간다", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await submitOne(fx);
+    // 설정 단계의 역할을 아무도 갖지 않은 역할로 바꿔 전 단계를 빈 자리로 → 대표 폴백(행 없음, 대표가 처리할 때 삽입).
+    const [route] = await db.select().from(approvalRoutes).where(eq(approvalRoutes.instanceId, doc.instanceId));
+    if (!route) throw new Error("차수 없음");
+    await db.update(approvalSteps).set({ roleId: DIVISION_HEAD_ROLE_ID }).where(eq(approvalSteps.routeId, route.id));
+    await setSubmittedAt(doc.instanceId, "2026-10-05T10:00:00+09:00");
+    const inbox = await listMyInbox(fx.ceo);
+    expect(inbox.mine.map((item) => item.instanceId)).toContain(doc.instanceId);
+    await tick([approvalWaitingKind], "2026-10-07");
+    expect(await rowsOf(fx.ceo)).toHaveLength(0);
+    await tick([approvalWaitingKind], "2026-10-08");
+    const rows = await rowsOf(fx.ceo);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ message: MESSAGE, entity: "approval-step", round: 1 });
+    expect(await rowsOf(fx.lead)).toHaveLength(0);
   });
 
   it("결재선이 막힌(blocked) 인스턴스는 후보 없음", async () => {

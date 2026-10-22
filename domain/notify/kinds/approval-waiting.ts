@@ -66,8 +66,9 @@ export const approvalWaitingKind: ConditionKind = {
       });
       const outcome = walk.outcome;
       if (outcome.kind !== "actionable") continue;
+      // 대표 폴백 단계는 대표가 처리할 때 행이 생긴다 — 처리 전에는 행이 없어 차수 id로 키를 만든다(결재함과 같은 walk 판정).
       const currentRow = instance.steps.find((step) => step.stepIndex === outcome.stepIndex);
-      if (!currentRow) continue;
+      if (!currentRow && !outcome.isFallback) continue;
       // 열린 시각 = 앞 단계(자기 결재 · 빈 단계 제외)의 가장 늦은 처리 시각, 없으면 상신 시각(DB에 열린 시각 칸이 없어 파생).
       let openedAt = instance.route.submittedAt;
       for (const step of walk.display) {
@@ -77,9 +78,10 @@ export const approvalWaitingKind: ConditionKind = {
       // N=0은 「열린 날이 영업일이면 그날, 아니면 다음 영업일」(addBusinessDays가 0일 때 앞으로 구른다 — P6).
       const firstDue = addBusinessDays(toKstDate(openedAt), days, lookup);
       // 대표 단계는 회차가 올라도 팀장 · 대표를 더하지 않는다(위로 안 올림). 현재 단계 보유자가 팀장이면 겹침은 후보 합집합에서 한 번만.
-      const atCeo = currentRow.isFallback || currentRow.roleId === CEO_ROLE_ID;
+      const atCeo = !currentRow || currentRow.isFallback || currentRow.roleId === CEO_ROLE_ID;
       const escalation = atCeo ? [] : teamLeadsOfRoute(instance.steps, snapshot);
-      waiting.push({ instance, stepId: currentRow.id, candidateIds: outcome.candidateIds, firstDue, escalation });
+      const stepId = currentRow ? currentRow.id : `${instance.route.id}:fallback`;
+      waiting.push({ instance, stepId, candidateIds: outcome.candidateIds, firstDue, escalation });
     }
     if (waiting.length === 0) return [];
 

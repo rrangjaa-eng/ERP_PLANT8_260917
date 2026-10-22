@@ -3,6 +3,7 @@ import { test, expect, type Browser, type Page, type Request } from "@playwright
 import { createAccount } from "@/domain/auth/accounts";
 import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { unlockPerson } from "@/domain/people";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { countOpenFailures, recordAttempt } from "@/repositories/login-attempts";
 import { updateUserResignationDate } from "@/repositories/users";
@@ -124,6 +125,25 @@ test.describe("사람 목록 잠김 · 잠금 풀기 (SC-11)", () => {
     const result = page.getByRole("status").filter({ hasText: "잠금 풀기 ·" });
     await expect(result).toHaveCount(1);
     await expect(result).toHaveText(`잠금 풀기 · ${b.name}`);
+  });
+
+  // 07-17 독립 검토 L3: 낡은 목록(다른 관리자가 먼저 풂)에서 누르면 서버는 아무것도 하지 않고 성공 줄도 없다 — 행은 새 값으로.
+  test("이미 풀린 사람의 `잠금 풀기` → 결과 줄 없음 · 상태가 새 값 · 포커스는 같은 행", async ({ page }) => {
+    const token = `잠김E2E${randomUUID().slice(0, 6)}`;
+    const a = await makePerson(token, "가");
+    await lock(a.email);
+    await loginAsAdmin(page);
+    await openPeople(page, token);
+    const rowA = personRow(page, a.email);
+    await expect(statusCell(rowA)).toHaveText("잠김");
+
+    await unlockPerson(SYSTEM_VIEWER, a.userId);
+    await rowA.getByRole("button", { name: "잠금 풀기" }).click();
+
+    await expect(statusCell(rowA)).not.toContainText("잠김");
+    await expect(rowA.getByRole("button", { name: "잠금 풀기" })).toHaveCount(0);
+    await expect(rowA.getByRole("link", { name: "상세" })).toBeFocused();
+    await expect(page.getByRole("status").filter({ hasText: "잠금 풀기" })).toHaveCount(0);
   });
 
   test("U6 — 요청 중 그 `잠금 풀기`는 aria-busy · aria-disabled, 연타해도 요청 하나, 다른 행은 그대로", async ({ page }) => {

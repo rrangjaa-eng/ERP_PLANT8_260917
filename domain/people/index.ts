@@ -12,7 +12,7 @@ import {
   resetPassword as defaultResetPassword,
   unlockAccount as defaultUnlockAccount,
 } from "@/domain/auth/accounts";
-import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
+import { isLocked, lockoutConfig, windowStart } from "@/domain/auth/lockout";
 import { archive as defaultArchive } from "@/domain/archive";
 import { revokeAllSessions as defaultRevokeAllSessions } from "@/domain/auth/password";
 import { findRoleById as defaultFindRoleById, findRolesByIds as defaultFindRolesByIds } from "@/repositories/roles";
@@ -21,7 +21,7 @@ import { findOrgUnitById as repoFindOrgUnitById } from "@/repositories/org-units
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { kstToday } from "@/lib/kst-date";
 import { isCheckViolation } from "@/lib/pg-errors";
-import { listLockedEmails } from "@/repositories/login-attempts";
+import { countOpenFailures, listLockedEmails } from "@/repositories/login-attempts";
 import { withTransaction } from "@/lib/db-transaction";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
@@ -559,6 +559,7 @@ export type UnlockPersonDeps = {
     tx: DbOrTx,
   ) => Promise<Pick<UserRow, "id" | "email" | "roleId" | "resignationDate" | "archivedAt"> | null>;
   assertCanGrantRoles: (viewer: Viewer, roleIds: (string | null)[], tx: DbOrTx) => Promise<void>;
+  lockedNow: (email: string, tx: DbOrTx) => Promise<boolean>;
   unlockAccount: (viewer: Viewer, email: string) => Promise<{ resolved: number }>;
   now: () => Date;
 };
@@ -566,14 +567,23 @@ export type UnlockPersonDeps = {
 // 07-17 SC-11 · SC-12 · D-728 · R11: 사람 화면의 잠금 풀기 — `admin.people` 쓰기 · 대상 상한 안 · 퇴직자 아님을 본 뒤
 // 07-09 `unlockAccount`(해소 + account_unlock 기록 · 상한 재확인)를 부른다. 퇴직 거부는 여기(domain)에만 있다 —
 // `unlockAccount` 자체와 CLI 경로는 퇴직을 보지 않는다(PR-AUTH 범위, 관리자 화면 경로만 막는다).
-export async function unlockPerson(viewer: Viewer, personId: string, deps?: Partial<UnlockPersonDeps>): Promise<void> {
+// 07-17 독립 검토 L3: 지금 잠긴 사람만 푼다(화면이 `잠금 풀기`를 그리는 조건과 같은 판정) — 잠기지 않았으면 아무것도 하지 않고
+// `{ unlocked: false }`(account_unlock 「해소 0건」 기록 · 임계 미만 실패 지우기 없음). 두 관리자가 동시에 누르면 사람 키에서 줄 서
+// 뒤 요청은 이미 풀린 것을 본다.
+export async function unlockPerson(
+  viewer: Viewer,
+  personId: string,
+  deps?: Partial<UnlockPersonDeps>,
+): Promise<{ unlocked: boolean }> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
     throw new ForbiddenError("잠금 풀기 권한 없음");
   }
   const loadTarget = deps?.loadTarget ?? ((v: Viewer, id: string, tx: DbOrTx) => repoFindUserById(v, id, tx));
   const today = seoulTodayOf(deps);
-  await (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
+  // 설정 읽기는 잠금 전에 — 잠금 중에는 tx로만 센다(로그인 거부와 같은 임계 · 창).
+  const lockedNow = deps?.lockedNow ?? (await defaultLockedNow(deps?.now?.() ?? new Date()));
+  return (deps?.withPersonLock ?? defaultWithPersonLock)(viewer, personId, async (tx) => {
     const target = await loadTarget(viewer, personId, tx);
     if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
     // 07-17 독립 검토 L2: 보관된 사람은 화면이 행동을 그리지 않는다 — 직접 호출도 거부(260907 `archived_at is null`과 같은 판정).
@@ -582,8 +592,16 @@ export async function unlockPerson(viewer: Viewer, personId: string, deps?: Part
       throw new ForbiddenError("퇴직한 사람 · 잠금 풀기 없음");
     }
     await (deps?.assertCanGrantRoles ?? assertCanGrantRoles)(viewer, [target.roleId], tx);
+    if (!(await lockedNow(target.email, tx))) return { unlocked: false };
     await (deps?.unlockAccount ?? defaultUnlockAccount)(viewer, target.email);
+    return { unlocked: true };
   });
+}
+
+async function defaultLockedNow(now: Date): Promise<(email: string, tx: DbOrTx) => Promise<boolean>> {
+  const { threshold, windowMinutes } = await lockoutConfig();
+  const since = windowStart(now, windowMinutes);
+  return async (email, tx) => isLocked(await countOpenFailures(SYSTEM_VIEWER, email, since, tx), threshold);
 }
 
 // 07-17 SC-12 · D-P2-7: 비밀번호 초기화 결과 — 행 DTO가 아니라 일회성 비밀이라 `…Dto`로 짓지 않고 `registerDto`도 하지 않는다

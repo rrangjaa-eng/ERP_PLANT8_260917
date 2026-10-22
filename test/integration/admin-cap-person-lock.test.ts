@@ -121,3 +121,37 @@ describe("사람 키 잠금 뒤 상한 재판정(07-17 독립 검토 L1)", () =>
     expect(await countRows("leave_adjustments")).toBe(rowsBefore);
   });
 });
+
+async function unlockRecords(userId: string): Promise<number> {
+  const result = await db.execute<{ n: string }>(
+    sql`select count(*)::text as n from action_log where action_type = 'account_unlock' and entity_id = ${userId}`,
+  );
+  return Number(result.rows[0]?.n ?? 0);
+}
+
+// 07-17 독립 검토 L3: 지금 잠기지 않은 사람의 잠금 풀기는 아무것도 하지 않는다 — 「해소 0건」 기록 · 임계 미만 실패 지우기가 없고,
+// 두 관리자가 같은 사람을 동시에 풀면 사람 키에서 줄 서서 하나만 푼다(화면도 그 하나만 성공 줄).
+describe("잠기지 않은 사람의 잠금 풀기(07-17 독립 검토 L3)", () => {
+  it("임계 미만 실패만 있는 사람 — 풀지 않음 · 기록 없음 · 실패 수 그대로", async () => {
+    const p = await makePerson("대상 P", DEFAULT_ROLE_ID, null);
+    const email = (await findUserById(SYSTEM_VIEWER, p.id))?.email ?? "";
+    await recordAttempt(SYSTEM_VIEWER, { email, success: false, ip: null });
+
+    expect(await unlockPerson(SYSTEM_VIEWER, p.id)).toEqual({ unlocked: false });
+
+    expect(await unlockRecords(p.id)).toBe(0);
+    expect(await openFailures(email)).toBe(1);
+  });
+
+  it("잠긴 사람을 둘이 동시에 풀면 하나만 풀고 기록도 하나", async () => {
+    const p = await makePerson("대상 P", DEFAULT_ROLE_ID, null);
+    const email = (await findUserById(SYSTEM_VIEWER, p.id))?.email ?? "";
+    await lockLogin(email);
+
+    const results = await Promise.all([unlockPerson(SYSTEM_VIEWER, p.id), unlockPerson(SYSTEM_VIEWER, p.id)]);
+
+    expect(results.map((result) => result.unlocked).sort()).toEqual([false, true]);
+    expect(await unlockRecords(p.id)).toBe(1);
+    expect(await openFailures(email)).toBe(0);
+  });
+});

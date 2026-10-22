@@ -23,6 +23,7 @@ function deps(resignationDate: string | null) {
     withPersonLock,
     loadTarget: vi.fn(() => Promise.resolve(target(resignationDate))),
     assertCanGrantRoles: vi.fn(() => Promise.resolve()),
+    lockedNow: vi.fn(() => Promise.resolve(true)),
     unlockAccount: vi.fn(() => Promise.resolve({ resolved: 3 })),
     now,
   };
@@ -95,5 +96,29 @@ describe("unlockPerson — 보관된 사람 거부(07-17 L2)", () => {
     d.loadTarget.mockResolvedValue({ ...target(null), archivedAt: new Date("2026-10-01T00:00:00Z") } as never);
     await expect(unlockPerson(viewer, "target-1", d)).rejects.toBeInstanceOf(ForbiddenError);
     expect(d.unlockAccount).not.toHaveBeenCalled();
+  });
+});
+
+// 07-17 독립 검토 L3: 지금 잠기지 않았으면 아무것도 하지 않는다(account_unlock 「해소 0건」 기록 · 임계 미만 실패 지우기 없음).
+describe("unlockPerson — 잠기지 않은 사람(07-17 L3)", () => {
+  it("잠기지 않았으면 unlockAccount를 부르지 않고 { unlocked: false }", async () => {
+    const d = deps(null);
+    d.lockedNow.mockResolvedValue(false);
+    await expect(unlockPerson(viewer, "target-1", d)).resolves.toEqual({ unlocked: false });
+    expect(d.unlockAccount).not.toHaveBeenCalled();
+  });
+
+  it("잠겼으면 상한 판정 뒤 그 tx로 잠김을 보고 풀어 { unlocked: true }", async () => {
+    const d = deps(null);
+    await expect(unlockPerson(viewer, "target-1", d)).resolves.toEqual({ unlocked: true });
+    expect(d.lockedNow).toHaveBeenCalledWith("kim@example.test", TX);
+    expect(d.unlockAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it("상한 밖이면 잠김을 보기 전에 거부", async () => {
+    const d = deps(null);
+    d.assertCanGrantRoles.mockRejectedValue(new ForbiddenError("계급 지정 권한 없음 · 시스템 관리자"));
+    await expect(unlockPerson(viewer, "target-1", d)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(d.lockedNow).not.toHaveBeenCalled();
   });
 });

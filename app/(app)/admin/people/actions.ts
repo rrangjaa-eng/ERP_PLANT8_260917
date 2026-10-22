@@ -140,9 +140,10 @@ export const archivePersonAction = authedActionClient
 export const unlockPersonAction = authedActionClient
   .schema(z.object({ personId: z.string().min(1) }))
   .action(async ({ parsedInput, ctx }) => {
-    await unlockPerson(ctx.viewer, parsedInput.personId);
+    const result = await unlockPerson(ctx.viewer, parsedInput.personId);
     revalidatePath("/admin/people");
     revalidatePath(`/admin/people/${parsedInput.personId}`);
+    return result;
   });
 
 export const archiveOrgUnitAction = authedActionClient

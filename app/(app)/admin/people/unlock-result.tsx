@@ -47,11 +47,13 @@ export function UnlockResultSection({ children }: { children: ReactNode }) {
     inflight.current.add(target.id);
     setPending(target.id, true);
     let failure: string | null = null;
+    let unlocked = true;
     try {
       const result = await unlockPersonAction({ personId: target.id });
       if (!result) failure = "잠금 풀기 실패 · 다시 시도";
       else if (result.serverError) failure = result.serverError;
       else if (result.validationErrors) failure = "잠금 풀기 실패 · 다시 시도";
+      else unlocked = result.data?.unlocked !== false;
     } catch {
       failure = "잠금 풀기 실패 · 다시 시도";
     }
@@ -61,7 +63,8 @@ export function UnlockResultSection({ children }: { children: ReactNode }) {
       setLine({ text: failure, failed: true });
       return;
     }
-    setLine({ text: `잠금 풀기 · ${target.name}`, failed: false });
+    // 07-17 독립 검토 L3: 이미 풀려 있었으면(다른 관리자 · 낡은 목록) 서버가 아무것도 하지 않았으므로 성공 줄도 없다 — 행이 새 값으로 바뀐다.
+    setLine(unlocked ? { text: `잠금 풀기 · ${target.name}`, failed: false } : null);
     focusId.current = target.id;
     startRefresh(() => router.refresh());
   }

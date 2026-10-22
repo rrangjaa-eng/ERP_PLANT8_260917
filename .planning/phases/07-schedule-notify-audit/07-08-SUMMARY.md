@@ -36,6 +36,14 @@ files_modified:
   - test/e2e/change-password.spec.ts
   - test/e2e/settings-approval-route.spec.ts
   - test/e2e/form-label-section-gap.spec.ts
+  - ui/form/focus-first-invalid.ts
+  - ui/table/Table.module.css
+  - app/(app)/account/change-password-form.tsx
+  - test/e2e/holidays.spec.ts
+  - test/e2e/corp-cards.spec.ts
+  - test/e2e/code-tables.spec.ts
+  - docs/design/checks/2026-10-22-07-08-audit-fixes.md
+  - .planning/phases/07-schedule-notify-audit/audit/07-08-dom-audit.md
   - docs/design/checks/2026-10-22-07-08-settings-form.md
 ---
 
@@ -98,13 +106,31 @@ files_modified:
 **3. [Rule 1 - 회귀] 설정 css `.selectLabel` 제거로 깨진 E2E 선택자**
 - settings-approval-route(경고 줄 조상 깊이, `role=alert` 가정), form-label-section-gap 설정 화면(`[class*="selectLabel"]` 묶음 탐색) 선택자를 새 DOM(`Form.Field` + `Select`)에 맞게 바꿈. 기대값(PC 라벨 열 96 · select 폭 200 · 폰 라벨 위 · 가로 넘침 0)은 그대로 통과. **Commits:** 10af53a3, 45b1d311
 
+### 감사 수정(2026-10-22) 중 계획과 다르게 한 것
+- **D1(사용자 결정 2026-10-22):** blur 저장 설정 화면은 포커스를 되돌리지 않음 — Tab 이동을 빼앗지 않기 위해. 플랜 :54 뒷 절은 제출 폼에만 적용.
+- **C1:** 플랜 :181의 `Form.Field` + `TextField` + `Form.Error` 그대로는 `TextField`가 자기 라벨을 가져 라벨이 두 번 나온다. 라벨 열(96+8)은 `TextField` 줄 그대로 두고 입력 칸 묶음 폭에만 `--field-w-short`를 걸었다(settings.module.css 선택자 하나). 오류는 `TextField`의 `error`(`aria-describedby` · `aria-invalid` 포함) 그대로. 숫자 · 텍스트 모두 280(문자열 칸도 접두 · 구분자 · HH:MM · 전화 · 구매처 이름이라 짧다 — 480 `long`은 안 씀).
+
 ### 계획과 다르게 한 것
 - 점검표 파일명을 계획의 `2026-10-21-…` 대신 디스패치 지시의 `2026-10-22-07-08-settings-form.md`로 둠.
 - 잠금 시간은 단위 글자(unitLabel)를 빼고 힌트 `1~60분`에 한 번만 — 단위 칸이 있으면 잠금 횟수 칸과 입력 폭이 달라져(1280 실측 확인).
 - 내 계정 폼(`change-password-form.tsx`)은 이미 `ui/input` 뿐이라 코드 변경 없음(E2E 단언만 보강).
 
+## 독립 DOM 감사 지적 처리 (감사 보고서: `audit/07-08-dom-audit.md`, 2026-10-22, HEAD 58c1c534)
+
+| 지적 | 처리 | 커밋 |
+|---|---|---|
+| D1 오류 뒤 포커스(제출 폼) | 내 계정 · 공휴일 · 법인카드 등록/수정이 서버 검증 오류 뒤 오류 난 첫 칸(`aria-invalid`)으로 포커스. `ui/form/focus-first-invalid.ts`(기존 `project-form`의 같은 한 줄 패턴을 함수 하나로). 설정 화면은 그대로(aria-describedby만) | df80a8da |
+| C1 설정 TextField 폭 616/597 | 숫자 · 텍스트 칸 모두 짧은 칸 `--field-w-short`(280)로, 폰은 전폭. 단위 붙은 칸 포함 | bb0c6358 |
+| C2 기한 일수 오류 문구 | 수금 · 지급 기한 일수가 `범위 1~365 · 다시 입력`(잠금 키의 `integerInRange` 재사용). 결재 마감 시각(M2)은 손대지 않음 | 1bf68ca5 |
+| C3 증빙 종류 칸 스킨 | `ui/table/Table.module.css`의 `.inputCells` 두 규칙에서 `static-table-detail` 줄 후손만 제외 → 규칙 종류 select 등이 폼 스킨(1px 테두리 · radius 6 · 흰 면) | 3482131c |
+| (보고서 커밋) | 감사 보고서 · design-gate 점검표 `2026-10-22-07-08-audit-fixes.md` | de3d9143 · 3863d33e |
+
+- 사용자 결정 2026-10-22 D1: 제출 폼만 고친다. blur 저장 설정 화면은 포커스를 되돌리지 않는다 — Tab 이동을 빼앗지 않기 위해. 플랜 :54 뒷 절은 제출 폼에만 적용.
+- 시험(실패 먼저): C2 단위(`phase7-keys.test.ts`) · D1 E2E 4건(change-password · holidays · corp-cards 등록 · corp-cards 수정 `toBeFocused`) · C1 E2E(칸 폭 280, 1280 · 768, 375는 280 초과) · C3 E2E(계산 스타일 1px/6px/흰 면, 이름 칸 셀 스킨 0/1px/0 유지) — 구현 전에 전부 빨간 것을 확인(C1은 616, C3은 0px · `rgb(235, 242, 240)`).
+- C3 Table.module.css 영향 범위: `StaticTable`의 `detail` prop을 쓰는 곳은 코드표 증빙 종류 세금 규칙 하나뿐(`grep detail:`). 제외 조건을 `:not(:where([data-ui="static-table-detail"] *))`로 걸어 특이도가 그대로라 다른 표 셀 입력(코드표 이름 · 설명, 계급 표)의 겉모습은 불변(E2E로 이름 칸 확인). 증빙 종류 칸이 표 `<table>` 안 `<tr>`라 `.inputCells` 밖으로 옮기는 안은 구조상 불가능해 CSS 제외를 택했다.
+
 ## 남은 것 · 다음 플랜에 넘기는 것
-- 오류 뒤 「포커스가 그 칸에 남는다」(backstop)는 설정 화면이 칸을 떠나면 저장(blur-save)이라 오류 뒤 포커스를 붙잡으면 키보드가 갇혀 구현하지 않았다. 판정 필요.
+- 오류 뒤 포커스(backstop): 제출 폼은 감사 수정에서 구현했다(아래 「독립 DOM 감사 지적 처리」). blur 저장 설정 화면은 사용자 결정으로 되돌리지 않는다.
 - 독립 DOM 감사 · `/design-review` · `/qa` · `/review`는 오케스트레이터 몫(실행자 몫은 점검표 + 싼 게이트까지).
 - **운영 값 확인(C-P1-2)**: 운영 DB의 `auth.lockout_threshold` · `auth.lockout_window_minutes` 저장값(또는 env 기본값)이 3~10 · 1~60 안인지 배포 전 확인 필요. 범위 밖이어도 읽기는 기본값(5 · 15)으로 대체되므로 로그인은 깨지지 않지만 의도한 운영값과 다를 수 있다. 이 세션은 운영 DB를 조회하지 않았다(CLAUDE.md §2).
 - `project.cost_rate_pct` · `project.collection_due_days` 소비자는 07-22 · 07-24 몫(`readBy: {phase:"7"}`로 registry-coverage 통과).

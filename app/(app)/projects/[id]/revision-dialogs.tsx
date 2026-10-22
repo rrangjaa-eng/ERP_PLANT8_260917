@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { createRevisionAction, setCustomerApprovalAction } from "../actions";
@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
 import { TextField } from "@/ui/input/TextField";
+import { EMPTY_ERROR, FORMAT_ERROR, isCalendarDate } from "@/domain/projects/period";
 import { PanelForm } from "@/ui/side-panel/PanelForm";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { unsavedEditsReason } from "./unsaved-edits";
@@ -168,8 +169,8 @@ function useFocusTitleAfterSuccess() {
   return succeededRef;
 }
 
-// 07-18(W6 · SC-19) — 승인 표시는 근거(필수) + 메모(선택)가 더해져 입력 칸이 둘이라 옆 패널이다. 1차 `승인 표시`, 2차 `취소 Esc`.
-// 승인일은 칸이 아니라 오늘(KST)이다 — 사용자가 하지 않아도 될 결정이다.
+// 07-18(W6 · SC-19) — 승인 표시는 근거(필수) + 승인일(기본 오늘 KST, 개정 ⑭ · DR-20) + 메모(선택)가 더해져 입력 칸이 셋이라 옆 패널이다.
+// 1차 `승인 표시`, 2차 `취소 Esc`. 승인일 칸은 main의 확인 창에서 옮겨 온 그대로다(비었거나 형식이 틀리면 1차가 막히고 이유 한 줄).
 function ApprovalPanel({
   revisionId,
   totalKrw,
@@ -205,13 +206,13 @@ function ApprovalPanel({
     },
   });
 
-  function submit(basis: CustomerApprovalBasisKey, memo: string) {
+  function submit(basis: CustomerApprovalBasisKey, memo: string, approvedOn: string) {
     if (submittingRef.current) return;
     submittingRef.current = true;
     succeededRef.current = false;
     setRejection(null);
     // ENG-D9 — PM이 본 기준값(요약 행의 합계 · 내용 토큰)을 그대로 싣는다.
-    execute({ revisionId, approval: { approvedOn: todayKst, seenTotalKrw: totalKrw, contentToken, approvalBasis: basis, approvalMemo: memo } });
+    execute({ revisionId, approval: { approvedOn, seenTotalKrw: totalKrw, contentToken, approvalBasis: basis, approvalMemo: memo } });
   }
 
   return (
@@ -232,10 +233,12 @@ function ApprovalPanel({
       {open ? (
         <SidePanel title="고객 승인 표시" onClose={() => setOpen(false)}>
           <ApprovalPanelForm
+            todayKst={todayKst}
             pending={isExecuting}
             unsaved={unsavedEditsReason(dirtyCount) ?? undefined}
             rejection={rejection}
             onSubmit={submit}
+            onEdit={() => setRejection(null)}
             onRefresh={() => {
               setOpen(false);
               router.refresh();
@@ -248,24 +251,33 @@ function ApprovalPanel({
 }
 
 function ApprovalPanelForm({
+  todayKst,
   pending,
   unsaved,
   rejection,
   onSubmit,
   onRefresh,
+  onEdit,
 }: {
+  todayKst: string;
   pending: boolean;
   unsaved: string | undefined;
   rejection: string | null;
-  onSubmit: (basis: CustomerApprovalBasisKey, memo: string) => void;
+  onSubmit: (basis: CustomerApprovalBasisKey, memo: string, approvedOn: string) => void;
   onRefresh: () => void;
+  /** 칸을 고치면 지난 서버 거부 이유를 지운다. */
+  onEdit: () => void;
 }) {
   const [basis, setBasis] = useState("");
   const [basisError, setBasisError] = useState<string | null>(null);
+  const [approvedOn, setApprovedOn] = useState(todayKst);
+  const reasonId = useId();
+  const dateEmpty = approvedOn === "";
+  const dateError = dateEmpty ? EMPTY_ERROR : isCalendarDate(approvedOn) ? null : FORMAT_ERROR;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (unsaved) return;
+    if (unsaved || dateError) return;
     const memoValue = new FormData(event.currentTarget).get("approvalMemo");
     const memo = typeof memoValue === "string" ? memoValue : "";
     if (basis !== "purchase_order" && basis !== "email" && basis !== "verbal") {
@@ -273,8 +285,21 @@ function ApprovalPanelForm({
       document.getElementById("approval-basis")?.focus();
       return;
     }
-    onSubmit(basis, memo);
+    onSubmit(basis, memo, approvedOn);
   }
+
+  const refreshRejection = rejection?.endsWith(REFRESH_TAIL) ?? false;
+  const rejectionNode =
+    rejection === null ? undefined : refreshRejection ? (
+      <>
+        <span>{rejection.slice(0, -REFRESH_TAIL.length)}</span>
+        <Button type="button" variant="tertiary" onClick={onRefresh}>
+          새로 고침
+        </Button>
+      </>
+    ) : (
+      rejection
+    );
 
   return (
     <PanelForm
@@ -283,20 +308,10 @@ function ApprovalPanelForm({
       intent="edit"
       onSubmit={handleSubmit}
       pending={pending}
-      blockedReason={unsaved}
-      // 근거 오류는 칸 아래 한 곳(Select error)에만 — 이 이유 줄에 같은 글자를 또 그리지 않는다.
-      reason={
-        rejection?.endsWith(REFRESH_TAIL) ? (
-          <>
-            <span>{rejection.slice(0, -REFRESH_TAIL.length)}</span>
-            <Button type="button" variant="tertiary" onClick={onRefresh}>
-              새로 고침
-            </Button>
-          </>
-        ) : (
-          (rejection ?? undefined)
-        )
-      }
+      reasonId={reasonId}
+      // 막힘 순서: 미저장 편집(DR-6) → 승인일 칸(비었거나 형식이 틀림, 이 이유 줄 한 곳) → 서버 거부. 근거 오류는 칸 아래 한 곳.
+      blockedReason={unsaved ?? dateError ?? undefined}
+      reason={dateError ? undefined : rejectionNode}
     >
       <Form.Field id="approval-basis" label="근거" width="select">
         <Select
@@ -310,6 +325,23 @@ function ApprovalPanelForm({
           onChange={(event) => {
             setBasis(event.target.value);
             setBasisError(null);
+            onEdit();
+          }}
+        />
+      </Form.Field>
+      <Form.Field id="approval-date" label="승인일" width="short">
+        <input
+          id="approval-date"
+          name="approvedOn"
+          type="date"
+          autoComplete="off"
+          value={approvedOn}
+          aria-invalid={dateError ? "true" : undefined}
+          aria-describedby={dateError ? reasonId : undefined}
+          className={styles.periodInput}
+          onChange={(event) => {
+            setApprovedOn(event.target.value);
+            onEdit();
           }}
         />
       </Form.Field>

@@ -15,6 +15,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { EMPTY_ERROR } from "@/domain/projects/period";
 import { chooseApprovalBasis, expandProjectInfo, openApprovalSheet, openProjectInfoEdit, projectInfo, submitApproval } from "./project-info-helpers";
 
 // 04-24(PROJ-07 · PROJ-05 · UX-04) — 상세의 차수 화면: 「복사해 새 차수」 · 고객 승인 표시와 취소 · 차수 섹션 ·
@@ -329,25 +330,42 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await expect(projectInfo(page).getByRole("button", { name: "승인 표시 취소", exact: true })).toHaveCount(0);
   });
 
-  test("승인일 칸은 없다 — 근거를 비우면 `근거 선택`으로 막힘 · 근거를 고르면 통과해 토스트 없이 제목 포커스 · 섹션에 `승인됨 · 구두`", async ({ page }) => {
+  test("승인일 칸은 기본 오늘 · 근거를 비우면 `근거 선택` 한 곳 · 승인일을 비우면 1차가 막힘 · 내일은 서버 거부 · 오늘로 고치고 근거를 고르면 통과해 토스트 없이 제목 포커스 · 섹션에 `승인됨 · 구두`", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "승인 줄", unitPrice: 1_000_000, execution: 400_000 }] });
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
-    // 승인일은 서버가 페이지를 그리는 때의 KST 오늘 — 모듈 로드 때 고정한 TODAY는 자정을 넘기면 어긋난다.
+    // 기본값은 서버가 페이지를 그리는 때의 KST 오늘 — 모듈 로드 때 고정한 TODAY는 자정을 넘기면 어긋난다.
     const today = kstToday(new Date());
 
     const sheet = await openApprovalSheet(page);
     const primary = sheet.getByRole("button", { name: /^승인 표시/ });
-    await expect(sheet.getByLabel("승인일")).toHaveCount(0);
+    const date = sheet.getByLabel("승인일");
+    await expect(date).toHaveValue(today);
+    await expect(sheet.getByLabel("근거")).toHaveAttribute("aria-required", "true");
     await primary.click();
-    await expect(sheet.getByText("근거 선택", { exact: true }).filter({ visible: true }).last()).toBeVisible();
+    await expect(sheet.locator("p").getByText("근거 선택", { exact: true })).toHaveCount(1);
     await expect(sheet).toBeVisible();
 
     // PanelForm은 제출 뒤 500ms 동안 같은 틱 연타를 막는다 — 사람 속도로 고른다.
     await page.waitForTimeout(600);
+    await date.fill("");
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    await expect(sheet.getByText(EMPTY_ERROR, { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expectDescribedBy(page, primary, EMPTY_ERROR);
+
+    await date.fill(addDays(today, 1));
+    await expect(sheet.getByText(EMPTY_ERROR, { exact: true })).toHaveCount(0);
     await chooseApprovalBasis(sheet, "verbal");
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+    await submitApproval(page, primary);
+    const future = "승인일이 오늘보다 늦음 · 날짜 수정";
+    await expect(sheet.getByText(future, { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expect(sheet).toBeVisible();
+
+    await date.fill(today);
+    await expect(sheet.getByText(future, { exact: true })).toHaveCount(0);
     await submitApproval(page, primary);
 
     await expect(sheet).toBeHidden();

@@ -53,6 +53,9 @@ key-decisions:
   - "/qa ISSUE-002(사용자 결정 2026-10-22, 후속 수정): N번째 틀린 시도부터 403 잠금 문구 — after 훅이 요청형 문맥에서는 403 Response를 반환(공개 훅 반환 계약), auth.api 직접 호출에서는 APIError(FORBIDDEN)를 던진다. 본문은 로그인 전 훅 잠금 403과 같은 꼴({message})"
   - "퇴직 · 보관 계정(사용자 결정 2026-10-22, 후속 수정): 거부 전에 같은 잠금 계수를 지난다 — 퇴직 · 보관 · 재직 · 없는 이메일이 같은 횟수에 같은 상태 · 본문. 플랜 behavior 「퇴직 시도는 실패 수에 넣지 않는다」를 대체"
   - "미리 기록 행의 attempted_at은 DB 기본값(트랜잭션 시작 시각) — action_log.occurred_at과 같은 시계로 「잠금 기록 확인」 비교"
+  - "Codex 지적 (2)(사용자 결정 2026-10-22): settle의 잠금 기록 실패만 잡아 log.error(auth.lockout_record_failed) 뒤 잠김을 돌려준다 — N번째 응답 403 잠금 문구, 다음 시도가 기록을 채운다(D-712)"
+  - "Codex 지적 (1) 성공 로그인의 동시 예약 행 해소는 수용(사용자 결정 2026-10-22) — 고치려면 스키마(정산 표시)가 필요"
+  - "DB 세션 TimeZone=UTC 가정 수용 · recordLoginFailure 유지 · 퇴직 · 보관 세션의 better-auth 자체 엔드포인트 틈은 후속 플랜 · /cso 대체 인정(사용자 결정 2026-10-22)"
 
 duration: ~2h
 completed: 2026-10-22
@@ -89,6 +92,8 @@ completed: 2026-10-22
 - **동시 시도 중 맞는 비밀번호가 잠깐 「잠김」을 볼 수 있다**(부록 NA): 다른 동시 시도의 미리 기록 행이 임계를 채우면 맞는 비밀번호도 before에서 403 — 미리 기록한 시도가 성공하면 곧 풀린다.
 - 「잠금 기록 확인」은 DB 시각(트랜잭션 시작) 비교다. 한 트랜잭션이 BEGIN을 먼저 하고도 이메일 잠금을 임계 수의 다른 시도보다 늦게 얻는 극단적 경합에서는 `account_lock`이 한 행 더 남을 수 있다(경합한 트랜잭션 수로 유한). 시험의 동시 8건은 정확히 1행.
   - **정정(독립 검토):** 처음 적은 「누락이 아니라 중복 쪽만」은 틀렸다. 해제 · 초기화가 끼어들면 누락도 이론상 가능하다 — ① 해제가 잠금 기록 tx 사이에 해소 · `account_unlock`을 커밋해 행동 로그가 「해제 → 잠금」 순인데 실제로는 풀려 있는 오도, ② 직전 `account_lock` tx보다 먼저 시작한 미리 기록 tx가 해제 뒤에 행을 넣으면(attempted_at이 그 `account_lock`보다 이름) 다음 잠금의 기록이 빠질 수 있음(추정, 극히 좁음). 후속 수정이 해제 · 초기화의 해소 tx에 `lockLoginEmail`을 쥐게 해 ①을 닫았다. ②는 tx 시작 시각 비교라 남는다(추정 · 미재현).
+- **성공 로그인이 동시 시도의 예약 실패 행까지 해소한다**(Codex 지적 (1)): after의 `resolveOpenFailures(email, "success")`가 그 순간 핸들러 안에 있던 다른 요청의 미리 기록 행까지 해소해, 잠금이 그 수(보통 0~1)만큼 늦을 수 있다. 비밀번호를 모르면 그 시점을 고를 수 없고 결과는 「W → C 순차」와 같다. 고치려면 스키마(정산 표시)가 필요해 수용한다 — 사용자 결정 2026-10-22.
+- **D-712 불변식이 바뀌었다:** 04.2는 「N번째 실패 기록도 함께 롤백 → 잠겼는데 기록 0건 없음」이었다. 07-09는 「after의 잠금 기록이 실패하면 다음 시도가 채움」이다 — 그 사이 잠겼는데 `account_lock` 0건인 구간이 있다. 후속 수정 2(A)로 그 경우 N번째 응답은 403 잠금 문구이고 `auth.lockout_record_failed` 오류 로그가 남는다.
 - before 훅이 사용자를 한 번 더 읽는다(`reserveLoginAttempt`가 eng E5대로 tx 전에 `findUserByEmail`) — 로그인당 쿼리 하나.
 
 ## Deviations from Plan
@@ -112,12 +117,13 @@ completed: 2026-10-22
 ## Deferred
 
 - ~~/qa ISSUE-002~~ — 후속 수정에서 해결.
-- 독립 검토 [P3 추정] 미리 기록 행 `attempted_at`(DB `now()`, `timestamp without time zone`)은 DB 세션 TimeZone = UTC를 가정한다(Cloud SQL 기본 · 로컬 모두 UTC, action_log도 같은 가정). 이번 후속 지시 목록 밖이라 손대지 않음 — OPERATIONS 한 줄 또는 수용은 결정 사항.
+- ~~독립 검토 [P3 추정] 미리 기록 행 `attempted_at`(DB `now()`, `timestamp without time zone`)은 DB 세션 TimeZone = UTC를 가정한다(Cloud SQL 기본 · 로컬 모두 UTC, action_log도 같은 가정).~~ — 수용(사용자 결정 2026-10-22). OPERATIONS.md 300줄 한도라 문서 줄도 더하지 않는다.
 
 ## Next
 
 - 07-17(사람 화면 잠금 풀기 · 초기화)은 `resetPassword(viewer, email)` · `unlockAccount(viewer, email)`를 그대로 부르면 상한 판정이 따라온다 — `RoleGrantForbiddenError`를 화면 문구로 바꾸는 처리는 07-17 몫.
 - PR-AUTH 게이트: `/review` + `/cso` + 독립 검토 1 → 사용자 머지(D-726).
+- 07-17(또는 별도 quick): 퇴직 · 보관 계정의 기존 세션이 better-auth 자체 엔드포인트(get-session · change-password · update-user · list-sessions)에서 계속 인증되는 틈을 닫는다 — /review P3, 보관은 기존 M-2.
 
 ## 후속 수정 (독립 검토 · 사용자 결정 2026-10-22)
 
@@ -136,8 +142,21 @@ completed: 2026-10-22
 
 검증(전용 DB erp_w0709_test): 통합 lockout · retiree-login · reset-unlocks · action-log · account-cli · archived-session · auth · rate-limit · archive · people-login-status 10파일 91/91 · 단위 docs-limits · env · env-login-limit 121/121 · `pnpm typecheck` 0 · `pnpm lint` 0. 로그인 화면 E2E 중 잠금 문구를 다루는 스펙 없음(`login-logout.spec.ts`에 잠금 사례 없음) — E2E 미실행.
 
+## 후속 수정 2 (Codex 지적 · 사용자 결정 2026-10-22)
+
+고친 것(A, Codex 지적 (2)): N번째 틀린 시도의 after `settleLoginFailure`에서 `ensureLockRecorded`가 실패하면 오류가 훅 밖으로 나가 **HTTP 응답이 500**이었다(시험 K2 RED에서 실측, `auth.lockout` 로그도 없음). settle이 잠금 기록 확인의 실패만 잡아 tx를 롤백한 뒤 `log.error("auth.lockout_record_failed", {email, name})`를 남기고 잠김을 그대로 돌려준다 → 응답 **403 잠금 문구**(요청 문맥은 기존 403 Response 경로). 실패 행 재계수 등 다른 오류는 그대로 던진다. 다음 시도가 before에서 기록을 채우는 D-712 자가 회복은 그대로다. 퇴직 · 보관 거부도 같은 settle을 지나 같은 결과다. reserve(before)의 잠금 기록 실패는 지시 범위 밖이라 그대로 던진다. 시험: K(직접 호출이 잠김을 돌려줌) · K2(HTTP 경로 기록 실패 주입 → 403 잠금 문구 · 오류 로그 1건 · `auth.lockout` 없음 · 0행 → 다음 시도 403 · 1행) — 둘 다 RED 확인 뒤 GREEN. 커밋 c607db21.
+
+결정(사용자 결정 2026-10-22):
+- DB 세션 TimeZone=UTC 가정은 그대로 수용한다(OPERATIONS.md 300줄 한도) — Deferred 항목을 닫았다.
+- `recordLoginFailure`(프로덕션 호출처 없음, 시험만)는 남긴다.
+- 퇴직 · 보관 계정의 기존 세션이 better-auth 자체 엔드포인트(get-session · change-password · update-user · list-sessions)에서 계속 인증되는 틈(/review P3, 보관은 기존 M-2)은 후속 플랜(07-17 또는 별도 quick)으로 넘긴다.
+- /cso는 스냅숏 64MiB 한도로 실행할 수 없었다. /review 보안 항목, Codex 봇 보안 검토 0건, Opus 독립 검토로 대체를 인정한다.
+
+검증(전용 DB erp_w0709_test): 통합 lockout · retiree-login · reset-unlocks · auth 4파일 44/44 · `pnpm typecheck` 0 · `pnpm lint` 0.
+
 ## Self-Check: PASSED
 
 - 파일: retiree-login.test.ts · reset-unlocks.test.ts · env-login-limit.test.ts 있음
 - 커밋: 739358f7 · 2d096e41 · c9864ef2 있음
 - 후속 커밋: 43a3b57e · 492c716a · f59ff4a1 · 50abae06 · f3436de9 · ffd07051 있음
+- 후속 수정 2 커밋: c607db21 있음

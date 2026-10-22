@@ -7,7 +7,7 @@
   "plan": 0,
   "task": 0,
   "total_tasks": 28,
-  "status": "executing",
+  "status": "paused",
   "completed_tasks": [
     {
       "id": 1,
@@ -78,6 +78,6 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 [#258-05 실행]: /gsd-progress → .continue-here.md 읽기 → 웨이브 1 PR [검토] 상태 확인 → /gsd-execute-phase 07 --wave 2",
-  "context_notes": "웨이브 1(07-01·02·03·04·12) 실행·게이트 끝, PR #259·#261·#262·#263 ready(머지 = 프로젝트 스레드 「07 실행」), #260 PR-S draft. 웨이브 2부터 스킬·훅이 잡히는 새 세션(plant8, 저장소 경로)에서. 넘김 메모는 .continue-here.md 끝."
+  "next_action": "새 세션 [#258-06 실행]: /gsd-progress → .continue-here.md 「[#258-05 실행] 결과」 읽기 → 웨이브 2 브랜치에 origin/main·의존 브랜치 재반영 → /gsd-execute-phase 07 --wave 2",
+  "context_notes": "웨이브 1: #262 main 머지, #259·#261·#263 ready, #260 PR-S draft. [#258-05]는 CEO 게이트 손 기록(사용자 승인, cbbcde1) 뒤 그 줄의 session= 때문에 세션 경계 훅이 실행자를 막아 웨이브 2 브랜치만 준비하고 넘김(사용자 결정 2026-10-22). 넘김 메모는 .continue-here.md."
 }

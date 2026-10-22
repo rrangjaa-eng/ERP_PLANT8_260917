@@ -8,7 +8,7 @@ export type PayWeekday = (typeof PAY_WEEKDAYS)[number];
 
 export type PayScheduleConfig = { termDays: number; payWeekday: PayWeekday; cutoffHHmm: string };
 
-// no-slot = 기한 창에 지급 요일이 없어 기한 이하 마지막 영업일(D-741 — 밀림 아님) · cutoff = 원래 지급일 마감을 넘겨 다음 지급 가능 요일로 밀림(D-704 첫 절).
+// no-slot = 기한 창에 영업일로 맞춘 지급 요일이 없어 기한 이하 마지막 영업일(D-741 — 밀림 아님) · cutoff = 원래 지급일 마감을 넘겨 다음 지급 가능 요일로 밀림(D-704 첫 절).
 export type PayPushReason = "cutoff" | "no-slot" | null;
 
 export type PaySchedule = {
@@ -91,12 +91,15 @@ function cutoffOf(payDate: string, cfg: PayScheduleConfig, lookup: HolidayLookup
   return kstAt(prevBusinessOnOrBefore(shift(payDate, -1), lookup), cfg);
 }
 
-// 기한 창 = 기준일 < d ≤ limit(기준일 당일은 창 밖). 창 안 마지막 지급 요일을 영업일로 맞추고, 창에 지급 요일이 없으면
-// D-741 · D-749: 기한 이하 마지막 영업일(창에 영업일이 없으면 기준일 당일 포함 앞으로).
+// 기한 창 = 기준일 < d ≤ limit(기준일 당일은 창 밖). 창 안 마지막 지급 요일을 영업일로 맞춘 날이 창 안이면 그 날, 창에 지급 요일이 없거나
+// 맞춘 날이 기준일 이하면 D-741 · D-749: 기한 이하 마지막 영업일(창에 영업일이 없으면 기준일 당일 포함 앞으로).
 function firstCandidate(input: PayScheduleInput): { payDate: string; pushReason: PayPushReason } {
   const limit = shift(input.baseDate, input.termDays);
   const anchor = weekdayOnOrBefore(limit, input.cfg.payWeekday);
-  if (anchor > input.baseDate) return { payDate: prevBusinessOnOrBefore(anchor, input.lookup), pushReason: null };
+  if (anchor > input.baseDate) {
+    const pay = prevBusinessOnOrBefore(anchor, input.lookup);
+    if (pay > input.baseDate) return { payDate: pay, pushReason: null };
+  }
   return { payDate: prevBusinessOnOrBefore(limit, input.lookup), pushReason: "no-slot" };
 }
 

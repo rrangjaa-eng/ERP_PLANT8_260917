@@ -5,10 +5,10 @@ current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
 current_plan: 37
 status: executing
 stopped_at: Completed 06-39-PLAN.md
-last_updated: "2026-10-15T14:20:21.177Z"
+last_updated: "2026-10-22T05:47:45.753Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 06 execution started
-state_head: da06532d5a8fe4061f050a2b17cc3bb39c56159e
+state_head: daa8e7db36ef1aefe19703824d563c27d762176c
 progress:
   total_phases: 22
   completed_phases: 7
@@ -453,6 +453,7 @@ Recent decisions affecting current work:
 | 261002-4jn | 보관함 복원: 이미 복원됨 토스트 · 날짜 점유 공휴일 복원 숨김(회고 #3·#4) | 2026-10-02 | ecd2f6e | [261002-4jn-archive-restore-already-restored-toast-a](./quick/261002-4jn-archive-restore-already-restored-toast-a/) |
 | 261003-40w | DEF-1 보관함 500 수정 + SYSTEM 폼 간격 24 | 2026-10-03 | af018d7 | [261003-40w-def-1-500-system-24](./quick/261003-40w-def-1-500-system-24/) |
 | 261004-51o | 프로젝트 목록 수익률 기준선 색 — 설정 키(기본 15%)와 목록 위험 색 | 2026-10-04 | dd7ea069 | [261004-51o-profit-rate-threshold-color-on-project-l](./quick/261004-51o-profit-rate-threshold-color-on-project-l/) |
+| 261022-7n2 | firstCandidate no-slot 경계 수정(D-749) — 지급 요일을 영업일로 맞춘 날이 기준일 이하면 no-slot | 2026-10-22 | daa8e7d | [261022-7n2-firstcandidate-no-slot-boundary-fix-d-74](./quick/261022-7n2-firstcandidate-no-slot-boundary-fix-d-74/) |
 
 ### Roadmap Evolution
 

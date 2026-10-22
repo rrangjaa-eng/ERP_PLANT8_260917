@@ -1,13 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { expenses } from "@/db/schema";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { createExpenseFromLines, ExpenseFieldError, getExpense, saveExpenseDraft } from "@/domain/expenses";
-import { REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { createExpenseFromLines, createTeamExpenseDraft, ExpenseFieldError, getExpense, saveExpenseDraft } from "@/domain/expenses";
+import { REQUESTED_DATE_PASSED, REQUESTED_DATE_PAST, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { seoulToday } from "@/lib/dates";
 import { listCodeItems } from "@/repositories/code-tables";
-import { setupExpenseProject } from "./fixtures/expenses";
+import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 
 // 05-16 — `/expenses/new`에서 비고 · 지급 예정일 · 지급 방식을 적은 뒤 견적 줄을 고르면 그 값이 만들어지는 작성 중 문서에 같이 저장된다
 // (줄 값만으로 만들고 적은 칸을 지우던 것을 고침). 저장은 insert 한 번이라 값과 문서가 함께 생기거나 함께 안 생긴다.
@@ -115,5 +116,58 @@ describe("줄에서 만들 때 적어 둔 칸을 같이 저장", () => {
     // 작성자 입력에는 지급 예정일 키가 없다(strict 스키마 — 타입 밖 입력도 거부).
     const withSchedule: Record<string, unknown> = { scheduledPaymentDate: "2026-07-10" };
     await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: (await rowOf(expenseId)).version, fields: withSchedule })).rejects.toThrow();
+  });
+});
+
+// 사용자 결정 2026-10-23(AQ-10 완화 · 독립 검토 L-4): 희망 지급일이 지난 지출결의도 다른 칸은 저장 — 날짜를 바꿀 때만 검사.
+// 제출은 지난 희망일을 날짜 칸 오류 `희망일 지남`으로 막는다. /review P3 F19: 제출 · 팀 비용 첫 저장의 희망일 검사.
+describe("지난 희망 지급일 — 날짜를 바꿀 때만 검사", () => {
+  async function lineDraftWithPastHope(): Promise<{ pm: Viewer; expenseId: string; past: string }> {
+    const fx = await setupExpenseProject();
+    const result = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = result.created[0]?.expenseId ?? "";
+    const past = daysFromToday(-2);
+    // 저장할 때는 미래였던 희망일이 날이 지나 과거가 된 문서.
+    await db.update(expenses).set({ requestedPaymentDate: past, requestedPaymentReason: "행사 전 선금" }).where(eq(expenses.id, expenseId));
+    return { pm: fx.pm, expenseId, past };
+  }
+
+  it("임시 저장: 희망일을 그대로 두고 비고만 고치면 저장된다(폼처럼 희망 두 칸을 같이 보내도 · 빼고 보내도)", async () => {
+    const { pm, expenseId, past } = await lineDraftWithPastHope();
+    await saveExpenseDraft(pm, { expenseId, expectedVersion: (await rowOf(expenseId)).version, fields: { note: "비고 고침", requestedPaymentDate: past, requestedPaymentReason: "행사 전 선금" } });
+    expect(await rowOf(expenseId)).toMatchObject({ note: "비고 고침", requestedPaymentDate: past });
+    await saveExpenseDraft(pm, { expenseId, expectedVersion: (await rowOf(expenseId)).version, fields: { note: "다시 고침" } });
+    expect(await rowOf(expenseId)).toMatchObject({ note: "다시 고침", requestedPaymentDate: past });
+  });
+
+  it("임시 저장: 다른 지난 날로 바꾸면 희망 지급일 칸 오류 · 저장 안 됨", async () => {
+    const { pm, expenseId, past } = await lineDraftWithPastHope();
+    const changed = await saveExpenseDraft(pm, {
+      expenseId,
+      expectedVersion: (await rowOf(expenseId)).version,
+      fields: { note: "비고 고침", requestedPaymentDate: daysFromToday(-1), requestedPaymentReason: "행사 전 선금" },
+    }).catch((e: unknown) => e);
+    expect(changed).toBeInstanceOf(ExpenseFieldError);
+    expect(changed).toMatchObject({ field: "requestedPaymentDate", message: REQUESTED_DATE_PAST });
+    expect(await rowOf(expenseId)).toMatchObject({ note: null, requestedPaymentDate: past });
+  });
+
+  it("제출: 희망일이 지났으면 희망 지급일 칸 오류 `희망일 지남` · 제출 안 됨", async () => {
+    const { pm, expenseId } = await lineDraftWithPastHope();
+    const submitted = await submitReadyDraft(pm, expenseId).catch((e: unknown) => e);
+    expect(submitted).toBeInstanceOf(ExpenseFieldError);
+    expect(submitted).toMatchObject({ field: "requestedPaymentDate", message: REQUESTED_DATE_PASSED });
+    expect((await rowOf(expenseId)).number).toBeNull();
+  });
+
+  it("팀 비용 첫 저장: 지난 희망일은 희망 지급일 칸 오류 · 문서를 만들지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const idempotencyKey = randomUUID();
+    const created = await createTeamExpenseDraft(fx.pm, {
+      idempotencyKey,
+      fields: { teamExpenseKind: "team_overhead", usageDate: daysFromToday(0), content: "팀 회식", requestedPaymentDate: daysFromToday(-1), requestedPaymentReason: "선금" },
+    }).catch((e: unknown) => e);
+    expect(created).toMatchObject({ field: "requestedPaymentDate", message: REQUESTED_DATE_PAST });
+    expect(await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.idempotencyKey, idempotencyKey))).toEqual([]);
   });
 });

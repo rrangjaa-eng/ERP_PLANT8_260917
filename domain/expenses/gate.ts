@@ -49,6 +49,8 @@ export const PREPAID_REASON_REQUIRED = "선결제 사유 없음 · 사유 적기
 export const REQUESTED_REASON_REQUIRED = "희망 사유 · 입력";
 export const REQUESTED_DATE_PAST = "오늘 이후 날짜 · 다시 선택";
 export const REQUESTED_DATE_MISSING = "희망 지급일 없음 · 날짜 선택";
+// 사용자 결정 2026-10-23: 제출 때 저장된 희망일이 지났으면(저장은 날짜를 바꿀 때만 과거를 본다).
+export const REQUESTED_DATE_PASSED = "희망일 지남";
 
 export type ExpenseSubmitFacts = {
   // ① 견적 줄 문서의 현재 차수 고객 승인 사실(팀 비용 null).

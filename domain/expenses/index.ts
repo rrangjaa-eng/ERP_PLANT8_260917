@@ -4,7 +4,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { withTransaction } from "@/lib/db-transaction";
 import { isCalendarDate, seoulToday } from "@/lib/dates";
-import { DATE_FORMAT_ERROR, expenseDraftFieldsSchema, requestedPaymentErrors, TEAM_EXPENSE_KINDS, type TeamExpenseKind } from "@/domain/expenses/draft-fields";
+import { DATE_FORMAT_ERROR, expenseDraftFieldsSchema, requestedPaymentErrors, TEAM_EXPENSE_KINDS, type RequestedPaymentCheck, type TeamExpenseKind } from "@/domain/expenses/draft-fields";
 import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-number";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
@@ -770,7 +770,7 @@ export async function createExpenseFromLines(
   const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
   if (!canWriteExpense || !canWriteProject) throw new ForbiddenError("지출결의 작성 권한 없음");
   const typed = lineDraftFieldsSchema.parse(input.fields ?? {});
-  assertRequestedPayment(typed, seoulToday());
+  assertRequestedPayment(typed, seoulToday(), { on: "save", stored: null });
   await assertActiveCodes(viewer, typed);
 
   const [gateEnabled, teamScope, rowScope] = await Promise.all([
@@ -882,9 +882,13 @@ const lineDraftFieldsSchema = draftFieldsSchema.pick({ note: true, requestedPaym
 
 export type LineDraftFieldsInput = z.input<typeof lineDraftFieldsSchema>;
 
-// 07-16(SC-02 · AQ-10): 희망 지급일 · 사유 판정(합친 값) — 어긋나면 그 칸 오류(첫 하나).
-function assertRequestedPayment(fields: { requestedPaymentDate?: string | null; requestedPaymentReason?: string | null }, todayKst: string): void {
-  const errors = requestedPaymentErrors(fields, todayKst);
+// 07-16(SC-02 · AQ-10): 희망 지급일 · 사유 판정(합친 값) — 어긋나면 그 칸 오류(첫 하나). 저장 경로 넷이 이 함수 하나로 판정한다(check — 사용자 결정 2026-10-23).
+function assertRequestedPayment(
+  fields: { requestedPaymentDate?: string | null; requestedPaymentReason?: string | null },
+  todayKst: string,
+  check: RequestedPaymentCheck,
+): void {
+  const errors = requestedPaymentErrors(fields, todayKst, check);
   if (errors.requestedPaymentDate) throw new ExpenseFieldError("requestedPaymentDate", errors.requestedPaymentDate);
   if (errors.requestedPaymentReason) throw new ExpenseFieldError("requestedPaymentReason", errors.requestedPaymentReason);
 }
@@ -932,6 +936,7 @@ export async function saveExpenseDraft(
       requestedPaymentReason: fields.requestedPaymentReason !== undefined ? fields.requestedPaymentReason : row.requestedPaymentReason,
     },
     seoulToday(deps?.now),
+    { on: "save", stored: row.requestedPaymentDate },
   );
   // 06-10: 합친 행이 선결제 · 사유 빔이면 DB 체크(expenses_prepaid_reason_check)를 만나기 전에 칸 오류로 거부한다. 선결제가 아니면 사유는 버린다.
   const prepaid = fields.prepaid ?? row.prepaid;
@@ -1000,7 +1005,7 @@ export async function createTeamExpenseDraft(
   if (parsed.payeeUserId) await usablePayeeUser(viewer, parsed.payeeUserId, deps?.now);
   await assertActiveCodes(viewer, parsed);
   const draftColumns = withOnePayee(toDraftColumns(parsed));
-  assertRequestedPayment(draftColumns, seoulToday(deps?.now));
+  assertRequestedPayment(draftColumns, seoulToday(deps?.now), { on: "save", stored: null });
   if (draftColumns.prepaid && !draftColumns.prepaidReason) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
   const usageDate = parsed.usageDate ?? seoulToday(deps?.now);
   const attributedTeamId = await attributedTeamFor(viewer, usageDate);
@@ -1158,8 +1163,8 @@ export async function submitExpense(
   // 팀 비용 문서는 프로젝트가 없다 — 프로젝트 행 잠금 · 고객 승인 판정 없이 지출결의 행 잠금만.
   const projectRow = row.projectId ? await findProjectById(viewer, row.projectId) : null;
   if (!projectRow && !isTeamCostRow(row)) throw new ExpenseNotFoundError();
-  // 07-16(SC-02): 저장된 희망 지급일 · 사유가 짝 · 오늘 이후를 지켜야 제출된다(임시 저장과 같은 판정).
-  assertRequestedPayment(row, seoulToday(deps?.now));
+  // 07-16(SC-02): 저장된 희망 지급일 · 사유가 짝 · 오늘 이후를 지켜야 제출된다(임시 저장과 같은 판정 — 지났으면 `희망일 지남`).
+  assertRequestedPayment(row, seoulToday(deps?.now), { on: "submit" });
 
   const tax = await computeExpenseTax(viewer, withEffectiveDate(row, await loadExpenseSchedules(viewer, [row], deps?.now)));
   const pre = projectRow ? await loadSubmitPre(viewer, projectRow) : null;

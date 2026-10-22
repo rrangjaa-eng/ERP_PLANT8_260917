@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CURRENCIES } from "@/domain/money/currency";
 import { isCalendarDate } from "@/lib/dates";
-import { REQUESTED_DATE_MISSING, REQUESTED_DATE_PAST, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
+import { REQUESTED_DATE_MISSING, REQUESTED_DATE_PASSED, REQUESTED_DATE_PAST, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
 
 // 05 /review A12: 지출결의 칸 입력 스키마 하나 — 액션 입력 검증(칸 오류 문구)과 도메인 판정이 같은 스키마를 쓴다. 입력에 세액 · 지급 총액 ·
 // 원화 칸은 없다(사람이 적는 금액은 공급가액 하나, 원화 환산 · 세금은 서버). 팀 id 칸도 없다(귀속 팀은 서버가 사용일 소속으로만 정한다).
@@ -50,15 +50,23 @@ export const expenseDraftFieldsSchema = z
 
 export type RequestedPaymentErrors = Partial<Record<"requestedPaymentDate" | "requestedPaymentReason", string>>;
 
+// 저장은 저장된 희망일(stored — 새 문서는 null)과 다른 값만 과거를 본다. 제출은 지난 희망일을 `희망일 지남`으로 막는다.
+export type RequestedPaymentCheck = { on: "save"; stored: string | null } | { on: "submit" };
+
 // 07-16(SC-02 · AQ-10): 희망 지급일 · 사유 판정 — 둘 다 있거나 둘 다 없어야 하고(빈 사유 = 없음), 희망일은 오늘(넘긴 KST 날짜) 이후. 영업일은 따지지 않는다.
-// 저장 경로(임시 저장 · 줄에서 만들기 · 제출)가 합친 값으로 부른다.
+// 저장 경로(임시 저장 · 줄에서 만들기 · 팀 비용 첫 저장 · 제출)가 합친 값으로 부른다.
+// 사용자 결정 2026-10-23(AQ-10 완화): 희망일이 지난 문서도 다른 칸은 저장 — 날짜를 바꿀 때만 검사.
 export function requestedPaymentErrors(
   fields: { requestedPaymentDate?: string | null; requestedPaymentReason?: string | null },
   todayKst: string,
+  check: RequestedPaymentCheck = { on: "save", stored: null },
 ): RequestedPaymentErrors {
   const date = fields.requestedPaymentDate ?? null;
   const reason = fields.requestedPaymentReason?.trim() ? fields.requestedPaymentReason : null;
   if (date === null) return reason === null ? {} : { requestedPaymentDate: REQUESTED_DATE_MISSING };
-  if (date < todayKst) return { requestedPaymentDate: REQUESTED_DATE_PAST };
+  if (date < todayKst) {
+    if (check.on === "submit") return { requestedPaymentDate: REQUESTED_DATE_PASSED };
+    if (date !== check.stored) return { requestedPaymentDate: REQUESTED_DATE_PAST };
+  }
   return reason === null ? { requestedPaymentReason: REQUESTED_REASON_REQUIRED } : {};
 }

@@ -7,6 +7,7 @@ import { actionLog } from "@/db/schema";
 import { UNPRUNABLE_ACTION_TYPES } from "@/domain/action-log/prune-scope";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { markActionLogRowsPruned } from "@/repositories/action-log";
+import { backdateActionLog } from "@/test/support/action-log-backdate";
 
 // 07-13(R6 · D7) — 행동 로그 불변 트리거. 앱 코드를 거치지 않는 문장(psql과 같은 길)으로 DB가 직접 막는지 본다.
 // 단언 규칙(E-42): drizzle 0.45는 pg 오류를 DrizzleQueryError로 감싸 원본을 .cause에 두므로 cause.code · cause.message로 본다.
@@ -158,5 +159,16 @@ describe("action_log 불변 트리거 — 끌 수 없는 종류(R4)", () => {
     const body = readFileSync(path.join(dir, file), "utf8");
     const missing = UNPRUNABLE_ACTION_TYPES.filter((type) => !body.includes(`'${type}'`));
     expect(missing).toEqual([]);
+  });
+});
+
+describe("시험 전용 시각 당기기 backdateActionLog", () => {
+  it("그 행 occurred_at만 옮기고, 끝난 뒤 같은 연결의 다른 UPDATE는 여전히 거부된다(SET LOCAL이 새지 않음)", async () => {
+    const seq = await insertRow("immutable_probe");
+    const target = new Date("2026-08-31T20:00:00Z");
+    await backdateActionLog(seq, target);
+    expect((await readRow(seq)).occurredAt).toEqual(target);
+    await expectAppendOnly(() => db.execute(sql`UPDATE action_log SET occurred_at = now() WHERE seq = ${seq}`));
+    expect((await readRow(seq)).occurredAt).toEqual(target);
   });
 });

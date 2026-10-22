@@ -906,6 +906,20 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     );
   }
 
+  function scheduledCell(row: PaymentTargetScreenRow) {
+    return (
+      <span className={styles.nowrap}>
+        <Num value={row.scheduledPaymentDate ? row.scheduledPaymentDate.slice(5) : null} />
+        {row.scheduledPaymentManual ? (
+          <>
+            {" "}
+            <StatusTag status="수동 지정" variant="text" />
+          </>
+        ) : null}
+      </span>
+    );
+  }
+
   // 폰 접힌 줄 맨 앞 글자(K5) — PC 2행과 같은 낱말, 행동은 없다(폰은 행 → 문서 화면).
   function phoneLead(row: PaymentTargetScreenRow) {
     if (row.paymentScheduleFailed === true) return <span className={styles.scheduleFailed}>예정일 계산 실패</span>;
@@ -982,7 +996,9 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       // 07-16(J11): 결재 중 참고 행은 링크 · 행동 없이 muted 글자만.
       cell: (row) =>
         row.approving ? (
-          <span className={`${styles.titleCell} ${styles.approvingText}`}>{row.title ?? "—"}</span>
+          <span className={`${styles.titleCell} ${styles.approvingText}`} title={phone ? (row.title ?? undefined) : undefined}>
+            {row.title ?? "—"}
+          </span>
         ) : (
           <span className={styles.titleCell} data-row-id={row.id}>
             <Link
@@ -1015,7 +1031,9 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       header: PAYMENT_TARGET_COLUMN_LABELS.method,
       priority: "p2",
       cell: (row) => (row.account ? <PaymentAccountValue account={row.account} /> : <span className={styles.nowrap}>{row.paymentMethodName ?? "—"}</span>),
+      // 결재 중 행은 지급 방식 · 예정일이 없다 — 접힌 줄을 세우지 않는다(감사 #6, 상태 · 금액은 주 행 p1 칸).
       summary: (row) => {
+        if (row.approving) return null;
         const text = row.account ? accountSummary(row.account) : (row.paymentMethodName ?? "—");
         const lead = phoneLead(row);
         return lead ? (
@@ -1034,17 +1052,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       header: PAYMENT_TARGET_COLUMN_LABELS.payment,
       priority: "p2",
       // 07-16(SC-01): 수동 지정 건은 값 뒤 `수동 지정`(muted 글자 — 07-06 D-742).
-      cell: (row) => (
-        <span className={styles.nowrap}>
-          <Num value={row.scheduledPaymentDate ? row.scheduledPaymentDate.slice(5) : null} />
-          {row.scheduledPaymentManual ? (
-            <>
-              {" "}
-              <StatusTag status="수동 지정" variant="text" />
-            </>
-          ) : null}
-        </span>
-      ),
+      cell: scheduledCell,
+      summary: (row) => (row.approving ? null : scheduledCell(row)),
     },
     {
       key: "evidence",

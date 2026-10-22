@@ -126,3 +126,16 @@ superpowers:test-driven-development · plant8:design-gate · superpowers:systema
 
 - FOUND: repositories/project-documents.ts, domain/projects/documents.ts, domain/projects/profit-summary.ts, test/e2e/mobile-quote-doors.spec.ts, test/integration/customer-approval-basis.test.ts
 - FOUND commits: 89c00ff8, 6aeeea1b, 5f2eaf78, 1368fbd5 (`git log`로 확인)
+
+## 사후 고침
+
+독립 DOM 감사(`audit/07-18-dom-audit.md`)와 260907 비교 지적을 반영했다. 호출한 스킬: superpowers:test-driven-development · plant8:design-gate · superpowers:systematic-debugging · superpowers:verification-before-completion.
+
+1. `계산 불가` 배지 버튼 폰 터치 44×44(`--touch-min`), `aria-controls` 대상(이유 줄)을 닫혀 있어도 `hidden`으로 DOM에 둠 (감사 P2·P3-5).
+2. 정보 면 PO 금액 · 손익 값을 공용 `Num`으로 (감사 P3-2). 손익 비율 글자는 목록과 같은 `formatPercent`(소수 1자리 버림, `20.0%`).
+3. 승인 패널 빈 제출의 `근거 선택`을 칸 아래 한 곳으로, 근거 select `aria-required` (감사 P3-3). 기본값은 비어 있는 그대로.
+4. 승인일 칸 복원(260907 회귀): 기본 오늘 KST, 비었거나 형식이 틀리면 1차 막힘 + 이유 한 줄, `approvedOn`으로 전송. 위 결정 줄 「승인일 칸을 없애고 오늘로 둔다」는 이 고침으로 뒤집혔다. E2E(quote-revisions)를 승인일 흐름으로 교체.
+5. 손익 정의를 목록과 하나로(260907 불일치): `repositories/projects.ts getProjectProfitRow`가 목록과 같은 `rowMoneyExpressions`를 한 프로젝트에 적용, `domain/projects/profit-summary.ts`는 기준 ≤ 0이면 `계산 불가`(견적 기준 `견적 없음` · 발행 기준 `발행액 없음`)만 판정. 이 SUMMARY 위쪽의 「취소 줄 제외 Σ차익 / 견적 합계」 손익 정의는 대체됐다. 통합 테스트가 정산+발행 줄 · 견적 기준 · 미발행 정산 · 기준 0에서 목록과 상세 일치를 확인.
+6. DOM 감사 보고서를 플랜 경로 `audit/07-18-dom-audit.md`로 복사(감사 P3-6).
+
+열린 질문: 승인 근거 select를 260907처럼 발주서 기본값으로 둘지(지금은 비어 있음, 바꾸지 않음).

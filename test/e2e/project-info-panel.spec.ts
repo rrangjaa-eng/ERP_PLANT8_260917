@@ -479,6 +479,33 @@ test.describe("고객 승인 섹션 · 승인 표시 패널 (W6 · SC-19)", () =
   });
 });
 
+test.describe("정보 면 손익 · 금액 글자 (07-18 사후 고침)", () => {
+  test.use({ viewport: { width: 375, height: 800 } });
+
+  test("`계산 불가` 배지는 폰에서 44×44 이상이고, aria-controls 대상이 닫혀 있어도 DOM에 있다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makePm(team, { amount: true, pnl: true });
+    const empty = await seedProject({ teamId: team, pmUserId: pm.userId, status: "bidding", lines: [] });
+    await login(page, pm);
+    await page.goto(`/projects/${empty.id}`);
+    await expandProjectInfo(page);
+
+    const badge = projectInfo(page).getByRole("group", { name: "손익" }).getByRole("button", { name: "계산 불가", exact: true });
+    const box = await badge.boundingBox();
+    expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    const controls = await badge.getAttribute("aria-controls");
+    expect(controls).toBeTruthy();
+    const target = page.locator(`[id="${controls}"]`);
+    await expect(target).toHaveCount(1);
+    await expect(target).toBeHidden();
+    await badge.click();
+    await expect(target).toBeVisible();
+    await expect(target).toHaveText("계산 불가 · 견적 없음");
+  });
+});
+
 test.describe("견적 줄 문 칸 이유 글자 (S4 · SC-22)", () => {
   test.use({ viewport: { width: 1280, height: 900 } });
 

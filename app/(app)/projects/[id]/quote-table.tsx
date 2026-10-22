@@ -3006,8 +3006,8 @@ export function QuoteLedger({
                       </>
                     )}
                   </p>
-                  {profit.kind === "unavailable" && profitReasonOpen ? (
-                    <p id={`${INFO_BODY_ID}-profit-reason`} className={styles.infoAux}>{`계산 불가 · ${profit.reason}`}</p>
+                  {profit.kind === "unavailable" ? (
+                    <p id={`${INFO_BODY_ID}-profit-reason`} className={styles.infoAux} hidden={!profitReasonOpen}>{`계산 불가 · ${profit.reason}`}</p>
                   ) : null}
                 </div>
               ) : null}

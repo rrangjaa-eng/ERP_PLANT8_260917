@@ -450,6 +450,17 @@ td:has(> .rowNumber) {
   cursor: pointer;
 }
 
+@media (max-width: 699.98px) {
+  /* §3 폰 터치 목표 44×44 — 폰에는 hover가 없어 이 탭이 계산 불가 이유를 여는 유일한 길이다. */
+  .infoReasonButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
 .infoWarn {
   color: var(--status-warning);
   font-size: var(--text-aux);

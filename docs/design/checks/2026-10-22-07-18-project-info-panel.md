@@ -30,3 +30,7 @@
 - [x] 새 색·서체·radius를 만들지 않았다 — 근거: `.infoAux` `.infoWarn` `.infoReasonButton`는 var() 토큰만(`--text-aux` `--text-muted` `--status-warning` `--s-*`), `font` 속성 없음(stylelint 통과), 상태 배지 `계산 불가`는 status-map 한 표의 기존 kind `muted`
 - [x] 폰: 행에 문 버튼을 더하지 않았다 — 근거: 폰 행은 두 줄 · 주 버튼 하나 그대로, 문 행동은 행 탭 시트가 맡고 닫힌 줄은 PC와 같은 낱말 · mobile-quote-doors.spec.ts 375 · 320 녹색(가로 넘침 0)
 - [x] 실제 앱 화면을 확인했다 — 근거: Playwright DOM 실측(project-info-panel.spec.ts 16건 · mobile-quote-doors.spec.ts 2건 녹색 — 패널 열기 · 근거 필수 · 저장 뒤 `승인됨 · 발주서` · 경고 사라짐 · 취소 모달, 문 칸 낱말 높이 24px 미만) — 폭별 사진은 독립 DOM 감사 보고서가 맡는다(CLAUDE.md §6)
+
+## 사후 고침 (독립 DOM 감사 · 260907 비교 반영)
+- [x] 폰 터치 44: `계산 불가` 배지 버튼이 폰(<700)에서 `min-width/min-height: var(--touch-min)`이고 `aria-controls` 대상은 닫혀도 DOM에 있다 — 근거: project-detail.module.css `.infoReasonButton` 미디어 규칙, E2E `계산 불가 배지는 폰에서 44×44 이상`이 boundingBox와 대상 존재를 확인(375)
+- [x] 새 색·서체·radius를 만들지 않았다 — 근거: 추가한 CSS는 `var(--touch-min)`뿐

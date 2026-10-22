@@ -181,19 +181,19 @@ export async function setPermissionCell(
     { menu: input.menu, action: input.action },
     ...dependentCells(input.menu, input.action, input.allowed),
   ].map((cell) => ({ ...cell, allowed: input.allowed }));
-  const isAdminWriteOff = (cell: PermissionCell & { allowed: boolean }) =>
+  const turnsOffAdminWrite = (cell: PermissionCell & { allowed: boolean }) =>
     cell.menu === "admin.permissions" && cell.action === "write" && cell.allowed === false;
 
   // T-03-18: 자기 계급의 권한표 쓰기 칸을 스스로 끄는 사고를 막는다 — 그 칸을
   // 끄면 그 계급의 누구도 권한표를 다시 열 수 없어 DB 직접 수정 없이는
   // 복구가 불가능하다. 07-15: 보기 끔의 연쇄로 쓰기가 꺼지는 경우도 같다.
-  if (viewer.roleId === input.roleId && candidates.some(isAdminWriteOff)) {
+  if (viewer.roleId === input.roleId && candidates.some(turnsOffAdminWrite)) {
     throw new SelfLockoutError("자기 계급 권한표 쓰기는 끌 수 없음");
   }
 
   return withTransaction(async (tx) => {
     // 06.4(D-6403 · D-6408): 관리자 칸 끄기만 관리자 키 잠금 뒤 재조회 — 다른 계급 칸도 포함(자기 계급은 위 SelfLockout이 먼저).
-    const adminOff = candidates.some(isAdminWriteOff);
+    const adminOff = candidates.some(turnsOffAdminWrite);
     if (adminOff) {
       await lockSeatKeys(viewer, { admin: true }, tx);
       // 06.4 /review F5: 잠금을 기다린 사이 앞선 저장이 행위자 계급의 관리자 칸을 껐으면 거부 — 사전 판정만 믿지 않는다.
@@ -214,7 +214,7 @@ export async function setPermissionCell(
     }
 
     // 06.4 /review F7: 이미 꺼진 칸을 다시 끄는 저장은 관리자 수를 바꾸지 않으므로 마지막 관리자 판정을 건너뛴다.
-    if (adminOff && steps.some((step) => isAdminWriteOff(step.cell) && step.previous === true)) {
+    if (adminOff && steps.some((step) => turnsOffAdminWrite(step.cell) && step.previous === true)) {
       await assertAdminRoleRemains(viewer, { roleId: input.roleId, asOf: kstToday((deps?.now ?? (() => new Date()))()) }, tx);
     }
 

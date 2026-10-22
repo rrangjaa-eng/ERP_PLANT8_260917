@@ -277,6 +277,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       status={status}
       period={{ startDate: project.startDate, endDate: project.endDate, rights: periodRights, todayKst }}
       preEstimate={{ value: project.preEstimate ?? null, canEdit: canEditPreEstimate }}
+      poNumber={project.poNumber}
       canSave={canSave}
       frame={frame}
       statusSinceText={`${statusLabel} ${statusSince}`}

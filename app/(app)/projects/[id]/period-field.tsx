@@ -127,3 +127,9 @@ export function periodText(startDate: string | null, endDate: string | null): st
   if (!startDate && !endDate) return "기간 미정";
   return `기간 ${startDate ?? "—"} ~ ${endDate ?? "—"}`;
 }
+
+// 07-18(SC-19 · U14) — 정보 면 접힌 줄의 기간(`MM-DD~MM-DD`). 금액을 볼 수 없는 계급의 접힌 줄이 비지 않게 한다.
+export function periodShortText(startDate: string | null, endDate: string | null): string {
+  if (!startDate && !endDate) return "미정";
+  return `${startDate ? startDate.slice(5) : "—"}~${endDate ? endDate.slice(5) : "—"}`;
+}

@@ -222,6 +222,19 @@ registerGateRule<unknown, ProjectPreEstimateEditCtx>({
   },
 });
 
+// 07-18(W2 · D-737) — PO 번호 칸 저장. 권리는 기간과 같은 periodEditRights이고 금액이 아니라 quote.amount 노출은 보지 않는다.
+export type ProjectPoNumberEditCtx = { rights: "lead" | "pm" | "none"; errors: { reason: string }[] };
+
+registerGateRule<unknown, ProjectPoNumberEditCtx>({
+  name: "project.po-number-edit",
+  check: (_doc, ctx) => {
+    if (ctx.rights === "none") return { allowed: false, reason: "PO 번호 바꾸기 권한 없음" };
+    const [first] = ctx.errors;
+    if (first) return { allowed: false, reason: first.reason };
+    return { allowed: true };
+  },
+});
+
 // 04-20(D-82) — 진행으로 가는 전환은 시작일이 있어야 한다. 이 문자열은
 // statusDestinations의 blockedReason으로 화면에 그대로 간다(UI-SPEC rev 5 원문).
 export type ProjectStartDateRequiredCtx = { to: string; startDate: string | null };

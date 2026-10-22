@@ -99,6 +99,8 @@ export type ProjectDto = {
   version: number;
   archivedAt: Date | null;
   createdAt: Date;
+  // 07-18(W2 · D-737) — PO 번호(선택 · 중복 허용).
+  poNumber: string | null;
   // 04-44(DR-28 · 계약 8) — 총 매출 예상가. 견적 금액과 같은 정보 항목이라 볼 수 없으면 키가 없다.
   preEstimate?: Money;
 };
@@ -134,6 +136,7 @@ export const PROJECT_DTO_SPEC: DtoSpec<ProjectDtoSource, ProjectDto> = {
     { key: "version", from: "version", infoItem: "project.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "project.value" },
     { key: "createdAt", from: "createdAt", infoItem: "project.value" },
+    { key: "poNumber", from: "poNumber", infoItem: "project.value" },
     { key: "preEstimate", from: "preEstimate", infoItem: "quote.amount" },
   ],
 };

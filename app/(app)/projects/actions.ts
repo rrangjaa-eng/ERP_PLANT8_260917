@@ -194,6 +194,8 @@ export const saveProjectLedgerAction = authedActionClient
           fxRateTouched: z.boolean(),
         })
         .optional(),
+      // 07-18(D-737) — PO 번호. 길이 상한은 도메인이 칸 문구로 돌려준다.
+      poNumber: z.string().nullable().optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -213,6 +215,7 @@ export const saveProjectLedgerAction = authedActionClient
         issueRequests: parsedInput.issueRequests?.map(({ cancel, ...row }) => (cancel ? { id: row.id, version: row.version, cancel } : row)),
         period: parsedInput.period,
         preEstimate: parsedInput.preEstimate,
+        poNumber: parsedInput.poNumber,
       });
     } catch (error) {
       // 04-22 — 기간 칸 거부는 칸 오류로 돌려준다(화면이 칸 아래 Form.Error로 그린다).

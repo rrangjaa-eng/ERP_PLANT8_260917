@@ -505,6 +505,17 @@ export async function updateProjectPreEstimate(
   return row ?? null;
 }
 
+export async function updateProjectPoNumber(
+  viewer: Viewer,
+  id: string,
+  poNumber: string | null,
+  tx: DbOrTx,
+): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx.update(projects).set({ poNumber, updatedAt: new Date() }).where(eq(projects.id, id)).returning();
+  return row ?? null;
+}
+
 export type SettledProjectRow = { id: string; endDate: string; lastChangeAt: Date | null };
 
 export type AutoSettleCandidateRow = Pick<ProjectRow, "id" | "status" | "endDate" | "archivedAt">;

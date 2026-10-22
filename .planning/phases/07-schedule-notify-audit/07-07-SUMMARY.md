@@ -123,7 +123,7 @@ origin/main 마지막 = `0038_phase61_evidence` · 07-02 = `0039` · `0040` → 
 | `pnpm db:generate` | 마지막 줄 `No schema changes, nothing to migrate 😴` |
 | `pnpm typecheck` | exit 0 |
 | `pnpm exec eslint`(브랜치에서 바뀐 TS 다섯 — 07-02 셋 + 이 플랜 둘) | exit 0 |
-| `pnpm lint`(전체) | 아래 Deviation 1 |
+| `pnpm lint`(전체, `NODE_OPTIONS=--max-old-space-size=4096`) | 세 번째 시도에서 exit 0(앞 두 번은 Deviation 1) |
 | 수락 grep — notifications.ts | `notification_rules` ≥1 · `skipped_rule_off` 1 · `enabled_at` ≥1 |
 | 수락 grep — 0041 | `NOT VALID` 1줄 · `SET LOCAL lock_timeout = '1s';` 1줄 |
 | 수락 grep — 0042 | `VALIDATE CONSTRAINT` 1줄 |
@@ -131,11 +131,11 @@ origin/main 마지막 = `0038_phase61_evidence` · 07-02 = `0039` · `0040` → 
 
 ## Deviations from Plan
 
-**1. [환경] 전체 `pnpm lint`가 이 머신에서 메모리 부족으로 끝나지 못함 — 바뀐 파일 ESLint로 대신 확인**
+**1. [환경] 전체 `pnpm lint`가 메모리 부족으로 두 번 끊김 — 힙 4096MB로 세 번째에 통과**
 - **Found during:** Task 1 verify
 - **Issue:** 기본 힙(2096MB)에서 `FATAL ERROR: Reached heap limit`(exit 134), `--max-old-space-size=6144` · `4096`에서는 병렬 작업 트리 여섯 개(eslint · tsc · vitest · next build 동시)의 메모리 경합으로 OOM 킬러(exit 137). 내 변경과 무관(스키마 파일 하나 · 시험 파일 하나).
-- **Fix:** 브랜치에서 바뀐 TS 파일 전부를 `pnpm exec eslint`로 검사(exit 0). 전체 lint는 CI quality 잡이 돈다.
-- **Impact:** 변경 파일 범위는 검사됨. CI에서 전체 확인 필요.
+- **Fix:** 먼저 브랜치에서 바뀐 TS 파일 전부를 `pnpm exec eslint`로 검사(exit 0), 푸시 전 경합이 줄었을 때 `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` 전체 exit 0.
+- **Impact:** 없음 — 코드 변경 없음.
 
 **2. [W2-RULES] verify의 `pnpm db:dev && pnpm db:migrate && pnpm db:reset:test`를 전용 DB 비우기 + 통합 global-setup 마이그레이션으로 대신** — 규칙 §3 그대로. `pnpm db:migrate`(.env.local 개발 DB)는 돌리지 않았다.
 

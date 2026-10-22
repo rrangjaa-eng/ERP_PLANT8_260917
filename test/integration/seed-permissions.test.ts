@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { codeItems } from "@/db/schema";
+import { codeItems, permissionMatrix, visibilityMatrix } from "@/db/schema";
 import { seedMasterData } from "@/domain/seed";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import {
@@ -265,5 +265,91 @@ describe("개인카드 전표 증빙 종류 시드(06.1 G15)", () => {
     await seedMasterData(SYSTEM_VIEWER);
 
     expect(await personalCardReceipt()).toMatchObject({ active: true, privateToOwner: false });
+  });
+});
+
+// 07-05(D-722 · T-07-05-03): 시드 계급 기본값을 domain/seed/role-defaults.ts 표 하나로 옮긴 리팩터가 행을 하나도 바꾸지 않는다.
+// 고정값은 리팩터 전 main(4f6236ee)으로 시드한 DB에서 뽑았다 — 시드 계급 4종 줄만(시스템 관리자는 MENUS · INFO_ITEMS 루프 사례가 따로 본다).
+// 시드 계급 기본값을 바꾸는 플랜은 이 고정값을 바꾼 줄만 고친다(diff가 확인 카드의 바꿀 칸과 1:1).
+const SEED_ROLE_PERMISSIONS_BEFORE_0705 = [
+  "role-ceo|expenses|view|true",
+  "role-ceo|expenses|write|true",
+  "role-ceo|leave|view|true",
+  "role-ceo|leave|write|true",
+  "role-ceo|projects.complete|write|true",
+  "role-ceo|projects.member|write|true",
+  "role-ceo|projects.period|write|true",
+  "role-ceo|projects.status|write|true",
+  "role-ceo|projects|view|true",
+  "role-division-head|expenses|view|true",
+  "role-division-head|expenses|write|true",
+  "role-division-head|leave|view|true",
+  "role-division-head|leave|write|true",
+  "role-division-head|projects.member|write|true",
+  "role-division-head|projects.period|write|true",
+  "role-division-head|projects.status|write|true",
+  "role-division-head|projects|view|true",
+  "role-pm|certs.events|view|true",
+  "role-pm|certs.events|write|true",
+  "role-pm|evidence|view|true",
+  "role-pm|expenses|view|true",
+  "role-pm|expenses|write|true",
+  "role-pm|leave|view|true",
+  "role-pm|leave|write|true",
+  "role-pm|projects.member|write|true",
+  "role-pm|projects|view|true",
+  "role-pm|projects|write|true",
+  "role-team-lead|evidence|view|true",
+  "role-team-lead|expenses.team|view|true",
+  "role-team-lead|expenses|view|true",
+  "role-team-lead|expenses|write|true",
+  "role-team-lead|leave|view|true",
+  "role-team-lead|leave|write|true",
+  "role-team-lead|projects.member|write|true",
+  "role-team-lead|projects.period|write|true",
+  "role-team-lead|projects.status|write|true",
+  "role-team-lead|projects|view|true",
+];
+const SEED_ROLE_VISIBLE_ITEMS_BEFORE_0705: Record<string, { visible: string[]; hidden: string[] }> = {
+  "role-ceo": {
+    visible: ["approval.value", "card_usage.amount", "card_usage.value", "cert_event.value", "code_item.label", "code_item.value", "corp_card.value", "evidence.amount", "evidence.value", "expense.amount", "expense.value", "leave.value", "org_unit.value", "person.value", "project.value", "purchase_request.amount", "purchase_request.value", "quote.amount", "revenue.issued_amount", "revenue.paid_amount", "role.value", "team.value", "team_assignment.value", "vendor.value"],
+    hidden: ["action_log.detail", "archive.value", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "pnl.amount", "reserve.amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
+  },
+  "role-division-head": {
+    visible: ["approval.value", "card_usage.amount", "card_usage.value", "cert_event.value", "code_item.label", "code_item.value", "corp_card.value", "evidence.amount", "evidence.value", "expense.amount", "expense.value", "leave.value", "org_unit.value", "person.value", "project.value", "purchase_request.amount", "purchase_request.value", "quote.amount", "role.value", "team.value", "team_assignment.value", "vendor.value"],
+    hidden: ["action_log.detail", "archive.value", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "pnl.amount", "reserve.amount", "revenue.issued_amount", "revenue.paid_amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
+  },
+  "role-pm": {
+    visible: ["approval.value", "card_usage.amount", "card_usage.value", "cert_event.value", "code_item.label", "code_item.value", "corp_card.value", "evidence.amount", "evidence.value", "expense.amount", "expense.value", "leave.value", "org_unit.value", "person.value", "project.value", "purchase_request.amount", "purchase_request.value", "quote.amount", "revenue.issued_amount", "role.value", "team.value", "team_assignment.value", "vendor.value"],
+    hidden: ["action_log.detail", "archive.value", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "pnl.amount", "reserve.amount", "revenue.paid_amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
+  },
+  "role-team-lead": {
+    visible: ["approval.value", "card_usage.amount", "card_usage.value", "cert_event.value", "code_item.label", "code_item.value", "corp_card.value", "evidence.amount", "evidence.value", "expense.amount", "expense.value", "leave.value", "org_unit.value", "person.value", "project.value", "purchase_request.amount", "purchase_request.value", "quote.amount", "role.value", "team.value", "team_assignment.value", "vendor.value"],
+    hidden: ["action_log.detail", "archive.value", "cert.rrn_unmasked", "cert_prize.value", "cert_submission.value", "incentive.amount", "pnl.amount", "reserve.amount", "revenue.issued_amount", "revenue.paid_amount", "target.amount", "team.cost", "vendor.account_number_unmasked", "vendor.amount"],
+  },
+};
+
+describe("시드 계급 기본값 표 리팩터 전후 행 집합(07-05 D-722)", () => {
+  it("빈 DB 첫 시드 뒤 시드 계급 4종의 권한 · 노출 행 집합이 리팩터 전과 같고 반환 카운트도 같다", async () => {
+    const permissions = (await db.select().from(permissionMatrix))
+      .filter((row) => row.roleId !== SYSADMIN_ROLE_ID)
+      .map((row) => `${row.roleId}|${row.menu}|${row.action}|${row.allowed}`)
+      .sort();
+    expect(permissions).toEqual(SEED_ROLE_PERMISSIONS_BEFORE_0705);
+
+    const visibility: Record<string, { visible: string[]; hidden: string[] }> = {};
+    for (const row of (await db.select().from(visibilityMatrix)).filter((r) => r.roleId !== SYSADMIN_ROLE_ID)) {
+      const entry = (visibility[row.roleId] ??= { visible: [], hidden: [] });
+      entry[row.visible ? "visible" : "hidden"].push(row.infoItem);
+    }
+    for (const entry of Object.values(visibility)) {
+      entry.visible.sort();
+      entry.hidden.sort();
+    }
+    expect(visibility).toEqual(SEED_ROLE_VISIBLE_ITEMS_BEFORE_0705);
+
+    // 재시드는 행을 바꾸지 않고, 반환 카운트는 리팩터 전 값과 같다(시스템 관리자 루프 + 시드 계급 표).
+    const result = await seedMasterData(SYSTEM_VIEWER);
+    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 124, visibility: 180 });
   });
 });

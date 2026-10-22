@@ -959,4 +959,27 @@ describe("상세 손익은 목록 손익과 같은 정의다 (07-18, 실제 Post
 
     expect(await loadProjectProfit(SYSTEM_VIEWER, project.id)).toEqual({ kind: "unavailable", reason: "견적 없음" });
   });
+
+  // 07-18 /review P1 — 상세 손익은 목록 손익 열과 같은 정보 항목(견적 금액 + 발행 금액 모두)을 볼 때만 서버가 싣는다.
+  it("발행 금액을 못 보는 계급에는 상세 손익을 싣지 않고, 둘 다 보는 계급은 목록과 같은 값이다", async () => {
+    const base = await makeBase();
+    const marker = `상세손익-가림-${randomUUID().slice(0, 8)}`;
+    const project = await makeProject(base, marker, { status: "settling", line: { quote: 1_000_000, execution: 400_000 }, issues: [1_500_000] });
+    const quoteOnly = await viewerWith({ quote: true, revenue: false });
+    const issuedOnly = await viewerWith({ quote: false, revenue: true });
+    const both = await viewerWith({ quote: true, revenue: true });
+    for (const viewer of [quoteOnly, issuedOnly, both]) {
+      if (viewer.roleId === null) throw new Error("계급이 없습니다");
+      await upsertPermission(SYSTEM_VIEWER, { roleId: viewer.roleId, menu: "pnl", action: "view", allowed: true });
+    }
+
+    expect(await loadProjectProfit(quoteOnly, project.id)).toBeNull();
+    expect(await loadProjectProfit(issuedOnly, project.id)).toBeNull();
+
+    const listed = (await loadProjectList(both, { year: "all", search: marker })).rows.find((row) => row.id === project.id);
+    const detail = await loadProjectProfit(both, project.id);
+    expect(detail).toMatchObject({ kind: "ok", profitKrw: 1_100_000 });
+    expect(detail).toMatchObject({ profitKrw: listed?.profitKrw });
+    expect(listed?.profitBasis).toBe("issued");
+  });
 });

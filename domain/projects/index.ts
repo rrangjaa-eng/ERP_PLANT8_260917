@@ -485,6 +485,10 @@ export async function findProject(
 
 // 07-18 사후 고침 — 상세 정보 면 `손익`. 목록과 같은 행 식을 한 프로젝트에 적용한다(보기 범위 조건을 목록과 같이 건다).
 export async function loadProjectProfit(viewer: Viewer, projectId: string): Promise<ProjectProfitSummary | null> {
+  // 07-18 /review P1 — 목록 손익 열과 같은 정보 항목(PROFIT_INFO_ITEMS 모두)을 볼 때만 읽는다. 못 보면 값이 서버를 떠나지 않는다.
+  for (const infoItem of PROFIT_INFO_ITEMS) {
+    if (!(await defaultVisible(viewer, infoItem))) return null;
+  }
   const scope = await projectRowScope(viewer);
   const row = await getProjectProfitRow(viewer, scope, projectId);
   return row ? summarizeProjectProfit(row) : null;

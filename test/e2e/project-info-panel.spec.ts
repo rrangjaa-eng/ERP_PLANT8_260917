@@ -306,14 +306,15 @@ test.describe("고치기 하나 — 기간 · PO 금액 · PO 번호 한 묶음 
 type SeedLine = { itemName: string; unitPrice: number; execution: number; lineKind?: "quote" | "out_of_quote" | "adjustment"; vendorId?: string };
 
 // 담당 PM 계급 — 프로젝트 보기 · 쓰기(+ 선택: 지출결의 쓰기 · 손익 보기 · 금액 노출). 회사 범위라 팀 걱정이 없다.
-async function makePm(teamId: string, options: { expenses?: boolean; pnl?: boolean; amount?: boolean }): Promise<Account & { roleId: string }> {
+async function makePm(teamId: string, options: { expenses?: boolean; pnl?: boolean; amount?: boolean; issued?: boolean }): Promise<Account & { roleId: string }> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E정보PM-${randomUUID().slice(0, 8)}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
   if (options.expenses) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "write", allowed: true });
   if (options.pnl) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "pnl", action: "view", allowed: true });
-  for (const infoItem of ["project.value", "vendor.value", "team.value", "person.value", "quote.amount"]) {
-    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: infoItem !== "quote.amount" || options.amount !== false });
+  for (const infoItem of ["project.value", "vendor.value", "team.value", "person.value", "quote.amount", "revenue.issued_amount"]) {
+    const visible = infoItem === "quote.amount" ? options.amount !== false : infoItem === "revenue.issued_amount" ? (options.issued ?? options.pnl === true) : true;
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible });
   }
   return { ...(await makeAccount(role.id, teamId, "E2E 정보 PM")), roleId: role.id };
 }
@@ -478,6 +479,29 @@ test.describe("고객 승인 섹션 · 승인 표시 패널 (W6 · SC-19)", () =
     await other.goto(`/projects/${withLines.id}`);
     await expandProjectInfo(other);
     await expect(projectInfo(other).getByRole("group", { name: "손익" })).toHaveCount(0);
+    await other.close();
+  });
+
+  // /review P1 — 목록이 손익 열을 가리는 계급(견적 금액은 보되 발행 금액은 못 봄)에는 상세도 섹션이 없고 값이 HTML에 없다.
+  test("손익 — 발행 금액을 못 보는 계급에겐 섹션도 값도 없고, 둘 다 보는 계급은 목록과 같은 값을 본다", async ({ page, browser }) => {
+    const team = await makeTeam();
+    const allowed = await makePm(team, { amount: true, pnl: true });
+    const project = await seedProject({ teamId: team, pmUserId: allowed.userId, status: "bidding", lines: ONE_LINE });
+    const hidden = await makePm(team, { amount: true, pnl: true, issued: false });
+
+    await login(page, hidden);
+    await page.goto(`/projects/${project.id}`);
+    await expandProjectInfo(page);
+    await expect(projectInfo(page).getByRole("group", { name: "손익" })).toHaveCount(0);
+    const html = await page.content();
+    expect(html).not.toContain("200,000 · 20.0%");
+    expect(html).not.toContain("권한 없음");
+
+    const other = await browser.newPage();
+    await login(other, allowed);
+    await other.goto(`/projects/${project.id}`);
+    await expandProjectInfo(other);
+    await expect(projectInfo(other).getByRole("group", { name: "손익" }).getByText("200,000 · 20.0%", { exact: true })).toBeVisible();
     await other.close();
   });
 });

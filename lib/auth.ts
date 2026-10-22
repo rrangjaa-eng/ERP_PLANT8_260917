@@ -41,6 +41,8 @@ export const auth = betterAuth({
       // better-auth가 요청마다 사용자 행을 다시 읽어 값이 최신이다.
       // input:false — 클라이언트가 자기 보관 상태를 바꿀 수 없다.
       archivedAt: { type: "date", required: false, input: false },
+      // 07 D-743 — getSession이 퇴직 세션을 끊으려면 세션 사용자에 실려야 한다. input:false
+      resignationDate: { type: "string", required: false, input: false },
     },
   },
   advanced: {

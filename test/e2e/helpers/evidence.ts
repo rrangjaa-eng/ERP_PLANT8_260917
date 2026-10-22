@@ -1,8 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { expect, type Locator, type Page } from "@playwright/test";
-import { asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { evidenceImportBatches, evidenceRecordLinks, evidenceRecords, teams } from "@/db/schema";
+import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, teams } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { createCorpCard, DuplicateCorpCardError, type CardOwnerKind } from "@/domain/corp-cards";
 import { registerEvidenceFile } from "@/domain/evidence-import";
@@ -98,11 +98,16 @@ export async function teamIdByName(name: string): Promise<string> {
 
 type CardOwner = { kind: CardOwnerKind; teamId?: string; holderUserId?: string };
 
-// 카드 한 장을 등록하고 끝 4자리를 돌려준다(케이스마다 다른 번호 — 앞 케이스의 카드와 겹치지 않게).
-// 카드는 케이스 사이에 지우지 않아 무작위 4자리가 앞 케이스 카드와 겹칠 수 있다(한 실행에 롯데 40여 장 — /qa 실측) — 겹치면 다른 번호로 다시 고른다.
+// 카드 한 장을 등록하고 끝 4자리를 돌려준다(케이스마다 다른 번호 — 카드를 케이스 사이에 지우지 않으므로 살아 있는 번호를 빼고 고르면 앞 케이스 카드와 겹치지 않는다).
+// 살아 있는 같은 발급사 카드의 끝 4자리를 읽어 빈 번호에서 고른다 — 빈 번호가 없으면 바로 오류, 다른 worker와 겹치면 다시 읽어 최대 5번(무작위 재시도는 빈 3칸을 30초 안에 못 맞혀 연쇄 실패를 냈다 — 2026-10-22).
 async function addCard(issuer: string, owner: CardOwner): Promise<string> {
-  for (;;) {
-    const last4 = String(randomInt(1000, 10_000));
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const taken = new Set(
+      (await db.select({ last4: corpCards.numberLast4 }).from(corpCards).where(and(eq(corpCards.issuer, issuer), isNull(corpCards.archivedAt)))).map((row) => row.last4),
+    );
+    const free = Array.from({ length: 9000 }, (_, i) => String(1000 + i)).filter((last4) => !taken.has(last4));
+    const last4 = free.length > 0 ? free[randomInt(free.length)] : undefined;
+    if (last4 === undefined) throw new Error(`카드 도우미 — ${issuer} 끝 4자리 빈 번호 없음`);
     try {
       await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4: last4, label: `${issuer.slice(0, 2)} ${last4}`, ...owner });
       return last4;
@@ -110,6 +115,7 @@ async function addCard(issuer: string, owner: CardOwner): Promise<string> {
       if (!(error instanceof DuplicateCorpCardError)) throw error;
     }
   }
+  throw new Error(`카드 도우미 — ${issuer} 끝 4자리 등록이 5번 겹침(다른 worker 경쟁)`);
 }
 
 export function addLotteCard(owner: CardOwner): Promise<string> {

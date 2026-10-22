@@ -51,6 +51,7 @@ describe("playwright.config.ts — 규약 C4 확인증 프로젝트 격리(백�
     const wipers = [
       "evidence-attach-audit.spec.ts",
       "evidence-attach.spec.ts",
+      "evidence-card-fixture.regression-1.spec.ts",
       "evidence-export.spec.ts",
       "evidence-intake.spec.ts",
       "evidence-list-audit.spec.ts",
@@ -75,7 +76,8 @@ describe("playwright.config.ts — 규약 C4 확인증 프로젝트 격리(백�
     // 새 스펙이 clearEvidence를 부르면 이 목록(= desktop-evidence)에 들어와야 한다.
     const dir = resolve(__dirname, "../../e2e");
     const callers = readdirSync(dir).filter((file) => file.endsWith(".spec.ts") && readFileSync(resolve(dir, file), "utf8").includes("clearEvidence("));
-    expect(callers.sort()).toEqual(wipers);
+    // 카드 도우미 회귀 스펙은 clearEvidence를 부르지 않지만, 롯데 채움 카드 ~9000장이 병렬 corp-cards 스펙과 겹치지 않게 이 한 워커 프로젝트에 둔다 — 호출자 목록에서만 뺀다.
+    expect(callers.sort()).toEqual(wipers.filter((file) => file !== "evidence-card-fixture.regression-1.spec.ts"));
   });
 
   it("globalSetup이 통합 테스트처럼 CERT_FEATURE_ALLOWED를 켠다(webServer가 물려받는다)", () => {

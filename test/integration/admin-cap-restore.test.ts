@@ -15,6 +15,8 @@ import { findUserByEmail, findUserById, updateUserResignationDate } from "@/repo
 import { ARCHIVABLE_TABLES } from "@/repositories/archive";
 import { findTeamById } from "@/repositories/teams";
 import { findOrgUnitById } from "@/repositories/org-units";
+import { insertFieldDefinition } from "@/repositories/field-definitions";
+import { findCodeItemById } from "@/repositories/code-tables";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 import { addTeam, countLogs, makeAdmin, makeDelegatedRole, makeOrgTeam, makeSeated, uniqueName } from "./admin-cap-fixtures";
 
@@ -332,10 +334,11 @@ describe("등록 보상 보관 로그 tx(06.4)", () => {
 
 // 07-03(R11 · T-07-03-03) — 보관함이 아는 종류마다 「보관함 쓰기가 없으면 복원 거부 · 로그 그대로」를 한 줄씩 건다.
 // 종류 목록은 ARCHIVABLE_TABLES에서 읽으므로 새 종류가 생기면 이 시험이 자동으로 그 종류를 덮는다.
+// 이 사례는 restore() 첫 줄의 보관함 쓰기 게이트만 본다 — 종류별 게이트는 아래 「종류별 복원 게이트」.
 // 사람 종류의 상한(계급 지정 권한)은 위 「사람 복원」 두 번째 사례, 사람 쓰기 게이트는 첫 사례,
-// 팀 · 본부 자리 재검사는 「팀 · 본부 복원 자리 재검사」, 칸 관리 쓰기(field_definitions)는 field-definitions-archive.test.ts가 이미 본다.
-describe("종류별 복원 게이트 — 보관함 쓰기 없는 위임자 (07-03 R11)", () => {
-  it("사람 쓰기만 위임받은 사람은 어느 종류도 복원하지 못하고 로그가 늘지 않는다", async () => {
+// 팀 · 본부 자리 재검사는 「팀 · 본부 복원 자리 재검사」가 본다.
+describe("보관함 쓰기 게이트 — 보관함 쓰기 없는 위임자 (07-03 R11)", () => {
+  it("보관함 쓰기 권한 없으면 모든 종류 복원 거부 · 로그 그대로", async () => {
     const roleP = await makeDelegatedRole({
       name: "사람만 위임",
       copyFrom: [DEFAULT_ROLE_ID],
@@ -353,5 +356,48 @@ describe("종류별 복원 게이트 — 보관함 쓰기 없는 위임자 (07-0
       expect(error.message, entry.entity).toBe("보관함 쓰기 권한 없음");
       expect(await countLogs("restore", entry.entity, id), entry.entity).toBe(0);
     }
+  });
+});
+
+// 07-03 R11(사용자 결정 2026-10-22 「지금 설계 유지」): 사람은 계급 지정 상한, 팀 · 본부는 자리 재검사(위 사례들),
+// 나머지는 보관함 쓰기 + 종류별 requiredMenu 쓰기(assertCanWriteEntry). 여기서는 requiredMenu를 실제로 보관된 행으로 본다.
+// requiredMenu가 붙은 종류가 늘면 아래 표에 보관된 행 만드는 법을 더해야 첫 단언이 초록이 된다.
+const ARCHIVED_ROW_OF_GATED_KIND: Record<string, () => Promise<string>> = {
+  field_definitions: async () => {
+    const id = `fd-vendor-${randomUUID()}`;
+    await insertFieldDefinition(SYSTEM_VIEWER, { id, entity: "vendor", key: `v_${randomUUID().slice(0, 8)}`, type: "text" });
+    await archive(SYSTEM_VIEWER, "field_definitions", id, deps);
+    return id;
+  },
+};
+
+describe("종류별 복원 게이트 — 보관함 쓰기만 있는 위임자 (07-03 R11)", () => {
+  it("추가 권한 조건이 있는 종류마다 그 메뉴 쓰기가 없으면 보관된 행 복원 거부 · 보관 · 로그 그대로", async () => {
+    const gated = ARCHIVABLE_TABLES.filter((entry) => entry.requiredMenu);
+    expect(gated.map((entry) => entry.entity).sort()).toEqual(Object.keys(ARCHIVED_ROW_OF_GATED_KIND).sort());
+    const v = await archiveOnlyViewer();
+
+    for (const entry of gated) {
+      const makeArchived = ARCHIVED_ROW_OF_GATED_KIND[entry.entity];
+      if (!makeArchived) throw new Error(`보관된 행 만드는 법이 없습니다: ${entry.entity}`);
+      const id = await makeArchived();
+      expect((await entry.findById(SYSTEM_VIEWER, id))?.archivedAt, entry.entity).not.toBeNull();
+
+      const error = await refusal(restore(v, entry.entity, id, deps), ArchiveForbiddenError);
+
+      expect(error.message, entry.entity).toBe("보관함 쓰기 권한 없음");
+      expect((await entry.findById(SYSTEM_VIEWER, id))?.archivedAt, entry.entity).not.toBeNull();
+      expect(await countLogs("restore", entry.entity, id), entry.entity).toBe(0);
+    }
+  });
+
+  it("추가 권한 조건이 없는 종류(코드표)는 보관함 쓰기만으로 복원된다", async () => {
+    const v = await archiveOnlyViewer();
+    const codeItem = await createCodeItem(SYSTEM_VIEWER, { tableKey: "project_status", value: `r11-${randomUUID().slice(0, 8)}`, label: "R11" });
+    await archive(SYSTEM_VIEWER, "code_items", codeItem.id, deps);
+
+    expect(await restore(v, "code_items", codeItem.id, deps)).toEqual({ restored: true });
+    expect((await findCodeItemById(SYSTEM_VIEWER, codeItem.id))?.archivedAt).toBeNull();
+    expect(await countLogs("restore", "code_items", codeItem.id)).toBe(1);
   });
 });

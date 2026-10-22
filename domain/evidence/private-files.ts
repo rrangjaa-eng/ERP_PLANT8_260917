@@ -29,8 +29,8 @@ export async function privateEvidenceTypeOf(viewer: Viewer, evidenceType: string
 }
 
 export type FileVisibility = {
-  /** 파일 행마다 — 05 파일은 `uploadedBy`, 붙은 기록은 null(올린 사람 갈래 없음 — PA-G15-LINKED). */
-  visible(file: { uploadedBy: string | null }): boolean;
+  /** 파일 행마다 — 05 파일은 `uploadedBy`와 파일 칸 `privateToOwner`, 붙은 기록은 uploadedBy null(올린 사람 갈래 없음 — PA-G15-LINKED). 칸은 필수(cso 대체 L-1). */
+  visible(file: { uploadedBy: string | null; privateToOwner: boolean }): boolean;
   /** 숨길 수 있는 종류면 그 이름(잠김 줄 글자), 아니면 null. */
   privateTypeName: string | null;
 };
@@ -44,10 +44,11 @@ const ALL_VISIBLE: FileVisibility = { visible: () => true, privateTypeName: null
 export async function fileVisibilityFor(viewer: Viewer, input: { ownerKind: string; evidenceType: string | null }): Promise<FileVisibility> {
   if (input.ownerKind !== "expense") return ALL_VISIBLE;
   const type = await privateEvidenceTypeOf(viewer, input.evidenceType);
-  if (!type?.privateToOwner) return ALL_VISIBLE;
+  const typePrivate = type?.privateToOwner === true;
   const scopeAll = (await rowScopeFor(viewer, "expense")).rows === "all";
   return {
-    visible: (file) => privateFileVisible({ privateType: true, uploadedBy: file.uploadedBy, viewerId: viewer.id, scopeAll }),
-    privateTypeName: type.label,
+    // 07-27(R20 · AQ-15): 보임 = 파일 칸 OR 지금 문서 종류 — 비공개 종류로 올린 파일은 종류를 공개로 바꿔도 같은 규칙으로 숨는다.
+    visible: (file) => privateFileVisible({ privateType: typePrivate || file.privateToOwner === true, uploadedBy: file.uploadedBy, viewerId: viewer.id, scopeAll }),
+    privateTypeName: type?.privateToOwner ? type.label : null,
   };
 }

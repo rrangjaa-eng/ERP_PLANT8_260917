@@ -40,6 +40,8 @@ import { MemberAddHeaderButton, MembersSection, ProjectMembersProvider } from ".
 import type { StatusChangeProps } from "./status-change";
 import type { CustomerApprovalProps, NewRevisionProps } from "./revision-dialogs";
 import { getPerson } from "@/domain/people";
+import { projectHasPurchaseOrder } from "@/domain/projects/documents";
+import { summarizeProjectProfit } from "@/domain/projects/profit-summary";
 import { listLineDoors } from "@/domain/expenses";
 import "@/app/(app)/document-kinds";
 import { getSettlementHeader } from "@/domain/settlements";
@@ -148,6 +150,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listRevisionSummaries(session.viewer, project.id),
   ]);
   const currentSummary = revisionSummaries.find((row) => row.revisionId === revision.id);
+  // 07-18(SC-19 · U16) — `손익` 섹션은 손익 메뉴를 볼 수 있는 계급이 금액도 볼 수 있을 때만(서버가 거른다).
+  const profit = canSeeAmount && (await can(session.viewer, "pnl", "view")) ? summarizeProjectProfit(lines) : null;
   // /qa ISSUE-002 · /design-review — 「프로젝트 복사」는 목록 등록 진입점과 같은 규칙(업무 범위로 좁힌 팀 · 담당 PM).
   const scopedCreateReferences =
     canWrite && project.archivedAt === null ? await scopeCreateFormReferences(session.viewer, references, { todayKst }) : null;
@@ -175,17 +179,21 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // 요약 행에 합계 키가 있을 때(견적 금액을 볼 때)만. 승인일 글자는 서버가 만든 KST 날짜 문자열 그대로(B-25).
   const approvedBy = currentSummary?.approvedBy ?? null;
   const approverName = approvedBy ? ((await getPerson(session.viewer, approvedBy))?.person.name ?? null) : null;
-  const approvalText = currentSummary?.approvedOn
-    ? [`고객 승인 ${currentSummary.approvedOn}`, approverName].filter(Boolean).join(" ")
-    : null;
   const seenTotalKrw = currentSummary?.totalKrw;
   const contentToken = currentSummary?.contentToken;
   const canToggleApproval = project.pmUserId === session.viewer.id && canWrite && status !== "completed";
   const customerApproval: CustomerApprovalProps = {
     revisionId: revision.id,
     seq: revision.seq,
-    approvalText,
     approvedOn: currentSummary?.approvedOn ?? null,
+    approverName,
+    basis: currentSummary?.approvalBasis ?? null,
+    memo: currentSummary?.approvalMemo ?? null,
+    // 07-18(W6) — 근거가 발주서인데 발주서 서류가 없으면 면이 경고 글자를 보인다(저장은 막지 않는다).
+    purchaseOrderMissing:
+      currentSummary?.approvedOn != null &&
+      currentSummary.approvalBasis === "purchase_order" &&
+      !(await projectHasPurchaseOrder(session.viewer, project.id)),
     control:
       !canToggleApproval || seenTotalKrw === undefined || contentToken === undefined
       ? null
@@ -278,6 +286,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       period={{ startDate: project.startDate, endDate: project.endDate, rights: periodRights, todayKst }}
       preEstimate={{ value: project.preEstimate ?? null, canEdit: canEditPreEstimate }}
       poNumber={project.poNumber}
+      profit={profit}
       canSave={canSave}
       frame={frame}
       statusSinceText={`${statusLabel} ${statusSince}`}

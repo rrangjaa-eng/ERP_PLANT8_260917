@@ -14,6 +14,7 @@ import {
 import { validatePreEstimateChange, type PreEstimateFieldError } from "@/domain/projects/pre-estimate";
 import { quoteLinesInputSchema, SaveRejectedError } from "@/domain/quotes/lines";
 import {
+  CUSTOMER_APPROVAL_BASES,
   createRevisionFromCurrent,
   listRevisionLines,
   revisionLinesInputSchema,
@@ -335,6 +336,8 @@ export const setCustomerApprovalAction = authedActionClient
           approvedOn: z.iso.date(),
           seenTotalKrw: z.number().int(),
           contentToken: z.string().length(32),
+          approvalBasis: z.enum(CUSTOMER_APPROVAL_BASES),
+          approvalMemo: z.string().optional(),
         })
         .nullable(),
     }),

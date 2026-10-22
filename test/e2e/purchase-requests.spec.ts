@@ -232,7 +232,7 @@ test.describe("구매 요청 신청 (06-08)", () => {
 
     // 승인하면 문이 돌아온다.
     const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-    await setCustomerApproval(fx.pm.viewer, revision.id, { approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+    await setCustomerApproval(fx.pm.viewer, revision.id, { approvalBasis: "verbal", approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
     await page.goto(`/projects/${fx.projectId}`);
     await expect(page.getByText(gateReason, { exact: true })).toHaveCount(0);
     await expect(grid.getByRole("row").filter({ hasText: fx.lines.tracer.itemName }).getByRole("link", { name: "구매 요청" })).toHaveAttribute("href", `/cards/purchases?new=1&line=${fx.lines.tracer.id}`);

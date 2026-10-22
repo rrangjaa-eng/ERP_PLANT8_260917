@@ -33,3 +33,27 @@ export async function cancelProjectInfoEdit(page: Page): Promise<void> {
   await panel.getByRole("button", { name: "고치기 취소", exact: true }).click();
   await expect(panel.getByRole("button", { name: "고치기", exact: true })).toBeFocused();
 }
+
+// 고객 승인 섹션의 `승인 표시` 옆 패널(07-18 W6). 면을 펼친 뒤 섹션의 `승인 표시`를 눌러 연다.
+export function approvalSheet(page: Page): Locator {
+  return page.getByRole("dialog", { name: "고객 승인 표시", exact: true });
+}
+
+export async function openApprovalSheet(page: Page): Promise<Locator> {
+  await expandProjectInfo(page);
+  await projectInfo(page).getByRole("button", { name: "승인 표시", exact: true }).click();
+  const sheet = approvalSheet(page);
+  await expect(sheet).toBeVisible();
+  return sheet;
+}
+
+export async function chooseApprovalBasis(sheet: Locator, basis: "purchase_order" | "email" | "verbal"): Promise<void> {
+  await sheet.getByLabel("근거").selectOption(basis);
+}
+
+// 승인 · 승인 취소 요청만 기다린다 — 개발 서버에서는 담당자 목록 서버 액션이 같은 시간에 오가서 아무 서버 액션이나 기다리면 엇갈린다.
+export async function submitApproval(page: Page, primary: Locator): Promise<void> {
+  const answered = page.waitForResponse((response) => response.request().method() === "POST" && (response.request().postData() ?? "").includes('"approval"'));
+  await primary.click();
+  await answered;
+}

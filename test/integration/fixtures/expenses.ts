@@ -89,7 +89,7 @@ export async function setupExpenseProject(): Promise<ExpenseFixture> {
 
   await changeProjectStatus(lead, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(pm, revision.id, { approvedOn: "2026-09-15", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(pm, revision.id, { approvalBasis: "verbal", approvedOn: "2026-09-15", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
 
   return {
     pm,
@@ -128,7 +128,7 @@ export async function setupApprovedProject(name: string, teamId: string, pm: Vie
   if (!lineId) throw new Error(`견적 줄 없음: ${name}`);
   await changeProjectStatus(SYSTEM_VIEWER, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(pm, revision.id, { approvedOn: "2026-09-15", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(pm, revision.id, { approvalBasis: "verbal", approvedOn: "2026-09-15", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   return { id: project.id, lineId };
 }
 
@@ -193,7 +193,7 @@ export async function addApprovedRevision(fx: ExpenseFixture, rows: readonly Ext
     })),
   });
   const basis = await approvalBasis(SYSTEM_VIEWER, second.revisionId);
-  await setCustomerApproval(fx.pm, second.revisionId, { approvedOn: "2026-09-20", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(fx.pm, second.revisionId, { approvalBasis: "verbal", approvedOn: "2026-09-20", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   const lines = await db.select({ id: quoteLines.id, itemName: quoteLines.itemName }).from(quoteLines).where(eq(quoteLines.revisionId, second.revisionId));
   return { revisionId: second.revisionId, lineIds: new Map(lines.map((line) => [line.itemName, line.id])) };
 }

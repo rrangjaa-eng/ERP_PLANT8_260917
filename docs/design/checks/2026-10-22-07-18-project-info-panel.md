@@ -20,3 +20,13 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: project-detail.module.css에 더한 `.info*` 규칙의 값은 전부 var() 토큰(`--surface-foot` `--border-surface` `--border-row` `--radius-surface` `--text-muted` `--text-aux` `--s-*`) — `git diff -- '*.css'`로 리터럴 값 없음 확인
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 섹션은 flex-wrap + `min-width: 0` + `overflow-wrap: anywhere`(긴 PO 번호 줄바꿈) · 버튼은 기존 Button 3차(폰 터치 높이는 Button이 정함) · 폭별 실측은 독립 DOM 감사(§6)가 맡는다
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: Task 1은 Playwright 1280 DOM 실측(project-info-panel.spec.ts 5건 녹색) · Task 2는 같은 스펙 9건 + project-period (14)(14b) 375/1280 순서 실측 녹색(고치기 하나 · 세 칸 Esc 두 단계 · PO 금액 이름) — 폭별 사진은 독립 DOM 감사 보고서(audit/07-18-dom-audit.md)
+
+## Task 3 — 고객 승인 섹션 · 승인 표시 패널 · 손익 · 문 칸 이유 (SC-19 · SC-22)
+- [x] 안내 문구 최소: Task 3에서 더한 글자를 모두 셌다 — 근거: 섹션 `상태` 값 `승인 전`/`승인됨 · 발주서`, 경고 한 줄 `발주서 파일 없음`(저장은 막지 않음), 승인일 · 승인자, 메모 원문, 손익 `수익 {금액} · {비율}%` 또는 `—` + 배지 `계산 불가`, 문 칸 낱말 4개(`취소된 줄` `견적 외 비용` `조정 줄` `남은 실행가 없음`) — 설명 문장 0, 문 열 권한이 없으면 열이 없고 `권한 없음` 글자 0(project-info-panel.spec.ts `문 칸 이유` 스펙이 DOM에서 확인)
+- [x] 결정 최소: 승인일 칸을 없앴고(오늘 KST 기본) 사용자가 고를 것은 근거 하나(필수 · `근거 선택` 기본)와 메모(선택)뿐이다 — 근거: revision-dialogs.tsx ApprovalPanelForm — 근거를 비우고 제출하면 서버를 부르지 않고 칸 아래 `근거 선택`
+- [x] 주 버튼 하나: 승인 표시 패널은 1차 `승인 표시`(Ctrl+Enter) · 2차 `취소 Esc`이고 면 안 `승인 표시` 진입 버튼은 3차 — 근거: PanelForm 기존 컴포넌트 그대로, 화면 1차는 `일괄 저장 N` 하나 유지
+- [x] 할 수 없는 선택지는 숨기거나 비활성화했다 — 근거: 담당 PM + 쓰기 + 완료 아님 + quote.amount 가능 계급에게만 `승인 표시`/`승인 표시 취소`(서버가 control을 만든다), 저장 안 한 편집이 있으면 1차 aria-disabled + `저장 안 한 편집 N칸 · 먼저 일괄 저장`, 손익 섹션은 pnl 보기 + quote.amount 없는 계급에겐 없다(U14)
+- [x] 같은 종류의 행동은 같은 모양이다 — 근거: 승인 취소는 기존 확인 모달 그대로, 승인 표시는 기존 PanelForm 옆 패널 규격, 입력 칸은 기존 Select · TextField
+- [x] 새 색·서체·radius를 만들지 않았다 — 근거: `.infoAux` `.infoWarn` `.infoReasonButton`는 var() 토큰만(`--text-aux` `--text-muted` `--status-warning` `--s-*`), `font` 속성 없음(stylelint 통과), 상태 배지 `계산 불가`는 status-map 한 표의 기존 kind `muted`
+- [x] 폰: 행에 문 버튼을 더하지 않았다 — 근거: 폰 행은 두 줄 · 주 버튼 하나 그대로, 문 행동은 행 탭 시트가 맡고 닫힌 줄은 PC와 같은 낱말 · mobile-quote-doors.spec.ts 375 · 320 녹색(가로 넘침 0)
+- [x] 실제 앱 화면을 확인했다 — 근거: Playwright DOM 실측(project-info-panel.spec.ts 16건 · mobile-quote-doors.spec.ts 2건 녹색 — 패널 열기 · 근거 필수 · 저장 뒤 `승인됨 · 발주서` · 경고 사라짐 · 취소 모달, 문 칸 낱말 높이 24px 미만) — 폭별 사진은 독립 DOM 감사 보고서가 맡는다(CLAUDE.md §6)

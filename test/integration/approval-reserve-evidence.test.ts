@@ -150,7 +150,7 @@ describe("D-56 마감 — 표시 꺼짐 · 완료 · 권리 밖 직접 호출 ·
     await expect(removeEvidence(fx.pm, { fileId: file.id })).rejects.toThrow("승인 표시 없음 · 증빙 잠김");
 
     const basis = await approvalBasis(SYSTEM_VIEWER, fx.revisionId);
-    await setCustomerApproval(fx.pm, fx.revisionId, { approvedOn: "2026-09-16", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+    await setCustomerApproval(fx.pm, fx.revisionId, { approvalBasis: "verbal", approvedOn: "2026-09-16", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
     expect((await getEvidenceActions(fx.pm, { ownerKind: "quote_revision", ownerId: fx.revisionId })).canAdd).toBe(true);
     const again = await upload(fx.pm, "quote_revision", fx.revisionId);
     expect(again.id).toEqual(expect.any(String));

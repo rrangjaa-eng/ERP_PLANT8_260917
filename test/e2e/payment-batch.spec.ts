@@ -114,7 +114,7 @@ async function manyTargets(fx: ExpenseE2E, count: number): Promise<{ id: string;
   });
   await changeProjectStatus(fx.lead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(fx.pm.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(fx.pm.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   const confirmer = await makeTeamPayer(fx);
   const made: { id: string; itemName: string }[] = [];
   for (const itemName of names) {
@@ -1791,7 +1791,7 @@ async function bigLines(fx: ExpenseE2E, count: number): Promise<{ id: string; it
   });
   await changeProjectStatus(fx.lead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(fx.pm.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(fx.pm.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   return names.map((itemName) => {
     const id = saved.lines.find((row) => row.itemName === itemName)?.id;
     if (!id) throw new Error(`견적 줄 없음: ${itemName}`);

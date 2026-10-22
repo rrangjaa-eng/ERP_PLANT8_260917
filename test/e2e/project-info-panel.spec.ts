@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projects } from "@/db/schema";
+import { codeItems, projectDocuments, projects, quoteLines, quoteRevisions } from "@/db/schema";
+import { and, asc, isNull } from "drizzle-orm";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { setCustomerApproval } from "@/domain/quotes/revisions";
+import { approvalBasis as readApprovalBasis } from "@/repositories/quote-revisions";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -291,5 +297,242 @@ test.describe("고치기 하나 — 기간 · PO 금액 · PO 번호 한 묶음 
     }).toPass();
     await expect(projectInfo(page).getByLabel("종료일")).toBeFocused();
     await expect(projectInfo(page).getByRole("button", { name: "고치기 취소", exact: true })).toBeVisible();
+  });
+});
+
+
+// ── Task 3 — 고객 승인 섹션 · 승인 표시 패널 · 손익 · 문 칸 이유 글자 ───────────────────────────────
+
+type SeedLine = { itemName: string; unitPrice: number; execution: number; lineKind?: "quote" | "out_of_quote" | "adjustment"; vendorId?: string };
+
+// 담당 PM 계급 — 프로젝트 보기 · 쓰기(+ 선택: 지출결의 쓰기 · 손익 보기 · 금액 노출). 회사 범위라 팀 걱정이 없다.
+async function makePm(teamId: string, options: { expenses?: boolean; pnl?: boolean; amount?: boolean }): Promise<Account & { roleId: string }> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E정보PM-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
+  if (options.expenses) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "write", allowed: true });
+  if (options.pnl) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "pnl", action: "view", allowed: true });
+  for (const infoItem of ["project.value", "vendor.value", "team.value", "person.value", "quote.amount"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: infoItem !== "quote.amount" || options.amount !== false });
+  }
+  return { ...(await makeAccount(role.id, teamId, "E2E 정보 PM")), roleId: role.id };
+}
+
+async function seedProject(input: { teamId: string; pmUserId: string; status: string; lines: SeedLine[] }): Promise<{ id: string; name: string; revisionId: string }> {
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E정보승인-${randomUUID()}`, normalizedName: `e2e정보승인-${randomUUID()}` });
+  const name = `E2E승인-${randomUUID().slice(0, 8)}`;
+  const created = await createProject(SYSTEM_VIEWER, {
+    clientId: client.id,
+    teamId: input.teamId,
+    pmUserId: input.pmUserId,
+    name,
+    startDate: addDays(TODAY, -5),
+    endDate: addDays(TODAY, 20),
+  });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, created.id);
+  if (!revision) throw new Error("1차 차수가 없습니다");
+  const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
+  if (!subcategory) throw new Error("소분류 코드가 없습니다");
+  if (input.lines.length > 0) {
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: input.lines.map((line) => ({
+        id: randomUUID(),
+        isNew: true as const,
+        lineKind: line.lineKind ?? "quote",
+        subcategory: line.lineKind === undefined || line.lineKind === "quote" ? subcategory.value : "",
+        itemName: line.itemName,
+        vendorId: line.vendorId ?? client.id,
+        quantity: 1,
+        unitPrice: { currency: "KRW" as const, amount: line.lineKind === "adjustment" ? 0 : line.unitPrice, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: line.execution, fxRate: 1 },
+      })),
+    });
+  }
+  await db.update(projects).set({ status: input.status }).where(eq(projects.id, created.id));
+  return { id: created.id, name, revisionId: revision.id };
+}
+
+const ONE_LINE: SeedLine[] = [{ itemName: "승인 첫 줄", unitPrice: 1_000_000, execution: 800_000 }];
+
+test.describe("고객 승인 섹션 · 승인 표시 패널 (W6 · SC-19)", () => {
+  test("`승인 표시`는 옆 패널 — 근거를 비우면 `근거 선택`, 발주서 + 메모로 저장하면 `승인됨 · 발주서` · 메모 · `발주서 파일 없음`, 서류가 생기면 경고가 사라지고 취소는 모달 그대로", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makePm(team, { amount: true });
+    const project = await seedProject({ teamId: team, pmUserId: pm.userId, status: "bidding", lines: ONE_LINE });
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expandProjectInfo(page);
+
+    const panel = projectInfo(page);
+    await expect(panel.getByRole("group", { name: "고객 승인" }).getByText("승인 전", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "고객 승인 표시", exact: true })).toHaveCount(0);
+    await panel.getByRole("button", { name: "승인 표시", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "고객 승인 표시", exact: true });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("button", { name: /^취소/ })).toContainText("Esc");
+    // 근거를 비운 채 1차 — 서버를 부르지 않고 `근거 선택`.
+    await sheet.getByRole("button", { name: /^승인 표시/ }).click();
+    await expect(sheet.getByText("근거 선택", { exact: true }).last()).toBeVisible();
+    await expect(sheet).toBeVisible();
+
+    // PanelForm은 제출 뒤 500ms 동안 같은 틱 연타를 막는다(SUBMIT_LOCK_GRACE_MS) — 사람 속도로 고른다.
+    await page.waitForTimeout(600);
+    await sheet.getByLabel("근거").selectOption("purchase_order");
+    await sheet.getByLabel("메모").fill("메일로 받은 발주서");
+    const approved = page.waitForResponse((response) => response.request().method() === "POST" && (response.request().postData() ?? "").includes('"approval"'));
+    await sheet.getByRole("button", { name: /^승인 표시/ }).click();
+    await approved;
+    await expect(sheet).toHaveCount(0);
+
+    const section = projectInfo(page).getByRole("group", { name: "고객 승인" });
+    await expect(section.getByText("승인됨 · 발주서", { exact: true })).toBeVisible();
+    await expect(section.getByText("메일로 받은 발주서", { exact: true })).toBeVisible();
+    await expect(section.getByText("발주서 파일 없음", { exact: true })).toBeVisible();
+    const [stored] = await db.select().from(quoteRevisions).where(eq(quoteRevisions.id, project.revisionId));
+    expect(stored?.customerApprovalBasis).toBe("purchase_order");
+    expect(stored?.customerApprovalMemo).toBe("메일로 받은 발주서");
+
+    // 발주서 서류가 생기면 경고가 사라진다(저장은 처음부터 막지 않았다).
+    await db.insert(projectDocuments).values({ projectId: project.id, kind: "purchase_order", createdBy: pm.userId });
+    await page.reload();
+    await expandProjectInfo(page);
+    await expect(projectInfo(page).getByText("승인됨 · 발주서", { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByText("발주서 파일 없음", { exact: true })).toHaveCount(0);
+
+    // 승인 표시 취소는 확인 모달 그대로 — 취소하면 근거 · 메모도 비운다.
+    await projectInfo(page).getByRole("button", { name: "승인 표시 취소", exact: true }).click();
+    const cancelDialog = page.getByRole("dialog", { name: "고객 승인 표시 취소", exact: true });
+    await expect(cancelDialog).toBeVisible();
+    const cancelled = page.waitForResponse((response) => response.request().method() === "POST" && (response.request().postData() ?? "").includes('"approval":null'));
+    await cancelDialog.getByRole("button", { name: /^승인 표시 취소/ }).click();
+    await cancelled;
+    await expect(cancelDialog).toHaveCount(0);
+    const [cleared] = await db.select().from(quoteRevisions).where(eq(quoteRevisions.id, project.revisionId));
+    expect(cleared?.customerApprovedAt).toBeNull();
+    expect(cleared?.customerApprovalBasis).toBeNull();
+    expect(cleared?.customerApprovalMemo).toBeNull();
+  });
+
+  test("저장 안 한 편집이 있으면 승인 표시 패널의 1차가 기존 막힘 문구로 막힌다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makePm(team, { amount: true });
+    const project = await seedProject({ teamId: team, pmUserId: pm.userId, status: "bidding", lines: ONE_LINE });
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await openProjectInfoEdit(page);
+    await projectInfo(page).getByLabel("PO 번호", { exact: true }).fill("PO-막힘");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    await projectInfo(page).getByRole("button", { name: "승인 표시", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "고객 승인 표시", exact: true });
+    await expect(sheet.getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true })).toBeVisible();
+    await expect(sheet.getByRole("button", { name: /^승인 표시/ })).toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("U14 — quote.amount를 볼 수 없는 계급은 접힌 줄이 `기간 · MM-DD~MM-DD`이고 펼친 면 어디에도 PO 금액 · 손익이 없다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makePm(team, { amount: false, pnl: true });
+    const project = await seedProject({ teamId: team, pmUserId: pm.userId, status: "bidding", lines: [] });
+    await db.update(projects).set({ preEstimateAmountKrw: 77_777_000 }).where(eq(projects.id, project.id));
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+
+    const panel = projectInfo(page);
+    await expect(panel.getByText(/^기간 · \d{2}-\d{2}~\d{2}-\d{2}$/)).toBeVisible();
+    expect(await page.content()).not.toContain("77,777,000");
+    await expandProjectInfo(page);
+    await expect(panel.getByText("PO 금액")).toHaveCount(0);
+    await expect(panel.getByRole("group", { name: "손익" })).toHaveCount(0);
+    await expect(panel.getByRole("group", { name: "기본" })).toBeVisible();
+    await expect(panel.getByRole("group", { name: "고객 승인" })).toBeVisible();
+  });
+
+  test("손익 — 권한 있는 계급은 수익 · 비율을 보고, 견적이 없으면 `—` + 배지 `계산 불가`(탭하면 이유), 권한 없는 계급에겐 섹션이 없다", async ({ page, browser }) => {
+    const team = await makeTeam();
+    const pm = await makePm(team, { amount: true, pnl: true });
+    const withLines = await seedProject({ teamId: team, pmUserId: pm.userId, status: "bidding", lines: ONE_LINE });
+    const empty = await seedProject({ teamId: team, pmUserId: pm.userId, status: "bidding", lines: [] });
+    await login(page, pm);
+
+    await page.goto(`/projects/${withLines.id}`);
+    await expandProjectInfo(page);
+    const profit = projectInfo(page).getByRole("group", { name: "손익" });
+    await expect(profit.getByText("200,000 · 20%", { exact: true })).toBeVisible();
+
+    await page.goto(`/projects/${empty.id}`);
+    await expandProjectInfo(page);
+    const emptyProfit = projectInfo(page).getByRole("group", { name: "손익" });
+    await expect(emptyProfit.getByText("—", { exact: true })).toBeVisible();
+    const badge = emptyProfit.getByRole("button", { name: "계산 불가", exact: true });
+    await expect(badge).toBeVisible();
+    await badge.click();
+    await expect(emptyProfit.getByText("계산 불가 · 견적 없음", { exact: true })).toBeVisible();
+
+    const noPnl = await makePm(team, { amount: true, pnl: false });
+    const other = await browser.newPage();
+    await login(other, noPnl);
+    // 담당 PM이 아니어도 보기 권한과 범위(회사)로 읽을 수 있다.
+    await other.goto(`/projects/${withLines.id}`);
+    await expandProjectInfo(other);
+    await expect(projectInfo(other).getByRole("group", { name: "손익" })).toHaveCount(0);
+    await other.close();
+  });
+});
+
+test.describe("견적 줄 문 칸 이유 글자 (S4 · SC-22)", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test("문이 닫힌 줄은 버튼 대신 표 낱말, 열린 줄은 `지출결의 올리기`, 문 열 권한이 없으면 열 자체가 없고 `권한 없음` 글자도 없다", async ({ page, browser }) => {
+    const team = await makeTeam();
+    const pm = await makePm(team, { expenses: true, amount: true });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E문거래처-${randomUUID()}`, normalizedName: `e2e문거래처-${randomUUID()}` });
+    const project = await seedProject({
+      teamId: team,
+      pmUserId: pm.userId,
+      status: "in_progress",
+      lines: [
+        { itemName: "문 열린 줄", unitPrice: 1_000_000, execution: 500_000, vendorId: vendor.id },
+        { itemName: "문 취소 줄", unitPrice: 1_000_000, execution: 500_000, vendorId: vendor.id },
+        { itemName: "문 실행가 0 줄", unitPrice: 1_000_000, execution: 0, vendorId: vendor.id },
+        { itemName: "문 견적 외 줄", unitPrice: 0, execution: 30_000, lineKind: "out_of_quote", vendorId: vendor.id },
+        { itemName: "문 조정 줄", unitPrice: 0, execution: 40_000, lineKind: "adjustment", vendorId: vendor.id },
+      ],
+    });
+    await db.update(quoteLines).set({ lineStatus: "cancelled" }).where(and(eq(quoteLines.revisionId, project.revisionId), eq(quoteLines.itemName, "문 취소 줄")));
+    const seen = await readApprovalBasis(SYSTEM_VIEWER, project.revisionId);
+    await setCustomerApproval({ id: pm.userId, roleId: pm.roleId }, project.revisionId, {
+      approvalBasis: "verbal",
+      approvedOn: TODAY,
+      seenTotalKrw: seen.totalKrw,
+      contentToken: seen.contentToken,
+    });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    const grid = page.getByRole("grid", { name: "견적 줄" }).or(page.getByRole("table", { name: "견적 줄" }));
+    const rowOf = (item: string) => grid.getByRole("row").filter({ hasText: item });
+    // 구분 칸에도 같은 낱말이 있어 문 칸의 글자(span)로 좁힌다.
+    const doorWord = (item: string, word: string) => rowOf(item).locator("span").filter({ hasText: new RegExp(`^${word}$`) });
+    await expect(rowOf("문 열린 줄").getByRole("button", { name: "지출결의 올리기" }).or(rowOf("문 열린 줄").getByRole("link", { name: "지출결의 올리기" }))).toBeVisible();
+    await expect(doorWord("문 취소 줄", "취소된 줄")).toBeVisible();
+    await expect(doorWord("문 실행가 0 줄", "남은 실행가 없음")).toBeVisible();
+    await expect(doorWord("문 견적 외 줄", "견적 외 비용")).toBeVisible();
+    await expect(doorWord("문 조정 줄", "조정 줄")).toBeVisible();
+    // 이유 낱말 하나가 문 칸 안 한 줄이다.
+    const wordBox = await doorWord("문 실행가 0 줄", "남은 실행가 없음").boundingBox();
+    expect(wordBox?.height ?? 99).toBeLessThan(24);
+    // 표 위 공통 게이트 줄은 없다(승인됨) — 줄마다 반복되는 말도 없다.
+    await expect(page.getByText("고객 승인 전")).toHaveCount(0);
+
+    // 문 열 권한이 없는 계급 — 열이 없고 `권한 없음` 글자도 없다.
+    const reader = await makePm(team, { expenses: false, amount: true });
+    const other = await browser.newPage();
+    await login(other, reader);
+    await other.goto(`/projects/${project.id}`);
+    await expect(other.getByRole("heading", { name: project.name })).toBeVisible();
+    await expect(other.getByText("취소된 줄")).toHaveCount(0);
+    await expect(other.getByText("지출결의 올리기")).toHaveCount(0);
+    await expect(other.getByText("권한 없음")).toHaveCount(0);
+    await other.close();
   });
 });

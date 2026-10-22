@@ -433,6 +433,28 @@ td:has(> .rowNumber) {
   color: var(--text-muted);
 }
 
+/* 07-18 고객 승인 섹션 — 승인일 · 메모는 보조 글자, 발주서 파일 없음은 경고 글자(저장은 막지 않는다). */
+.infoAux {
+  margin: 0 0 var(--s-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.infoReasonButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.infoWarn {
+  color: var(--status-warning);
+  font-size: var(--text-aux);
+}
+
 /* 04-22(S13) — 부제의 기간 글자 + 3차 「기간 바꾸기」, 머리 줄 아래 기간 칸 묶음(Form.Actions 없음). */
 .periodLine {
   display: flex;

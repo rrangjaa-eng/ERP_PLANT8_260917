@@ -239,7 +239,7 @@ const ENTRIES: Entry[] = [
   {
     // 기준값이 틀려 범위 안이면 게이트가 막는다.
     name: "고객 승인(setCustomerApproval)",
-    probe: perProject((viewer, project) => setCustomerApproval(viewer, project.revisionId, { approvedOn: "2026-10-01", seenTotalKrw: -1, contentToken: "stale" })),
+    probe: perProject((viewer, project) => setCustomerApproval(viewer, project.revisionId, { approvalBasis: "verbal", approvedOn: "2026-10-01", seenTotalKrw: -1, contentToken: "stale" })),
     expected: (visible) => outcomesFor(visible),
   },
   {

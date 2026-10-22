@@ -276,7 +276,7 @@ describe("파생 계약 금액 — 고객 승인된 현재 차수 합계 (04-16 
 
   async function approve(pm: Viewer, revisionId: string, approvedOn = kstToday(new Date())) {
     const basis = await approvalBasis(SYSTEM_VIEWER, revisionId);
-    await setCustomerApproval(pm, revisionId, { approvedOn, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+    await setCustomerApproval(pm, revisionId, { approvalBasis: "verbal", approvedOn, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   }
 
   // 1차에 견적 줄 둘(30,000,000 + 18,000,000) · 견적 외 비용 · 조정 줄을 두고 2차를 만든 뒤, 2차에 줄 하나를 더해 승인 전에 보관한다.

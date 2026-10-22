@@ -66,7 +66,8 @@ import {
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { SettlementButton, type SettlementHeaderProps } from "./settlement-button";
 import { unsavedEditsReason } from "./unsaved-edits";
-import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
+import { CUSTOMER_APPROVAL_TRIGGER_ID, CustomerApprovalItems, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
+import type { ProjectProfitSummary } from "@/domain/projects/profit-summary";
 import { PreSettleLedgerContext } from "./pre-settle-check";
 import { PeriodField, periodRangeText, periodShortText, type PeriodDraft, type PeriodFieldError } from "./period-field";
 import type { PeriodRights } from "@/domain/projects/period";
@@ -148,6 +149,18 @@ type LineCells = Record<QuoteLineField, QuoteCellEditability>;
 // 04-23(D-83) — 표의 줄은 늘 견적 줄 → 견적 외 비용 → 조정 순서다(조정은 맨 아래 고정 그룹). 같은 종류 안의 순서는 그대로.
 const KIND_ORDER: Record<QuoteLineKind, number> = { quote: 0, out_of_quote: 1, adjustment: 2 };
 const KIND_GROUP_LABELS: Record<Exclude<QuoteLineKind, "quote">, string> = { out_of_quote: "견적 외 비용", adjustment: "조정" };
+
+// 07-18(SC-22 · S4) — 문 칸에 버튼이 서지 않는 줄의 이유 낱말. `expenseLineDoor` 사유(none · closed)를 표(UI-SPEC SC-22 고정)의 낱말로 옮긴다 — 표에 없는 사유는 null(빈 칸)이고 새 낱말을 짓지 않는다.
+// 문 열 권한이 없는 계급은 열 자체가 없다(showColumn) — 여기까지 오지 않는다. 표 전체 게이트(고객 승인 전 · 완료)는 표 위 한 줄이 맡는다.
+function doorReasonWord(row: { lineKind: QuoteLineKind; lineStatus: string }, door: LineDoorCell): string | null {
+  if (door.state === "none") {
+    if (row.lineKind === "out_of_quote") return "견적 외 비용";
+    if (row.lineKind === "adjustment") return "조정 줄";
+    return row.lineStatus === "cancelled" ? "취소된 줄" : null;
+  }
+  if (door.state === "closed" && !door.latestId) return "남은 실행가 없음";
+  return null;
+}
 
 export function byKind<T extends { lineKind: QuoteLineKind }>(lines: T[]): T[] {
   return [...lines].sort((a, b) => KIND_ORDER[a.lineKind] - KIND_ORDER[b.lineKind]);
@@ -974,6 +987,7 @@ export function QuoteLedger({
   copyProjectHref,
   memberAdd,
   customerApproval,
+  profit,
   approvedSeq,
   revisions,
   endDateNote,
@@ -1027,6 +1041,8 @@ export function QuoteLedger({
   memberAdd?: ReactNode;
   /** 04-24(D-56 · CEO-D19) — 부제 옆 고객 승인 줄(글자·버튼 모두 서버 판정). */
   customerApproval: CustomerApprovalProps;
+  /** 07-18(SC-19 · U16) — 정보 면 `손익` 섹션의 숫자. 손익 권한이 없으면 null(섹션 없음). */
+  profit: ProjectProfitSummary | null;
   /** 04-24(ENG-D7) — 현재 차수가 고객 승인됐으면 그 순번(표 위 잠김 줄 — tableLockLine). */
   approvedSeq: number | null;
   /** 04-24(DR-4) — 이 프로젝트의 차수 id·순번(서버 요약) — 다른 차수 보관본을 `{n}차`로 읽는다. */
@@ -1133,6 +1149,8 @@ export function QuoteLedger({
   const [preEstimateDraft, setPreEstimateDraft] = useState<PreEstimateDraft | null>(null);
   const [preEstimateErrors, setPreEstimateErrors] = useState<PreEstimateFieldError[]>([]);
   // 07-18(SC-19 · N1) — 정보 면. 펼침은 이 화면 안에서만 유지한다(저장하지 않음). `고치기` 묶음은 draft가 있으면 열린 것이다.
+  // 07-18(U16) — 폰은 hover가 없어 `계산 불가` 배지를 탭하면 이유 한 줄이 열린다.
+  const [profitReasonOpen, setProfitReasonOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [poNumberBase, setPoNumberBase] = useState(poNumber ?? "");
   const [poNumberDraft, setPoNumberDraft] = useState<string | null>(null);
@@ -1250,7 +1268,12 @@ export function QuoteLedger({
   function sheetDoorAction(row: DraftLine): ReactNode {
     const lineId = row.id;
     const door = lineDoors.showColumn && lineId ? lineDoors.cells[lineId] : undefined;
-    if (!lineId || !door || door.state === "none") return undefined;
+    if (!lineId || !door) return undefined;
+    // 07-18(SC-22) — 버튼이 없는 줄은 행과 같은 이유 낱말을 시트에도 보인다.
+    if (door.state === "none") {
+      const word = doorReasonWord(row, door);
+      return word ? <p className={styles.doorNote}>{word}</p> : undefined;
+    }
     if (door.branch === "purchase") {
       // 06-35(G-06-D · 카드 ① 「구매 요청만」): 구매 요청 문도 표 전체 게이트(고객 승인 전 · 완료)를 따른다. 완료의 이유는 지출결의 문구가 아니라 견적 줄 잠김(서버 구매 거절과 같은 말)이다
       if (lineDoors.tableGateReason) {
@@ -1269,7 +1292,10 @@ export function QuoteLedger({
       );
     }
     if (door.state === "closed") {
-      if (!door.latestId) return undefined;
+      if (!door.latestId) {
+        const word = doorReasonWord(row, door);
+        return word ? <p className={styles.doorNote}>{word}</p> : undefined;
+      }
       const open = (
         <Link href={`/expenses/${door.latestId}`} className={buttonLinkClassName("tertiary")}>
           지출결의 열기
@@ -1840,9 +1866,10 @@ export function QuoteLedger({
   }
 
   // 06-22(S18 · PS-6) — 점검 매출 줄 `{n}차 고객 승인 전` 3차가 고객 승인 줄의 트리거로 포커스한다(포커스가 스크롤도 한다).
-  const customerApprovalRef = useRef<HTMLDivElement>(null);
+  // 07-18 — 승인 트리거는 정보 면 `고객 승인` 섹션 안이라 접힌 면이면 먼저 펼친 뒤 포커스한다.
   function focusCustomerApproval() {
-    customerApprovalRef.current?.querySelector<HTMLElement>("button")?.focus();
+    setInfoOpen(true);
+    focusWhenReady(CUSTOMER_APPROVAL_TRIGGER_ID);
   }
 
   // 「발행 줄로」 — 발행일 = 희망 발행일 · 발행액 = 요청 금액 · 메모 = 요청 메모인 새 발행 줄을 만들고 그 발행일 칸으로 간다.
@@ -2333,6 +2360,9 @@ export function QuoteLedger({
                   </span>
                 );
               }
+              // 07-18(SC-22) — 버튼 대신 이유 낱말(취소된 줄 · 견적 외 비용 · 조정 줄 · 남은 실행가 없음). 표에 없는 사유는 빈 칸.
+              const reasonWord = doorReasonWord(row, door);
+              if (reasonWord) return <span className={styles.doorNote}>{reasonWord}</span>;
               // 06-13(S14 · D-609) — 카드 쪽 연결 줄의 「지출결의 올리기」는 렌더 + 비활성 + 이유, 이유 옆 3차 다음 한 수(`카드 사용 등록`).
               if (door.state === "open" && door.blocked && !lineDoors.tableGateReason) {
                 return (
@@ -2841,9 +2871,6 @@ export function QuoteLedger({
         primary: saveAction,
       }}
     >
-      <div ref={customerApprovalRef} className={styles.layoutContents}>
-        <CustomerApprovalLine {...customerApproval} className={styles.periodLine} dirtyCount={dirtyCount} />
-      </div>
       <p className={styles.periodLine}>{statusSinceText}</p>
 
       {/* 07-18(SC-19 · K22) — 정보 면: 모든 폭에서 처음엔 접힌 한 줄. 합계 면 모양 하나에 섹션 선으로만 나눈다(카드 속 카드 없음). */}
@@ -2948,6 +2975,42 @@ export function QuoteLedger({
                   </p>
                 )}
               </div>
+              <div role="group" aria-labelledby={`${INFO_BODY_ID}-approval`} className={styles.infoSection}>
+                <p id={`${INFO_BODY_ID}-approval`} className={styles.infoSectionTitle}>
+                  고객 승인
+                </p>
+                <CustomerApprovalItems {...customerApproval} dirtyCount={dirtyCount} />
+              </div>
+              {profit ? (
+                <div role="group" aria-labelledby={`${INFO_BODY_ID}-profit`} className={styles.infoSection}>
+                  <p id={`${INFO_BODY_ID}-profit`} className={styles.infoSectionTitle}>
+                    손익
+                  </p>
+                  <p className={styles.infoItem}>
+                    <span className={styles.infoLabel}>수익</span>
+                    {profit.kind === "ok" ? (
+                      <span className={styles.infoValue}>{`${formatKrw(profit.profitKrw)} · ${profit.ratePct}%`}</span>
+                    ) : (
+                      <>
+                        <span className={styles.infoNone}>—</span>
+                        <button
+                          type="button"
+                          className={styles.infoReasonButton}
+                          title={`계산 불가 · ${profit.reason}`}
+                          aria-expanded={profitReasonOpen}
+                          aria-controls={`${INFO_BODY_ID}-profit-reason`}
+                          onClick={() => setProfitReasonOpen((open) => !open)}
+                        >
+                          <StatusTag status="계산 불가" />
+                        </button>
+                      </>
+                    )}
+                  </p>
+                  {profit.kind === "unavailable" && profitReasonOpen ? (
+                    <p id={`${INFO_BODY_ID}-profit-reason`} className={styles.infoAux}>{`계산 불가 · ${profit.reason}`}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

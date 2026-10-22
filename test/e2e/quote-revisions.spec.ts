@@ -15,7 +15,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { addDays, kstToday } from "@/lib/kst-date";
-import { openProjectInfoEdit } from "./project-info-helpers";
+import { chooseApprovalBasis, expandProjectInfo, openApprovalSheet, openProjectInfoEdit, projectInfo, submitApproval } from "./project-info-helpers";
 
 // 04-24(PROJ-07 · PROJ-05 · UX-04) — 상세의 차수 화면: 「복사해 새 차수」 · 고객 승인 표시와 취소 · 차수 섹션 ·
 // 이전 차수 읽기 섹션 · 이전 차수 보관본 복원 줄. 준비는 도메인 함수와 DB로 하고(상태 · 승인일), 화면 동작만 브라우저로 본다.
@@ -255,20 +255,8 @@ async function approveInDb(revisionId: string, userId: string, approvedOn = TODA
   await db.update(quoteRevisions).set(customerApprovalColumns(userId, approvedOn)).where(eq(quoteRevisions.id, revisionId));
 }
 
-const APPROVAL_EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
 const APPROVED_REASON = "1차 고객 승인됨 · 고치려면 새 차수";
 const PM_NAME = "E2E 차수 PM";
-
-function approvalDialog(page: Page): Locator {
-  return page.getByRole("dialog", { name: "고객 승인 표시", exact: true });
-}
-
-async function openApprovalDialog(page: Page): Promise<Locator> {
-  await page.getByRole("button", { name: "고객 승인 표시", exact: true }).click();
-  const dialog = approvalDialog(page);
-  await expect(dialog).toBeVisible();
-  return dialog;
-}
 
 async function submitAndWait(page: Page, primary: Locator) {
   const answered = page.waitForResponse((response) => isServerAction(response.request()));
@@ -276,8 +264,13 @@ async function submitAndWait(page: Page, primary: Locator) {
   await answered;
 }
 
-test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · D9 · DR-20)", () => {
-  test("담당 PM에게 수주중·정산에서 「고객 승인 표시」가 있다(CEO-D19)", async ({ page }) => {
+// 07-18(W6) — 고객 승인은 정보 면 `고객 승인` 섹션이다. 승인 표시는 옆 패널(근거 필수 · 메모 선택), 취소는 확인 모달 그대로.
+function approvalSection(page: Page): Locator {
+  return projectInfo(page).getByRole("group", { name: "고객 승인" });
+}
+
+test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · D9 · DR-20 · 07-18 W6)", () => {
+  test("담당 PM에게 수주중·정산에서 정보 면 `승인 표시`가 있다(CEO-D19)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const bidding = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "수주중 줄", unitPrice: 100_000, execution: 50_000 }] });
@@ -291,8 +284,9 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     for (const project of [bidding, settling]) {
       await page.goto(`/projects/${project.id}`);
       await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
-      await expect(page.getByRole("button", { name: "고객 승인 표시", exact: true })).toHaveCount(1);
-      await expect(page.getByRole("button", { name: "승인 표시 취소", exact: true })).toHaveCount(0);
+      await expandProjectInfo(page);
+      await expect(projectInfo(page).getByRole("button", { name: "승인 표시", exact: true })).toHaveCount(1);
+      await expect(projectInfo(page).getByRole("button", { name: "승인 표시 취소", exact: true })).toHaveCount(0);
     }
   });
 
@@ -307,14 +301,17 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
 
     await page.goto(`/projects/${open.id}`);
     await expect(page.getByRole("heading", { name: open.name })).toBeVisible();
-    await expect(page.getByRole("button", { name: "고객 승인 표시", exact: true })).toHaveCount(0);
+    await expandProjectInfo(page);
+    await expect(projectInfo(page).getByRole("button", { name: "승인 표시", exact: true })).toHaveCount(0);
 
     await page.goto(`/projects/${approved.id}`);
-    await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "승인 표시 취소", exact: true })).toHaveCount(0);
+    await expandProjectInfo(page);
+    await expect(approvalSection(page).getByText("승인됨", { exact: true })).toBeVisible();
+    await expect(approvalSection(page).getByText(`${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByRole("button", { name: "승인 표시 취소", exact: true })).toHaveCount(0);
   });
 
-  test("완료 프로젝트에는 두 버튼이 없고 승인일은 부제에 보인다", async ({ page }) => {
+  test("완료 프로젝트에는 두 버튼이 없고 승인일은 섹션에 보인다", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({
@@ -326,47 +323,37 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await approveInDb(project.revisionId, pm.userId);
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
-    await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "고객 승인 표시", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "승인 표시 취소", exact: true })).toHaveCount(0);
+    await expandProjectInfo(page);
+    await expect(approvalSection(page).getByText(`${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByRole("button", { name: "승인 표시", exact: true })).toHaveCount(0);
+    await expect(projectInfo(page).getByRole("button", { name: "승인 표시 취소", exact: true })).toHaveCount(0);
   });
 
-  test("승인일 칸이 첫 포커스·기본 오늘 · 비우면 칸 아래 「날짜 없음 · 날짜 고르기」로 막힘 · 내일은 서버 거부 · 오늘로 고쳐 통과하면 토스트 없이 제목 포커스·부제", async ({ page }) => {
+  test("승인일 칸은 없다 — 근거를 비우면 `근거 선택`으로 막힘 · 근거를 고르면 통과해 토스트 없이 제목 포커스 · 섹션에 `승인됨 · 구두`", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "승인 줄", unitPrice: 1_000_000, execution: 400_000 }] });
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
-    // 기본값은 서버가 페이지를 그리는 때의 KST 오늘 — 모듈 로드 때 고정한 TODAY는 자정을 넘기면 어긋난다.
+    // 승인일은 서버가 페이지를 그리는 때의 KST 오늘 — 모듈 로드 때 고정한 TODAY는 자정을 넘기면 어긋난다.
     const today = kstToday(new Date());
 
-    const dialog = await openApprovalDialog(page);
-    const date = dialog.getByLabel("승인일");
-    const primary = dialog.getByRole("button", { name: /고객 승인 표시/ });
-    await expect(date).toBeFocused();
-    await expect(date).toHaveValue(today);
-    await expect(dialog.getByText(`상세 견적 1차 · 1,000,000`, { exact: true })).toBeVisible();
+    const sheet = await openApprovalSheet(page);
+    const primary = sheet.getByRole("button", { name: /^승인 표시/ });
+    await expect(sheet.getByLabel("승인일")).toHaveCount(0);
+    await primary.click();
+    await expect(sheet.getByText("근거 선택", { exact: true }).filter({ visible: true }).last()).toBeVisible();
+    await expect(sheet).toBeVisible();
 
-    await date.fill("");
-    await expect(primary).toHaveAttribute("aria-disabled", "true");
-    await expect(dialog.getByText(APPROVAL_EMPTY_ERROR, { exact: true }).filter({ visible: true })).toHaveCount(1);
-    await expectDescribedBy(page, primary, APPROVAL_EMPTY_ERROR);
+    // PanelForm은 제출 뒤 500ms 동안 같은 틱 연타를 막는다 — 사람 속도로 고른다.
+    await page.waitForTimeout(600);
+    await chooseApprovalBasis(sheet, "verbal");
+    await submitApproval(page, primary);
 
-    await date.fill(addDays(today, 1));
-    await expect(dialog.getByText(APPROVAL_EMPTY_ERROR, { exact: true })).toHaveCount(0);
-    await submitAndWait(page, primary);
-    const future = "승인일이 오늘보다 늦음 · 날짜 수정";
-    await expect(dialog.getByText(future, { exact: true }).filter({ visible: true })).toHaveCount(1);
-    await expect(dialog).toBeVisible();
-
-    await date.fill(today);
-    await expect(dialog.getByText(future, { exact: true })).toHaveCount(0);
-    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
-    await submitAndWait(page, primary);
-
-    await expect(dialog).toBeHidden();
-    await expect(page.getByText(`고객 승인 ${today} ${PM_NAME}`, { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "승인 표시 취소", exact: true })).toBeVisible();
+    await expect(sheet).toBeHidden();
+    await expect(approvalSection(page).getByText("승인됨 · 구두", { exact: true })).toBeVisible();
+    await expect(approvalSection(page).getByText(`${today} ${PM_NAME}`, { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByRole("button", { name: "승인 표시 취소", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
     await expect(page.getByRole("status").filter({ hasText: "고객 승인" })).toHaveCount(0);
   });
@@ -380,18 +367,18 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await editTextCell(page, 0, COL.itemName, "고친 항목");
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
 
-    let dialog = await openApprovalDialog(page);
-    const primary = dialog.getByRole("button", { name: /고객 승인 표시/ });
+    let sheet = await openApprovalSheet(page);
+    const primary = sheet.getByRole("button", { name: /^승인 표시/ });
     await expect(primary).toHaveAttribute("aria-disabled", "true");
-    await expect(dialog.getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expect(sheet.getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true }).filter({ visible: true })).toHaveCount(1);
     await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
+    await expect(sheet).toBeHidden();
 
     await quoteCell(page, 0, COL.itemName).focus();
     await page.keyboard.press("Control+s");
     await expect(page.getByText(/저장됨/)).toBeVisible();
-    dialog = await openApprovalDialog(page);
-    await expect(dialog.getByRole("button", { name: /고객 승인 표시/ })).not.toHaveAttribute("aria-disabled", "true");
+    sheet = await openApprovalSheet(page);
+    await expect(sheet.getByRole("button", { name: /^승인 표시/ })).not.toHaveAttribute("aria-disabled", "true");
   });
 
   test("자기 저장 바로 뒤 승인 제출은 새 기준값으로 통과한다 — 저장이 다시 그린 합계·토큰을 싣는다(ENG-D9 · 검토 S3b)", async ({ page }) => {
@@ -405,14 +392,15 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await page.keyboard.press("Control+s");
     await expect(page.getByText(/저장됨/)).toBeVisible();
 
-    const dialog = await openApprovalDialog(page);
-    await expect(dialog.getByText("상세 견적 1차 · 2,000,000", { exact: true })).toBeVisible();
-    await submitAndWait(page, dialog.getByRole("button", { name: /고객 승인 표시/ }));
-    await expect(dialog).toBeHidden();
-    await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
+    const sheet = await openApprovalSheet(page);
+    await chooseApprovalBasis(sheet, "email");
+    await submitApproval(page, sheet.getByRole("button", { name: /^승인 표시/ }));
+    await expect(sheet).toBeHidden();
+    await expect(approvalSection(page).getByText("승인됨 · 이메일", { exact: true })).toBeVisible();
+    await expect(approvalSection(page).getByText(`${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
   });
 
-  test("견적 금액(quote.amount)을 볼 수 없는 담당 PM에게는 「고객 승인 표시」가 없다(ENG-D9 · 검토 S3c)", async ({ page }) => {
+  test("견적 금액(quote.amount)을 볼 수 없는 담당 PM에게는 `승인 표시`가 없다(ENG-D9 · 검토 S3c)", async ({ page }) => {
     const team = await makeTeam();
     const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E금액없음-${randomUUID().slice(0, 8)}`, workScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
@@ -425,7 +413,8 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await page.goto(`/projects/${project.id}`);
     await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
     await expect(page.getByText("금액 숨김 줄")).toBeVisible();
-    await expect(page.getByRole("button", { name: "고객 승인 표시", exact: true })).toHaveCount(0);
+    await expandProjectInfo(page);
+    await expect(projectInfo(page).getByRole("button", { name: "승인 표시", exact: true })).toHaveCount(0);
   });
 
   test("견적 금액(quote.amount)을 볼 수 없으면 차수 표에 「견적 합계」 열이 없다(/design-review P-6 · SYSTEM 정보 노출 — 열이 빠진다)", async ({ page }) => {
@@ -443,7 +432,7 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await expect(revisions.getByRole("columnheader", { name: "견적 합계", exact: true })).toHaveCount(0);
   });
 
-  test("다른 사람이 그새 수량을 바꿔 저장하면 `견적이 바뀜` + 3차 「새로 고침」, 승인일 없음 → 새로 고친 뒤 통과(ENG-D9)", async ({ page }) => {
+  test("다른 사람이 그새 수량을 바꿔 저장하면 `견적이 바뀜` + 3차 「새로 고침」, 승인 안 됨 → 새로 고친 뒤 통과(ENG-D9)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "옛 기준 줄", unitPrice: 1_000_000, execution: 400_000 }] });
@@ -467,21 +456,24 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
       ],
     });
 
-    let dialog = await openApprovalDialog(page);
-    await submitAndWait(page, dialog.getByRole("button", { name: /고객 승인 표시/ }));
-    await expect(dialog.getByText("견적이 바뀜", { exact: true }).filter({ visible: true })).toHaveCount(1);
-    await expect(dialog).toBeVisible();
-    await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toHaveCount(0);
+    let sheet = await openApprovalSheet(page);
+    await chooseApprovalBasis(sheet, "verbal");
+    await submitApproval(page, sheet.getByRole("button", { name: /^승인 표시/ }));
+    await expect(sheet.getByText("견적이 바뀜", { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expect(sheet).toBeVisible();
+    await expect(approvalSection(page).getByText("승인 전", { exact: true })).toBeVisible();
 
-    // 다음 한 수 3차 「새로 고침」 — 화면을 다시 받고 다이얼로그를 닫는다(SYSTEM.md §7-17 ERROR, 2026-10-01).
-    await dialog.getByRole("button", { name: "새로 고침" }).click();
-    await expect(dialog).toBeHidden();
-    dialog = await openApprovalDialog(page);
-    // 새로 받은 기준값(합계 · 내용 토큰)이 그려진 뒤에 제출한다 — RSC 응답 도착은 렌더 반영을 보장하지 않는다.
-    await expect(dialog.getByText("상세 견적 1차 · 3,000,000", { exact: true })).toBeVisible();
-    await submitAndWait(page, dialog.getByRole("button", { name: /고객 승인 표시/ }));
-    await expect(dialog).toBeHidden();
-    await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
+    // 다음 한 수 3차 「새로 고침」 — 화면을 다시 받고 패널을 닫는다(SYSTEM.md §7-17 ERROR, 2026-10-01).
+    // 새로 받은 기준값(합계 · 내용 토큰)이 도착한 뒤에 다시 제출한다 — 화면 다시 받기 응답을 끝까지 기다린다.
+    const refreshed = page.waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1");
+    await sheet.getByRole("button", { name: "새로 고침" }).click();
+    await (await refreshed).finished();
+    await expect(sheet).toBeHidden();
+    sheet = await openApprovalSheet(page);
+    await chooseApprovalBasis(sheet, "verbal");
+    await submitApproval(page, sheet.getByRole("button", { name: /^승인 표시/ }));
+    await expect(sheet).toBeHidden();
+    await expect(approvalSection(page).getByText(`${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
   });
 
   test("서버 거부가 아닌 실패(요청 끊김)는 세 다이얼로그 모두 1차 왼쪽 막힘 자리에 `처리하지 못함 · 닫고 다시 시도`(검토 S5)", async ({ page }) => {
@@ -505,15 +497,19 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
 
-    dialog = await openApprovalDialog(page);
-    await dialog.getByRole("button", { name: /고객 승인 표시/ }).click();
-    await expect(dialog.getByText(FAILED, { exact: true }).filter({ visible: true })).toHaveCount(1);
+    const sheet = await openApprovalSheet(page);
+    await chooseApprovalBasis(sheet, "verbal");
+    await sheet.getByRole("button", { name: /^승인 표시/ }).click();
+    await expect(sheet.getByText(FAILED, { exact: true }).filter({ visible: true })).toHaveCount(1);
+    // 근거를 골라 바뀐 칸이 있어 Esc는 `입력 버리기` 확인을 거친다(DR1 A).
     await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
+    await page.getByRole("dialog", { name: "입력 버리기" }).getByRole("button", { name: /^입력 버리기/ }).click();
+    await expect(sheet).toBeHidden();
 
     await approveInDb(project.revisionId, pm.userId);
     await page.reload();
-    await page.getByRole("button", { name: "승인 표시 취소", exact: true }).click();
+    await expandProjectInfo(page);
+    await projectInfo(page).getByRole("button", { name: "승인 표시 취소", exact: true }).click();
     dialog = page.getByRole("dialog", { name: "고객 승인 표시 취소" });
     await dialog.getByRole("button", { name: /승인 표시 취소/ }).click();
     await expect(dialog.getByText(FAILED, { exact: true }).filter({ visible: true })).toHaveCount(1);
@@ -527,10 +523,11 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
 
-    const dialog = await openApprovalDialog(page);
-    await submitAndWait(page, dialog.getByRole("button", { name: /고객 승인 표시/ }));
-    await expect(dialog.getByText("승인할 견적 줄이 없음 · 첫 줄 만들기", { exact: true }).filter({ visible: true })).toHaveCount(1);
-    await expect(dialog).toBeVisible();
+    const sheet = await openApprovalSheet(page);
+    await chooseApprovalBasis(sheet, "verbal");
+    await submitApproval(page, sheet.getByRole("button", { name: /^승인 표시/ }));
+    await expect(sheet.getByText("승인할 견적 줄이 없음 · 첫 줄 만들기", { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expect(sheet).toBeVisible();
   });
 
   test("승인 차수: 수량·소분류는 이유 한 줄로 막히고 표 위 줄도 같은 글자 · 실행가는 저장 · 새 줄의 수량·단가는 잠김(ENG-D7)", async ({ page }) => {
@@ -578,17 +575,18 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await page.goto(`/projects/${project.id}`);
     await expect(quoteCell(page, 0, COL.quantity)).toHaveAttribute("aria-readonly", "true");
 
-    await page.getByRole("button", { name: "승인 표시 취소", exact: true }).click();
+    await expandProjectInfo(page);
+    await projectInfo(page).getByRole("button", { name: "승인 표시 취소", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "고객 승인 표시 취소" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`상세 견적 1차 · 승인일 ${TODAY}`, { exact: true })).toBeVisible();
     await expect(dialog.getByText("승인일 지워짐 · 이 차수의 지출결의가 다시 막힘", { exact: true })).toBeVisible();
     await expect(dialog.getByRole("button", { name: /^닫기/ }).filter({ hasText: "Esc" })).toBeVisible();
 
-    await submitAndWait(page, dialog.getByRole("button", { name: /승인 표시 취소/ }));
+    await submitApproval(page, dialog.getByRole("button", { name: /승인 표시 취소/ }));
     await expect(dialog).toBeHidden();
-    await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "고객 승인 표시", exact: true })).toBeVisible();
+    await expect(approvalSection(page).getByText(`${TODAY} ${PM_NAME}`, { exact: true })).toHaveCount(0);
+    await expect(projectInfo(page).getByRole("button", { name: "승인 표시", exact: true })).toBeVisible();
     await expect(quoteCell(page, 0, COL.quantity)).toHaveAttribute("aria-readonly", "false");
     await expect(page.getByText(APPROVED_REASON, { exact: true })).toHaveCount(0);
   });

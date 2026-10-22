@@ -15,6 +15,7 @@ import { listPermissions, listVisibility, upsertPermission, upsertVisibility } f
 import { insertRole } from "@/repositories/roles";
 import { saveRevenue, type MoneyInputDto } from "@/domain/revenue";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { chooseApprovalBasis, openApprovalSheet, submitApproval } from "./project-info-helpers";
 
 // Phase 4 Task 3 ⑤ — 매출 섹션 E2E: 발행·입금 줄(경영관리 쓰기) → 입금 셀 둘째 줄 공급가액 +
 // 합계 행 미수 표시 확인 → 기획 PM에게는 두 표가 DOM에 없음(부재, 숨김이
@@ -194,12 +195,9 @@ test.describe("계약 금액 — 고객 승인된 현재 차수 합계 (04-16 Ta
     await expect(page.getByRole("textbox", { name: "계약 금액" })).toHaveCount(0);
     await expect(page.getByRole("combobox", { name: "계약 금액 통화" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: "고객 승인 표시", exact: true }).click();
-    const approval = page.getByRole("dialog", { name: "고객 승인 표시", exact: true });
-    await expect(approval).toBeVisible();
-    const approved = page.waitForResponse((response) => isServerAction(response.request()));
-    await approval.getByRole("button", { name: /고객 승인 표시/ }).click();
-    await approved;
+    const approval = await openApprovalSheet(page);
+    await chooseApprovalBasis(approval, "verbal");
+    await submitApproval(page, approval.getByRole("button", { name: /^승인 표시/ }));
     await expect(approval).toBeHidden();
 
     await expect(contractValue(page)).toContainText("1,500,000");

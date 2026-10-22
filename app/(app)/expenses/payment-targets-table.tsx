@@ -1300,11 +1300,14 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       row.group
     );
 
-  // 지급 대상 없이 결재 중만 — 빈 화면 글자 + 하위 그룹 표(고르기 · 1차 없음).
-  if (!props.hasAny && rows.length === 0 && tableRows.length > 0) {
+  // 지급 대상 없이 결재 중만 — 빈 화면 글자 + 하위 그룹 표(고르기 · 1차 없음). 필터로 결재 중만 남은 때도 같다(다른 지급 대상은 필터 밖).
+  if (rows.length === 0 && tableRows.length > 0) {
     return (
       <ListScreen title="지출결의" filters={filters} summary={approvingLine}>
-        <ListEmpty message="이번 주 지급 대상 없음" action={{ label: "지급 완료 보기", href: props.paidHref }} />
+        <ListEmpty
+          message={props.hasAny ? "조건에 맞는 건이 없습니다" : "이번 주 지급 대상 없음"}
+          action={props.hasAny ? { label: "필터 지우기", href: href({ status: PAYMENT_TARGET_VIEW }) } : { label: "지급 완료 보기", href: props.paidHref }}
+        />
         <Table caption="지급 대상" columns={columns} rows={tableRows} getRowId={(row) => row.id} groupBy={groupKey} groupHeader={groupHeader} />
       </ListScreen>
     );

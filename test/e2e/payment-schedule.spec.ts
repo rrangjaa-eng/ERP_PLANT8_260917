@@ -239,6 +239,28 @@ test.describe("지급 대상 머리글 · 결재 중 하위 그룹 (07-16 Task 2
     expect(await approvingGroupOf(page, fx.lines.phone.itemName)).toBe(`${payWeekGroupLabel(approving, cal.today).label} · 결재 중 · 합계 제외`);
     await page.context().close();
   });
+
+  test("필터(검색)가 결재 중 건만 남기면 — 다른 지급 대상이 있어도 결재 중 하위 그룹 표가 지워지지 않고 `필터 지우기`와 함께 선다", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const issuedOn = addDays(cal.today, 7 - cal.cfg.termDays);
+    const approvingId = await submittedDoc(fx, "phone", issuedOn);
+    const approving = resolvePaySchedule({ baseDate: issuedOn, termDays: cal.cfg.termDays, manualDate: null, approvedAt: null, now: new Date(), lookup: cal.lookup, cfg: cal.cfg });
+    const week = payWeekIndex(approving.payDate, cal.today);
+    test.skip(week !== 0 && week !== 1, "결재 중 건이 이번 주 · 다음 주 밖");
+    await approvedDoc(fx, "retry", payer, { issuedOn: addDays(cal.today, -3) });
+    const [doc] = await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, approvingId));
+    if (!doc?.number) throw new Error("문서 번호 없음");
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto(`/expenses?${new URLSearchParams({ status: "지급 대상", q: doc.number })}`);
+    const table = page.getByRole("table", { name: "지급 대상" }).or(targetsGrid(page));
+    await expect(table.locator("tbody tr").filter({ hasText: fx.lines.phone.itemName })).toHaveCount(1);
+    expect(await approvingGroupOf(page, fx.lines.phone.itemName)).toBe(`${payWeekGroupLabel(approving, cal.today).label} · 결재 중 · 합계 제외`);
+    await expect(page.getByRole("link", { name: "필터 지우기" })).toBeVisible();
+    await page.context().close();
+  });
 });
 
 // 결재 중 행(링크 없음)의 가장 가까운 그룹 머리글.

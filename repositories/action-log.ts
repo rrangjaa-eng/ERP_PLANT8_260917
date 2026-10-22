@@ -85,6 +85,23 @@ export async function findLatestActionFor(
   return row ?? null;
 }
 
+// 07-09 FA-1: since 이후 같은 이메일의 account_lock이 있는가 — 잠금 한 번에 한 행(잠근 tx 안에서 읽는다). 값은 바인딩.
+export async function hasAccountLockSince(viewer: Viewer, email: string, since: Date, tx: DbOrTx): Promise<boolean> {
+  void viewer;
+  const [row] = await tx
+    .select({ seq: actionLog.seq })
+    .from(actionLog)
+    .where(
+      and(
+        eq(actionLog.actionType, "account_lock"),
+        gte(actionLog.occurredAt, since),
+        sql`${actionLog.detail} ->> 'email' = ${email}`,
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
 // 06.5-06(결정 맥락 11 · DM-5): 이체 파일 기록(excel_export · bank_transfer) 중 since 이후 · 주어진 문서 id를 하나라도 품은 줄 —
 // 지급 대상 행의 「{HH:mm} 이체 파일에 담김」. 값은 파라미터로만 간다(jsonb `?|`는 글자 배열 매개변수). 시각 · 문서 id 배열만 돌려준다.
 export async function findTransferFileTimes(

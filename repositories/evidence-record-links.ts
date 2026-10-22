@@ -49,6 +49,19 @@ export async function countLiveLinksByOwners(
     .groupBy(evidenceRecordLinks.ownerId);
 }
 
+// 07-01(D-715): 지출결의마다 살아 있는 붙임 기록의 가장 이른 작성일(issued_on) — 자동 지급 예정일의 기준일. 붙임이 없는 문서는 결과에 없다.
+export async function listEarliestIssuedOnForExpenses(viewer: Viewer, expenseIds: readonly string[], tx: DbOrTx = db): Promise<Map<string, string>> {
+  void viewer;
+  if (expenseIds.length === 0) return new Map();
+  const rows = await tx
+    .select({ ownerId: evidenceRecordLinks.ownerId, issuedOn: sql<string>`min(${evidenceRecords.issuedOn})::text` })
+    .from(evidenceRecordLinks)
+    .innerJoin(evidenceRecords, eq(evidenceRecords.id, evidenceRecordLinks.evidenceRecordId))
+    .where(and(eq(evidenceRecordLinks.ownerKind, "expense"), inArray(evidenceRecordLinks.ownerId, [...expenseIds]), live()))
+    .groupBy(evidenceRecordLinks.ownerId);
+  return new Map(rows.map((row) => [row.ownerId, row.issuedOn]));
+}
+
 export type LiveLinkWithRecord = {
   linkId: string;
   ownerId: string;

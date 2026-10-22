@@ -250,6 +250,7 @@ describe("지급 계좌 변경의 대상 상한(사용자 결정 2026-10-23)", (
       (caught: unknown) => caught,
     );
     expect(outcome).toBeInstanceOf(RoleGrantForbiddenError);
+    expect((outcome as Error).message).toBe("이 사람 계좌 바꾸기 권한 없음");
     const row = await readRow(admin.id);
     expect(row?.accountBank).toBeNull();
     expect(row?.accountNumberEncrypted).toBeNull();

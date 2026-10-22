@@ -15,7 +15,7 @@ import { planAccountNumberUpdate } from "@/domain/vendors";
 import { AccountFieldsError, assertAccountFields } from "@/domain/vendors/account-fields";
 import { ACCOUNT_PROBLEMS, accountProblemText } from "@/domain/bank-transfer";
 import { isCheckViolation } from "@/lib/pg-errors";
-import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
+import { assertCanGrantRoles, RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
 import { lockSeatKeys } from "@/repositories/seats";
 import {
   findUserById as repoFindUserById,
@@ -133,7 +133,13 @@ export async function updatePersonPayoutAccount(
       await lockSeatKeys(viewer, { personIds: [userId] }, tx);
       const target = await repoFindUserById(viewer, userId, tx);
       if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
-      await assertCanGrantRoles(viewer, [target.roleId], tx);
+      try {
+        await assertCanGrantRoles(viewer, [target.roleId], tx);
+      } catch (ceiling) {
+        // 계급 지정 문구(GRANT_FORBIDDEN_MESSAGE)는 이 맥락에 맞지 않는다 — 지급 패널은 계좌 낱말로 말한다.
+        if (ceiling instanceof RoleGrantForbiddenError) throw new RoleGrantForbiddenError("이 사람 계좌 바꾸기 권한 없음");
+        throw ceiling;
+      }
       await updateRow(
         viewer,
         userId,

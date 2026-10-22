@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { pgTable, text, boolean, integer, jsonb, timestamp, uuid, index, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { users } from "./auth";
 
 // MAST-01: 거래처 표. 03-06 Task 1 결정 ⑤ — 계좌번호는 암호문 컬럼
 // (accountNumberEncrypted) + 별도 평문 뒤 4자리 컬럼(accountNumberLast4)만
@@ -10,6 +11,7 @@ import { pgTable, text, boolean, integer, jsonb, timestamp, uuid, index, uniqueI
 // 갈래(kind) = 클라이언트 · 협력사 · 둘 다(261006-biv D-1).
 // 사업자번호는 숫자만 뽑은 값이 살아 있는(보관 안 된) 거래처 사이에서 유일하다(옛 260907 vendors_business_number_once).
 // 07: 지급 기한(payment_term_days = 260907 payment_due_days — 협력사 갈래만 · 1~180, J5) · version(동시 수정 검사 칸 — G9, 비교는 07-20).
+// 07 S3: 확인 시각 · 확인한 사람(V9 — NULL = 확인 전). 기존 행은 마이그레이션이 confirmed_at = created_at으로 채운다(확인됨 · 07-23).
 export const vendors = pgTable(
   "vendors",
   {
@@ -29,6 +31,8 @@ export const vendors = pgTable(
     customFields: jsonb("custom_fields").notNull().default({}),
     paymentTermDays: integer("payment_term_days"),
     version: integer("version").notNull().default(1),
+    confirmedAt: timestamp("confirmed_at"),
+    confirmedBy: text("confirmed_by").references(() => users.id),
     archivedAt: timestamp("archived_at"),
     archivedBy: text("archived_by"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

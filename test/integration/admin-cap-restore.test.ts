@@ -12,6 +12,7 @@ import { archive, ForbiddenError as ArchiveForbiddenError, listArchive, restore 
 import { PersonNotRestorableError, PersonRestoreForbiddenError } from "@/domain/people/restore";
 import { SeatTakenError } from "@/domain/people/seat-rules";
 import { findUserByEmail, findUserById, updateUserResignationDate } from "@/repositories/users";
+import { ARCHIVABLE_TABLES } from "@/repositories/archive";
 import { findTeamById } from "@/repositories/teams";
 import { findOrgUnitById } from "@/repositories/org-units";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
@@ -326,5 +327,31 @@ describe("등록 보상 보관 로그 tx(06.4)", () => {
     expect(logs[0]?.detail).toEqual({ reason: "register_person_rollback", requestedBy: admin.id });
     expect(options).toHaveLength(1);
     expect(options[0]).toEqual(expect.objectContaining({ tx: expect.anything() as unknown }));
+  });
+});
+
+// 07-03(R11 · T-07-03-03) — 보관함이 아는 종류마다 「보관함 쓰기가 없으면 복원 거부 · 로그 그대로」를 한 줄씩 건다.
+// 종류 목록은 ARCHIVABLE_TABLES에서 읽으므로 새 종류가 생기면 이 시험이 자동으로 그 종류를 덮는다.
+// 사람 종류의 상한(계급 지정 권한)은 위 「사람 복원」 두 번째 사례, 사람 쓰기 게이트는 첫 사례,
+// 팀 · 본부 자리 재검사는 「팀 · 본부 복원 자리 재검사」, 칸 관리 쓰기(field_definitions)는 field-definitions-archive.test.ts가 이미 본다.
+describe("종류별 복원 게이트 — 보관함 쓰기 없는 위임자 (07-03 R11)", () => {
+  it("사람 쓰기만 위임받은 사람은 어느 종류도 복원하지 못하고 로그가 늘지 않는다", async () => {
+    const roleP = await makeDelegatedRole({
+      name: "사람만 위임",
+      copyFrom: [DEFAULT_ROLE_ID],
+      menus: [
+        { menu: "admin.people", action: "view" },
+        { menu: "admin.people", action: "write" },
+      ],
+    });
+    const viewer = await makePerson(uniqueName("사람만 V"), roleP, null);
+
+    expect(ARCHIVABLE_TABLES.length).toBeGreaterThan(0);
+    for (const entry of ARCHIVABLE_TABLES) {
+      const id = randomUUID();
+      const error = await refusal(restore(viewer, entry.entity, id, deps), ArchiveForbiddenError);
+      expect(error.message, entry.entity).toBe("보관함 쓰기 권한 없음");
+      expect(await countLogs("restore", entry.entity, id), entry.entity).toBe(0);
+    }
   });
 });

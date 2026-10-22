@@ -65,6 +65,22 @@
   min-width: 0;
 }
 
+/* 07-16 감사 #1 · #2: 지급 예정일 값 — 날짜는 어떤 폭에서도 한 줄(SYSTEM §2-4). 폰에서는 3차 둘이 값 칸을 밀지 않게 값 아래 줄로 내린다. */
+.nowrap {
+  white-space: nowrap;
+}
+
+@media (max-width: 699.98px) {
+  .scheduleRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .scheduleRow > .fill {
+    align-self: stretch;
+  }
+}
+
 /* 06.5 V12: 문서 화면 지급처 값 아래 한 줄로도 쓴다(KvList 값 안 — 폼의 .fill 세로 줄과 같은 모양). */
 .sub {
   display: block;

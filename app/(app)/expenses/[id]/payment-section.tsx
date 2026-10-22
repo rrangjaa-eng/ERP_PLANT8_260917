@@ -318,7 +318,7 @@ export function PaymentScheduleValue({ date, manual, autoDate, pushReason, ruleL
   return (
     <>
       <span>
-        <span>{date}</span>
+        <span className={styles.nowrap}>{date}</span>
         {manual ? (
           <>
             {" "}
@@ -450,7 +450,7 @@ export function PaymentFields({
     items.push({
       label: "지급 예정일",
       value: canPay ? (
-        <span className={styles.valueRow}>
+        <span className={`${styles.valueRow} ${styles.scheduleRow}`}>
           <span className={styles.fill}>{scheduleValue}</span>
           <span>
             {scheduleValueProps.manual && !autoResult ? (

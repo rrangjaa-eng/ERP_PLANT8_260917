@@ -347,6 +347,73 @@ test.describe("상세 지급 예정일 표시 · 수정 (07-16 Task 2 · SC-03)"
     await page.context().close();
   });
 
+  // 감사 #1(P1) · #2(P2): 폰에서 3차 둘(`자동으로 되돌리기` · `지급 예정일 바꾸기`)이 값 칸을 0px로 밀어 날짜가 글자마다 꺾였다.
+  // 날짜는 어떤 폭에서도 한 줄(SYSTEM §2-4 nowrap) · 규칙 줄은 값 칸 전체 폭 · 폰(<700)에서는 행동이 값 아래 줄 · 가로 넘침 없음.
+  test("감사 #1 · #2 — 375 · 320 · 768 · 1280 수동 지정 · 밀린 건 지급 예정일: 날짜 한 줄 · 규칙 줄 접히지 않음 · 폰은 행동이 값 아래", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const { id: manualId } = await approvedDoc(fx, "tracer", payer, { issuedOn: addDays(cal.today, -3) });
+    const thursday = firstDay(cal, addDays(cal.today, 1), (date) => new Date(`${date}T12:00:00Z`).getUTCDay() === 4 && isBusinessDay(date, cal.lookup));
+    await saveScheduledPayDate(payer.viewer, { expenseId: manualId, scheduledPayDate: thursday, version: await docVersion(manualId) });
+    const { id: pushedId, schedule } = await pushedDoc(fx, "hold", payer, cal);
+    const cases = [
+      { id: manualId, date: thursday, rule: "결재 마감 면제", ruleMax: 1 },
+      { id: pushedId, date: schedule.payDate, rule: payRuleLine(schedule, cal.cfg.termDays, cal.cfg), ruleMax: 2 },
+    ];
+
+    for (const width of [375, 320, 768, 1280]) {
+      const page = await loginPage(browser, baseURL, payer, { width, height: 900 });
+      for (const doc of cases) {
+        await page.goto(`/expenses/${doc.id}`);
+        const value = scheduleRow(page);
+        await expect(value).toContainText(doc.date);
+        const shape = await value.evaluate(
+          (dd, { date, rule }) => {
+            const lines = (text: string) => {
+              const walker = document.createTreeWalker(dd, NodeFilter.SHOW_TEXT);
+              for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                const at = node.textContent?.indexOf(text) ?? -1;
+                if (at < 0) continue;
+                const range = document.createRange();
+                range.setStart(node, at);
+                range.setEnd(node, at + text.length);
+                return new Set([...range.getClientRects()].filter((rect) => rect.width > 0).map((rect) => Math.round(rect.top))).size;
+              }
+              return -1;
+            };
+            const button = [...dd.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "지급 예정일 바꾸기");
+            const walker = document.createTreeWalker(dd, NodeFilter.SHOW_TEXT);
+            let dateBottom = 0;
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+              const at = node.textContent?.indexOf(date) ?? -1;
+              if (at < 0) continue;
+              const range = document.createRange();
+              range.setStart(node, at);
+              range.setEnd(node, at + date.length);
+              dateBottom = range.getBoundingClientRect().bottom;
+              break;
+            }
+            return {
+              dateLines: lines(date),
+              ruleLines: lines(rule),
+              buttonTop: button ? button.getBoundingClientRect().top : -1,
+              dateBottom,
+              overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            };
+          },
+          { date: doc.date, rule: doc.rule },
+        );
+        expect(shape.dateLines, `${width} ${doc.date} 날짜 줄 수`).toBe(1);
+        expect(shape.ruleLines, `${width} 규칙 줄 수`).toBeGreaterThanOrEqual(1);
+        expect(shape.ruleLines, `${width} 규칙 줄 수`).toBeLessThanOrEqual(doc.ruleMax);
+        expect(shape.overflow, `${width} 가로 넘침`).toBeLessThanOrEqual(0);
+        if (width < 700) expect(shape.buttonTop, `${width} 행동이 값 아래`).toBeGreaterThanOrEqual(shape.dateBottom);
+      }
+      await page.context().close();
+    }
+  });
+
   test("키보드 — `지급 예정일 바꾸기` Enter → 칸 포커스 · Esc → 취소 · 포커스가 버튼으로", async ({ browser, baseURL }) => {
     const cal = await payCalendar();
     const fx = await setupExpenseE2E();

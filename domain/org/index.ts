@@ -351,6 +351,8 @@ export async function cancelFutureAssignment(
   await withTransaction(async (tx) => {
     await lockSeatKeys(viewer, { personIds: [input.userId] }, tx);
     const person = await repoFindUserById(viewer, input.userId, tx);
+    // 07-17 R15: 대상 계급이 내 상한 밖이면 미래 발령도 취소하지 못한다 — assignTeam과 같은 잠금 뒤 재조회 판정.
+    await assertCanGrantRoles(viewer, [person?.roleId ?? null], tx);
     const before = await listOccupiedTeams(viewer, input.userId, today, tx);
     const deletedId = await deleteMembership(viewer, input.userId, input.effectiveFrom, tx);
     if (deletedId === null) {

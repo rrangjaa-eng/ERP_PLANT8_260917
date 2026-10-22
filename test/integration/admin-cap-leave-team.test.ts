@@ -3,7 +3,7 @@ import type { Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
 import { addLeaveAdjustment } from "@/domain/leave/balance-service";
-import { assignTeam } from "@/domain/org";
+import { assignTeam, cancelFutureAssignment } from "@/domain/org";
 import { listMemberships } from "@/repositories/team-memberships";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { countRows, makePerson, NOW_2026 } from "./approvals-fixtures";
@@ -77,5 +77,38 @@ describe("팀 발령의 대상 상한(07-17 R15)", () => {
     await assignTeam(d, { userId: p.id, teamId, effectiveFrom: "2026-09-01" }, { now: () => NOW_2026 });
 
     expect((await listMemberships(SYSTEM_VIEWER, p.id)).map((row) => row.teamId)).toEqual([teamId]);
+  });
+});
+
+describe("미래 발령 취소의 대상 상한(07-17 R15)", () => {
+  // 미래 발령은 시스템이 넣어 두고(상한 무관), 위임자가 취소를 시도한다.
+  async function futureAssignment(userId: string): Promise<string> {
+    const { teamId } = await makeOrgTeam();
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: "2026-12-01" }, { now: () => NOW_2026 });
+    return teamId;
+  }
+
+  it("위임자가 상한 밖(시스템 관리자) 대상의 미래 발령을 취소하면 거부 · 발령 그대로", async () => {
+    const d = await delegate();
+    const a = await makeAdmin("관리자 A");
+    const teamId = await futureAssignment(a.id);
+
+    const error = await refusal(
+      cancelFutureAssignment(d, { userId: a.id, effectiveFrom: "2026-12-01" }, { now: () => NOW_2026 }),
+      RoleGrantForbiddenError,
+    );
+
+    expect(error.message).toBe(GRANT_FORBIDDEN);
+    expect((await listMemberships(SYSTEM_VIEWER, a.id)).map((row) => row.teamId)).toEqual([teamId]);
+  });
+
+  it("위임자가 상한 안(PM) 대상의 미래 발령을 취소하면 성공", async () => {
+    const d = await delegate();
+    const p = await makePerson("대상 P", DEFAULT_ROLE_ID, null);
+    await futureAssignment(p.id);
+
+    await cancelFutureAssignment(d, { userId: p.id, effectiveFrom: "2026-12-01" }, { now: () => NOW_2026 });
+
+    expect(await listMemberships(SYSTEM_VIEWER, p.id)).toEqual([]);
   });
 });

@@ -1,10 +1,11 @@
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { approvalRoutes, approvalSteps, notificationLog } from "@/db/schema";
+import { approvalRoutes, approvalSteps, notificationLog, notifyTickRuns } from "@/db/schema";
 import { approveDocument, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { createExpenseFromLines } from "@/domain/expenses";
+import type { ConditionKind } from "@/domain/notify/condition-kinds";
 import { approvalWaitingKind } from "@/domain/notify/kinds/approval-waiting";
 import { runTick } from "@/domain/notify/tick";
 import { DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
@@ -153,6 +154,36 @@ describe("결재 처리 자동 읽음 (N16 · G33 · C-P3-2)", () => {
     await runTick({ conditionKinds: [], now: at("2026-10-17"), emailSender: null });
     for (const row of await waitingRows(s.stepOne)) expect(row.readAt).toBeInstanceOf(Date);
     for (const row of await waitingRows(s.stepTwo)) expect(row.readAt).toBeNull();
+  });
+
+  it("다음 tick 정리가 실패해도(P3-2) 그 정리만 되돌리고 tick의 나머지(종류 평가 · 실행 기록)는 커밋된다", async () => {
+    const s = await setup();
+    const doc = docOf(s, await instanceByStep([s.stepOne, s.stepTwo]));
+    await withdrawDocument(s.fx.pm, { instanceId: doc.instanceId, expectedVersion: doc.version });
+    const probeKind: ConditionKind = {
+      kind: "probe-cleanup-failure",
+      label: "정리 실패 탐침",
+      dateUnit: "calendar",
+      defaults: { enabled: true, emailEnabled: false },
+      defaultRecipientLabel: "탐침",
+      evaluate: () => Promise.resolve([{ entity: "probe", entityId: "probe-1", recipientId: s.fx.pm.id, round: 1, referenceDate: "2026-10-14", message: "탐침" }]),
+    };
+    // 읽음 표시(read_at null → 값)만 막는 트리거 — 정리 문장을 실패시킨다.
+    await db.execute(sql`create or replace function probe_block_read() returns trigger language plpgsql as $$ begin raise exception 'probe: read blocked'; end $$`);
+    await db.execute(sql`create trigger probe_block_read before update on notification_log for each row when (old.read_at is null and new.read_at is not null) execute function probe_block_read()`);
+    const error = vi.spyOn(log, "error");
+    try {
+      const result = await runTick({ conditionKinds: [probeKind], now: at("2026-10-14"), emailSender: null });
+      expect(result).toMatchObject({ status: "ok", businessDay: true, sent: 1 });
+      expect(error.mock.calls.some(([event]) => event === "notify.auto_read_failed")).toBe(true);
+    } finally {
+      error.mockRestore();
+      await db.execute(sql`drop trigger if exists probe_block_read on notification_log`);
+      await db.execute(sql`drop function if exists probe_block_read()`);
+    }
+    expect(await db.select().from(notificationLog).where(eq(notificationLog.conditionKind, "probe-cleanup-failure"))).toHaveLength(1);
+    expect(await db.select().from(notifyTickRuns).where(eq(notifyTickRuns.kstDate, "2026-10-14"))).toHaveLength(1);
+    for (const row of await waitingRows(s.stepOne)) expect(row.readAt).toBeNull();
   });
 
   it("마지막 단계(대표 — 폴백 자리면 차수 키)를 대표가 승인해도 그 단계 행이 읽음", async () => {

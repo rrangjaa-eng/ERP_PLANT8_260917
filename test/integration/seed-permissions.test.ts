@@ -350,7 +350,7 @@ describe("시드 계급 기본값 표 리팩터 전후 행 집합(07-05 D-722)",
 
     // 재시드는 행을 바꾸지 않고, 반환 카운트는 리팩터 전 값과 같다(시스템 관리자 루프 + 시드 계급 표).
     const result = await seedMasterData(SYSTEM_VIEWER);
-    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 127, visibility: 190 });
+    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 128, visibility: 190 });
   });
 });
 
@@ -431,5 +431,29 @@ describe("07 새 권한 키 · 정보 항목 시드(07-15)", () => {
         expect((await findVisibility(SYSTEM_VIEWER, roleId, item))?.visible, `${roleId} ${item}`).toBe(false);
       }
     }
+  });
+});
+
+// 07-15(A-P2-10 · 07-05 카드 ⑦ 답 「켬」): R18 뒤 evidence.intake 쓰기만 켜진 운영 계급이 조용히 증빙을 잃지 않게, 시드가 그 계급마다
+// evidence 보기를 없을 때만 넣는다 — 명시적으로 꺼진 보기는 그대로(D-722).
+describe("등록 쓰기 계급 증빙 보기 시드(07-15 R18 · A-P2-10)", () => {
+  it("보기 행이 없는 등록 계급은 재시드 뒤 보기 켬 · 꺼진 보기 계급은 그대로 · 두 번째 재시드 변경 0", async () => {
+    const missing = (await insertRole(SYSTEM_VIEWER, { id: `role-test-${randomUUID()}`, name: `등록만-${randomUUID()}` })).id;
+    const explicitOff = (await insertRole(SYSTEM_VIEWER, { id: `role-test-${randomUUID()}`, name: `보기끔-${randomUUID()}` })).id;
+    for (const roleId of [missing, explicitOff]) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "evidence.intake", action: "write", allowed: true });
+    }
+    await upsertPermission(SYSTEM_VIEWER, { roleId: explicitOff, menu: "evidence", action: "view", allowed: false });
+
+    await seedMasterData(SYSTEM_VIEWER);
+
+    expect((await findPermission(SYSTEM_VIEWER, missing, "evidence", "view"))?.allowed).toBe(true);
+    expect((await findPermission(SYSTEM_VIEWER, explicitOff, "evidence", "view"))?.allowed).toBe(false);
+
+    const snapshot = async () =>
+      (await db.select().from(permissionMatrix)).map((row) => `${row.roleId}|${row.menu}|${row.action}|${row.allowed}`).sort();
+    const before = await snapshot();
+    await seedMasterData(SYSTEM_VIEWER);
+    expect(await snapshot()).toEqual(before);
   });
 });

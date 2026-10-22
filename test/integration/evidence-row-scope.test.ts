@@ -21,6 +21,11 @@ import {
   setRecordVisibilityFixture,
 } from "./fixtures/evidence";
 import { resetDatabase, skipDbReset } from "./setup";
+import { evidenceScopeFor } from "@/domain/permissions/scope-for";
+import { can } from "@/domain/permissions/can";
+import { createAccount } from "@/domain/auth/accounts";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission } from "@/repositories/permissions";
 
 // 06.1-05 Task 2 — 증빙 행 범위 실측(EVID-07 · RP-5). 단언 대상 viewer는 시드 계급 role-pm(오늘 · 미래 발령)과 등록 계급뿐이다 —
 // 시스템 관리자 자격으로 재지 않는다(실제 사용자와 같은 자격으로 낮춰서). SYSTEM_VIEWER는 아래 준비(fixture) 줄에만 쓴다.
@@ -129,5 +134,33 @@ describe("증빙 행 범위 — 실제 계급(role-pm · 등록 계급)으로 (0
     expect(await getEvidenceRecord(viewers.pmA, ids.archived)).toBeNull();
     expect(await getEvidenceRecord(viewers.pmA, ids.privateType)).toBeNull();
     expect(await getEvidenceRecord(viewers.pmZ, ids.teamZ)).toBeNull();
+  });
+});
+
+// 07-15(R18 · T-07-15-03): 증빙 범위는 메뉴 판정(`evidence` 보기)이 먼저다 — 보기 없는 등록 쓰기만으로는 none.
+// 「보기 없는 등록 쓰기」 상태는 setPermissionCell로 만들 수 없어(딸린 칸) repository upsertPermission으로 직접 만든다.
+describe("증빙 범위 = 메뉴 판정(07-15 R18)", () => {
+  async function roleWith(cells: readonly { menu: string; action: "view" | "write" }[]): Promise<Viewer> {
+    const roleId = `role-r18-${randomUUID().slice(0, 8)}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `R18 ${roleId.slice(-8)}` });
+    for (const { menu, action } of cells) await upsertPermission(SYSTEM_VIEWER, { roleId, menu, action, allowed: true });
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: `r18-${randomUUID()}@example.test`, name: "R18", roleId });
+    return { id: userId, roleId };
+  }
+
+  it("등록 쓰기만 → none · 둘 다 → all · 보기만 → published, 메뉴 판정(evidence 보기)과 같다", async () => {
+    const intakeOnly = await roleWith([{ menu: "evidence.intake", action: "write" }]);
+    const both = await roleWith([
+      { menu: "evidence.intake", action: "write" },
+      { menu: "evidence", action: "view" },
+    ]);
+    const viewOnly = await roleWith([{ menu: "evidence", action: "view" }]);
+
+    expect(await evidenceScopeFor(intakeOnly)).toEqual({ rows: "none" });
+    expect(await can(intakeOnly, "evidence", "view")).toBe(false);
+    expect(await evidenceScopeFor(both)).toEqual({ rows: "all" });
+    expect(await can(both, "evidence", "view")).toBe(true);
+    expect((await evidenceScopeFor(viewOnly)).rows).toBe("published");
+    expect(await can(viewOnly, "evidence", "view")).toBe(true);
   });
 });

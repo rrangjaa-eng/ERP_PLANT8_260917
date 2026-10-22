@@ -9,6 +9,7 @@ import {
   upsertVisibility,
   insertPermissionIfAbsent,
   insertVisibilityIfAbsent,
+  listPermissions,
   upsertVisibilityIfUnedited,
 } from "@/repositories/permissions";
 import { seedCodeItem } from "@/repositories/code-tables";
@@ -243,6 +244,14 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   // 관리자가 권한표에서 끈 값을 다음 배포의 시드가 되살리지 않는다.
   for (const entry of ROLE_DEFAULT_PERMISSIONS) {
     await insertPermissionIfAbsent(viewer, { ...entry, updatedBy: null });
+    permissionsCount++;
+  }
+
+  // 07-15(R18 · A-P2-10 · 07-05 카드 ⑦ 답 「켬」): 증빙 범위가 `evidence` 보기를 먼저 보게 되면서 `evidence.intake` 쓰기만 켜진 운영
+  // 계급이 조용히 증빙을 잃지 않게, 그 계급마다 `evidence` 보기를 없을 때만 넣는다 — 명시적으로 꺼진 보기는 그대로(D-722).
+  for (const row of await listPermissions(viewer)) {
+    if (row.menu !== "evidence.intake" || row.action !== "write" || !row.allowed) continue;
+    await insertPermissionIfAbsent(viewer, { roleId: row.roleId, menu: "evidence", action: "view", allowed: true, updatedBy: null });
     permissionsCount++;
   }
 

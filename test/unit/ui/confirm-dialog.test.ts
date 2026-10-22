@@ -415,7 +415,7 @@ describe("ConfirmDialog — 결과 단계(07-17)", () => {
   };
 
   it("result가 있으면 값 한 줄 · 3차 복사(role=status 자리) · aux · 1차 닫기만 — 확인 단계 결과 줄 · 2차 · 닫기 x 없음", () => {
-    const html = render({ ...confirmStep, result: { value: "Tmp-7Q2x-9kLm" } });
+    const html = render({ ...confirmStep, result: { label: "임시 비밀번호", value: "Tmp-7Q2x-9kLm" } });
     expect(html).toContain('data-ui="confirm-result-value"');
     expect(html).toContain("Tmp-7Q2x-9kLm");
     expect(html).toMatch(/role="status"[^>]*>.*<span>복사<\/span>/);
@@ -428,7 +428,7 @@ describe("ConfirmDialog — 결과 단계(07-17)", () => {
   });
 
   it("값 요소는 Tab으로 닿고(tabindex 0) 값 → 복사 → 닫기 DOM 순서다", () => {
-    const html = render({ ...confirmStep, result: { value: "Tmp-7Q2x-9kLm" } });
+    const html = render({ ...confirmStep, result: { label: "임시 비밀번호", value: "Tmp-7Q2x-9kLm" } });
     expect(html).toMatch(/data-ui="confirm-result-value"[^>]*tabindex="0"|tabindex="0"[^>]*data-ui="confirm-result-value"/);
     const value = html.indexOf("Tmp-7Q2x-9kLm");
     const copy = html.indexOf("<span>복사</span>");
@@ -436,6 +436,17 @@ describe("ConfirmDialog — 결과 단계(07-17)", () => {
     expect(value).toBeGreaterThan(-1);
     expect(value).toBeLessThan(copy);
     expect(copy).toBeLessThan(close);
+  });
+
+  it("감사 P2 — 값 위에 라벨 `임시 비밀번호`가 보이고, 값(첫 포커스)은 읽기 전용 textbox로 그 라벨을 이름으로 가리킨다", () => {
+    const html = render({ ...confirmStep, result: { label: "임시 비밀번호", value: "Tmp-7Q2x-9kLm" } });
+    const labelId = html.match(/<[^>]*\bid="([^"]+)"[^>]*>임시 비밀번호</)?.[1];
+    expect(labelId).toBeTruthy();
+    const valueTag = html.match(/<p[^>]*data-ui="confirm-result-value"[^>]*>/)?.[0] ?? "";
+    expect(valueTag).toContain('role="textbox"');
+    expect(valueTag).toContain('aria-readonly="true"');
+    expect(valueTag).toContain(`aria-labelledby="${labelId}"`);
+    expect(html.indexOf("임시 비밀번호")).toBeLessThan(html.indexOf("Tmp-7Q2x-9kLm"));
   });
 
   it("result가 없으면 결과 단계 요소가 하나도 없고 확인 단계(결과 줄 · 2차 · 닫기 x)는 그대로", () => {
@@ -459,6 +470,8 @@ describe("ConfirmDialog — 결과 단계(07-17)", () => {
     const block = (name: string) => css.match(new RegExp(`\\.${name} \\{[^}]*\\}`))?.[0] ?? "";
     expect(block("resultValue")).toContain("var(--text-body)");
     expect(block("copyFailed")).toContain("var(--status-danger)");
+    expect(block("resultLabel")).toContain("var(--text-aux)");
+    expect(block("resultLabel")).toContain("var(--text-muted)");
     expect(styles.resultValue).toBeTruthy();
   });
 });

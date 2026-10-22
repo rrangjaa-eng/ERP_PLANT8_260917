@@ -75,8 +75,9 @@ type ConfirmDialogBaseProps = {
   /**
    * 07-17(SYSTEM §7-17 결과 단계 · 개정 7) — 실행 뒤 같은 창에 일회성 값(예: 임시 비밀번호). 값 한 줄(선택된 채 · 첫 포커스) ·
    * 3차 `복사` · aux `닫으면 다시 볼 수 없음` · 1차 `닫기`만 서고, Esc · 바깥 누름 · 닫기 x로는 닫히지 않는다. `닫기` = onClose(값 파기는 호출자).
+   * label = 값 위 라벨 한 줄이자 값(읽기 전용 textbox)의 접근 이름(07-17 DOM 감사 P2 · UI-SPEC SC-12 `임시 비밀번호`).
    */
-  result?: { value: string };
+  result?: { label: string; value: string };
 };
 
 export type ConfirmDialogProps = ConfirmDialogBaseProps &
@@ -165,8 +166,9 @@ function selectValue(element: HTMLElement | null) {
 }
 
 // 07-17 결과 단계 본문 — 값 한 줄 + 같은 자리 `복사` → `복사됨` / `복사 실패 · 직접 선택`(값 다시 고름) · aux. 값이 바뀌면(key) 복사 상태도 처음으로.
-function ResultBody({ value, valueRef }: { value: string; valueRef: React.RefObject<HTMLParagraphElement | null> }) {
+function ResultBody({ label, value, valueRef }: { label: string; value: string; valueRef: React.RefObject<HTMLParagraphElement | null> }) {
   const [copy, setCopy] = useState<"idle" | "done" | "failed">("idle");
+  const labelId = useId();
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(value);
@@ -178,8 +180,19 @@ function ResultBody({ value, valueRef }: { value: string; valueRef: React.RefObj
   }
   return (
     <div className={styles.body}>
+      <p id={labelId} className={styles.resultLabel}>
+        {label}
+      </p>
       <div className={styles.resultRow}>
-        <p ref={valueRef} tabIndex={0} className={styles.resultValue} data-ui="confirm-result-value">
+        <p
+          ref={valueRef}
+          role="textbox"
+          aria-readonly="true"
+          aria-labelledby={labelId}
+          tabIndex={0}
+          className={styles.resultValue}
+          data-ui="confirm-result-value"
+        >
           {value}
         </p>
         <span role="status">
@@ -399,7 +412,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 
       {result ? (
         <>
-          <ResultBody key={result.value} value={result.value} valueRef={resultValueRef} />
+          <ResultBody key={result.value} label={result.label} value={result.value} valueRef={resultValueRef} />
           <div className={styles.actions}>
             <Button variant="primary" onClick={closeNow}>
               닫기

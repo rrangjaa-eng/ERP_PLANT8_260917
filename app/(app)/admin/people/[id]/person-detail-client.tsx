@@ -154,7 +154,7 @@ export function PersonLoginActions({ userId, name, canUnlock }: { userId: string
         subtitle={name}
         resultLines={["기존 비밀번호는 쓸 수 없게 됨 · 잠금도 풀림"]}
         primary={{ label: "비밀번호 초기화", onConfirm: () => void reset(), pending: resetting, disabledReason: resetError ?? undefined }}
-        result={tempPassword === null ? undefined : { value: tempPassword }}
+        result={tempPassword === null ? undefined : { label: "임시 비밀번호", value: tempPassword }}
       />
     </>
   );

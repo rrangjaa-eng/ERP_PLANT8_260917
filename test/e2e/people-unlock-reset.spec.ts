@@ -378,6 +378,9 @@ test.describe("사람 상세 로그인 섹션 · 비밀번호 초기화 (SC-12 T
     const temp = (await value.textContent())?.trim() ?? "";
     expect(temp.length).toBeGreaterThan(5);
     await expect(value).toBeFocused();
+    // 감사 P2 — 첫 포커스는 이름 있는 값(읽기 전용 textbox `임시 비밀번호`), 라벨 글자가 창에 보인다.
+    await expect(dialog.getByRole("textbox", { name: "임시 비밀번호" })).toBeFocused();
+    await expect(dialog.getByText("임시 비밀번호", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(temp);
     await expect(dialog).toContainText("닫으면 다시 볼 수 없음");
     await expect(dialog.getByRole("button", { name: "닫기" })).toHaveCount(1);

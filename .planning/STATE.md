@@ -454,6 +454,7 @@ Recent decisions affecting current work:
 | 261003-40w | DEF-1 보관함 500 수정 + SYSTEM 폼 간격 24 | 2026-10-03 | af018d7 | [261003-40w-def-1-500-system-24](./quick/261003-40w-def-1-500-system-24/) |
 | 261004-51o | 프로젝트 목록 수익률 기준선 색 — 설정 키(기본 15%)와 목록 위험 색 | 2026-10-04 | dd7ea069 | [261004-51o-profit-rate-threshold-color-on-project-l](./quick/261004-51o-profit-rate-threshold-color-on-project-l/) |
 | 261022-7n2 | firstCandidate no-slot 경계 수정(D-749) — 지급 요일을 영업일로 맞춘 날이 기준일 이하면 no-slot | 2026-10-22 | daa8e7d | [261022-7n2-firstcandidate-no-slot-boundary-fix-d-74](./quick/261022-7n2-firstcandidate-no-slot-boundary-fix-d-74/) |
+| 261022-cwp | 07 사후 검토 main 결함 4건 — 설정 첫 저장 이전 값=기본값 · 결재선 바뀌지 않은 빈 부서 칸 기록 안 함 · 원가율 공백=비움 · role-smoke 최종 경로 단언 | 2026-10-22 | 2c8dfed | [261022-cwp-07-post-review-main-defect-fixes-setting](./quick/261022-cwp-07-post-review-main-defect-fixes-setting/) |
 
 ### Roadmap Evolution
 

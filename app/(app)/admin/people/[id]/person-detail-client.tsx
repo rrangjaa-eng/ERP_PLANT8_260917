@@ -6,6 +6,7 @@ import { changePersonRoleAction, assignTeamAction, cancelAssignmentAction } from
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
 import { Form } from "@/ui/form/Form";
+import { Select } from "@/ui/select/Select";
 import styles from "../people.module.css";
 
 function errorMessageOf(result: { serverError?: unknown; validationErrors?: unknown }): string | null {
@@ -52,32 +53,28 @@ export function PersonRoleChange({
 
   return (
     <>
-      <div className={styles.selectLabel}>
-        <label htmlFor="person-role-change">계급 변경</label>
-        <select
-          id="person-role-change"
-          className={styles.select}
-          value={value}
-          aria-busy={isExecuting || undefined}
-          onChange={(event) => {
-            if (isExecuting) return;
-            setValue(event.target.value);
-            executeRoleChange({ userId, roleId: event.target.value });
-          }}
-        >
-          {hasCurrentRole ? null : (
-            <option value="" disabled>
-              계급 선택
-            </option>
-          )}
-          {roles.map((role) => (
-            <option key={role.id} value={role.id}>
-              {role.name}
-            </option>
-          ))}
-        </select>
+      {/* 07-17 N10(SC-15): 공용 Select — 즉시 저장 · 저장 중 aria-busy · 오류 줄(Select 것)은 그대로. */}
+      <div className={styles.roleChange}>
+        <Form.Field id="person-role-change" label="계급 변경" width="select">
+          <Select
+            id="person-role-change"
+            hideEmptyOption
+            value={value}
+            aria-busy={isExecuting || undefined}
+            error={roleError ?? undefined}
+            options={[
+              ...(hasCurrentRole ? [] : [{ value: "", label: "계급 선택" }]),
+              ...roles.map((role) => ({ value: role.id, label: role.name })),
+            ]}
+            onChange={(event) => {
+              // 「계급 선택」(빈 값)은 고를 수 없던 자리 — 저장하지 않는다(이관 전 disabled 옵션과 같은 결과).
+              if (isExecuting || event.target.value === "") return;
+              setValue(event.target.value);
+              executeRoleChange({ userId, roleId: event.target.value });
+            }}
+          />
+        </Form.Field>
       </div>
-      {roleError ? <p className={styles.registeredHint}>{roleError}</p> : null}
     </>
   );
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
+import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -12,6 +13,7 @@ import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { addLeaveAdjustmentAction, setHireDateAction, setResignationDateAction } from "./actions";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
+import peopleStyles from "../people.module.css";
 import { DayNumbers } from "@/app/(app)/leave/day-numbers";
 
 // 04.1-06 S9 — 관리자 사람 상세 `연차` 섹션. 2px 섹션 선 + 제목(발령 이력 섹션과 같은 모양), 칸은 단일 기둥 720 ·
@@ -65,22 +67,22 @@ function EmploymentDate({ userId, id, label, initial, kind }: { userId: string; 
   const resignation = useAction(setResignationDateAction, callbacks);
   const { execute, result } = kind === "hire" ? hire : resignation;
   const error = result.serverError ?? result.validationErrors?.date?._errors?.[0];
+  // 07-17 N10(SC-15): 공용 TextField — 라벨 · 오류 줄은 TextField 것, blur 저장 · 짧은 칸 폭은 그대로.
   return (
-    <Form.Field id={id} label={label} width="short">
-      <input
+    <div className={peopleStyles.leaveField}>
+      <TextField
         id={id}
+        label={label}
         type="date"
         value={value}
-        className={leaveStyles.textInput}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${id}-error` : undefined}
+        className={peopleStyles.inputShort}
+        error={error}
         onChange={(event) => setValue(event.target.value)}
         onBlur={() => {
           if (value !== savedRef.current) execute({ userId, date: value });
         }}
       />
-      {error ? <Form.Error id={`${id}-error`}>{error}</Form.Error> : null}
-    </Form.Field>
+    </div>
   );
 }
 
@@ -166,40 +168,39 @@ export function LeaveSection(props: LeaveSectionProps) {
                 />
                 {monthlyBlockedReason ? <Form.Hint>{monthlyBlockedReason}</Form.Hint> : null}
               </Form.Field>
-              <Form.Field id="adjustDays" label="일수" width="short">
-                <input
+              {/* 07-17 N10(SC-15): 일수 · 사유는 공용 TextField — 오류가 있으면 오류 줄이 힌트 자리를 대신한다(이관 전과 같음). */}
+              <div className={peopleStyles.leaveField}>
+                <TextField
                   id="adjustDays"
+                  label="일수"
                   type="text"
                   inputMode="decimal"
                   autoComplete="off"
                   value={amountDays}
                   onChange={(event) => setAmountDays(event.target.value)}
-                  className={leaveStyles.textInput}
-                  aria-invalid={fieldError("amountDays") ? true : undefined}
-                  aria-describedby={fieldError("amountDays") ? "adjustDays-error" : "adjustDays-hint"}
+                  className={peopleStyles.inputShort}
+                  error={fieldError("amountDays")}
+                  hintId={fieldError("amountDays") ? undefined : "adjustDays-hint"}
                 />
-                {fieldError("amountDays") ? (
-                  <Form.Error id="adjustDays-error">{fieldError("amountDays")}</Form.Error>
-                ) : (
-                  <span id="adjustDays-hint">
-                    <Form.Hint>빼려면 -1처럼</Form.Hint>
-                  </span>
+                {fieldError("amountDays") ? null : (
+                  <p id="adjustDays-hint" className={peopleStyles.leaveHint}>
+                    빼려면 -1처럼
+                  </p>
                 )}
-              </Form.Field>
-              <Form.Field id="adjustReason" label="사유" width="long">
-                <input
+              </div>
+              <div className={peopleStyles.leaveField}>
+                <TextField
                   id="adjustReason"
+                  label="사유"
                   type="text"
                   maxLength={500}
                   autoComplete="off"
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
-                  className={leaveStyles.textInput}
-                  aria-invalid={fieldError("reason") ? true : undefined}
-                  aria-describedby={fieldError("reason") ? "adjustReason-error" : undefined}
+                  className={peopleStyles.inputLong}
+                  error={fieldError("reason")}
                 />
-                {fieldError("reason") ? <Form.Error id="adjustReason-error">{fieldError("reason")}</Form.Error> : null}
-              </Form.Field>
+              </div>
               <Form.Actions>
                 <Button
                   type="submit"

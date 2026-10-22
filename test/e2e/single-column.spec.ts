@@ -105,8 +105,8 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
     const dls = page.locator("main dl");
     await expect(dls).toHaveCount(2);
     for (const dl of await dls.all()) await expectSingleColumn(page, dl);
-    // select 자체는 PC 라벨 열 뒤 200px이다(§6-3 칸 폭, form-label-section-gap.spec.ts) — 기둥은 그 묶음이 잡는다.
-    await expectSingleColumn(page, page.locator("div:has(> #person-role-change)"));
+    // select 자체는 PC 라벨 열 뒤 200px이다(§6-3 칸 폭, form-label-section-gap.spec.ts) — 기둥은 그 묶음(07-17 N10 뒤 Form.Field 줄)이 잡는다.
+    await expectSingleColumn(page, page.locator('div:has(> label[for="person-role-change"])'));
   });
 
   // 260922-o2b 후속(/review + 독립 DOM 감사) — SYSTEM.md §3 「단일 기둥 최대
@@ -129,7 +129,8 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
     await page.getByRole("button", { name: "사람 등록" }).click();
     await expect(page.getByText(`초기 비밀번호 — ${email}`)).toBeVisible();
 
-    await page.goto("/admin/people");
+    // 07-17: 목록이 50명/쪽 — 검색으로 그 행을 연다.
+    await page.goto(`/admin/people?q=${encodeURIComponent(email)}`);
     await page.locator("tr", { hasText: email }).getByRole("link", { name: "상세" }).click();
     await expect(page).toHaveURL(/\/admin\/people\/.+/);
 

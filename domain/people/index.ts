@@ -26,6 +26,8 @@ import { assertSeatsFree, newSeats, SeatTakenError } from "@/domain/people/seat-
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
   listUsers as repoListUsers,
+  listUsersPage as repoListUsersPage,
+  findUsersByLowerEmails as repoFindUsersByLowerEmails,
   findUserById as repoFindUserById,
   updateUserRole as repoUpdateUserRole,
   updateUserHireDate as repoUpdateUserHireDate,
@@ -156,12 +158,15 @@ export function isRetiredOn(resignationDate: string | null, today: string): bool
 export async function listPeople(viewer: Viewer, deps?: Partial<PeopleReadDeps>): Promise<PersonDto[]> {
   const scope = await scopeFor(viewer, "user");
   const rows = await repoListUsers(viewer, { scope, includeArchived: scope.includeArchived });
+  return projectPeople(viewer, rows, seoulTodayOf(deps), await lockedEmailSet(viewer), memoizeVisible());
+}
 
-  // viewer가 호출 동안 고정이라 infoItem만 키로 쓴다. 캐시는 이 함수 호출
-  // 안에만 있고 모듈 전역에 두지 않는다(T-q56-01) — 다른 viewer·계급의
-  // 판정이 섞이거나 노출표 변경 뒤 낡은 판정이 쓰이는 것을 막는다.
+// viewer가 호출 동안 고정이라 infoItem만 키로 쓴다. 캐시는 이 함수 호출
+// 안에만 있고 모듈 전역에 두지 않는다(T-q56-01) — 다른 viewer·계급의
+// 판정이 섞이거나 노출표 변경 뒤 낡은 판정이 쓰이는 것을 막는다.
+function memoizeVisible(): typeof defaultVisible {
   const visibleCache = new Map<string, Promise<boolean>>();
-  const memoizedVisible = (v: Viewer, infoItem: string): Promise<boolean> => {
+  return (v: Viewer, infoItem: string): Promise<boolean> => {
     let cached = visibleCache.get(infoItem);
     if (!cached) {
       cached = defaultVisible(v, infoItem);
@@ -169,8 +174,15 @@ export async function listPeople(viewer: Viewer, deps?: Partial<PeopleReadDeps>)
     }
     return cached;
   };
+}
 
-  const today = seoulTodayOf(deps);
+async function projectPeople(
+  viewer: Viewer,
+  rows: UserRow[],
+  today: string,
+  lockedEmails: ReadonlySet<string>,
+  memoizedVisible: typeof defaultVisible,
+): Promise<PersonDto[]> {
   const roleIds = [...new Set(rows.map((row) => row.roleId).filter((id): id is string => id !== null))];
   const [teamMap, roleRows] = await Promise.all([
     defaultTeamsAtDate(
@@ -182,7 +194,6 @@ export async function listPeople(viewer: Viewer, deps?: Partial<PeopleReadDeps>)
     defaultFindRolesByIds(viewer, roleIds),
   ]);
   const roleNameMap = new Map(roleRows.map((role) => [role.id, role.name]));
-  const lockedEmails = await lockedEmailSet(viewer);
 
   return Promise.all(
     rows.map((row) =>
@@ -196,6 +207,64 @@ export async function listPeople(viewer: Viewer, deps?: Partial<PeopleReadDeps>)
       ),
     ),
   );
+}
+
+export const PEOPLE_PAGE_SIZE = 50;
+
+export type PeoplePage = {
+  rows: PersonDto[];
+  total: number;
+  /** 잠긴 재직자 수 — 검색 · 쪽과 무관한 권한 범위 전체, 퇴직 · 보관 제외(SC-11 U2). */
+  lockedCount: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  /** 보는 사람에게 보이는 DTO 키 — 열 노출은 쪽 행이 아니라 노출표로 정한다(결과 0행이어도 같은 열). */
+  visibleKeys: ReadonlySet<string>;
+};
+
+// 07-17 SC-11(U1 · U2 · U6): 사람 목록 한 쪽(50명) — 이름 · 이메일 검색, `locked`면 잠긴 재직자만(퇴직은 isRetiredOn · 보관 제외).
+// T-07-17-03: 검색 · 잠김 거르기 · 잠긴 수는 보는 사람에게 보이는 칸으로만 — 가린 값으로 거르면 그 값이 행 수로 새어 나간다.
+export async function listPeoplePage(
+  viewer: Viewer,
+  query: { q?: string; locked?: boolean; page?: number },
+  deps?: Partial<PeopleReadDeps>,
+): Promise<PeoplePage> {
+  const scope = await scopeFor(viewer, "user");
+  const today = seoulTodayOf(deps);
+  const memoizedVisible = memoizeVisible();
+  const visibleKeys = new Set<string>();
+  for (const field of PERSON_DTO_SPEC.fields) {
+    const items = typeof field.infoItem === "string" ? [field.infoItem] : field.infoItem;
+    const shown = await Promise.all(items.map((item) => memoizedVisible(viewer, item)));
+    if (shown.every(Boolean)) visibleKeys.add(field.key);
+  }
+  const lockedEmails = await lockedEmailSet(viewer);
+  const showLocked = visibleKeys.has("locked");
+  const lockedPeople =
+    scope.rows === "none" || !showLocked
+      ? []
+      : (await repoFindUsersByLowerEmails(viewer, [...lockedEmails])).filter(
+          (row) => row.archivedAt === null && !isRetiredOn(row.resignationDate, today),
+        );
+  const q = query.q?.trim() ? query.q.trim() : null;
+  const { rows, total, page } = await repoListUsersPage(viewer, {
+    scope,
+    includeArchived: scope.includeArchived,
+    search: q ? { q, name: visibleKeys.has("name"), email: visibleKeys.has("email") } : null,
+    ids: query.locked && showLocked ? lockedPeople.map((row) => row.id) : null,
+    page: query.page ?? 1,
+    pageSize: PEOPLE_PAGE_SIZE,
+  });
+  return {
+    rows: await projectPeople(viewer, rows, today, lockedEmails, memoizedVisible),
+    total,
+    lockedCount: lockedPeople.length,
+    page,
+    pageSize: PEOPLE_PAGE_SIZE,
+    pageCount: Math.max(1, Math.ceil(total / PEOPLE_PAGE_SIZE)),
+    visibleKeys,
+  };
 }
 
 export async function getPerson(

@@ -13,7 +13,7 @@ import { addDays } from "@/lib/kst-date";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { isStrict } from "./design-principles";
 import { checkPrinciples } from "./principles-check";
-import { collapsedRowOf, loginAsAdmin, personRow, registerPerson, statusCell } from "./people-list-helpers";
+import { collapsedRowOf, gotoPeopleRow, loginAsAdmin, personRow, registerPerson, statusCell } from "./people-list-helpers";
 import { archiveRolesByPrefix, createDelegatedAccount, makeDuplicateLeads } from "./admin-cap-fixtures";
 
 // 사람 목록이 페이지 없이 전부 그려지고 CI DB에 계정이 쌓여 느리다 — 근본 해결은 페이지네이션(07 페이즈로 이월).
@@ -139,8 +139,10 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
     const sepGlyph = await status.getByText("·", { exact: true }).evaluate(glyph);
     expect(sepGlyph).toEqual(badgeGlyph);
 
+    await gotoPeopleRow(page, admin.email);
     await expect(personRow(page, admin.email)).toBeVisible();
     await expect(statusCell(personRow(page, admin.email))).not.toContainText("첫 로그인 전");
+    await gotoPeopleRow(page, email);
 
     // 접힌 줄은 PC에서 숨고, 이메일 셀은 접근성 트리에 한 번만 나온다(행 이름은 셀 글자를 이어 붙이므로 셀 줄로 센다).
     await expect(collapsedRowOf(row)).toBeHidden();
@@ -163,7 +165,7 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
     const { userId } = await createAccount(SYSTEM_VIEWER, { email, name: "보관배지대상", roleId: DEFAULT_ROLE_ID });
     await archivePerson(SYSTEM_VIEWER, userId);
 
-    await page.goto("/admin/people");
+    await gotoPeopleRow(page, email);
     await expect(statusCell(personRow(page, email))).toHaveText("보관됨");
   });
 
@@ -651,7 +653,7 @@ test.describe("위임 계급의 계급 자리 (06.4 D-6402 · D-6414 · D7~D9)",
       element.append(option);
     });
     await select.selectOption("e2e-missing-role");
-    await expect(page.locator("div:has(> #person-role-change) + p")).toBeVisible();
+    await expect(page.locator("#person-role-change-error")).toBeVisible();
     await expect(select).toHaveValue(DEFAULT_ROLE_ID);
   });
 });
@@ -678,16 +680,19 @@ test.describe("삭제 · 퇴직일 칸 상태와 삭제 사유 (06.4 D-6417 · D
     const pm = await makeListedAccount("E2E삭제대상", DEFAULT_ROLE_ID);
 
     await loginWith(page, delegate);
-    await page.goto("/admin/people");
+    await gotoPeopleRow(page, pm.email);
     await expect(personRow(page, pm.email).getByRole("button", { name: "삭제" })).toHaveCount(1);
+    await gotoPeopleRow(page, delegate.email);
     await expect(personRow(page, delegate.email).getByRole("button", { name: "삭제" })).toHaveCount(0);
+    await gotoPeopleRow(page, admin.email);
     await expect(personRow(page, admin.email).getByRole("button", { name: "삭제" })).toHaveCount(0);
 
     const context = await browser.newContext({ baseURL });
     const adminPage = await context.newPage();
     const self = await loginAsAdmin(adminPage);
-    await adminPage.goto("/admin/people");
+    await gotoPeopleRow(adminPage, admin.email);
     await expect(personRow(adminPage, admin.email).getByRole("button", { name: "삭제" })).toHaveCount(1);
+    await gotoPeopleRow(adminPage, self.email);
     await expect(personRow(adminPage, self.email).getByRole("button", { name: "삭제" })).toHaveCount(0);
     await context.close();
   });
@@ -711,7 +716,7 @@ test.describe("삭제 · 퇴직일 칸 상태와 삭제 사유 (06.4 D-6417 · D
     const target = await makeListedAccount("E2E낡은삭제", DEFAULT_ROLE_ID);
 
     await loginWith(page, delegate);
-    await page.goto("/admin/people");
+    await gotoPeopleRow(page, target.email);
     const row = personRow(page, target.email);
     await expect(row.getByRole("button", { name: "삭제" })).toHaveCount(1);
     await changePersonRole(SYSTEM_VIEWER, target.userId, SYSADMIN_ROLE_ID);

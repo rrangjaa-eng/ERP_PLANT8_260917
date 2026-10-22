@@ -238,3 +238,86 @@ test.describe("사람 목록 잠김 · 잠금 풀기 (SC-11)", () => {
     await personPage.context().close();
   });
 });
+
+// 07-17 Task 2(U1 · U2 · U6): `잠김 N` 끝 링크 · `?locked=1` · 이름 · 이메일 검색 · EMPTY. 잠긴 수는 회사 전체(공유 시험 DB에서 다른 스펙이
+// 바꿀 수 있다)라 정확한 수 대신 같은 화면 안의 증감으로 본다 — 0이면 링크가 없는 갈래는 단위 시험(people-list-hidden-id)이 고정한다.
+test.describe("사람 목록 잠김 N · 검색 · 쪽 (SC-11 Task 2)", () => {
+  function lockedLink(page: Page) {
+    return page.getByRole("search", { name: "사람 검색" }).getByRole("link", { name: /^잠김 \d+$/ });
+  }
+
+  async function lockedCount(page: Page): Promise<number> {
+    const text = await lockedLink(page).textContent();
+    return Number(text?.replace("잠김 ", ""));
+  }
+
+  test("`잠김 N`을 누르면 ?locked=1 · 잠긴 재직자만, 필터 중 풀면 그 행이 빠지고 결과 줄과 N-1, 다 풀면 EMPTY", async ({ page }) => {
+    const token = `잠김E2E${randomUUID().slice(0, 6)}`;
+    const a = await makePerson(token, "가");
+    const b = await makePerson(token, "나");
+    const free = await makePerson(token, "다");
+    await lock(a.email);
+    await lock(b.email);
+    await loginAsAdmin(page);
+    await page.goto("/admin/people");
+    await expect(lockedLink(page)).toBeVisible();
+    await lockedLink(page).click();
+    await expect(page).toHaveURL(/[?&]locked=1(&|$)/);
+
+    await page.goto(`/admin/people?locked=1&q=${encodeURIComponent(token)}`);
+    await expect(personRow(page, a.email)).toHaveCount(1);
+    await expect(personRow(page, b.email)).toHaveCount(1);
+    await expect(personRow(page, free.email)).toHaveCount(0);
+    const before = await lockedCount(page);
+
+    await personRow(page, a.email).getByRole("button", { name: "잠금 풀기" }).click();
+    const result = page.getByRole("status").filter({ hasText: "잠금 풀기 ·" });
+    await expect(result).toHaveText(`잠금 풀기 · ${a.name}`);
+    await expect(personRow(page, a.email)).toHaveCount(0);
+    await expect.poll(() => lockedCount(page)).toBe(before - 1);
+
+    await personRow(page, b.email).getByRole("button", { name: "잠금 풀기" }).click();
+    await expect(result).toHaveText(`잠금 풀기 · ${b.name}`);
+    await expect(page.getByText("조건에 맞는 사람이 없습니다")).toBeVisible();
+    await expect(page.getByRole("link", { name: "필터 지우기" })).toBeVisible();
+    // 행이 빠졌으니 포커스는 결과 줄로.
+    await expect(result).toBeFocused();
+    if (before - 2 === 0) await expect(lockedLink(page)).toHaveCount(0);
+  });
+
+  test("검색칸에 이메일 일부 → Enter → 그 사람, `지우기` → 전체, 결과 0 → EMPTY + `필터 지우기`", async ({ page }) => {
+    const token = `검색E2E${randomUUID().slice(0, 6)}`;
+    const a = await makePerson(token, "가");
+    await loginAsAdmin(page);
+    await page.goto("/admin/people");
+    const search = page.getByRole("searchbox", { name: "검색" });
+    await search.fill(a.email.slice(0, 24));
+    await search.press("Enter");
+    await expect(page).toHaveURL(/[?&]q=/);
+    await expect(personRow(page, a.email)).toHaveCount(1);
+    await expect(page.locator("tbody tr:has(th[scope='row'])")).toHaveCount(1);
+
+    await page.getByRole("search", { name: "사람 검색" }).getByRole("link", { name: "지우기" }).click();
+    await expect(page).toHaveURL(/\/admin\/people$/);
+    await expect(page.getByRole("searchbox", { name: "검색" })).toHaveValue("");
+
+    await page.getByRole("searchbox", { name: "검색" }).fill(`없는사람${randomUUID()}`);
+    await page.getByRole("searchbox", { name: "검색" }).press("Enter");
+    await expect(page.getByText("조건에 맞는 사람이 없습니다")).toBeVisible();
+    await page.getByRole("link", { name: "필터 지우기" }).click();
+    await expect(page).toHaveURL(/\/admin\/people$/);
+  });
+
+  test("50명/쪽 — 51명이 넘는 검색 결과는 페이지 줄이 있고 2쪽으로 간다", async ({ page }) => {
+    const token = `쪽E2E${randomUUID().slice(0, 6)}`;
+    for (let i = 0; i < 51; i += 1) await makePerson(token, String(i).padStart(2, "0"));
+    await loginAsAdmin(page);
+    await page.goto(`/admin/people?q=${encodeURIComponent(token)}`);
+    await expect(page.locator("tbody tr:has(th[scope='row'])")).toHaveCount(50);
+    const nav = page.getByRole("navigation", { name: "사람 페이지" });
+    await expect(page.getByText("1–50 / 51명")).toBeVisible();
+    await nav.getByRole("link", { name: "2", exact: true }).click();
+    await expect(page).toHaveURL(/[?&]page=2/);
+    await expect(page.locator("tbody tr:has(th[scope='row'])")).toHaveCount(1);
+  });
+});

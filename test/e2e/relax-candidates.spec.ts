@@ -137,7 +137,7 @@ test.describe("완화 후보 5 · 7 · 8 (PC 1280)", () => {
     expect(seconds(duration)).toBeLessThan(0.001);
   });
 
-  test("후보 7 — 저장 대기 칸 배경은 --surface-dirty(--g-100 계열) 계산 색이다", async ({ page }) => {
+  test("후보 7 — 저장 대기 칸 배경은 --surface-dirty(--n-60 중립, 07 개정 11) 계산 색이다", async ({ page }) => {
     const edit = page.locator('[data-gallery="table-edit"]');
     await expect(edit.locator("td").first()).toBeVisible();
     const probe = await edit.evaluate((root) => {
@@ -149,7 +149,7 @@ test.describe("완화 후보 5 · 7 · 8 (PC 1280)", () => {
     const dirtyCells = probe.filter((entry) => entry.shadow === dirtyShadow);
     expect(dirtyCells).toHaveLength(1);
     expect(dirtyCells[0]!.bg).toBe(await resolved(page, "background-color", "var(--surface-dirty)"));
-    expect(dirtyCells[0]!.bg).toBe(await resolved(page, "background-color", "var(--g-100)"));
+    expect(dirtyCells[0]!.bg).toBe(await resolved(page, "background-color", "var(--n-60)"));
   });
 
   test("후보 7 — 편집 가능 칸 포커스 링이 모서리(--radius-control)를 따른다", async ({ page }) => {

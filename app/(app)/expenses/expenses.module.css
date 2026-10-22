@@ -268,7 +268,8 @@
   padding: 0 var(--s-1);
   border: 0;
   border-bottom: var(--line-w) solid var(--accent);
-  background: var(--accent-weak);
+  /* 07 개정 11(사용자 10/7 13:09) — 표 안 입력 칸 면은 투명(초록 면 없음). ui/table .inputCells와 같은 규칙. */
+  background: transparent;
   color: var(--text-strong);
   font-family: var(--font-sans);
   font-size: var(--text-body);
@@ -278,10 +279,12 @@
   text-align: right;
 }
 
+/* 07 개정 11(사용자 10/7 13:12) — 포커스 · 입력 중 칸 = 흰 바탕 + 안쪽 --focus-w --accent 선(ui/table .editableCell:focus-visible와 같은 모양). */
 .cellInput:focus-visible,
 .cellInputNumeric:focus-visible {
-  outline: var(--focus-w) solid var(--focus);
-  outline-offset: var(--focus-offset);
+  background: var(--surface-base);
+  outline: var(--focus-w) solid var(--accent);
+  outline-offset: calc(-1 * var(--focus-w));
   border-radius: var(--radius-control);
 }
 

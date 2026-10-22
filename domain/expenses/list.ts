@@ -8,7 +8,8 @@ import { visible } from "@/domain/permissions/visible";
 import { moneyFromRow } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
 import { EXPENSE_LIST_ROW_DTO_SPEC, type ExpenseListRowDto } from "@/domain/expenses/dto";
-import { TEAM_EXPENSE_KIND_LABELS, type TeamExpenseKind } from "@/domain/expenses";
+import { loadExpenseSchedules, scheduleOf, TEAM_EXPENSE_KIND_LABELS, type TeamExpenseKind } from "@/domain/expenses";
+import type { PaySchedule } from "@/domain/payments/pay-schedule";
 import { EXPENSE_GROUP_RANKS, listExpensePage, summarizeExpenseList, type ExpenseListRow as RepoRow, type ExpenseSearch, type ExpenseSearchField } from "@/repositories/expenses";
 import { statusStepLabel, type CurrentStep } from "@/domain/approvals";
 import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
@@ -144,7 +145,7 @@ function statusOf(row: RepoRow, currentSteps: Map<string, CurrentStep>, payment?
   return { statusWord: "승인", statusDate: date };
 }
 
-function toSource(row: RepoRow, currentSteps: Map<string, CurrentStep>, payment?: PaymentStatus): ExpenseListRowDto {
+function toSource(row: RepoRow, schedule: PaySchedule, currentSteps: Map<string, CurrentStep>, payment?: PaymentStatus): ExpenseListRowDto {
   const teamCost = row.projectId === null && row.quoteLineId === null;
   const seq = row.installment && row.installmentSeq ? ` ${row.installmentSeq}회차` : "";
   const title = teamCost ? [row.teamName, row.content].filter(Boolean).join(" · ") : `${[row.projectName, row.itemName].filter(Boolean).join(" · ")}${seq}`;
@@ -160,7 +161,8 @@ function toSource(row: RepoRow, currentSteps: Map<string, CurrentStep>, payment?
       row.supplyAmountKrw === null
         ? null
         : moneyFromRow({ currency: row.supplyCurrency, foreignAmount: row.supplyForeignAmount, fxRate: row.supplyFxRate, amountKrw: row.supplyAmountKrw }),
-    scheduledPaymentDate: row.scheduledPaymentDate,
+    scheduledPaymentDate: schedule.payDate,
+    scheduledPaymentManual: schedule.manual,
     drafterName: row.drafterName,
     ...statusOf(row, currentSteps, payment),
   };
@@ -189,12 +191,16 @@ export async function listExpenses(
       : [];
   const drafterColumn =
     scope.rowScope.rows === "all" || (scope.rowScope.rows === "limited" && scope.rowScope.by.kind !== "own") || summary.othersCount > 0;
-  const payments = await paymentStatuses(viewer, rows, today);
-  const projected = await projectMany(viewer, rows.map((row) => toSource(row, scope.currentSteps, payments.get(row.id))), EXPENSE_LIST_ROW_DTO_SPEC);
+  const [payments, loaded] = await Promise.all([paymentStatuses(viewer, rows, today), loadExpenseSchedules(viewer, rows)]);
+  const projected = await projectMany(
+    viewer,
+    rows.map((row) => toSource(row, scheduleOf(loaded, row.id), scope.currentSteps, payments.get(row.id))),
+    EXPENSE_LIST_ROW_DTO_SPEC,
+  );
   const items = rows.map((row, index) => {
     const dto = { ...projected[index] };
     if (!drafterColumn) delete dto.drafterName;
-    return { groupRank: row.groupRank, scheduledPaymentDate: row.scheduledPaymentDate, dto };
+    return { groupRank: row.groupRank, scheduledPaymentDate: scheduleOf(loaded, row.id).payDate, dto };
   });
   const groups = groupExpenses(items, { status: input.status, todayKst: today }).map((group) => ({
     label: group.label,

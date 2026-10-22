@@ -67,6 +67,8 @@ import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateDocumentNumber, allocateExpenseNumber, loadDocumentNumberFormat, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
+import { loadPaySchedules, loadPayScheduleConfig, type PayScheduleSource } from "@/domain/payments/pay-schedule-load";
+import { payOffWeekdayText, payRuleLine, type PaySchedule, type PayScheduleConfig } from "@/domain/payments/pay-schedule";
 import { computeExpenseTax, snapshotSupplyDiffers, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { BANK_TRANSFER_PAYMENT_METHOD, documentPayee, hasUsableAccount, PAYEE_ACCOUNT_MISSING_FIXABLE, type ExpensePayee } from "@/domain/expenses/payee";
@@ -315,6 +317,39 @@ function supplyMoney(row: Pick<ExpenseRow, "supplyCurrency" | "supplyForeignAmou
   return moneyFromRow({ currency: row.supplyCurrency, foreignAmount: row.supplyForeignAmount, fxRate: row.supplyFxRate, amountKrw: row.supplyAmountKrw });
 }
 
+// 07 D-715 · D-704: 지출결의 DTO의 지급 예정일 = 유효 예정일(07-01 로더 — 행 묶음 한 번). 자동값은 읽을 때 셈하고 저장하지 않는다.
+type ExpenseSchedules = { schedules: Map<string, PaySchedule>; cfg: PayScheduleConfig };
+
+export async function loadExpenseSchedules(viewer: Viewer, rows: readonly PayScheduleSource[]): Promise<ExpenseSchedules> {
+  const now = new Date();
+  const [schedules, cfg] = await Promise.all([loadPaySchedules(viewer, rows, { today: seoulToday(now), now }), loadPayScheduleConfig()]);
+  return { schedules, cfg };
+}
+
+export function scheduleOf(loaded: ExpenseSchedules, id: string): PaySchedule {
+  const schedule = loaded.schedules.get(id);
+  if (!schedule) throw new Error(`지급 일정 없음: ${id}`);
+  return schedule;
+}
+
+type PaymentFields = Pick<
+  ExpenseDocumentDto,
+  "scheduledPaymentDate" | "scheduledPaymentManual" | "autoPaymentDate" | "paymentPushReason" | "paymentRuleLine" | "paymentOffWeekday"
+>;
+
+// 문구는 07-01 함수만(D-731 · C6) — 요일 글자 · 규칙 줄을 여기서 만들지 않는다.
+function paymentFieldsOf(loaded: ExpenseSchedules, id: string): PaymentFields {
+  const schedule = scheduleOf(loaded, id);
+  return {
+    scheduledPaymentDate: schedule.payDate,
+    scheduledPaymentManual: schedule.manual,
+    autoPaymentDate: schedule.autoPayDate,
+    paymentPushReason: schedule.pushReason,
+    paymentRuleLine: payRuleLine(schedule, loaded.cfg.termDays, loaded.cfg),
+    paymentOffWeekday: schedule.manual ? payOffWeekdayText(schedule.payDate, loaded.cfg) : null,
+  };
+}
+
 type SourceExtras = Partial<
   Pick<
     ExpenseDocumentDto,
@@ -332,7 +367,7 @@ type SourceExtras = Partial<
   >
 >;
 
-function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDocumentDto {
+function toSource(row: ExpenseSummaryRow, payment: PaymentFields, extras: SourceExtras = {}): ExpenseDocumentDto {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -340,7 +375,7 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
     vendorId: row.vendorId,
     evidenceType: row.evidenceType,
     paymentMethod: row.paymentMethod,
-    scheduledPaymentDate: row.scheduledPaymentDate,
+    ...payment,
     note: row.note,
     installment: row.installment,
     version: row.version,
@@ -391,9 +426,10 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
 // 결재함 요약 — 투영 뒤 값으로만(보이지 않으면 싣지 않는다). 문서 칸 = `{프로젝트명} · {항목}`, 측정값 = 공급가액.
 async function describeExpenseDocuments(viewer: Viewer, ids: string[], deps?: DescribeDeps): Promise<Map<string, DocumentSummary>> {
   const rows = await listExpenseSummaries(viewer, { ids, documentKind: EXPENSE_DOCUMENT_KIND });
+  const loaded = await loadExpenseSchedules(viewer, rows);
   const result = new Map<string, DocumentSummary>();
   for (const row of rows) {
-    const projected = await project(viewer, toSource(row), EXPENSE_DOCUMENT_DTO_SPEC, deps?.visible ? { visible: deps.visible } : undefined);
+    const projected = await project(viewer, toSource(row, paymentFieldsOf(loaded, row.id)), EXPENSE_DOCUMENT_DTO_SPEC, deps?.visible ? { visible: deps.visible } : undefined);
     const summary: DocumentSummary = { ...projected };
     if (projected.projectName && projected.itemName) summary.documentText = `${projected.projectName} · ${projected.itemName}`;
     else if (projected.teamName) summary.documentText = [projected.teamName, projected.content].filter(Boolean).join(" · ");
@@ -424,7 +460,11 @@ export async function codeLabelsOf(viewer: Viewer, tableKey: string): Promise<Ma
 // (이미 보임 판정을 지난) 문서 id만 한 번에 넘기므로 문서마다 다시 판정하지 않는다. 제출된 문서라 계산 한 줄은 저장 스냅숏이다.
 async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<string, ExpenseDetailDto>> {
   const rows = await listExpenseSummaries(viewer, { ids, documentKind: EXPENSE_DOCUMENT_KIND });
-  const [evidenceNames, paymentNames] = await Promise.all([codeLabelsOf(viewer, "evidence_type"), codeLabelsOf(viewer, "payment_method")]);
+  const [evidenceNames, paymentNames, loaded] = await Promise.all([
+    codeLabelsOf(viewer, "evidence_type"),
+    codeLabelsOf(viewer, "payment_method"),
+    loadExpenseSchedules(viewer, rows),
+  ]);
   // 05-10: 살아 있는 증빙 파일(주소 없음)을 한 번의 읽기로 — 문서마다 따로 읽지 않는다.
   const aliveFiles = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) });
   // 06.1-14(G15 · Round 2 P1-6): 문서 증빙 종류 값마다 한 번 — 결재자 시트에 남의 「올린 사람 · 경영관리만 보기」 파일 이름이 나가지 않는다.
@@ -474,7 +514,8 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
       evidenceFiles: visibleFiles.map((file) => ({ id: file.id, name: file.originalName, sizeBytes: file.sizeBytes, contentType: file.contentType })),
       // 파일이 남은 문서에는 더하지 않는다 — 시트가 파일 행을 따로 묶어 같은 라벨 행이 둘이면 approval-sheet.tsx `key={row.label}`가 겹친다.
       hiddenEvidenceNotice: visibleFiles.length === 0 && ownFiles.length > 0 ? PRIVATE_EVIDENCE_SHEET_NOTICE : null,
-      scheduledPaymentDate: row.scheduledPaymentDate,
+      scheduledPaymentDate: scheduleOf(loaded, row.id).payDate,
+      scheduledPaymentManual: scheduleOf(loaded, row.id).manual,
       paymentMethodName: row.paymentMethod ? (paymentNames.get(row.paymentMethod) ?? row.paymentMethod) : null,
       note: row.note,
       drafterName: row.drafterName,
@@ -1685,7 +1726,11 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
   const [row] = await listExpenseSummaries(viewer, { ids: [input.expenseId], documentKind: EXPENSE_DOCUMENT_KIND });
   if (!row) return null;
   if (!(await canSeeExpense(viewer, row))) return null;
-  const [evidenceNames, paymentNames] = await Promise.all([codeLabelsOf(viewer, "evidence_type"), codeLabelsOf(viewer, "payment_method")]);
+  const [evidenceNames, paymentNames, loaded] = await Promise.all([
+    codeLabelsOf(viewer, "evidence_type"),
+    codeLabelsOf(viewer, "payment_method"),
+    loadExpenseSchedules(viewer, [row]),
+  ]);
   const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
   const supply = supplyMoney(row);
   // 제출 뒤는 저장된 스냅숏, 작성 중은 지금 기준 계산. 번호 있는 문서는 지금 설정 · 기준일로 다시 계산해 저장값과 다르면
@@ -1706,7 +1751,7 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
   const payeeTeam = row.payeeUserId ? await teamAtDate(viewer, row.payeeUserId, row.usageDate ?? seoulToday(row.createdAt)) : null;
   return project(
     viewer,
-    toSource(row, {
+    toSource(row, paymentFieldsOf(loaded, row.id), {
       evidenceTypeName,
       paymentMethodName: row.paymentMethod ? (paymentNames.get(row.paymentMethod) ?? row.paymentMethod) : null,
       taxLine,

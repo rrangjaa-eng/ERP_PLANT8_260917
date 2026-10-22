@@ -401,6 +401,16 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     focusUndoRef.current = false;
     document.getElementById("payment-move-undo")?.focus();
   }, [moveResult]);
+  // 재감사 R1: 되돌리면 결과 줄이 사라진다 — 새로 받은 목록에 되돌린 행의 `이번 주로`가 다시 그려진 뒤 그 버튼으로 포커스(body로 빠지지 않게).
+  const focusRevertedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const id = focusRevertedRef.current;
+    if (id === null) return;
+    const button = document.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(id)}"] [data-pay-push] button`);
+    if (!button) return;
+    focusRevertedRef.current = null;
+    button.focus();
+  });
   // 막힌 행(id → 오류 줄 낱말) — 다음 이번 주로 · 지급 · 이체 파일 때 지운다.
   const [moveBlocked, setMoveBlocked] = useState<ReadonlyMap<string, string>>(new Map());
   // 요청 중인 행 id(U6 — 그 컨트롤 aria-busy) · 연타 이중 요청 막기는 ref(같은 렌더 안 두 번째 누름도 막는다).
@@ -877,6 +887,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setMoveBlocked(new Map());
     const first = data.rejected[0];
     setMoveResult(first ? { kind: "revertFailed", reason: first.reason, items } : null);
+    focusRevertedRef.current = first ? null : (data.reverted[0]?.expenseId ?? null);
     router.refresh();
   }
 

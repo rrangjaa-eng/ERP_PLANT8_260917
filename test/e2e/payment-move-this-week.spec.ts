@@ -78,6 +78,8 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     await expect.poll(() => groupOf(page, itemName)).toBe(payWeekGroupLabel(schedule, cal.today).label);
     await expect(targetRow(page, itemName).getByText("수동 지정", { exact: true })).toHaveCount(0);
     await expect(targetRow(page, itemName).getByText("마감 지나 밀림", { exact: true })).toBeVisible();
+    // 재감사 R1: 되돌린 뒤 결과 줄이 사라져도 포커스가 body로 빠지지 않는다 — 되돌린 행의 `이번 주로`로(SYSTEM §10).
+    await expect(targetRow(page, itemName).getByRole("button", { name: `${itemName} 이번 주로` })).toBeFocused();
     await page.context().close();
   });
 

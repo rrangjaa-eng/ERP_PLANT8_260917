@@ -215,7 +215,7 @@ export type ProjectPreEstimateEditCtx = {
 registerGateRule<unknown, ProjectPreEstimateEditCtx>({
   name: "project.pre-estimate-edit",
   check: (_doc, ctx) => {
-    if (ctx.rights === "none" || !ctx.canSeeAmount) return { allowed: false, reason: "총 매출 예상가 바꾸기 권한 없음" };
+    if (ctx.rights === "none" || !ctx.canSeeAmount) return { allowed: false, reason: "PO 금액 바꾸기 권한 없음" };
     const [first] = ctx.errors;
     if (first) return { allowed: false, reason: first.reason };
     return { allowed: true };

@@ -68,7 +68,7 @@ import { SettlementButton, type SettlementHeaderProps } from "./settlement-butto
 import { unsavedEditsReason } from "./unsaved-edits";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import { PreSettleLedgerContext } from "./pre-settle-check";
-import { PeriodField, periodShortText, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
+import { PeriodField, periodRangeText, periodShortText, type PeriodDraft, type PeriodFieldError } from "./period-field";
 import type { PeriodRights } from "@/domain/projects/period";
 import {
   PoNumberField,
@@ -77,7 +77,6 @@ import {
   parsePreEstimateDraft,
   preEstimateDirtyCount,
   preEstimateDraftFrom,
-  preEstimateText,
   preEstimateValue,
   type PreEstimateDraft,
   type PreEstimateFieldError,
@@ -204,9 +203,6 @@ const COLUMN_TO_FIELD: Record<string, QuoteLineField> = {
   note: "note",
 };
 
-// 04-22(A-34) — 기간 칸이 닫히면 포커스가 돌아올 3차 「기간 바꾸기」.
-const PERIOD_TRIGGER_ID = "period-open";
-const PRE_ESTIMATE_TRIGGER_ID = "pre-estimate-open";
 // 07-18(SC-19) — 정보 면 머리의 3차 `고치기`(펼친 면에만) · 면 뿌리/본문 id(D-P3-1: E2E 도우미는 `#project-info` 안에서 찾는다).
 const INFO_EDIT_TRIGGER_ID = "project-info-edit";
 const INFO_PANEL_ID = "project-info";
@@ -1132,11 +1128,9 @@ export function QuoteLedger({
   const [periodDraft, setPeriodDraft] = useState<PeriodDraft | null>(null);
   const [periodFocus, setPeriodFocus] = useState<"start" | "end">("start");
   const [periodErrors, setPeriodErrors] = useState<PeriodFieldError[]>([]);
-  const [periodSaved, setPeriodSaved] = useState(false);
   // 04-44(S17) — 총 매출 예상가 칸. 기준값은 서버 렌더 값 또는 직전 저장 결과(나중 저장이 이긴다 — 기준값 검사 없음).
   const [preEstimateBase, setPreEstimateBase] = useState<Money | null>(preEstimate.value);
   const [preEstimateDraft, setPreEstimateDraft] = useState<PreEstimateDraft | null>(null);
-  const [preEstimateSaved, setPreEstimateSaved] = useState(false);
   const [preEstimateErrors, setPreEstimateErrors] = useState<PreEstimateFieldError[]>([]);
   // 07-18(SC-19 · N1) — 정보 면. 펼침은 이 화면 안에서만 유지한다(저장하지 않음). `고치기` 묶음은 draft가 있으면 열린 것이다.
   const [infoOpen, setInfoOpen] = useState(false);
@@ -1332,6 +1326,11 @@ export function QuoteLedger({
   // 04-28 — 저장 요청에 실어 보낸 줄(clientKey) 순서 스냅숏. 봉투의 rowIndex가 이 순서다.
   const sentLineKeysRef = useRef<string[]>([]);
 
+  // 요청한 칸이 아직 그려지지 않았으면(면이 접혔거나 묶음이 닫힘) 그려진 직후(다음 프레임)에 포커스한다.
+  function focusWhenReady(id: string) {
+    requestAnimationFrame(() => document.getElementById(id)?.focus());
+  }
+
   // 04-47 — 표 밖 칸 거부 뒤 그 칸(기간 → 총 매출 예상가)으로. 거부 응답이 올 때 칸은 열려 있다.
   function focusOutsideError(period: PeriodFieldError[], preEstimate: PreEstimateFieldError[]) {
     const periodError = period[0];
@@ -1343,7 +1342,11 @@ export function QuoteLedger({
           ? "pre-estimate-fx-rate"
           : "pre-estimate-amount"
         : null;
-    if (id) document.getElementById(id)?.focus();
+    if (id) {
+      // 07-18(D-P1-1) — 칸이 접힌 면 안에 있으면 먼저 면을 펼친 뒤 그 칸으로.
+      setInfoOpen(true);
+      focusWhenReady(id);
+    }
   }
 
   const { execute, result, isExecuting } = useAction(saveProjectLedgerAction, {
@@ -1410,11 +1413,9 @@ export function QuoteLedger({
         setPeriodErrors([]);
         setPreEstimateErrors([]);
         setSeenStatus(saved.status as ProjectStatus); // projects.status 열은 text — 값은 PROJECT_STATUSES 중 하나다.
-        if (periodDraft) closePeriodFieldAfterSave();
         if (saved.preEstimate) setPreEstimateBase(saved.preEstimate);
-        if (preEstimateDraft) closePreEstimateFieldAfterSave();
         if (saved.poNumber !== undefined) setPoNumberBase(saved.poNumber ?? "");
-        if (poNumberDraft !== null) closeInfoEditAfterSave();
+        if (infoEditing) closeInfoEditAfterSave();
         // 상태가 바뀌었으면(정산 → 진행 등) 서버가 계산하는 태그·권리·canSave를 다시 받는다.
         if (saved.status !== status) router.refresh();
       }
@@ -1423,45 +1424,18 @@ export function QuoteLedger({
     },
   });
 
-  // S13 — 저장 성공: 600ms --accent-weak 틴트 뒤 묶음이 닫힌다(prefers-reduced-motion이면 바로). 표 밖 면이라 개정 11 대상 밖 — 07-12-SUMMARY 「표 밖 --accent-weak」 그 화면 플랜 몫.
-  function closePeriodFieldAfterSave() {
-    const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduced) {
-      setPeriodDraft(null);
-      return;
-    }
-    setPeriodSaved(true);
-    window.setTimeout(() => {
-      setPeriodSaved(false);
-      setPeriodDraft(null);
-    }, 600);
-  }
-
-  // S17 — 저장 성공: 기간 칸과 같은 600ms 틴트 뒤 닫힘(토스트 없음).
-  function closePreEstimateFieldAfterSave() {
-    const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduced) {
-      setPreEstimateDraft(null);
-      return;
-    }
-    setPreEstimateSaved(true);
-    window.setTimeout(() => {
-      setPreEstimateSaved(false);
-      setPreEstimateDraft(null);
-    }, 600);
-  }
-
-  // 07-18 — 저장 성공: PO 번호 칸도 같은 600ms 틴트 뒤 닫힌다(기간 · 총 매출 예상가 칸과 같은 규칙).
+  // S13 · S17 · 07-18 — 저장 성공: 600ms --accent-weak 틴트 뒤 묶음(기간 · PO 금액 · PO 번호)이 함께 닫힌다(prefers-reduced-motion이면 바로).
+  // 표 밖 면이라 개정 11 대상 밖 — 07-12-SUMMARY 「표 밖 --accent-weak」 그 화면 플랜 몫.
   function closeInfoEditAfterSave() {
     const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
-      setPoNumberDraft(null);
+      closeInfoEdit();
       return;
     }
     setInfoSaved(true);
     window.setTimeout(() => {
       setInfoSaved(false);
-      setPoNumberDraft(null);
+      closeInfoEdit();
     }, 600);
   }
 
@@ -1472,52 +1446,11 @@ export function QuoteLedger({
   const preEstimateDirty =
     preEstimateDraft && preEstimateBaselineDraft ? preEstimateDirtyCount(preEstimateDraft, preEstimateBaselineDraft) : 0;
 
-  function openPreEstimateField() {
-    setPreEstimateDraft((prev) => prev ?? preEstimateBaselineDraft);
-  }
-
   function changePreEstimate(next: PreEstimateDraft) {
     persistPendingRef.current = true;
     setPreEstimateErrors([]);
     setPreEstimateDraft(next);
   }
-
-  // S17 — Esc는 편집 중 값을 되돌리고, 칸이 모두 원래 값이면 묶음을 닫는다(기간 칸과 같은 규칙).
-  function escapePreEstimate() {
-    persistPendingRef.current = true;
-    setPreEstimateErrors([]);
-    setPreEstimateDraft(preEstimateDirty > 0 ? preEstimateBaselineDraft : null);
-  }
-
-  // 묶음이 닫히면 포커스가 「총 매출 예상가 바꾸기」로 돌아온다.
-  const preEstimateWasOpenRef = useRef(false);
-  useEffect(() => {
-    if (preEstimateDraft) {
-      preEstimateWasOpenRef.current = true;
-    } else if (preEstimateWasOpenRef.current) {
-      preEstimateWasOpenRef.current = false;
-      document.getElementById(PRE_ESTIMATE_TRIGGER_ID)?.focus();
-    }
-  }, [preEstimateDraft]);
-
-  // 04-44의 상태 모달 3차 · 04-30의 EMPTY 「기간 바꾸기」가 이 함수로 칸을 연다.
-  function openPeriodField(focus: "start" | "end") {
-    setPeriodFocus(focus);
-    setPeriodDraft((prev) => prev ?? { start: periodBaseline.startDate ?? "", end: periodBaseline.endDate ?? "" });
-    // 칸이 이미 열려 있으면 PeriodField의 포커스 effect가 다시 돌지 않는다 — 그 칸으로 바로 간다.
-    document.getElementById(`period-${focus}`)?.focus();
-  }
-
-  // A-34 — 묶음이 닫히면 포커스가 그 칸을 연 3차로 돌아온다.
-  const periodWasOpenRef = useRef(false);
-  useEffect(() => {
-    if (periodDraft) {
-      periodWasOpenRef.current = true;
-    } else if (periodWasOpenRef.current) {
-      periodWasOpenRef.current = false;
-      document.getElementById(PERIOD_TRIGGER_ID)?.focus();
-    }
-  }, [periodDraft]);
 
   const periodBaselineDraft: PeriodDraft = { start: periodBaseline.startDate ?? "", end: periodBaseline.endDate ?? "" };
   const periodDirtyCount = periodDraft
@@ -1530,27 +1463,24 @@ export function QuoteLedger({
     setPeriodDraft(next);
   }
 
-  // S13 — Esc는 편집 중 값을 되돌리고, 두 칸이 모두 원래 값이면 묶음을 닫는다.
-  function escapePeriod() {
-    persistPendingRef.current = true;
-    if (periodDirtyCount > 0) {
-      setRestoredPeriodBase(null);
-      setPeriodDraft(periodBaselineDraft);
-      setPeriodErrors([]);
-      return;
-    }
-    setPeriodErrors([]);
-    setPeriodDraft(null);
-  }
-
   const poNumberDirty = poNumberDraft !== null && poNumberDraft !== poNumberBase ? 1 : 0;
-  const infoEditing = poNumberDraft !== null;
+  // 07-18(N1) — 기간 · PO 금액 · PO 번호는 `고치기` 하나로 한꺼번에 열고 닫는 한 묶음이다. 칸이 하나라도 열려 있으면 열린 것이다.
+  const infoEditing = periodDraft !== null || preEstimateDraft !== null || poNumberDraft !== null;
   const canEditInfo = period.rights !== "none";
 
-  // `고치기` — 묶음을 연다(펼친 면에서만 보인다). 다른 길(상태 모달 · 빈 표 · 저장 거부 · 복원)도 먼저 면을 펼친다.
-  function openInfoEdit() {
+  // 묶음을 연다(펼친 면에서 `고치기` · 상태 모달 · 빈 표 `기간 바꾸기` · 복원이 모두 이 길). 이미 열린 칸은 그대로 두고 면을 펼친 뒤 요청한 칸에 포커스한다.
+  function openInfoEdit(focus: "start" | "end" = "start") {
     setInfoOpen(true);
+    setPeriodFocus(focus);
+    setPeriodDraft((prev) => prev ?? { start: periodBaseline.startDate ?? "", end: periodBaseline.endDate ?? "" });
+    setPreEstimateDraft((prev) => prev ?? (preEstimate.canEdit ? preEstimateBaselineDraft : null));
     setPoNumberDraft((prev) => prev ?? poNumberBase);
+    focusWhenReady(`period-${focus}`);
+  }
+
+  // 04-44의 상태 모달 3차 · 04-30의 EMPTY 「기간 바꾸기」가 이 함수로 칸을 연다.
+  function openPeriodField(focus: "start" | "end") {
+    openInfoEdit(focus);
   }
 
   function changePoNumber(next: string) {
@@ -1558,16 +1488,34 @@ export function QuoteLedger({
     setPoNumberDraft(next);
   }
 
-  // `고치기 취소` — 묶음 전체 원복 + 닫기. 포커스는 아래 효과가 `고치기`로 돌려 놓는다.
-  function cancelInfoEdit() {
+  function closeInfoEdit() {
     persistPendingRef.current = true;
+    setRestoredPeriodBase(null);
+    setPeriodErrors([]);
+    setPreEstimateErrors([]);
+    setPeriodDraft(null);
+    setPreEstimateDraft(null);
     setPoNumberDraft(null);
   }
 
-  // Esc는 지금 두 단계 그대로 — 첫 Esc는 바뀐 값을 되돌리고, 모두 원래 값이면 두 번째 Esc가 묶음을 닫는다.
+  // `고치기 취소` — 묶음 전체 원복 + 닫기. 포커스는 아래 효과가 `고치기`로 돌려 놓는다.
+  function cancelInfoEdit() {
+    closeInfoEdit();
+  }
+
+  // Esc는 지금 두 단계 그대로 — 첫 Esc는 바뀐 값을 세 칸 모두 되돌리고, 모두 원래 값이면 두 번째 Esc가 묶음을 닫는다.
   function escapeInfoEdit() {
+    if (periodDirtyCount + preEstimateDirty + poNumberDirty === 0) {
+      closeInfoEdit();
+      return;
+    }
     persistPendingRef.current = true;
-    setPoNumberDraft(poNumberDirty > 0 ? poNumberBase : null);
+    setRestoredPeriodBase(null);
+    setPeriodErrors([]);
+    setPreEstimateErrors([]);
+    setPeriodDraft(periodDraft ? periodBaselineDraft : null);
+    setPreEstimateDraft(preEstimateDraft ? preEstimateBaselineDraft : null);
+    setPoNumberDraft(poNumberDraft === null ? null : poNumberBase);
   }
 
   // 묶음이 닫히면 포커스가 `고치기`로 돌아온다.
@@ -1659,24 +1607,24 @@ export function QuoteLedger({
       adjustment: adjustmentLineCells,
     });
     setLines(restored.lines);
-    if (restored.period.base) {
+    // 07-18(D-P1-1 · D-P3-2) — 복원한 값이 있으면 면을 펼치고 세 칸 묶음을 연다. 고치지 않은 칸은 기준값에서 시작한 초안이다.
+    const restoredBase = restored.period.base;
+    const hasPreEstimate = preEstimate.canEdit && preEstimateBaselineDraft !== null && Object.keys(restored.preEstimate).length > 0;
+    if (!restoredBase && !hasPreEstimate && restored.poNumber === undefined) return;
+    setInfoOpen(true);
+    if (restoredBase) {
       // 고치지 않은 칸도 보관 시점 값으로 — 보통 편집과 같이 기준값에서 시작한 초안이다.
-      const base = restored.period.base;
-      setRestoredPeriodBase(base);
+      setRestoredPeriodBase(restoredBase);
       setPeriodFocus(restored.period.start !== undefined ? "start" : "end");
       setPeriodDraft({
-        start: restored.period.start ?? base.startDate ?? "",
-        end: restored.period.end ?? base.endDate ?? "",
+        start: restored.period.start ?? restoredBase.startDate ?? "",
+        end: restored.period.end ?? restoredBase.endDate ?? "",
       });
+    } else {
+      setPeriodDraft((prev) => prev ?? { start: periodBaseline.startDate ?? "", end: periodBaseline.endDate ?? "" });
     }
-    if (preEstimateBaselineDraft && Object.keys(restored.preEstimate).length > 0) {
-      setPreEstimateDraft({ ...preEstimateBaselineDraft, ...restored.preEstimate });
-    }
-    // 07-18(D-P1-1 · D-P3-2) — 복원한 PO 번호 값은 면을 펼치고 묶음을 연 채 돌아온다.
-    if (restored.poNumber !== undefined) {
-      setInfoOpen(true);
-      setPoNumberDraft(restored.poNumber);
-    }
+    if (preEstimate.canEdit && preEstimateBaselineDraft) setPreEstimateDraft({ ...preEstimateBaselineDraft, ...restored.preEstimate });
+    setPoNumberDraft(restored.poNumber ?? poNumberBase);
   }
 
   function restoreEdits() {
@@ -2896,28 +2844,6 @@ export function QuoteLedger({
       <div ref={customerApprovalRef} className={styles.layoutContents}>
         <CustomerApprovalLine {...customerApproval} className={styles.periodLine} dirtyCount={dirtyCount} />
       </div>
-      {/* S13 — 칸이 열린 동안 기간 글자와 「기간 바꾸기」는 숨는다(같은 값을 두 번 보이지 않는다). */}
-      {periodDraft ? null : (
-        <p className={styles.periodLine}>
-          <span>{periodText(periodBaseline.startDate, periodBaseline.endDate)}</span>
-          {period.rights !== "none" ? (
-            <Button id={PERIOD_TRIGGER_ID} type="button" variant="tertiary" onClick={() => (saveLocked ? undefined : openPeriodField("start"))}>
-              기간 바꾸기
-            </Button>
-          ) : null}
-        </p>
-      )}
-      {/* S17 — 금액을 볼 수 없으면 줄이 없다. 칸이 열린 동안 값과 3차는 숨는다. */}
-      {preEstimateBase === null || preEstimateDraft ? null : (
-        <p className={styles.periodLine}>
-          <span>{preEstimateText(preEstimateBase)}</span>
-          {preEstimate.canEdit ? (
-            <Button id={PRE_ESTIMATE_TRIGGER_ID} type="button" variant="tertiary" onClick={() => (saveLocked ? undefined : openPreEstimateField())}>
-              총 매출 예상가 바꾸기
-            </Button>
-          ) : null}
-        </p>
-      )}
       <p className={styles.periodLine}>{statusSinceText}</p>
 
       {/* 07-18(SC-19 · K22) — 정보 면: 모든 폭에서 처음엔 접힌 한 줄. 합계 면 모양 하나에 섹션 선으로만 나눈다(카드 속 카드 없음). */}
@@ -2940,7 +2866,7 @@ export function QuoteLedger({
                 variant="tertiary"
                 disabled={saveLocked}
                 aria-describedby={saveLocked ? saveButtonId : undefined}
-                onClick={infoEditing ? cancelInfoEdit : openInfoEdit}
+                onClick={infoEditing ? cancelInfoEdit : () => openInfoEdit()}
               >
                 {infoEditing ? "고치기 취소" : "고치기"}
               </Button>
@@ -2963,12 +2889,53 @@ export function QuoteLedger({
                 <p id={`${INFO_BODY_ID}-basic`} className={styles.infoSectionTitle}>
                   기본
                 </p>
+                {periodDraft ? (
+                  <PeriodField
+                    draft={periodDraft}
+                    baseline={periodBaselineDraft}
+                    status={status}
+                    todayKst={period.todayKst}
+                    errors={periodErrors}
+                    focusField={periodFocus}
+                    saved={infoSaved}
+                    onChange={changePeriod}
+                    onEscape={escapeInfoEdit}
+                    onSave={attemptSave}
+                    saveLocked={saveLocked}
+                  />
+                ) : (
+                  <p className={styles.infoItem}>
+                    <span className={styles.infoLabel}>기간</span>
+                    <span className={styles.infoValue}>{periodRangeText(periodBaseline.startDate, periodBaseline.endDate)}</span>
+                  </p>
+                )}
+                {preEstimateBase === null ? null : preEstimateDraft && preEstimateBaselineDraft ? (
+                  <PreEstimateField
+                    draft={preEstimateDraft}
+                    baseline={preEstimateBaselineDraft}
+                    serverErrors={preEstimateErrors}
+                    saved={infoSaved}
+                    onChange={changePreEstimate}
+                    onEscape={escapeInfoEdit}
+                    onSave={attemptSave}
+                    saveLocked={saveLocked}
+                  />
+                ) : (
+                  <p className={styles.infoItem}>
+                    <span className={styles.infoLabel}>PO 금액</span>
+                    {preEstimateValue(preEstimateBase) ? (
+                      <span className={styles.infoValue}>{preEstimateValue(preEstimateBase)}</span>
+                    ) : (
+                      <span className={styles.infoNone}>없음</span>
+                    )}
+                  </p>
+                )}
                 {poNumberDraft !== null ? (
                   <PoNumberField
                     draft={poNumberDraft}
                     baseline={poNumberBase}
                     saved={infoSaved}
-                    focusOnMount
+                    focusOnMount={false}
                     onChange={changePoNumber}
                     onEscape={escapeInfoEdit}
                     onSave={attemptSave}
@@ -2985,35 +2952,6 @@ export function QuoteLedger({
           ) : null}
         </div>
       </div>
-
-      {periodDraft ? (
-        <PeriodField
-          draft={periodDraft}
-          baseline={periodBaselineDraft}
-          status={status}
-          todayKst={period.todayKst}
-          errors={periodErrors}
-          focusField={periodFocus}
-          saved={periodSaved}
-          onChange={changePeriod}
-          onEscape={escapePeriod}
-          onSave={attemptSave}
-          saveLocked={saveLocked}
-        />
-      ) : null}
-
-      {preEstimateDraft && preEstimateBaselineDraft ? (
-        <PreEstimateField
-          draft={preEstimateDraft}
-          baseline={preEstimateBaselineDraft}
-          serverErrors={preEstimateErrors}
-          saved={preEstimateSaved}
-          onChange={changePreEstimate}
-          onEscape={escapePreEstimate}
-          onSave={attemptSave}
-          saveLocked={saveLocked}
-        />
-      ) : null}
 
       {dirtyStorage.restorableCount > 0 ? (
         <p className={styles.restoreBanner}>

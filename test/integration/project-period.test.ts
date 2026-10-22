@@ -708,7 +708,7 @@ describe("총 매출 예상가 저장 (04-44)", () => {
     }).catch((error: unknown) => error);
 
     expect(outcome).toBeInstanceOf(PreEstimateRejectedError);
-    expect((outcome as PreEstimateRejectedError).errors).toEqual([{ field: "amount", reason: "총 매출 예상가 바꾸기 권한 없음" }]);
+    expect((outcome as PreEstimateRejectedError).errors).toEqual([{ field: "amount", reason: "PO 금액 바꾸기 권한 없음" }]);
     expect((await reload(s.projectId)).preEstimateAmountKrw).toBe(0);
     const denied = deniedCalls(warn);
     expect(denied).toHaveLength(1);
@@ -729,7 +729,7 @@ describe("총 매출 예상가 저장 (04-44)", () => {
       }).catch((error: unknown) => error);
 
       expect(outcome).toBeInstanceOf(PreEstimateRejectedError);
-      expect((outcome as PreEstimateRejectedError).errors).toEqual([{ field: "amount", reason: "총 매출 예상가 바꾸기 권한 없음" }]);
+      expect((outcome as PreEstimateRejectedError).errors).toEqual([{ field: "amount", reason: "PO 금액 바꾸기 권한 없음" }]);
       expect((await reload(s.projectId)).preEstimateAmountKrw).toBe(0);
       const denied = deniedCalls(warn);
       expect(denied).toHaveLength(1);
@@ -755,7 +755,7 @@ describe("총 매출 예상가 저장 (04-44)", () => {
 
     expect(outcome).toBeInstanceOf(PreEstimateRejectedError);
     expect((outcome as PreEstimateRejectedError).errors).toEqual([
-      { field: "amount", reason: "총 매출 예상가는 0 이상 · 금액 수정" },
+      { field: "amount", reason: "PO 금액은 0 이상 · 금액 수정" },
     ]);
     expect((await reload(s.projectId)).preEstimateAmountKrw).toBe(0);
     expect(await linesNamed(itemName)).toHaveLength(0);

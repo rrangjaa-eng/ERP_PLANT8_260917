@@ -16,6 +16,7 @@ import { insertRole } from "@/repositories/roles";
 import { saveRevenue } from "@/domain/revenue";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { and, eq, isNull, sum } from "drizzle-orm";
+import { openProjectInfoEdit } from "./project-info-helpers";
 
 // 04-04 Task 3 — 견적 줄 표의 키보드 계약·범위 선택·붙여넣기·전부 거부를
 // E2E로 증명한다. 실제 엑셀 붙여넣기(인용 규칙)는 자동화가 닿지 못해
@@ -1692,7 +1693,7 @@ test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽
     await page.getByRole("button", { name: "로그인" }).click();
     await expect(page).toHaveURL(/\/account$/);
     await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await openProjectInfoEdit(page);
     await page.getByLabel("종료일").fill(addDays(today, -1));
     await saveAndWait(page);
     const endInput = page.getByLabel("종료일");
@@ -1882,7 +1883,7 @@ test.describe("견적 줄 표 — 저장됨 N줄(FINDING-012)", () => {
     await saveAndWait(page);
     await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 2줄 \d{2}:\d{2}$/) }]);
 
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.locator("#period-start").fill("2026-10-01");
     await page.locator("#period-end").fill("2026-10-31");
     await saveAndWait(page);

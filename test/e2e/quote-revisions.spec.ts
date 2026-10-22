@@ -15,6 +15,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { openProjectInfoEdit } from "./project-info-helpers";
 
 // 04-24(PROJ-07 · PROJ-05 · UX-04) — 상세의 차수 화면: 「복사해 새 차수」 · 고객 승인 표시와 취소 · 차수 섹션 ·
 // 이전 차수 읽기 섹션 · 이전 차수 보관본 복원 줄. 준비는 도메인 함수와 DB로 하고(상태 · 승인일), 화면 동작만 브라우저로 본다.
@@ -1278,7 +1279,7 @@ test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」
 
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`/projects/${project.id}`);
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.locator("#period-end").fill(TODAY);
     const active = page.getByRole("main").getByRole("button", { name: /일괄 저장/ });
     await expect(active).not.toHaveAttribute("aria-disabled", "true");

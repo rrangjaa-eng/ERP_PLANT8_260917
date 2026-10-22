@@ -15,7 +15,7 @@ import { validatePreEstimateChange, type PreEstimateFieldError } from "@/domain/
 import type { Currency, Money } from "@/domain/money";
 import styles from "./project-detail.module.css";
 
-// 04-44(DR-28 · DR-37 · 계약 8 · S17 · §7-15) — 머리 줄 아래 총 매출 예상가 칸 묶음. 기간 칸(04-22)과 같은 형태의
+// 04-44(DR-28 · DR-37 · 계약 8 · S17 · §7-15) · 07-18(K3 — 화면 이름은 `PO 금액`) — 정보 면 `고치기` 묶음의 사전견적(총 매출 예상가) 칸. 기간 칸(04-22)과 같은 형태의
 // `Form.Actions`가 없는 칸 폼이다 — 고치면 화면 1차 「일괄 저장」의 N에 합류하고 같은 트랜잭션으로 저장된다.
 // 값·dirty·오류는 QuoteLedger가 갖고 이 컴포넌트는 그리기와 키만 맡는다. 칸 값은 입력 칸 글자(쉼표 포함) 그대로다.
 export type PreEstimateDraft = { amount: string; currency: Currency; fxRate: string };
@@ -24,13 +24,6 @@ export type { PreEstimateFieldError };
 function numberText(value: number, kind: NumberInputKind): string {
   const raw = String(value);
   return formatNumberInput({ raw, caret: raw.length, kind }).text;
-}
-
-// 부제 글자 — 저장된 0은 미입력으로 본다(S17 empty · 사용자 2026-09-23).
-export function preEstimateText(value: Money): string {
-  if (value.amountKrw === 0) return "총 매출 예상가 —";
-  const foreign = formatForeignLine(value);
-  return `총 매출 예상가 ${formatKrw(value.amountKrw)}${foreign ? ` · ${foreign}` : ""}`;
 }
 
 // 07-18(SC-19) — 정보 면 값 글자. 저장된 0은 미입력이라 null(화면이 `없음`을 muted로 그린다 — 개정 12 · K21).
@@ -185,14 +178,14 @@ export function PreEstimateField({
       className={saved ? `${styles.periodForm} ${styles.periodSaved}` : styles.periodForm}
       onSubmit={(event) => event.preventDefault()}
     >
-      <Form.Field id="pre-estimate-amount" label="총 매출 예상가" width="short">
+      <Form.Field id="pre-estimate-amount" label="PO 금액" width="short">
         <CommaInput
           id="pre-estimate-amount"
           kind={draft.currency === "KRW" ? "krw" : "foreign"}
           value={draft.amount}
           dirty={draft.amount !== baseline.amount}
           error={errorOf("amount")}
-          focusOnMount
+          focusOnMount={false}
           readOnly={saveLocked}
           onChange={(amount) => onChange({ ...draft, amount })}
           onKeyDown={handleKeyDown}

@@ -11,6 +11,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertVendor } from "@/repositories/vendors";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { expandProjectInfo, openProjectInfoEdit, projectInfo } from "./project-info-helpers";
 
 // 04-11(D-76 · D-81 · PR #38 /qa 「잘못된 id 404」) — 날짜로 움직이는 상세. 날짜는 전부
 // 오늘(KST)에서 더해 만든다 — 「종료일 = 오늘」 경계는 단위·통합이 now 주입으로 본다(A-18).
@@ -180,11 +181,12 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await page.goto(`/projects/${project.id}`);
     await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
     await expect(headerTag(page, "정산")).toBeVisible();
-    await expect(page.getByText(`기간 ${startDate} ~ ${endDate}`, { exact: true })).toBeVisible();
+    await expandProjectInfo(page);
+    await expect(projectInfo(page).getByText(`${startDate} ~ ${endDate}`, { exact: true })).toBeVisible();
 
     const firstEnd = addDays(TODAY, 7);
-    // 04-30 — 0줄 정산 표의 EMPTY도 팀장에게 「기간 바꾸기」를 둔다(같은 이름 둘) — 기간 칸의 여는 버튼을 id로 고른다.
-    await page.locator("#period-open").click();
+    // 04-30 — 0줄 정산 표의 EMPTY도 팀장에게 「기간 바꾸기」를 둔다(같은 이름 둘) — 07-18부터 기간 칸은 정보 면 `고치기`로 연다.
+    await openProjectInfoEdit(page);
     await page.getByLabel("종료일").fill(firstEnd);
     await expect(page.getByText("저장하면 진행으로 돌아감", { exact: true })).toBeVisible();
     const firstSave = waitForSaveAction(page);
@@ -192,16 +194,16 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await firstSave;
 
     await expect(headerTag(page, "진행")).toBeVisible();
-    await expect(page.getByText(`기간 ${startDate} ~ ${firstEnd}`, { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByText(`${startDate} ~ ${firstEnd}`, { exact: true })).toBeVisible();
 
     const secondEnd = addDays(TODAY, 9);
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.getByLabel("종료일").fill(secondEnd);
     const secondSave = waitForSaveAction(page);
     await page.getByRole("button", { name: /일괄 저장 1/ }).click();
     await secondSave;
 
-    await expect(page.getByText(`기간 ${startDate} ~ ${secondEnd}`, { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByText(`${startDate} ~ ${secondEnd}`, { exact: true })).toBeVisible();
     await expect(page.getByText("다른 사람이 먼저 기간을 바꿈 · 새로 고침")).toHaveCount(0);
     const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
     expect(row?.status).toBe("in_progress");
@@ -234,15 +236,15 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     });
 
     const firstEnd = addDays(TODAY, 7);
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.getByLabel("종료일").fill(firstEnd);
     const firstSave = waitForSaveAction(page);
     await page.getByRole("button", { name: /일괄 저장 1/ }).click();
     await firstSave;
-    await expect(page.getByText(`기간 ${startDate} ~ ${firstEnd}`, { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByText(`${startDate} ~ ${firstEnd}`, { exact: true })).toBeVisible();
 
     const secondEnd = addDays(TODAY, 9);
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.getByLabel("종료일").fill(secondEnd);
     const secondSave = waitForSaveAction(page);
     await page.getByRole("button", { name: /일괄 저장 1/ }).click();
@@ -276,7 +278,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
 
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await openProjectInfoEdit(page);
     await page.getByLabel("종료일").fill(addDays(TODAY, -1));
     const saving = waitForSaveAction(page);
     await page.getByRole("button", { name: /일괄 저장 1/ }).click();
@@ -307,7 +309,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
     await expect(headerTag(page, "진행")).toBeVisible();
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await openProjectInfoEdit(page);
     await page.getByLabel("종료일").fill(addDays(TODAY, -1));
     await expect(page.getByText("저장하면 정산이 됨", { exact: true })).toBeVisible();
     const saving = waitForSaveAction(page);
@@ -317,7 +319,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(headerTag(page, "정산")).toBeVisible();
   });
 
-  test("(6) 기간 칸의 Esc는 편집 값을 되돌리고, 원래 값이면 묶음을 닫아 포커스가 「기간 바꾸기」로 돌아온다", async ({ page }) => {
+  test("(6) 기간 칸의 Esc는 편집 값을 되돌리고, 원래 값이면 묶음을 닫아 포커스가 「고치기」로 돌아온다", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
     const endDate = addDays(TODAY, 5);
@@ -325,7 +327,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
 
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await openProjectInfoEdit(page);
     const endInput = page.getByLabel("종료일");
     await endInput.fill(addDays(TODAY, 8));
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
@@ -336,7 +338,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
 
     await endInput.press("Escape");
     await expect(page.getByLabel("종료일")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "기간 바꾸기" })).toBeFocused();
+    await expect(projectInfo(page).getByRole("button", { name: "고치기", exact: true })).toBeFocused();
   });
 
   // /review R-3 — 네이티브 날짜 칸을 덜 채우면 값이 ""로 온다(validity.badInput). 비운 것으로 저장해
@@ -349,7 +351,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
 
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await openProjectInfoEdit(page);
     const endInput = page.getByLabel("종료일");
     await endInput.focus();
     await endInput.press("Backspace");
@@ -361,7 +363,8 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(page.getByText("날짜 없음 · 날짜 고르기", { exact: true })).toBeVisible();
 
     await page.reload();
-    await expect(page.getByText(new RegExp(`^기간 \\S+ ~ ${endDate}$`))).toBeVisible();
+    await expandProjectInfo(page);
+    await expect(projectInfo(page).getByText(new RegExp(`^\\S+ ~ ${endDate}$`))).toBeVisible();
   });
 
   // /qa ISSUE-001 — 조각을 하나씩 전부 지우면 값은 ""이고 badInput도 풀린다. 첫 조각에서만 input 이벤트가
@@ -374,7 +377,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
 
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await openProjectInfoEdit(page);
     const endInput = page.getByLabel("종료일");
     await endInput.focus();
     for (const key of ["Backspace", "Tab", "Backspace", "Tab", "Backspace"]) await endInput.press(key);
@@ -386,7 +389,8 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(page.getByText("날짜 없음 · 날짜 고르기", { exact: true })).toHaveCount(0);
 
     await page.reload();
-    await expect(page.getByText(/^기간 \S+ ~ —$/)).toBeVisible();
+    await expandProjectInfo(page);
+    await expect(projectInfo(page).getByText(/^\S+ ~ —$/)).toBeVisible();
   });
 
   // /review (data-migration) — 덜 채운 날짜는 보관본에 「덜 채움」으로 남는다. 「복원」 뒤 그 칸에서 값을 바꾸지
@@ -399,7 +403,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
 
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await openProjectInfoEdit(page);
     const endInput = page.getByLabel("종료일");
     await endInput.focus();
     await endInput.press("Backspace");
@@ -416,14 +420,15 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(page.getByText("날짜 없음 · 날짜 고르기", { exact: true })).toBeVisible();
 
     await page.reload();
-    await expect(page.getByText(new RegExp(`^기간 \\S+ ~ ${endDate}$`))).toBeVisible();
+    await expandProjectInfo(page);
+    await expect(projectInfo(page).getByText(new RegExp(`^\\S+ ~ ${endDate}$`))).toBeVisible();
   });
 });
 
 // 04-44(DR-28 · DR-37 · 계약 8 · S17) — 머리 줄 부제의 총 매출 예상가. 권리는 기간 칸과 같다. 계급 권한·정보
 // 노출은 시드 그대로 둔다(ENG-D2).
 test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
-  test("(7) 같은 팀 팀장이 수주중 프로젝트의 총 매출 예상가를 부제 3차로 열어 저장하면 부제가 새 값이고, 새로 고쳐도 같다 · 값이 0이면 「총 매출 예상가 —」", async ({ page }) => {
+  test("(7) 같은 팀 팀장이 수주중 프로젝트의 PO 금액을 정보 면 「고치기」로 열어 저장하면 면이 새 값이고, 새로 고쳐도 같다 · 값이 0이면 「PO 금액 · 없음」", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
     const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
@@ -432,10 +437,10 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
     await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
-    await expect(page.getByText("총 매출 예상가 —", { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByText("PO 금액 · 없음", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
-    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await openProjectInfoEdit(page);
+    const amount = page.getByLabel("PO 금액", { exact: true });
     await amount.fill("50000000");
     await expect(amount).toHaveValue("50,000,000");
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
@@ -443,10 +448,10 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await amount.press("Control+s");
     await saving;
 
-    await expect(page.getByText("총 매출 예상가 50,000,000", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("총 매출 예상가", { exact: true })).toHaveCount(0);
+    await expect(projectInfo(page).getByText("50,000,000", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("PO 금액", { exact: true })).toHaveCount(0);
     await page.reload();
-    await expect(page.getByText("총 매출 예상가 50,000,000", { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByText("PO 금액 · 50,000,000", { exact: true })).toBeVisible();
     const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
     expect(row?.preEstimateAmountKrw).toBe(50_000_000);
   });
@@ -461,8 +466,8 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
 
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
-    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await openProjectInfoEdit(page);
+    const amount = page.getByLabel("PO 금액", { exact: true });
     await amount.fill("1500000");
     await expect(amount).toHaveValue("1,500,000");
 
@@ -472,15 +477,16 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     expect(await amount.evaluate((element) => (element as HTMLInputElement).selectionStart)).toBe(1);
   });
 
-  test("(8) 정산 프로젝트의 담당 PM에게는 값만 있고 「총 매출 예상가 바꾸기」가 없다(권리 none)", async ({ page }) => {
+  test("(8) 정산 프로젝트의 담당 PM에게는 값만 있고 「고치기」가 없다(권리 none)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
     const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "settling", endDate: addDays(TODAY, -1) });
 
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
-    await expect(page.getByText("총 매출 예상가 —", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "총 매출 예상가 바꾸기" })).toHaveCount(0);
+    await expect(projectInfo(page).getByText("PO 금액 · 없음", { exact: true })).toBeVisible();
+    await expandProjectInfo(page);
+    await expect(projectInfo(page).getByRole("button", { name: /고치기/ })).toHaveCount(0);
   });
 
   test("(9) 음수 금액을 Ctrl+S로 저장하면 칸 아래 「0 이상」 + 견적 표 합계 행 「전부 거부 · 다른 칸 오류 1칸」 · Esc 두 번이면 묶음이 닫히고 포커스가 3차로", async ({ page }) => {
@@ -499,15 +505,15 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
 
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
-    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await openProjectInfoEdit(page);
+    const amount = page.getByLabel("PO 금액", { exact: true });
     await amount.fill("-1");
     const saving = waitForSaveAction(page);
     await amount.press("Control+s");
     await saving;
 
     await expect(amount).toHaveAttribute("aria-invalid", "true");
-    await expect(page.getByText("총 매출 예상가는 0 이상 · 금액 수정", { exact: true })).toBeVisible();
+    await expect(page.getByText("PO 금액은 0 이상 · 금액 수정", { exact: true })).toBeVisible();
     // 04-16(D-85 · R2) — PM에게도 발행 표가 있어 그 합계 행에도 같은 글자가 나온다. 견적 표로 좁힌다.
     await expect(page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) }).locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸")).toBeVisible();
     const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
@@ -516,8 +522,8 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await amount.press("Escape");
     await expect(amount).toHaveValue("");
     await amount.press("Escape");
-    await expect(page.getByLabel("총 매출 예상가", { exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "총 매출 예상가 바꾸기" })).toBeFocused();
+    await expect(page.getByLabel("PO 금액", { exact: true })).toHaveCount(0);
+    await expect(projectInfo(page).getByRole("button", { name: "고치기", exact: true })).toBeFocused();
   });
 
   test("(9b) 금액 칸에 거부되는 값(원화 소수점)을 넣으면 칸 아래 S15 이유가 보이고 값은 그대로 · Esc로 되돌리면 이유도 사라진다(리뷰 S-2)", async ({ page }) => {
@@ -528,8 +534,8 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
 
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
-    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await openProjectInfoEdit(page);
+    const amount = page.getByLabel("PO 금액", { exact: true });
     await amount.fill("12000");
     // S15 — 한 글자 입력은 조용히 거른다. 거부 이유는 붙여넣기처럼 한 번에 들어온 값에 붙는다(number-format (편집기 붙여넣기)와 같다).
     await amount.fill("1,234.56");
@@ -543,7 +549,7 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await expect(page.getByText("원화는 소수점 없이", { exact: true })).toHaveCount(0);
   });
 
-  test("(10) 상태가 바뀌어 전부 거부된 뒤 「복원」은 총 매출 예상가 묶음을 열고 편집 값을 dirty로 되살린다(D-68)", async ({ page }) => {
+  test("(10) 상태가 바뀌어 전부 거부된 뒤 「복원」은 PO 금액 묶음을 열고 편집 값을 dirty로 되살린다(D-68)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
     const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
@@ -551,8 +557,8 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
 
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
-    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await openProjectInfoEdit(page);
+    const amount = page.getByLabel("PO 금액", { exact: true });
     await amount.fill("7000000");
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
 
@@ -565,7 +571,7 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await expect(headerTag(page, "미수주")).toBeVisible();
     await expect(page.getByText("저장 안 한 편집 1칸")).toBeVisible();
     await page.getByRole("button", { name: "복원" }).click();
-    await expect(page.getByLabel("총 매출 예상가", { exact: true })).toHaveValue("7,000,000");
+    await expect(page.getByLabel("PO 금액", { exact: true })).toHaveValue("7,000,000");
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
   });
 });
@@ -626,25 +632,33 @@ test.describe("상태 모달 → 기간 칸 · 폰 부제 순서 (04-44, PROJ-04
     await expect(page.getByLabel("종료일")).toBeFocused();
   });
 
-  // UI-SPEC S3(:1122) · DR-26(:498, :1153) — `번호 · 차수 · … · 총 매출 예상가 … · 상태 날짜` 순서, 폰은 `기간 …`이 첫 항목.
+  // UI-SPEC S3(:1122) · DR-26(:498, :1153) → 07-18 SC-19 — 메타(번호 · 차수) → 상태 날짜 → 정보 면(접힌 줄 `PO 금액 · …`), 펼치면 기간 → PO 금액 → PO 번호 순서.
   async function headerItemTops(page: Page, project: { number: string }, endDate: string) {
-    const items = {
-      period: page.getByText(`기간 ${addDays(endDate, -3)} ~ ${endDate}`, { exact: true }),
-      subtitle: page.getByText(`${project.number} · 상세 견적 1차`, { exact: true }),
-      preEstimate: page.getByText("총 매출 예상가 —", { exact: true }),
-      statusDate: page.getByText(`수주중 ${TODAY}`, { exact: true }),
+    const measure = async (items: Record<string, Locator>) => {
+      const tops: Record<string, number> = {};
+      for (const [key, locator] of Object.entries(items)) {
+        await expect(locator).toBeVisible();
+        const box = await locator.boundingBox();
+        if (!box) throw new Error(`${key} 항목이 보이지 않습니다`);
+        tops[key] = box.y;
+      }
+      return tops;
     };
-    const tops: Record<string, number> = {};
-    for (const [key, locator] of Object.entries(items)) {
-      await expect(locator).toBeVisible();
-      const box = await locator.boundingBox();
-      if (!box) throw new Error(`${key} 항목이 보이지 않습니다`);
-      tops[key] = box.y;
-    }
-    return tops as Record<keyof typeof items, number>;
+    const folded = await measure({
+      subtitle: page.getByText(`${project.number} · 상세 견적 1차`, { exact: true }),
+      statusDate: page.getByText(`수주중 ${TODAY}`, { exact: true }),
+      info: projectInfo(page).getByText("PO 금액 · 없음", { exact: true }),
+    });
+    await expandProjectInfo(page);
+    const expanded = await measure({
+      period: projectInfo(page).getByText(`${addDays(endDate, -3)} ~ ${endDate}`, { exact: true }),
+      preEstimate: projectInfo(page).getByText("PO 금액", { exact: true }),
+      poNumber: projectInfo(page).getByText("PO 번호", { exact: true }),
+    });
+    return { ...folded, ...expanded } as Record<"subtitle" | "statusDate" | "info" | "period" | "preEstimate" | "poNumber", number>;
   }
 
-  test("(14) 375×812에서도 메타(번호 · 차수)가 제목 바로 아래이고 그 아래가 기간 → 총 매출 예상가 → 상태 날짜다 (DR-26 → DetailScreen 틀 순서, 04.6-12)", async ({ page }) => {
+  test("(14) 375×812에서도 메타(번호 · 차수)가 제목 바로 아래이고 그 아래가 상태 날짜 → 정보 면(기간 → PO 금액 → PO 번호)이다 (DR-26 → DetailScreen 틀 순서, 04.6-12, 07-18)", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
@@ -656,12 +670,13 @@ test.describe("상태 모달 → 기간 칸 · 폰 부제 순서 (04-44, PROJ-04
     await page.goto(`/projects/${project.id}`);
     const tops = await headerItemTops(page, project, endDate);
     // DetailScreen은 메타 한 줄을 머리 줄 바로 아래에 두므로 폰에서도 PC와 같은 순서다(옛 폰 전용 「기간 먼저」 재배치는 틀로 대체).
-    expect(tops.subtitle).toBeLessThan(tops.period);
+    expect(tops.subtitle).toBeLessThan(tops.statusDate);
+    expect(tops.statusDate).toBeLessThan(tops.info);
     expect(tops.period).toBeLessThan(tops.preEstimate);
-    expect(tops.preEstimate).toBeLessThan(tops.statusDate);
+    expect(tops.preEstimate).toBeLessThan(tops.poNumber);
   });
 
-  test("(14b) 1280에서 부제 순서는 번호 · 차수 → 기간 → 총 매출 예상가 → 상태 날짜다 (UI-SPEC S3, 리뷰 S-1)", async ({ page }) => {
+  test("(14b) 1280에서 순서는 번호 · 차수 → 상태 날짜 → 정보 면(기간 → PO 금액 → PO 번호)이다 (UI-SPEC S3 → SC-19, 리뷰 S-1)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
@@ -672,8 +687,9 @@ test.describe("상태 모달 → 기간 칸 · 폰 부제 순서 (04-44, PROJ-04
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
     const tops = await headerItemTops(page, project, endDate);
-    expect(tops.subtitle).toBeLessThan(tops.period);
+    expect(tops.subtitle).toBeLessThan(tops.statusDate);
+    expect(tops.statusDate).toBeLessThan(tops.info);
     expect(tops.period).toBeLessThan(tops.preEstimate);
-    expect(tops.preEstimate).toBeLessThan(tops.statusDate);
+    expect(tops.preEstimate).toBeLessThan(tops.poNumber);
   });
 });

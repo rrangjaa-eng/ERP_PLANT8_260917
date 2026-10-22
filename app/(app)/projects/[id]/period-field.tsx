@@ -122,10 +122,10 @@ export function PeriodField({
   );
 }
 
-// 부제의 기간 글자 — 날짜는 식별자형이라 쉼표가 없다(D-95 예외).
-export function periodText(startDate: string | null, endDate: string | null): string {
-  if (!startDate && !endDate) return "기간 미정";
-  return `기간 ${startDate ?? "—"} ~ ${endDate ?? "—"}`;
+// 정보 면 `기본` 섹션의 기간 값 — 날짜는 식별자형이라 쉼표가 없다(D-95 예외).
+export function periodRangeText(startDate: string | null, endDate: string | null): string {
+  if (!startDate && !endDate) return "미정";
+  return `${startDate ?? "—"} ~ ${endDate ?? "—"}`;
 }
 
 // 07-18(SC-19 · U14) — 정보 면 접힌 줄의 기간(`MM-DD~MM-DD`). 금액을 볼 수 없는 계급의 접힌 줄이 비지 않게 한다.

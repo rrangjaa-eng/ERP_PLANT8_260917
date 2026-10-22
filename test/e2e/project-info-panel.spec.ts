@@ -171,3 +171,125 @@ test.describe("PO 번호 · 고치기 하나 (N1 · D-737)", () => {
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
   });
 });
+
+test.describe("고치기 하나 — 기간 · PO 금액 · PO 번호 한 묶음 (N1 · D-P2-3 · K3 · K21)", () => {
+  test("`고치기` 하나가 기간 두 칸 · PO 금액 · PO 번호를 한꺼번에 열고 머리의 따로 된 버튼 둘은 없다 · 기간과 PO 번호를 바꾸면 일괄 저장 2", async ({ page }) => {
+    const { lead, project } = await setup();
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+
+    await expect(page.getByRole("button", { name: "총 매출 예상가 바꾸기" })).toHaveCount(0);
+    await expect(page.locator("#period-open")).toHaveCount(0);
+    await expect(page.locator("#pre-estimate-open")).toHaveCount(0);
+
+    await openProjectInfoEdit(page);
+    const panel = projectInfo(page);
+    await expect(panel.getByRole("button", { name: /고치기/ })).toHaveCount(1);
+    await expect(panel.getByLabel("시작일")).toBeFocused();
+    await expect(panel.getByLabel("종료일")).toBeVisible();
+    await expect(panel.getByLabel("PO 금액", { exact: true })).toBeVisible();
+    await expect(panel.getByLabel("통화")).toBeVisible();
+    await expect(panel.getByLabel("PO 번호", { exact: true })).toBeVisible();
+
+    const newEnd = addDays(TODAY, 25);
+    await panel.getByLabel("종료일").fill(newEnd);
+    await panel.getByLabel("PO 번호", { exact: true }).fill("PO-BUNDLE");
+    await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
+    const saving = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 2/ }).click();
+    await saving;
+
+    await expect(panel.getByLabel("종료일")).toHaveCount(0);
+    await expect(panel.getByText(`${addDays(TODAY, 2)} ~ ${newEnd}`, { exact: true })).toBeVisible();
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+    expect(row?.endDate).toBe(newEnd);
+    expect(row?.poNumber).toBe("PO-BUNDLE");
+  });
+
+  test("묶음의 첫 Esc는 세 칸을 모두 원래 값으로 돌리고 칸은 열려 있으며, 두 번째 Esc가 닫고 포커스가 `고치기`로 온다", async ({ page }) => {
+    const { lead, project } = await setup();
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await openProjectInfoEdit(page);
+
+    const panel = projectInfo(page);
+    const end = panel.getByLabel("종료일");
+    const endBase = await end.inputValue();
+    const amount = panel.getByLabel("PO 금액", { exact: true });
+    const poNumber = panel.getByLabel("PO 번호", { exact: true });
+    await end.fill(addDays(TODAY, 30));
+    await amount.fill("1234000");
+    await poNumber.fill("PO-ESC-ALL");
+    await expect(page.getByRole("button", { name: /일괄 저장 3/ })).toBeVisible();
+
+    await amount.press("Escape");
+    await expect(end).toHaveValue(endBase);
+    await expect(amount).toHaveValue("");
+    await expect(poNumber).toHaveValue("");
+    await expect(page.getByRole("button", { name: /일괄 저장 \d/ })).toHaveCount(0);
+
+    await poNumber.press("Escape");
+    await expect(panel.getByLabel("PO 번호", { exact: true })).toHaveCount(0);
+    await expect(panel.getByLabel("종료일")).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "고치기", exact: true })).toBeFocused();
+  });
+
+  test("PO 금액은 이름이 곳곳에서 같다 — 빈 값은 `없음`, 저장하면 접힌 줄과 기본 섹션이 새 값이고 음수는 `PO 금액은 0 이상 · 금액 수정`", async ({ page }) => {
+    const { lead, project } = await setup();
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await expandProjectInfo(page);
+
+    const panel = projectInfo(page);
+    await expect(panel.getByText("PO 금액", { exact: true })).toBeVisible();
+    await expect(panel.getByText("총 매출 예상가")).toHaveCount(0);
+
+    await panel.getByRole("button", { name: "고치기", exact: true }).click();
+    const amount = panel.getByLabel("PO 금액", { exact: true });
+    await amount.fill("-1");
+    const rejected = waitForSaveAction(page);
+    await amount.press("Control+s");
+    await rejected;
+    await expect(amount).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByText("PO 금액은 0 이상 · 금액 수정", { exact: true })).toBeVisible();
+
+    await amount.fill("50000000");
+    const saving = waitForSaveAction(page);
+    await amount.press("Control+s");
+    await saving;
+    await expect(panel.getByText("50,000,000", { exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(projectInfo(page).getByText("PO 금액 · 50,000,000", { exact: true })).toBeVisible();
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+    expect(row?.preEstimateAmountKrw).toBe(50_000_000);
+  });
+
+  test("정산 0줄 표의 `기간 바꾸기`(라벨 그대로)는 면을 펼치고 묶음을 열어 종료일 칸에 포커스를 둔다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E정보클라이언트-${randomUUID()}`, normalizedName: `e2e정보클라이언트-${randomUUID()}` });
+    const created = await createProject(SYSTEM_VIEWER, {
+      clientId: vendor.id,
+      teamId: team,
+      pmUserId: pm.userId,
+      name: `E2E정보정산-${randomUUID().slice(0, 8)}`,
+      startDate: addDays(TODAY, -5),
+      endDate: addDays(TODAY, -1),
+    });
+    await db.update(projects).set({ status: "settling" }).where(eq(projects.id, created.id));
+
+    await login(page, lead);
+    await page.goto(`/projects/${created.id}`);
+    const empty = page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) });
+    await expect(projectInfo(page).getByRole("button", { name: "펼치기", exact: true })).toHaveAttribute("aria-expanded", "false");
+    await expect(async () => {
+      await empty.getByRole("button", { name: "기간 바꾸기" }).click();
+      await expect(projectInfo(page).getByRole("button", { name: "접기", exact: true })).toBeVisible({ timeout: 1_000 });
+    }).toPass();
+    await expect(projectInfo(page).getByLabel("종료일")).toBeFocused();
+    await expect(projectInfo(page).getByRole("button", { name: "고치기 취소", exact: true })).toBeVisible();
+  });
+});

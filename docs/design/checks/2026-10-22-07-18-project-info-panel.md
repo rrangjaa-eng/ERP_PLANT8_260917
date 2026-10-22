@@ -19,4 +19,4 @@
 ## 시스템
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: project-detail.module.css에 더한 `.info*` 규칙의 값은 전부 var() 토큰(`--surface-foot` `--border-surface` `--border-row` `--radius-surface` `--text-muted` `--text-aux` `--s-*`) — `git diff -- '*.css'`로 리터럴 값 없음 확인
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 섹션은 flex-wrap + `min-width: 0` + `overflow-wrap: anywhere`(긴 PO 번호 줄바꿈) · 버튼은 기존 Button 3차(폰 터치 높이는 Button이 정함) · 폭별 실측은 독립 DOM 감사(§6)가 맡는다
-- [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: Task 1은 Playwright 1280 DOM 실측(project-info-panel.spec.ts 5건 녹색) — 폭별 사진은 독립 DOM 감사 보고서(audit/07-18-dom-audit.md)
+- [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: Task 1은 Playwright 1280 DOM 실측(project-info-panel.spec.ts 5건 녹색) · Task 2는 같은 스펙 9건 + project-period (14)(14b) 375/1280 순서 실측 녹색(고치기 하나 · 세 칸 Esc 두 단계 · PO 금액 이름) — 폭별 사진은 독립 DOM 감사 보고서(audit/07-18-dom-audit.md)

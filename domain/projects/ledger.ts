@@ -117,7 +117,7 @@ export class PeriodRejectedError extends UserFacingError {
 // 04-44 — 총 매출 예상가 칸 거부.
 export class PreEstimateRejectedError extends UserFacingError {
   constructor(readonly errors: PreEstimateFieldError[]) {
-    super(errors[0]?.reason ?? "총 매출 예상가 바꾸기 권한 없음");
+    super(errors[0]?.reason ?? "PO 금액 바꾸기 권한 없음");
   }
 }
 

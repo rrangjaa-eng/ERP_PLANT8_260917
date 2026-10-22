@@ -11,6 +11,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertVendor } from "@/repositories/vendors";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { openProjectInfoEdit } from "./project-info-helpers";
 
 // 04-30(D-78 · 사용자 D10·D12 · UI-SPEC rev 5 S4) — 견적 표의 편집 범위가 서버 셀 단계(DTO cellEditability)와
 // 구조 판정(structuralEditability)대로 그려지는지. 날짜는 전부 오늘(KST)에서 더해 만든다(A-18). 계급 권한·정보
@@ -645,7 +646,7 @@ const hintRow = (page: Page) => page.locator("p", { has: page.locator("kbd", { h
 const primarySave = (page: Page) => page.getByRole("button", { name: /일괄 저장/ });
 
 async function changePeriodEnd(page: Page, value: string) {
-  await page.locator("#period-open").click();
+  await openProjectInfoEdit(page);
   await page.locator("#period-end").fill(value);
 }
 
@@ -806,7 +807,13 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
 
     await page.getByRole("button", { name: "고객 승인 표시", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "고객 승인 표시", exact: true });
-    const approved = page.waitForResponse((response) => response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined);
+    // 참여자 목록 읽기 같은 다른 서버 액션 응답이 먼저 오지 않게 승인 요청만 기다린다.
+    const approved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.request().headers()["next-action"] !== undefined &&
+        (response.request().postData() ?? "").includes('"approval"'),
+    );
     await dialog.getByRole("button", { name: /고객 승인 표시/ }).click();
     await approved;
 

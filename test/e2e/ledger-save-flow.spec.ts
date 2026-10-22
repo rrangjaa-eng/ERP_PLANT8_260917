@@ -11,6 +11,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertVendor } from "@/repositories/vendors";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { expandProjectInfo, openProjectInfoEdit, projectInfo } from "./project-info-helpers";
 
 // 04-22(S19 · DR-6 · D-68) — 저장 흐름. 화면이 본 상태와 서버 상태가 다르면 저장 전체가 거부되고, 화면이
 // 새 상태로 다시 그려지며, 편집은 브라우저 보관본에서 복원 줄로 돌아온다. 04-30이 저장 중 잠금 케이스를
@@ -144,7 +145,7 @@ test.describe("저장 중 잠금(DR-3)", () => {
     await expect(firstExecution).toHaveText("777,000");
 
     // 기간 칸을 열어 둔다(표 밖 칸도 잠긴다).
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.locator("#period-end").fill(addDays(TODAY, 12));
     await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
 
@@ -156,7 +157,8 @@ test.describe("저장 중 잠금(DR-3)", () => {
     let saveRequestCount = 0;
     await page.route("**/*", async (route) => {
       const request = route.request();
-      if (request.method() === "POST" && request.headers()["next-action"] !== undefined) {
+      // 참여자 목록 읽기 같은 다른 서버 액션은 붙잡지 않는다 — 저장 요청(seenStatus를 싣는다)만 센다.
+      if (request.method() === "POST" && request.headers()["next-action"] !== undefined && (request.postData() ?? "").includes("seenStatus")) {
         saveRequestCount += 1;
         await held;
       }
@@ -263,7 +265,7 @@ async function editExecution(page: Page, target: ReturnType<Page["locator"]>, va
 }
 
 test.describe("저장 중 잠금 — 복원 줄·표 밖 칸 여는 버튼(리뷰 S-6)", () => {
-  test("요청 중 「버림」·「복원」·기간 바꾸기·총 매출 예상가 바꾸기는 무동작이다", async ({ page }) => {
+  test("요청 중 「버림」·「복원」·고치기는 무동작이다", async ({ page }) => {
     const { grid, execution, holdSaves, release } = await openLockProject(page);
     await editExecution(page, execution(0), "777000");
     await expect(execution(0)).toHaveText("777,000");
@@ -281,10 +283,12 @@ test.describe("저장 중 잠금 — 복원 줄·표 밖 칸 여는 버튼(리�
     await page.getByRole("button", { name: "복원", exact: true }).click();
     await expect(restoreLine).toBeVisible();
     await expect(execution(0)).toHaveText("500,000");
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await expandProjectInfo(page);
+    const editBundle = projectInfo(page).getByRole("button", { name: "고치기", exact: true });
+    await expect(editBundle).toHaveAttribute("aria-disabled", "true");
+    await editBundle.click({ force: true });
     await expect(page.locator("#period-end")).toHaveCount(0);
-    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
-    await expect(page.getByRole("button", { name: "총 매출 예상가 바꾸기" })).toBeVisible();
+    await expect(editBundle).toBeVisible();
 
     release();
     await expect(page.locator("tfoot").getByText(/저장됨/).first()).toBeVisible();

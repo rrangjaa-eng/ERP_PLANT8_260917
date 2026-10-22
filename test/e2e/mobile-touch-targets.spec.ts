@@ -7,6 +7,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertVendor } from "@/repositories/vendors";
 import { kstToday } from "@/lib/kst-date";
+import { openProjectInfoEdit } from "./project-info-helpers";
 
 // quick 260929-npq — 04-UI-REVIEW 지적 1·3. SYSTEM §3 폰 터치 목표 44×44 · UI-SPEC `--touch-min`.
 // 프로젝트 상세 머리 줄 「상태 바꾸기」·「더보기」와 목록 정렬 머리글 「프로젝트명」·「견적」이 폰 375·320에서 44×44 이상,
@@ -154,7 +155,7 @@ test.describe("폰 터치 목표 44 (quick 260929-npq · 04-UI-REVIEW 지적 1·
     await expect(copyRevision).toBeVisible();
     await expect(copyProject).toBeVisible();
     // 기간 칸을 바꿔 1차 「일괄 저장」을 띄운다(quote-edit-scope (l) 선례).
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.locator("#period-end").fill(kstToday(new Date()));
     const save = main.getByRole("button", { name: /일괄 저장/ });
     await expect(save).toBeVisible();
@@ -215,7 +216,7 @@ test.describe("폰 터치 목표 44 (quick 260929-npq · 04-UI-REVIEW 지적 1·
     await login(page, seed.pm);
     await page.setViewportSize({ width: WIDTHS_PC[0], height: 800 });
     await page.goto(`/projects/${seed.projectId}`);
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.locator("#period-end").fill(kstToday(new Date()));
     const save = page.getByRole("main").getByRole("button", { name: /일괄 저장/ });
     await expect(save).toBeVisible();
@@ -269,7 +270,7 @@ test.describe("PR #104 후속 — 폰 복원 줄 44 (DR-104-01) · 머리 줄 Ta
     await login(page, seed.pm);
     await page.setViewportSize({ width: 375, height: 800 });
     await page.goto(`/projects/${seed.projectId}`);
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.locator("#period-end").fill(kstToday(new Date()));
     // 보관이 끝나야 다시 열 때 복원 줄이 뜬다(reserves.spec 선례).
     await expect
@@ -297,7 +298,7 @@ test.describe("PR #104 후속 — 폰 복원 줄 44 (DR-104-01) · 머리 줄 Ta
     await page.setViewportSize({ width: 375, height: 800 });
     await page.goto(`/projects/${seed.projectId}`);
     const main = page.getByRole("main");
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.locator("#period-end").fill(kstToday(new Date()));
     const save = main.getByRole("button", { name: /일괄 저장/ });
     await expect(save).toBeVisible();

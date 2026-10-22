@@ -58,6 +58,16 @@ const PHASE6_WORDS: [string, StatusKind][] = [
   ["선결제 · 증빙 없음", "danger"],
 ];
 
+// 07 개정 1 — 07 화면(지급 목록 · 알림 · 수금 · 로그인 잠김)이 쓰는 낱말 여섯(07-12). `in STATUS_KIND`도 함께 단언한다.
+const PHASE7_WORDS: [string, StatusKind][] = [
+  ["마감 지나 밀림", "warning"],
+  ["수동 지정", "muted"],
+  ["계좌 바뀜", "warning"],
+  ["잠김", "danger"],
+  ["초과", "danger"],
+  ["수금 지연", "warning"],
+];
+
 describe("status-map — 낱말 → 색 한 표", () => {
   for (const [kind, words] of Object.entries(UI_SPEC_TABLE) as [StatusKind, string[]][]) {
     for (const word of words) {
@@ -83,6 +93,13 @@ describe("status-map — 낱말 → 색 한 표", () => {
 
   for (const [word, kind] of PHASE6_WORDS) {
     it(`Phase 6(SP-2): ${word} → ${kind}`, () => {
+      expect(word in STATUS_KIND, `${word}이 표에 있다`).toBe(true);
+      expect(statusKind(word as StatusWord)).toBe(kind);
+    });
+  }
+
+  for (const [word, kind] of PHASE7_WORDS) {
+    it(`07 개정 1: ${word} → ${kind}`, () => {
       expect(word in STATUS_KIND, `${word}이 표에 있다`).toBe(true);
       expect(statusKind(word as StatusWord)).toBe(kind);
     });

@@ -6,6 +6,7 @@ import { MENUS, PERMISSION_ACTIONS, type PermissionAction } from "@/domain/permi
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { customFieldColumns } from "@/domain/custom-fields/visibility";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { buildChanges } from "@/domain/action-log/changes";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday } from "@/lib/kst-date";
@@ -14,6 +15,7 @@ import { assertCanEditRole, visibilityKey } from "@/domain/permissions/grant-cei
 import { lockSeatKeys } from "@/repositories/seats";
 import {
   findPermission,
+  findVisibility,
   listPermissions as defaultListPermissions,
   upsertPermission as defaultUpsertPermission,
   listVisibility as defaultListVisibility,
@@ -134,6 +136,9 @@ export async function setPermissionCell(
       }
     }
 
+    // 07-26(R5): 같은 tx에서 이전 값을 읽어 전후 값을 남긴다.
+    const previous = await findPermission(viewer, input.roleId, input.menu, input.action, tx);
+
     await upsertPermission(viewer, {
       roleId: input.roleId,
       menu: input.menu,
@@ -148,7 +153,13 @@ export async function setPermissionCell(
         actionType: "permission_change",
         entity: "permission_matrix",
         entityId: input.roleId,
-        detail: { roleId: input.roleId, menu: input.menu, action: input.action, allowed: input.allowed },
+        detail: {
+          roleId: input.roleId,
+          menu: input.menu,
+          action: input.action,
+          allowed: input.allowed,
+          changes: buildChanges({ allowed: previous?.allowed ?? null }, { allowed: input.allowed }),
+        },
       },
       { tx },
     );
@@ -207,17 +218,31 @@ export async function setVisibilityCell(
     return { ...before, keys };
   });
 
-  await upsertVisibility(viewer, {
-    roleId: input.roleId,
-    infoItem: input.infoItem,
-    visible: input.visible,
-    updatedBy: viewer.id,
-  });
+  // 07-26(R5): 이전 값 읽기 · 저장 · 기록을 한 tx로 — 기록이 실패하면 노출 값도 그대로다.
+  await withTransaction(async (tx) => {
+    const previous = await findVisibility(viewer, input.roleId, input.infoItem, tx);
 
-  await recordAction(viewer, {
-    actionType: "permission_change",
-    entity: "visibility_matrix",
-    entityId: input.roleId,
-    detail: { roleId: input.roleId, infoItem: input.infoItem, visible: input.visible },
+    await upsertVisibility(viewer, {
+      roleId: input.roleId,
+      infoItem: input.infoItem,
+      visible: input.visible,
+      updatedBy: viewer.id,
+    }, tx);
+
+    await recordAction(
+      viewer,
+      {
+        actionType: "permission_change",
+        entity: "visibility_matrix",
+        entityId: input.roleId,
+        detail: {
+          roleId: input.roleId,
+          infoItem: input.infoItem,
+          visible: input.visible,
+          changes: buildChanges({ visible: previous?.visible ?? null }, { visible: input.visible }),
+        },
+      },
+      { tx },
+    );
   });
 }

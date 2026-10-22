@@ -48,6 +48,8 @@ function writeDeps(now: Date = NOW) {
     // quick 261001-hfi(B2) — 취소는 지운 행이 있어야 성공하고, 삭제 · 로그를 한 트랜잭션에서 부른다.
     deleteFutureHistorizedValue: vi.fn().mockResolvedValue(true),
     recordAction: vi.fn().mockResolvedValue(undefined),
+    // 07-04 — 추가 · 취소가 직전 유효값을 같은 tx에서 읽는다.
+    listHistory: vi.fn().mockResolvedValue([]),
     withTransaction: vi.fn((fn: (t: never) => Promise<unknown>) => fn({} as never)) as never,
   };
 }

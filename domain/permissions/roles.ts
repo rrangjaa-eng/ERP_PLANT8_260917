@@ -4,6 +4,7 @@ import { can as defaultCan } from "@/domain/permissions/can";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { recordAction as RecordActionFn } from "@/domain/action-log/record";
+import { buildChanges } from "@/domain/action-log/changes";
 import type { grantCustomFieldsToRole as GrantCustomFieldsFn } from "@/domain/custom-fields/visibility";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { normalizeRoleName } from "@/domain/permissions/role-name";
@@ -206,7 +207,12 @@ export async function createRole(
   });
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "permission_change", entity: "roles", entityId: row.id });
+  await recordAction(viewer, {
+    actionType: "permission_change",
+    entity: "roles",
+    entityId: row.id,
+    detail: { changes: buildChanges({ name: null }, { name: row.name }) },
+  });
 
   return (await project(viewer, row, ROLE_DTO_SPEC)) as RoleDto;
 }
@@ -222,10 +228,18 @@ export async function renameRole(
     throw new ForbiddenError("계급 이름 변경 권한 없음");
   }
 
-  await repoRenameRole(viewer, id, normalizeRoleName(name));
+  // 07-26(R5): 이전 이름을 읽어 전후 값을 남긴다 — 행이 없으면 이전은 null(오류는 새로 만들지 않는다).
+  const previous = await defaultFindRoleById(viewer, id);
+  const nextName = normalizeRoleName(name);
+  await repoRenameRole(viewer, id, nextName);
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "permission_change", entity: "roles", entityId: id });
+  await recordAction(viewer, {
+    actionType: "permission_change",
+    entity: "roles",
+    entityId: id,
+    detail: { changes: buildChanges({ name: previous?.name ?? null }, { name: nextName }) },
+  });
 }
 
 export async function setRoleWorkScope(
@@ -254,7 +268,10 @@ export async function setRoleWorkScope(
     actionType: "permission_change",
     entity: "roles",
     entityId: id,
-    detail: { workScope: { from: row.workScope, to: workScope } },
+    detail: {
+      workScope: { from: row.workScope, to: workScope },
+      changes: buildChanges({ workScope: row.workScope }, { workScope }),
+    },
   });
 }
 
@@ -288,6 +305,9 @@ export async function setRoleViewScope(
     actionType: "permission_change",
     entity: "roles",
     entityId: id,
-    detail: { viewScope: { from: row.viewScope, to: viewScope } },
+    detail: {
+      viewScope: { from: row.viewScope, to: viewScope },
+      changes: buildChanges({ viewScope: row.viewScope }, { viewScope }),
+    },
   });
 }

@@ -149,7 +149,7 @@ describe("계급 업무 범위(D11·D20)", () => {
       .where(and(eq(actionLog.entity, "roles"), eq(actionLog.entityId, "role-team-lead")));
     expect(logs).toHaveLength(1);
     expect(logs[0]?.actionType).toBe("permission_change");
-    expect(logs[0]?.detail).toEqual({ workScope: { from: "team", to: "company" } });
+    expect(logs[0]?.detail).toEqual({ workScope: { from: "team", to: "company" }, changes: { workScope: ["team", "company"] } });
   });
 
   it("admin.people 쓰기가 없는 기획 PM의 변경은 거부되고 DB 값이 그대로다", async () => {
@@ -242,7 +242,7 @@ describe("계급 보는 범위(06.2 D-6201)", () => {
       .where(and(eq(actionLog.entity, "roles"), eq(actionLog.entityId, "role-team-lead")));
     expect(logs).toHaveLength(1);
     expect(logs[0]?.actionType).toBe("permission_change");
-    expect(logs[0]?.detail).toEqual({ viewScope: { from: "team", to: "company" } });
+    expect(logs[0]?.detail).toEqual({ viewScope: { from: "team", to: "company" }, changes: { viewScope: ["team", "company"] } });
   });
 
   it("자기 계급의 보는 범위는 바꿀 수 없고(값·로그 그대로), 다른 계급은 바꿀 수 있다(CSO-1)", async () => {

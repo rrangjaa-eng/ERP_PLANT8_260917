@@ -91,9 +91,10 @@ export async function findVisibility(
   viewer: Viewer,
   roleId: string,
   infoItem: string,
+  tx: DbOrTx = db,
 ): Promise<VisibilityMatrixRow | null> {
   void viewer;
-  const [row] = await db
+  const [row] = await tx
     .select()
     .from(visibilityMatrix)
     .where(and(eq(visibilityMatrix.roleId, roleId), eq(visibilityMatrix.infoItem, infoItem)))

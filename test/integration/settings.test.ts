@@ -138,7 +138,7 @@ describe("설정 레지스트리 (ADMN-05, 실제 Postgres)", () => {
     );
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({ entity: "settings_historized" });
-    expect(logs[0]?.detail).toEqual({ key: def.key, effectiveFrom: "2999-01-01", cancelled: true });
+    expect(logs[0]?.detail).toEqual({ key: def.key, effectiveFrom: "2999-01-01", cancelled: true, changes: { value: [0.3, null] } });
   });
 
   it("로그 쓰기가 실패하면 예정값 취소도 되돌려져 행이 남는다", async () => {

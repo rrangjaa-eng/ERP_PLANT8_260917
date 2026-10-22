@@ -110,6 +110,25 @@ describe("퇴직자 로그인 막기 (D-743)", () => {
     expect(runs[1]).toEqual(runs[2]);
     expect(runs[3]).toEqual(runs[2]);
   });
+
+  // KST 날짜 경계: UTC 15:00~24:00에는 UTC 날짜가 KST 날짜보다 하루 앞선다 — 퇴직일이 UTC 날짜(= KST 어제)이면 거부.
+  it("UTC 16:00(KST 다음 날 01:00)에 퇴직일 = UTC 날짜 → 거부(KST 어제)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-21T16:00:00Z"));
+      expect(toKstDate(new Date())).toBe("2026-10-22");
+      const retiree = await person("retiree-kst-edge", "2026-10-21");
+      const active = await person("retiree-kst-control", null);
+
+      const retired = await signIn(retiree.email, retiree.tempPassword, "198.51.100.148");
+      const wrong = await signIn(active.email, "wrong-password", "198.51.100.148");
+      expect(wrong.status).toBe(401);
+      expect(retired.status).toBe(wrong.status);
+      expect(await retired.json()).toEqual(await wrong.json());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("퇴직자의 기존 세션 (D-743 · A-P1-2)", () => {

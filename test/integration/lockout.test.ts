@@ -6,7 +6,7 @@ import { loginAttempts } from "@/db/schema";
 import { createAccount, unlockAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { backdateOpenFailures, countOpenFailures } from "@/repositories/login-attempts";
-import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
+import { lockoutConfig, reserveLoginAttempt, settleLoginFailure, windowStart } from "@/domain/auth/lockout";
 import { setSettingValue } from "@/domain/settings/registry";
 import { AUTH_LOCKOUT_WINDOW_MINUTES } from "@/domain/settings/keys";
 import { lockedMessage } from "@/domain/auth/locked-message";
@@ -213,6 +213,21 @@ describe("계정 잠금 (login_attempts)", () => {
       statusCode: 403,
       message: lockedMessage(windowMinutes),
     });
+  });
+
+  // D-712 자가 회복: 로그인 뒤 훅의 잠금 기록이 실패해 롤백돼도, 다음 시도가 잠금 기록 확인을 다시 지나 한 행을 채운다.
+  it("K: settle의 잠금 기록 실패 뒤 다음 시도에서 account_lock 1행", async () => {
+    const email = uniqueEmail("lockout-k");
+    const ip = "198.51.100.13";
+    const { threshold } = await lockoutConfig();
+    for (let i = 0; i < threshold; i++) await reserveLoginAttempt(email, ip);
+    const failing = vi.fn().mockRejectedValue(new Error("injected"));
+    await expect(settleLoginFailure(email, { recordAction: failing })).rejects.toThrow("injected");
+    expect(failing).toHaveBeenCalledTimes(1);
+    expect(await accountLocks(email)).toBe(0);
+
+    expect((await signIn(email, "wrong-password", ip)).status).toBe(403);
+    expect(await accountLocks(email)).toBe(1);
   });
 
   // 07-09 /cso F1: 잠금 확인과 실패 기록 사이 경쟁 — 동시 시도가 임계를 넘어 검사되지 않는다.

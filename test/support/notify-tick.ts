@@ -1,6 +1,6 @@
 import { createSign, generateKeyPairSync } from "node:crypto";
 import type { Certificates } from "google-auth-library";
-import type { ConditionKind, NotificationCandidate } from "@/domain/notify/condition-kinds";
+import type { ConditionKind, EvaluateContext, NotificationCandidate } from "@/domain/notify/condition-kinds";
 
 // 테스트 전용 — 프로덕션 폴더(app·domain·lib·repositories)는 이 파일을
 // import하지 않는다. 테스트 조건 종류는 `runTick({ conditionKinds })`로만 주입된다
@@ -24,27 +24,30 @@ export function testCandidate(input: {
 
 type CandidateSource =
   | readonly NotificationCandidate[]
-  | (() => readonly NotificationCandidate[] | Promise<readonly NotificationCandidate[]>);
+  | ((ctx: EvaluateContext) => readonly NotificationCandidate[] | Promise<readonly NotificationCandidate[]>);
 
 export type TestConditionKind = ConditionKind & { evaluations: () => number };
 
-// 발생 계약: evaluate({ today })는 referenceDate <= today인 발생을 전부 돌려준다
-// (원장에 이미 있는 발생은 tick이 키로 건너뛴다). source가 함수면 평가마다 불려
-// 던지기·대기 같은 동작을 테스트가 끼울 수 있다.
+// 발생 계약: evaluate(ctx)는 referenceDate <= today인 발생을 전부 돌려준다
+// (원장에 이미 있는 발생은 tick이 키로 건너뛴다). source가 함수면 평가마다 ctx를 받아 불려
+// 던지기·대기·ctx.since 사용 같은 동작을 테스트가 끼울 수 있다. 기본값은 켬·이메일 켬(규칙 행으로 덮어쓴다).
 export function createTestConditionKind(
   source: CandidateSource,
-  opts?: { kind?: string },
+  opts?: { kind?: string; defaults?: ConditionKind["defaults"]; daysRange?: ConditionKind["daysRange"] },
 ): TestConditionKind {
   let count = 0;
   return {
     kind: opts?.kind ?? "test",
     label: "테스트 알림",
     dateUnit: "calendar",
+    defaults: opts?.defaults ?? { enabled: true, emailEnabled: true },
+    ...(opts?.daysRange ? { daysRange: opts.daysRange } : {}),
+    defaultRecipientLabel: "테스트",
     evaluations: () => count,
-    async evaluate({ today }) {
+    async evaluate(ctx) {
       count += 1;
-      const all = typeof source === "function" ? await source() : source;
-      return all.filter((candidate) => candidate.referenceDate <= today);
+      const all = typeof source === "function" ? await source(ctx) : source;
+      return all.filter((candidate) => candidate.referenceDate <= ctx.today);
     },
   };
 }

@@ -283,6 +283,31 @@ describe("tick 배치 규칙", () => {
     }
   });
 
+  it("종류 X의 SQL이 tick tx에서 실패해도(트랜잭션 중단) 종류 Y의 후보는 들어가고 evaluation_failed가 남는다", async () => {
+    const b = await createUser("iso-sql-b");
+    const x = createTestConditionKind(
+      async (ctx) => {
+        if (!ctx.tx) throw new Error("tx 없음");
+        await ctx.tx.execute(sql`select 1/0`);
+        return [];
+      },
+      { kind: "X" },
+    );
+    const y = createTestConditionKind([occ(b, "T-1", "2026-10-01")], { kind: "Y" });
+    const error = vi.spyOn(log, "error");
+    try {
+      const result = await runTick({ conditionKinds: [x, y], now: kst(WED) });
+      expect(result).toMatchObject({ status: "ok", sent: 1 });
+      expect(await rowsFor(b)).toHaveLength(1);
+      const failures = error.mock.calls.filter(([event]) => event === "notify.condition_failed");
+      expect(failures).toHaveLength(1);
+      expect(failures[0]?.[1]).toMatchObject({ kind: "X" });
+      expect((await tickRuns())[0]?.evaluationFailed).toBe(true);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("부분 삽입 → 평가 실패 → 복구: 실행 기록의 미완 목록과 evaluation_failed가 tick마다 바르게 남는다", async () => {
     const a = await createUser("partial-a");
     const b = await createUser("partial-b");

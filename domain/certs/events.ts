@@ -30,6 +30,7 @@ import {
   findEventByCreateRequest,
   findEventCreator,
   insertEvent,
+  listEventIdsInScope,
   listEventSummaries,
   lockEventRow,
   setQrGenerated,
@@ -308,6 +309,13 @@ export async function listEvents(
   const rows = await listEventSummaries(viewer, scope);
   const dtos = rows.map((row) => toListDto(row, now)).sort(byListOrder);
   return { kind: "ok", events: await projectMany(viewer, dtos, CERT_EVENT_LIST_DTO_SPEC) };
+}
+
+// 07-14 알림 착지 링크(N25): 상세 화면(getEventDetail)과 같은 범위(scopeOf)로 볼 수 있는 행사 id만 — 묶음 한 번.
+export async function listVisibleCertEventIds(viewer: Viewer, ids: readonly string[]): Promise<Set<string>> {
+  const scope = await scopeOf(viewer);
+  if (!scope) return new Set();
+  return listEventIdsInScope(viewer, scope, ids.filter((id) => UUID_PATTERN.test(id)));
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

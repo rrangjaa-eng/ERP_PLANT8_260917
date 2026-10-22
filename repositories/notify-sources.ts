@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import {
+  actionLog,
   approvalInstances,
   approvalRoutes,
   approvalSteps,
@@ -248,4 +249,234 @@ export async function listProxyRegistrations(viewer: Viewer, since: Date, limit:
     .orderBy(asc(corpCardUsages.createdAt), asc(corpCardUsages.id))
     .limit(limit + 1);
   return rows.flatMap((row) => (row.recipientId === null || row.projectName === null ? [] : [{ ...row, recipientId: row.recipientId, projectName: row.projectName }]));
+}
+
+// 07-14 결재 결과(N11 · N19 · D-716 · D-744) 사건 — 원천은 행동 로그가 아니라 도메인 표(결재 단계 acted_at)다. since 이후 사건을 사건 id(단계 id)로 돌려준다.
+// 최종 승인 = 승인으로 끝난 지출결의 인스턴스의 지금 차수에서 단계 번호가 가장 큰 처리된 승인 단계. 본인 승인(처리자 = 기안자)은 자기 행동이라 뺀다. limit + 1행까지.
+export type ExpenseResultEventRow = { expenseId: string; drafterId: string; eventId: string; at: Date };
+
+export async function listExpenseFinalApprovals(viewer: Viewer, since: Date, limit: number, tx: DbOrTx = db): Promise<ExpenseResultEventRow[]> {
+  void viewer;
+  return tx
+    .select({ expenseId: expenses.id, drafterId: approvalInstances.drafterId, eventId: approvalSteps.id, at: sql<Date>`${approvalSteps.actedAt}`.mapWith(approvalSteps.actedAt) })
+    .from(approvalSteps)
+    .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+    .innerJoin(approvalInstances, and(eq(approvalInstances.id, approvalRoutes.instanceId), eq(approvalInstances.currentRound, approvalRoutes.round)))
+    .innerJoin(expenses, eq(expenses.id, approvalInstances.documentId))
+    .where(
+      and(
+        eq(approvalInstances.documentKind, "expense"),
+        eq(approvalInstances.status, "approved"),
+        isNull(expenses.deletedAt),
+        eq(approvalSteps.action, "approved"),
+        sql`${approvalSteps.actedBy} <> ${approvalInstances.drafterId}`,
+        sql`${approvalSteps.actedAt} >= ${since.toISOString()}::timestamp`,
+        // 결재선 순서상 마지막 처리 단계(대표 폴백 행도 차수 끝 번호) — 처리 시각 순서가 아니라 단계 번호로 고른다.
+        sql`not exists (select 1 from approval_steps later where later.route_id = ${approvalSteps.routeId} and later.acted_at is not null and later.step_index > ${approvalSteps.stepIndex})`,
+      ),
+    )
+    .orderBy(asc(approvalSteps.actedAt), asc(approvalSteps.id))
+    .limit(limit + 1);
+}
+
+// 반려 — 지출결의 결재 단계가 반려된 사건(차수 무관 — 반려 뒤 다시 제출해 또 반려되면 각자 한 번). 사건 id = 단계 id.
+export async function listExpenseRejections(viewer: Viewer, since: Date, limit: number, tx: DbOrTx = db): Promise<ExpenseResultEventRow[]> {
+  void viewer;
+  return tx
+    .select({ expenseId: expenses.id, drafterId: approvalInstances.drafterId, eventId: approvalSteps.id, at: sql<Date>`${approvalSteps.actedAt}`.mapWith(approvalSteps.actedAt) })
+    .from(approvalSteps)
+    .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+    .innerJoin(approvalInstances, eq(approvalInstances.id, approvalRoutes.instanceId))
+    .innerJoin(expenses, eq(expenses.id, approvalInstances.documentId))
+    .where(
+      and(
+        eq(approvalInstances.documentKind, "expense"),
+        isNull(expenses.deletedAt),
+        eq(approvalSteps.action, "rejected"),
+        sql`${approvalSteps.actedBy} <> ${approvalInstances.drafterId}`,
+        sql`${approvalSteps.actedAt} >= ${since.toISOString()}::timestamp`,
+      ),
+    )
+    .orderBy(asc(approvalSteps.actedAt), asc(approvalSteps.id))
+    .limit(limit + 1);
+}
+
+// 지급 완료(지급 기록 처리 시각) · 지급 취소(취소 시각) — 지급 행 하나가 두 사건을 가질 수 있어 사건 id에 갈래를 붙인다(`paid-{지급 id}` · `cancel-{지급 id}`).
+// 기안자 본인이 처리 · 취소한 건은 자기 행동이라 뺀다.
+export async function listExpensePaymentEvents(
+  viewer: Viewer,
+  input: { since: Date; cancelled: boolean },
+  limit: number,
+  tx: DbOrTx = db,
+): Promise<ExpenseResultEventRow[]> {
+  void viewer;
+  const at = input.cancelled ? expensePayments.cancelledAt : expensePayments.processedAt;
+  const actor = input.cancelled ? expensePayments.cancelledBy : expensePayments.processedBy;
+  const rows = await tx
+    .select({ expenseId: expenses.id, drafterId: expenses.drafterId, paymentId: expensePayments.id, at: sql<Date>`${at}`.mapWith(expensePayments.processedAt) })
+    .from(expensePayments)
+    .innerJoin(expenses, eq(expenses.id, expensePayments.expenseId))
+    .where(and(isNull(expenses.deletedAt), sql`${actor} <> ${expenses.drafterId}`, sql`${at} >= ${input.since.toISOString()}::timestamp`))
+    .orderBy(asc(at), asc(expensePayments.id))
+    .limit(limit + 1);
+  const prefix = input.cancelled ? "cancel" : "paid";
+  return rows.map((row) => ({ expenseId: row.expenseId, drafterId: row.drafterId, eventId: `${prefix}-${row.paymentId}`, at: row.at }));
+}
+
+// 금액 바뀜(AQ-24) — 기안자가 아닌 사람이 제출 뒤 지출결의 금액을 바꾼 사건. 확인 기록(expense_evidence_reviews)은 문서마다 한 행이라 고칠 때마다
+// 덮여 사건마다 키를 못 만든다 → 원천은 그 고침이 같은 tx로 남기는 끌 수 없는 행동 로그 evidence_amount_change(ALWAYS_ON_ACTION_TYPES —
+// 관리자가 꺼서 이 갈래가 조용히 비는 일이 없다). 사건 id = `amount-{로그 seq}`.
+export async function listExpenseAmountChanges(viewer: Viewer, since: Date, limit: number, tx: DbOrTx = db): Promise<ExpenseResultEventRow[]> {
+  void viewer;
+  const rows = await tx
+    .select({ expenseId: expenses.id, drafterId: expenses.drafterId, seq: actionLog.seq, at: actionLog.occurredAt })
+    .from(actionLog)
+    .innerJoin(expenses, sql`${expenses.id}::text = ${actionLog.entityId}`)
+    .where(
+      and(
+        eq(actionLog.actionType, "evidence_amount_change"),
+        eq(actionLog.entity, "expense"),
+        isNull(actionLog.prunedAt),
+        isNull(expenses.deletedAt),
+        sql`${actionLog.actorId} is distinct from ${expenses.drafterId}`,
+        sql`${actionLog.occurredAt} >= ${since.toISOString()}::timestamp`,
+      ),
+    )
+    .orderBy(asc(actionLog.occurredAt), asc(actionLog.seq))
+    .limit(limit + 1);
+  return rows.map((row) => ({ expenseId: row.expenseId, drafterId: row.drafterId, eventId: `amount-${row.seq}`, at: row.at }));
+}
+
+// ── 07-14 재촉 셋(N13) · 임자 없는 증빙 받는 사람(AQ-25) · 착지 링크 재료 ──────────────
+
+// 메뉴 × 쓰기 권한을 가진 계급의 활성 사용자(경영관리 판정 listPaymentManagerIds와 같은 꼴 — 권한표로 해석).
+export async function listMenuWriterIds(viewer: Viewer, menu: string, today: string, tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  const rows = await tx
+    .select({ id: users.id })
+    .from(users)
+    .innerJoin(roles, and(eq(roles.id, users.roleId), isNull(roles.archivedAt)))
+    .innerJoin(
+      permissionMatrix,
+      and(eq(permissionMatrix.roleId, roles.id), eq(permissionMatrix.menu, menu), eq(permissionMatrix.action, "write"), eq(permissionMatrix.allowed, true)),
+    )
+    .where(activeUser(today))
+    .groupBy(users.id)
+    .orderBy(users.id);
+  return rows.map((row) => row.id);
+}
+
+// 정산 상신 재촉 — 정산 중(settling) · 보관 아님 · 정산 결재가 올라가 있지 않은(제출 · 결재 중 · 승인 아님) 프로젝트 중 종료일이 [from, to]인 것.
+export type SettlingProjectRow = { id: string; name: string; pmUserId: string; endDate: string };
+
+export async function listSettlingProjectsNotSubmitted(
+  viewer: Viewer,
+  window: { from: string; to: string },
+  limit: number,
+  tx: DbOrTx = db,
+): Promise<SettlingProjectRow[]> {
+  void viewer;
+  const rows = await tx
+    .select({ id: projects.id, name: projects.name, pmUserId: projects.pmUserId, endDate: projects.endDate })
+    .from(projects)
+    .where(
+      and(
+        isNull(projects.archivedAt),
+        eq(projects.status, "settling"),
+        isNotNull(projects.endDate),
+        gte(projects.endDate, window.from),
+        lte(projects.endDate, window.to),
+        sql`not exists (select 1 from ${settlementApprovals} sa join ${approvalInstances} i on i.document_kind = 'settlement' and i.document_id = sa.id where sa.project_id = ${projects.id} and i.status in ('submitted', 'in_review', 'approved'))`,
+      ),
+    )
+    .orderBy(asc(projects.endDate), asc(projects.id))
+    .limit(limit + 1);
+  return rows.flatMap((row) => (row.endDate === null ? [] : [{ id: row.id, name: row.name, pmUserId: row.pmUserId, endDate: row.endDate }]));
+}
+
+// 반려 방치 재촉 — 지금도 반려 상태(다시 제출 · 회수 · 종결 · 삭제 아님)인 지출결의의 지금 차수 반려 단계가 [from, before) 사이에 반려된 것.
+export type RejectedExpenseRow = { expenseId: string; drafterId: string; stepId: string; rejectedAt: Date };
+
+export async function listRejectedIdleExpenses(
+  viewer: Viewer,
+  window: { from: Date; before: Date },
+  limit: number,
+  tx: DbOrTx = db,
+): Promise<RejectedExpenseRow[]> {
+  void viewer;
+  return tx
+    .select({ expenseId: expenses.id, drafterId: expenses.drafterId, stepId: approvalSteps.id, rejectedAt: sql<Date>`${approvalSteps.actedAt}`.mapWith(approvalSteps.actedAt) })
+    .from(approvalInstances)
+    .innerJoin(approvalRoutes, and(eq(approvalRoutes.instanceId, approvalInstances.id), eq(approvalRoutes.round, approvalInstances.currentRound)))
+    .innerJoin(approvalSteps, and(eq(approvalSteps.routeId, approvalRoutes.id), eq(approvalSteps.action, "rejected")))
+    .innerJoin(expenses, eq(expenses.id, approvalInstances.documentId))
+    .where(
+      and(
+        eq(approvalInstances.documentKind, "expense"),
+        eq(approvalInstances.status, "rejected"),
+        isNull(expenses.deletedAt),
+        isNull(expenses.closedAt),
+        sql`${approvalSteps.actedAt} >= ${window.from.toISOString()}::timestamp`,
+        sql`${approvalSteps.actedAt} < ${window.before.toISOString()}::timestamp`,
+      ),
+    )
+    .orderBy(asc(approvalSteps.actedAt), asc(approvalSteps.id))
+    .limit(limit + 1);
+}
+
+// 견적 재촉 — 보관 · 미수주(lost) · 완료(completed)가 아니고 어느 차수에도 살아 있는 견적 줄이 없는 프로젝트 중 생성이 [from, before)인 것.
+export type QuotelessProjectRow = { id: string; name: string; pmUserId: string; createdAt: Date };
+
+export async function listProjectsWithoutQuote(
+  viewer: Viewer,
+  window: { from: Date; before: Date },
+  limit: number,
+  tx: DbOrTx = db,
+): Promise<QuotelessProjectRow[]> {
+  void viewer;
+  return tx
+    .select({ id: projects.id, name: projects.name, pmUserId: projects.pmUserId, createdAt: projects.createdAt })
+    .from(projects)
+    .where(
+      and(
+        isNull(projects.archivedAt),
+        notInArray(projects.status, ["lost", "completed"]),
+        sql`${projects.createdAt} >= ${window.from.toISOString()}::timestamp`,
+        sql`${projects.createdAt} < ${window.before.toISOString()}::timestamp`,
+        sql`not exists (select 1 from ${quoteLines} ql join ${quoteRevisions} qr on qr.id = ql.revision_id where qr.project_id = ${projects.id} and ql.archived_at is null)`,
+      ),
+    )
+    .orderBy(asc(projects.createdAt), asc(projects.id))
+    .limit(limit + 1);
+}
+
+// 착지 링크(07-14 N25): 결재 단계 id → 문서(종류 · id · 기안자 · 정산이면 프로젝트). 대표 폴백 자리 키(`{차수 id}:fallback`)는 차수로 찾는다.
+export type StepDocumentRow = { key: string; documentKind: string; documentId: string; drafterId: string; projectId: string | null };
+
+export async function listStepDocuments(viewer: Viewer, stepKeys: readonly string[], tx: DbOrTx = db): Promise<StepDocumentRow[]> {
+  void viewer;
+  if (stepKeys.length === 0) return [];
+  const result = await tx.execute<{ key: string; document_kind: string; document_id: string; drafter_id: string; project_id: string | null }>(sql`
+    select k.key, i.document_kind, i.document_id::text as document_id, i.drafter_id, sa.project_id::text as project_id
+    from unnest(${sql.param([...stepKeys])}::text[]) as k(key)
+    join approval_routes r on r.id = (
+      case
+        when k.key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          then (select s.route_id from approval_steps s where s.id = k.key::uuid)
+        when k.key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:fallback$'
+          then split_part(k.key, ':', 1)::uuid
+      end
+    )
+    join approval_instances i on i.id = r.instance_id
+    left join settlement_approvals sa on i.document_kind = 'settlement' and sa.id = i.document_id
+  `);
+  return result.rows.map((row) => ({ key: row.key, documentKind: row.document_kind, documentId: row.document_id, drafterId: row.drafter_id, projectId: row.project_id }));
+}
+
+// 착지 링크: 보관된 프로젝트 id(canOpenProject의 보관 조건 재료).
+export async function listArchivedProjectIds(viewer: Viewer, ids: readonly string[], tx: DbOrTx = db): Promise<Set<string>> {
+  void viewer;
+  if (ids.length === 0) return new Set();
+  const rows = await tx.select({ id: projects.id }).from(projects).where(and(inArray(projects.id, [...ids]), isNotNull(projects.archivedAt)));
+  return new Set(rows.map((row) => row.id));
 }

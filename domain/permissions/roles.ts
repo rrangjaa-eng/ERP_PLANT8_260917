@@ -227,6 +227,8 @@ export async function renameRole(
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
     throw new ForbiddenError("계급 이름 변경 권한 없음");
   }
+  // 07-15(R16): 위임자는 상한 밖 계급의 이름을 바꾸지 못한다(칸 · 범위는 그대로이므로 바꾸기 전 = 바꾼 뒤).
+  await assertCanEditRole(viewer, id, (before) => before);
 
   // 07-26(R5): 이전 이름을 읽어 전후 값을 남긴다 — 행이 없으면 이전은 null(오류는 새로 만들지 않는다).
   const previous = await defaultFindRoleById(viewer, id);

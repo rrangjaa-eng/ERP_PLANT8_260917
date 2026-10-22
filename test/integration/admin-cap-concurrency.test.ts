@@ -42,7 +42,7 @@ async function bystanderWorld() {
 }
 
 async function expectExactlyOneWins(
-  results: PromiseSettledResult<void>[],
+  results: PromiseSettledResult<unknown>[],
   roleB: string,
   loserType: typeof LastAdminError | typeof ForbiddenError,
   loserMessage: string,
@@ -90,7 +90,7 @@ describe("관리자 키 경합(06.4 D-6408 · 성공 기준 5)", () => {
 // 06.4-02(D-6408 · 성공 기준 5): (a) 같은 팀 두 팀장 발령 (b) 두 관리자가 서로를 강등 (c) 계급 변경(X → 팀장) ∥ 발령(X → 팀장 있는
 // 팀). 결정적 사례는 만나는 키를 홀더가 쥔 동안 두 저장이 그 키에서 기다림(pg_locks 2)을 확인한 뒤 푼다.
 
-async function heldRace(key: string, race: () => Promise<PromiseSettledResult<void>[]>) {
+async function heldRace(key: string, race: () => Promise<PromiseSettledResult<unknown>[]>) {
   const holder = await holdKey(key);
   const both = race();
   let waiting = 0;
@@ -102,7 +102,7 @@ async function heldRace(key: string, race: () => Promise<PromiseSettledResult<vo
   return { waiting, results: await both };
 }
 
-function loserOf(results: PromiseSettledResult<void>[]): unknown {
+function loserOf(results: PromiseSettledResult<unknown>[]): unknown {
   expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
   const loser = results.find((result) => result.status === "rejected");
   return loser?.status === "rejected" ? loser.reason : null;
@@ -242,7 +242,7 @@ async function restoreVsAssignWorld() {
   const l = await makeSeated(uniqueName("팀장L"), TEAM_LEAD_ROLE_ID, teamId);
   await archive(SYSTEM_VIEWER, "user", l.id, deps);
   const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, null);
-  const race = async (): Promise<PromiseSettledResult<void>[]> => {
+  const race = async (): Promise<PromiseSettledResult<unknown>[]> => {
     const [restored, assigned] = await Promise.allSettled([
       restore(admin, "user", l.id, deps),
       assignTeam(admin, { userId: z.id, teamId, effectiveFrom: "2026-09-01" }, deps),

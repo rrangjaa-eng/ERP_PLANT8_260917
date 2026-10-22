@@ -23,7 +23,10 @@ import {
   listRoles as listRoleDtos,
   type RoleViewScope,
   type RoleWorkScope,
+  renameRole as renameRoleDomain,
 } from "@/domain/permissions/roles";
+import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
+import { makeAdminRole, makeDelegatedRole } from "./admin-cap-fixtures";
 import { rowScopeFor } from "@/domain/permissions/scope-for";
 
 describe("roles (ADMN-08, 실제 Postgres)", () => {
@@ -287,5 +290,28 @@ describe("계급 보는 범위(06.2 D-6201)", () => {
       viewerId: person.id,
       by: { kind: "org_unit", orgUnitId: team?.orgUnitId },
     });
+  });
+});
+
+// 07-15(R16): 위임자(시스템 관리자가 아닌 계급 관리자)는 상한 밖 계급의 이름을 바꾸지 못한다 — 상한 검사는 assertCanEditRole 하나.
+describe("계급 이름 바꾸기 상한(07-15 R16)", () => {
+  it("위임자가 상한 밖 계급 이름을 바꾸면 「계급 지정 권한 없음 · 시스템 관리자」 · 이름 그대로 · 상한 안 계급은 성공", async () => {
+    const delegated = await makeDelegatedRole({ name: "위임 이름", viewScope: "team", workScope: "team" });
+    const d = await makePerson("위임자 D", delegated, null);
+    const outside = await makeAdminRole("상한 밖");
+    const outsideName = (await findRoleById(SYSTEM_VIEWER, outside))?.name;
+    const inside = await createRole(SYSTEM_VIEWER, { name: `상한 안-${randomUUID()}` });
+
+    const error = await renameRoleDomain(d, outside, `바꿈-${randomUUID()}`).then(
+      () => new Error("거부되어야 하는데 성공함"),
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(RoleGrantForbiddenError);
+    expect((error as Error).message).toBe("계급 지정 권한 없음 · 시스템 관리자");
+    expect((await findRoleById(SYSTEM_VIEWER, outside))?.name).toBe(outsideName);
+
+    const nextName = `안 바꿈-${randomUUID()}`;
+    await renameRoleDomain(d, inside.id, nextName);
+    expect((await findRoleById(SYSTEM_VIEWER, inside.id))?.name).toBe(nextName);
   });
 });

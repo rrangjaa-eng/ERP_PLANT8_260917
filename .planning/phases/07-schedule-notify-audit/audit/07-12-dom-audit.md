@@ -170,3 +170,26 @@
 - 고른 행 글자 최소 대비 **7.31 ≥ 4.5** → **D1 해소**.
 - 측정 스펙은 임시 파일(`test/e2e/zz-gate0712-d1.spec.ts`, 미추적 · 커밋 안 함).
 - 이웃 상태(게이트 `/review`에서 찾음): 같은 면인 **범위 선택 칸**(`td.selectedCell`, 지급 대상 표에서 Shift+→로 「확인됨」 칸까지 범위)에서는 `41d87df` 뒤에도 `#0E7A66` on `#E4EAE7` = **4.31 FAIL**(재지정이 `.selectedRow`에만 있었음). `.selectedCell`에 같은 두 재지정을 건 뒤 다시 잼: `#005446` on `#E4EAE7` = **7.31 PASS**(같은 빌드 · 같은 DB · 같은 방법).
+
+## c3922dd 재측정 ([검토 4·5회차] 요청)
+
+- 실행자와 별도 에이전트(세션 [#258-06 실행]), HEAD `9aed964f`(c3922dd + origin/main 4f6236e 머지), `CI=true pnpm build` → `pnpm start`, 전용 DB `erp_audit0712b_test`, Playwright `getComputedStyle` 실측(스크린샷 판정 없음). 폭 1280 · 768 · 375 · 320.
+- 현재 HEAD `820633c0`은 여기에 main 8256196(#259) 머지만 더했고, 9aed964f 대비 `app/` · `ui/` · `*.css` 변경이 0이라 이 실측을 그대로 쓴다.
+- 대상 7표: 견적 · 매출 발행/입금 · 발행 요청 · 리저브 · 지급 대상(이체액 · 차이 사유) · 증빙(공개) · 경품.
+
+| 항목 | 계산 값 | 기대 | 판정 |
+|---|---|---|---|
+| 쉬는 편집 칸 `.cellInput` · `.cellInputNumeric` · `.cellSelect` | bg transparent · td transparent · 밑줄 1px #005446 | 투명, 초록 면 아님 | 통과(7표) |
+| 쉬는 칸 글자 대비 | 16.79(흰 면) · 15.53(고친 칸 #F3F7F5) · 13.77(고른 행 #E4EAE7) | ≥ 4.5 | 통과 |
+| 포커스(`:focus-visible` 전부 true) | bg #FFFFFF · outline solid 2px #005446 · offset -2px · radius 6px · shadow none · 대비 16.79 | `--surface-base` + 안쪽 `--accent` 선 | 통과(7표) |
+| 표 안 `--accent-weak`(#EBF2F0) 등 초록 면 | 0 (스캔 220회, 양성 대조 2/2 검출) | 0 | 통과 |
+| 표 안 면 색 전체 | #FFFFFF · #E4EAE7 · #F6F8F7 · #F3F7F5 뿐 | 중립 · dirty만 | 통과 |
+| 768 · 375 · 320 | 7표 렌더, 편집기 0(1024 미만 편집 닫힘 설계), 초록 0, 가로 넘침 0 | 설계대로 | 통과 |
+| 기간 칸 저장 틴트(표 밖) `form.periodForm.periodSaved` | #EBF2F0(`--accent-weak`) 약 600ms, `project-detail.module.css:371-373` | 감사자 기대: `--surface-selected` #E4EAE7(c3922dd 주석 기준) | 불통과 → 처리 아래 |
+
+- 기간 칸 틴트는 `<table>` 밖이라 「표 안 초록 면 0」 위반은 아니다. 감사자가 불통과로 센 근거는 c3922dd가 `quote-table.tsx:1401` 주석만 `--surface-selected`로 바꾸고 규칙 값은 `--accent-weak`로 둔 어긋남이다.
+  - 처리: 주석을 실제 값(`--accent-weak`)으로 되돌렸다. 표 밖 `--accent-weak` 면은 07-12-SUMMARY 「표 밖 `--accent-weak` 면은 그대로(그 화면 플랜 몫)」대로 넘긴다(`project-detail.module.css:369` 포함, 사전 견적 칸 `pre-estimate-field.tsx:178`도 같은 클래스). 화면 CSS 변경이 없어 재측정은 필요 없다.
+- 표 안 저장 성공 틴트(SYSTEM 847)는 c3922dd 이전부터 구현이 없다(Ctrl+S 뒤 99프레임 틴트 없음). 잴 대상이 없어 결함으로 세지 않았다.
+- 참고: SYSTEM.md 300(모션 표) 저장 완료 행 `--g-50` → `--surface-base`가 SYSTEM 847(`--surface-selected`)과 어긋난다 — 그 화면 플랜에서 함께 정리.
+- 측정 못 한 것: 768 · 375 · 320의 편집기 쉼·포커스(1024 미만에는 편집기가 없음, 설계).
+- 판정: 표 안 편집기(c3922dd 대상) 결함 0. 표 밖 `.periodSaved`는 주석 정정 + 화면 플랜으로 넘김.

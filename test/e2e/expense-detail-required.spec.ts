@@ -66,6 +66,10 @@ test.describe("상세 — 제출 필수 (07-28 J13 · N8)", () => {
     await submit.click();
     await expect(page).toHaveURL(new RegExp(`/expenses/${id}\\?submitted=1$`));
     expect((await noteOf(id))?.note).toBe("행사 운영비");
+
+    // 제출한 문서의 상세 화면 — 정보 행 라벨도 `상세`(라벨 「비고」인 지출결의 칸 0).
+    await expect(page.locator("dt", { hasText: /^상세$/ }).locator("xpath=following-sibling::dd[1]")).toHaveText("행사 운영비");
+    await expect(page.locator("dt", { hasText: /^비고$/ })).toHaveCount(0);
     await page.context().close();
   });
 });

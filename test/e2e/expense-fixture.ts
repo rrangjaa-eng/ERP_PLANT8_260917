@@ -202,7 +202,8 @@ export async function uniqueReceipt(page: Page): Promise<{ name: string; mimeTyp
 
 // 줄 하나의 작성 중 문서를 만들어 폼에서 사진 한 장을 붙여 제출한다(문이 닫히는 줄 · 제출된 문서가 필요한 스펙). 문서 id를 돌려준다.
 export async function submitLineExpense(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, key: LineKey): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  // 07-28(J13 · N8): 상세는 제출 필수 — 폼이 채워진 채 열린다.
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   const page = await loginPage(browser, baseURL, fx.pm);

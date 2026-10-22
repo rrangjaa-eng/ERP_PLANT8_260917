@@ -35,7 +35,7 @@ import { loginPage, makePerson, setupLeaveOrg, waitForHydration, type LeaveOrg }
 type PreSettleE2E = { org: LeaveOrg; projectId: string; itemName: string; expenseId: string };
 
 async function submitExpenseInBrowser(browser: Browser, baseURL: string | undefined, org: LeaveOrg, lineId: string): Promise<string> {
-  const created = await createExpenseFromLines(org.drafter.viewer, { lineIds: [lineId] });
+  const created = await createExpenseFromLines(org.drafter.viewer, { lineIds: [lineId], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   const page = await loginPage(browser, baseURL, org.drafter);

@@ -13,7 +13,7 @@ import { insertMembership } from "@/repositories/team-memberships";
 import { rejectDocument } from "@/domain/approvals";
 import { createExpenseFromLines, submitExpense } from "@/domain/expenses";
 import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
-import { attachEvidence, makeEvidenceManager, type ExpenseFixture } from "./expenses";
+import { attachEvidence, ensureDetail, makeEvidenceManager, type ExpenseFixture } from "./expenses";
 
 // 06.1-04: 증빙 등록 권한 계급 · 등록 도우미 — 06.1-05 · 06 · 09 · 11이 다시 쓴다.
 // 계급은 새로 만든다 — 시드 계급의 권한을 바꾸면 누수 스캔 · 권한표 단언이 흔들린다(시드는 어느 계급에도 등록을 켜지 않는다).
@@ -141,7 +141,8 @@ export async function insertLinkFixture(input: { recordId: string; ownerKind?: "
 
 /** 작성 중(번호 없음) 지출결의 하나. */
 export async function createDraftExpenseFixture(fx: ExpenseFixture, lineId: string = fx.lines.withVendor): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm, { lineIds: [lineId] });
+  // 07-28(J13 · N8): 상세는 제출 필수 — 작성 중 문서가 채워진 채 만들어진다(제출 시험이 이 도우미로 문서를 만든다).
+  const created = await createExpenseFromLines(fx.pm, { lineIds: [lineId], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("지출결의를 만들지 못했다");
   return expenseId;
@@ -164,6 +165,7 @@ export async function createInReviewExpenseFixture(
   const expenseId = await createDraftExpenseFixture(fx, opts.lineId);
   if (opts.linkRecordId) await insertLinkFixture({ recordId: opts.linkRecordId, ownerId: expenseId, attachedBy: opts.linkedBy ?? fx.pm.id });
   else await attachEvidence(fx.pm, expenseId);
+  await ensureDetail(fx.pm, expenseId);
   const submitted = await submitExpense(fx.pm, { expenseId, expectedVersion: await expenseVersionOf(expenseId) });
   if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
   return { expenseId, instanceId: submitted.instanceId, number: submitted.number };

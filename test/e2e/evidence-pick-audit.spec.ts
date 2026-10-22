@@ -303,7 +303,7 @@ async function closeAndCheckFocus(page: Page, width: number, role: string, url: 
 }
 
 async function inReviewDocument(fx: ExpenseE2E, line: keyof ExpenseE2E["lines"] = "tracer"): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[line].id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[line].id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   await attachEvidence(fx.pm.viewer, expenseId);
@@ -341,7 +341,7 @@ async function withdrawIt(fx: ExpenseE2E, expenseId: string): Promise<void> {
 }
 
 async function draftDocument(fx: ExpenseE2E, line: keyof ExpenseE2E["lines"] = "tracer"): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[line].id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[line].id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   return expenseId;
@@ -872,7 +872,7 @@ test("P6 (G-06.1-29) 작성자 — 고르기 붙인 직후 · 마지막 떼기 �
     const before = await gate();
     record("⑴ 붙이기 전 1차 aria-disabled=true · 이유 줄(폭별 글자)", width, role, url, before, { ariaDisabled: "true", reason: reasonText }, before.ariaDisabled === "true" && before.reason === reasonText);
 
-    const memo = page.getByLabel("비고");
+    const memo = page.getByLabel("상세", { exact: true });
     await memo.fill("저장 안 한 비고");
     await trigger.click();
     const picker = pickDialog(page);

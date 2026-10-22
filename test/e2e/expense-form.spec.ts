@@ -19,7 +19,7 @@ const UPLOAD_WAIT = 20_000;
 const META = /^\d+KB · \d{2}-\d{2}$/;
 
 async function openDraft(page: Page, fx: ExpenseE2E, key: LineKey): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   await page.goto(`/expenses/${expenseId}`);
@@ -136,10 +136,10 @@ test.describe("막힘 이유 (S6)", () => {
     await expect(picker).toBeFocused();
 
     const posts = countActionPosts(page);
-    await page.getByLabel("비고").focus();
+    await page.getByLabel("상세", { exact: true }).focus();
     await submit.click({ force: true });
     await expect(picker).toBeFocused();
-    await page.getByLabel("비고").focus();
+    await page.getByLabel("상세", { exact: true }).focus();
     await page.keyboard.press("Control+Enter");
     await expect(picker).toBeFocused();
     expect(posts.count()).toBe(0);
@@ -348,7 +348,7 @@ test.describe("견적 줄 바꾸기 포커스 플래그 (05 /review B9)", () => 
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     const firstId = await openDraft(page, fx, "tracer");
-    const second = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+    const second = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id], fields: { note: "행사 운영비" } });
     const secondId = second.created[0]?.expenseId;
     if (!secondId) throw new Error("두 번째 작성 중 문서를 만들지 못했다");
 
@@ -408,6 +408,7 @@ test.describe("지급처 계좌 없음 (06.5 V4)", () => {
         teamExpenseKind: "team_overhead",
         usageDate: seoulToday(),
         content: `계좌없음 회식-${suffix}`,
+        note: "행사 운영비",
         vendorId: vendor.id,
         supply: { currency: "KRW", amount: 100_000, fxRate: 1 },
         evidenceType: "tax_invoice",
@@ -440,6 +441,7 @@ test.describe("지급처 계좌 등록 뒤 탭 복귀 (06.5 D-1)", () => {
         teamExpenseKind: "team_overhead",
         usageDate: seoulToday(),
         content: `계좌복귀 회식-${suffix}`,
+        note: "행사 운영비",
         vendorId: vendor.id,
         supply: { currency: "KRW", amount: 100_000, fxRate: 1 },
         evidenceType: "tax_invoice",

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// 05 /review A6(red-team): 사용일 · 지급 예정일이 정규식만 지나 `2026-02-30`이 도메인 · DB까지 갔다(date 범위 오류 → 일반 오류 화면).
+// 05 /review A6(red-team): 사용일 · 지급 예정일(07-16부터 희망 지급일)이 정규식만 지나 `2026-02-30`이 도메인 · DB까지 갔다(date 범위 오류 → 일반 오류 화면).
 // 액션 입력 검증이 칸 오류로 돌려주고 도메인을 부르지 않는다.
 const saved: unknown[] = [];
 vi.mock("@/lib/viewer", () => ({ getSession: () => Promise.resolve({ viewer: { id: "viewer" }, user: { id: "viewer" } }) }));
@@ -29,11 +29,12 @@ describe("지출결의 임시 저장 — 달력에 없는 날짜", () => {
     saved.length = 0;
   });
 
-  it("사용일 2026-02-30 · 지급 예정일 2026-13-01은 칸 오류이고 도메인을 부르지 않는다", async () => {
+  // 07-16(D-714): 작성자 칸은 지급 예정일이 아니라 희망 지급일 — 같은 형식 검증을 그 칸으로 옮겼다.
+  it("사용일 2026-02-30 · 희망 지급일 2026-13-01은 칸 오류이고 도메인을 부르지 않는다", async () => {
     const usage = await saveExpenseDraftAction({ expenseId: EXPENSE_ID, expectedVersion: 1, fields: { usageDate: "2026-02-30" } });
     expect(usage?.validationErrors?.fields?.usageDate?._errors).toEqual(["날짜 형식 오류 · 2026-09-19처럼"]);
-    const scheduled = await saveExpenseDraftAction({ expenseId: EXPENSE_ID, expectedVersion: 1, fields: { scheduledPaymentDate: "2026-13-01" } });
-    expect(scheduled?.validationErrors?.fields?.scheduledPaymentDate?._errors).toEqual(["날짜 형식 오류 · 2026-09-19처럼"]);
+    const requested = await saveExpenseDraftAction({ expenseId: EXPENSE_ID, expectedVersion: 1, fields: { requestedPaymentDate: "2026-13-01" } });
+    expect(requested?.validationErrors?.fields?.requestedPaymentDate?._errors).toEqual(["날짜 형식 오류 · 2026-09-19처럼"]);
     expect(saved).toEqual([]);
   });
 

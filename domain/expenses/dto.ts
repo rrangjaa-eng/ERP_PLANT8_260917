@@ -230,6 +230,10 @@ export type ExpensePreviewDto = {
   fieldErrors: { supplyAmount?: string; usageDate?: string };
   // 05-07 팀 비용 — 사용일 소속 팀 이름(사용일을 바꾸면 미리보기로 다시 온다). 견적 줄 문서 null.
   teamName: string | null;
+  // 07-16(SC-02 · K19 · D-731): 폼 읽기 줄 `지급 예정일` — 유효 예정일 · 수동 지정 · 규칙 줄(07-01 payRuleLine).
+  scheduledPaymentDate: string | null;
+  scheduledPaymentManual: boolean;
+  paymentRuleLine: string;
 };
 
 export const EXPENSE_PREVIEW_DTO_SPEC: DtoSpec<ExpensePreviewDto, ExpensePreviewDto> = {
@@ -238,6 +242,9 @@ export const EXPENSE_PREVIEW_DTO_SPEC: DtoSpec<ExpensePreviewDto, ExpensePreview
     { key: "block", from: "block", infoItem: "expense.value" },
     { key: "fieldErrors", from: "fieldErrors", infoItem: "expense.amount" },
     { key: "teamName", from: "teamName", infoItem: "expense.value" },
+    { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
+    { key: "scheduledPaymentManual", from: "scheduledPaymentManual", infoItem: "expense.value" },
+    { key: "paymentRuleLine", from: "paymentRuleLine", infoItem: "expense.value" },
   ],
 };
 

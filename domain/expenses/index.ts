@@ -4,7 +4,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { withTransaction } from "@/lib/db-transaction";
 import { isCalendarDate, seoulToday } from "@/lib/dates";
-import { DATE_FORMAT_ERROR, expenseDraftFieldsSchema, TEAM_EXPENSE_KINDS, type TeamExpenseKind } from "@/domain/expenses/draft-fields";
+import { DATE_FORMAT_ERROR, expenseDraftFieldsSchema, requestedPaymentErrors, TEAM_EXPENSE_KINDS, type TeamExpenseKind } from "@/domain/expenses/draft-fields";
 import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-number";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
@@ -176,7 +176,7 @@ function isTeamCostRow(row: Pick<ExpenseRow, "projectId" | "quoteLineId">): bool
 // 칸 오류 — 회차 상한 초과(게이트가 아니라 공급가액 칸 아래 한 줄).
 export class ExpenseFieldError extends UserFacingError {
   constructor(
-    readonly field: "supplyAmount" | "usageDate" | "prepaidReason",
+    readonly field: "supplyAmount" | "usageDate" | "prepaidReason" | "requestedPaymentDate" | "requestedPaymentReason",
     message: string,
   ) {
     super(message);
@@ -770,6 +770,7 @@ export async function createExpenseFromLines(
   const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
   if (!canWriteExpense || !canWriteProject) throw new ForbiddenError("지출결의 작성 권한 없음");
   const typed = lineDraftFieldsSchema.parse(input.fields ?? {});
+  assertRequestedPayment(typed, seoulToday());
   await assertActiveCodes(viewer, typed);
 
   const [gateEnabled, teamScope, rowScope] = await Promise.all([
@@ -852,6 +853,8 @@ export async function createExpenseFromLines(
       evidenceType: vendor?.defaultEvidenceType ?? null,
       paymentMethod: typed.paymentMethod ?? paymentMethod,
       note: typed.note ?? null,
+      requestedPaymentDate: typed.requestedPaymentDate ?? null,
+      requestedPaymentReason: typed.requestedPaymentDate ? (typed.requestedPaymentReason ?? null) : null,
       supplyCurrency: supply.currency,
       supplyForeignAmount: supply.foreignAmount,
       supplyFxRate: supply.fxRate,
@@ -872,17 +875,24 @@ const draftFieldsSchema = expenseDraftFieldsSchema;
 
 export type ExpenseDraftInput = z.input<typeof draftFieldsSchema>;
 
-// 05-16 `/expenses/new`에서 줄을 고르기 전에 적어 둔 칸 — 줄이 정하지 않는 비고 · 지급 방식만 새 작성 중 문서의 insert에 같이 싣는다
+// 05-16 `/expenses/new`에서 줄을 고르기 전에 적어 둔 칸 — 줄이 정하지 않는 비고 · 희망 지급일 · 희망 사유 · 지급 방식만 새 작성 중 문서의 insert에 같이 싣는다
 // (검증은 임시 저장과 같은 draftFieldsSchema). 이미 그 줄의 작성 중 문서가 있으면 그 문서를 그대로 열고 덮어쓰지 않는다.
-// 07 D-714 · D-742 — 지급 예정일 수동 지정은 지급 권한자 길(07-06 saveScheduledPayDate)뿐. 작성자 입력은 검증만 하고 칸에 쓰지 않는다(07-16이 폼에서 걷고 희망 지급일로 바꿈).
-const lineDraftFieldsSchema = draftFieldsSchema.pick({ note: true, scheduledPaymentDate: true, paymentMethod: true });
+// 07 D-714 · D-742 — 지급 예정일 수동 지정은 지급 권한자 길(07-06 saveScheduledPayDate)뿐 — 작성자 입력에는 지급 예정일 키가 없다(07-16).
+const lineDraftFieldsSchema = draftFieldsSchema.pick({ note: true, requestedPaymentDate: true, requestedPaymentReason: true, paymentMethod: true });
 
 export type LineDraftFieldsInput = z.input<typeof lineDraftFieldsSchema>;
 
+// 07-16(SC-02 · AQ-10): 희망 지급일 · 사유 판정(합친 값) — 어긋나면 그 칸 오류(첫 하나).
+function assertRequestedPayment(fields: { requestedPaymentDate?: string | null; requestedPaymentReason?: string | null }, todayKst: string): void {
+  const errors = requestedPaymentErrors(fields, todayKst);
+  if (errors.requestedPaymentDate) throw new ExpenseFieldError("requestedPaymentDate", errors.requestedPaymentDate);
+  if (errors.requestedPaymentReason) throw new ExpenseFieldError("requestedPaymentReason", errors.requestedPaymentReason);
+}
+
 function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraftFields {
-  // 07 D-714 · D-742: 지급 예정일은 칸 묶음에서 걸러 낸다 — 갱신에서 빠지므로 D-740 기존 값은 그대로 남는다.
-  const { supply, content, prepaidReason, scheduledPaymentDate, ...others } = fields;
-  void scheduledPaymentDate;
+  const { supply, content, prepaidReason, requestedPaymentReason, ...trimmed } = fields;
+  // 07-16: 공백뿐인 희망 사유는 없음(NULL — DB 짝 CHECK는 NULL만 본다).
+  const others = requestedPaymentReason === undefined ? trimmed : { ...trimmed, requestedPaymentReason: requestedPaymentReason ? requestedPaymentReason : null };
   // 공백뿐인 내용은 비운 것과 같다.
   const withContent = content === undefined ? others : { ...others, content: content?.trim() ? content.trim() : null };
   // 06-10: 선결제를 끄면 적은 사유는 버린다(S6) — 사유는 앞뒤 공백을 뗀다. 받는 인원(06.5)은 칸 이름이 같아 그대로 실린다.
@@ -916,6 +926,13 @@ export async function saveExpenseDraft(
   const parsed = draftFieldsSchema.parse(input.fields);
   await assertActiveCodes(viewer, parsed, row);
   const fields = withOnePayee(toDraftColumns(parsed));
+  assertRequestedPayment(
+    {
+      requestedPaymentDate: fields.requestedPaymentDate !== undefined ? fields.requestedPaymentDate : row.requestedPaymentDate,
+      requestedPaymentReason: fields.requestedPaymentReason !== undefined ? fields.requestedPaymentReason : row.requestedPaymentReason,
+    },
+    seoulToday(deps?.now),
+  );
   // 06-10: 합친 행이 선결제 · 사유 빔이면 DB 체크(expenses_prepaid_reason_check)를 만나기 전에 칸 오류로 거부한다. 선결제가 아니면 사유는 버린다.
   const prepaid = fields.prepaid ?? row.prepaid;
   if (prepaid) {
@@ -983,6 +1000,7 @@ export async function createTeamExpenseDraft(
   if (parsed.payeeUserId) await usablePayeeUser(viewer, parsed.payeeUserId, deps?.now);
   await assertActiveCodes(viewer, parsed);
   const draftColumns = withOnePayee(toDraftColumns(parsed));
+  assertRequestedPayment(draftColumns, seoulToday(deps?.now));
   if (draftColumns.prepaid && !draftColumns.prepaidReason) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
   const usageDate = parsed.usageDate ?? seoulToday(deps?.now);
   const attributedTeamId = await attributedTeamFor(viewer, usageDate);
@@ -1140,6 +1158,8 @@ export async function submitExpense(
   // 팀 비용 문서는 프로젝트가 없다 — 프로젝트 행 잠금 · 고객 승인 판정 없이 지출결의 행 잠금만.
   const projectRow = row.projectId ? await findProjectById(viewer, row.projectId) : null;
   if (!projectRow && !isTeamCostRow(row)) throw new ExpenseNotFoundError();
+  // 07-16(SC-02): 저장된 희망 지급일 · 사유가 짝 · 오늘 이후를 지켜야 제출된다(임시 저장과 같은 판정).
+  assertRequestedPayment(row, seoulToday(deps?.now));
 
   const tax = await computeExpenseTax(viewer, withEffectiveDate(row, await loadExpenseSchedules(viewer, [row], deps?.now)));
   const pre = projectRow ? await loadSubmitPre(viewer, projectRow) : null;
@@ -1615,7 +1635,8 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
 
   // 증빙 종류 이름 표는 제출 코드 사실(짝 단계)과 같은 읽기 하나다.
   const codes = await loadSubmitCodes(viewer);
-  const tax = await computeExpenseTax(viewer, withEffectiveDate(row, await loadExpenseSchedules(viewer, [row])));
+  const schedules = await loadExpenseSchedules(viewer, [row]);
+  const tax = await computeExpenseTax(viewer, withEffectiveDate(row, schedules));
   const evidenceTypeName = row.evidenceType ? (codes.evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
   const taxLine = supply ? taxLineText(tax, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
 
@@ -1652,7 +1673,9 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
     const cap = remainingForInstallments(lineExecution(line), others, supply);
     if (cap.exceeds) fieldErrors.supplyAmount = `남은 실행가 ${remainingText(cap.remaining, cap.basis)} 넘음 · 공급가액 고치기`;
   }
-  return project(viewer, { taxLine, block, fieldErrors, teamName }, EXPENSE_PREVIEW_DTO_SPEC);
+  // 07-16(SC-02 · K19 · D-731): 폼 읽기 줄 — 유효 예정일 · 수동 지정 · 규칙 줄(문서 화면과 같은 07-01 함수 — 여기서 문구를 만들지 않는다).
+  const { scheduledPaymentDate, scheduledPaymentManual, paymentRuleLine } = paymentFieldsOf(schedules, row.id);
+  return project(viewer, { taxLine, block, fieldErrors, teamName, scheduledPaymentDate, scheduledPaymentManual, paymentRuleLine }, EXPENSE_PREVIEW_DTO_SPEC);
 }
 
 // ── 읽기 ──────────────────────────────────────────────────────────────

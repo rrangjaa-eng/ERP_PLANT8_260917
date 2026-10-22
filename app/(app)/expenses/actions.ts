@@ -56,12 +56,12 @@ const expenseIdSchema = z.string().uuid();
 const draftFieldsInput = expenseDraftFieldsSchema;
 
 // 줄 수 상한 = 차수 줄 상한 기본값 — 견적 줄 표 Ctrl+A → Ctrl+E가 한 차수의 줄 전부를 보낸다(05-08 검토 #5).
-// 05-16 fields — `/expenses/new`에서 줄을 고르기 전에 적어 둔 비고 · 지급 예정일 · 지급 방식(임시 저장과 같은 검증). 견적 줄 표는 보내지 않는다.
+// 05-16 fields — `/expenses/new`에서 줄을 고르기 전에 적어 둔 비고 · 희망 지급일 · 희망 사유(07-16) · 지급 방식(임시 저장과 같은 검증). 견적 줄 표는 보내지 않는다.
 export const createExpenseFromLinesAction = authedActionClient
   .schema(
     z.object({
       lineIds: z.array(z.string().uuid()).min(1).max(QUOTE_LINE_MAX_PER_REVISION_DEFAULT),
-      fields: draftFieldsInput.pick({ note: true, scheduledPaymentDate: true, paymentMethod: true }).optional(),
+      fields: draftFieldsInput.pick({ note: true, requestedPaymentDate: true, requestedPaymentReason: true, paymentMethod: true }).optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -142,7 +142,16 @@ export const previewExpenseAction = authedActionClient
   .schema(z.object({ expenseId: expenseIdSchema, fields: draftFieldsInput }))
   .action(async ({ parsedInput, ctx }) => {
     const preview = await previewExpense(ctx.viewer, parsedInput);
-    return { taxLine: preview.taxLine ?? null, block: preview.block ?? null, fieldErrors: preview.fieldErrors ?? {}, teamName: preview.teamName ?? null };
+    return {
+      taxLine: preview.taxLine ?? null,
+      block: preview.block ?? null,
+      fieldErrors: preview.fieldErrors ?? {},
+      teamName: preview.teamName ?? null,
+      // 07-16(SC-02): 폼 읽기 줄 `지급 예정일` — 유효 예정일 · 수동 지정 · 규칙 줄.
+      scheduledPaymentDate: preview.scheduledPaymentDate ?? null,
+      scheduledPaymentManual: preview.scheduledPaymentManual ?? false,
+      paymentRuleLine: preview.paymentRuleLine ?? null,
+    };
   });
 
 // 제출 — 같은 문서 두 번 제출(폰 두 번 탭 · 응답 유실 뒤 재시도)은 오류가 아니라 결과(`already_submitted`)다. 화면이 문서 화면으로

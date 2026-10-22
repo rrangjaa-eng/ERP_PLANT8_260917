@@ -159,10 +159,14 @@ describe("지급 주 묶음 · 마감 gate (07-01 Task 2)", () => {
   it("D-742 · NB P1-2: 작성자가 저장한 날짜(이번 주 금)는 수동 면제를 받지 못한다 — 마감 뒤 승인 → cutoff · 마감 지나 밀림", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
-    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { scheduledPaymentDate: "2026-08-07" } });
+    // 07-16(D-714 · B-P1-1): 작성자 입력에는 지급 예정일 키가 없다 — 실어 보내면 거부되고(strict), 저장 칸에 날짜를 둘 길이 없다.
+    const authorDate: Record<string, unknown> = { scheduledPaymentDate: "2026-08-07" };
+    await expect(createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: authorDate })).rejects.toThrow();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
     const expenseId = created.created[0]?.expenseId ?? "";
     const [draft] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
-    const saved = await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: draft?.version ?? 0, fields: { scheduledPaymentDate: "2026-08-07" } });
+    await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: draft?.version ?? 0, fields: authorDate })).rejects.toThrow();
+    const saved = { version: draft?.version ?? 0 };
     await insertLinkFixture({ recordId: await insertRecordFixture(payer, { issuedOn: "2026-06-08" }), ownerId: expenseId, attachedBy: payer.id });
     const submitted = await submitExpense(fx.pm, { expenseId, expectedVersion: saved.version });
     if (submitted.kind !== "submitted") throw new Error("제출 안 됨");

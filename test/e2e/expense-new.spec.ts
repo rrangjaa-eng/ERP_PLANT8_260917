@@ -12,6 +12,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { normalizeVendorName } from "@/domain/vendors";
 import { seoulToday } from "@/lib/dates";
 import { delayServerActions, loginPage, waitForHydration } from "./leave-org";
+import { addDays } from "./pay-schedule-e2e";
 import { addPayeeCandidates, addPayeeEmployee, setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 05-07(EXP-08 · UX-06 · UI-SPEC S3 두 입구 · S14 골라내기): `/expenses/new` 팀 비용 지출결의 — 종류 · 사용일 · 팀 · 내용 → 거래처 고르기 →
@@ -29,14 +30,28 @@ async function openDraft(page: Page, fx: ExpenseE2E, key: LineKey): Promise<stri
   return expenseId;
 }
 
-// 07-06 D-714 · D-704: 작성자가 적은 지급 예정일은 칸(DB)에 쓰이지 않고, 화면 칸은 유효 예정일(자동값)로 찬다.
+// 07-16 D-714 · SC-02: 기안자는 지급 예정일 칸이 없다 — 희망 지급일 · 희망 사유 한 쌍만 저장되고, 예정일은 읽기 줄(자동값)로 보인다.
+const HOPE_DATE = addDays(seoulToday(), 7);
+const HOPE_REASON = "행사 전 선금";
+
+async function fillHope(page: Page): Promise<void> {
+  await page.getByLabel("희망 지급일").fill(HOPE_DATE);
+  await page.getByLabel("희망 사유").fill(HOPE_REASON);
+}
+
 async function expectAutoPayDate(page: Page, fx: ExpenseE2E): Promise<void> {
   const expenseId = page.url().split("/").at(-1) ?? "";
-  const [row] = await db.select({ date: expenses.scheduledPaymentDate }).from(expenses).where(eq(expenses.id, expenseId));
-  expect(row?.date).toBeNull();
+  const [row] = await db
+    .select({ date: expenses.scheduledPaymentDate, hope: expenses.requestedPaymentDate, reason: expenses.requestedPaymentReason })
+    .from(expenses)
+    .where(eq(expenses.id, expenseId));
+  expect(row).toEqual({ date: null, hope: HOPE_DATE, reason: HOPE_REASON });
   const effective = (await getExpense(fx.pm.viewer, { expenseId }))?.scheduledPaymentDate;
   expect(effective).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue(effective ?? "");
+  await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("expense-schedule-value")).toHaveText(`${(effective ?? "").slice(5)} (자동)`);
+  await expect(page.getByLabel("희망 지급일")).toHaveValue(HOPE_DATE);
+  await expect(page.getByLabel("희망 사유")).toHaveValue(HOPE_REASON);
 }
 
 async function openNew(page: Page): Promise<void> {
@@ -353,12 +368,12 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(page.getByLabel("공급가액")).toHaveValue("12,400,000");
   });
 
-  test("웨이브 9 D1 — 저장된 문서에서 줄을 바꾸면 저장 안 한 비고가 먼저 저장돼 남는다 · 작성자가 적은 지급 예정일은 칸에 쓰이지 않는다(07-01 D-714)", async ({ browser, baseURL }) => {
+  test("웨이브 9 D1 — 저장된 문서에서 줄을 바꾸면 저장 안 한 비고가 먼저 저장돼 남는다 · 희망 지급일 · 사유도 남고 지급 예정일은 자동값 읽기 줄(07-01 D-714 · 07-16 SC-02)", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openDraft(page, fx, "tracer");
     await page.getByLabel("비고", { exact: true }).fill("웨이브9 저장 안 한 메모");
-    await page.getByLabel("지급 예정일", { exact: true }).fill("2026-10-17");
+    await fillHope(page);
     await page.getByRole("button", { name: "바꾸기", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
     await dialog.getByRole("option", { name: new RegExp(fx.lines.phone.itemName) }).click();
@@ -369,12 +384,12 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expectAutoPayDate(page, fx);
   });
 
-  test("05-16 — /expenses/new에서 비고 · 지급 예정일을 적고 줄을 고르면 지워짐 글자 없이 비고가 만들어진 문서에 남고, 지급 예정일은 칸에 쓰이지 않고 자동값으로 보인다(07-01 D-714 · 07-06 D-704)", async ({ browser, baseURL }) => {
+  test("05-16 — /expenses/new에서 비고 · 희망 지급일 · 사유를 적고 줄을 고르면 지워짐 글자 없이 만들어진 문서에 남고, 지급 예정일은 자동값 읽기 줄로 보인다(07-01 D-714 · 07-06 D-704 · 07-16 SC-02)", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openNew(page);
     await page.getByLabel("비고", { exact: true }).fill("새 문서 메모");
-    await page.getByLabel("지급 예정일", { exact: true }).fill("2026-10-17");
+    await fillHope(page);
     await page.getByRole("button", { name: "견적 줄 고르기" }).click();
     const dialog = page.getByRole("dialog", { name: "견적 줄 고르기" });
     await dialog.getByRole("textbox", { name: "견적 줄 검색" }).fill(fx.lines.hold.itemName);

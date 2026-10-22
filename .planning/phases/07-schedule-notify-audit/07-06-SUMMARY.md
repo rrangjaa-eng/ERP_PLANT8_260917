@@ -52,6 +52,8 @@ key-files:
     - test/integration/expense-payments.test.ts
     - test/integration/payment-batch.test.ts
     - test/e2e/payment-single.spec.ts
+    - test/integration/expense-approval-lifecycle.test.ts
+    - test/e2e/expense-new.spec.ts
 
 key-decisions:
   - "07-06: 홈 지급 묶음(phase6-items)은 loadPaySchedules를 직접 부르지 않고 같은 요청의 지급 대상 판정(judgeTargets)이 실은 PaySchedule(target.schedule)을 쓴다"
@@ -129,6 +131,50 @@ completed: 2026-10-22
 - **07-16(화면):** actions.ts `saveScheduledPayDate` 스키마를 `string | null`로(자동으로 되돌리기), 반환 `offWeekday`를 화면 `{요일}요일 아님`에, `moveToThisWeek` · `revertScheduledPayDates` 액션 신설(반환 그대로 되돌리기에 넘김), `thisWeekMove === null`이면 `이번 주로` 숨김. 서버 거부 사유: `영업일만 선택 · 다시 선택` · `이번 주 지급일 지남` · `마감 지나 밀림 아님 · 새로 고침` · `이미 지급 완료 · 새로 고침` · `다른 사람이 HH:mm에 바꿈 · 새로 고침` — UI-SPEC의 막힌 행 줄 `영업일이 아닌 날`과 맞출지는 07-16 판단.
 - 이번 주로 · 되돌리기는 지급 대상 화면 선택 건만 받는다고 가정 — 서버는 건마다 보임 · 결재 통과 · 지급 여부 · version을 다시 판정한다.
 - `pnpm lint`는 이 환경에서 `NODE_OPTIONS=--max-old-space-size=6144`가 있어야 OOM 없이 끝났다.
+
+## 독립 검토 반영 (2026-10-22)
+
+검토 범위 054c6396..a466ab85. 돈 경로 금액 결함은 없음 — CI를 붉게 하는 낡은 시험 셋(P1)과 P3 넷을 아래처럼 처리했다.
+
+### 검토 처리 표
+
+| 지적 | 처리 | 커밋 |
+|------|------|------|
+| P1-1 행 범위 처분표 ⓓ에 listUnpaidApprovedScheduleSources 빠짐 | 처분표에 등록(scopeCondition은 listExpensePage와 같음) | 9a6e5671 |
+| P1-2 expense-approval-lifecycle 결재 시트 「지급 예정일」 기대 `—` · muted | D-704대로 상세 DTO와 같은 로더 값 · default로. 고치기 전 전용 DB에서 실패 확인(`expected ['2026-12-18'] to deeply equal ['—']`) | 1263d3b6 |
+| P1-3 expense-new E2E 두 곳 `toHaveValue("")` | CI=true E2E로 두 곳 실패 확인(Received `2026-12-18`) 뒤, 칸 = 유효 예정일(상세 DTO 값) · DB 칸 NULL 단언으로 | ad55de90 |
+| P3 승인 보기 구간 머리글이 지급 끝난 건에서 되풀이 | 지급 끝난 건은 맨 뒤 「지급 완료」 구간 하나(사용자 결정 2026-10-22). tone 없음 — 기존 중립 구간과 같은 꼴, 새 색 · 화면 파일 변경 없음 | 878d04a3 |
+| P3 제출 스냅숏 = 「지금 승인되면」 일정 | 설계 한계로 아래에 기록(고치지 않음) | 이 SUMMARY 커밋 |
+| P3 pushReason null(pay-schedule.ts:96-99) | 후속 quick으로 넘김(아래) | — |
+| P3 작은 견고성 넷 | 지금 닿는 경로 없음 — 메모만(아래) | — |
+
+### 설계 한계 — 제출 스냅숏의 세금 기준일
+
+- 제출 스냅숏은 「지금 승인되면」 일정으로 세금을 셈한다(domain/expenses/index.ts:1142 — submitExpense는 approvedAt이 없어 now 기준 자동값을 쓴다).
+- 실제 승인이 그 주 결재 마감을 넘기면 지급일이 다음 주로 밀린다. 그 사이 세율이 바뀌면 스냅숏 세액과 지급 세액이 갈린다. 이때는 상세의 「세율 바뀜」 표시로 드러난다(조용한 오차 아님).
+- 그래서 truth 4(「승인 스냅숏 = 지급 세액」)는 승인이 같은 지급 주 안일 때만 성립한다.
+- 반려 · 회수 뒤 증빙 없이 재제출하면 기준일이 옛 submittedAt이라 같은 갈림이 생길 수 있다.
+- 승인 시점에 스냅숏을 다시 잡는 것은 이 플랜 범위 밖이다.
+
+### 후속 메모 — pushReason null로 규칙 줄이 「마지막 금요일」
+
+- domain/payments/pay-schedule.ts:96-99(firstCandidate): 기한 창(기준일, 기준일+기한] 안 지급 요일을 영업일로 당긴 결과가 창 밖(기준일 당일 · 그 앞)이어도 pushReason이 null이다. 창 안 영업일이 0이면 규칙 줄이 「기한 N일 안 마지막 금요일」로 나온다. D-749 · D-741 문맥이면 no-slot(「마지막 영업일」)이 맞아 보인다.
+- 예: 기준 07-09(목) · 기한 1 · 07-10 공휴일. J5로 거래처 기한 1~180일이 열려 짧은 기한에서 실제로 닿는다. 날짜 자체는 D-749와 맞다.
+- 사용자 결정: 별도 quick에서 D-749 해석을 확인하고 고친다. 이 PR에서는 고치지 않는다. 고치면 test/unit/payments/pay-schedule.test.ts의 해당 사례 pushReason 기대를 no-slot으로 바꾼다.
+
+### 작은 견고성 넷 — 지금 닿는 경로 없음(고치지 않음)
+
+- domain/payments/index.ts:726 `rejectOnUserError`가 UPDATE 뒤 단계(recordAction)까지 감싼다. 거기서 UserFacingError가 나면 행은 바뀐 채 커밋되고 로그가 빠진다. 지금은 등록된 로그 유형이라 닿지 않는다.
+- `PaymentInputs.autoPayDate` 선택 칸: 운영 호출처는 loadPaymentInputs 하나라 늘 채워진다. 새 호출처가 빠뜨리면 잠금 뒤 판정의 지급 예정일 자리가 저장값뿐이라, 수동 값이 없는 건은 세금 기준일이 조용히 오늘로 떨어진다(domain/expenses/tax.ts:51). 타입 주석으로만 지킨다.
+- revertScheduledPayDates는 이전 값이 영업일이 아니면(D-740 옛 주말 값 · 그 뒤 공휴일 지정) 「영업일만 선택」으로 되돌리기를 거부한다. 드문 경우다.
+- domain/payments/batch.ts:81 `rejudgePaymentTargets(…, { shared })`에 deps.now가 넘어가지 않는다 — 시계 주입 시험에서만 차이.
+
+### 검토 반영 검증 (전용 DB erp_w0706_test, 새로 비운 뒤)
+
+- 통합: expense-approval-lifecycle · payments/effective-date · payments/move-to-this-week · expenses/approved-sort · expense-list-search — 5파일 51 통과.
+- 단위: row-scope-disposition · domain/expenses/list-groups — 2파일 26 통과.
+- E2E(desktop, flock · CI=true): expense-new · expense-list · expense-auto-date — 30 통과(skipped 18은 visual 프로젝트 몫).
+- P3 RED: 새 단위 사례가 「다음 주」 뒤 「예정일 지남」 · 「그 뒤」 · 「이번 주 지급」 머리글 되풀이로 실패. approved-sort 새 단언은 고치기 전 list.ts로 `expected { label: '예정일 지남' } to match { label: '지급 완료' }` 실패 → 고친 뒤 통과.
 
 ## Known Stubs
 

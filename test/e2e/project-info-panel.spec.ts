@@ -372,7 +372,10 @@ test.describe("고객 승인 섹션 · 승인 표시 패널 (W6 · SC-19)", () =
     await expect(sheet.getByRole("button", { name: /^취소/ })).toContainText("Esc");
     // 근거를 비운 채 1차 — 서버를 부르지 않고 `근거 선택`.
     await sheet.getByRole("button", { name: /^승인 표시/ }).click();
-    await expect(sheet.getByText("근거 선택", { exact: true }).last()).toBeVisible();
+    // 오류는 칸 아래 한 곳에만 — 이유 줄에 같은 글자를 또 그리지 않는다(옵션 글자는 <p>가 아니다).
+    await expect(sheet.locator("p").getByText("근거 선택", { exact: true })).toHaveCount(1);
+    await expect(sheet.getByLabel("근거")).toHaveAttribute("aria-required", "true");
+    await expect(sheet.getByLabel("근거")).toHaveAttribute("aria-invalid", "true");
     await expect(sheet).toBeVisible();
 
     // PanelForm은 제출 뒤 500ms 동안 같은 틱 연타를 막는다(SUBMIT_LOCK_GRACE_MS) — 사람 속도로 고른다.

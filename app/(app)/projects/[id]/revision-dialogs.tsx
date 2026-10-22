@@ -284,9 +284,9 @@ function ApprovalPanelForm({
       onSubmit={handleSubmit}
       pending={pending}
       blockedReason={unsaved}
+      // 근거 오류는 칸 아래 한 곳(Select error)에만 — 이 이유 줄에 같은 글자를 또 그리지 않는다.
       reason={
-        basisError ??
-        (rejection?.endsWith(REFRESH_TAIL) ? (
+        rejection?.endsWith(REFRESH_TAIL) ? (
           <>
             <span>{rejection.slice(0, -REFRESH_TAIL.length)}</span>
             <Button type="button" variant="tertiary" onClick={onRefresh}>
@@ -295,7 +295,7 @@ function ApprovalPanelForm({
           </>
         ) : (
           (rejection ?? undefined)
-        ))
+        )
       }
     >
       <Form.Field id="approval-basis" label="근거" width="select">
@@ -305,6 +305,7 @@ function ApprovalPanelForm({
           hideEmptyOption
           value={basis}
           options={BASIS_OPTIONS}
+          aria-required="true"
           error={basisError ?? undefined}
           onChange={(event) => {
             setBasis(event.target.value);

@@ -123,6 +123,17 @@
   color: var(--text-muted);
 }
 
+/* 07-16(SC-01 · R15 · U8) — 지급 대상 제목 아래: 예정일 계산 실패 글자 · 「이번 주로」 막힌 행 오류 줄(위험 색 보조 글자). */
+.scheduleFailed {
+  color: var(--status-danger);
+  font-size: var(--text-tag);
+  font-weight: var(--fw-medium);
+}
+
+.moveError {
+  color: var(--status-danger);
+}
+
 /* 거래처 — 한 줄 말줄임. */
 .vendorCell {
   display: block;

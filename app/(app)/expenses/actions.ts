@@ -23,6 +23,7 @@ import {
 } from "@/domain/expenses";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX, expenseDraftFieldsSchema } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatch } from "@/domain/payments/batch";
+import { moveToThisWeek, revertScheduledPayDates } from "@/domain/payments";
 import { exportBankTransferFile, summarizeTransferPayees } from "@/domain/payments/bank-transfer";
 import { getEvidenceConfirmView, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
@@ -402,3 +403,30 @@ const evidenceConfirmViewSchema = z.object({ expenseId: z.string().uuid(), rowVe
 export const getEvidenceConfirmViewAction = authedActionClient
   .schema(evidenceConfirmViewSchema)
   .action(async ({ parsedInput, ctx }) => getEvidenceConfirmView(ctx.viewer, parsedInput));
+
+// 07-16(J9 · D-742 · K6 · N4): 「이번 주로」 — 마감 지나 밀린 건을 이번 주 지급일로 수동 지정(확인 창 없음). 건마다 결과(옮김 · 거부)를 그대로 돌려준다 —
+// 판정(지급 권한 · 보임 · 밀림 · 이번 주 지급일 지남 · version)은 07-06 도메인. 되돌리기는 옮긴 건의 이전 값(null = 자동) · 새 version으로 다시 저장한다.
+const scheduleItemsMax = 200;
+
+export const moveToThisWeekAction = authedActionClient
+  .schema(z.object({ items: z.array(z.object({ expenseId: expenseIdSchema, version: z.number().int().min(1) })).min(1).max(scheduleItemsMax) }))
+  .action(async ({ parsedInput, ctx }) => {
+    const result = await moveToThisWeek(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    return result;
+  });
+
+export const revertScheduledPayDatesAction = authedActionClient
+  .schema(
+    z.object({
+      items: z
+        .array(z.object({ expenseId: expenseIdSchema, date: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR).nullable(), version: z.number().int().min(1) }))
+        .min(1)
+        .max(scheduleItemsMax),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const result = await revertScheduledPayDates(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    return result;
+  });

@@ -85,3 +85,6 @@ registerAction({ name: "previewTransferPayeesAction", menu: "expenses.payments",
 registerAction({ name: "sumSelectedTransfersAction", menu: "expenses.payments", action: "write", dtoName: "paymentTargetRow" });
 // 06-17 제자리 증빙 확인 모달 보기 — 파일 행은 05 증빙 파일 명세(evidenceFile)의 정보 항목, 금액 칸은 expense.amount(06-06 paymentView와 같다).
 registerAction({ name: "getEvidenceConfirmViewAction", menu: "expenses.payments", action: "write", dtoName: "evidenceFile" });
+// 07-16 이번 주로 · 되돌리기 — 건마다 id · 이전 예정일 · 새 version · 거부 사유 글자만 돌려준다(DTO 없음). 지급 권한자 전용(판정은 07-06 도메인).
+registerAction({ name: "moveToThisWeekAction", menu: "expenses.payments", action: "write", dtoName: null });
+registerAction({ name: "revertScheduledPayDatesAction", menu: "expenses.payments", action: "write", dtoName: null });

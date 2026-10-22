@@ -276,6 +276,7 @@ async function PaymentTargets({
       dateError={DATE_FORMAT_ERROR}
       canExportTransferFile={canExportTransferFile}
       evidenceLink={evidenceLink}
+      thisWeekMove={list.thisWeekMove}
     />
   );
 }

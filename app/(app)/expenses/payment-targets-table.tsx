@@ -25,10 +25,17 @@ import type { PaymentAccount } from "@/domain/payments";
 import { AccountNumberCell } from "@/app/(app)/admin/vendors/account-number";
 import { revealVendorAccountNumberAction } from "@/app/(app)/admin/vendors/actions";
 import { revealPersonAccountNumberAction } from "@/app/(app)/admin/people/[id]/actions";
-import { AMOUNT_HIDDEN, DIFF_REASON_REQUIRED, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
+import { AMOUNT_HIDDEN, DIFF_REASON_REQUIRED, NOT_BUSINESS_DAY, THIS_WEEK_PASSED, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { formatKrw } from "@/lib/format-number";
 import { Toast } from "@/ui/toast/Toast";
-import { completePaymentsBatchAction, exportBankTransferFileAction, previewTransferPayeesAction, sumSelectedTransfersAction } from "./actions";
+import {
+  completePaymentsBatchAction,
+  exportBankTransferFileAction,
+  moveToThisWeekAction,
+  previewTransferPayeesAction,
+  revertScheduledPayDatesAction,
+  sumSelectedTransfersAction,
+} from "./actions";
 import {
   applyBatchResult,
   diffCount,
@@ -98,6 +105,24 @@ function downloadBase64(base64: string, filename: string) {
 }
 
 const NO_RESPONSE = "결과를 받지 못함 · 새로 고침";
+
+// 07-16(J9 · K6 · N4 · U8): 「이번 주로」 결과 — 옮긴 건(되돌리기 재료: 이전 값 · 새 version) · 막힌 건 수. 전부 거부면 실패 꼴(첫 사유 · 다시 보낼 입력),
+// 되돌리기 거부면 그 사유(원인 없으면 null = 다시 시도). 결과 줄은 다음 제자리 행동이나 화면 이탈까지 남는다(U7 — 시간으로 지우지 않음).
+type MovedItem = { expenseId: string; before: string | null; version: number };
+type MoveResult =
+  | { kind: "moved"; moved: MovedItem[]; blocked: number }
+  | { kind: "failed"; reason: string; retry: { expenseId: string; version: number }[] }
+  | { kind: "revertFailed"; reason: string | null; items: { expenseId: string; date: string | null; version: number }[] };
+
+// 막힌 행 오류 줄 낱말 — 영업일 · 과거(이번 주 지급일 지남) 거부는 UI-SPEC SC-01 낱말 `영업일이 아닌 날`, 그 밖(version 충돌 등)은 서버 사유 그대로.
+function moveReasonText(reason: string): string {
+  return reason === NOT_BUSINESS_DAY || reason === THIS_WEEK_PASSED ? "영업일이 아닌 날" : reason;
+}
+
+// 「이번 주로」로 옮길 수 있는 행 — 마감 지나 밀린 건(07-01 pushReason cutoff)만. 계산 실패 행(R15)은 없다.
+function movable(row: PaymentTargetScreenRow): boolean {
+  return row.paymentPushReason === "cutoff" && row.paymentScheduleFailed !== true && typeof row.version === "number";
+}
 
 // 합 요청 모음(계획 판단 — reversible): 고른 행 · 이체액이 바뀐 뒤 이만큼 모아 마지막 합계 번호 하나만 보낸다.
 const SUM_DEBOUNCE_MS = 300;
@@ -298,6 +323,8 @@ export type PaymentTargetsScreenProps = {
   canExportTransferFile: boolean;
   /** 06.1-05(P-3) — 필터 줄 끝 하위 목록 `증빙 {N}`(증빙 등록 권한자만 — 없으면 undefined). */
   evidenceLink?: { label: string; href: string };
+  /** 07-06(K6) — 이번 주 지급일. 그 날이 지났으면 null이고 `이번 주로`를 어디에도 그리지 않는다. */
+  thisWeekMove: { payDate: string } | null;
 };
 
 export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
@@ -317,6 +344,13 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   const [transferFailed, setTransferFailed] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
+  const [moveResult, setMoveResult] = useState<MoveResult | null>(null);
+  // 막힌 행(id → 오류 줄 낱말) — 다음 이번 주로 · 지급 · 이체 파일 때 지운다.
+  const [moveBlocked, setMoveBlocked] = useState<ReadonlyMap<string, string>>(new Map());
+  // 요청 중인 행 id(U6 — 그 컨트롤 aria-busy) · 연타 이중 요청 막기는 ref(같은 렌더 안 두 번째 누름도 막는다).
+  const [movingIds, setMovingIds] = useState<ReadonlySet<string>>(new Set());
+  const [reverting, setReverting] = useState(false);
+  const movingRef = useRef(false);
   const [snapshot, setSnapshot] = useState<{ ids: string[]; rows: PaymentTargetScreenRow[]; edits: SelectionState["edits"]; seq: number; otherPage: number }>({
     ids: [],
     rows: [],
@@ -683,6 +717,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setBlocked(new Map());
     setResult(null);
     setTransferResult(null);
+    setMoveResult(null);
+    setMoveBlocked(new Map());
     setRejection(null);
     execute({ payDate, rows: sent });
   }
@@ -726,8 +762,106 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setBlocked(new Map());
     setResult(null);
     setTransferResult(null);
+    setMoveResult(null);
+    setMoveBlocked(new Map());
     setTransferFailed(false);
     exportFile({ rows: sent });
+  }
+
+  // 07-16(J9 · D-742 · N4 · U6 · U8): 이번 주로 — 확인 창 없이 서버가 건마다 판정 · 저장하고, 결과는 표 위 결과 줄(토스트 없음).
+  // 옮긴 행은 선택을 풀고 막힌 행은 선택을 유지한 채 제목 아래 오류 줄. 목록은 다시 받는다(옮긴 행이 이번 주 그룹 · `수동 지정`으로).
+  async function moveRows(items: { expenseId: string; version: number }[]) {
+    if (items.length === 0 || movingRef.current) return;
+    movingRef.current = true;
+    setMovingIds(new Set(items.map((item) => item.expenseId)));
+    setResult(null);
+    setTransferResult(null);
+    setBlocked(new Map());
+    let response: Awaited<ReturnType<typeof moveToThisWeekAction>> | undefined;
+    try {
+      response = await moveToThisWeekAction({ items });
+    } catch {
+      response = undefined;
+    }
+    movingRef.current = false;
+    setMovingIds(new Set());
+    const data = response?.data;
+    if (!data) {
+      setMoveBlocked(new Map());
+      setMoveResult({ kind: "failed", reason: response?.serverError ?? NO_RESPONSE, retry: items });
+      return;
+    }
+    setMoveBlocked(new Map(data.rejected.map((item) => [item.expenseId, moveReasonText(item.reason)])));
+    const first = data.rejected[0];
+    setMoveResult(data.moved.length === 0 && first ? { kind: "failed", reason: moveReasonText(first.reason), retry: items } : { kind: "moved", moved: data.moved, blocked: data.rejected.length });
+    const movedIds = new Set(data.moved.map((item) => item.expenseId));
+    if (movedIds.size > 0) setSelection((current) => ({ ...current, selectedIds: current.selectedIds.filter((id) => !movedIds.has(id)) }));
+    router.refresh();
+  }
+
+  // 되돌리기 — 옮긴 건만 이전 값(자동이면 null)으로. 다 되면 결과 줄이 사라지고, 거부되면 `되돌리기 실패 · {원인}`(되돌리기 없음 — SYSTEM §7-8).
+  async function revertMoved(items: { expenseId: string; date: string | null; version: number }[]) {
+    if (items.length === 0 || movingRef.current) return;
+    movingRef.current = true;
+    setReverting(true);
+    let response: Awaited<ReturnType<typeof revertScheduledPayDatesAction>> | undefined;
+    try {
+      response = await revertScheduledPayDatesAction({ items });
+    } catch {
+      response = undefined;
+    }
+    movingRef.current = false;
+    setReverting(false);
+    const data = response?.data;
+    if (!data) {
+      setMoveResult({ kind: "revertFailed", reason: response?.serverError ?? null, items });
+      return;
+    }
+    setMoveBlocked(new Map());
+    const first = data.rejected[0];
+    setMoveResult(first ? { kind: "revertFailed", reason: first.reason, items } : null);
+    router.refresh();
+  }
+
+  // 제목 아래 2행(PC · 태블릿 — 폰은 접힌 줄 맨 앞, SYSTEM §7-3 폰 전략): `마감 지나 밀림` · `예정일 계산 실패`(R15) · 행 `이번 주로` · 막힌 행 오류 줄.
+  function titleSecondLine(row: PaymentTargetScreenRow) {
+    const failed = row.paymentScheduleFailed === true;
+    const pushed = !failed && row.paymentPushReason === "cutoff";
+    const moveError = moveBlocked.get(row.id) ?? null;
+    const canMove = !phone && props.thisWeekMove !== null && movable(row);
+    if (!failed && !pushed && moveError === null) return null;
+    const busy = movingIds.has(row.id);
+    return (
+      <>
+        {failed || pushed ? (
+          <span className={styles.wideSecondLine} data-pay-push="">
+            {failed ? <span className={styles.scheduleFailed}>예정일 계산 실패</span> : <StatusTag status="마감 지나 밀림" variant="text" />}
+            {canMove && typeof row.version === "number" ? (
+              <>
+                {" · "}
+                <Button
+                  variant="tertiary"
+                  aria-label={`${row.title ?? row.number ?? ""} 이번 주로`.trim()}
+                  aria-busy={busy ? "true" : undefined}
+                  pending={busy}
+                  onClick={() => void moveRows([{ expenseId: row.id, version: row.version ?? 0 }])}
+                >
+                  이번 주로
+                </Button>
+              </>
+            ) : null}
+          </span>
+        ) : null}
+        {moveError !== null ? <span className={`${styles.wideSecondLine} ${styles.moveError}`}>{moveError}</span> : null}
+      </>
+    );
+  }
+
+  // 폰 접힌 줄 맨 앞 글자(K5) — PC 2행과 같은 낱말, 행동은 없다(폰은 행 → 문서 화면).
+  function phoneLead(row: PaymentTargetScreenRow) {
+    if (row.paymentScheduleFailed === true) return <span className={styles.scheduleFailed}>예정일 계산 실패</span>;
+    if (row.paymentPushReason === "cutoff") return <StatusTag status="마감 지나 밀림" variant="text" />;
+    return null;
   }
 
   // 증빙 칸 3차(`확인 전`만) — ≥1024는 제자리 모달, 700~1023은 문서 화면 왕복 링크. 폰은 행 링크(3차 없음).
@@ -803,6 +937,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           >
             {row.title ?? "—"}
           </Link>
+          {titleSecondLine(row)}
         </span>
       ),
     },
@@ -823,13 +958,36 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       header: PAYMENT_TARGET_COLUMN_LABELS.method,
       priority: "p2",
       cell: (row) => (row.account ? <PaymentAccountValue account={row.account} /> : <span className={styles.nowrap}>{row.paymentMethodName ?? "—"}</span>),
-      summary: (row) => (row.account ? accountSummary(row.account) : (row.paymentMethodName ?? "—")),
+      summary: (row) => {
+        const text = row.account ? accountSummary(row.account) : (row.paymentMethodName ?? "—");
+        const lead = phoneLead(row);
+        return lead ? (
+          <>
+            {lead}
+            {" · "}
+            {text}
+          </>
+        ) : (
+          text
+        );
+      },
     },
     {
       key: "payment",
       header: PAYMENT_TARGET_COLUMN_LABELS.payment,
       priority: "p2",
-      cell: (row) => <Num value={row.scheduledPaymentDate ? row.scheduledPaymentDate.slice(5) : null} />,
+      // 07-16(SC-01): 수동 지정 건은 값 뒤 `수동 지정`(muted 글자 — 07-06 D-742).
+      cell: (row) => (
+        <span className={styles.nowrap}>
+          <Num value={row.scheduledPaymentDate ? row.scheduledPaymentDate.slice(5) : null} />
+          {row.scheduledPaymentManual ? (
+            <>
+              {" "}
+              <StatusTag status="수동 지정" variant="text" />
+            </>
+          ) : null}
+        </span>
+      ),
     },
     {
       key: "evidence",
@@ -915,8 +1073,55 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           </Button>
         </span>
       ) : null}
-      <p aria-live="polite" className={styles.batchResult}>
-        {result ? (
+      {wide && props.thisWeekMove !== null && chosenRows.some(movable) ? (
+        <span className={styles.transferSlot}>
+          <Button
+            variant="tertiary"
+            aria-busy={movingIds.size > 0 ? "true" : undefined}
+            pending={movingIds.size > 0}
+            onClick={() => void moveRows(chosenRows.filter(movable).map((row) => ({ expenseId: row.id, version: row.version ?? 0 })))}
+          >
+            이번 주로
+          </Button>
+        </span>
+      ) : null}
+      <p role="status" aria-live="polite" className={styles.batchResult}>
+        {moveResult?.kind === "moved" ? (
+          <>
+            <span className={styles.batchDone}>{`이번 주로 · ${moveResult.moved.length}건 옮김`}</span>
+            {moveResult.blocked > 0 ? (
+              <>
+                {" · "}
+                <span className={styles.batchBlocked}>{`막힘 ${moveResult.blocked}건`}</span>
+              </>
+            ) : null}{" "}
+            <Button
+              variant="tertiary"
+              pending={reverting}
+              onClick={() => void revertMoved(moveResult.moved.map((item) => ({ expenseId: item.expenseId, date: item.before, version: item.version })))}
+            >
+              되돌리기
+            </Button>
+          </>
+        ) : moveResult?.kind === "failed" ? (
+          <span className={styles.batchBlocked}>
+            {`이번 주로 실패 · ${moveResult.reason} · `}
+            <Button variant="tertiary" pending={movingIds.size > 0} onClick={() => void moveRows(moveResult.retry)}>
+              다시 시도
+            </Button>
+          </span>
+        ) : moveResult?.kind === "revertFailed" ? (
+          moveResult.reason ? (
+            <span className={styles.batchBlocked}>{`되돌리기 실패 · ${moveResult.reason}`}</span>
+          ) : (
+            <span className={styles.batchBlocked}>
+              {"되돌리기 실패 · "}
+              <Button variant="tertiary" pending={reverting} onClick={() => void revertMoved(moveResult.items)}>
+                다시 시도
+              </Button>
+            </span>
+          )
+        ) : result ? (
           <>
             <span className={styles.batchDone}>{`${result.time} 지급 완료 ${result.processed}건`}</span>
             {result.blocked > 0 ? (

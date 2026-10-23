@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
@@ -166,6 +166,14 @@ export type CertEventSummaryRow = {
 function scopeWhere(scope: CertEventScope): SQL | undefined {
   if (scope.createdBy === undefined) return undefined;
   return scope.createdBy === null ? isNull(certEvents.createdBy) : eq(certEvents.createdBy, scope.createdBy);
+}
+
+// 07-14 알림 착지 링크(N25): 범위 안 행사 id만 — 상세 머리(listEventSummaries)와 같은 scopeWhere, 묶음 한 번.
+export async function listEventIdsInScope(viewer: Viewer, scope: CertEventScope, ids: readonly string[]): Promise<Set<string>> {
+  void viewer;
+  if (ids.length === 0) return new Set();
+  const rows = await db.select({ id: certEvents.id }).from(certEvents).where(and(scopeWhere(scope), inArray(certEvents.id, [...ids])));
+  return new Set(rows.map((row) => row.id));
 }
 
 // 목록 · 상세 머리 공용 — 만든 사람 · 닫은 사람 이름과 제출 건수(대조 제외 뺀 수 — E1 b)를 한 쿼리로.

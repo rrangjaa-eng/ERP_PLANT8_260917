@@ -268,8 +268,13 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
     expectTypeOf<Scope["rows"]>().toEqualTypeOf<"all" | "none">();
   });
 
-  it("evidence.intake 쓰기 권한이 있으면 rows가 all이다", async () => {
-    expect(await evidenceScopeFor(viewer, grants(["evidence.intake:write"]))).toEqual({ rows: "all" });
+  // 07-15(R18): 메뉴 판정이 먼저 — 등록 쓰기는 evidence 보기가 있을 때만 all이다.
+  it("evidence.intake 쓰기 · evidence 보기가 둘 다 있으면 rows가 all이다", async () => {
+    expect(await evidenceScopeFor(viewer, grants(["evidence.intake:write", "evidence:view"]))).toEqual({ rows: "all" });
+  });
+
+  it("evidence 보기 없이 evidence.intake 쓰기만 있으면 rows가 none이다(07-15 R18)", async () => {
+    expect(await evidenceScopeFor(viewer, grants(["evidence.intake:write"]))).toEqual({ rows: "none" });
   });
 
   it("evidence.intake 보기만 있으면 all이 아니다", async () => {
@@ -313,7 +318,7 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
     });
   });
 
-  it("evidence.intake 쓰기가 있으면 evidence 보기와 무관하게 all이고 발령 · 팀 조회를 하지 않는다", async () => {
+  it("evidence 보기와 evidence.intake 쓰기가 있으면 all이고 발령 · 팀 조회를 하지 않는다", async () => {
     const deps = published({ allowed: ["evidence.intake:write", "evidence:view"] });
     expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "all" });
     expect(deps.findMembershipAtDate).not.toHaveBeenCalled();

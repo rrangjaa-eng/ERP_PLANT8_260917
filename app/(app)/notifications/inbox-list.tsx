@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import { toKstDate, formatKstTime } from "@/domain/holidays/business-day";
+import { foldInbox, type InboxItem } from "@/domain/notify/inbox-fold";
 import { useUnreadCount } from "@/ui/shell/unread-count";
 import { Button } from "@/ui/button/Button";
 import { Num } from "@/ui/num/Num";
@@ -17,7 +19,21 @@ export type InboxRowView = {
   createdAt: string;
   readAt: string | null;
   emailStatus: string;
+  /** 볼 수 있는 문서로 가는 주소(N25) — 없으면 문장은 글자다. */
+  href?: string;
+  /** 등록부 종류 이름(N26) — 없는 행(확인증 즉시 경로 등)은 접지 않는다. */
+  kindLabel?: string;
 };
+
+// Table 한 줄 — 알림 한 건(`row`) · 접힘 줄(`fold` — 같은 날 같은 종류 5건 이상) · 펼친 접힘 줄 아래의 알림 한 건(`member` — 들여 쓴다).
+type FoldItem = Extract<InboxItem<InboxRowView>, { type: "fold" }>;
+type DisplayRow =
+  | { id: string; createdAt: string; kind: "row" | "member"; row: InboxRowView }
+  | { id: string; createdAt: string; kind: "fold"; fold: FoldItem };
+
+function rowDomId(id: string): string {
+  return `inbox-row-${id}`;
+}
 
 export type InboxListProps = {
   initialRows: InboxRowView[];
@@ -44,6 +60,8 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   const [referenceYear, setReferenceYear] = useState(initialReferenceYear);
+  // 펼친 접힘 줄 — 날짜 + 종류 키로 들고 있어 더 보기로 행이 늘어도 펼친 채 남는다(U10).
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const { refresh } = useUnreadCount();
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // 다음 커밋 뒤 포커스를 옮길 행 id — setState가 아니라 ref로 들고 있다가
@@ -135,26 +153,80 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
     execute({ cursor: { createdAt: lastRow.createdAt, id: lastRow.id } });
   }
 
+  const isUnread = (row: InboxRowView) => row.readAt === null || row.readAt === openedAt;
+
+  function toggle(key: string): void {
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
+
+  // 문장 — 볼 수 있는 문서면 링크(N25), 아니면 글자.
+  function sentence(row: InboxRowView): ReactNode {
+    return row.href ? (
+      <Link href={row.href} className={styles.link}>
+        {row.message}
+      </Link>
+    ) : (
+      row.message
+    );
+  }
+
   // 읽음 표시·포커스는 내용 칸의 `[data-inbox-row]`가 맡는다 — 표 행은 공용 `Table`이 그린다.
-  const columns: TableColumn<InboxRowView>[] = [
+  function inboxRow(row: InboxRowView, member: boolean): ReactNode {
+    const unread = isUnread(row);
+    return (
+      <div
+        data-inbox-row
+        id={rowDomId(row.id)}
+        ref={(el) => {
+          rowRefs.current[row.id] = el;
+        }}
+        tabIndex={-1}
+        className={[styles.row, unread ? styles.unread : "", member ? styles.member : ""].filter(Boolean).join(" ")}
+      >
+        {unread ? <span className="sr-only">안 읽음 · </span> : null}
+        {sentence(row)}
+        {row.emailStatus === "failed" ? <div className={styles.emailFailed}>이메일 발송 실패</div> : null}
+      </div>
+    );
+  }
+
+  const displayRows: DisplayRow[] = foldInbox(rows).flatMap((item): DisplayRow[] => {
+    if (item.type === "row") return [{ id: item.row.id, createdAt: item.row.createdAt, kind: "row", row: item.row }];
+    const head: DisplayRow = { id: `fold:${item.key}`, createdAt: item.rows[0]?.createdAt ?? "", kind: "fold", fold: item };
+    const members: DisplayRow[] = expanded.has(item.key) ? item.rows.map((row) => ({ id: row.id, createdAt: row.createdAt, kind: "member", row })) : [];
+    return [head, ...members];
+  });
+
+  const columns: TableColumn<DisplayRow>[] = [
     {
       key: "message",
       header: "내용",
       priority: "p1",
-      cell: (row) => {
-        const unread = row.readAt === null || row.readAt === openedAt;
+      cell: (display) => {
+        if (display.kind !== "fold") return inboxRow(display.row, display.kind === "member");
+        const { fold } = display;
+        const open = expanded.has(fold.key);
+        const unreadCount = fold.rows.filter(isUnread).length;
+        const titleId = `inbox-fold-${fold.rows[0]?.id ?? ""}-title`;
         return (
-          <div
-            data-inbox-row
-            ref={(el) => {
-              rowRefs.current[row.id] = el;
-            }}
-            tabIndex={-1}
-            className={unread ? `${styles.row} ${styles.unread}` : styles.row}
-          >
-            {unread ? <span className="sr-only">안 읽음 · </span> : null}
-            {row.message}
-            {row.emailStatus === "failed" ? <div className={styles.emailFailed}>이메일 발송 실패</div> : null}
+          <div className={unreadCount > 0 ? `${styles.foldHead} ${styles.unread}` : styles.foldHead}>
+            {unreadCount > 0 ? <span className="sr-only">안 읽음 · </span> : null}
+            <span id={titleId} className={styles.foldTitle}>
+              {fold.label} · {fold.rows.length}건
+            </span>
+            <Button
+              variant="tertiary"
+              aria-expanded={open}
+              aria-controls={fold.rows.map((row) => rowDomId(row.id)).join(" ")}
+              aria-describedby={titleId}
+              onClick={() => toggle(fold.key)}
+            >
+              {open ? "접기" : "펼치기"}
+            </Button>
           </div>
         );
       },
@@ -164,7 +236,8 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
       header: "시각",
       priority: "p1",
       align: "right",
-      cell: (row) => <Num value={formatKstTime(new Date(row.createdAt))} />,
+      headerClassName: styles.time,
+      cell: (display) => (display.kind === "fold" ? null : <Num value={formatKstTime(new Date(display.row.createdAt))} />),
     },
   ];
 
@@ -173,7 +246,7 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
       <Table
         caption="알림함"
         columns={columns}
-        rows={rows}
+        rows={displayRows}
         getRowId={(row) => row.id}
         groupBy={(row) => toKstDate(new Date(row.createdAt))}
         groupHeader={(row) => formatGroupLabel(toKstDate(new Date(row.createdAt)), referenceYear)}

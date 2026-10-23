@@ -32,3 +32,70 @@ td:has(.unread) {
   color: var(--status-danger);
   margin-top: var(--s-2);
 }
+
+/* 「시각」 머리글 — 로드 뒤 표(inbox-list.tsx)와 loading.tsx 뼈대가 같은 클래스로 같은 폭(내용 폭)을 갖는다. */
+.time {
+  width: 1%;
+}
+
+/* N25 — 알림 문장 링크. 글자색은 본문 강조색(accent 아님), 밑줄은 hover · focus에만. */
+.link {
+  color: var(--text-strong);
+  text-decoration: none;
+}
+
+.link:hover,
+.link:focus-visible {
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.link:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* N26 — 같은 날 같은 종류 접힘 줄: `{종류} · N건` + 3차 버튼. */
+.foldHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.foldTitle {
+  color: var(--text-strong);
+}
+
+/* 펼친 접힘 줄 아래의 행 — 같은 표 줄이고 내용만 들여 쓴다. */
+.member {
+  padding-inline-start: var(--s-4);
+}
+
+/* 폰 — 링크 있는 행은 행 전체가 누름 자리(U10 · §3 44px). 링크 ::after가 표 줄(내용 + 시각 칸)을 덮는다. 색 · 밑줄은 더하지 않는다. */
+@media (max-width: 699.98px) {
+  tr:has(> td > .row > .link) {
+    position: relative;
+  }
+
+  /* 링크 상자가 44를 채우므로 그 칸은 위아래 여백을 걷고, 시각 칸과 한 줄 가운데로 맞춘다(표 칸 기본은 위 맞춤). */
+  tr:has(> td > .row > .link) > td {
+    vertical-align: middle;
+  }
+
+  td:has(> .row > .link) {
+    padding-block: 0;
+  }
+
+  .link {
+    display: flex;
+    align-items: center;
+    min-height: var(--touch-min);
+  }
+
+  .link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+}

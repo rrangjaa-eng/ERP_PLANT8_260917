@@ -8,6 +8,7 @@ import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { runTick, type TickResult } from "@/domain/notify/tick";
 import { createTestConditionKind, testCandidate, type TestConditionKind } from "@/test/support/notify-tick";
+import { approvalTurnRows, seedInboxRows, setupLinkedInbox } from "./notify-inbox-fixture";
 
 // Task 3(알림함 목록 완성) 준비 도우미 — tick으로 만든 행을 테스트 DB에서 직접
 // 고친다(email_status·created_at). 프로덕션 코드에는 이런 경로가 없다
@@ -756,5 +757,155 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     await page.goto("/notifications");
     await expect(page.locator("table b")).toHaveCount(0);
     await expect(page.getByText(`테스트 알림 · ${entityId}`)).toBeVisible();
+  });
+});
+
+// 계산된 글자색 — 토큰 이름으로 단언한다(값은 tokens.css가 정한다).
+function tokenAsColor(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, name);
+}
+
+test.describe("알림함 링크 · 접힘 (07-19 N25 · N26 · U10)", () => {
+  test("문장은 볼 수 있는 문서로 이어진다 — 색 --text-strong · 밑줄은 hover · focus에만 · 볼 수 없는 문서는 글자", async ({ page }) => {
+    const { fx, expenseId } = await setupLinkedInbox();
+    await seedInboxRows(fx.pm.viewer.id, [
+      { conditionKind: "expense-result", entity: "expense-result", entityId: `${expenseId}:${randomUUID()}`, message: "링크 문장" },
+      { conditionKind: "expense-result", entity: "expense", entityId: randomUUID(), message: "볼 수 없는 문서 문장" },
+    ]);
+    await login(page, fx.pm);
+    await page.goto("/notifications");
+
+    const link = page.getByRole("link", { name: "링크 문장" });
+    await expect(link).toHaveCSS("color", await tokenAsColor(page, "--text-strong"));
+    await expect(link).not.toHaveCSS("color", await tokenAsColor(page, "--accent"));
+    await expect(link).toHaveCSS("text-decoration-line", "none");
+    await link.hover();
+    await expect(link).toHaveCSS("text-decoration-line", "underline");
+    await page.mouse.move(0, 0);
+    await expect(link).toHaveCSS("text-decoration-line", "none");
+    await link.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await expect(link).toBeFocused();
+    await expect(link).toHaveCSS("text-decoration-line", "underline");
+    await expect(link).toHaveCSS("outline-color", await tokenAsColor(page, "--focus"));
+
+    await expect(page.getByRole("link", { name: "볼 수 없는 문서 문장" })).toHaveCount(0);
+    await expect(page.getByText("볼 수 없는 문서 문장")).toBeVisible();
+
+    await link.click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}$`));
+  });
+
+  test("같은 날 같은 종류 6건은 한 줄로 접히고 펼치기 · 접기 — aria-expanded · aria-controls · 포커스 유지 · Space · 각 행이 링크", async ({ page }) => {
+    const { fx, expenseId } = await setupLinkedInbox();
+    await seedInboxRows(fx.pm.viewer.id, approvalTurnRows(expenseId, 6));
+    await login(page, fx.pm);
+    await page.goto("/notifications");
+
+    await expect(page.locator("table [data-inbox-row]")).toHaveCount(0);
+    await expect(page.getByText("결재 차례 · 6건")).toBeVisible();
+    const toggle = page.getByRole("button", { name: "펼치기" });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(toggle).toHaveAccessibleDescription("결재 차례 · 6건");
+    // 안 읽은 건이 있으면 왼쪽 선(열람이 읽음 처리해도 이번 방문에는 인셋이 남는다 — S1-d).
+    const foldCell = page.locator("table td").filter({ hasText: "결재 차례 · 6건" });
+    await expect(foldCell).toHaveCSS("border-inline-start-width", "1px");
+
+    await toggle.click();
+    const opened = page.getByRole("button", { name: "접기" });
+    await expect(opened).toHaveAttribute("aria-expanded", "true");
+    await expect(opened).toBeFocused();
+    // 접힘 줄이 맡는 것은 펼친 행들이다 — 표 행은 한 요소로 묶을 수 없어 aria-controls가 행 id를 모두 가리킨다.
+    const controls = (await opened.getAttribute("aria-controls"))?.split(" ") ?? [];
+    expect(controls).toHaveLength(6);
+    for (const id of controls) await expect(page.locator(`[id="${id}"][data-inbox-row]`)).toHaveCount(1);
+    await expect(page.locator("table [data-inbox-row]")).toHaveCount(6);
+    await expect(page.locator("table").getByRole("link")).toHaveCount(6);
+    const indent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--s-4").trim());
+    await expect(page.locator("table [data-inbox-row]").first()).toHaveCSS("padding-inline-start", indent);
+
+    await page.keyboard.press("Space");
+    await expect(page.getByRole("button", { name: "펼치기" })).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("button", { name: "펼치기" })).toBeFocused();
+    await expect(page.locator("table [data-inbox-row]")).toHaveCount(0);
+    await page.keyboard.press("Space");
+    await expect(page.locator("table [data-inbox-row]")).toHaveCount(6);
+  });
+
+  test("모두 읽은 묶음은 왼쪽 선이 없다 · 4건은 접히지 않는다 · 확인증 알림 6건은 접히지 않는다", async ({ page }) => {
+    const { fx, expenseId } = await setupLinkedInbox();
+    await seedInboxRows(fx.pm.viewer.id, approvalTurnRows(expenseId, 6, { read: true, at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }));
+    await seedInboxRows(
+      fx.pm.viewer.id,
+      Array.from({ length: 4 }, (_, index) => ({
+        conditionKind: "pay-week-alert",
+        entity: "pay-week",
+        entityId: `2026-10-0${index + 1}`,
+        message: `지급 주 시험 ${index + 1}`,
+        read: true,
+        createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000 - index * 1000),
+      })),
+    );
+    await seedInboxRows(
+      fx.pm.viewer.id,
+      Array.from({ length: 6 }, (_, index) => ({
+        conditionKind: "cert_qr_request",
+        entity: "cert_event",
+        entityId: randomUUID(),
+        message: `확인증 시험 ${index + 1}`,
+        read: true,
+        createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000 - index * 1000),
+      })),
+    );
+    await login(page, fx.pm);
+    await page.goto("/notifications");
+
+    const foldCell = page.locator("table td").filter({ hasText: "결재 차례 · 6건" });
+    await expect(foldCell).toHaveCSS("border-inline-start-width", "0px");
+    await expect(page.getByText(/지급 주 시험/)).toHaveCount(4);
+    await expect(page.getByText(/확인증 시험/)).toHaveCount(6);
+    await expect(page.getByRole("button", { name: "펼치기" })).toHaveCount(1);
+  });
+
+  test("펼친 묶음은 더 보기 뒤에도 펼친 채다 · 더 보기 50건은 그대로", async ({ page }) => {
+    const { fx, expenseId } = await setupLinkedInbox();
+    await seedInboxRows(fx.pm.viewer.id, approvalTurnRows(expenseId, 6, { read: true }));
+    const older = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    await seedInboxRows(
+      fx.pm.viewer.id,
+      Array.from({ length: 50 }, (_, index) => ({
+        conditionKind: "test",
+        entity: "test",
+        entityId: `plain-${randomUUID()}`,
+        message: `일반 시험 ${index + 1}`,
+        read: true,
+        createdAt: new Date(older.getTime() - index * 1000),
+      })),
+    );
+    await login(page, fx.pm);
+    await page.goto("/notifications");
+
+    await page.getByRole("button", { name: "펼치기" }).click();
+    await expect(page.getByRole("button", { name: "접기" })).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("table [data-inbox-row]")).toHaveCount(6 + 44);
+    await page.getByRole("button", { name: "더 보기 50건" }).click();
+    await expect(page.locator("table [data-inbox-row]")).toHaveCount(6 + 50);
+    await expect(page.getByRole("button", { name: "접기" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("로드 뒤 「시각」 머리글이 loading 뼈대와 같은 폭 클래스를 가진다", async ({ page }) => {
+    const user = await createEmployee();
+    await seedInboxRows(user.userId, [{ conditionKind: "test", entity: "test", entityId: `plain-${randomUUID()}`, message: "머리글 시험" }]);
+    await login(page, user);
+    await page.goto("/notifications");
+    await expect(page.getByRole("columnheader", { name: "시각" })).toHaveClass(/time/);
   });
 });

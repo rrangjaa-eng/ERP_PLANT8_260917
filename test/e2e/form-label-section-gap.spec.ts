@@ -259,7 +259,7 @@ test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.
   test("사람 상세 계급 변경 · 변경 오류", async ({ page }) => {
     await loginAsSysadmin(page);
     await openPersonDetail(page);
-    // 오류 줄(묶음 뒤 형제 `registeredHint`)까지 재려고 없는 계급 id로 바꿔 서버 오류를 낸다 — 계급은 바뀌지 않는다.
+    // 오류 줄(07-17 N10 뒤 Select 칸 아래 `#person-role-change-error`)까지 재려고 없는 계급 id로 바꿔 서버 오류를 낸다 — 계급은 바뀌지 않는다.
     const select = page.locator("#person-role-change");
     await select.evaluate((element: HTMLSelectElement) => {
       const option = document.createElement("option");
@@ -268,8 +268,9 @@ test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.
       element.append(option);
     });
     await select.selectOption("e2e-missing-role");
-    await expect(page.locator("div:has(> #person-role-change) + p")).toBeVisible();
-    await expectLabelLayoutAtAllWidths(page, "main", false);
+    await expect(page.locator("#person-role-change-error")).toBeVisible();
+    // 07-17 N10 — 계급 변경이 공용 Select(Form.Field 줄)라 `selectLabel` 클래스가 없다 — 설정 화면처럼 구조로 잰다.
+    await expectLabelLayoutAtAllWidths(page, "main", false, false);
   });
 
   test("설정 화면 select 칸", async ({ page }) => {

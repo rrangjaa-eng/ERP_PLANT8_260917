@@ -108,7 +108,7 @@ test("시스템 관리자 행에서 칸을 끄면 거래처 목록 · 편집 화
     expect(listHtml).not.toContain(label);
     expect(listHtml).not.toContain(value);
     await page.goto(editHref!);
-    await expect(page.getByRole("button", { name: "거래처 수정" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "거래처 저장" })).toBeVisible();
     const editHtml = await page.content();
     expect(editHtml).not.toContain(label);
     expect(editHtml).not.toContain(value);

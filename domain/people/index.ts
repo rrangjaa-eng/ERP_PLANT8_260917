@@ -412,6 +412,22 @@ export async function registerPerson(
     roleId: input.roleId,
   });
 
+  // 07-21 게이트(/cso P3-a): 계정 생성(better-auth, 다른 연결)은 위 tx 잠금 밖이다 — 생성 뒤 계급 행을 FOR SHARE로 다시 읽어
+  // 계급 보관(FOR UPDATE 뒤 소속 세기)과 줄 선다. 보관이 먼저 셌으면(이 계정이 아직 안 보였으면) 여기서 보관을 보고 계정을 보상 보관한다.
+  const lockedRole = await withTransaction((tx) => findRoleForShare(viewer, input.roleId, tx));
+  if (!lockedRole || lockedRole.archivedAt) {
+    const archive = deps?.archive ?? defaultArchive;
+    await archive(SYSTEM_VIEWER, "user", userId, {
+      recordAction: async (v, entry, options) =>
+        (deps?.recordAction ?? defaultRecordAction)(
+          v,
+          { ...entry, detail: { reason: "register_person_rollback", requestedBy: viewer.id } },
+          options,
+        ),
+    });
+    throw new ValidationError(`존재하지 않거나 보관된 계급: ${input.roleId}`);
+  }
+
   if (input.teamId && input.effectiveFrom) {
     const assignTeam = deps?.assignTeam ?? defaultAssignTeam;
     try {

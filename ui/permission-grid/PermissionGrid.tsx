@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Toast } from "@/ui/toast/Toast";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { KvList } from "@/ui/kv-list/KvList";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import styles from "./PermissionGrid.module.css";
 
 // SYSTEM.md §7-13 체크박스 매트릭스 — 권한표·정보 노출표 두 화면이 공유한다
@@ -31,8 +32,22 @@ function cellDisabled(row: PermissionGridRow, column: PermissionGridColumn, chec
   return Boolean((row.locked || column.locked) && !checked);
 }
 
-type CellStatus = "idle" | "delayed" | "error";
+// saving = 딸린 칸 모드(07-21)의 저장 중 — 요청 칸 + 예측 칸이 `--surface-dirty` 면 · aria-busy · 누름 무시.
+type CellStatus = "idle" | "saving" | "delayed" | "error";
 type CellState = { checked: boolean; status: CellStatus; reason?: string };
+
+// 07-21(R7 화면 · SYSTEM §7-13 개정 8 · K4 · U5 · U6): 딸린 칸 — 칸 하나를 바꾸면 서버가 같이 바꾸는 칸이 있는 격자(권한표)만 넘긴다.
+// ui는 app 모듈을 import하지 않으므로 예측 · 원복 순서 함수는 prop으로만 받는다. 없으면(정보 노출표 · 설정 짝 격자) 지금 동작 그대로.
+export type PermissionGridChange = { columnId: string; checked: boolean };
+export type PermissionGridLinkedChange = { columnId: string; before: boolean; after: boolean };
+export type PermissionGridLinked = {
+  /** 그 칸을 next로 바꿀 때 같이 바뀔 칸(열 id, 요청 칸 제외). */
+  cells: (columnId: string, next: boolean) => string[];
+  /** 결과 줄 `되돌리기`의 호출 순서 — 그 누름으로 실제 바뀐 칸만. */
+  revertSteps: (changes: PermissionGridLinkedChange[]) => { columnId: string; next: boolean }[];
+};
+
+type LinkedResult = { next: boolean; groups: string[]; batches: { rowId: string; changes: PermissionGridLinkedChange[] }[] };
 
 export type PermissionGridProps = {
   /** 시각적으로 숨긴 <caption> 텍스트. */
@@ -50,7 +65,9 @@ export type PermissionGridProps = {
   /** ERROR 상태 — 있으면 격자 대신 한 줄을 그린다. */
   errorMessage?: string | null;
   onRetry?: () => void;
-  onToggle: (rowId: string, columnId: string, next: boolean) => Promise<void>;
+  /** 딸린 칸 모드면 서버가 실제로 바꾼 칸(요청 칸 포함)을 돌려준다 — 그 값이 최종이다. */
+  onToggle: (rowId: string, columnId: string, next: boolean) => Promise<readonly PermissionGridChange[] | void>;
+  linked?: PermissionGridLinked;
   /** 저장 실패 토스트의 이름 — 기본 `권한`. */
   saveNoun?: string;
 };
@@ -139,12 +156,22 @@ export function PermissionGrid({
   errorMessage,
   onRetry,
   onToggle,
+  linked,
   saveNoun = "권한",
 }: PermissionGridProps) {
   const [cells, setCells] = useState<Record<string, CellState>>(() => buildInitialCells(rows, columns, values));
   const [toast, setToast] = useState<{ message: string; tone: "default" | "error" } | null>(null);
   const [selectedRoleId, setSelectedRoleId] = useState<string>(rows[0]?.id ?? "");
   const delayTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [result, setResult] = useState<LinkedResult | null>(null);
+  const [reverting, setReverting] = useState(false);
+  // 저장 중인 칸 — 같은 칸 누름을 렌더를 기다리지 않고 거른다(두 번 눌러도 요청 한 번, U6).
+  const savingKeys = useRef(new Set<string>());
+  // 원복 단계처럼 await 사이에 이어지는 호출이 최신 칸 값을 읽는다.
+  const cellsRef = useRef(cells);
+  useEffect(() => {
+    cellsRef.current = cells;
+  });
 
   // M-1 회귀 수정: rows/columns/values가 (재조회로) 바뀔 때마다 cells를
   // 다시 동기화한다 — 위 useState의 지연 초기화는 첫 마운트에서만 돈다.
@@ -206,9 +233,91 @@ export function PermissionGrid({
     }
   }
 
+  // 딸린 칸 모드의 칸 하나 저장 — 요청 칸 + 예측 칸을 저장 중으로 → 서버 `changed`로 확정 · 실패면 둘 다 이전 값 + 실패 표시.
+  async function commitLinked(
+    model: PermissionGridLinked,
+    rowId: string,
+    columnId: string,
+    next: boolean,
+  ): Promise<{ ok: boolean; changes: PermissionGridLinkedChange[] }> {
+    const key = buildCellKey(rowId, columnId);
+    if (savingKeys.current.has(key)) return { ok: true, changes: [] };
+    const known = new Set(columns.map((column) => column.id));
+    const predicted = model
+      .cells(columnId, next)
+      .filter((id) => known.has(id))
+      .map((id) => buildCellKey(rowId, id))
+      .filter((cellKey) => !savingKeys.current.has(cellKey) && (cellsRef.current[cellKey]?.checked ?? false) !== next);
+    const keys = [key, ...predicted];
+    for (const cellKey of keys) savingKeys.current.add(cellKey);
+    const mark = (status: CellStatus, checked: boolean, reason?: string) =>
+      setCells((prev) => {
+        const out = { ...prev };
+        for (const cellKey of keys) out[cellKey] = { checked, status, reason };
+        return out;
+      });
+    mark("saving", next);
+    try {
+      const changed = (await onToggle(rowId, columnId, next)) ?? [];
+      setCells((prev) => {
+        const out = { ...prev };
+        for (const cellKey of keys) out[cellKey] = { checked: next, status: "idle" };
+        for (const change of changed) {
+          const cellKey = buildCellKey(rowId, change.columnId);
+          if (out[cellKey]) out[cellKey] = { checked: change.checked, status: "idle" };
+        }
+        return out;
+      });
+      return { ok: true, changes: changed.map((change) => ({ columnId: change.columnId, before: !change.checked, after: change.checked })) };
+    } catch {
+      mark("error", !next, "저장 실패 · 다시 시도");
+      return { ok: false, changes: [] };
+    } finally {
+      for (const cellKey of keys) savingKeys.current.delete(cellKey);
+    }
+  }
+
+  // 같이 바뀐 칸(요청 칸 밖)이 있을 때만 결과 줄 — `{메뉴}`는 딸려 바뀐 칸의 묶음 이름.
+  function linkedResult(next: boolean, requestedId: string, batches: LinkedResult["batches"]): LinkedResult | null {
+    const groups: string[] = [];
+    for (const batch of batches) {
+      for (const change of batch.changes) {
+        if (change.columnId === requestedId) continue;
+        const group = columns.find((column) => column.id === change.columnId)?.group ?? "";
+        if (!groups.includes(group)) groups.push(group);
+      }
+    }
+    return groups.length > 0 ? { next, groups, batches } : null;
+  }
+
+  async function handleRevert(model: PermissionGridLinked, target: LinkedResult) {
+    setReverting(true);
+    let failed = false;
+    for (const batch of target.batches) {
+      for (const step of model.revertSteps(batch.changes)) {
+        if (failed) break;
+        failed = !(await commitLinked(model, batch.rowId, step.columnId, step.next)).ok;
+      }
+    }
+    if (failed) setToast({ message: `${saveNoun} 저장 실패 · 다시 시도`, tone: "error" });
+    setReverting(false);
+    setResult((current) => (current === target ? null : current));
+  }
+
   async function handleCellToggle(row: PermissionGridRow, column: PermissionGridColumn) {
     const key = buildCellKey(row.id, column.id);
     const current = cells[key]?.checked ?? false;
+    if (linked) {
+      if (savingKeys.current.has(key)) return;
+      setResult(null);
+      const outcome = await commitLinked(linked, row.id, column.id, !current);
+      if (!outcome.ok) {
+        setToast({ message: `${saveNoun} 저장 실패 · 다시 시도`, tone: "error" });
+        return;
+      }
+      setResult(linkedResult(!current, column.id, [{ rowId: row.id, changes: outcome.changes }]));
+      return;
+    }
     const next = !current;
     setCells((prev) => ({ ...prev, [key]: { checked: next, status: "idle" } }));
     const ok = await saveCell(row.id, column.id, next);
@@ -221,6 +330,22 @@ export function PermissionGrid({
     // 배치 API 없음(D-38) — 열의 각 셀에 개별 저장 호출을 순차로 보낸다.
     let failed = 0;
     let total = 0;
+    if (linked) {
+      // 딸린 칸 모드: 칸마다 같은 경로(예측 · 확정), 결과 줄은 끝에 한 번.
+      setResult(null);
+      const batches: LinkedResult["batches"] = [];
+      for (const row of bulkTargetRows(rows, column)) {
+        total += 1;
+        const outcome = await commitLinked(linked, row.id, column.id, next);
+        if (outcome.ok) batches.push({ rowId: row.id, changes: outcome.changes });
+        else failed += 1;
+      }
+      setResult(linkedResult(next, column.id, batches));
+      if (failed > 0) {
+        setToast({ message: `${saveNoun} 저장 · ${total}칸 중 ${failed}칸 실패 · 다시 시도`, tone: "error" });
+      }
+      return;
+    }
     for (const row of bulkTargetRows(rows, column)) {
       const key = buildCellKey(row.id, column.id);
       setCells((prev) => ({ ...prev, [key]: { checked: next, status: "idle" } }));
@@ -245,6 +370,20 @@ export function PermissionGrid({
 
   return (
     <div>
+      {linked ? (
+        <p role="status" className={styles.resultLine}>
+          {result ? (
+            <>
+              <span>{`${result.groups.join(", ")} · ${result.next ? "보기도 켬" : "쓰기·승인도 끔"}`}</span>
+              <RowActions>
+                <RowAction pending={reverting} onClick={() => void handleRevert(linked, result)}>
+                  되돌리기
+                </RowAction>
+              </RowActions>
+            </>
+          ) : null}
+        </p>
+      ) : null}
       <div className={styles.desktopOnly}>
         <div className={styles.wrap} style={{ "--role-count": rows.length } as CSSProperties}>
           <table className={styles.table}>
@@ -294,6 +433,7 @@ export function PermissionGrid({
                         const cellClass = [
                           styles.cell,
                           cell.status === "delayed" ? styles.delayed : "",
+                          cell.status === "saving" ? styles.dirty : "",
                           cell.status === "error" ? styles.errorCell : "",
                         ]
                           .filter(Boolean)
@@ -306,6 +446,8 @@ export function PermissionGrid({
                                 checked={cell.checked}
                                 disabled={cellDisabled(row, column, cell.checked)}
                                 aria-label={cellAriaLabel(row, column)}
+                                aria-busy={cell.status === "saving" ? true : undefined}
+                                aria-disabled={cell.status === "saving" ? true : undefined}
                                 onChange={() => {
                                   void handleCellToggle(row, column);
                                 }}
@@ -355,6 +497,8 @@ export function PermissionGrid({
                     checked={cell.checked}
                     disabled={cellDisabled(selectedRow, column, cell.checked)}
                     aria-label={cellAriaLabel(selectedRow, column)}
+                    aria-busy={cell.status === "saving" ? true : undefined}
+                    aria-disabled={cell.status === "saving" ? true : undefined}
                     onChange={() => {
                       void handleCellToggle(selectedRow, column);
                     }}

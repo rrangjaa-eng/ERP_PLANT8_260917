@@ -235,3 +235,24 @@
     display: none;
   }
 }
+
+/* 07-21(SYSTEM §7-13 개정 8): 딸린 칸 모드의 저장 중 면 — 요청 칸 + 같이 바뀔 칸. */
+.dirty {
+  background: var(--surface-dirty);
+}
+
+/* 07-21(개정 8 · 공통 계약 3): 표 위 결과 줄 `{메뉴} · 보기도 켬` + `되돌리기` — 휴일 삭제 결과 줄(.undoLine)과 같은 글자. 비면 자리 없음. */
+.resultLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-3);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.resultLine:empty {
+  margin: 0;
+}

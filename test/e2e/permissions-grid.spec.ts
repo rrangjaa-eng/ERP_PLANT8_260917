@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
+import { upsertPermission } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // ADMN-01, D-40, 성공 기준 2: 권한표 셀을 켜면 저장 버튼 없이 즉시 저장되고
@@ -433,5 +434,297 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
     expect(tableSurface.width).toBe("1px");
     expect(tableSurface.radius).toBe("8px");
     expect(gridSurface).toEqual(tableSurface);
+  });
+});
+
+// 07-21(R7 화면 · SYSTEM 개정 8 · K4 · K24 · U5 · U6 · D-739): 권한표 딸린 칸 — 예측 · 저장 중 면 · 표 위 결과 줄 · 서버 `changed` 확정 ·
+// 결과 줄 `되돌리기`(그 누름이 실제 바꾼 칸만) · 같은 칸 다시 누름은 보통 켬/끔 · 거래처 칸은 셋. 임시 계급만 바꾼다(공유 계급 무변화).
+test.describe("권한표 딸린 칸(07-21 R7 · K4 · K24 · U5 · U6)", () => {
+  type TempRole = { id: string; name: string };
+
+  async function tempRole(tag: string, cells: { menu: string; action: string }[] = []): Promise<TempRole> {
+    const id = `role-e2e-linked-${tag}-${randomUUID()}`;
+    const name = `E2E 딸림 ${tag} ${id.slice(-8)}`;
+    await insertRole(SYSTEM_VIEWER, { id, name, sortOrder: 97 });
+    for (const cell of cells) await upsertPermission(SYSTEM_VIEWER, { roleId: id, ...cell, allowed: true });
+    return { id, name };
+  }
+
+  async function loginAs(page: Page, roleId: string): Promise<void> {
+    const user = await createFixtureUser({ roleId });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+  }
+
+  async function openGrid(page: Page, roleId: string = SYSADMIN_ROLE_ID): Promise<void> {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAs(page, roleId);
+    await page.goto("/admin/permissions");
+    await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+  }
+
+  function cellOf(page: Page, role: TempRole, group: string, action: string): Locator {
+    return page.getByRole("checkbox", { name: `${role.name} · ${group} · ${action}`, exact: true });
+  }
+
+  function resultLine(page: Page): Locator {
+    return page.getByRole("status").filter({ has: page.getByRole("button", { name: "되돌리기", exact: true }) });
+  }
+
+  // 서버 액션 POST를 붙잡아 저장 중 상태를 잰다 — release 전까지 응답이 오지 않는다.
+  async function holdSaves(page: Page): Promise<{ release: () => void; posts: () => number }> {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let posts = 0;
+    await page.route("**/admin/permissions", async (route) => {
+      if (route.request().method() === "POST") {
+        posts += 1;
+        await gate;
+      }
+      await route.continue();
+    });
+    return { release: () => release(), posts: () => posts };
+  }
+
+  async function tokenBackground(page: Page, token: string): Promise<string> {
+    return page.evaluate((name) => {
+      const probe = document.createElement("div");
+      probe.style.background = `var(${name})`;
+      document.body.append(probe);
+      const value = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return value;
+    }, token);
+  }
+
+  const td = (cell: Locator) => cell.locator("xpath=ancestor::td");
+
+  test("거래처 칸은 셋 — 보기 · 쓰기 · 계좌 쓰기만 있고 승인 · 계좌 보기 · 계좌 승인은 없다(K24 · D-739)", async ({ page }) => {
+    const role = await tempRole("cells");
+    try {
+      await openGrid(page);
+      for (const [group, action] of [["거래처", "보기"], ["거래처", "쓰기"], ["거래처 계좌 · 서류 수정", "쓰기"]] as const) {
+        await expect(cellOf(page, role, group, action)).toHaveCount(1);
+      }
+      for (const [group, action] of [["거래처", "승인"], ["거래처 계좌 · 서류 수정", "보기"], ["거래처 계좌 · 서류 수정", "승인"]] as const) {
+        await expect(cellOf(page, role, group, action)).toHaveCount(0);
+      }
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, role.id, true);
+    }
+  });
+
+  test("계좌 쓰기 켬 → 거래처 보기도 켬 · 저장 중 두 칸 dirty 면 + aria-busy · 결과 줄 · 토스트 없음 · 새로 고쳐도 켜짐", async ({ page }) => {
+    const role = await tempRole("on");
+    try {
+      await openGrid(page);
+      const account = cellOf(page, role, "거래처 계좌 · 서류 수정", "쓰기");
+      const view = cellOf(page, role, "거래처", "보기");
+      await expect(account).not.toBeChecked();
+      await expect(view).not.toBeChecked();
+
+      const saves = await holdSaves(page);
+      await account.click();
+      await expect(account).toBeChecked();
+      await expect(view).toBeChecked();
+      const dirty = await tokenBackground(page, "--surface-dirty");
+      for (const cell of [account, view]) {
+        await expect(cell).toHaveAttribute("aria-busy", "true");
+        await expect(cell).toHaveAttribute("aria-disabled", "true");
+        expect(await td(cell).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(dirty);
+      }
+      saves.release();
+
+      await expect(resultLine(page)).toContainText("거래처 · 보기도 켬");
+      for (const cell of [account, view]) await expect(cell).not.toHaveAttribute("aria-busy", "true");
+      await expect(page.getByRole("alert").filter({ hasText: "저장 실패" })).toHaveCount(0);
+      expect(saves.posts()).toBe(1);
+
+      await page.reload();
+      await expect(account).toBeChecked();
+      await expect(view).toBeChecked();
+      await expect(resultLine(page)).toHaveCount(0);
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, role.id, true);
+    }
+  });
+
+  test("거래처 보기 끔(쓰기 · 계좌 쓰기 켜짐) → 셋 다 꺼짐 · 결과 줄 · 새로 고쳐도 꺼짐", async ({ page }) => {
+    const role = await tempRole("off", [
+      { menu: "admin.vendors", action: "view" },
+      { menu: "admin.vendors", action: "write" },
+      { menu: "vendors.account", action: "write" },
+    ]);
+    try {
+      await openGrid(page);
+      const view = cellOf(page, role, "거래처", "보기");
+      const write = cellOf(page, role, "거래처", "쓰기");
+      const account = cellOf(page, role, "거래처 계좌 · 서류 수정", "쓰기");
+      await view.click();
+      for (const cell of [view, write, account]) await expect(cell).not.toBeChecked();
+      await expect(resultLine(page)).toContainText("거래처, 거래처 계좌 · 서류 수정 · 쓰기·승인도 끔");
+
+      await page.reload();
+      for (const cell of [view, write, account]) await expect(cell).not.toBeChecked();
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, role.id, true);
+    }
+  });
+
+  test("한 칸을 빠르게 두 번 눌러도 서버 요청은 한 번이다(U6)", async ({ page }) => {
+    const role = await tempRole("dbl");
+    try {
+      await openGrid(page);
+      const write = cellOf(page, role, "코드표", "쓰기");
+      const saves = await holdSaves(page);
+      await write.dblclick();
+      await expect(write).toHaveAttribute("aria-busy", "true");
+      saves.release();
+      await expect(write).not.toHaveAttribute("aria-busy", "true");
+      await expect(write).toBeChecked();
+      expect(saves.posts()).toBe(1);
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, role.id, true);
+    }
+  });
+
+  test("보기 켬 · 쓰기 끔 · 승인 켬에서 쓰기 켬 → 딸린 칸 없음 · 결과 줄 없음(K4)", async ({ page }) => {
+    const role = await tempRole("k4a", [
+      { menu: "admin.code-tables", action: "view" },
+      { menu: "admin.code-tables", action: "approve" },
+    ]);
+    try {
+      await openGrid(page);
+      const write = cellOf(page, role, "코드표", "쓰기");
+      await write.click();
+      await expect(write).toBeChecked();
+      await expect(write).not.toHaveAttribute("aria-busy", "true");
+      await expect(cellOf(page, role, "코드표", "보기")).toBeChecked();
+      await expect(cellOf(page, role, "코드표", "승인")).toBeChecked();
+      await expect(resultLine(page)).toHaveCount(0);
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, role.id, true);
+    }
+  });
+
+  test("거래처 보기 끔 뒤 `되돌리기` → 보기 · 쓰기 · 계좌 쓰기 모두 원래대로 켜짐 · 결과 줄 사라짐 · 새로 고쳐도 같음(K4 · U5)", async ({ page }) => {
+    const role = await tempRole("k4b", [
+      { menu: "admin.vendors", action: "view" },
+      { menu: "admin.vendors", action: "write" },
+      { menu: "vendors.account", action: "write" },
+    ]);
+    try {
+      await openGrid(page);
+      const cells = [cellOf(page, role, "거래처", "보기"), cellOf(page, role, "거래처", "쓰기"), cellOf(page, role, "거래처 계좌 · 서류 수정", "쓰기")];
+      await cells[0]?.click();
+      for (const cell of cells) await expect(cell).not.toBeChecked();
+      await resultLine(page).getByRole("button", { name: "되돌리기", exact: true }).click();
+      for (const cell of cells) await expect(cell).toBeChecked();
+      await expect(resultLine(page)).toHaveCount(0);
+
+      await page.reload();
+      for (const cell of cells) await expect(cell).toBeChecked();
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, role.id, true);
+    }
+  });
+
+  test("모두 끔에서 코드표 쓰기 켬(보기도 켬) → `되돌리기` → 둘 다 꺼짐(K4)", async ({ page }) => {
+    const role = await tempRole("k4c");
+    try {
+      await openGrid(page);
+      const view = cellOf(page, role, "코드표", "보기");
+      const write = cellOf(page, role, "코드표", "쓰기");
+      await write.click();
+      await expect(view).toBeChecked();
+      await expect(resultLine(page)).toContainText("코드표 · 보기도 켬");
+      await resultLine(page).getByRole("button", { name: "되돌리기", exact: true }).click();
+      await expect(write).not.toBeChecked();
+      await expect(view).not.toBeChecked();
+      await expect(resultLine(page)).toHaveCount(0);
+
+      await page.reload();
+      await expect(write).not.toBeChecked();
+      await expect(view).not.toBeChecked();
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, role.id, true);
+    }
+  });
+
+  test("같은 칸 다시 누름 = 그 칸의 보통 끔 — 쓰기만 꺼지고 보기는 켜진 채(숨은 원복 없음 · U5)", async ({ page }) => {
+    const role = await tempRole("u5");
+    try {
+      await openGrid(page);
+      const view = cellOf(page, role, "코드표", "보기");
+      const write = cellOf(page, role, "코드표", "쓰기");
+      await write.click();
+      await expect(view).toBeChecked();
+      await expect(resultLine(page)).toHaveCount(1);
+      await write.click();
+      await expect(write).not.toBeChecked();
+      await expect(write).not.toHaveAttribute("aria-busy", "true");
+      await expect(view).toBeChecked();
+      await expect(resultLine(page)).toHaveCount(0);
+
+      await page.reload();
+      await expect(write).not.toBeChecked();
+      await expect(view).toBeChecked();
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, role.id, true);
+    }
+  });
+
+  test("서버가 거부하면(자기 계급 권한표 보기 끔 → 쓰기도 끔 = 자기 잠금) 요청 칸 · 예측 칸 모두 원래 값 + 실패 표시 · 결과 줄 없음", async ({ page }) => {
+    const role = await tempRole("fail", [
+      { menu: "admin.permissions", action: "view" },
+      { menu: "admin.permissions", action: "write" },
+    ]);
+    try {
+      await openGrid(page, role.id);
+      const view = cellOf(page, role, "권한표", "보기");
+      const write = cellOf(page, role, "권한표", "쓰기");
+      await view.click();
+      const failure = page.getByRole("alert").filter({ hasText: "저장 실패" });
+      await expect(failure).toContainText("권한 저장 실패 · 다시 시도");
+      await expect(view).toBeChecked();
+      await expect(write).toBeChecked();
+      const inset = await page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.boxShadow = "var(--inset-error)";
+        document.body.append(probe);
+        const value = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        return value;
+      });
+      for (const cell of [view, write]) {
+        expect(await td(cell).evaluate((el) => getComputedStyle(el).boxShadow)).toBe(inset);
+        await expect(td(cell)).toHaveAttribute("title", "저장 실패 · 다시 시도");
+      }
+      await expect(failure).toHaveCount(1);
+      await expect(resultLine(page)).toHaveCount(0);
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, role.id, true);
+    }
+  });
+
+  test("정보 노출표는 딸린 동작 · 결과 줄이 없다(회귀)", async ({ page }) => {
+    const role = await tempRole("vis");
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await loginAs(page, SYSADMIN_ROLE_ID);
+      await page.goto("/admin/visibility");
+      const cell = page.getByRole("checkbox", { name: new RegExp(`^${role.name} · `) }).first();
+      const before = await cell.isChecked();
+      await cell.click();
+      await expect(cell).toBeChecked({ checked: !before });
+      await expect(page.getByRole("button", { name: "되돌리기", exact: true })).toHaveCount(0);
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, role.id, true);
+    }
   });
 });

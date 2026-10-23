@@ -421,3 +421,61 @@ test.describe("위임자 계급 표 범위 칸(07-21 R14 · 개정 10)", () => {
     await expect(viewScopeSelect(page, companyName).locator("option")).toHaveText(["전사", "본부", "팀", "본인"]);
   });
 });
+
+// 07-21(R17 화면 · K14 · N4): 소속 사람이 남은 계급의 `삭제`는 비활성 + 같은 줄 이유(`{N}명`은 사람 목록 필터 링크) — 창 없음.
+// 소속 0 계급의 보관 성공 결과는 그 줄이 목록에서 빠지는 것(토스트 없음), 되돌리기는 보관함 `복원`.
+test.describe("소속 남은 계급 보관 막기(07-21 R17 · K14 · N4)", () => {
+  test.afterAll(async () => {
+    await archiveTempRoles();
+  });
+
+  test("소속 2명 계급 — 비활성 삭제 · 같은 줄 이유 · 창 없음 · `2명` 링크 → 사람 목록 2행 · 필터 줄", async ({ page }) => {
+    const roleName = `E2E소속계급-${randomUUID().slice(0, 6)}`;
+    const role = await insertTempRole({ id: `role-${randomUUID()}`, name: roleName, workScope: "team", viewScope: "team" });
+    await createFixtureUser({ roleId: role.id });
+    await createFixtureUser({ roleId: role.id });
+
+    await loginAs(page);
+    await page.goto("/admin/people/roles");
+    const row = visibleRow(page, roleName);
+    const remove = row.getByRole("button", { name: "삭제" });
+    await expect(remove).toHaveAttribute("aria-disabled", "true");
+    await expect(row).toContainText("소속 2명 · 먼저 다른 계급으로 옮기기");
+    const describedBy = (await remove.getAttribute("aria-describedby")) ?? "";
+    const reasonText = await page.evaluate((ids) => ids.split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" "), describedBy);
+    expect(reasonText).toContain("소속 2명 · 먼저 다른 계급으로 옮기기");
+
+    await remove.click({ force: true });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByText(`${roleName} 삭제 · 보관함으로 이동합니다`)).toHaveCount(0);
+
+    await remove.focus();
+    await page.keyboard.press("Tab");
+    const link = row.getByRole("link", { name: "2명" });
+    await expect(link).toBeFocused();
+    await link.click();
+    await expect(page).toHaveURL(new RegExp(`/admin/people\\?role=${role.id}$`));
+    await expect(page.locator("main table:not([aria-hidden='true']) tbody tr").filter({ visible: true })).toHaveCount(2);
+    await expect(page.getByText(`계급 · ${roleName}`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "지우기" })).toBeVisible();
+  });
+
+  test("소속 0 계급 — 두 단계 삭제 뒤 줄이 빠지고 토스트 없음 · 보관함 복원 뒤 다시 있음", async ({ page }) => {
+    const roleName = `E2E빈계급-${randomUUID().slice(0, 6)}`;
+    await insertTempRole({ id: `role-${randomUUID()}`, name: roleName, workScope: "team", viewScope: "team" });
+
+    await loginAs(page);
+    await page.goto("/admin/people/roles");
+    const row = visibleRow(page, roleName);
+    await row.getByRole("button", { name: "삭제" }).click();
+    await row.getByRole("button", { name: "삭제" }).click();
+    await expect(page.getByLabel(`${roleName} 이름`)).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: roleName })).toHaveCount(0);
+
+    await page.goto("/admin/archive");
+    await page.locator("tr", { hasText: roleName }).getByRole("button", { name: "복원" }).click();
+    await expect(page.locator("tr", { hasText: roleName })).toHaveCount(0, { timeout: 15000 });
+    await page.goto("/admin/people/roles");
+    await expect(page.getByLabel(`${roleName} 이름`)).toBeVisible();
+  });
+});

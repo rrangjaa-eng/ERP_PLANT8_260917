@@ -87,6 +87,25 @@ button.action {
   white-space: nowrap;
 }
 
+/* 07-21(SC-09 · SC-13): 폰(<700)은 이유가 좁은 행동 칸에서 넘치지 않게 버튼 아래로 줄바꿈하고, 이유 안 `{N}명` 링크도 44×44 누르는 상자다. */
+@media (max-width: 699.98px) {
+  .withReason {
+    flex-wrap: wrap;
+  }
+
+  .reason {
+    white-space: normal;
+  }
+
+  .reason a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44(공유 Button .tertiary와 같은 패턴). PC는 그대로. */
 @media (max-width: 699.98px) {
   .action {

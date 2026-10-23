@@ -1,9 +1,10 @@
-import { and, eq, gte, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { roles, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import { normalizeRoleName } from "@/domain/permissions/role-name";
+import { activeUserCondition } from "@/repositories/users";
 
 export type RoleRow = InferSelectModel<typeof roles>;
 
@@ -98,20 +99,40 @@ export async function lockRoleForUpdate(viewer: Viewer, id: string, tx: DbOrTx):
   return row ?? null;
 }
 
+// 07-21(F2): 계급으로 옮기는 쓰기가 같은 tx에서 계급 행을 FOR SHARE로 다시 읽는다 — 보관(FOR UPDATE · 소속 세기)과 줄 선다.
+export async function findRoleForShare(viewer: Viewer, id: string, tx: DbOrTx): Promise<RoleRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(roles).where(eq(roles.id, id)).for("share");
+  return row ?? null;
+}
+
 // 07-15(R17): 그 계급의 활성 소속 수 — 보관 안 됨 ∧ 퇴직일 안 지남(countActiveAdmins의 기본 활성 조건과 같다).
+// 07-21: 활성 조건은 사람 목록 필터 · 계급별 숫자와 같은 조각(activeUserCondition).
 export async function countActiveMembersOfRole(viewer: Viewer, roleId: string, asOf: string, tx: DbOrTx = db): Promise<number> {
   void viewer;
   const [row] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(users)
-    .where(
-      and(
-        eq(users.roleId, roleId),
-        isNull(users.archivedAt),
-        or(isNull(users.resignationDate), gte(users.resignationDate, asOf)),
-      ),
-    );
+    .where(and(eq(users.roleId, roleId), activeUserCondition(viewer, asOf)));
   return row?.n ?? 0;
+}
+
+// 07-21(R17 화면): 계급별 활성 소속 수 한 번에 — 없는 계급은 0.
+export async function countActiveMembersByRole(
+  viewer: Viewer,
+  roleIds: readonly string[],
+  asOf: string,
+): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  for (const id of roleIds) counts[id] = 0;
+  if (roleIds.length === 0) return counts;
+  const rows = await db
+    .select({ roleId: users.roleId, n: sql<number>`count(*)::int` })
+    .from(users)
+    .where(and(inArray(users.roleId, [...roleIds]), activeUserCondition(viewer, asOf)))
+    .groupBy(users.roleId);
+  for (const row of rows) if (row.roleId !== null) counts[row.roleId] = row.n;
+  return counts;
 }
 
 // 멱등 시드 전용 — 이미 있으면 건드리지 않는다(onConflictDoNothing).

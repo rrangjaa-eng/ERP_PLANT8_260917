@@ -34,6 +34,7 @@ import {
   listMemberships as repoListMemberships,
   insertMembership as repoInsertMembership,
   deleteMembership as repoDeleteMembership,
+  activeTeamMembers,
 } from "@/repositories/team-memberships";
 
 export class ForbiddenError extends UserFacingError {}
@@ -295,6 +296,10 @@ export async function assignTeam(
   await withTransaction(async (tx) => {
     // 06.4 /cso: 발령할 팀(보관이어도)의 팀 · 본부 키도 같은 층 정렬로 먼저 — 팀 복원과 줄 서고 뒤 자리 키는 다시 기다리지 않는다.
     await lockSeatKeys(viewer, { personIds: [input.userId], teamIds: [input.teamId] }, tx);
+    // 07-21(R10 · T-07-21-02): 잠금 뒤 tx로 팀을 다시 읽는다 — 먼저 커밋된 팀 보관과 줄 서서 보관된 팀으로 발령하지 않는다
+    // (사람 등록 `registerPerson`의 보관 팀 거부와 같은 판정 · 같은 문구).
+    const lockedTeam = await defaultFindTeamById(viewer, input.teamId, tx);
+    if (!lockedTeam || lockedTeam.archivedAt) throw new ValidationError(`존재하지 않거나 보관된 팀: ${input.teamId}`);
     const person = await repoFindUserById(viewer, input.userId, tx);
     // 07-17 R15: 대상 계급이 내 상한 밖이면 발령하지 못한다 — 화면 숨김은 UX일 뿐(퇴직일 진입점과 같은 잠금 뒤 재조회 판정).
     await assertCanGrantRoles(viewer, [person?.roleId ?? null], tx);
@@ -304,6 +309,28 @@ export async function assignTeam(
     await assertAssignmentSeatsFree(viewer, { person, before, after, today, showNames }, tx);
     await recordAction(viewer, { actionType: "document_create", entity: "team_membership", entityId: row.id }, { tx });
   });
+}
+
+export type OrgMemberCounts = { teams: Record<string, number>; orgUnits: Record<string, number> };
+
+// 07-21(R10 · SC-13): 팀 · 본부별 소속 활성 사람 수 — 보관 거부(`OrgHasMembersError`) · 사람 목록 `?team=` · `?org=` 필터와 같은 술어
+// (`activeTeamMembers`). 숫자만 돌려준다(정보 항목 아님) — 사람 메뉴 보기가 있어야 한다. 소속 0인 팀 · 본부는 키가 없다.
+export async function orgMemberCounts(viewer: Viewer, deps?: Partial<{ can: typeof defaultCan; now: () => Date }>): Promise<OrgMemberCounts> {
+  if (!(await (deps?.can ?? defaultCan)(viewer, PEOPLE_MENU, "view"))) {
+    throw new ForbiddenError("조직 보기 권한 없음");
+  }
+  const today = kstToday((deps?.now ?? (() => new Date()))());
+  const members = await activeTeamMembers(viewer, { today });
+  const teamSets = new Map<string, Set<string>>();
+  const orgUnitSets = new Map<string, Set<string>>();
+  for (const member of members) {
+    teamSets.set(member.teamId, (teamSets.get(member.teamId) ?? new Set()).add(member.userId));
+    orgUnitSets.set(member.orgUnitId, (orgUnitSets.get(member.orgUnitId) ?? new Set()).add(member.userId));
+  }
+  return {
+    teams: Object.fromEntries([...teamSets].map(([id, users]) => [id, users.size])),
+    orgUnits: Object.fromEntries([...orgUnitSets].map(([id, users]) => [id, users.size])),
+  };
 }
 
 export type CancelAssignmentDeps = {

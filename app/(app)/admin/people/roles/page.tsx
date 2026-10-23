@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { listRoles } from "@/domain/permissions/roles";
+import { roleMemberCounts } from "@/domain/people";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
@@ -46,6 +47,8 @@ export default async function RolesPage({
     ? await loadRoleRowControls(session.viewer, roles.map((role) => role.id))
     : {};
   const locked = canWrite && ceilingLocked(controls, session.viewer.roleId);
+  // 07-21(R17 화면): 보관 권한자에게만 계급별 소속 수 — 서버 계급 보관 거부(07-15)와 같은 조건.
+  const memberCounts = canArchive ? await roleMemberCounts(session.viewer, roles.map((role) => role.id)) : {};
 
   return (
     <ListScreen
@@ -80,6 +83,7 @@ export default async function RolesPage({
             canWrite={canWrite}
             viewerRoleId={session.viewer.roleId}
             controls={controls}
+            memberCounts={memberCounts}
           />
         </>
       )}

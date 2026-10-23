@@ -42,9 +42,9 @@ type ButtonActionBase = ActionCommon & {
   describedBy?: string;
 };
 
-// Button의 UX-06 규약 — 비활성은 이유와 함께만 쓴다.
+// Button의 UX-06 규약 — 비활성은 이유와 함께만 쓴다. 07-21(SC-09 · SC-13): 이유 줄에 `{N}명` 링크가 들어가 ReactNode.
 type ButtonAction = ButtonActionBase &
-  ({ disabled?: false; disabledReason?: string } | { disabled: true; disabledReason: string });
+  ({ disabled?: false; disabledReason?: ReactNode } | { disabled: true; disabledReason: ReactNode });
 
 export type RowActionProps = LinkAction | ButtonAction;
 

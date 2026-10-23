@@ -1,6 +1,6 @@
 /* SYSTEM.md §6-1 목록 · §6-3 폼 템플릿(D-39). 값은 역할 토큰만 쓴다(스킨 A).
    04.6-14: 표(StaticTable)와 행 행동(RowActions)이 공용 컴포넌트로 옮겨 화면별 표 · 행 행동 · 등록 링크 규칙을 지웠다.
-   패널 안 select는 라벨 위 · 칸 전폭(.panelSelect — 조직 화면, 07-21 이관 전)이다. */
+   07-21 N10: 조직 화면 패널 select도 공용 Select(Form.Field)로 옮겨 .panelSelect · .selectInvalid를 지웠다. */
 
 /* 로그인 상태 배지: PC는 · 로 이어 한 줄. */
 .badges {
@@ -69,27 +69,17 @@
   }
 }
 
-/* 패널 안 select 묶음 — 모든 폭에서 라벨 위 · 칸 전폭(04.6-04 패널 배치). */
-.panelSelect {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-1);
-  font-size: var(--text-aux);
-  font-weight: var(--fw-medium);
-  color: var(--text-muted);
-  margin: 0 0 var(--s-4);
-}
-
 /* 사람 상세 계급 변경 줄 — 위아래 여백(07-17 N10: 칸은 Form.Field · Select가 그린다). */
 .roleChange {
   margin: var(--s-2) 0;
 }
 
-/* 계급 표 머리글은 폰에서 칸이 좁아도 한 글자씩 꺾이지 않는다(defect 3 — 한글은 글자 사이에서 꺾인다). */
 /* 07-21(SYSTEM 개정 10): 계급 표 위 잠김 한 줄 — 표와 붙지 않게 아래 여백만. */
 .ceilingHint {
   margin: 0 0 var(--s-2);
 }
+
+/* 계급 표 머리글은 폰에서 칸이 좁아도 한 글자씩 꺾이지 않는다(defect 3 — 한글은 글자 사이에서 꺾인다). */
 
 .rolesTable th {
   white-space: nowrap;
@@ -111,10 +101,6 @@
 .select:focus-visible {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: var(--focus-offset);
-}
-
-.selectInvalid {
-  border-color: var(--status-danger);
 }
 
 /* 사람 등록 결과(초기 비밀번호) — 패널 안에 한 번만 보인다(T-03-29 · Q3 A). */

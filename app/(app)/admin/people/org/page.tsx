@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
-import { listOrgUnits, listTeams } from "@/domain/org";
+import { listOrgUnits, listTeams, orgMemberCounts, type OrgMemberCounts } from "@/domain/org";
 import { listSeatDuplicates } from "@/domain/people/seat-rules";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
@@ -37,6 +37,9 @@ export default async function OrgPage({
     listSeatDuplicates(session.viewer),
   ]);
 
+  // 07-21(R10 · SC-13): 보관 권한자에게만 팀 · 본부별 소속 수 — 서버 팀 · 본부 보관 거부와 같은 술어.
+  const memberCounts: OrgMemberCounts = canArchive ? await orgMemberCounts(session.viewer) : { teams: {}, orgUnits: {} };
+
   // DR3 B — 「팀 추가」 행동 링크의 `orgUnitId`는 보관되지 않은 본부와 같을 때만 팀 폼 본부 칸 기본값이다. 모르는 값 ·
   // 보관된 본부는 빈 기본값이다(서버 액션의 본부 검증은 그대로).
   const defaultOrgUnitId = orgUnits.find((org) => org.id === orgUnitIdParam && org.archivedAt === null)?.id ?? "";
@@ -71,6 +74,7 @@ export default async function OrgPage({
           canArchive={canArchive}
           canWrite={canWrite}
           duplicates={duplicates ?? undefined}
+          memberCounts={memberCounts}
         />
       )}
     </ListScreen>

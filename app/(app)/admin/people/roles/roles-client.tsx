@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, type FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
 import {
@@ -14,10 +15,10 @@ import type { RoleRowControls } from "./role-row-controls";
 import { TextField } from "@/ui/input/TextField";
 import { Num } from "@/ui/num/Num";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
-import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
+import { ArchiveRejectedError, DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { StaticTable } from "@/ui/table/StaticTable";
-import { RowActions } from "@/ui/row-actions/RowActions";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { PcOnly, PhoneOnly } from "../../pc-only";
 import styles from "../people.module.css";
 
@@ -161,9 +162,11 @@ function RoleViewScopeCell({ role, scopes }: { role: RoleRowView; scopes: RoleVi
 function RoleActionsCell({
   role,
   canArchive,
+  memberCount,
 }: {
   role: RoleRowView;
   canArchive: boolean;
+  memberCount: number;
 }) {
   return (
     <>
@@ -173,13 +176,32 @@ function RoleActionsCell({
           렌더하지 않는다. */}
       {!role.isSeed && !role.archivedAt && canArchive ? (
         <RowActions>
-          <DeleteToArchive
-            name={role.name}
-            onArchive={async () => {
-              const result = await archiveRoleAction({ id: role.id });
-              if (result?.serverError) throw new Error(result.serverError);
-            }}
-          />
+          {memberCount > 0 ? (
+            // 07-21(R17 화면 · K14 · SC-09 = SC-13 꼴): 소속이 남은 계급의 `삭제`는 비활성 + 같은 줄 이유 — 창을 열지 않는다(서버 07-15도 거부).
+            <RowAction
+              danger
+              disabled
+              disabledReason={
+                <>
+                  {"소속 "}
+                  <Link href={`/admin/people?role=${role.id}`}>{`${memberCount}명`}</Link>
+                  {" · 먼저 다른 계급으로 옮기기"}
+                </>
+              }
+              onClick={() => {}}
+            >
+              삭제
+            </RowAction>
+          ) : (
+            // N4: 성공 결과는 이 줄이 목록에서 빠지는 것(토스트 없음) — 되돌리기는 보관함 `복원`. 경합 거부는 서버 문구 그대로.
+            <DeleteToArchive
+              name={role.name}
+              onArchive={async () => {
+                const result = await archiveRoleAction({ id: role.id });
+                if (result?.serverError) throw new ArchiveRejectedError(result.serverError);
+              }}
+            />
+          )}
         </RowActions>
       ) : null}
     </>
@@ -192,12 +214,14 @@ export function RolesList({
   canWrite,
   viewerRoleId,
   controls,
+  memberCounts,
 }: {
   roles: RoleRowView[];
   canArchive: boolean;
   canWrite: boolean;
   viewerRoleId: string | null;
   controls: Readonly<Record<string, RoleRowControls>>;
+  memberCounts: Readonly<Record<string, number>>;
 }) {
   return (
     <div className={styles.rolesTable}>
@@ -229,6 +253,7 @@ export function RolesList({
                 key="actions"
                 role={role}
                 canArchive={canArchive && row.editable}
+                memberCount={memberCounts[role.id] ?? 0}
               />,
             ],
           };

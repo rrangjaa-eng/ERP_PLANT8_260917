@@ -16,9 +16,16 @@ export async function listTeams(viewer: Viewer, opts: { scope: Scope }): Promise
     .orderBy(teams.sortOrder, teams.name);
 }
 
-export async function findTeamById(viewer: Viewer, id: string): Promise<TeamRow | null> {
-  const [row] = await db.select().from(teams).where(eq(teams.id, id)).limit(1);
+export async function findTeamById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<TeamRow | null> {
+  const [row] = await tx.select().from(teams).where(eq(teams.id, id)).limit(1);
   return row ?? null;
+}
+
+// 07-21(R10): 본부 아래 팀 id 전부(보관 팀 포함) — 본부 보관이 팀 자리 키를 잡을 때.
+export async function listTeamIdsOfOrgUnit(viewer: Viewer, orgUnitId: string, tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  const rows = await tx.select({ id: teams.id }).from(teams).where(eq(teams.orgUnitId, orgUnitId));
+  return rows.map((row) => row.id);
 }
 
 // 목록 묶음 조회(이슈 #56) — findTeamById와 같은 의미로 보관 여부로 거르지

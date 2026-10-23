@@ -261,7 +261,9 @@ export function SidePanel(props: SidePanelProps) {
   }
 
   // 키보드 밖의 취소(안드로이드 뒤로 등)도 스스로 닫지 않고 같은 닫기 경로로 묻는다.
+  // 안쪽 파일 칸의 cancel(고르기 취소)도 위로 퍼진다 — 패널 자신의 cancel만 닫기다.
   function handleCancel(event: SyntheticEvent<HTMLDialogElement>) {
+    if (event.target !== event.currentTarget) return;
     event.preventDefault();
     requestClose("esc");
   }

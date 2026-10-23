@@ -8,7 +8,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { teams, users } from "@/db/schema";
+import { projects, revenueEntries, teams, users } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
@@ -1288,5 +1288,70 @@ test.describe("프로젝트 목록 — 수익률 기준선 미만은 위험 색 
     } finally {
       await setSettingValue(SYSTEM_VIEWER, PROJECT_PROFIT_RATE_THRESHOLD, original);
     }
+  });
+});
+
+// 07-22(N22 · SC-20 · U15) — 수금 지연은 상태 칸 둘째 줄의 한 값이다: 종료일 지남 > 수금 지연 > 없음. 첫 줄 상태 낱말은 그대로.
+// 발행 70일 전 · 입금 0이면 기한(60일, 쉬는 날이면 앞 영업일)이 지났다.
+async function seedCollectionProject(
+  pm: { clientId: string; teamId: string; pmUserId: string },
+  name: string,
+  opts: { status?: "bidding" | "completed"; endDate?: string; startDate?: string; paid?: boolean } = {},
+): Promise<string> {
+  const today = kstToday(new Date());
+  const project = await createProject(SYSTEM_VIEWER, {
+    clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name,
+    ...(opts.startDate ? { startDate: opts.startDate } : {}),
+    ...(opts.endDate ? { endDate: opts.endDate } : {}),
+  });
+  if (opts.status && opts.status !== "bidding") await db.update(projects).set({ status: opts.status }).where(eq(projects.id, project.id));
+  const line = { projectId: project.id, amountCurrency: "KRW", amountFxRate: "1.0000" };
+  await db.insert(revenueEntries).values({ ...line, kind: "issue", entryDate: addDays(today, -70), amountAmountKrw: 1_000_000 });
+  if (opts.paid) await db.insert(revenueEntries).values({ ...line, kind: "payment", entryDate: addDays(today, -65), amountAmountKrw: 1_100_000 });
+  return project.id;
+}
+
+test.describe("프로젝트 목록 — 수금 지연 (07-22 · U15)", () => {
+  test("상태 칸 둘째 줄: 지연 → 수금 지연 · 다 받음 → 없음 · 종료일 지남이 이김 · 완료도 보인다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const marker = `E2E수금-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    await seedCollectionProject(pm, `${marker}-지연`);
+    await seedCollectionProject(pm, `${marker}-다받음`, { paid: true });
+    await seedCollectionProject(pm, `${marker}-종료지남`, { startDate: addDays(today, -80), endDate: addDays(today, -1) });
+    await seedCollectionProject(pm, `${marker}-완료`, { status: "completed" });
+
+    await login(page, await makeManager(["revenue.paid_amount"]));
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+
+    const late = await cellOf(page, `${marker}-지연`, "상태");
+    await expect(late.getByText("수주중", { exact: true })).toBeVisible();
+    await expect(late.getByText("수금 지연", { exact: true })).toBeVisible();
+    const [lateBox, wordBox] = await Promise.all([late.getByText("수금 지연", { exact: true }).boundingBox(), late.getByText("수주중", { exact: true }).boundingBox()]);
+    expect(lateBox!.y).toBeGreaterThanOrEqual(wordBox!.y + wordBox!.height - 1);
+
+    await expect((await cellOf(page, `${marker}-다받음`, "상태")).getByText("수금 지연", { exact: true })).toHaveCount(0);
+
+    const ended = await cellOf(page, `${marker}-종료지남`, "상태");
+    await expect(ended.getByText("수주중", { exact: true })).toBeVisible();
+    await expect(ended.getByText("종료일 지남", { exact: true })).toBeVisible();
+    await expect(ended.getByText("수금 지연", { exact: true })).toHaveCount(0);
+
+    const completed = await cellOf(page, `${marker}-완료`, "상태");
+    await expect(completed.getByText("완료", { exact: true })).toBeVisible();
+    await expect(completed.getByText("수금 지연", { exact: true })).toBeVisible();
+  });
+
+  test("입금을 못 보는 계급에게는 수금 지연이 HTML에 없다", async ({ page }) => {
+    const marker = `E2E수금숨김-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    await seedCollectionProject(pm, `${marker}-지연`);
+
+    await login(page, await makeManager());
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+    await expect(page.locator(`${LIST_TABLE} tbody`).getByRole("link", { name: `${marker}-지연`, exact: true })).toBeAttached();
+    expect(await page.content()).not.toContain("수금 지연");
   });
 });

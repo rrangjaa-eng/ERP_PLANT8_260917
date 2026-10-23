@@ -336,7 +336,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await expect(page.getByLabel("프로젝트명")).toHaveValue(projectName);
   });
   // 04-15 Task 2(D-52 · D-95 · S2) — 총 매출 예상가 칸. 저장 값은 통합 테스트(project-copy.test.ts)가 DB로 단언한다.
-  test("(d1) 총 매출 예상가에 120000000을 치면 칸에 120,000,000이 보이고 등록이 성공한다", async ({ page }) => {
+  test("(d1) PO 금액에 120000000을 치면 칸에 120,000,000이 보이고 등록이 성공한다", async ({ page }) => {
     const vendor = await insertVendor(SYSTEM_VIEWER, {
       name: `E2E예상가클라이언트-${Date.now()}`,
       normalizedName: `e2e예상가클라이언트-${Date.now()}`,
@@ -344,7 +344,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await loginAndOpenForm(page);
     const projectName = `E2E예상가-${Date.now()}`;
     await fillRequiredFields(page, vendor.name, projectName);
-    const amount = page.getByLabel("총 매출 예상가");
+    const amount = page.getByLabel("PO 금액");
     await amount.fill("120000000");
     await expect(amount).toHaveValue("120,000,000");
 
@@ -354,7 +354,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
   });
 
-  test("(d2) 음수 총 매출 예상가를 제출하면 칸 아래와 1차 옆에 이유가 보이고 다른 칸 입력이 남는다", async ({ page }) => {
+  test("(d2) 음수 PO 금액을 제출하면 칸 아래와 1차 옆에 이유가 보이고 다른 칸 입력이 남는다", async ({ page }) => {
     const vendor = await insertVendor(SYSTEM_VIEWER, {
       name: `E2E음수클라이언트-${Date.now()}`,
       normalizedName: `e2e음수클라이언트-${Date.now()}`,
@@ -362,14 +362,14 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await loginAndOpenForm(page);
     const projectName = `E2E음수-${Date.now()}`;
     await fillRequiredFields(page, vendor.name, projectName);
-    const amount = page.getByLabel("총 매출 예상가");
+    const amount = page.getByLabel("PO 금액");
     await amount.fill("-5000");
 
     await amount.press("Control+Enter");
 
     const form = page.locator("#project-form");
-    await expect(form.getByText("총 매출 예상가는 0 이상 · 금액 수정", { exact: true })).toBeVisible();
-    await expect(form.getByText("등록 실패 · 총 매출 예상가 1칸", { exact: true })).toBeVisible();
+    await expect(form.getByText("PO 금액은 0 이상 · 금액 수정", { exact: true })).toBeVisible();
+    await expect(form.getByText("등록 실패 · PO 금액 1칸", { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/projects\?new=1/);
     await expect(page.getByLabel("프로젝트명")).toHaveValue(projectName);
     await expect(amount).toHaveValue("-5,000");
@@ -406,7 +406,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await rememberFxRate("USD", 1234.5);
     await loginAndOpenForm(page);
     await fillRequiredFields(page, vendor.name, `E2E환율기본-${Date.now()}`);
-    const amount = page.getByLabel("총 매출 예상가");
+    const amount = page.getByLabel("PO 금액");
     await amount.fill("100");
     await page.getByLabel("통화", { exact: true }).selectOption("USD");
     const fxRate = page.getByLabel("환율", { exact: true });
@@ -441,7 +441,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await expect(client).toBeFocused();
 
     // 쉼표 칸 입력은 다시 그리기를 일으킨다 — effect가 매 렌더 돌면 포커스가 클라이언트로 튄다.
-    const amount = page.getByLabel("총 매출 예상가");
+    const amount = page.getByLabel("PO 금액");
     await amount.fill("1000");
     await expect(amount).toHaveValue("1,000");
     await expect(amount).toBeFocused();

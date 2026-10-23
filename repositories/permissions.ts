@@ -91,6 +91,7 @@ export async function findVisibility(
   viewer: Viewer,
   roleId: string,
   infoItem: string,
+  // 07-22 — 알림 tick 잠금 트랜잭션 안에서는 그 tx로 읽는다(풀의 다른 연결을 잡지 않는다).
   tx: DbOrTx = db,
 ): Promise<VisibilityMatrixRow | null> {
   void viewer;

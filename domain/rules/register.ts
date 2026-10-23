@@ -215,7 +215,20 @@ export type ProjectPreEstimateEditCtx = {
 registerGateRule<unknown, ProjectPreEstimateEditCtx>({
   name: "project.pre-estimate-edit",
   check: (_doc, ctx) => {
-    if (ctx.rights === "none" || !ctx.canSeeAmount) return { allowed: false, reason: "총 매출 예상가 바꾸기 권한 없음" };
+    if (ctx.rights === "none" || !ctx.canSeeAmount) return { allowed: false, reason: "PO 금액 바꾸기 권한 없음" };
+    const [first] = ctx.errors;
+    if (first) return { allowed: false, reason: first.reason };
+    return { allowed: true };
+  },
+});
+
+// 07-18(W2 · D-737) — PO 번호 칸 저장. 권리는 기간과 같은 periodEditRights이고 금액이 아니라 quote.amount 노출은 보지 않는다.
+export type ProjectPoNumberEditCtx = { rights: "lead" | "pm" | "none"; errors: { reason: string }[] };
+
+registerGateRule<unknown, ProjectPoNumberEditCtx>({
+  name: "project.po-number-edit",
+  check: (_doc, ctx) => {
+    if (ctx.rights === "none") return { allowed: false, reason: "PO 번호 바꾸기 권한 없음" };
     const [first] = ctx.errors;
     if (first) return { allowed: false, reason: first.reason };
     return { allowed: true };

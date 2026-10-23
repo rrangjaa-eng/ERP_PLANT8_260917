@@ -1,8 +1,8 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
-import { revenueEntries } from "@/db/schema";
+import { projects, revenueEntries, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
 
@@ -20,10 +20,75 @@ export async function listRevenueEntriesByProject(viewer: Viewer, projectId: str
     .orderBy(asc(revenueEntries.kind), asc(revenueEntries.entryDate));
 }
 
+export type CollectionRow = Pick<RevenueEntryRow, "id" | "projectId" | "kind" | "entryDate" | "amountAmountKrw" | "createdAt">;
+
+// 07-22(D-746) — 수금 지연 판정 재료. 주어진 프로젝트들의 보관 안 된 발행 · 입금 줄을 한 질의로(N+1 없음). 프로젝트 id는 호출자가 범위를
+// 판정한 뒤의 것(목록 쪽 · 상세 · 알림 종류의 SYSTEM_VIEWER).
+export async function listCollectionRows(viewer: Viewer, projectIds: readonly string[], tx: DbOrTx = db): Promise<CollectionRow[]> {
+  void viewer;
+  if (projectIds.length === 0) return [];
+  return tx
+    .select({
+      id: revenueEntries.id,
+      projectId: revenueEntries.projectId,
+      kind: revenueEntries.kind,
+      entryDate: revenueEntries.entryDate,
+      amountAmountKrw: revenueEntries.amountAmountKrw,
+      createdAt: revenueEntries.createdAt,
+    })
+    .from(revenueEntries)
+    .where(and(inArray(revenueEntries.projectId, [...projectIds]), isNull(revenueEntries.archivedAt)));
+}
+
+// 07-22(N22 · D-716) — 수금 지연 알림 후보: 보관 안 된 프로젝트 가운데 보관 안 된 발행 줄이 하나라도 있는 것(상태로 거르지 않는다 — 완료도 덜
+// 받았으면 지연, 배지와 같은 정의). 가장 이른 발행 순 · id 순으로 limit개. 담당 PM이 활성(보관 안 됨 · 퇴직일이 오늘 이후)이 아니면 pmRoleId는 null.
+// 시스템 tick(SYSTEM_VIEWER, domain/notify/kinds/collection-overdue.ts)만 부르고 행을 화면에 내지 않는다.
+export type CollectionCandidateProject = { id: string; name: string; pmUserId: string | null; pmRoleId: string | null };
+
+export async function listCollectionCandidateProjects(
+  viewer: Viewer,
+  input: { limit: number; today: string },
+  tx: DbOrTx = db,
+): Promise<CollectionCandidateProject[]> {
+  void viewer;
+  const firstIssue = sql<string>`(select min(${revenueEntries.entryDate}) from ${revenueEntries} where ${revenueEntries.projectId} = ${projects.id} and ${revenueEntries.kind} = 'issue' and ${revenueEntries.archivedAt} is null)`;
+  return tx
+    .select({ id: projects.id, name: projects.name, pmUserId: projects.pmUserId, pmRoleId: users.roleId })
+    .from(projects)
+    .leftJoin(
+      users,
+      and(
+        eq(users.id, projects.pmUserId),
+        isNull(users.archivedAt),
+        or(isNull(users.resignationDate), gte(users.resignationDate, input.today)),
+      ),
+    )
+    .where(and(isNull(projects.archivedAt), sql`${firstIssue} is not null`))
+    .orderBy(asc(firstIssue), asc(projects.id))
+    .limit(input.limit);
+}
+
 export async function findRevenueEntryById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<RevenueEntryRow | null> {
   void viewer;
   const [row] = await tx.select().from(revenueEntries).where(eq(revenueEntries.id, id)).limit(1);
   return row ?? null;
+}
+
+// 07-22(W7) — 계산서 파일 붙이기 · 교체가 매출 줄 한 행을 잠근다(같은 줄의 교체 두 건이 차례로 — 살아 있는 파일 하나).
+export async function lockRevenueEntryForUpdate(viewer: Viewer, id: string, tx: DbOrTx): Promise<RevenueEntryRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(revenueEntries).where(eq(revenueEntries.id, id)).for("update");
+  return row ?? null;
+}
+
+// 07-22(W7) — 프로젝트의 보관 안 된 발행 줄 id(계산서 링크 재료).
+export async function listLiveIssueEntryIds(viewer: Viewer, projectId: string): Promise<string[]> {
+  void viewer;
+  const rows = await db
+    .select({ id: revenueEntries.id })
+    .from(revenueEntries)
+    .where(and(eq(revenueEntries.projectId, projectId), eq(revenueEntries.kind, "issue"), isNull(revenueEntries.archivedAt)));
+  return rows.map((row) => row.id);
 }
 
 export type RevenueEntryInsertInput = {

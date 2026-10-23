@@ -349,7 +349,7 @@ async function basisOf(revisionId: string) {
 }
 
 async function approve(viewer: Viewer, revisionId: string, approvedOn = "2026-09-19", deps: Parameters<typeof setCustomerApproval>[3] = {}) {
-  return setCustomerApproval(viewer, revisionId, { approvedOn, ...(await basisOf(revisionId)) }, { now: NOW, ...deps });
+  return setCustomerApproval(viewer, revisionId, { approvalBasis: "verbal", approvedOn, ...(await basisOf(revisionId)) }, { now: NOW, ...deps });
 }
 
 async function approvalOf(revisionId: string) {
@@ -380,7 +380,7 @@ describe("고객 승인 표시(04-14 Task 2 · D-56, 실제 Postgres)", () => {
       .from(actionLog)
       .where(and(eq(actionLog.entity, "quote_revision"), eq(actionLog.entityId, revisionId)));
     expect(logs.map((row) => [row.actionType, row.detail])).toEqual([
-      ["document_update", { kind: "customer_approval", revisionSeq: 1, approvedOn: "2026-09-19" }],
+      ["document_update", { kind: "customer_approval", revisionSeq: 1, approvedOn: "2026-09-19", approvalBasis: "verbal" }],
     ]);
   });
 
@@ -487,11 +487,11 @@ describe("고객 승인 표시(04-14 Task 2 · D-56, 실제 Postgres)", () => {
       .update(quoteLines)
       .set({ quantity: "2.00", quoteAmountKrw: 200_000, profitKrw: 160_000, version: sql`${quoteLines.version} + 1` })
       .where(eq(quoteLines.id, line.id));
-    await expect(setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", ...seen }, opts)).rejects.toThrow("견적이 바뀜 · 새로 고침");
+    await expect(setCustomerApproval(pm, revisionId, { approvalBasis: "verbal", approvedOn: "2026-09-19", ...seen }, opts)).rejects.toThrow("견적이 바뀜 · 새로 고침");
     expect(await approvalOf(revisionId)).toEqual({ at: null, by: null });
     expect(deniedWarnings(warn.mock.calls)).toHaveLength(1);
 
-    await setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", ...(await basisOf(revisionId)) }, opts);
+    await setCustomerApproval(pm, revisionId, { approvalBasis: "verbal", approvedOn: "2026-09-19", ...(await basisOf(revisionId)) }, opts);
     expect((await approvalOf(revisionId)).by).toBe(pm.id);
     await setCustomerApproval(pm, revisionId, null, opts);
 
@@ -502,19 +502,19 @@ describe("고객 승인 표시(04-14 Task 2 · D-56, 실제 Postgres)", () => {
       .set({ executionAmountKrw: 50_000, profitKrw: 150_000, version: sql`${quoteLines.version} + 1` })
       .where(eq(quoteLines.id, line.id));
     expect((await basisOf(revisionId)).seenTotalKrw).toBe(beforeExecution.seenTotalKrw);
-    await expect(setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", ...beforeExecution }, opts)).rejects.toThrow(
+    await expect(setCustomerApproval(pm, revisionId, { approvalBasis: "verbal", approvedOn: "2026-09-19", ...beforeExecution }, opts)).rejects.toThrow(
       "견적이 바뀜 · 새로 고침",
     );
 
     // 합계는 맞고 토큰만 다름 → 거부.
     const current = await basisOf(revisionId);
     await expect(
-      setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", seenTotalKrw: current.seenTotalKrw, contentToken: "0".repeat(32) }, opts),
+      setCustomerApproval(pm, revisionId, { approvalBasis: "verbal", approvedOn: "2026-09-19", seenTotalKrw: current.seenTotalKrw, contentToken: "0".repeat(32) }, opts),
     ).rejects.toThrow("견적이 바뀜 · 새로 고침");
 
     // 조정 줄만 더한 저장은 토큰 밖 — 옛 기준값 그대로 통과.
     await insertLine(revisionId, adjustmentPatch(-7_000));
-    await setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", ...current }, opts);
+    await setCustomerApproval(pm, revisionId, { approvalBasis: "verbal", approvedOn: "2026-09-19", ...current }, opts);
     expect((await approvalOf(revisionId)).by).toBe(pm.id);
   });
 
@@ -596,7 +596,7 @@ describe("차수 요약 · 이전 차수 잠김 조회(04-14 Task 3, 실제 Post
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ seq: 1, lineCount: 1, statusWord: "현재" });
     for (const row of rows) {
-      expect(Object.keys(row).sort()).toEqual(["approvedBy", "approvedOn", "contentToken", "createdOn", "lineCount", "revisionId", "seq", "statusWord"]);
+      expect(Object.keys(row).sort()).toEqual(["approvalBasis", "approvalMemo", "approvedBy", "approvedOn", "contentToken", "createdOn", "lineCount", "revisionId", "seq", "statusWord"]);
     }
   });
 

@@ -47,6 +47,7 @@ import {
   findProjectById,
   findProjectInScope,
   updateProjectPeriod,
+  updateProjectPoNumber,
   updateProjectPreEstimate,
   updateProjectStatusIfCurrent,
 } from "@/repositories/projects";
@@ -87,6 +88,8 @@ export type SaveProjectLedgerInput = {
   issueRequests?: IssueRequestWriteRow[];
   period?: PeriodInput;
   preEstimate?: PreEstimateInput;
+  // 07-18(W2 · D-737) — PO 번호. 빈 문자열 · 공백은 NULL, 중복은 막지 않는다. 권리는 기간 칸과 같다.
+  poNumber?: string | null;
 };
 
 export type SaveProjectLedgerResult = {
@@ -95,7 +98,7 @@ export type SaveProjectLedgerResult = {
   // 06-18 — 이번 저장이 요청 줄을 쓰거나 잇었으면 커밋 뒤 다시 읽은 표(그 밖에는 null).
   issueRequests: IssueRequestDto[] | null;
   // preEstimate는 이번 저장에 실어 보낸(권리·노출을 통과한) 경우에만 싣는다.
-  project: { status: string; startDate: string | null; endDate: string | null; preEstimate?: Money };
+  project: { status: string; startDate: string | null; endDate: string | null; preEstimate?: Money; poNumber?: string | null };
 };
 
 export type { PeriodFieldError };
@@ -114,7 +117,7 @@ export class PeriodRejectedError extends UserFacingError {
 // 04-44 — 총 매출 예상가 칸 거부.
 export class PreEstimateRejectedError extends UserFacingError {
   constructor(readonly errors: PreEstimateFieldError[]) {
-    super(errors[0]?.reason ?? "총 매출 예상가 바꾸기 권한 없음");
+    super(errors[0]?.reason ?? "PO 금액 바꾸기 권한 없음");
   }
 }
 
@@ -131,6 +134,8 @@ export type SaveProjectLedgerDeps = {
 const PROJECT_ENTITY = "project";
 const PERIOD_RULE = "project.period-edit";
 const PRE_ESTIMATE_RULE = "project.pre-estimate-edit";
+const PO_NUMBER_RULE = "project.po-number-edit";
+const PO_NUMBER_MAX = 100;
 const PERIOD_CONFLICT = "다른 사람이 먼저 기간을 바꿈 · 새로 고침";
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -187,7 +192,7 @@ export async function saveProjectLedger(
     // DR-37)라 기간 없이 총 매출 예상가만 실린 저장도 같은 사실과 quote.amount 노출을 여기서 읽는다(04-44).
     const todayKst = kstToday(now());
     const periodFacts =
-      input.period || input.preEstimate
+      input.period || input.preEstimate || input.poNumber !== undefined
         ? await (async () => {
             const [canWrite, canEditPeriod, teamScope, canSeeAmount] = await Promise.all([
               can(viewer, "projects", "write"),
@@ -220,6 +225,7 @@ export async function saveProjectLedger(
       }
       let current = locked;
       let savedPreEstimate: Money | undefined;
+      let savedPoNumber: string | null | undefined;
       const status = locked.status;
       const rights = periodFacts
         ? periodEditRights({
@@ -262,12 +268,25 @@ export async function saveProjectLedger(
         }
       }
 
+      // ②'' PO 번호 판정 — 기간과 같은 권리, 100자 상한(D-737: 중복 검사 없음).
+      const poNumber = input.poNumber === undefined ? undefined : (input.poNumber?.trim() || null);
+      let poNumberRejection: string | null = null;
+      if (poNumber !== undefined) {
+        const errors = poNumber !== null && poNumber.length > PO_NUMBER_MAX ? [{ reason: "PO 번호 · 100자 이하" }] : [];
+        const decision = await gate(locked, PO_NUMBER_RULE, { rights, errors });
+        if (!decision.allowed) poNumberRejection = decision.reason;
+      }
+
       // U-6 — 표 밖 칸(기간 · 총 매출 예상가) 오류는 모아 한 번에 거부한다. write.denied는 한 번.
       if (periodRejection) {
         denyWrite(viewer, PERIOD_RULE, { projectId }, new PeriodRejectedError(periodRejection, preEstimateRejection ?? []));
       }
       if (preEstimateRejection) {
         denyWrite(viewer, PRE_ESTIMATE_RULE, { projectId }, new PreEstimateRejectedError(preEstimateRejection));
+      }
+
+      if (poNumberRejection) {
+        denyWrite(viewer, PO_NUMBER_RULE, { projectId }, new UserFacingError(poNumberRejection));
       }
 
       // A-16: 누가 무엇을 바꿨는지 — 바뀐 칸만 싣는다(총 매출 예상가는 금액 없이 표시만). 같은 tx, 한 줄.
@@ -310,6 +329,14 @@ export async function saveProjectLedger(
         ) {
           changed.preEstimateChanged = true;
         }
+      }
+
+      // ③'' PO 번호 쓰기 — 바뀐 값만 기록한다(번호는 금액이 아니라 값을 싣는다).
+      if (poNumber !== undefined) {
+        const written = await updateProjectPoNumber(viewer, projectId, poNumber, tx);
+        if (!written) throw new Error("project.po_number_no_row");
+        savedPoNumber = written.poNumber;
+        if (locked.poNumber !== written.poNumber) changed.poNumber = { from: locked.poNumber, to: written.poNumber };
       }
 
       if (Object.keys(changed).length > 0) {
@@ -388,6 +415,7 @@ export async function saveProjectLedger(
           startDate: current.startDate,
           endDate: current.endDate,
           ...(savedPreEstimate ? { preEstimate: savedPreEstimate } : {}),
+          ...(savedPoNumber !== undefined ? { poNumber: savedPoNumber } : {}),
         },
       };
     });

@@ -71,6 +71,8 @@ export const STATUS_KIND = {
   후보: "muted",
   예정: "muted",
   "확인 불가": "muted",
+  // 07-18(SC-19 · U16): 정보 면 손익이 숫자를 못 구할 때(이유는 hover / 폰 탭 `계산 불가 · {이유}`)
+  "계산 불가": "muted",
   미설정: "muted",
   // 확인증(Round 2 Q8 — #88 SYSTEM §7-5 의미 목록): 접수 중 accent · 제출됨 success · 신청됨 · 접수 전 · 닫힘 · 대조 제외 muted
   "접수 중": "accent",

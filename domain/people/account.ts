@@ -15,7 +15,10 @@ import { planAccountNumberUpdate } from "@/domain/vendors";
 import { AccountFieldsError, assertAccountFields } from "@/domain/vendors/account-fields";
 import { ACCOUNT_PROBLEMS, accountProblemText } from "@/domain/bank-transfer";
 import { isCheckViolation } from "@/lib/pg-errors";
+import { assertCanGrantRoles, RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
+import { lockSeatKeys } from "@/repositories/seats";
 import {
+  findUserById as repoFindUserById,
   findUserPayoutAccount as repoFindUserPayoutAccount,
   updateUserPayoutAccount as repoUpdateUserPayoutAccount,
 } from "@/repositories/users";
@@ -126,6 +129,17 @@ export async function updatePersonPayoutAccount(
   const gate = await loadActionLogGate();
   try {
     await withTransaction(async (tx) => {
+      // 사용자 결정(2026-10-23): 지급처 변경도 대상 계급 상한 — 사람 키 잠금 → 재조회 → assertCanGrantRoles(07-17 상한 커밋들과 같은 꼴).
+      await lockSeatKeys(viewer, { personIds: [userId] }, tx);
+      const target = await repoFindUserById(viewer, userId, tx);
+      if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
+      try {
+        await assertCanGrantRoles(viewer, [target.roleId], tx);
+      } catch (ceiling) {
+        // 계급 지정 문구(GRANT_FORBIDDEN_MESSAGE)는 이 맥락에 맞지 않는다 — 지급 패널은 계좌 낱말로 말한다.
+        if (ceiling instanceof RoleGrantForbiddenError) throw new RoleGrantForbiddenError("이 사람 계좌 바꾸기 권한 없음");
+        throw ceiling;
+      }
       await updateRow(
         viewer,
         userId,

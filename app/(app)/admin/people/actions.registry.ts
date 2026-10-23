@@ -119,3 +119,11 @@ registerAction({
   action: "write",
   dtoName: "TeamDto",
 });
+
+// 07-17 SC-11 · SC-12: 잠금 풀기 — 돌려주는 값은 `{ unlocked }` 하나(07-17 L3 — 이미 풀렸으면 false, 사람 행 DTO 계열).
+registerAction({
+  name: "unlockPersonAction",
+  menu: "admin.people",
+  action: "write",
+  dtoName: "PersonDto",
+});

@@ -25,8 +25,14 @@ export async function registerPerson(page: Page, name: string): Promise<string> 
   await page.getByLabel("입사일").fill("2026-01-01");
   await page.getByRole("button", { name: "사람 등록" }).click();
   await expect(page.getByText(`초기 비밀번호 — ${email}`)).toBeVisible({ timeout: 20_000 });
-  await page.goto("/admin/people");
+  await gotoPeopleRow(page, email);
   return email;
+}
+
+// 07-17(U6 · C-03 「e2e 계정 정리」): 목록이 50명/쪽이라 만든 사람이 1쪽에 없을 수 있다 — 검색(`?q=`)으로 그 행을 연다.
+// 계정을 지우는 정리는 하지 않는다.
+export async function gotoPeopleRow(page: Page, emailOrName: string): Promise<void> {
+  await page.goto(`/admin/people?q=${encodeURIComponent(emailOrName)}`);
 }
 
 // 목록의 사람 행(행 머리글이 있는 행)만 — 접힌 줄은 같은 이메일을 담지만 행 머리글이 없다.

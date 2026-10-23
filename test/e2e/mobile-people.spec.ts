@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { createAccount } from "@/domain/auth/accounts";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import {
   collapsedRowOf,
@@ -82,6 +85,10 @@ test.describe("폰 사람 목록 로그인 배지 · 칸 접기 (04.4-05, D8-07)
   test("375: 두 배지가 세로로 쌓이고 P2 칸은 접힌 줄 하나로 모인다", async ({ page }) => {
     await loginAsAdmin(page);
     const email = await registerPerson(page, "폰배지대상");
+    // 07-17 U6: 목록이 검색(`?q=`)으로 열려 대상이 표의 마지막 줄이 되면 마지막 행 선 없음 규칙이 아래 선 단언을 덮는다 — 이름순으로
+    // 뒤에 서는 사람을 하나 더 두고 공통 이름으로 찾아 대상이 마지막 줄이 아니게 한다.
+    await createAccount(SYSTEM_VIEWER, { email: `e2e-${randomUUID()}@example.test`, name: "폰배지대상-뒤", roleId: DEFAULT_ROLE_ID });
+    await page.goto(`/admin/people?q=${encodeURIComponent("폰배지대상")}`);
     const row = personRow(page, email);
     const status = statusCell(row);
 

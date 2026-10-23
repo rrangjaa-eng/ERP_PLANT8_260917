@@ -21,8 +21,8 @@ describe("detailLines (07-25 K16)", () => {
       },
     });
     expect(lines).toHaveLength(4);
-    expect(lines?.map((line) => line.label)).toEqual(["켬", "일수", "이메일 알림", "예산"]);
-    expect(lines?.[3]).toEqual({ label: "예산", before: "1,000,000", after: "2,500,000" });
+    expect(lines?.map((line) => line.label).sort()).toEqual(["켬", "일수", "이메일 알림", "예산"].sort());
+    expect(lines?.find((line) => line.label === "예산")).toEqual({ label: "예산", before: "1,000,000", after: "2,500,000" });
   });
 
   it("changes가 없거나 비어 있으면 null", () => {
@@ -64,12 +64,12 @@ describe("detailLines (07-25 K16)", () => {
         value: [{ a: 1 }, { a: 2 }],
       },
     });
-    expect(lines?.[0]).toEqual({ label: "지급 예정일", before: "없음", after: "2026-11-03" });
-    expect(lines?.[1]).toEqual({ label: "켬", before: "켬", after: "끔" });
-    expect(lines?.[2]).toEqual({ label: "일수", before: "1,234,567", after: "0" });
-    expect(lines?.[3]).toEqual({ label: "받는 계급", before: "없음", after: "a, b" });
-    expect(lines?.[4]?.before).toBe("바뀜");
-    expect(lines?.[4]?.after).toBe("바뀜");
+    const byLabel = (label: string) => lines?.find((line) => line.label === label);
+    expect(byLabel("지급 예정일")).toEqual({ label: "지급 예정일", before: "없음", after: "2026-11-03" });
+    expect(byLabel("켬")).toEqual({ label: "켬", before: "켬", after: "끔" });
+    expect(byLabel("일수")).toEqual({ label: "일수", before: "1,234,567", after: "0" });
+    expect(byLabel("받는 계급")).toEqual({ label: "받는 계급", before: "없음", after: "a, b" });
+    expect(byLabel("값")).toMatchObject({ before: "바뀜", after: "바뀜" });
   });
 
   it("UUID 값은 글자로 보이지 않고 바뀜 · 개수로 줄인다", () => {
@@ -101,6 +101,52 @@ describe("detailLines (07-25 K16)", () => {
   it("buildChanges 결과를 그대로 읽는다(쓰는 쪽 ↔ 읽는 쪽)", () => {
     const changes = buildChanges({ name: "A", workScope: "team" }, { name: "B", workScope: "all" });
     expect(detailLines({ changes })?.map((line) => line.label)).toEqual(["이름", "업무 범위"]);
+  });
+});
+
+// 07-25 고침 뒤(DOM 감사 P2-3): jsonb는 키를 길이 · 사전 순으로 저장해 Object.entries 순서가 쓰는 쪽의 순서와 무관하다.
+// 줄 순서는 칸 이름 표(CHANGE_FIELD_LABELS)가 선언된 순서(= 폼 순서) → 표에 없는 키는 키 글자 사전 순이다.
+// 오케스트레이터 결정으로 SC-08 계약 공백을 메운 것이다(되돌릴 수 있음).
+describe("줄 순서 (07-25 DOM 감사 P2-3)", () => {
+  const labelsOf = (changes: Record<string, unknown>) => detailLines({ changes })?.map((line) => line.label);
+
+  it("칸 이름 표에 선언된 순서를 따른다(넣은 순서와 무관)", () => {
+    const keys = Object.keys(CHANGE_FIELD_LABELS);
+    const pick = ["password", "rrn", "accountNumber", "emailEnabled", "name"];
+    const expected = [...pick].sort((a, b) => keys.indexOf(a) - keys.indexOf(b)).map((key) => CHANGE_FIELD_LABELS[key]);
+    const shuffled = Object.fromEntries(pick.map((key) => [key, ["a", "b"]]));
+    expect(labelsOf(shuffled)).toEqual(expected);
+    expect(labelsOf(Object.fromEntries([...pick].reverse().map((key) => [key, ["a", "b"]])))).toEqual(expected);
+  });
+
+  it("이름 표에 없는 키는 표에 있는 칸 뒤에 키 사전 순으로", () => {
+    const labels = labelsOf({ zeta: [1, 2], "tax.vat.rate": [0.1, 0.12], password: ["a", "b"], "auth.lockout.threshold": [5, 10], memo: ["x", "y"] });
+    expect(labels?.[0]).toBe("비밀번호");
+    expect(labels?.slice(1)).toEqual(["잠금 횟수", "memo", "부가세율", "zeta"]);
+  });
+
+  it("jsonb가 키를 길이순으로 돌려줘도(짧은 키가 앞) 같은 순서", () => {
+    const byLength = { rrn: ["a", "b"], memo: ["x", "y"], password: ["a", "b"], "tax.vat.rate": [1, 2], accountNumber: ["1111", "2222"] };
+    const reversed = Object.fromEntries(Object.entries(byLength).reverse());
+    expect(labelsOf(byLength)).toEqual(labelsOf(reversed));
+    expect(labelsOf(byLength)?.[0]).toBe("계좌번호");
+  });
+});
+
+// 07-25 고침 뒤(DOM 감사 P3-7): 이전 · 이후가 둘 다 「없음」이면 바뀐 것이 없는 줄이라 표 칸 · 시트 · 개수에서 함께 뺀다.
+describe("없음 → 없음 줄 제외 (07-25 DOM 감사 P3)", () => {
+  it("둘 다 없음인 줄은 빼고 나머지는 남긴다", () => {
+    const lines = detailLines({ changes: { name: [null, null], days: [3, 5], enabled: ["", []] } });
+    expect(lines).toEqual([{ label: "일수", before: "3", after: "5" }]);
+  });
+
+  it("전부 둘 다 없음이면 changes가 없는 행과 같다(null)", () => {
+    expect(detailLines({ changes: { name: [null, null], days: [undefined, null] } })).toBeNull();
+  });
+
+  it("없음 → 값 · 값 → 없음은 남긴다 · 바뀜 → 바뀜(민감 칸)도 남긴다", () => {
+    const lines = detailLines({ changes: { name: [null, "A"], days: [3, null], password: ["a", "b"] } });
+    expect(lines).toHaveLength(3);
   });
 });
 

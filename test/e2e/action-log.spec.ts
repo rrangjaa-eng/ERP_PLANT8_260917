@@ -386,6 +386,17 @@ test.describe("행동 로그 상세 칸 (07-25 K16)", () => {
     expect(await row.innerText()).not.toContain(UTC_DATE_OF_ROW);
   });
 
+  // DOM 감사 P3: 아래 줄 순서 — 계좌번호(칸 이름 표 선언 순서가 앞) → 비밀번호 → 표에 없는 키는 사전 순. 앞 3줄이 이 순서다.
+  test("상세 줄 순서가 정해져 있다 — 앞 3줄은 계좌번호 · 비밀번호 · 잠금 횟수, 부가세율은 외 1칸 안", async ({ page }) => {
+    const token = `e2e-order-${randomUUID().slice(0, 8)}`;
+    await insertKstMidnightRow(token);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/action-log?documentId=${token}`);
+    const detail = page.locator("tbody tr", { hasText: token }).first().locator('[data-ui="action-log-detail"]');
+    const lines = await detail.getByRole("listitem").allInnerTexts();
+    expect(lines.map((line) => line.split(" · ")[0])).toEqual(["계좌번호", "비밀번호", "잠금 횟수"]);
+  });
+
   // DOM 감사 P1: 문서 번호 칸의 blur 제출이 값이 그대로여도 일어나 Tab만으로는 표에 닿지 못했다(포커스가 BODY로 돌아감).
   test("Tab만으로 필터 줄을 지나 표까지 가고 페이지가 다시 불러지지 않는다", async ({ page }) => {
     const token = `e2e-tab-${randomUUID().slice(0, 8)}`;

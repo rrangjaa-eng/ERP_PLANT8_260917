@@ -102,12 +102,30 @@ function labelFor(field: string, detail: Record<string, unknown>): string {
   return settingLabel(field) ?? field;
 }
 
+// 줄 순서(07-25 DOM 감사 P2-3 · 오케스트레이터 결정, SC-08 계약 공백 메움 — 되돌릴 수 있음): jsonb는 키를 길이 · 사전 순으로
+// 저장해 Object.entries 순서가 쓰는 쪽이 넣은 순서와 무관하다. 그래서 칸 이름 표(CHANGE_FIELD_LABELS)가 선언된 순서(= 폼 순서)를
+// 먼저, 표에 없는 키는 그 뒤에 키 사전 순으로 놓아 「앞 3줄」 · 폰 접힌 줄 첫 줄이 늘 같게 한다.
+const FIELD_ORDER = new Map(Object.keys(CHANGE_FIELD_LABELS).map((key, index) => [key, index]));
+
+function compareFields(a: string, b: string): number {
+  const rankA = FIELD_ORDER.get(a);
+  const rankB = FIELD_ORDER.get(b);
+  if (rankA !== undefined && rankB !== undefined) return rankA - rankB;
+  if (rankA !== undefined) return -1;
+  if (rankB !== undefined) return 1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function detailLines(detail: Record<string, unknown> | null | undefined): DetailLine[] | null {
   if (!detail || !isRecord(detail.changes)) return null;
   const lines: DetailLine[] = [];
-  for (const [field, pair] of Object.entries(detail.changes)) {
+  for (const [field, pair] of Object.entries(detail.changes).sort(([a], [b]) => compareFields(a, b))) {
     const values: unknown[] = Array.isArray(pair) ? pair : [null, pair];
-    lines.push({ label: labelFor(field, detail), before: formatValue(field, values[0]), after: formatValue(field, values[1]) });
+    const before = formatValue(field, values[0]);
+    const after = formatValue(field, values[1]);
+    // 이전 · 이후가 둘 다 「없음」인 줄은 바뀐 것이 없다 — 표 칸 · 시트 · `외 N칸` 개수에서 함께 뺀다(DOM 감사 P3).
+    if (before === NONE && after === NONE) continue;
+    lines.push({ label: labelFor(field, detail), before, after });
   }
   return lines.length > 0 ? lines : null;
 }

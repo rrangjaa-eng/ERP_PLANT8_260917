@@ -15,13 +15,19 @@ export const UI_ONLY_EXCLUDED: Record<string, string> = {
   "app/(app)/admin/code-tables/code-item-form.tsx": "코드표 인라인 blur 칸 — 표 안 입력이다(SC-15 제외)",
   "app/(app)/admin/people/page.tsx": "필터 줄 검색칸(ListScreen filters · GET ?q=) — 폼이 아니다(SC-15 제외, 07-17 PLAN N10 범위)",
   "app/(app)/admin/vendors/vendor-search.tsx": "거래처 목록 필터 줄 검색칸 — 폼이 아니다(SC-15 제외, 07-20 V2)",
+  "app/(app)/admin/people/roles/roles-client.tsx": "표 안 입력 — CONTEXT 관리자 폼 줄 · 07-21 N10 배정(계급 표 안 이름 · 업무 범위 · 보는 범위 칸 셋)",
+  "app/(app)/admin/people/org/org-client.tsx": "표 안 입력 — CONTEXT 관리자 폼 줄 · 07-21 N10 배정(`RenameInput` 줄 안 blur 칸 하나). 폼 입력(`팀 추가` 본부 select)은 `ui/select`로 이관됨",
 };
 
-// 맡은 플랜이 이관하면서 이 목록에서 지운다. 07-25가 비운다.
-export const UI_ONLY_PENDING: Record<string, string> = {
-  "app/(app)/admin/people/roles/roles-client.tsx": "07-21 몫",
-  "app/(app)/admin/people/org/org-client.tsx": "07-21 몫",
+// 07-25: 파일째 빼면 같은 파일의 폼 입력이 가려진다 — 표 안 입력 파일은 허용 개수를 둬 그 수를 넘는 입력(예 org-client `팀 추가` 본부 select를 네이티브로 되돌림)은 빨갛게 한다.
+// 이 표에 없는 영구 제외 파일은 개수 제한 없이 07-08 꼴 그대로다.
+export const UI_ONLY_EXCLUDED_MAX: Record<string, number> = {
+  "app/(app)/admin/people/roles/roles-client.tsx": 3,
+  "app/(app)/admin/people/org/org-client.tsx": 1,
 };
+
+// 맡은 플랜이 이관하면서 이 목록에서 지운다. 07-25가 비웠다(N10 마무리) — 다시 채우지 않는다. 남은 파일은 그 맡은 플랜의 미완이다.
+export const UI_ONLY_PENDING: Record<string, string> = {};
 
 const EXEMPT_INPUT_TYPES = new Set(["checkbox", "radio", "hidden"]);
 
@@ -123,6 +129,30 @@ describe("관리자 폼 · 내 계정의 ui/ 밖 네이티브 입력 계수 (07-
         expect(reason.trim(), `${name}의 ${path} 이유가 비었다`).not.toBe("");
       }
     }
+  });
+
+  it("N10 마무리(07-25): 대기 목록이 비었다", () => {
+    expect(Object.keys(UI_ONLY_PENDING)).toHaveLength(0);
+  });
+
+  it("N10 마무리(07-25): 영구 제외 밖의 admin · account 파일에 ui/ 밖 select · input이 0이다", () => {
+    const outside = [...counts].filter(([path, count]) => count > 0 && !(path in UI_ONLY_EXCLUDED)).map(([path, count]) => `${path}(${count})`);
+    expect(outside, `제외 밖 네이티브 입력: ${outside.join(", ")}`).toEqual([]);
+  });
+
+  it("표 안 입력 파일(roles-client · org-client)은 허용 개수를 넘는 입력이 없다 — 파일째 가리지 않는다", () => {
+    for (const [path, max] of Object.entries(UI_ONLY_EXCLUDED_MAX)) {
+      expect(path in UI_ONLY_EXCLUDED, `${path}가 영구 제외에 없다`).toBe(true);
+      expect(counts.get(path), `${path}에 허용 ${max}개를 넘는 네이티브 입력(폼 입력이 ui/ 밖으로 돌아갔다)`).toBeLessThanOrEqual(max);
+    }
+    expect(Object.keys(UI_ONLY_EXCLUDED_MAX).sort()).toEqual(
+      ["app/(app)/admin/people/org/org-client.tsx", "app/(app)/admin/people/roles/roles-client.tsx"],
+    );
+  });
+
+  it("허용 개수 판정이 org-client에 본부 select를 네이티브로 더하면 넘친다고 본다", () => {
+    const withExtraSelect = `const a = <input type="text" />; const b = <select></select>;`;
+    expect(countNativeInputs(withExtraSelect)).toBeGreaterThan(UI_ONLY_EXCLUDED_MAX["app/(app)/admin/people/org/org-client.tsx"] ?? 0);
   });
 
   it("영구 제외 파일은 대기 목록에 겹쳐 있지 않다", () => {

@@ -31,6 +31,9 @@ export const CANCEL_REASON_REQUIRED = "사유 없음 · 사유 적기";
 export const DIFF_REASON_REQUIRED = "차이 사유 없음 · 사유 적기";
 
 // 06.5 D-6518(UI-SPEC V13 「막힘 문구」) — 미래 실제 지급일. 서버 거부(FuturePayDateError)와 지급일 칸 오류(단건 · 일괄 대화상자)가 같은 상수를 읽는다.
+// 07-06 수동 지정 · 이번 주로 거부 사유 — 07-16 지급 대상 표가 막힌 행 오류 줄 낱말(`영업일이 아닌 날`)로 바꿔 보인다(클라이언트도 읽는 자리).
+export const NOT_BUSINESS_DAY = "영업일만 선택 · 다시 선택";
+export const THIS_WEEK_PASSED = "이번 주 지급일 지남";
 export const FUTURE_PAY_DATE = "미래 지급일 · 오늘까지 날짜 고르기";
 
 // 「Error — 이체액 칸」(UI-SPEC S1 · S5) — 액션 입력 검증과 화면 칸 오류가 같은 문구를 읽는다.

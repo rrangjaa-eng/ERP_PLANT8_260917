@@ -245,6 +245,21 @@ function stateWhere(state: EvidenceRecordState, cardFormats: readonly string[]):
   }
 }
 
+// 07-14 N21 · D-721: 임자 없는 증빙 = 목록 상태 거르개 「공개」(공개됐는데 붙임 0 — stateWhere 그대로, 같은 판정 두 벌 금지) 중
+// 등록(created_at)이 createdBefore 앞인 건수. 범위는 회사 전체(알림 받는 사람 = 증빙 등록 권한자 — 목록 범위 all과 같은 집합).
+export async function countPublishedUnattachedBefore(
+  viewer: Viewer,
+  input: { cardFormats: readonly string[]; createdBefore: Date },
+  tx: DbOrTx = db,
+): Promise<number> {
+  void viewer;
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(evidenceRecords)
+    .where(sql`(${stateWhere("published", input.cardFormats)}) and ${evidenceRecords.createdAt} < ${input.createdBefore.toISOString()}::timestamp`);
+  return row?.count ?? 0;
+}
+
 // 목록 조건 — 범위 + 상태 · 종류 · 기간 · 묶음. 합계 · 그룹 건수 · 쪽 · 제안이 모두 이 한 조건을 쓴다(합계가 쪽만 더하지 않게).
 function listWhere(scope: EvidenceScope, filters: EvidenceRecordFilters): SQL {
   const parts: SQL[] = [sql`(${scopeWhere(scope)})`, sql`(${stateWhere(filters.state, filters.cardFormats)})`];

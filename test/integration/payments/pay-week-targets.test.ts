@@ -125,6 +125,25 @@ describe("지급 주 묶음 · 마감 gate (07-01 Task 2)", () => {
     expect(after.approvingByWeek.map((week) => [week.label, week.rows.map((row) => row.id)])).toEqual([["다음 주 금 08-14 · 마감 08-13 14:00", [approving.expenseId]]]);
   }, 30_000);
 
+  // 감사 #4(P2): 그 주 그룹이 두 쪽에 걸치면 결재 중 하위 그룹이 쪽마다 되풀이됐다 — 그 주 그룹이 실제로 끝나는 쪽 하나(그룹이 없으면 첫 쪽)를 서버가 정한다.
+  it("결재 중 하위 그룹이 설 쪽(page) — 그 주 그룹의 마지막 행이 있는 쪽 · 그 주 지급 대상이 없으면 1쪽, 어느 쪽을 읽어도 같다", async () => {
+    const payer = await makePayer();
+    await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-08-05T10:00") });
+    await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-08-05T11:00") });
+    await inReview(payer, "2026-06-08");
+    await inReview(payer, "2026-06-15");
+
+    const first = await listPaymentTargets(payer, { page: 1 }, { today: TODAY, now: BEFORE_CUTOFF, pageSize: 1 });
+    const second = await listPaymentTargets(payer, { page: 2 }, { today: TODAY, now: BEFORE_CUTOFF, pageSize: 1 });
+    expect(first.page.pageCount).toBe(2);
+    const expected = [
+      ["이번 주 금 08-07 · 마감 08-06 14:00", 2],
+      ["다음 주 금 08-14 · 마감 08-13 14:00", 1],
+    ];
+    expect(first.approvingByWeek.map((week) => [week.label, week.page])).toEqual(expected);
+    expect(second.approvingByWeek.map((week) => [week.label, week.page])).toEqual(expected);
+  }, 30_000);
+
   it("「다음 확인 전」은 유효 예정일 순서를 따른다(저장 칸 순서 아님 — B-P2-2)", async () => {
     const payer = await makePayer();
     await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-08-05T10:00") });
@@ -159,10 +178,14 @@ describe("지급 주 묶음 · 마감 gate (07-01 Task 2)", () => {
   it("D-742 · NB P1-2: 작성자가 저장한 날짜(이번 주 금)는 수동 면제를 받지 못한다 — 마감 뒤 승인 → cutoff · 마감 지나 밀림", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
-    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { scheduledPaymentDate: "2026-08-07" } });
+    // 07-16(D-714 · B-P1-1): 작성자 입력에는 지급 예정일 키가 없다 — 실어 보내면 거부되고(strict), 저장 칸에 날짜를 둘 길이 없다.
+    const authorDate: Record<string, unknown> = { scheduledPaymentDate: "2026-08-07" };
+    await expect(createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: authorDate })).rejects.toThrow();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
     const expenseId = created.created[0]?.expenseId ?? "";
     const [draft] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
-    const saved = await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: draft?.version ?? 0, fields: { scheduledPaymentDate: "2026-08-07" } });
+    await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: draft?.version ?? 0, fields: authorDate })).rejects.toThrow();
+    const saved = { version: draft?.version ?? 0 };
     await insertLinkFixture({ recordId: await insertRecordFixture(payer, { issuedOn: "2026-06-08" }), ownerId: expenseId, attachedBy: payer.id });
     const submitted = await submitExpense(fx.pm, { expenseId, expectedVersion: saved.version });
     if (submitted.kind !== "submitted") throw new Error("제출 안 됨");

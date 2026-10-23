@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { Client, type PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
-import { notificationLog, notifyTickRuns } from "@/db/schema";
+import { notificationLog, notifyTickRuns, users } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { ensureHolidayCandidates } from "@/domain/holidays/candidates";
 import {
@@ -18,12 +18,14 @@ import { listMyNotifications } from "@/domain/notify/inbox";
 import { runTick } from "@/domain/notify/tick";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { log } from "@/lib/log";
-import { findLastEmailOutcome, findUnresolvedEmail, type recordEmailOutcome } from "@/repositories/notifications";
+import { claimNextEmailBundle, findLastEmailOutcome, findUnresolvedEmail, type recordEmailOutcome } from "@/repositories/notifications";
 import { setUserArchived } from "@/repositories/users";
 import { handleNotifyTick, type NotifyTickHandlerDeps } from "@/app/internal/notify-tick/handle";
 import { createFakeEmailSender } from "@/test/support/fake-email-sender";
 import { createTestConditionKind, testCandidate } from "@/test/support/notify-tick";
 import type { NotificationCandidate } from "@/domain/notify/condition-kinds";
+import { setupExpenseProject } from "./fixtures/expenses";
+import { approvedExpenseWithEvidence } from "./fixtures/payments";
 
 type TestUser = { id: string; email: string };
 
@@ -82,7 +84,7 @@ describe("이메일 트레이서 (NOTI-02 · D-706 · D-711)", () => {
 
     expect(fake.sent).toHaveLength(1);
     expect(fake.sent[0]?.to).toBe(a.email);
-    expect(fake.sent[0]?.subject).toBe("PLANT8 알림 3건");
+    expect(fake.sent[0]?.subject).toBe("알림 3건 · 10-07");
     expect(fake.calls).toHaveLength(1);
     expect(fake.calls[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(fake.calls[0]?.abortedAtCall).toBe(false);
@@ -191,8 +193,8 @@ describe("이메일 묶음 규칙 (엣지 #14~#18)", () => {
     expect(toA[0]?.text).not.toContain("B-ONLY-1");
     expect(toB[0]?.text).toContain("B-ONLY-1");
     expect(toB[0]?.text).not.toContain("A-ONLY");
-    expect(toA[0]?.subject).toBe("PLANT8 알림 2건");
-    expect(toB[0]?.subject).toBe("PLANT8 알림 1건");
+    expect(toA[0]?.subject).toBe("알림 2건 · 10-07");
+    expect(toB[0]?.subject).toBe("알림 1건 · 10-07");
   });
 
   it("빈 사람 — 알림이 없는 C에게는 메일이 없고, 발송기 null이면 0통 · claimed 0", async () => {
@@ -396,7 +398,7 @@ describe("이메일 묶음 규칙 (엣지 #14~#18)", () => {
 
     expect(fake.sent).toHaveLength(1);
     const mail = fake.sent[0];
-    expect(mail?.subject).toBe("PLANT8 알림 45건");
+    expect(mail?.subject).toBe("알림 45건 · 10-07");
     const lines = (mail?.text ?? "").split("\n");
     expect(lines[0]).toBe("2026-10-07 알림 45건");
     const expected = [
@@ -431,6 +433,24 @@ describe("이메일 묶음 규칙 (엣지 #14~#18)", () => {
     await setUserArchived(SYSTEM_VIEWER, a.id, false);
     await runTick({ conditionKinds: [emptyKind()], now: () => new Date("2026-10-07T01:00:00Z"), emailSender: fake.sender });
     expect(fake.sent.map((m) => m.to)).toEqual([b.email, a.email]);
+  });
+
+  it("읽은 결재 차례(07-14 P3-4) — 자동 읽음된 approval-waiting 행은 pending이어도 묶음에서 빠진다 · 다른 종류의 읽은 행은 그대로 나간다", async () => {
+    const a = await createUser("read-a");
+    const b = await createUser("read-b");
+    const readAt = new Date("2026-10-06T03:00:00Z");
+    await db.insert(notificationLog).values([
+      { conditionKind: "approval-waiting", entity: "approval-step", entityId: randomUUID(), recipientId: a.id, round: 1, referenceDate: "2026-10-01", message: "결재 차례 · 처리된 문서", createdAt: new Date("2026-10-06T01:00:00Z"), readAt },
+      { conditionKind: "approval-waiting", entity: "approval-step", entityId: randomUUID(), recipientId: b.id, round: 1, referenceDate: "2026-10-01", message: "결재 차례 · 처리된 문서 B", createdAt: new Date("2026-10-06T01:00:00Z"), readAt },
+    ]);
+    await insertPending(a.id, "T-READ-OTHER", new Date("2026-10-06T02:00:00Z"));
+    await db.update(notificationLog).set({ readAt }).where(eq(notificationLog.entityId, "T-READ-OTHER"));
+    const fake = createFakeEmailSender();
+    await runTick({ conditionKinds: [emptyKind()], now: kst(WED), emailSender: fake.sender });
+
+    expect(fake.sent.map((m) => m.to)).toEqual([a.email]);
+    expect(fake.sent[0]?.text).toContain("T-READ-OTHER");
+    expect(fake.sent[0]?.text).not.toContain("결재 차례");
   });
 });
 
@@ -937,4 +957,66 @@ describe("대기 한도 — 풀·문장·토큰·결과 기록 응답 정지 (Co
     },
     15_000,
   );
+});
+
+// 07-14 C-P2-5 · SC-07: 메일 줄 끝 `열기` — 받는 사람 viewer({ id, roleId })가 볼 수 있는 문서만. 계급 없는 사람은 링크 없음.
+describe("메일 줄 열기 링크 (07-14 C-P2-5)", () => {
+  const SERVICE = "https://erp.test.invalid";
+
+  async function insertRow(recipientId: string, input: { conditionKind: string; entity: string; entityId: string; message: string; createdAt: Date }) {
+    await db.insert(notificationLog).values({ ...input, recipientId, round: 1, referenceDate: "2026-10-01" });
+  }
+
+  it("묶음 선점이 받는 사람 roleId와 줄의 condition_kind · entity · entity_id를 돌려준다", async () => {
+    const a = await createUser("claim-shape");
+    await insertRow(a.id, { conditionKind: "expense-result", entity: "expense-result", entityId: "E-1:S-1", message: "승인 · 문서", createdAt: new Date("2026-10-06T00:00:00Z") });
+    const [run] = await db
+      .insert(notifyTickRuns)
+      .values({ startedAt: new Date(), finishedAt: new Date(), kstDate: WED, businessDay: true })
+      .returning({ id: notifyTickRuns.id });
+    if (!run) throw new Error("실행 기록 없음");
+    const [user] = await db.select({ roleId: users.roleId }).from(users).where(eq(users.id, a.id));
+    const bundle = await claimNextEmailBundle(SYSTEM_VIEWER, { runId: run.id, dayStart: new Date("2026-10-06T15:00:00Z"), now: new Date("2026-10-07T00:00:00Z") });
+    expect(bundle).toMatchObject({ recipientId: a.id, email: a.email, roleId: user?.roleId ?? null });
+    expect(bundle?.rows).toHaveLength(1);
+    expect(bundle?.rows[0]).toMatchObject({ message: "승인 · 문서", conditionKind: "expense-result", entity: "expense-result", entityId: "E-1:S-1" });
+    expect(typeof bundle?.rows[0]?.id).toBe("number");
+  });
+
+  it("볼 수 있는 지출결의 줄에만 열기 — 볼 수 없는 문서 줄 · 나머지 갈래 줄은 링크 없음", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    await insertRow(fx.pm.id, { conditionKind: "expense-result", entity: "expense-result", entityId: `${doc.expenseId}:${randomUUID()}`, message: "승인 · 보이는 문서", createdAt: new Date("2026-10-06T03:00:00Z") });
+    await insertRow(fx.pm.id, { conditionKind: "expense-result", entity: "expense-result", entityId: `${randomUUID()}:${randomUUID()}`, message: "승인 · 없는 문서", createdAt: new Date("2026-10-06T02:00:00Z") });
+    await insertRow(fx.pm.id, { conditionKind: "test", entity: "test", entityId: "T-1", message: "테스트 알림 · T-1", createdAt: new Date("2026-10-06T01:00:00Z") });
+    const fake = createFakeEmailSender();
+    await runTick({ conditionKinds: [emptyKind()], now: kst(WED), emailSender: fake.sender, serviceUrl: SERVICE });
+    expect(fake.sent).toHaveLength(1);
+    expect(listedLines(fake.sent[0]?.text)).toEqual([
+      `- 승인 · 보이는 문서 열기 ${SERVICE}/expenses/${doc.expenseId}`,
+      "- 승인 · 없는 문서",
+      "- 테스트 알림 · T-1",
+    ]);
+    expect(fake.sent[0]?.subject).toBe("알림 3건 · 10-07");
+  });
+
+  it("남의 문서(범위 밖 지출결의)는 링크 없음", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    const stranger = await createUser("mail-stranger");
+    await insertRow(stranger.id, { conditionKind: "expense-result", entity: "expense-result", entityId: `${doc.expenseId}:${randomUUID()}`, message: "승인 · 남의 문서", createdAt: new Date("2026-10-06T03:00:00Z") });
+    const fake = createFakeEmailSender();
+    await runTick({ conditionKinds: [emptyKind()], now: kst(WED), emailSender: fake.sender, serviceUrl: SERVICE });
+    expect(listedLines(fake.sent[0]?.text)).toEqual(["- 승인 · 남의 문서"]);
+  });
+
+  it("계급 없는(role_id NULL) 받는 사람은 자기 문서여도 모든 줄에 링크 없음(can 기본 거부)", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    await db.update(users).set({ roleId: null }).where(eq(users.id, fx.pm.id));
+    await insertRow(fx.pm.id, { conditionKind: "expense-result", entity: "expense-result", entityId: `${doc.expenseId}:${randomUUID()}`, message: "승인 · 내 문서", createdAt: new Date("2026-10-06T03:00:00Z") });
+    const fake = createFakeEmailSender();
+    await runTick({ conditionKinds: [emptyKind()], now: kst(WED), emailSender: fake.sender, serviceUrl: SERVICE });
+    expect(listedLines(fake.sent[0]?.text)).toEqual(["- 승인 · 내 문서"]);
+  });
 });

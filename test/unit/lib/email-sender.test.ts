@@ -258,7 +258,7 @@ describe("createSmtpSender — 트레이서", () => {
     });
     const digest = composeDigest({
       kstDate: "2026-10-07",
-      messages: ["가", "나", "다"],
+      messages: [{ text: "가" }, { text: "나" }, { text: "다" }],
       serviceUrl: "https://erp.test.invalid",
     });
 
@@ -272,7 +272,7 @@ describe("createSmtpSender — 트레이서", () => {
     expect(fake.messages).toHaveLength(1);
     const raw = fake.messages[0] ?? "";
     const parsed = parseRawMessage(raw);
-    expect(parsed.subject).toBe("PLANT8 알림 3건");
+    expect(parsed.subject).toBe("알림 3건 · 10-07");
     expect(parsed.headers).toMatch(/Content-Type: text\/plain/i);
     expect(raw).not.toMatch(/text\/html/i);
     expect(parsed.body.split(/\r?\n/)).toContain("- 가");
@@ -296,7 +296,7 @@ function senderFor(port: number) {
 
 const digestMessage = {
   to: "member@test.invalid",
-  ...composeDigest({ kstDate: "2026-10-07", messages: ["가", "나", "다"], serviceUrl: "https://erp.test.invalid" }),
+  ...composeDigest({ kstDate: "2026-10-07", messages: [{ text: "가" }, { text: "나" }, { text: "다" }], serviceUrl: "https://erp.test.invalid" }),
 };
 
 describe("createSmtpSender — 결과 분류", () => {

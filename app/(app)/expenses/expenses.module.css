@@ -123,6 +123,29 @@
   color: var(--text-muted);
 }
 
+/* 07-16(SC-01 · R15 · U8) — 지급 대상 제목 아래: 예정일 계산 실패 글자 · 「이번 주로」 막힌 행 오류 줄(위험 색 보조 글자). */
+.scheduleFailed {
+  color: var(--status-danger);
+  font-size: var(--text-tag);
+  font-weight: var(--fw-medium);
+}
+
+.moveError {
+  color: var(--status-danger);
+}
+
+/* 07-16(SC-01 J11 · K9) — 결재 중 하위 그룹 행 글자(muted) · 합계 면 아래 한 줄 `결재 중 N건 · 합계 제외 {합}`. */
+.approvingText {
+  color: var(--text-muted);
+}
+
+.approvingTotal {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
 /* 거래처 — 한 줄 말줄임. */
 .vendorCell {
   display: block;
@@ -154,7 +177,8 @@
     min-width: max(100%, 5em);
   }
 
-  .titleCell .link {
+  .titleCell .link,
+  .titleCell.approvingText {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;

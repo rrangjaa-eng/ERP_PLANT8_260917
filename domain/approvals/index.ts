@@ -26,6 +26,7 @@ import {
   type NewApprovalStep,
 } from "@/repositories/approvals";
 import { listOrgSnapshot as defaultListOrgSnapshot, listRouteLabelNames } from "@/repositories/org-snapshot";
+import { markStepNotificationsRead } from "@/repositories/notifications";
 import {
   FALLBACK_LABEL,
   hasPriorApproval,
@@ -679,6 +680,14 @@ async function approveBlockedReasonsOf(viewer: Viewer, kind: string, documentIds
   return reasonsOf(viewer, documentIds);
 }
 
+// 결재 차례 알림(07-10 approval-waiting)의 단계 키 — 단계 행 id, 대표 폴백 자리는 처리 전 행이 없어 `{차수 id}:fallback`.
+function actedStepKey(route: ApprovalRouteWithSteps, outcome: { stepIndex: number; isFallback: boolean }): string {
+  if (outcome.isFallback) return `${route.id}:fallback`;
+  const row = route.steps.find((step) => step.stepIndex === outcome.stepIndex);
+  if (!row) throw new Error("지금 단계 행 없음");
+  return row.id;
+}
+
 export async function approveDocument(
   viewer: Viewer,
   input: { instanceId: string; expectedVersion: number },
@@ -738,6 +747,8 @@ export async function approveDocument(
             if (!row) throw new Error("지금 단계 행 없음");
             await recordStepAction(viewer, { stepId: row.id, actedBy: viewer.id, action: "approved", selfApproved }, tx);
           }
+          // 07-14 N16 · G33: 처리한 단계의 결재 차례 알림 중 처리한 사람 본인 것만 읽음(사용자 결정 2026-10-23 · 같은 tx · 메일 단계가 잡은 행은 건너뜀 — 다음 tick이 정리).
+          await markStepNotificationsRead(viewer, { stepIds: [actedStepKey(route, outcome)], recipientId: viewer.id }, tx);
           // 05-01 E2: 최종 승인(계산된 status approved)이면 단계 기록 뒤 · 행동 로그 전에 같은 tx로 종류의 훅 — 던지면 전부 롤백.
           if (status === "approved" && finalHook && target) {
             await finalHook.inTx(viewer, target.instance.documentId, tx, prepared);
@@ -808,6 +819,7 @@ export async function rejectDocument(
               if (!row) throw new Error("지금 단계 행 없음");
               await recordStepAction(viewer, { stepId: row.id, actedBy: viewer.id, action: "rejected", selfApproved: false, reason }, tx);
             }
+            await markStepNotificationsRead(viewer, { stepIds: [actedStepKey(route, outcome)], recipientId: viewer.id }, tx);
             return { detail: { stepIndex }, result: { drafterName: graph.instance.drafterName } };
           },
         };

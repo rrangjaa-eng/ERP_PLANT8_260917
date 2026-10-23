@@ -10,7 +10,8 @@ import { KvList } from "@/ui/kv-list/KvList";
 import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { parseNumberInput } from "@/lib/format-number";
-import { PREPAID_REASON_REQUIRED } from "@/domain/expenses/gate";
+import { PREPAID_REASON_REQUIRED, REQUESTED_DATE_MISSING, REQUESTED_DATE_PASSED, REQUESTED_DATE_PAST, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { BANK_TRANSFER_PAYMENT_METHOD } from "@/domain/expenses/payee";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
@@ -52,7 +53,13 @@ export type ExpenseFormData = {
   currency: string;
   amount: number | null;
   fxRate: number;
+  // 07-16(SC-02 · K19 · D-731): 읽기 줄 `지급 예정일` — 유효 예정일 · 수동 지정 · 규칙 줄(첫 그림 = 서버 값, 그 뒤 = 미리보기). 작성자는 적지 않는다(D-714).
   scheduledPaymentDate: string | null;
+  scheduledPaymentManual: boolean;
+  paymentRuleLine: string | null;
+  // 희망 지급일 · 희망 사유 저장값(작성자가 적는 한 쌍).
+  requestedPaymentDate: string | null;
+  requestedPaymentReason: string | null;
   note: string | null;
   installment: boolean;
   installmentMode: "checkbox" | "fixed" | "none";
@@ -98,6 +105,8 @@ let refocusLineTrigger = false;
 
 export type ExpenseFormProps = {
   data: ExpenseFormData;
+  /** 07-16 감사 #7: 오늘(KST, 서버 seoulToday) — 희망 지급일 칸 min. */
+  today: string;
   evidenceOptions: SelectOption[];
   // 06.5 V15: 세금 규칙이 회사 대납인 증빙 코드 — 이 증빙 종류에서만 받는 인원 칸이 선다.
   companyBorneEvidence: string[];
@@ -119,6 +128,13 @@ export type ExpenseFormProps = {
 };
 
 const DATE_EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
+
+// 07-16: 서버 희망 칸 오류(ExpenseFieldError)는 글자만 온다 — 어느 칸인지는 그 글자로 가른다(선결제 사유와 같은 꼴).
+function hopeErrorOf(message: string | undefined): { requestedPaymentDate: string } | { requestedPaymentReason: string } | null {
+  if (message === REQUESTED_DATE_PAST || message === REQUESTED_DATE_MISSING || message === REQUESTED_DATE_PASSED) return { requestedPaymentDate: message };
+  if (message === REQUESTED_REASON_REQUIRED) return { requestedPaymentReason: message };
+  return null;
+}
 const FX_ERROR = "환율 형식 오류 · 1,318.4처럼";
 
 // 환율 칸 — 통화를 바꾸면 그 통화의 기본 환율로 다시 열린다(훅이 값을 밖에서 못 바꾸므로 통화를 key로 다시 마운트한다).
@@ -146,16 +162,18 @@ function FxField({ initial, error, onRaw, below }: { initial: number; error: str
   );
 }
 
-export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords, linkedEvidenceCount = 0 }: ExpenseFormProps) {
+export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords, linkedEvidenceCount = 0 }: ExpenseFormProps) {
   const router = useRouter();
   const [evidenceType, setEvidenceType] = useState(data.evidenceType ?? "");
   const [paymentMethod, setPaymentMethod] = useState(data.paymentMethod ?? "");
   const [currency, setCurrency] = useState(data.currency);
-  const [date, setDate] = useState(data.scheduledPaymentDate ?? "");
+  const [hopeDate, setHopeDate] = useState(data.requestedPaymentDate ?? "");
+  const [hopeReason, setHopeReason] = useState(data.requestedPaymentReason ?? "");
+  const [schedule, setSchedule] = useState({ date: data.scheduledPaymentDate, manual: data.scheduledPaymentManual, ruleLine: data.paymentRuleLine });
   const [note, setNote] = useState(data.note ?? "");
   const [installment, setInstallment] = useState(data.installment || data.installmentMode === "fixed");
   const [fxRaw, setFxRaw] = useState(String(data.fxRate));
-  const dateRef = useRef<HTMLInputElement>(null);
+  const hopeDateRef = useRef<HTMLInputElement>(null);
   const evidenceDateRef = useRef<HTMLInputElement>(null);
   const [prepaid, setPrepaid] = useState(data.prepaid);
   const [prepaidReason, setPrepaidReason] = useState(data.prepaidReason ?? "");
@@ -194,7 +212,8 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
   const [errors, setErrors] = useState<{
     supplyAmount?: string;
     fxRate?: string;
-    scheduledPaymentDate?: string;
+    requestedPaymentDate?: string;
+    requestedPaymentReason?: string;
     note?: string;
     usageDate?: string;
     prepaidReason?: string;
@@ -224,7 +243,8 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     currency,
     amountInput.rawValue,
     currency === "KRW" ? "" : fxRaw,
-    date,
+    hopeDate,
+    hopeDate ? hopeReason : "",
     note,
     installment,
     teamKind,
@@ -249,7 +269,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, uploading]);
 
-  // 계산에 드는 칸(증빙 종류 · 공급가액 · 통화 · 환율 · 지급 예정일 · 분할 지급)이 바뀌면 짧은 지연 뒤 미리보기를 부른다. 늦게 온 응답이
+  // 계산에 드는 칸(증빙 종류 · 공급가액 · 통화 · 환율 · 분할 지급)이 바뀌면 짧은 지연 뒤 미리보기를 부른다. 늦게 온 응답이
   // 새 응답을 덮지 않게 요청 순번으로 거른다. 첫 그림은 서버가 보낸 값이라 부르지 않는다.
   // 막힘 판정에 드는 지급 방식 · 증빙 파일 수 · 붙은 증빙 기록 수도 본다(파일을 올리거나 떼면 · 기록을 붙이거나 떼면 서버가 다시 그린 값이 바뀐다).
   // 다른 탭에서 지급처 계좌를 등록하고 돌아오면 막힘이 지난 값으로 남는다 — 탭이 다시 보일 때마다 순번을 올려 미리보기를 다시 부른다.
@@ -272,7 +292,6 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     currency,
     amountInput.rawValue,
     currency === "KRW" ? "" : fxRaw,
-    date,
     installment,
     files.length,
     linkedEvidenceCount,
@@ -348,6 +367,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
         setNetworkFailed((current) => (current === "submit" ? null : current));
         setPreviewFailed(false);
         setTaxLine(result.data.taxLine);
+        setSchedule({ date: result.data.scheduledPaymentDate ?? null, manual: result.data.scheduledPaymentManual ?? false, ruleLine: result.data.paymentRuleLine ?? null });
         setServerBlock(result.data.block);
         setPreviewFieldError(result.data.fieldErrors.supplyAmount ?? null);
         if (team) {
@@ -419,7 +439,9 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
       }
       supply = { currency, amount, fxRate };
     }
-    if (dateRef.current?.validity.badInput) next.scheduledPaymentDate = DATE_EMPTY_ERROR;
+    if (hopeDateRef.current?.validity.badInput) next.requestedPaymentDate = DATE_EMPTY_ERROR;
+    // 희망일을 골랐으면 사유가 짝이다(서버도 같은 판정 — requestedPaymentErrors).
+    else if (hopeDate !== "" && hopeReason.trim() === "") next.requestedPaymentReason = REQUESTED_REASON_REQUIRED;
     if (evidenceDateRef.current?.validity.badInput) next.evidenceDate = DATE_EMPTY_ERROR;
     if (team && (usageDate === "" || usageDateRef.current?.validity.badInput)) next.usageDate = DATE_EMPTY_ERROR;
     setErrors(next);
@@ -431,7 +453,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
       evidenceType: evidenceType || null,
       paymentMethod: paymentMethod || null,
       supply,
-      scheduledPaymentDate: date || null,
+      ...hopeFields(),
       note: note || null,
       installment: data.installmentMode === "none" ? false : installment,
       ...evidenceFields(),
@@ -439,6 +461,12 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
       ...teamFields(),
       ...(newDoc && picked ? (picked.kind === "vendor" ? { vendorId: picked.id } : { payeeUserId: picked.id }) : {}),
     };
+  }
+
+  // 07-16(D-714): 희망 지급일 · 희망 사유 한 쌍 — 희망일이 없으면 사유도 보내지 않는다. 지급 예정일 키는 보내지 않는다.
+  function hopeFields(): { requestedPaymentDate: string | null; requestedPaymentReason: string | null } {
+    const date = hopeDateRef.current?.validity.badInput ? "" : hopeDate;
+    return { requestedPaymentDate: date || null, requestedPaymentReason: date ? hopeReason.trim() || null : null };
   }
 
   // 06-10 증빙 묶음 칸 셋 — 선결제를 끄면 사유는 보내지 않고 서버가 버린다(S6). 증빙일은 비면 null(제출 필수 아님).
@@ -474,7 +502,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
       evidenceType: evidenceType || null,
       paymentMethod: paymentMethod || null,
       supply: supplyValid ? { currency, amount, fxRate } : null,
-      scheduledPaymentDate: dateRef.current?.validity.badInput ? null : date || null,
+      ...hopeFields(),
       installment: data.installmentMode === "none" ? false : installment,
       prepaid,
       prepaidReason: prepaid ? prepaidReason.trim() || null : null,
@@ -487,7 +515,8 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     const names = {
       supplyAmount: "공급가액",
       fxRate: "환율",
-      scheduledPaymentDate: "지급 예정일",
+      requestedPaymentDate: "희망 지급일",
+      requestedPaymentReason: "희망 사유",
       note: "비고",
       usageDate: "사용일",
       prepaidReason: "선결제 사유",
@@ -522,14 +551,16 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     }
     const fieldErrors = result?.validationErrors?.fields;
     const noteError = fieldErrors?.note?._errors?.[0];
-    const dateError = fieldErrors?.scheduledPaymentDate?._errors?.[0];
+    const dateError = fieldErrors?.requestedPaymentDate?._errors?.[0];
+    const hopeReasonError = fieldErrors?.requestedPaymentReason?._errors?.[0];
     const headcountError = fieldErrors?.recipientCount?._errors?.[0];
     const evidenceDateError = fieldErrors?.evidenceDate?._errors?.[0];
     const prepaidReasonError = fieldErrors?.prepaidReason?._errors?.[0];
-    if (noteError || dateError || headcountError || evidenceDateError || prepaidReasonError) {
+    if (noteError || dateError || hopeReasonError || headcountError || evidenceDateError || prepaidReasonError) {
       const next = {
         ...(noteError ? { note: noteError } : {}),
-        ...(dateError ? { scheduledPaymentDate: dateError } : {}),
+        ...(dateError ? { requestedPaymentDate: dateError } : {}),
+        ...(hopeReasonError ? { requestedPaymentReason: hopeReasonError } : {}),
         ...(headcountError ? { headcount: headcountError } : {}),
         ...(evidenceDateError ? { evidenceDate: evidenceDateError } : {}),
         ...(prepaidReasonError ? { prepaidReason: prepaidReasonError } : {}),
@@ -541,9 +572,13 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     } else {
       const message = result?.serverError;
       // 서버 칸 오류(ExpenseFieldError)는 글자만 온다 — 어느 칸인지는 그 글자로 가른다(선결제 사유 빔).
+      const hopeError = hopeErrorOf(message);
       if (message === PREPAID_REASON_REQUIRED) {
         setErrors({ prepaidReason: message });
         setFailure(purpose === "submit" ? failureLine({ prepaidReason: message }) : "임시 저장 실패 · 다시 시도");
+      } else if (hopeError) {
+        setErrors(hopeError);
+        setFailure(failureLine(hopeError, purpose));
       } else {
         setFailure(message ?? (purpose === "submit" ? "제출 실패 · 다시 제출" : "임시 저장 실패 · 다시 시도"));
       }
@@ -573,9 +608,13 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
       return null;
     }
     const message = result?.serverError;
+    const hopeError = hopeErrorOf(message);
     if (message?.startsWith("사용일에")) {
       setErrors({ usageDate: message });
       setFailure(failureLine({ usageDate: message }, purpose));
+    } else if (hopeError) {
+      setErrors(hopeError);
+      setFailure(failureLine(hopeError, purpose));
     } else {
       setFailure(message ?? (purpose === "submit" ? "제출 실패 · 다시 제출" : "임시 저장 실패 · 다시 시도"));
     }
@@ -645,6 +684,14 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
       return;
     }
     const message = result?.serverError ?? "제출 실패 · 다시 제출";
+    // 사용자 결정 2026-10-23: 지난 희망일(`희망일 지남`)은 희망 지급일 칸 오류다.
+    const hopeError = hopeErrorOf(message);
+    if (hopeError) {
+      setErrors(hopeError);
+      setFailure(failureLine(hopeError, "submit"));
+      release();
+      return;
+    }
     if (message.startsWith("남은 실행가")) setErrors({ supplyAmount: message });
     setFailure(message);
     release();
@@ -712,7 +759,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
     setFailure(null);
   }
 
-  // 견적 줄 고르기 · 바꾸기 — 새 문서는 그 줄의 작성 중 문서를 만들거나 열고(적어 둔 비고 · 지급 예정일 · 지급 방식은 같이 저장하고 팀 비용 칸은 버린다),
+  // 견적 줄 고르기 · 바꾸기 — 새 문서는 그 줄의 작성 중 문서를 만들거나 열고(적어 둔 비고 · 희망 지급일 · 사유 · 지급 방식은 같이 저장하고 팀 비용 칸은 버린다),
   // 저장된 문서는 서버가 줄 값으로 다시 채운다.
   // 그 줄에 내 다른 작성 중 문서가 있으면 그 문서로 이동한다. 줄이 바뀌면 칸 값이 통째로 새 값이라 페이지가 폼을 새로 그린다(router.refresh · key).
   async function pickLine(lineId: string): Promise<boolean | void> {
@@ -723,7 +770,7 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
       try {
         created = await createExpenseFromLinesAction({
           lineIds: [lineId],
-          fields: { note: note || null, scheduledPaymentDate: date || null, paymentMethod: paymentMethod || null },
+          fields: { note: note || null, ...hopeFields(), paymentMethod: paymentMethod || null },
         });
       } catch {
         setFailure(failed);
@@ -783,6 +830,41 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
   }
 
   const amountError = errors.supplyAmount ?? amountInput.error ?? previewFieldError ?? undefined;
+  // 07-16(SC-02): 지급 예정일 읽기 줄 — 새 문서(문서 없음)는 `—`, 계산 중 `…`, 실패 한 줄, 그 밖은 `MM-DD` + `(자동)` 또는 `수동 지정`, 아래 규칙 줄(07-01 문구 그대로).
+  const scheduleRead =
+    newDoc || schedule.date === null ? (
+      <span data-testid="expense-schedule-value">—</span>
+    ) : previewing ? (
+      <>
+        <span data-testid="expense-schedule-value" className={styles.muted}>
+          …
+        </span>
+        <span data-testid="expense-schedule-rule" className={`${styles.subLine} ${styles.muted}`}>
+          …
+        </span>
+      </>
+    ) : previewFailed ? (
+      <span data-testid="expense-schedule-value">계산하지 못함 · 저장 뒤 다시 확인</span>
+    ) : (
+      <>
+        <span data-testid="expense-schedule-value">
+          {schedule.date.slice(5)}
+          {schedule.manual ? (
+            <>
+              {" "}
+              <StatusTag status="수동 지정" variant="text" />
+            </>
+          ) : (
+            <span className={styles.muted}>{" (자동)"}</span>
+          )}
+        </span>
+        {schedule.ruleLine ? (
+          <span data-testid="expense-schedule-rule" className={`${styles.subLine} ${styles.muted}`}>
+            {schedule.ruleLine}
+          </span>
+        ) : null}
+      </>
+    );
   // 계산 한 줄은 값 줄이라 설명 문단(`Form.Hint`의 <p>)이 아니라 같은 모양(힌트 글자)의 span이다 — 화면 사용성 원칙 검사의 「긴 설명」과 구분.
   const taxHint = previewFailed ? (
     <span className={`${styles.taxLine} ${styles.stale}`} data-testid="expense-tax-line">
@@ -985,19 +1067,46 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
           </Form.Field>
         ) : null}
 
-        <Form.Field id="scheduledPaymentDate" label="지급 예정일" width="short">
+        {/* 07-16(SC-02 · D-714): 작성자는 희망 지급일 · 사유 한 쌍만 — 사유 칸은 희망일을 고른 동안만(포커스는 옮기지 않는다), 희망일을 지우면 사유도 지운다. */}
+        <Form.Field id="requestedPaymentDate" label="희망 지급일" width="short">
           <input
-            id="scheduledPaymentDate"
-            ref={dateRef}
+            id="requestedPaymentDate"
+            ref={hopeDateRef}
             type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
+            min={today}
+            value={hopeDate}
+            onChange={(event) => {
+              setHopeDate(event.target.value);
+              if (event.target.value === "") setHopeReason("");
+              if (errors.requestedPaymentDate || errors.requestedPaymentReason) setErrors((current) => ({ ...current, requestedPaymentDate: undefined, requestedPaymentReason: undefined }));
+            }}
             className={styles.textInput}
-            aria-invalid={errors.scheduledPaymentDate ? true : undefined}
-            aria-describedby={errors.scheduledPaymentDate ? "scheduledPaymentDate-error" : undefined}
+            aria-invalid={errors.requestedPaymentDate ? true : undefined}
+            aria-describedby={errors.requestedPaymentDate ? "requestedPaymentDate-error" : undefined}
           />
-          {errors.scheduledPaymentDate ? <Form.Error id="scheduledPaymentDate-error">{errors.scheduledPaymentDate}</Form.Error> : null}
+          {errors.requestedPaymentDate ? <Form.Error id="requestedPaymentDate-error">{errors.requestedPaymentDate}</Form.Error> : null}
         </Form.Field>
+        {hopeDate !== "" ? (
+          <Form.Field id="requestedPaymentReason" label="희망 사유" width="long">
+            <input
+              id="requestedPaymentReason"
+              type="text"
+              maxLength={480}
+              autoComplete="off"
+              value={hopeReason}
+              onChange={(event) => {
+                setHopeReason(event.target.value);
+                if (errors.requestedPaymentReason) setErrors((current) => ({ ...current, requestedPaymentReason: undefined }));
+              }}
+              className={styles.textInput}
+              aria-invalid={errors.requestedPaymentReason ? true : undefined}
+              aria-describedby={errors.requestedPaymentReason ? "requestedPaymentReason-error" : undefined}
+            />
+            {errors.requestedPaymentReason ? <Form.Error id="requestedPaymentReason-error">{errors.requestedPaymentReason}</Form.Error> : null}
+          </Form.Field>
+        ) : null}
+        {/* K19 · D-731: 읽기 줄 — 입력 테두리 없는 KvList 한 줄. 미리보기 동안 값 · 규칙 줄 둘 다 `…`(이전 문구를 남기지 않는다 — U16). */}
+        <KvList items={[{ label: "지급 예정일", value: scheduleRead }]} />
 
         <Form.Field id="paymentMethod" label="지급 방식" width="select">
           <Select id="paymentMethod" options={paymentOptions} value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} />

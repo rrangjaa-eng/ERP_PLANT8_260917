@@ -56,7 +56,8 @@ async function tick(kinds: readonly ConditionKind[], date: string) {
 
 describe("등록부", () => {
   it("켜진 기본 종류가 SC-07 표 순서이고 결재 도착 별도 종류가 없다(K17)", () => {
-    const names = CONDITION_KINDS.map((kind) => kind.kind);
+    // 07-14가 꺼 둔 종류를 뒤에 더한다 — 이 단언은 켜진 기본 종류만(전체 순서는 kinds-off.test.ts).
+    const names = CONDITION_KINDS.filter((kind) => kind.defaults.enabled).map((kind) => kind.kind);
     expect(names).toEqual(["project-end-no-expense", "pay-week-alert", "approval-waiting", "paid-no-evidence", "prepaid-evidence", "proxy-registered"]);
     expect(names).not.toContain("approval-arrived");
   });

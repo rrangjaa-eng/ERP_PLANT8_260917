@@ -16,6 +16,9 @@ export type ExpenseDraftDto = {
   // 07 D-715 — 유효 예정일(수동 ?? 자동). 저장 칸은 지급 권한자 수동값만.
   scheduledPaymentDate: string | null;
   scheduledPaymentManual: boolean;
+  // 07-16(D-714 · J10): 기안자가 적는 희망 지급일 · 사유(둘 다 있거나 둘 다 없다 — 07-02 CHECK). 경영관리 판단 재료라 예정일 계산에 들지 않는다.
+  requestedPaymentDate: string | null;
+  requestedPaymentReason: string | null;
   note: string | null;
   installment: boolean;
   version: number;
@@ -32,6 +35,8 @@ export const EXPENSE_DRAFT_DTO_SPEC: DtoSpec<ExpenseDraftDto, ExpenseDraftDto> =
     { key: "paymentMethod", from: "paymentMethod", infoItem: "expense.value" },
     { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
     { key: "scheduledPaymentManual", from: "scheduledPaymentManual", infoItem: "expense.value" },
+    { key: "requestedPaymentDate", from: "requestedPaymentDate", infoItem: "expense.value" },
+    { key: "requestedPaymentReason", from: "requestedPaymentReason", infoItem: "expense.value" },
     { key: "note", from: "note", infoItem: "expense.value" },
     { key: "installment", from: "installment", infoItem: "expense.value" },
     { key: "version", from: "version", infoItem: "expense.value" },
@@ -225,6 +230,10 @@ export type ExpensePreviewDto = {
   fieldErrors: { supplyAmount?: string; usageDate?: string };
   // 05-07 팀 비용 — 사용일 소속 팀 이름(사용일을 바꾸면 미리보기로 다시 온다). 견적 줄 문서 null.
   teamName: string | null;
+  // 07-16(SC-02 · K19 · D-731): 폼 읽기 줄 `지급 예정일` — 유효 예정일 · 수동 지정 · 규칙 줄(07-01 payRuleLine).
+  scheduledPaymentDate: string | null;
+  scheduledPaymentManual: boolean;
+  paymentRuleLine: string;
 };
 
 export const EXPENSE_PREVIEW_DTO_SPEC: DtoSpec<ExpensePreviewDto, ExpensePreviewDto> = {
@@ -233,6 +242,9 @@ export const EXPENSE_PREVIEW_DTO_SPEC: DtoSpec<ExpensePreviewDto, ExpensePreview
     { key: "block", from: "block", infoItem: "expense.value" },
     { key: "fieldErrors", from: "fieldErrors", infoItem: "expense.amount" },
     { key: "teamName", from: "teamName", infoItem: "expense.value" },
+    { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
+    { key: "scheduledPaymentManual", from: "scheduledPaymentManual", infoItem: "expense.value" },
+    { key: "paymentRuleLine", from: "paymentRuleLine", infoItem: "expense.value" },
   ],
 };
 

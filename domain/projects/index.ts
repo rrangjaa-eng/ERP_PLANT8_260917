@@ -344,6 +344,7 @@ export type ProjectListDeps = {
   repo: { aggregate: typeof repoAggregateProjects; listPage: typeof repoListProjectsPage };
   teams: typeof repoListTeams;
   visible: ProjectDeps["visible"];
+  collectionOverdue: typeof collectionOverdueByProject;
 };
 
 // 드리즐이 PG 오류를 cause로 감싼다 — 운영 로그에는 PG 코드만(필터 값·금액 없음).
@@ -440,7 +441,7 @@ export async function loadProjectList(
   // 07-22(SC-20) — 수금 지연은 입금을 볼 수 있을 때만 판정한다(못 보면 읽지도 않는다 — 칸은 투영이 뺀다).
   const collection =
     rows.length > 0 && (await (deps?.visible ?? defaultVisible)(viewer, "revenue.paid_amount"))
-      ? await collectionOverdueByProject(viewer, rows.map((row) => row.id), { today: todayKst })
+      ? await (deps?.collectionOverdue ?? collectionOverdueByProject)(viewer, rows.map((row) => row.id), { today: todayKst })
       : null;
   const sources = rows.map((row) => ({
     ...row,

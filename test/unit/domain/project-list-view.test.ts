@@ -530,6 +530,8 @@ describe("loadProjectList — 행의 endDatePassed", () => {
         scope: () => Promise.resolve({ rows: "all", includeArchived: false }),
         settle: () => Promise.resolve(),
         visible: () => Promise.resolve(true),
+        // 07-22 — 수금 지연 판정은 이 시험의 관심 밖(DB를 읽지 않게 빈 판정).
+        collectionOverdue: () => Promise.resolve(new Map()),
         repo: {
           aggregate: () =>
             Promise.resolve([{ bucket: "in", count: rows.length, revenueKrw: 0, quoteAmountKrw: 0, executionAmountKrw: 0, profitKrw: 0, basisAmountKrw: 0, profitRate: null }]),

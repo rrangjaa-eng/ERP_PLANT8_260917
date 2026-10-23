@@ -54,6 +54,10 @@ vi.mock("@/domain/settlements", () => ({ getSettlementHeader: () => Promise.reso
 vi.mock("@/app/(app)/projects/[id]/quote-table", () => ({ QuoteLedger: () => null }));
 vi.mock("@/app/(app)/projects/[id]/revision-section", () => ({ RevisionSection: () => null }));
 vi.mock("@/app/(app)/projects/[id]/card-usage-section", () => ({ CardUsageSection: () => null }));
+// 07-22 — 서류 섹션 · 계산서 파일 링크 재료는 이 시험의 관심 밖.
+vi.mock("@/app/(app)/projects/[id]/documents-section", () => ({ DocumentsSection: () => null }));
+vi.mock("@/domain/projects/documents", () => ({ listProjectDocuments: () => Promise.resolve(null) }));
+vi.mock("@/domain/revenue/invoice-file", () => ({ listInvoiceFiles: () => Promise.resolve({}) }));
 vi.mock("@/app/(app)/projects/[id]/pre-settle-check", () => ({ PreSettleCheckSection: () => null }));
 // 06.2-12: 페이지가 참여자 권리를 서버에서 읽고 참여자 섹션 · 머리 자식을 그린다 — 이 테스트의 관심사(줄 카드 사실)가 아니라 스텁으로 둔다.
 vi.mock("@/domain/projects/members", () => ({ projectMemberRights: () => Promise.resolve({ canEdit: false, locked: false, pmName: null, hasCandidates: false }) }));

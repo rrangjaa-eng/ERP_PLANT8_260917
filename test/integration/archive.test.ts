@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { auth } from "@/lib/auth";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { createRole, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createCodeItem } from "@/domain/code-tables";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { createVendor } from "@/domain/vendors";
@@ -11,7 +11,7 @@ import { createCorpCard } from "@/domain/corp-cards";
 import { createAccount } from "@/domain/auth/accounts";
 import { archivePerson } from "@/domain/people";
 import { findHolidayByDate } from "@/repositories/holidays";
-import { archive, restore, listArchive, ForbiddenError, ProtectedRowError, CorpCardLast4TakenError } from "@/domain/archive";
+import { archive, restore, listArchive, ForbiddenError, ProtectedRowError, CorpCardLast4TakenError, RoleHasMembersError } from "@/domain/archive";
 import { ARCHIVABLE_TABLES, listArchivedAcrossEntities as defaultListArchivedAcrossEntities } from "@/repositories/archive";
 import { addHoliday, deleteHoliday } from "@/domain/holidays/admin";
 import { queryActionLog } from "@/domain/action-log";
@@ -19,7 +19,11 @@ import { db } from "@/db/client";
 import { corpCards, holidays, vendors } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { insertRole } from "@/repositories/roles";
+import { findRoleById, insertRole } from "@/repositories/roles";
+import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
+import { updateUserResignationDate } from "@/repositories/users";
+import { makePerson, NOW_2026 } from "./approvals-fixtures";
+import { makeAdmin, makeAdminRole, makeDelegatedRole } from "./admin-cap-fixtures";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 
 let ipCounter = 0;
@@ -395,5 +399,70 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     expect(listed.find((item) => item.id === taken.id)).toMatchObject({ restorable: false });
     expect(listed.find((item) => item.id === bySubstitute.id)).toMatchObject({ restorable: true });
     await expect(restore(admin, "holiday", taken.id)).rejects.toThrow("이미 공휴일");
+  });
+});
+
+// 07-15(R16 · R17): 계급 보관 — 상한 밖 계급은 위임자가 보관하지 못하고, 소속 활성 사람이 남은 계급은 보관하지 못한다.
+describe("계급 보관 가드(07-15 R16 · R17)", () => {
+  const deps = { now: () => NOW_2026 };
+
+  it("소속 활성 2명인 계급 보관 → RoleHasMembersError · 인원 2 · 보관 안 됨 · 로그 없음", async () => {
+    const admin = await makeAdmin("관리자 X");
+    const roleId = (await createRole(SYSTEM_VIEWER, { name: `소속 남음-${randomUUID()}` })).id;
+    await makePerson("소속 1", roleId, null);
+    await makePerson("소속 2", roleId, null);
+
+    const error = await archive(admin, "roles", roleId, deps).then(
+      () => new Error("거부되어야 하는데 성공함"),
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(RoleHasMembersError);
+    expect((error as RoleHasMembersError).count).toBe(2);
+    expect((error as Error).message).toBe("소속 2명 · 먼저 다른 계급으로 옮기기");
+    expect((await findRoleById(SYSTEM_VIEWER, roleId))?.archivedAt).toBeNull();
+    expect((await queryActionLog(SYSTEM_VIEWER, { actionType: "archive" })).filter((row) => row.entityId === roleId)).toEqual([]);
+  });
+
+  it("소속 0명이면 보관 성공 · 퇴직자만 남은 계급도 성공(활성 기준)", async () => {
+    const admin = await makeAdmin("관리자 X");
+    const empty = (await createRole(SYSTEM_VIEWER, { name: `빈 계급-${randomUUID()}` })).id;
+    const resignedOnly = (await createRole(SYSTEM_VIEWER, { name: `퇴직만-${randomUUID()}` })).id;
+    const gone = await makePerson("퇴직자", resignedOnly, null);
+    await updateUserResignationDate(SYSTEM_VIEWER, gone.id, "2026-09-01");
+
+    await archive(admin, "roles", empty, deps);
+    await archive(admin, "roles", resignedOnly, deps);
+
+    expect((await findRoleById(SYSTEM_VIEWER, empty))?.archivedAt).not.toBeNull();
+    expect((await findRoleById(SYSTEM_VIEWER, resignedOnly))?.archivedAt).not.toBeNull();
+  });
+
+  it("위임자가 상한 밖 계급을 보관하면 「계급 지정 권한 없음 · 시스템 관리자」 · 상한 안 계급은 성공", async () => {
+    const delegated = await makeDelegatedRole({
+      name: "위임 보관",
+      viewScope: "team",
+      workScope: "team",
+      menus: [
+        { menu: "admin.people", action: "view" },
+        { menu: "admin.people", action: "write" },
+        { menu: "admin.archive", action: "view" },
+        { menu: "admin.archive", action: "write" },
+      ],
+    });
+    const d = await makePerson("위임자 D", delegated, null);
+    const outside = await makeAdminRole("상한 밖");
+    const inside = (await createRole(SYSTEM_VIEWER, { name: `상한 안-${randomUUID()}` })).id;
+
+    const error = await archive(d, "roles", outside, deps).then(
+      () => new Error("거부되어야 하는데 성공함"),
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(RoleGrantForbiddenError);
+    expect((error as Error).message).toBe("계급 지정 권한 없음 · 시스템 관리자");
+    expect((await findRoleById(SYSTEM_VIEWER, outside))?.archivedAt).toBeNull();
+
+    await archive(d, "roles", inside, deps);
+    expect((await findRoleById(SYSTEM_VIEWER, inside))?.archivedAt).not.toBeNull();
   });
 });

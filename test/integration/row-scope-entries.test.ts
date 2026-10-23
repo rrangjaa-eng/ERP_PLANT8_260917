@@ -20,6 +20,7 @@ import {
   SaveRejectedError,
 } from "@/domain/quotes/lines";
 import { canOpenProject } from "@/domain/projects/visibility";
+import { rowScopeFor } from "@/domain/permissions/scope-for";
 import { listRevenue, saveRevenue } from "@/domain/revenue";
 import { listProjectIssueRequests } from "@/domain/issue-requests";
 import { getSettlement, getSettlementHeader, submitSettlement } from "@/domain/settlements";
@@ -879,5 +880,19 @@ describe("구매 완료 건 수정 · 범위 밖 프로젝트의 담당 PM 이�
       version: usageRow?.version ?? 0,
     });
     expect(pre.pmName ?? "").not.toContain("박서연");
+  });
+});
+
+// 07-15(R19 · C-80 권한부): 팀 없는 사람의 본부 갈래가 0건이 되지 않는다 — 본부 id가 null이면 범위 조각만 거짓이고 PM · 참여
+// 조각은 남아 본인 행(own과 같음)을 본다. 계급에는 「설정 본부」 칸이 없어 보관 본부 갈래는 해당 없음(SUMMARY 표).
+describe("팀 없는 본부 범위 사람(07-15 R19)", () => {
+  it("본부 범위 계급 · 팀 없음 → limited org_unit(null) · 자기가 참여한 프로젝트만 열리고 0건이 아니다", async () => {
+    const nobody = await makePerson("팀 없는 본부장", DIVISION_HEAD_ROLE_ID, null);
+    await insertLiveMember(w.projects.P2.id, nobody.id, w.people.대표.id);
+
+    expect(await rowScopeFor(nobody, "project")).toMatchObject({ rows: "limited", by: { kind: "org_unit", orgUnitId: null } });
+    expect(await canOpenProject(nobody, w.projects.P2.id)).toBe(true);
+    expect(await canOpenProject(nobody, w.projects.P1.id)).toBe(false);
+    expect(await canOpenProject(nobody, w.projects.P3.id)).toBe(false);
   });
 });

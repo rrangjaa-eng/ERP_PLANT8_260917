@@ -385,12 +385,13 @@ describe("입사일·퇴직일 — 권한 · 역전 · 로그 · DB CHECK(A-04 �
 
   it("입사일·퇴직일을 동시에 바꾸는 경합 10회 — 매번 정확히 하나만 성공하고 나머지는 ValidationError, 끝 행은 역전이 없다", async () => {
     const userId = await makePlainPerson("경합대상");
+    // F24: 퇴직일이 지나면 입사일 변경은 퇴직 잠금으로 거부된다 — 역전 경합만 보려고 날짜를 먼 미래(재직 중)로 둔다.
     for (let round = 0; round < 10; round++) {
-      await db.update(users).set({ hireDate: "2026-01-01", resignationDate: "2026-12-31" }).where(eq(users.id, userId));
+      await db.update(users).set({ hireDate: "2099-01-01", resignationDate: "2099-12-31" }).where(eq(users.id, userId));
 
       const results = await Promise.allSettled([
-        setHireDate(SYSTEM_VIEWER, userId, "2026-10-01"),
-        setResignationDate(SYSTEM_VIEWER, userId, "2026-03-31"),
+        setHireDate(SYSTEM_VIEWER, userId, "2099-10-01"),
+        setResignationDate(SYSTEM_VIEWER, userId, "2099-03-31"),
       ]);
       expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
       const rejected = results.find((r) => r.status === "rejected");

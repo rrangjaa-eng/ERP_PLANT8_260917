@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
-import { registerPerson } from "@/domain/people";
+import { registerPerson, setResignationDate } from "@/domain/people";
 import { updatePersonPayoutAccount } from "@/domain/people/account";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { insertRole } from "@/repositories/roles";
 import { insertVisibilityIfAbsent } from "@/repositories/permissions";
+import { kstToday } from "@/lib/kst-date";
 import { createFixtureUser } from "./fixtures";
 
 // 06.5-04(D-6505 · UI-SPEC V2): 사람 상세 「지급 계좌」 섹션 + 옆 패널 「지급 계좌 수정」.
@@ -174,6 +175,28 @@ test.describe("사람 상세 지급 계좌(06.5 D-6505)", () => {
     await expect(panel(page).locator("#accountHolder-error")).toHaveText("예금주 없음 · 예금주 적기");
     await expect(panel(page).getByLabel("예금주")).toBeFocused();
     await expect(panel(page).getByLabel("계좌 은행")).toHaveValue("신한");
+  });
+  // 사용자 결정 F24(카드 2026-10-23 10:02 KST): 퇴직한 사람(퇴직일 다음 날부터)은 어떤 정보도 고치지 못한다 — 260907
+  // `server/src/people.ts:792-797`. 화면은 고치기 행동을 그리지 않고 잠김 한 줄만 둔다. 퇴직일 칸은 재입사 경로라 남는다.
+  // 서버 거부는 통합 people-retired-edit-lock이 본다.
+  test("퇴직자 상세 — 잠김 한 줄 · 계급 · 입사일 · 연차 조정 · 계좌 바꾸기 · 새 이력 추가 없음 · 퇴직일 칸은 남음", async ({ page }) => {
+    await login(page, await createFixtureUser({ roleId: SYSADMIN_ROLE_ID }));
+    const userId = await makeTarget();
+    await updatePersonPayoutAccount(SYSTEM_VIEWER, userId, { accountBank: "신한", accountHolder: "김직원", accountNumber: "110-123-456789" });
+    await setResignationDate(SYSTEM_VIEWER, userId, kstToday(new Date(Date.now() - 86_400_000)));
+    await page.goto(`/admin/people/${userId}`);
+
+    await expect(page.getByText("퇴직한 사람 · 정보 변경 없음", { exact: true })).toHaveCount(1);
+    await expect(section(page).getByText("6789")).toBeVisible();
+    await expect(section(page).getByRole("link", { name: "계좌 바꾸기" })).toHaveCount(0);
+    await expect(page.locator("#person-role-change")).toHaveCount(0);
+    await expect(page.locator("#hireDate")).toHaveCount(0);
+    await expect(page.locator("#resignationDate")).toHaveCount(1);
+    await expect(page.locator("#leave-adjustment-form")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "새 이력 추가" })).toHaveCount(0);
+    await page.goto(`/admin/people/${userId}?editAccount=1`);
+    await expect(section(page)).toBeVisible();
+    await expect(panel(page)).toHaveCount(0);
   });
 });
 

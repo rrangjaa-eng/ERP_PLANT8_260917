@@ -37,6 +37,8 @@ export type LeaveSectionProps = {
   canWrite: boolean;
   // 06.4(D-6417 · R2) · 07-17 독립 검토 M1: 대상 계급이 상한 밖이면 입사일 · 퇴직일 칸을 그리지 않는다 — 기본 참.
   datesWritable?: boolean;
+  // F24: 퇴직자는 입사일 칸을 그리지 않는다(퇴직일 칸은 재입사 경로라 남김) — 기본 참.
+  hireDateWritable?: boolean;
   // 07-17 R15: 대상 계급이 상한 밖이면 연차 조정 추가 폼도 그리지 않는다 — 기본 참.
   adjustWritable?: boolean;
   // 오늘 기준 월차 조정 거부 이유(04.1-03 checkLeaveAdjustment 문구 그대로) — 있으면 `월차` 옵션을 뺀다(CX-R5).
@@ -124,7 +126,9 @@ export function LeaveSection(props: LeaveSectionProps) {
         <div className="single-column">
           {canWrite && props.datesVisible && props.datesWritable !== false ? (
             <Form onSubmit={(event) => event.preventDefault()}>
-              <EmploymentDate userId={userId} id="hireDate" label="입사일" initial={props.hireDate} kind="hire" />
+              {props.hireDateWritable !== false ? (
+                <EmploymentDate userId={userId} id="hireDate" label="입사일" initial={props.hireDate} kind="hire" />
+              ) : null}
               <EmploymentDate userId={userId} id="resignationDate" label="퇴직일" initial={props.resignationDate} kind="resignation" />
             </Form>
           ) : null}

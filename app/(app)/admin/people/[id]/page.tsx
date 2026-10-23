@@ -1,11 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
-import { getPerson } from "@/domain/people";
+import { getPerson, isRetiredOn } from "@/domain/people";
+import { RETIRED_EDIT_MESSAGE } from "@/domain/people/retired";
 import { assignableRoleIds, listAssignableRoles } from "@/domain/permissions/roles";
 import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
 import { listOrgUnits, listTeams } from "@/domain/org";
 import { KvList } from "@/ui/kv-list/KvList";
+import { Form } from "@/ui/form/Form";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
 import { PersonLoginActions, PersonRoleChange, PersonHistorySection } from "./person-detail-client";
@@ -108,6 +110,10 @@ export default async function PersonDetailPage({
   const loginWord = "locked" in detail.person ? personLoginWord(personLoginStatus(detail.person, today)) : null;
   const loginWritable =
     canWrite && session.viewer.id !== id && !detail.person.archivedAt && !targetOutOfCeiling && loginWord !== "퇴직";
+  // 사용자 결정 F24(카드 2026-10-23 10:02 KST): 퇴직자는 어떤 정보도 고치지 못한다(260907 `server/src/people.ts:792-797`) —
+  // 계급 · 입사일 · 연차 조정 · 계좌 바꾸기 · 새 이력 추가를 그리지 않고 잠김 한 줄. 퇴직일 칸은 재입사 경로라 남긴다(서버도 같은 판정).
+  const retired = isRetiredOn(detail.person.resignationDate ?? current.resignationDate ?? null, today);
+  const editable = !targetOutOfCeiling && !retired;
   const balanceLines = balance.annual
     ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null, resignation: balance.resignation ?? null }).map((line) => line.text)
     : [];
@@ -143,7 +149,8 @@ export default async function PersonDetailPage({
           ]}
         />
 
-        {showRoleChange ? (
+        {retired && (canWrite || payoutAccount !== null) ? <Form.Hint>{RETIRED_EDIT_MESSAGE}</Form.Hint> : null}
+        {showRoleChange && !retired ? (
           <PersonRoleChange userId={id} roles={roles} currentRoleId={currentRoleId} lockedReason={lockedReason} />
         ) : null}
       </div>
@@ -176,22 +183,23 @@ export default async function PersonDetailPage({
         // 사용자 결정(2026-09-29 A) — 자기 연차 · 입사일 · 퇴직일은 바꾸지 못한다(서버도 거부) — 쓰기 칸을 그리지 않는다.
         canWrite={canWrite && session.viewer.id !== id}
         datesWritable={!targetOutOfCeiling}
-        adjustWritable={!targetOutOfCeiling}
+        hireDateWritable={!retired}
+        adjustWritable={editable}
         monthlyBlockedReason={blocked?.field === "bucket" ? blocked.message : null}
       />
 
       {/* 사용자 결정(2026-10-23): 상한 밖 대상은 지급 계좌를 바꾸지 못한다 — `계좌 바꾸기` · 패널 없음(서버 updatePersonPayoutAccount 상한). */}
       {payoutView ? (
-        <PayoutAccountSection userId={id} account={payoutView} canReveal={canRevealAccount} editHref={targetOutOfCeiling ? null : editAccountHref} />
+        <PayoutAccountSection userId={id} account={payoutView} canReveal={canRevealAccount} editHref={editable ? editAccountHref : null} />
       ) : null}
-      {payoutView && !targetOutOfCeiling && query.editAccount === "1" ? (
+      {payoutView && editable && query.editAccount === "1" ? (
         <SidePanel title="지급 계좌 수정" closeHref={baseHref}>
           <PayoutAccountPanel userId={id} account={payoutView} />
         </SidePanel>
       ) : null}
 
       {/* §3 데이터 표 예외 — 발령 이력 표는 .single-column 밖, 전체 폭(260922-o2b 후속). */}
-      <PersonHistorySection userId={detail.person.id} teamOptions={teamOptions} entries={entries} canAdd={!targetOutOfCeiling} />
+      <PersonHistorySection userId={detail.person.id} teamOptions={teamOptions} entries={entries} canAdd={editable} />
     </DetailScreen>
   );
 }

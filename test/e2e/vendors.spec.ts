@@ -1155,6 +1155,43 @@ test.describe("거래처 담당자 · 서류 · 확인 표시 (07-23 SC-17 ⑦�
     }
   });
 
+  // DOM 감사 P2(0723): 확인 표시 요청이 연결에서 끊기면(thrownError) 오류 줄이 없어 눌렀는데 아무 일도 없는 것처럼 보였다.
+  test("`확인됨으로 표시` 요청이 끊기면 같은 줄에 `확인 표시 실패 · 다시 시도` · 다시 누르면 줄이 사라지고 `확인됨` / `되돌리기`가 끊기면 `되돌리기 실패 · 다시 시도`", async ({ page }) => {
+    const vendor = await freshVendor("E2E확인실패");
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const panel = panelOf(page);
+      const mark = panel.getByRole("button", { name: "확인됨으로 표시" });
+      await waitForHydration(mark);
+
+      let abortNext = true;
+      await page.route("**/admin/vendors**", async (route) => {
+        if (route.request().method() !== "POST" || !abortNext) return route.continue();
+        abortNext = false;
+        await route.abort("failed");
+      });
+      await mark.click();
+      const failure = panel.getByText("확인 표시 실패 · 다시 시도", { exact: true });
+      await expect(failure).toBeVisible();
+      await expect(panel.getByText("확인 전", { exact: true })).toBeVisible();
+      await expect(mark).not.toHaveAttribute("aria-busy", "true");
+
+      await mark.click();
+      await expect(panel.getByText("확인됨", { exact: true })).toBeVisible();
+      await expect(failure).toHaveCount(0);
+
+      // 되돌리기도 같다 — 끊기면 줄(`확인됨` + `되돌리기`)이 그대로 남고 실패 한 줄.
+      abortNext = true;
+      await panel.getByRole("button", { name: "되돌리기" }).click();
+      await expect(panel.getByText("되돌리기 실패 · 다시 시도", { exact: true })).toBeVisible();
+      await expect(panel.getByText("확인됨", { exact: true })).toBeVisible();
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+
   test("목록 상태 `확인 전` → 패널 머리 `확인 전` + `확인됨으로 표시`(저장 중 aria-busy · 두 번 눌러도 요청 1회) → `확인됨` + 같은 줄 `되돌리기`(포커스 · 알림 없음) → `되돌리기` → `확인 전` → 다시 표시 → 목록 `—`", async ({ page }) => {
     const vendor = await freshVendor("E2E확인");
     try {

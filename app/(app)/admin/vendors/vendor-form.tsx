@@ -636,18 +636,26 @@ let confirmFocus: { id: string; target: "mark" | "undo" } | null = null;
 function VendorConfirmLine({ vendorId, confirmed, canConfirm }: { vendorId: string; confirmed: boolean; canConfirm: boolean }) {
   // 같은 틱의 두 번째 누름(더블 클릭)을 막는 동기 잠금 — isExecuting은 다음 렌더에야 참이 된다.
   const lockRef = useRef(false);
-  const settle = {
+  // 연결이 끊긴 실패(thrownError)는 serverError가 없다 — 이 값이 없으면 눌렀는데 아무 일도 없는 것처럼 보였다(07-23 DOM 감사 P2).
+  const [networkFailed, setNetworkFailed] = useState<"mark" | "unmark" | null>(null);
+  const settleFor = (which: "mark" | "unmark") => ({
     onSettled: () => {
       lockRef.current = false;
     },
-    onError: () => {
+    onError: ({ error }: { error: { thrownError?: Error } }) => {
       confirmFocus = null;
+      // 되돌리기가 실패하면 아직 확인됨이다 — 줄(`확인됨` + `되돌리기` + 실패 한 줄)을 그대로 둔다.
+      if (which === "unmark") recentlyConfirmedId = vendorId;
+      if (error.thrownError) setNetworkFailed(which);
     },
-  };
-  const markState = useAction(markVendorConfirmedAction, settle);
-  const unmarkState = useAction(unmarkVendorConfirmedAction, settle);
+  });
+  const markState = useAction(markVendorConfirmedAction, settleFor("mark"));
+  const unmarkState = useAction(unmarkVendorConfirmedAction, settleFor("unmark"));
   const busy = markState.isExecuting || unmarkState.isExecuting;
-  const error = markState.result.serverError ?? unmarkState.result.serverError;
+  const error =
+    markState.result.serverError ??
+    unmarkState.result.serverError ??
+    (networkFailed === "mark" ? "확인 표시 실패 · 다시 시도" : networkFailed === "unmark" ? "되돌리기 실패 · 다시 시도" : undefined);
 
   useEffect(() => {
     const intent = confirmFocus;
@@ -660,6 +668,7 @@ function VendorConfirmLine({ vendorId, confirmed, canConfirm }: { vendorId: stri
   function run(next: boolean) {
     if (lockRef.current || busy) return;
     lockRef.current = true;
+    setNetworkFailed(null);
     recentlyConfirmedId = next ? vendorId : null;
     confirmFocus = { id: vendorId, target: next ? "undo" : "mark" };
     if (next) markState.execute({ id: vendorId });

@@ -159,6 +159,17 @@ function RoleViewScopeCell({ role, scopes }: { role: RoleRowView; scopes: RoleVi
   );
 }
 
+// 07-21 K14: 소속이 남은 계급의 보관 막힘 이유 — 행동 칸(PC)과 아래 전폭 줄(폰)이 같은 글자를 쓴다.
+function membersReason(roleId: string, memberCount: number) {
+  return (
+    <>
+      {"소속 "}
+      <Link href={`/admin/people?role=${roleId}`}>{`${memberCount}명`}</Link>
+      {" · 먼저 다른 계급으로 옮기기"}
+    </>
+  );
+}
+
 function RoleActionsCell({
   role,
   canArchive,
@@ -181,13 +192,8 @@ function RoleActionsCell({
             <RowAction
               danger
               disabled
-              disabledReason={
-                <>
-                  {"소속 "}
-                  <Link href={`/admin/people?role=${role.id}`}>{`${memberCount}명`}</Link>
-                  {" · 먼저 다른 계급으로 옮기기"}
-                </>
-              }
+              reasonTone="info"
+              disabledReason={membersReason(role.id, memberCount)}
               onClick={() => {}}
             >
               삭제
@@ -256,6 +262,11 @@ export function RolesList({
                 memberCount={memberCounts[role.id] ?? 0}
               />,
             ],
+            // 폰(<700): 좁은 동작 칸 대신 행 아래 전폭 줄에 이유를 둔다(두 줄 안 — 0721 감사 #2). PC는 CSS가 이 줄을 숨기고 행동 옆 이유를 쓴다.
+            detail:
+              !role.isSeed && !role.archivedAt && canArchive && row.editable && (memberCounts[role.id] ?? 0) > 0 ? (
+                <span className={styles.rolesReason}>{membersReason(role.id, memberCounts[role.id] ?? 0)}</span>
+              ) : undefined,
           };
         })}
       />

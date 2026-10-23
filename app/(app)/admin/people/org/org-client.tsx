@@ -78,6 +78,7 @@ function OrgArchiveAction({
       <RowAction
         danger
         disabled
+        reasonTone="info"
         disabledReason={
           <>
             {"소속 "}

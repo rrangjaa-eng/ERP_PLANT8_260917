@@ -40,6 +40,8 @@ type ButtonActionBase = ActionCommon & {
   autoFocus?: boolean;
   /** 이 행동이 가리키는 대상 글자의 id(예: 실패 파일 행의 파일명) — `aria-describedby`에 이유 id보다 앞서 이어진다. */
   describedBy?: string;
+  /** `"info"` — 거부가 아니라 「아직 할 수 없음」 안내라 이유 글자색이 `--text-muted`다(Button `reasonTone`과 같은 말, 기본은 막힘 `--status-danger`). */
+  reasonTone?: "info";
 };
 
 // Button의 UX-06 규약 — 비활성은 이유와 함께만 쓴다. 07-21(SC-09 · SC-13): 이유 줄에 `{N}명` 링크가 들어가 ReactNode.
@@ -100,7 +102,7 @@ export function RowAction(props: RowActionProps) {
   return (
     <span className={[styles.withReason, endClass].filter(Boolean).join(" ")}>
       {button}
-      <span id={reasonId} className={styles.reason}>
+      <span id={reasonId} data-ui="row-reason" className={props.reasonTone === "info" ? `${styles.reason} ${styles.reasonInfo}` : styles.reason}>
         {reason}
       </span>
     </span>

@@ -25,7 +25,7 @@
 - [x] 결정 최소: 알 수 있는 값은 기본값으로 채웠고, 시스템이 계산할 것을 묻지 않는다 — 근거: 고를 값이 하나뿐인 범위 칸은 select 없이 저장값 글자다. 소속 수는 서버가 센다(`roleMemberCounts` · `orgMemberCounts` = 서버 거부 술어 = 사람 목록 필터 술어, 통합 org-archive-members 「숫자 = 거부 = 필터 total」). `{N}명`을 누르면 옮길 사람 목록이 이미 걸러져 열린다. 권한표 딸린 칸은 시스템이 같이 켜고 끄며, 서버 `changed`가 최종이다. 사용자는 칸을 하나씩 맞추지 않는다
 - [x] 할 수 없는 선택지는 숨기거나 비활성화했다 — 근거: 상한 밖 줄은 입력 · select · `삭제`를 그리지 않는다. 사람 남은 계급 · 팀 · 본부 `삭제`는 `RowAction disabled` + 이유(aria-disabled · aria-describedby, 창을 열지 않음 — E2E roles 「소속 남은 계급 보관 막기」 · org 2건 녹색). 경합으로 뒤늦게 막히면 서버 문구 `소속 N명 · 먼저 옮기기`가 기존 실패 줄에 실린다. 권한표 저장 중 칸은 aria-busy · aria-disabled이고 누름을 무시한다(E2E 두 번 눌러도 요청 1회)
 - [x] 주 버튼 하나: 이 화면의 다음 행동이 주 버튼 하나로 보인다 — 근거: 계급 · 조직 모두 1차는 기존 `계급 추가` / `본부 추가` 하나 그대로다(shots t1-* · t23-*-1280). 권한표는 1차가 없고 `되돌리기`는 3차 글자다(shots t23-admin-permissions-linked-1280)
-- [x] 위험한 동작(삭제 등)은 떨어뜨려 두고 위험 색이다 — 근거: `삭제`는 기존 RowActions 위험 색 그대로다. 비활성 이유도 RowAction 기존 이유 색(`--status-danger`)이다 — UI-SPEC 「`--text-muted`」와 다르며, 플랜 「RowAction 그대로」를 따랐다(디자인 검토 후보로 SUMMARY에 남김)
+- [x] 위험한 동작(삭제 등)은 떨어뜨려 두고 위험 색이다 — 근거: `삭제`는 기존 RowActions 위험 색 그대로다. 비활성 이유는 감사 수정으로 `reasonTone="info"` = `--text-muted`(UI-SPEC SC-09 · SC-13)다
 - [x] 같은 말을 두 번 하지 않는다(라벨과 칸 안 글자, 태그와 줄 등) — 근거: 잠김 이유는 표 위 한 번이다(E2E가 정확히 하나를 확인). 소속 이유는 그 줄 `삭제` 옆 한 번이고, 숫자는 링크 글자 하나다. 권한표 결과 줄은 표 위 한 곳이다 — 칸 · 토스트에서 다시 말하지 않는다
 - [x] 빈 화면은 설명보다 첫 행동 버튼이 먼저다 — 근거: 계급 · 조직 빈 화면은 기존 그대로다. 필터 결과 0명이면 사람 목록 기존 EMPTY `조건에 맞는 사람이 없습니다` + `필터 지우기`다
 - [x] 키보드만으로 끝난다(표는 엑셀 키 구성) — 근거: 글자가 된 칸은 탭 정지점이 없다. 비활성 `삭제`는 aria-disabled 버튼이라 Tab으로 닿고 이유를 읽는다. `{N}명` 링크는 Tab → Enter로 사람 목록에 간다. 권한표 결과 줄 `되돌리기`는 Tab으로 닿는 버튼이다
@@ -38,3 +38,17 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: people.module.css `.ceilingHint`는 `margin: 0 0 var(--s-2)` 하나다. `.panelSelect` · `.selectInvalid`는 지웠다(ui `Select`로 대체). RowActions.module.css 폰 규칙은 `--touch-min`만 쓴다. PermissionGrid `.dirty`는 기존 토큰 `--surface-dirty`, `.resultLine`은 `--text-aux` · `--text-muted` · `--s-2` · `--s-3`(실측 13px · rgb(82, 97, 92))만 쓴다
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 실측 scrollWidth − clientWidth = 0이다(Task 1 t1-shots.log, Task 2 t3-e2e-1.log `SHOT` 줄). 폰에서는 이유 줄이 버튼 아래로 줄바꿈하고 `{N}명` 링크는 44×44다(E2E mobile-org 「행동 44」 · mobile-320-no-overflow 녹색). 판정은 독립 DOM 감사가 다시 잰다
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: /home/user/wt/logs/07-21/shots/t1-{deleg,admin}-admin-people-roles-{1280,768,375,320}.png · t23-{deleg,admin}-{admin-people-roles,admin-people-org,admin-people-role-role-pm}-{1280,768,375,320}.png · t23-admin-permissions-linked-{1280,768}.png · t3-admin-permissions-linked-{1280,768,375,320}.png(CI=true 프로덕션 빌드)
+
+## 독립 DOM 감사 수정(0721-dom-audit P2 #1~#5 · P3 #7 · Q4a)
+화면 범위 추가: ui/row-actions/, ui/permission-grid/, app/(app)/admin/people/roles/, app/(app)/admin/people/org/
+
+지금 화면(고치기 전): 이유 줄 `{N}명` 링크가 브라우저 기본 파랑 rgb(0,0,238) · 글자가 `--status-danger`(UI-SPEC은 `--text-muted`) · 계급 폰 이유 줄 세 줄(83px) · 폰 권한표 결과 줄이 표 위에만 있어 아래 칸을 켜면 화면 −4593px · 폰 칸에 저장 중 면 없음 · 결과 줄 끔 방향 `쓰기·승인도 끔`이 묶음 이름 `·`와 겹치고 없는 승인을 말함.
+
+- [x] 안내 문구: 새 문구 없음. 결과 줄만 바꿨다 — `{묶음}: {실제 바뀐 동작}도 켬/끔`. 근거: 묶음 이름 안 `·`와 구분자가 겹치지 않게 구분자를 `:`로, 동작은 서버 `changed`에서 실제 바뀐 칸 이름(보기 · 쓰기 · 승인)만 쓴다(E2E permissions-grid 「거래처, 거래처 계좌 · 서류 수정: 쓰기도 끔」)
+- [x] 결정 최소 · 할 수 없는 선택지 · 주 버튼 하나 · 위험 동작 · 같은 말 두 번 · 빈 화면: 바뀌지 않음. 근거: 요소 추가 0, 클래스 값 · 한 모양 추가만(`RowAction` `reasonTone="info"` 하나)
+- [x] 키보드: 결과 줄 `되돌리기`는 main 안 Tab 순서에서 표 앞이라 문서 처음부터 Tab이면 첫 정지점(감사 #5). 저장소 `ui/`에 되돌리기 단축키(Ctrl+Z) 선례가 없어 새 단축키를 만들지 않았다 — 근거: grep `ctrl.*z|undo` ui/ 결과가 휴일 삭제 결과 줄(`autoFocus` 되돌리기) 하나뿐
+- [x] 같은 종류의 행동은 같은 모양: 비활성 이유의 `{N}명` 링크는 다른 행동 링크와 같은 `--text-link`. 근거: RowActions.module.css `.reason a`
+- [x] §1 사용자 결정: 어기지 않음. 근거: 계급 · 코드표 폰 읽기만(2026-10-03) 그대로, 조직 폰 줄 그대로
+- [x] 새 색·서체·radius·그림자 없음 — 근거: `--text-link` · `--text-muted` · `--surface-dirty` · `--inset-error` 기존 토큰만(computed color 단언이 토큰 값과 같다 — mobile-07-21-dom-fixes.spec.ts)
+- [x] 폰 320 가로 넘침 없음 · 터치 44px — 근거: 같은 스펙 375 · 320에서 scrollWidth − clientWidth ≤ 0, `{N}명` 링크 ≥ 44×44, 이유 줄 높이 ≤ 70px(계급 폰은 행 아래 전폭 줄)
+- [x] 실제 앱 화면 측정 — 근거: CI=true 프로덕션 빌드의 E2E DOM 실측(getBoundingClientRect · getComputedStyle). 스크린샷 육안 판정은 하지 않았다

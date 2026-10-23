@@ -85,6 +85,41 @@
   white-space: nowrap;
 }
 
+/* 07-21 감사 #2: 소속이 남은 계급의 보관 막힘 이유는 PC에서 행동 옆(RowAction), 폰에서 행 아래 전폭 줄(detail)이다 — 좁은 동작 칸에서는 이유가 세 줄이 된다. */
+.rolesReason {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.rolesReason a {
+  color: var(--text-link);
+}
+
+@media (min-width: 700px) {
+  .rolesTable [data-ui="static-table-detail"] {
+    display: none;
+  }
+}
+
+@media (max-width: 699.98px) {
+  .rolesTable [data-ui="row-reason"] {
+    display: none;
+  }
+
+  /* 접힌 줄과 이유 줄 사이에 선을 더 긋지 않는다 — 선은 이유 줄 아래에만. */
+  .rolesTable tr:has(+ [data-ui="static-table-detail"]) > td {
+    border-bottom: 0;
+  }
+
+  .rolesReason a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
 /* select · 목록 안 이름 입력 — 같은 패널 입력과 같은 --field-h(D14 · ui/select와 같은 꼴). */
 .select {
   box-sizing: border-box;

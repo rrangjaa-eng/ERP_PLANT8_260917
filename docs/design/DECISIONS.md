@@ -2296,9 +2296,21 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정자**: 사용자 결정 카드 2026-10-23 01:12 KST 「상한 밖 사람 지급 계좌 변경도 상한 검사」. 07-17 델타 독립 검토 P3-5 · P3-3.
 **버린 대안**: 지급 게이트만 보기(지급처 바꿔치기 열림) · 관리자 계좌만 따로 막기(상한과 다른 두 번째 규칙).
 **범위**: `domain/people/account.ts`, `test/integration/people-account.test.ts`. 화면 토큰 변경 0.
+
+---
+
 ## 2026-10-23 — 칸 오류 `희망일 지남`은 원인만 (07-16 · 델타 검토 P3-4)
 
 **결정**: 제출 때 희망 지급일 칸에 뜨는 오류 `희망일 지남`은 `원인 · 다음 행동` 꼴(SYSTEM.md §7-7 다섯 상태의 ERROR, 약 492줄)을 따르지 않고 원인만 보인다 — SYSTEM.md §7-7의 칸 오류 꼴에 대한 예외이며 SYSTEM.md는 고치지 않는다. 날짜를 바꾸면 칸 오류가 지워져 다시 고르기로 이어진다.
 **이유**: 사용자가 「희망 지급일이 지난 지출결의도 다른 칸은 저장되게 할까요?」에서 A를 골랐고 그 문구 그대로 쓴다(06-21 낱말).
 **결정자**: 사용자 카드 10/23 01:12 KST (옵션 A).
 **범위**: `domain/expenses/gate.ts` `REQUESTED_DATE_PASSED`, `app/(app)/expenses/[id]/expense-form.tsx` 날짜 칸 오류. 새 색 · 서체 · radius 0.
+
+---
+
+## 2026-10-23 — 07-21 독립 DOM 감사 수정: 비활성 이유 어조 · 폰 결과 줄 · 폰 칸 면 (0721-dom-audit P2 · P3 #7 · Q4a)
+
+**결정**: ① `RowAction`에 `reasonTone="info"`를 더한다(Button `reasonTone`과 같은 말) — 거부가 아니라 「아직 할 수 없음」인 비활성 이유는 `--text-muted`, 기본은 막힘 `--status-danger` 그대로. 계급 · 조직의 `소속 {N}명 · …` 이유만 info다(UI-SPEC SC-09 · SC-13, SYSTEM.md 외부 수령자 막힘 이유의 손대지 않은 막힘 = muted와 같은 나눔). ② 이유 안 링크는 모든 폭에서 `--text-link`(브라우저 기본 파랑 제거). 계급 표의 소속 이유는 폰(<700)에서 좁은 동작 칸(320에서 글자 폭 약 83)이 세 줄을 만들어, 행 아래 전폭 줄(`StaticTable` `detail`)로 옮긴다(PC는 그 줄을 CSS로 숨기고 행동 옆 이유 그대로, 폰은 행동 옆 이유를 숨김 — `aria-describedby`는 그대로 행동 옆 이유 글자를 가리킨다). 동작 칸 최소 폭을 늘리는 길은 다른 열(이름)을 눌러 행 줄 수를 깨 버려 쓰지 않았다. ③ 폰(<700) 권한표 결과 줄 `.resultLine`은 상단 바 아래 sticky(`top: var(--bar-h)`)라 아래쪽 칸을 켠 뒤에도 `되돌리기`가 화면 안에 선다 — 제출 줄 sticky와 같은 방식, PC는 그대로. ④ 폰 칸을 `.mobileCell`로 감싸 PC `td`와 같은 저장 중 면 `--surface-dirty` · 실패 표시 `--inset-error`를 준다. ⑤ 결과 줄 문구는 `{묶음}: {실제 바뀐 동작}도 켬/끔`(묶음 이름 안 `·`와 구분자가 겹치던 `쓰기·승인도 끔` 제거, 서버 `changed`로 실제 바뀐 동작 이름만).
+**새 값**: 새 색 · 서체 · radius 없음(`--text-link` · `--text-muted` · `--surface-dirty` · `--inset-error` · `--bar-h` 기존 토큰). 새 컴포넌트 · 클래스 이름은 CSS 모듈 안 `.reasonInfo` · `.mobileCell`뿐.
+**이유**: 독립 DOM 감사(0721-dom-audit) P2 #1~#4 · P3 #7 · Q4a. #5(되돌리기 단축키)는 `ui/`에 undo 단축키 선례가 없어 새 패턴을 만들지 않고 유지(main 첫 정지점 — 점검표에 기록).
+**범위**: `ui/row-actions/`, `ui/permission-grid/`, `app/(app)/admin/people/{roles,org}/*-client.tsx`, `app/(app)/admin/people/people.module.css`, `test/e2e/mobile-07-21-dom-fixes.spec.ts`. SYSTEM.md 본문 변경 없음.

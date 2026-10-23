@@ -955,6 +955,36 @@ test.describe("거래처 검색 · 파일 받기 (07-20 SC-16)", () => {
       await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
     }
   });
+
+  // 07-20 CI e2e 실패(PR #285): `파일 받기`는 서버 렌더에는 그려지고(useEditableWidth 서버 스냅숏 = 참) 1024 미만에서는 수화 뒤에 사라졌다.
+  // 700에서는 그 버튼 때문에 필터 줄이 한 줄 더 접혔다가 수화 뒤 48px 위로 당겨져, 느린 수화 중에 잰 행 동작 상자가 어긋났다.
+  // 수화 전(스크립트 차단) 화면에서도 1024 미만에는 버튼이 보이지 않아야 한다 — 표 위치가 수화 전후로 같다.
+  for (const width of [700, 768]) {
+    test(`${width}: 수화 전 서버 렌더에도 \`파일 받기\`가 보이지 않고 표 위치가 수화 뒤와 같다 (레이아웃 이동 없음)`, async ({ page }) => {
+      const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E이동-${randomUUID().slice(0, 8)}`, normalizedName: `e2e이동-${randomUUID()}` });
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        const tableTop = (target: import("@playwright/test").Page) =>
+          target.locator("table").evaluate((element) => element.getBoundingClientRect().top);
+
+        const ssr = await page.context().newPage();
+        await ssr.setViewportSize({ width, height: 800 });
+        await ssr.route("**/*", (route) => (route.request().resourceType() === "script" ? route.abort() : route.continue()));
+        await ssr.goto("/admin/vendors");
+        await expect(ssr.getByRole("button", { name: "파일 받기" })).toBeHidden();
+        const before = await tableTop(ssr);
+        await ssr.close();
+
+        await page.goto("/admin/vendors");
+        await waitForHydration(page.getByRole("searchbox", { name: "검색" }));
+        await expect(page.getByRole("button", { name: "파일 받기" })).toHaveCount(0);
+        expect(Math.abs((await tableTop(page)) - before), `${width}px 수화 전후 표 위치 차`).toBeLessThanOrEqual(0.5);
+      } finally {
+        await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+      }
+    });
+  }
 });
 
 // 07-20 게이트(2026-10-23): 패널 Form.Field + Select 줄 아래 간격(design-review P2) · 계좌 권한 없는 편집자의 등록 계좌 칸(사용자 결정).
@@ -1000,9 +1030,11 @@ test.describe("거래처 패널 select 줄 간격 · 등록 계좌 권한 (07-20
 
   test("`vendors.account` 없는 편집자의 등록 패널에는 계좌 세 칸이 없고, 사용자 정의 select 줄 아래도 16px다 (375 · 320 · 768 · 1280)", async ({ page }) => {
     const editor = await createE2EVendorEditor();
+    // 보관해도 라벨은 남는다 — 같은 DB로 다시 돌릴 때 이름이 겹치지 않게 접미어를 붙인다.
+    const stamp = randomUUID().slice(0, 8);
     try {
-      const select = await createE2EFieldDefinition({ label: `${PREFIX}계약`, type: "select", required: false, options: ["갑", "을"], sortOrder: 0, onlyRoleId: editor.roleId });
-      await createE2EFieldDefinition({ label: `${PREFIX}메모`, type: "text", required: false, sortOrder: 1, onlyRoleId: editor.roleId });
+      const select = await createE2EFieldDefinition({ label: `${PREFIX}계약-${stamp}`, type: "select", required: false, options: ["갑", "을"], sortOrder: 0, onlyRoleId: editor.roleId });
+      await createE2EFieldDefinition({ label: `${PREFIX}메모-${stamp}`, type: "text", required: false, sortOrder: 1, onlyRoleId: editor.roleId });
       await login(page, editor);
       for (const width of WIDTHS) {
         await page.setViewportSize({ width, height: 900 });

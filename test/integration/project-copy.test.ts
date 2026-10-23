@@ -373,7 +373,7 @@ describe("등록의 총 매출 예상가 · 기간 검증(04-15 Task 2, 실제 P
       "preEstimateFxRate",
       "환율 0 이하 · 환율 수정",
     );
-    await expectRejected(pm, { ...base(), preEstimate: { currency: "KRW", amount: -1, fxRate: 1 } }, "preEstimateAmount", "총 매출 예상가는 0 이상 · 금액 수정");
+    await expectRejected(pm, { ...base(), preEstimate: { currency: "KRW", amount: -1, fxRate: 1 } }, "preEstimateAmount", "PO 금액은 0 이상 · 금액 수정");
     await expectRejected(
       pm,
       { ...base(), preEstimate: { currency: "KRW", amount: 1_000_000_000_000, fxRate: 1 } },

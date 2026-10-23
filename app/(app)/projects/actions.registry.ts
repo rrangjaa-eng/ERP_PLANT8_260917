@@ -104,3 +104,8 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 07-22(W3 · W7 · SC-20): 프로젝트 서류 붙이기 시작(권리 = 정보 면 저장 권리 — domain) · 발행 줄 계산서 붙이기 시작 · 계산서 파일 읽기(05 증빙 DTO).
+registerAction({ name: "requestProjectDocumentUploadAction", menu: "projects", action: "write", dtoName: null });
+registerAction({ name: "requestInvoiceFileUploadAction", menu: "projects.revenue", action: "write", dtoName: null });
+registerAction({ name: "getInvoiceFileAction", menu: "projects", action: "view", dtoName: "evidenceFile" });

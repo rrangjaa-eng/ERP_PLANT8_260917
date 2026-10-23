@@ -14,7 +14,7 @@ export function validatePreEstimateChange(input: {
   if (!Number.isFinite(input.amount)) {
     errors.push({ field: "amount", reason: "숫자 형식 오류 · 12,400,000처럼" });
   } else if (input.amount < 0) {
-    errors.push({ field: "amount", reason: "총 매출 예상가는 0 이상 · 금액 수정" });
+    errors.push({ field: "amount", reason: "PO 금액은 0 이상 · 금액 수정" });
   }
   if (input.currency !== "KRW") {
     if (input.fxRate === null || !Number.isFinite(input.fxRate)) {

@@ -2,6 +2,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { addBusinessDays, isBusinessDay, type HolidayLookup } from "@/domain/holidays/business-day";
 import { ensureHolidayCandidates } from "@/domain/holidays/candidates";
 import { findHolidayDates } from "@/repositories/holidays";
+import type { DbOrTx } from "@/repositories/document-counters";
 
 // 계산이 읽지 않은 해에 닿았다 — 그 해만 보장·읽고 처음부터 다시 계산한다.
 export class HolidayYearNotLoadedError extends Error {
@@ -21,6 +22,17 @@ export async function loadHolidayLookup(years: number[]): Promise<HolidayLookup>
   for (const year of years) await ensureHolidayCandidates(year);
   const byYear = new Map(years.map((year) => [year, new Set<string>()]));
   for (const date of await findHolidayDates(SYSTEM_VIEWER, years)) byYear.get(Number(date.slice(0, 4)))?.add(date);
+  return (year) => {
+    const dates = byYear.get(year);
+    if (!dates) throw new HolidayYearNotLoadedError(year);
+    return dates;
+  };
+}
+
+// 07-22 — 이미 보장된 해를 주어진 tx로 읽기만 한다(후보 보장 쓰기 없음). 알림 tick 잠금 트랜잭션 안 판정용 — tick은 잠금 전에 올해 · 다음 해를 보장한다.
+export async function readHolidayLookup(years: number[], tx: DbOrTx): Promise<HolidayLookup> {
+  const byYear = new Map(years.map((year) => [year, new Set<string>()]));
+  for (const date of await findHolidayDates(SYSTEM_VIEWER, years, tx)) byYear.get(Number(date.slice(0, 4)))?.add(date);
   return (year) => {
     const dates = byYear.get(year);
     if (!dates) throw new HolidayYearNotLoadedError(year);

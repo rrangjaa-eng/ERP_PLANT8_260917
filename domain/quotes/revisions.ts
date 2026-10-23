@@ -144,7 +144,21 @@ export function approvedOnOf(at: Date | null): string | null {
   return at === null ? null : kstDateOf(at);
 }
 
-export type CustomerApprovalInput = { approvedOn: string; seenTotalKrw: number; contentToken: string };
+// 07-18(W6 · SC-19) — 승인 근거(발주서 · 이메일 · 구두)는 새 승인에서 필수이고 메모(500자 이하)는 선택이다. 끄면 둘 다 비운다.
+// 근거가 NULL인 옛 승인은 그대로 읽힌다(마이그레이션 없음).
+export const CUSTOMER_APPROVAL_BASES = ["purchase_order", "email", "verbal"] as const;
+export type CustomerApprovalBasis = (typeof CUSTOMER_APPROVAL_BASES)[number];
+export const APPROVAL_MEMO_MAX = 500;
+const APPROVAL_BASIS_REQUIRED = "근거 선택";
+const APPROVAL_MEMO_TOO_LONG = `메모 ${APPROVAL_MEMO_MAX}자 이하 · 메모 줄이기`;
+
+export type CustomerApprovalInput = {
+  approvedOn: string;
+  seenTotalKrw: number;
+  contentToken: string;
+  approvalBasis: CustomerApprovalBasis;
+  approvalMemo?: string;
+};
 
 export type SetCustomerApprovalDeps = {
   can: typeof defaultCan;
@@ -216,8 +230,18 @@ export async function setCustomerApproval(
     const decision = await gate(project, APPROVAL_TOGGLE_RULE, ctx);
     if (!decision.allowed) denyWrite(viewer, APPROVAL_TOGGLE_RULE, ids, new GateBlockedError(decision.reason));
     if (input && input.approvedOn > kstToday(now())) denyWrite(viewer, APPROVAL_TOGGLE_RULE, ids, new UserFacingError(APPROVAL_DATE_IN_FUTURE));
+    // 근거는 화면 밖 호출에서도 비면 거부한다(타입이 막는 호출이지만 마지막 방어다). 메모는 앞뒤 공백을 떼고 비면 NULL.
+    if (input && !CUSTOMER_APPROVAL_BASES.some((basis) => basis === input.approvalBasis)) {
+      denyWrite(viewer, APPROVAL_TOGGLE_RULE, ids, new UserFacingError(APPROVAL_BASIS_REQUIRED));
+    }
+    const memo = input?.approvalMemo?.trim() || null;
+    if (memo !== null && memo.length > APPROVAL_MEMO_MAX) denyWrite(viewer, APPROVAL_TOGGLE_RULE, ids, new UserFacingError(APPROVAL_MEMO_TOO_LONG));
 
-    const columns = customerApprovalColumns(viewer.id, input?.approvedOn ?? null);
+    const columns = {
+      ...customerApprovalColumns(viewer.id, input?.approvedOn ?? null),
+      customerApprovalBasis: input?.approvalBasis ?? null,
+      customerApprovalMemo: memo,
+    };
     await repoSetRevisionApproval(viewer, revisionId, columns, tx);
     // 승인 DTO(04-24 부제)의 승인일은 저장한 순간에서 되읽은 KST 날짜다.
     const approvedOn = approvedOnOf(columns.customerApprovedAt);
@@ -228,7 +252,10 @@ export async function setCustomerApproval(
         actionType: "document_update",
         entity: REVISION_ENTITY,
         entityId: revisionId,
-        detail: approvedOn === null ? { kind: "customer_approval", revisionSeq: seq, cleared: true } : { kind: "customer_approval", revisionSeq: seq, approvedOn },
+        detail:
+          approvedOn === null
+            ? { kind: "customer_approval", revisionSeq: seq, cleared: true }
+            : { kind: "customer_approval", revisionSeq: seq, approvedOn, approvalBasis: columns.customerApprovalBasis },
       },
       { tx },
     );
@@ -282,6 +309,9 @@ export type RevisionSummaryDto = {
   statusWord: "현재" | "승인" | "";
   approvedOn: string | null;
   approvedBy: string | null;
+  // 07-18(W6) — 승인 근거 · 메모. 옛 승인(근거 NULL)은 둘 다 null이다.
+  approvalBasis: CustomerApprovalBasis | null;
+  approvalMemo: string | null;
   contentToken: string;
   // 06-16(D-56) — 이 차수의 승인 증빙 파일 수(살아 있는 파일). 합계를 볼 수 있는 사람(quote.amount)에게만 싣는다.
   approvalEvidenceCount: number;
@@ -299,6 +329,8 @@ export const REVISION_SUMMARY_DTO_SPEC: DtoSpec<RevisionSummaryProjectable, Revi
     { key: "statusWord", from: "statusWord", infoItem: "project.value" },
     { key: "approvedOn", from: "approvedOn", infoItem: "project.value" },
     { key: "approvedBy", from: "approvedBy", infoItem: "project.value" },
+    { key: "approvalBasis", from: "approvalBasis", infoItem: "project.value" },
+    { key: "approvalMemo", from: "approvalMemo", infoItem: "project.value" },
     { key: "contentToken", from: "contentToken", infoItem: "project.value" },
     { key: "approvalEvidenceCount", from: "approvalEvidenceCount", infoItem: "quote.amount" },
   ],
@@ -319,6 +351,8 @@ function toSummaryProjectable(row: RevisionSummaryRow, latestSeq: number, eviden
     statusWord: revisionStatusWord({ seq: row.seq, latestSeq, approved: row.customerApprovedAt !== null }),
     approvedOn: approvedOnOf(row.customerApprovedAt),
     approvedBy: row.customerApprovedBy,
+    approvalBasis: row.customerApprovalBasis,
+    approvalMemo: row.customerApprovalMemo,
     contentToken: row.contentToken,
     approvalEvidenceCount: evidenceCounts.get(row.id) ?? 0,
   };

@@ -50,6 +50,7 @@ export const ROW_SCOPE_TAKERS: readonly string[] = [
   "rowScopeCondition",
   "projectFilterConditions",
   "findProjectInScope",
+  "getProjectProfitRow",
   "listProjectIdsInScope",
   "listProjectsPage",
   "aggregateProjects",

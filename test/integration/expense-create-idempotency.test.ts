@@ -127,7 +127,7 @@ describe("여러 줄", () => {
     const fx = await setupExpenseProject();
     const second = await createRevisionFromCurrent(fx.pm, { projectId: fx.projectId, fromRevisionId: fx.revisionId });
     const basis = await approvalBasis(SYSTEM_VIEWER, second.revisionId);
-    await setCustomerApproval(fx.pm, second.revisionId, { approvedOn: "2026-09-20", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+    await setCustomerApproval(fx.pm, second.revisionId, { approvalBasis: "verbal", approvedOn: "2026-09-20", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
     const currentStage = (await linesOf(second.revisionId)).find((line) => line.itemName === "무대 제작")?.id ?? "";
 
     const result = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor, currentStage] });

@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { createRevisionAction, setCustomerApprovalAction } from "../actions";
 import { Button } from "@/ui/button/Button";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Form } from "@/ui/form/Form";
+import { Select } from "@/ui/select/Select";
+import { TextField } from "@/ui/input/TextField";
 import { EMPTY_ERROR, FORMAT_ERROR, isCalendarDate } from "@/domain/projects/period";
-import { formatKrw } from "@/lib/format-number";
+import { PanelForm } from "@/ui/side-panel/PanelForm";
+import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { unsavedEditsReason } from "./unsaved-edits";
 import styles from "./project-detail.module.css";
 
@@ -99,38 +102,59 @@ export function NewRevisionDialog({
   );
 }
 
-// D-56 · ENG-D9 · CEO-D19 — 부제 옆 고객 승인 줄. 글자(`고객 승인 {날짜} {이름}`)·렌더 조건·기준값은 서버가 만든다.
+// D-56 · ENG-D9 · CEO-D19 · 07-18(W6) — 정보 면 `고객 승인` 섹션의 승인 상태와 행동. 글자 · 렌더 조건 · 기준값은 서버가 만든다.
+export type CustomerApprovalBasisKey = "purchase_order" | "email" | "verbal";
+const BASIS_LABEL: Record<CustomerApprovalBasisKey, string> = { purchase_order: "발주서", email: "이메일", verbal: "구두" };
+const BASIS_OPTIONS = [
+  { value: "", label: "근거 선택" },
+  { value: "purchase_order", label: BASIS_LABEL.purchase_order },
+  { value: "email", label: BASIS_LABEL.email },
+  { value: "verbal", label: BASIS_LABEL.verbal },
+];
+const BASIS_REQUIRED = "근거 선택";
+// 서버 거부 이유가 ` · 새로 고침`으로 끝나면 그 꼬리는 글자가 아니라 다음 한 수 3차 버튼이다(ConfirmDialog와 같은 규칙 — §7-17 ERROR).
+const REFRESH_TAIL = " · 새로 고침";
+const MEMO_MAX = 500;
+export const CUSTOMER_APPROVAL_TRIGGER_ID = "customer-approval-trigger";
+
 export type CustomerApprovalProps = {
   revisionId: string;
   seq: number;
-  /** 서버가 만든 `고객 승인 {KST 날짜} {승인자}` — 승인 전 null. */
-  approvalText: string | null;
   approvedOn: string | null;
-  /** 담당 PM + 쓰기 + 완료 아님(서버 판정) — 승인 전 「고객 승인 표시」, 승인 뒤 연결 문서가 없으면 「승인 표시 취소」. */
+  approverName: string | null;
+  /** 07-18 — 승인 근거 · 메모. 옛 승인(근거 NULL)은 둘 다 null. */
+  basis: CustomerApprovalBasisKey | null;
+  memo: string | null;
+  /** 근거가 발주서인데 발주서 서류가 없다 — 경고 글자만, 저장은 막지 않는다. */
+  purchaseOrderMissing: boolean;
+  /** 담당 PM + 쓰기 + 완료 아님(서버 판정) — 승인 전 「승인 표시」, 승인 뒤 연결 문서가 없으면 「승인 표시 취소」. */
   control: { kind: "approve"; totalKrw: number; contentToken: string; todayKst: string } | { kind: "cancel" } | null;
 };
 
-export function CustomerApprovalLine({
-  className,
-  dirtyCount,
-  ...props
-}: CustomerApprovalProps & { className?: string; dirtyCount: number }) {
-  if (!props.approvalText && !props.control) return null;
+export function CustomerApprovalItems({ dirtyCount, ...props }: CustomerApprovalProps & { dirtyCount: number }) {
+  const approved = props.approvedOn !== null;
   const control = props.control;
-  // 다이얼로그는 문단 밖에 둔다(대화상자 요소는 문단 안에 둘 수 없다) — 이 줄에는 글자와 트리거만.
-  const line = (trigger: ReactNode) => (
-    <p className={className}>
-      {props.approvalText ? <span>{props.approvalText}</span> : null}
-      {trigger}
-    </p>
+  return (
+    <>
+      <p className={styles.infoItem}>
+        <span className={styles.infoLabel}>상태</span>
+        {approved ? (
+          <span className={styles.infoValue}>{props.basis ? `승인됨 · ${BASIS_LABEL[props.basis]}` : "승인됨"}</span>
+        ) : (
+          <span className={styles.infoNone}>승인 전</span>
+        )}
+        {approved && props.purchaseOrderMissing ? <span className={styles.infoWarn}>발주서 파일 없음</span> : null}
+      </p>
+      {approved ? <p className={styles.infoAux}>{[props.approvedOn, props.approverName].filter(Boolean).join(" ")}</p> : null}
+      {approved && props.memo ? <p className={styles.infoAux}>{props.memo}</p> : null}
+      {control?.kind === "approve" ? (
+        <ApprovalPanel key={`approve-${props.revisionId}`} revisionId={props.revisionId} dirtyCount={dirtyCount} {...control} />
+      ) : null}
+      {control?.kind === "cancel" ? (
+        <ApprovalCancelDialog key={`cancel-${props.revisionId}`} revisionId={props.revisionId} seq={props.seq} approvedOn={props.approvedOn ?? ""} />
+      ) : null}
+    </>
   );
-  if (control?.kind === "approve") {
-    return <ApprovalDialog key={`approve-${props.revisionId}`} line={line} revisionId={props.revisionId} seq={props.seq} dirtyCount={dirtyCount} {...control} />;
-  }
-  if (control?.kind === "cancel") {
-    return <ApprovalCancelDialog key={`cancel-${props.revisionId}`} line={line} revisionId={props.revisionId} seq={props.seq} approvedOn={props.approvedOn ?? ""} />;
-  }
-  return line(null);
 }
 
 // 승인·취소 성공 뒤 새로 고침으로 트리거(이 컴포넌트)가 사라지면 포커스를 머리 줄 제목으로(S16 — status-change.tsx와 같다).
@@ -145,19 +169,16 @@ function useFocusTitleAfterSuccess() {
   return succeededRef;
 }
 
-// UI-SPEC rev 5 Copywriting 「확인 — 고객 승인 표시」 · S16 — 확인 근거 칸 하나(승인일, 개정 ⑭ · DR-20), 결과 줄 없음.
-function ApprovalDialog({
-  line,
+// 07-18(W6 · SC-19) — 승인 표시는 근거(필수) + 승인일(기본 오늘 KST, 개정 ⑭ · DR-20) + 메모(선택)가 더해져 입력 칸이 셋이라 옆 패널이다.
+// 1차 `승인 표시`, 2차 `취소 Esc`. 승인일 칸은 main의 확인 창에서 옮겨 온 그대로다(비었거나 형식이 틀리면 1차가 막히고 이유 한 줄).
+function ApprovalPanel({
   revisionId,
-  seq,
   totalKrw,
   contentToken,
   todayKst,
   dirtyCount,
 }: {
-  line: (trigger: ReactNode) => ReactNode;
   revisionId: string;
-  seq: number;
   totalKrw: number;
   contentToken: string;
   todayKst: string;
@@ -165,102 +186,176 @@ function ApprovalDialog({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [approvedOn, setApprovedOn] = useState(todayKst);
   const [rejection, setRejection] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const succeededRef = useFocusTitleAfterSuccess();
-  const fieldId = useId();
-  const errorId = `${fieldId}-error`;
 
   const { execute, isExecuting } = useAction(setCustomerApprovalAction, {
     onSettled: () => {
       submittingRef.current = false;
     },
     onSuccess: () => {
-      // 토스트 없음 — 결과는 부제(승인일)에 보인다.
+      // 토스트 없음 — 결과는 면의 `승인됨 · {근거}`에 보인다.
       succeededRef.current = true;
       setOpen(false);
       router.refresh();
     },
     onError: ({ error }) => {
-      // 서버 문자열 그대로(빈 차수 · 견적이 바뀜 · 미래 날짜) — 다이얼로그는 열린 채.
+      // 서버 문자열 그대로(빈 차수 · 견적이 바뀜 · 근거 · 메모) — 패널은 열린 채.
       setRejection(error.serverError ?? REQUEST_FAILED);
     },
   });
 
-  const unsaved = unsavedEditsReason(dirtyCount);
-  const dateEmpty = approvedOn === "";
-  const formatInvalid = !dateEmpty && !isCalendarDate(approvedOn);
-  const dateInvalid = dateEmpty || formatInvalid;
-
-  function submit() {
-    if (submittingRef.current || unsaved || dateInvalid) return;
+  function submit(basis: CustomerApprovalBasisKey, memo: string, approvedOn: string) {
+    if (submittingRef.current) return;
     submittingRef.current = true;
     succeededRef.current = false;
     setRejection(null);
-    // ENG-D9 — PM이 본 기준값(요약 행의 합계·내용 토큰)을 그대로 싣는다.
-    execute({ revisionId, approval: { approvedOn, seenTotalKrw: totalKrw, contentToken } });
+    // ENG-D9 — PM이 본 기준값(요약 행의 합계 · 내용 토큰)을 그대로 싣는다.
+    execute({ revisionId, approval: { approvedOn, seenTotalKrw: totalKrw, contentToken, approvalBasis: basis, approvalMemo: memo } });
   }
 
   return (
     <>
-      {line(
+      <p className={styles.infoItem}>
         <Button
+          id={CUSTOMER_APPROVAL_TRIGGER_ID}
           type="button"
           variant="tertiary"
           onClick={() => {
-            setApprovedOn(todayKst);
             setRejection(null);
             setOpen(true);
           }}
         >
-          고객 승인 표시
-        </Button>,
-      )}
-      <ConfirmDialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title="고객 승인 표시"
-        subtitle={`상세 견적 ${seq}차 · ${formatKrw(totalKrw)}`}
-        evidenceField={
-          <Form.Field id={fieldId} label="승인일" width="short">
-            <input
-              id={fieldId}
-              type="date"
-              autoComplete="off"
-              value={approvedOn}
-              aria-invalid={dateInvalid ? "true" : undefined}
-              aria-describedby={dateInvalid ? errorId : undefined}
-              className={styles.periodInput}
-              onChange={(event) => {
-                setApprovedOn(event.target.value);
-                setRejection(null);
-              }}
-            />
-            {dateInvalid ? <Form.Error id={errorId}>{dateEmpty ? EMPTY_ERROR : FORMAT_ERROR}</Form.Error> : null}
-          </Form.Field>
-        }
-        primary={{
-          label: "고객 승인 표시",
-          onConfirm: submit,
-          pending: isExecuting,
-          // 막힘 순서: 미저장 편집(DR-6) → 날짜 칸(비었거나 형식이 틀림, 칸 아래 한 자리) → 서버 거부.
-          disabledReason: unsaved ?? (dateInvalid ? undefined : (rejection ?? undefined)),
-          blockedBy: dateInvalid ? errorId : undefined,
-        }}
-      />
+          승인 표시
+        </Button>
+      </p>
+      {open ? (
+        <SidePanel title="고객 승인 표시" onClose={() => setOpen(false)}>
+          <ApprovalPanelForm
+            todayKst={todayKst}
+            pending={isExecuting}
+            unsaved={unsavedEditsReason(dirtyCount) ?? undefined}
+            rejection={rejection}
+            onSubmit={submit}
+            onEdit={() => setRejection(null)}
+            onRefresh={() => {
+              setOpen(false);
+              router.refresh();
+            }}
+          />
+        </SidePanel>
+      ) : null}
     </>
+  );
+}
+
+function ApprovalPanelForm({
+  todayKst,
+  pending,
+  unsaved,
+  rejection,
+  onSubmit,
+  onRefresh,
+  onEdit,
+}: {
+  todayKst: string;
+  pending: boolean;
+  unsaved: string | undefined;
+  rejection: string | null;
+  onSubmit: (basis: CustomerApprovalBasisKey, memo: string, approvedOn: string) => void;
+  onRefresh: () => void;
+  /** 칸을 고치면 지난 서버 거부 이유를 지운다. */
+  onEdit: () => void;
+}) {
+  const [basis, setBasis] = useState<string>("purchase_order");
+  const [basisError, setBasisError] = useState<string | null>(null);
+  const [approvedOn, setApprovedOn] = useState(todayKst);
+  const reasonId = useId();
+  const dateEmpty = approvedOn === "";
+  const dateError = dateEmpty ? EMPTY_ERROR : isCalendarDate(approvedOn) ? null : FORMAT_ERROR;
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (unsaved || dateError) return;
+    const memoValue = new FormData(event.currentTarget).get("approvalMemo");
+    const memo = typeof memoValue === "string" ? memoValue : "";
+    if (basis !== "purchase_order" && basis !== "email" && basis !== "verbal") {
+      setBasisError(BASIS_REQUIRED);
+      document.getElementById("approval-basis")?.focus();
+      return;
+    }
+    onSubmit(basis, memo, approvedOn);
+  }
+
+  const refreshRejection = rejection?.endsWith(REFRESH_TAIL) ?? false;
+  const rejectionNode =
+    rejection === null ? undefined : refreshRejection ? (
+      <>
+        <span>{rejection.slice(0, -REFRESH_TAIL.length)}</span>
+        <Button type="button" variant="tertiary" onClick={onRefresh}>
+          새로 고침
+        </Button>
+      </>
+    ) : (
+      rejection
+    );
+
+  return (
+    <PanelForm
+      id="customer-approval-form"
+      label="승인 표시"
+      intent="edit"
+      onSubmit={handleSubmit}
+      pending={pending}
+      reasonId={reasonId}
+      // 막힘 순서: 미저장 편집(DR-6) → 승인일 칸(비었거나 형식이 틀림, 이 이유 줄 한 곳) → 서버 거부. 근거 오류는 칸 아래 한 곳.
+      blockedReason={unsaved ?? dateError ?? undefined}
+      reason={dateError ? undefined : rejectionNode}
+    >
+      <Form.Field id="approval-basis" label="근거" width="select">
+        <Select
+          id="approval-basis"
+          name="approvalBasis"
+          hideEmptyOption
+          value={basis}
+          options={BASIS_OPTIONS}
+          aria-required="true"
+          error={basisError ?? undefined}
+          onChange={(event) => {
+            setBasis(event.target.value);
+            setBasisError(null);
+            onEdit();
+          }}
+        />
+      </Form.Field>
+      <Form.Field id="approval-date" label="승인일" width="short">
+        <input
+          id="approval-date"
+          name="approvedOn"
+          type="date"
+          autoComplete="off"
+          value={approvedOn}
+          aria-invalid={dateError ? "true" : undefined}
+          aria-describedby={dateError ? reasonId : undefined}
+          className={styles.periodInput}
+          onChange={(event) => {
+            setApprovedOn(event.target.value);
+            onEdit();
+          }}
+        />
+      </Form.Field>
+      <TextField id="approval-memo" name="approvalMemo" label="메모" maxLength={MEMO_MAX} autoComplete="off" />
+    </PanelForm>
   );
 }
 
 // UI-SPEC rev 5 Copywriting 「Destructive — 고객 승인 표시 취소」 — 2차 `닫기 Esc`는 1차의 「취소」에서 파생된다.
 function ApprovalCancelDialog({
-  line,
   revisionId,
   seq,
   approvedOn,
 }: {
-  line: (trigger: ReactNode) => ReactNode;
   revisionId: string;
   seq: number;
   approvedOn: string;
@@ -295,8 +390,9 @@ function ApprovalCancelDialog({
 
   return (
     <>
-      {line(
+      <p className={styles.infoItem}>
         <Button
+          id={CUSTOMER_APPROVAL_TRIGGER_ID}
           type="button"
           variant="tertiary"
           onClick={() => {
@@ -305,8 +401,8 @@ function ApprovalCancelDialog({
           }}
         >
           승인 표시 취소
-        </Button>,
-      )}
+        </Button>
+      </p>
       <ConfirmDialog
         open={open}
         onClose={() => setOpen(false)}

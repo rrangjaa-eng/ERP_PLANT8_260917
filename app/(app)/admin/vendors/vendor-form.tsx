@@ -377,22 +377,25 @@ export function VendorForm({
         </div>
       ) : null}
       <TextField id="name" name="name" label="이름" required defaultValue={editing?.name} error={nameError} />
-      <Form.Field id="kind" label="갈래">
-        <Select
-          id="kind"
-          name="kind"
-          options={KIND_OPTIONS}
-          hideEmptyOption
-          defaultValue={defaultKind}
-          error={kindError}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (!isVendorKind(next)) return;
-            setKind(next);
-            if (!servesSide(next, "supplier")) setTermDays("");
-          }}
-        />
-      </Form.Field>
+      {/* 게이트 P2: Form.Field 줄은 아래 간격이 없다(TextField 줄만 16px) — card-form.tsx `.field` 감싸개 결로 칸 사이 --s-4를 맞춘다. */}
+      <div className={styles.field}>
+        <Form.Field id="kind" label="갈래">
+          <Select
+            id="kind"
+            name="kind"
+            options={KIND_OPTIONS}
+            hideEmptyOption
+            defaultValue={defaultKind}
+            error={kindError}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (!isVendorKind(next)) return;
+              setKind(next);
+              if (!servesSide(next, "supplier")) setTermDays("");
+            }}
+          />
+        </Form.Field>
+      </div>
       <div className={styles.businessNoGroup}>
         <TextField
           id="businessNo"
@@ -444,14 +447,16 @@ export function VendorForm({
         </div>
       ) : null}
 
-      <Form.Field id="defaultEvidenceType" label="기본 증빙 종류">
-        <Select
-          id="defaultEvidenceType"
-          name="defaultEvidenceType"
-          options={evidenceTypes}
-          defaultValue={editing?.defaultEvidenceType ?? ""}
-        />
-      </Form.Field>
+      <div className={styles.field}>
+        <Form.Field id="defaultEvidenceType" label="기본 증빙 종류">
+          <Select
+            id="defaultEvidenceType"
+            name="defaultEvidenceType"
+            options={evidenceTypes}
+            defaultValue={editing?.defaultEvidenceType ?? ""}
+          />
+        </Form.Field>
+      </div>
 
       {accountHidden ? null : accountReadOnly && editing ? (
         // 07-20 R8: 계좌 수정 권한이 없으면 세 칸은 읽기 줄(번호는 마스킹) — 폼은 세 칸을 보내지 않는다.
@@ -575,18 +580,20 @@ function VendorCustomField({
     // disabled 옵션은 FormData에서 빠져 「안 바꿈」과 「지움」을 구분할 수 없다(UI-SPEC O2). 판정은 서버(05)가 한다.
     const archivedValue = stringValue !== "" && !options.includes(stringValue) ? stringValue : null;
     return (
-      <Form.Field id={id} label={def.label}>
-        <Select
-          id={id}
-          name={id}
-          options={[
-            ...options.map((option) => ({ value: option, label: option })),
-            ...(archivedValue !== null ? [{ value: archivedValue, label: `${archivedValue} (보관됨)` }] : []),
-          ]}
-          defaultValue={stringValue}
-          error={error}
-        />
-      </Form.Field>
+      <div className={styles.field}>
+        <Form.Field id={id} label={def.label}>
+          <Select
+            id={id}
+            name={id}
+            options={[
+              ...options.map((option) => ({ value: option, label: option })),
+              ...(archivedValue !== null ? [{ value: archivedValue, label: `${archivedValue} (보관됨)` }] : []),
+            ]}
+            defaultValue={stringValue}
+            error={error}
+          />
+        </Form.Field>
+      </div>
     );
   }
 

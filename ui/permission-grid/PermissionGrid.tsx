@@ -133,6 +133,23 @@ export function settleLinkedCells(
   return out;
 }
 
+// 딸린 칸 저장 응답 → 칸 상태 · 결과 줄 변화. 칸 상태는 `resulting`(표시 값)으로 확정하고, 결과 줄 · 되돌리기는 `changed`로만 만든다
+// — commitLinked가 `changed`를 settleLinkedCells에 넘기면 다른 관리자가 이미 켠 딸린 칸이 누르기 전 값으로 돌아간다(07-21 Codex P2).
+export function applyLinkedSave(
+  prev: Record<string, CellState>,
+  rowId: string,
+  requestedKey: string,
+  predictedKeys: string[],
+  next: boolean,
+  saved: PermissionGridSaved | void,
+): { cells: Record<string, CellState>; changes: PermissionGridLinkedChange[] } {
+  const { changed, resulting } = saved ?? { changed: [], resulting: [] };
+  return {
+    cells: settleLinkedCells(prev, rowId, requestedKey, predictedKeys, next, resulting),
+    changes: changed.map((change) => ({ columnId: change.columnId, before: !change.checked, after: change.checked })),
+  };
+}
+
 function ColumnCheckbox({
   checked,
   indeterminate,
@@ -280,9 +297,9 @@ export function PermissionGrid({
       });
     mark("saving", next);
     try {
-      const { changed, resulting } = (await onToggle(rowId, columnId, next)) ?? { changed: [], resulting: [] };
-      setCells((prev) => settleLinkedCells(prev, rowId, key, predicted, next, resulting));
-      return { ok: true, changes: changed.map((change) => ({ columnId: change.columnId, before: !change.checked, after: change.checked })) };
+      const saved = await onToggle(rowId, columnId, next);
+      setCells((prev) => applyLinkedSave(prev, rowId, key, predicted, next, saved).cells);
+      return { ok: true, changes: applyLinkedSave({}, rowId, key, predicted, next, saved).changes };
     } catch {
       mark("error", !next, "저장 실패 · 다시 시도");
       return { ok: false, changes: [] };

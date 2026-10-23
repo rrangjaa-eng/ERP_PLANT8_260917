@@ -210,14 +210,15 @@ async function attachDemoEvidence(viewer: Viewer, expenseId: string): Promise<vo
   );
 }
 
-async function draftExpense(viewer: Viewer, lineId: string, note: string, scheduledPaymentDate: string): Promise<{ expenseId: string; version: number }> {
+// 07-06(D-740): 지급 예정일 칸은 쓰지 않는다 — 자동 예정일(읽을 때 셈)이 보인다.
+async function draftExpense(viewer: Viewer, lineId: string, note: string): Promise<{ expenseId: string; version: number }> {
   const created = await createExpenseFromLines(viewer, { lineIds: [lineId] });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error(`견본 지출결의를 만들지 못했습니다: ${created.blocked.map((item) => item.reason).join(" / ")}`);
   const saved = await saveExpenseDraft(viewer, {
     expenseId,
     expectedVersion: 1,
-    fields: { evidenceType: "tax_invoice", paymentMethod: "bank_transfer", scheduledPaymentDate, note },
+    fields: { evidenceType: "tax_invoice", paymentMethod: "bank_transfer", note },
   });
   return { expenseId, version: saved.version };
 }
@@ -387,15 +388,15 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
   // 지출결의 — 작성 중 2 · 제출 3(결재 대기) · 팀 비용 작성 중 1.
   const popLines = lineIds.pop;
   const launchLines = lineIds.launch;
-  await draftExpense(pm1, popLines[1] as string, "현수막 · 배너 제작비", addDays(today, 14));
-  await draftExpense(pm2, launchLines[1] as string, "초청장 · 도록 인쇄비", addDays(today, 10));
+  await draftExpense(pm1, popLines[1] as string, "현수막 · 배너 제작비");
+  await draftExpense(pm2, launchLines[1] as string, "초청장 · 도록 인쇄비");
   const submissions: { viewer: Viewer; lineId: string; note: string }[] = [
     { viewer: pm1, lineId: popLines[0] as string, note: "무대 · 시공 대금" },
     { viewer: pm1, lineId: popLines[2] as string, note: "현장 진행 인력 용역비" },
     { viewer: pm2, lineId: launchLines[2] as string, note: "MC · 진행요원 용역비" },
   ];
   for (const item of submissions) {
-    const draft = await draftExpense(item.viewer, item.lineId, item.note, addDays(today, 7));
+    const draft = await draftExpense(item.viewer, item.lineId, item.note);
     await attachDemoEvidence(item.viewer, draft.expenseId);
     const submitted = await submitExpense(item.viewer, { expenseId: draft.expenseId, expectedVersion: draft.version });
     if (submitted.kind !== "submitted") throw new Error("견본 지출결의 제출 결과가 예상과 다릅니다");

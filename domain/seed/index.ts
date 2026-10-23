@@ -1,13 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
-import {
-  SEED_ROLES,
-  SYSADMIN_ROLE_ID,
-  DEFAULT_ROLE_ID,
-  CEO_ROLE_ID,
-  DIVISION_HEAD_ROLE_ID,
-  TEAM_LEAD_ROLE_ID,
-} from "@/domain/permissions/roles";
-import { MENUS, PERMISSION_ACTIONS } from "@/domain/permissions/menus";
+import { SEED_ROLES, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { MENUS, menuActions } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT, SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
 import { seedRole } from "@/repositories/roles";
@@ -16,6 +9,7 @@ import {
   upsertVisibility,
   insertPermissionIfAbsent,
   insertVisibilityIfAbsent,
+  listPermissions,
   upsertVisibilityIfUnedited,
 } from "@/repositories/permissions";
 import { seedCodeItem } from "@/repositories/code-tables";
@@ -25,6 +19,7 @@ import { seedTeam } from "@/repositories/teams";
 import { seedApprovalsLeave } from "@/domain/seed/approvals-leave";
 import { seedExpenses } from "@/domain/seed/expenses";
 import { seedSettlements } from "@/domain/seed/settlements";
+import { ROLE_DEFAULT_PERMISSIONS, ROLE_DEFAULT_VISIBILITY } from "@/domain/seed/role-defaults";
 
 // 이력형 키의 시드 기본 행은 항상 과거인 고정 날짜를 쓴다 — 시드 직후부터
 // 유효값이 즉시 성립해(오늘 기준 effective_from <= asOf) 03-UI-SPEC.md가
@@ -206,7 +201,9 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   for (const menu of MENUS) {
     // 04.5-09: 화면 항목 메뉴는 아래에서 insert-if-absent로 준다 — 관리자가 권한표에서 끈 값을 재시드가 되살리지 않는다.
     if (menu.key === "admin.field-definitions") continue;
-    for (const action of PERMISSION_ACTIONS) {
+    // 07-15(PC-08): 알림 규칙 화면이 07-19에 들어오기 전에 켜면 관리 인덱스 링크가 404로 간다 — 07-19가 화면과 같은 PR에서 이 줄을 지운다.
+    if (menu.key === "admin.notification-rules") continue;
+    for (const action of menuActions(menu)) {
       // certs.submissions는 확인증 개인정보 열람 메뉴라 다른 새 메뉴처럼 시드가 자동으로 켜지 않는다 —
       // 소유자가 시스템 관리자 계급에서 끄면 배포가 되살리지 않는다(E3-13).
       if (menu.key === "certs.submissions") {
@@ -243,69 +240,23 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
     permissionsCount++;
   }
 
-  // Phase 4(04-01): 기획 PM(DEFAULT_ROLE_ID)의 기본 업무 메뉴 — "projects"
-  // 보기·쓰기. `app/(app)/projects/page.tsx`가 이 페이즈에서 `can(viewer,
-  // "projects", "view")` 게이트를 얻는다(admin/vendors 선례). 관리자 메뉴와
-  // 달리 이 메뉴는 PM의 일상 업무라 admin.*처럼 관리자가 권한표에서 매번
-  // 켜야 하는 빈 기본값으로 두지 않는다 — 이미 여러 기존 E2E(page-chrome·
-  // mobile-page-chrome·a11y·mobile-list-empty)가 role-pm의 `/projects` 접근을
-  // 전제하고 있고(게이트가 없던 시절부터), 이 시드가 없으면 이 플랜이 추가하는
-  // 게이트가 그 전제를 조용히 깬다.
-  for (const action of ["view", "write"] as const) {
-    await insertPermissionIfAbsent(viewer, {
-      roleId: DEFAULT_ROLE_ID,
-      menu: "projects",
-      action,
-      allowed: true,
-      updatedBy: null,
-    });
+  // 07-05(D-722): 시드 계급 4종의 기본 권한은 domain/seed/role-defaults.ts 표 하나에서 나온다. 없을 때만 넣는다 —
+  // 관리자가 권한표에서 끈 값을 다음 배포의 시드가 되살리지 않는다.
+  for (const entry of ROLE_DEFAULT_PERMISSIONS) {
+    await insertPermissionIfAbsent(viewer, { ...entry, updatedBy: null });
     permissionsCount++;
   }
 
-  // 04.3-09: 기획 PM의 확인증 행사 기본 권한(CONTEXT 재량 「기획 PM·경영관리를 기본으로」).
-  // 경영관리는 시드 계급이 아니라 권한표에서 켠다 — 없을 때만 넣어 관리자가 끈 값을 덮지 않는다.
-  for (const action of ["view", "write"] as const) {
-    await insertPermissionIfAbsent(viewer, {
-      roleId: DEFAULT_ROLE_ID,
-      menu: "certs.events",
-      action,
-      allowed: true,
-      updatedBy: null,
-    });
+  // 07-15(R18 · A-P2-10 · 07-05 카드 ⑦ 답 「켬」): 증빙 범위가 `evidence` 보기를 먼저 보게 되면서 `evidence.intake` 쓰기만 켜진 운영
+  // 계급이 조용히 증빙을 잃지 않게, 그 계급마다 `evidence` 보기를 없을 때만 넣는다 — 명시적으로 꺼진 보기는 그대로(D-722).
+  for (const row of await listPermissions(viewer)) {
+    if (row.menu !== "evidence.intake" || row.action !== "write" || !row.allowed) continue;
+    await insertPermissionIfAbsent(viewer, { roleId: row.roleId, menu: "evidence", action: "view", allowed: true, updatedBy: null });
     permissionsCount++;
   }
 
-  // 04-20(D-46·D-79·A-05): 상태 전환 기본 권한 — 팀장·본부 책임자·대표는
-  // 프로젝트 화면(보기)과 수주중·미수주 전환(projects.status 쓰기), 대표는
-  // 정산 → 완료(projects.complete 쓰기)까지. 없을 때만 넣는다 — 관리자가 권한표에서
-  // 끈 값을 다음 배포의 시드가 되살리지 않는다. 04-22(사용자 결정 2026-09-25): 같은 계급에
-  // 기간만 고치는 projects.period 쓰기를 더한다.
-  const statusDefaults: { roleId: string; menu: string; action: "view" | "write" }[] = [
-    ...[TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID, CEO_ROLE_ID].flatMap((roleId) => [
-      { roleId, menu: "projects", action: "view" as const },
-      { roleId, menu: "projects.status", action: "write" as const },
-      { roleId, menu: "projects.period", action: "write" as const },
-    ]),
-    { roleId: CEO_ROLE_ID, menu: "projects.complete", action: "write" },
-    // 06.2(D-6210): ROADMAP 06.2 성공 기준 5(담당 PM · 팀장이 붙인다) + D-6210(관리 권리가 전사인 계급도 키가 있어야 붙인다).
-    // 260907은 기획팀장만이었다(`O: docs/06_업무/02_프로젝트.md:401`). 시스템 관리자는 위 MENUS 루프가 켠다.
-    ...[CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID].map((roleId) => ({
-      roleId,
-      menu: "projects.member",
-      action: "write" as const,
-    })),
-    // 06.1(D-6113): 증빙 보기 — 기획 PM · 팀장만(본부 책임자 · 대표는 넣지 않는다). 등록(evidence.intake)은 어느 시드 계급에도 켜지 않는다.
-    ...[DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID].map((roleId) => ({ roleId, menu: "evidence", action: "view" as const })),
-  ];
-  for (const entry of statusDefaults) {
-    await insertPermissionIfAbsent(viewer, { ...entry, allowed: true, updatedBy: null });
-    permissionsCount++;
-  }
-
-  // 04-20(ENG-D2·ENG-D3 ③): 시스템 관리자만 전 항목을 매번 켜고, 나머지 계급은
-  // 없을 때만 넣는다 — 기획 PM·팀장·본부 책임자는 staffDefault, 대표는 그에 더해
-  // 매출(revenue.*) 항목까지. 관리자가 노출표에서 끈 값을 시드가 되살리지 않는다.
-  const staffDefaultRoles = [DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID];
+  // 04-20(ENG-D2·ENG-D3 ③): 시스템 관리자만 전 항목을 매번 켜고, 시드 계급 4종은 role-defaults.ts 표대로
+  // 없을 때만 넣는다(07-05 D-722). 관리자가 노출표에서 끈 값을 시드가 되살리지 않는다.
   let visibilityCount = 0;
   for (const item of INFO_ITEMS) {
     // 소유자가 시스템 관리자 계급에서 확인증 개인정보 전체 보기를 끄면 배포가 되살리지 않는다 —
@@ -325,26 +276,15 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
         updatedBy: null,
       });
     }
-    for (const roleId of staffDefaultRoles) {
-      // 04-16(D-85 · CEO 리뷰 B-29): 발행액은 기획 PM 행만 upsert해 재시드한 기존 DB에도 공개하고,
-      // 팀장·본부 책임자 행은 없을 때만 숨김으로 넣는다 — 관리자가 노출표에서 켠다.
-      if (item.key === "revenue.issued_amount") {
-        if (roleId === DEFAULT_ROLE_ID) {
-          await upsertVisibilityIfUnedited(viewer, { roleId, infoItem: item.key, visible: true });
-        } else {
-          await insertVisibilityIfAbsent(viewer, { roleId, infoItem: item.key, visible: false, updatedBy: null });
-        }
-        continue;
-      }
-      await insertVisibilityIfAbsent(viewer, { roleId, infoItem: item.key, visible: item.staffDefault, updatedBy: null });
+    visibilityCount++;
+  }
+  for (const entry of ROLE_DEFAULT_VISIBILITY) {
+    if (entry.mode === "upsertIfUnedited") {
+      await upsertVisibilityIfUnedited(viewer, { roleId: entry.roleId, infoItem: entry.infoItem, visible: entry.visible });
+    } else {
+      await insertVisibilityIfAbsent(viewer, { roleId: entry.roleId, infoItem: entry.infoItem, visible: entry.visible, updatedBy: null });
     }
-    await insertVisibilityIfAbsent(viewer, {
-      roleId: CEO_ROLE_ID,
-      infoItem: item.key,
-      visible: item.staffDefault || item.key.startsWith("revenue."),
-      updatedBy: null,
-    });
-    visibilityCount += 2 + staffDefaultRoles.length;
+    visibilityCount++;
   }
 
   let codeItemsCount = 0;

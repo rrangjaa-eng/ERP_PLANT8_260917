@@ -37,6 +37,8 @@ import { markVoided } from "@/repositories/files";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { seoulToday } from "@/lib/dates";
+import { loadHolidayLookup } from "@/domain/holidays/calendar";
+import { isBusinessDay } from "@/domain/holidays/business-day";
 import { cancelExpensePaymentAction, completeExpensePaymentAction, previewPayableAction, saveScheduledPayDateAction } from "@/app/(app)/expenses/[id]/actions";
 import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
@@ -69,6 +71,15 @@ function addDays(date: string, days: number): string {
   const at = new Date(`${date}T00:00:00Z`);
   at.setUTCDate(at.getUTCDate() + days);
   return at.toISOString().slice(0, 10);
+}
+
+// 07-06(D-714): 수동 지정은 영업일만 — 그 날 이후 첫 영업일(오늘에서 셈한 날이 주말 · 공휴일이어도 시험이 날짜에 따라 깨지지 않게).
+async function businessDayFrom(date: string): Promise<string> {
+  const year = Number(date.slice(0, 4));
+  const lookup = await loadHolidayLookup([year, year + 1]);
+  let day = date;
+  while (!isBusinessDay(day, lookup)) day = addDays(day, 1);
+  return day;
 }
 
 async function snapshot(expenseId: string) {
@@ -290,11 +301,11 @@ it("기준일이 지급 예정일인 규칙 — previewPayableAction에 예정�
 });
 
 describe("지급 예정일 저장 (06-04 Task 2 · SP-3 ②)", () => {
-  it("예정일만 갱신 · 미래 날짜 허용 · 문서 version + 1 · document_update(전후 날짜)", async () => {
+  it("예정일만 갱신 · 미래 날짜 허용 · 문서 version + 1 · payment_schedule_change(전후 날짜 — 07-06)", async () => {
     const payer = await makePayer();
     const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
     const before = await snapshot(doc.expenseId);
-    const future = addDays(seoulToday(), 40);
+    const future = await businessDayFrom(addDays(seoulToday(), 40));
 
     const result = await saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: future, version: doc.version });
     expect(result.version).toBe(doc.version + 1);
@@ -304,8 +315,8 @@ describe("지급 예정일 저장 (06-04 Task 2 · SP-3 ②)", () => {
     const logs = await db
       .select({ actionType: actionLog.actionType, actorId: actionLog.actorId, detail: actionLog.detail })
       .from(actionLog)
-      .where(and(eq(actionLog.entityId, doc.expenseId), eq(actionLog.actionType, "document_update")));
-    expect(logs.at(-1)).toMatchObject({ actorId: payer.id, detail: { field: "scheduledPaymentDate", before: before.scheduledPaymentDate, after: future } });
+      .where(and(eq(actionLog.entityId, doc.expenseId), eq(actionLog.actionType, "payment_schedule_change")));
+    expect(logs.at(-1)).toMatchObject({ actorId: payer.id, detail: { changes: { scheduledPaymentDate: [before.scheduledPaymentDate, future] } } });
   });
 
   it("version이 어긋나면 `다른 사람이 {HH:mm}에 바꿈 · 새로 고침`으로 거부되고 예정일은 그대로다", async () => {
@@ -344,7 +355,7 @@ describe("지급 예정일 저장 (06-04 Task 2 · SP-3 ②)", () => {
     const unchanged = await snapshot(doc.expenseId);
     expect([unchanged.scheduledPaymentDate, unchanged.version, unchanged.logCount]).toEqual([before.scheduledPaymentDate, before.version, before.logCount]);
 
-    const future = addDays(seoulToday(), 400);
+    const future = await businessDayFrom(addDays(seoulToday(), 400));
     const saved = await saveScheduledPayDateAction({ expenseId: doc.expenseId, scheduledPayDate: future, version: doc.version });
     expect(saved?.data).toEqual({ version: doc.version + 1 });
     expect((await snapshot(doc.expenseId)).scheduledPaymentDate).toBe(future);

@@ -25,6 +25,8 @@ import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
+import { loadHolidayLookup } from "@/domain/holidays/calendar";
+import { isBusinessDay } from "@/domain/holidays/business-day";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission } from "@/repositories/permissions";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
@@ -122,6 +124,15 @@ function addDays(date: string, days: number): string {
   const at = new Date(`${date}T00:00:00Z`);
   at.setUTCDate(at.getUTCDate() + days);
   return at.toISOString().slice(0, 10);
+}
+
+// 07-06(D-714): 수동 지정은 영업일만 — 그 날 이후 첫 영업일(오늘에서 셈한 날이 주말 · 공휴일이어도 시험이 날짜에 따라 깨지지 않게).
+async function businessDayFrom(date: string): Promise<string> {
+  const year = Number(date.slice(0, 4));
+  const lookup = await loadHolidayLookup([year, year + 1]);
+  let day = date;
+  while (!isBusinessDay(day, lookup)) day = addDays(day, 1);
+  return day;
 }
 
 async function versionOf(expenseId: string): Promise<number> {
@@ -327,7 +338,7 @@ describe("막힘 · 재판정 · 스냅숏 (06-15 Task 2)", () => {
       const lines = await extraLines(fx, 55);
       await approvedMany(fx, lines.slice(0, 52), false);
       const unreviewed = await approvedMany(fx, lines.slice(52), true);
-      for (const doc of unreviewed) await saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: addDays(seoulToday(), -10), version: doc.version });
+      for (const doc of unreviewed) await saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: await businessDayFrom(addDays(seoulToday(), -10)), version: doc.version });
 
       const first = await listPaymentTargets(payer, { evidence: "payable", page: 1 });
       expect(rowsOf(first)).toHaveLength(50);
@@ -385,7 +396,7 @@ describe("막힘 · 재판정 · 스냅숏 (06-15 Task 2)", () => {
       .set({ evidenceType: await vatEvidenceType("test_vat_scheduled", "scheduled_payment_date"), evidenceDate: today })
       .where(eq(expenses.id, doc.expenseId));
     await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: addDays(today, 30), value: 0.12 });
-    await saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: addDays(today, 40), version: doc.version });
+    await saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: await businessDayFrom(addDays(today, 40)), version: doc.version });
 
     const [listed] = rowsOf(await listPaymentTargets(payer, {}));
     if (typeof listed?.payableKrw !== "number" || typeof listed.version !== "number") throw new Error("목록 값 없음");
@@ -403,14 +414,15 @@ describe("막힘 · 재판정 · 스냅숏 (06-15 Task 2)", () => {
     const docs = await approvedMany(fx, await extraLines(fx, 3), false);
     const type = await vatEvidenceType("test_vat_scheduled2", "scheduled_payment_date");
     const today = seoulToday();
+    const [near, far] = [await businessDayFrom(addDays(today, 3)), await businessDayFrom(addDays(today, 9))];
     for (const [index, doc] of docs.entries()) {
       await db.update(expenses).set({ evidenceType: type }).where(eq(expenses.id, doc.expenseId));
-      await saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: addDays(today, index === 0 ? 3 : 9), version: doc.version });
+      await saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: index === 0 ? near : far, version: doc.version });
     }
     const counter = countingLoadTaxRates();
     const list = await listPaymentTargets(payer, {}, { loadTaxRates: counter.load });
     expect(rowsOf(list)).toHaveLength(3);
-    expect(counter.calls.sort()).toEqual([addDays(today, 3), addDays(today, 9)]);
+    expect(counter.calls.sort()).toEqual([near, far]);
   });
 
   it("선택 불가 행 조작 요청 — P2 행을 스냅숏에 넣어 보내면 그 행만 `증빙 확인 전 · 증빙 확인`으로 막힌다", async () => {

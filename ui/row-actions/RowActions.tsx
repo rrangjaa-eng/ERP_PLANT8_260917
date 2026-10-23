@@ -85,6 +85,7 @@ export function RowAction(props: RowActionProps) {
       autoFocus={props.autoFocus}
       tabIndex={props.tabIndex}
       aria-disabled={inactive ? "true" : undefined}
+      aria-busy={props.pending ? "true" : undefined}
       aria-describedby={[props.describedBy, reason ? reasonId : undefined].filter(Boolean).join(" ") || undefined}
       onClick={rowActionClickHandler({ inactive, onClick: props.onClick })}
       className={[styles.action, dangerClass, reason ? "" : endClass].filter(Boolean).join(" ")}

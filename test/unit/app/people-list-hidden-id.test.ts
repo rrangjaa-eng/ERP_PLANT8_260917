@@ -11,6 +11,10 @@ import { StaticTable, type StaticTableProps } from "@/ui/table/StaticTable";
 let people: Partial<PersonDto>[] = [];
 // 「사람 등록」 표시 조건(DR-6) — admin.people · write만 이 값을 따르고 나머지 권한은 항상 true.
 let writeAllowed = true;
+// 07-17: 잠긴 재직자 수(끝 링크 `잠김 N`).
+let lockedCount = 0;
+// 열 노출 키를 행과 따로 줄 때(거른 결과 0행이어도 열은 노출표 기준).
+let keyRows: Partial<PersonDto>[] | null = null;
 
 vi.mock("@/lib/viewer", () => ({ getSession: () => Promise.resolve({ viewer: { id: "viewer", roleId: "role-x" } }) }));
 vi.mock("next/navigation", () => ({
@@ -26,7 +30,25 @@ vi.mock("@/domain/permissions/can", () => ({
   can: (_viewer: unknown, menu: string, action: string) =>
     Promise.resolve(menu === "admin.people" && action === "write" ? writeAllowed : true),
 }));
-vi.mock("@/domain/people", () => ({ listPeople: () => Promise.resolve(people) }));
+vi.mock("@/domain/people", () => ({
+  // 07-17: 목록은 한 쪽 조회(listPeoplePage) — 열 노출 키는 이 테스트의 행 키 합으로 둔다(노출표가 가린 키는 행에 없다).
+  listPeoplePage: () =>
+    Promise.resolve({
+      rows: people,
+      total: people.length,
+      lockedCount,
+      page: 1,
+      pageSize: 50,
+      pageCount: 1,
+      visibleKeys: new Set((keyRows ?? people).flatMap((person) => Object.keys(person))),
+    }),
+  isRetiredOn: (date: string | null, today: string) => date !== null && date < today,
+}));
+// 07-17: 잠금 풀기 결과 줄은 액션(server-only 체인)을 import한다 — 이 테스트의 관심 밖이라 자리만 둔다.
+vi.mock("@/app/(app)/admin/people/unlock-result", () => ({
+  UnlockResultSection: ({ children }: { children: ReactNode }) => children,
+  UnlockAction: () => null,
+}));
 vi.mock("@/domain/permissions/roles", () => ({
   listAssignableRoles: () => Promise.resolve([{ id: "role-pm", name: "기획 PM" }]),
   // 06.4 D-6417: 상한 판정은 이 테스트의 관심 밖 — 넘긴 계급을 모두 통과로 둔다.
@@ -66,7 +88,7 @@ function findStaticTable(node: ReactNode): ReactElement<StaticTableProps> | null
   return null;
 }
 
-async function render(searchParams: { new?: string } = {}) {
+async function render(searchParams: { new?: string; q?: string; locked?: string } = {}) {
   const tree = await PeoplePage({ searchParams: Promise.resolve(searchParams) });
   // 보이는 열이 없으면 표가 없다 — 행 key 목록은 비운다.
   const table = findStaticTable(tree);
@@ -77,6 +99,35 @@ async function render(searchParams: { new?: string } = {}) {
 beforeEach(() => {
   people = [];
   writeAllowed = true;
+  lockedCount = 0;
+  keyRows = null;
+});
+
+// 07-17 SC-11(U1 · U2): 끝 링크 `잠김 N`은 잠긴 재직자가 있을 때만 · 검색이 있으면 3차 `지우기` · 거른 결과 0이면 EMPTY + `필터 지우기`.
+describe("사람 목록 — 잠김 N · 지우기 · 거른 결과 EMPTY", () => {
+  it("잠긴 수 0이면 `잠김` 끝 링크가 없다", async () => {
+    people = visibleIdPeople;
+    const { html } = await render();
+    expect(html).not.toContain("locked=1");
+    expect(html).not.toMatch(/>잠김 \d+</);
+  });
+
+  it("잠긴 수 2면 `잠김 2` → ?locked=1", async () => {
+    people = visibleIdPeople;
+    lockedCount = 2;
+    const { html } = await render();
+    expect(html).toMatch(/href="\/admin\/people\?locked=1"[^>]*>잠김 2</);
+  });
+
+  it("검색 중이면 `지우기`, 결과 0이면 `조건에 맞는 사람이 없습니다` + `필터 지우기`", async () => {
+    people = [];
+    keyRows = visibleIdPeople;
+    const { html } = await render({ q: "없음" });
+    expect(html).toContain(">지우기<");
+    expect(html).toContain("조건에 맞는 사람이 없습니다");
+    expect(html).toContain("필터 지우기");
+    expect(html).not.toContain("등록된 사람이 없습니다");
+  });
 });
 
 describe("사람 목록 — person.id가 없는 행", () => {

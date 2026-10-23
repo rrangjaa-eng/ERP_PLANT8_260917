@@ -136,7 +136,8 @@ test.describe("보관된 계급을 가진 사람의 상세 화면", () => {
     await page.goto("/admin/people/roles");
     await expect(page.getByLabel(`${roleName} 이름`)).toHaveCount(0);
 
-    await page.goto("/admin/people");
+    // 07-17: 목록이 50명/쪽 — 검색으로 그 행을 연다.
+    await page.goto(`/admin/people?q=${encodeURIComponent(personName)}`);
     await page.getByRole("row", { name: new RegExp(personName) }).getByRole("link", { name: "상세" }).click();
 
     const state = await page.getByLabel("계급 변경").evaluate((el) => (el as HTMLSelectElement).value);

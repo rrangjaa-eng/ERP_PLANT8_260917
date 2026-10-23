@@ -125,6 +125,40 @@ test.describe("사람 상세 지급 계좌(06.5 D-6505)", () => {
     await viewerPage.context().close();
   });
 
+  // 사용자 결정(2026-10-23): 지급 계좌 변경도 대상 계급 상한 — 지급 게이트를 가진 지급 담당이라도 상한 밖(시스템 관리자) 대상에는
+  // `계좌 바꾸기`를 그리지 않고 주소로 열어도 패널이 없다. 상한 안(같은 계급) 대상에는 그대로 있다. 서버 거부는 통합 people-account가 본다.
+  test("상한 밖 대상(시스템 관리자)에는 `계좌 바꾸기` · 패널이 없고, 상한 안 대상에는 있다", async ({ page }) => {
+    const roleId = `role-e2e-payout-staff-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 지급담당 ${roleId.slice(-8)}`, sortOrder: 99 });
+    await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "expenses.payments", action: "write", allowed: true });
+    await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "admin.people", action: "view", allowed: true });
+    await insertVisibilityIfAbsent(SYSTEM_VIEWER, { roleId, infoItem: "person.value", visible: true });
+    await login(page, await createFixtureUser({ roleId }));
+
+    const account = { accountBank: "신한", accountHolder: "김직원", accountNumber: "110-123-456789" };
+    const { userId: adminId } = await registerPerson(SYSTEM_VIEWER, {
+      name: `상한밖${randomUUID().slice(0, 5)}`,
+      email: `e2e-payout-admin-${randomUUID()}@example.test`,
+      roleId: SYSADMIN_ROLE_ID,
+    });
+    await updatePersonPayoutAccount(SYSTEM_VIEWER, adminId, account);
+    await page.goto(`/admin/people/${adminId}`);
+    await expect(section(page).getByText("6789")).toBeVisible();
+    await expect(section(page).getByRole("link", { name: "계좌 바꾸기" })).toHaveCount(0);
+    await page.goto(`/admin/people/${adminId}?editAccount=1`);
+    await expect(section(page)).toBeVisible();
+    await expect(panel(page)).toHaveCount(0);
+
+    const { userId: peerId } = await registerPerson(SYSTEM_VIEWER, {
+      name: `상한안${randomUUID().slice(0, 5)}`,
+      email: `e2e-payout-peer-${randomUUID()}@example.test`,
+      roleId,
+    });
+    await updatePersonPayoutAccount(SYSTEM_VIEWER, peerId, account);
+    await page.goto(`/admin/people/${peerId}`);
+    await expect(section(page).getByRole("link", { name: "계좌 바꾸기" })).toBeVisible();
+  });
+
   test("칸 오류 — 예금주 한글 11자는 길이 초과, 은행 + 번호 + 빈 예금주는 예금주 없음 · 포커스 예금주", async ({ page }) => {
     await login(page, await createFixtureUser({ roleId: SYSADMIN_ROLE_ID }));
     const userId = await makeTarget();

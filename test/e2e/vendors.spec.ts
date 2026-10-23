@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { archiveE2EFieldDefinitions, createE2EFieldDefinition, createE2EVendorEditor, createFixtureUser, uniqueBusinessNo } from "./fixtures";
+import { waitForHydration } from "./leave-org";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
@@ -742,6 +743,8 @@ test.describe("거래처 사업자 번호 · 계좌 칸 (07-20 SC-17)", () => {
     await page.goto("/admin/vendors?new=1");
     const panel = panelOf(page);
     const field = panel.getByLabel("사업자 번호");
+    // 하이드레이션 전에 친 글자는 onInput(숫자 · 하이픈만 남김)을 거치지 않는다(07-23 관찰) — 처리기가 붙은 뒤에 친다.
+    await waitForHydration(field);
     await field.pressSequentially("123-45-678a90");
     await expect(field).toHaveValue("123-45-67890");
     await field.blur();

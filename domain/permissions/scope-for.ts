@@ -163,8 +163,9 @@ export async function evidenceScopeFor(
   deps?: Partial<ScopeForDeps & Pick<RowScopeDeps, "findMembershipAtDate" | "findTeamById" | "today">>,
 ): Promise<EvidenceScope> {
   const canFn = deps?.can ?? defaultCan;
-  if (await canFn(viewer, "evidence.intake", "write")) return { rows: "all" };
+  // 07-15(R18): 메뉴 판정(`evidence` 보기)이 먼저다 — 보기 없는 등록 쓰기만으로는 증빙을 보지 않는다.
   if (!(await canFn(viewer, "evidence", "view"))) return { rows: "none" };
+  if (await canFn(viewer, "evidence.intake", "write")) return { rows: "all" };
 
   const findMembershipAtDate = deps?.findMembershipAtDate ?? defaultFindMembershipAtDate;
   const membership = await findMembershipAtDate(viewer, viewer.id, (deps?.today ?? seoulToday)());

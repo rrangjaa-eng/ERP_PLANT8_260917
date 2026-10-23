@@ -72,7 +72,7 @@ export const EVIDENCE_PAGE_SIZE = 50;
 
 // 06.1-02 서식 규칙 — 서식 이름(결과 · 목록 1행) · 카드 서식(keyKind) · 카드사 이름(별칭 첫 값).
 const FORMAT_RULES = new Map<string, FormatRule>(EVIDENCE_FORMATS.map((rule) => [rule.key, rule]));
-const CARD_FORMATS: readonly string[] = EVIDENCE_FORMATS.filter((rule) => rule.keyKind === "card").map((rule) => rule.key);
+export const CARD_FORMATS: readonly string[] = EVIDENCE_FORMATS.filter((rule) => rule.keyKind === "card").map((rule) => rule.key);
 
 export type EvidenceRecordDto = {
   id: string;

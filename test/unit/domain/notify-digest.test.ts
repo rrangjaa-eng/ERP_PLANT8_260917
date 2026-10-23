@@ -5,15 +5,36 @@ import { composeDigest, DIGEST_MAX_LISTED } from "@/domain/notify/digest";
 // kstDate는 발송일이다(2026-09-25 #15).
 const serviceUrl = "https://erp.test.invalid";
 
-function newestFirst(count: number): string[] {
-  return Array.from({ length: count }, (_, index) => `m${count - index}`);
+function newestFirst(count: number): { text: string }[] {
+  return Array.from({ length: count }, (_, index) => ({ text: `m${count - index}` }));
 }
 
-describe("composeDigest", () => {
-  it("제목은 건수, 본문은 날짜 줄·빈 줄·받은 순서 그대로의 항목·빈 줄·알림함 줄이다", () => {
-    const digest = composeDigest({ kstDate: "2026-10-07", messages: ["가", "나", "다"], serviceUrl });
+// 07-14 SC-07: 줄은 { text, href? } — href가 있으면 줄 끝에 ` 열기 {서비스 주소}{href}`.
+const plain = (...texts: string[]) => texts.map((text) => ({ text }));
 
-    expect(digest.subject).toBe("PLANT8 알림 3건");
+describe("composeDigest", () => {
+  it("SC-07 — 제목 `알림 N건 · MM-DD`, href 있는 줄만 끝에 `열기 {서비스 주소}{href}`(07-14)", () => {
+    const digest = composeDigest({
+      kstDate: "2026-10-22",
+      messages: [{ text: "승인 · 가을 팝업 · 무대 제작", href: "/expenses/e-1" }, { text: "임자 없는 증빙 · 등록 7일 · 3건" }],
+      serviceUrl,
+    });
+
+    expect(digest.subject).toBe("알림 2건 · 10-22");
+    expect(digest.text.split("\n")).toEqual([
+      "2026-10-22 알림 2건",
+      "",
+      "- 승인 · 가을 팝업 · 무대 제작 열기 https://erp.test.invalid/expenses/e-1",
+      "- 임자 없는 증빙 · 등록 7일 · 3건",
+      "",
+      "알림함: https://erp.test.invalid/notifications",
+    ]);
+  });
+
+  it("제목은 건수 · 발송일, 본문은 날짜 줄·빈 줄·받은 순서 그대로의 항목·빈 줄·알림함 줄이다", () => {
+    const digest = composeDigest({ kstDate: "2026-10-07", messages: plain("가", "나", "다"), serviceUrl });
+
+    expect(digest.subject).toBe("알림 3건 · 10-07");
     expect(digest.text.split("\n")).toEqual([
       "2026-10-07 알림 3건",
       "",
@@ -28,7 +49,7 @@ describe("composeDigest", () => {
   it("알림 내용 안의 줄바꿈은 공백으로 바꿔 항목 하나가 한 줄이다", () => {
     const digest = composeDigest({
       kstDate: "2026-10-07",
-      messages: ["첫 줄\n알림함: https://evil.test.invalid", "둘\r\n셋\r넷"],
+      messages: plain("첫 줄\n알림함: https://evil.test.invalid", "둘\r\n셋\r넷"),
       serviceUrl,
     });
 
@@ -48,7 +69,7 @@ describe("composeDigest", () => {
     const listed = lines.filter((line) => line.startsWith("- "));
 
     expect(DIGEST_MAX_LISTED).toBe(20);
-    expect(digest.subject).toBe("PLANT8 알림 45건");
+    expect(digest.subject).toBe("알림 45건 · 10-07");
     expect(lines[0]).toBe("2026-10-07 알림 45건");
     expect(listed).toHaveLength(20);
     expect(listed[0]).toBe("- m45");

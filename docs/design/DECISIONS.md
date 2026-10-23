@@ -2285,3 +2285,10 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: `--surface-selected` 값을 더 옅게(개정 11 사용자 확정 값 변경) · 새 진한 초록 토큰(새 토큰 금지) · `expenses` 화면 CSS만 고치기(화면 하나만 예외 금지) · 고른 행에서 상태 글자 색을 없애기(상태는 색 · 배지로, 사용성 원칙).
 **범위**: `ui/table/Table.module.css`, `docs/design/SYSTEM.md` §1-4 · §7-3, `test/unit/design/tokens.test.ts`. 새 색 · 서체 · radius 0.
 **보강(07-12 게이트 `/review`)**: 같은 면인 범위 선택 칸(`.selectedCell`, `Shift`+방향키)에서도 지급 대상 표 「확인됨」이 `#0E7A66` on `#E4EAE7` 4.31로 DOM 실측돼, `.selectedCell`에도 같은 두 재지정을 건다.
+
+## 2026-10-23 — 칸 오류 `희망일 지남`은 원인만 (07-16 · 델타 검토 P3-4)
+
+**결정**: 제출 때 희망 지급일 칸에 뜨는 오류 `희망일 지남`은 `원인 · 다음 행동` 꼴(SYSTEM.md §7-7 다섯 상태의 ERROR, 약 492줄)을 따르지 않고 원인만 보인다 — SYSTEM.md §7-7의 칸 오류 꼴에 대한 예외이며 SYSTEM.md는 고치지 않는다. 날짜를 바꾸면 칸 오류가 지워져 다시 고르기로 이어진다.
+**이유**: 사용자가 「희망 지급일이 지난 지출결의도 다른 칸은 저장되게 할까요?」에서 A를 골랐고 그 문구 그대로 쓴다(06-21 낱말).
+**결정자**: 사용자 카드 10/23 01:12 KST (옵션 A).
+**범위**: `domain/expenses/gate.ts` `REQUESTED_DATE_PASSED`, `app/(app)/expenses/[id]/expense-form.tsx` 날짜 칸 오류. 새 색 · 서체 · radius 0.

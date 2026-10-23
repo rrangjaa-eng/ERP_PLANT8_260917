@@ -5,10 +5,11 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { SETTING_DEFS } from "@/domain/settings/keys";
+import { PROJECT_COST_RATE_PCT, SETTING_DEFS } from "@/domain/settings/keys";
 import { addHistorizedValue, cancelHistorizedValue, type SettingDef } from "@/domain/settings/registry";
 import { exportSettings } from "@/domain/settings/export";
 import { setSimpleSettingValue } from "@/domain/document-numbering";
+import { saveCostRateSetting } from "@/domain/projects/budget";
 import { isRouteStepSettingKey, saveRouteStepSettings } from "@/domain/approvals/route-step-settings";
 import "./actions.registry";
 
@@ -32,8 +33,15 @@ export const setSimpleSettingAction = authedActionClient
     const def = findSettingDef(parsedInput.key);
     // 결재선 단계 칸은 네 칸을 한 번에(saveApprovalRouteStepAction) — 칸 하나 저장은 중간 결재선을 만든다.
     if (isRouteStepSettingKey(def.key)) throw new UserFacingError("결재선 단계 칸 단독 저장 불가 · 단계 저장으로");
+    // 07-24(D-747 · U3 · B-P3-7): 원가율 키만 값 저장과 처음 예산 줄을 한 tx로 — 응답에 첫 저장 여부와 만든 줄 수를 싣는다.
+    if (def.key === PROJECT_COST_RATE_PCT.key) {
+      const costRate = await saveCostRateSetting(ctx.viewer, def, parsedInput.value);
+      revalidatePath("/admin/settings");
+      return { costRate };
+    }
     await setSimpleSettingValue(ctx.viewer, def, parsedInput.value, new Date());
     revalidatePath("/admin/settings");
+    return { costRate: null };
   });
 
 // 사용자 결정(2026-09-30 A): 결재선 한 단계의 네 칸을 한 트랜잭션에 — 값 검증은 도메인이 키 정의의 스키마로 한다.

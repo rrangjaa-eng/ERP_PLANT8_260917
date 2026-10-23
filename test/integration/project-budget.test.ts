@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projectBudgetEntries, projects, quoteLines } from "@/db/schema";
+import { actionLog, projectBudgetEntries, projects, quoteLines, quoteRevisions } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -14,7 +14,13 @@ import { createProject } from "@/domain/projects";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
-import { listBudgetRows } from "@/domain/projects/budget";
+import { listBudgetRows, saveCostRateSetting, seedInitialBudgets, setBudgetManually } from "@/domain/projects/budget";
+import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
+import { approvalBasis } from "@/repositories/quote-revisions";
+import { importSettings } from "@/domain/settings/export";
+import { getSettingValue, type SettingDef } from "@/domain/settings/registry";
+import { findProject, loadProjectList } from "@/domain/projects";
+import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { PROJECT_COST_RATE_PCT } from "@/domain/settings/keys";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { addDays, kstToday } from "@/lib/kst-date";
@@ -241,5 +247,257 @@ describe("listBudgetRows (07-24 Task 1 · W5 · D-733 · K11)", () => {
     expect(row).not.toHaveProperty("remainingKrw");
     expect(row).not.toHaveProperty("poAmountKrw");
     expect(row?.statusWord).toBe("수주중");
+  });
+});
+
+// ── Task 2 ────────────────────────────────────────────────────────────────
+
+const NOW = () => new Date("2026-09-20T03:00:00.000Z");
+const RATE_DEF = PROJECT_COST_RATE_PCT as SettingDef<unknown>;
+
+// 승인 · 새 차수를 만드는 PM — 회사 범위 · 프로젝트 쓰기 · 금액 정보 항목.
+async function makeApprovalPm(teamId: string): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `예산 승인 PM-${randomUUID()}`, viewScope: "company" });
+  for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action, allowed: true });
+  for (const infoItem of ["project.value", "quote.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  return makeViewer(role.id, teamId);
+}
+
+async function setupApproval() {
+  const teamId = await makeTeam();
+  const pm = await makeApprovalPm(teamId);
+  const lead = await makeViewer("role-team-lead", teamId);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
+  const created = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId, pmUserId: pm.id, name: `승인-${randomUUID()}` });
+  await db.update(projects).set({ status: "in_progress", endDate: FAR }).where(eq(projects.id, created.id));
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, created.id);
+  if (!revision) throw new Error("1차 차수가 없습니다");
+  return { projectId: created.id, revisionId: revision.id, pm, lead, teamId };
+}
+
+async function approve(pm: Viewer, revisionId: string): Promise<void> {
+  const basis = await approvalBasis(SYSTEM_VIEWER, revisionId);
+  await setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", approvalBasis: "email", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken }, { now: NOW });
+}
+
+async function makeAdmin(): Promise<Viewer> {
+  return makeViewer(SYSADMIN_ROLE_ID);
+}
+
+describe("등록 PO → 처음 줄 (07-24 Task 2 · K2)", () => {
+  it("원가율 70 · PO 1,000만으로 등록하면 등록 tx에 initial +700만 · PO 없으면 줄 없음", async () => {
+    await setCostRate(70);
+    const teamId = await makeTeam();
+    const pm = await makeViewer(DEFAULT_ROLE_ID, teamId);
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
+    const withPo = await createProject(pm, { clientId: client.id, teamId, pmUserId: pm.id, name: `등록-${randomUUID()}`, preEstimate: { currency: "KRW", amount: 10_000_000, fxRate: 1 } });
+    expect(await entriesOf(withPo.id)).toEqual([{ reason: "initial", base: 10_000_000, rate: "70.0", delta: 7_000_000, memo: null }]);
+    const withoutPo = await createProject(pm, { clientId: client.id, teamId, pmUserId: pm.id, name: `등록-${randomUUID()}` });
+    expect(await entriesOf(withoutPo.id)).toEqual([]);
+  });
+
+  it("등록이 거부되면 줄도 없다", async () => {
+    await setCostRate(70);
+    const teamId = await makeTeam();
+    const pm = await makeViewer(DEFAULT_ROLE_ID, teamId);
+    const before = await db.select().from(projectBudgetEntries);
+    const outcome = await createProject(pm, { clientId: randomUUID(), teamId, pmUserId: pm.id, name: `거부-${randomUUID()}`, preEstimate: { currency: "KRW", amount: 10_000_000, fxRate: 1 } }).catch((error: unknown) => error);
+    expect(outcome).toBeInstanceOf(Error);
+    expect(await db.select().from(projectBudgetEntries)).toHaveLength(before.length);
+  });
+});
+
+describe("새 승인 차수 → 증액 줄 (07-24 Task 2 · AQ-39 · D-730)", () => {
+  it("승인 견적 합계가 늘 때만 줄 · 감액 · 취소는 없음 · PO가 생기면 기준이 PO로 · PO가 있으면 새 승인은 줄 없음", async () => {
+    await setCostRate(70);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 5_000_000);
+    await approve(s.pm, s.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual([{ reason: "new_approved_revision", base: 5_000_000, rate: "70.0", delta: 3_500_000, memo: null }]);
+
+    const second = await createRevisionFromCurrent(s.pm, { projectId: s.projectId, fromRevisionId: s.revisionId });
+    await addExecutionLine(second.revisionId, 1_000_000);
+    await approve(s.pm, second.revisionId);
+    expect((await entriesOf(s.projectId)).at(-1)).toMatchObject({ reason: "new_approved_revision", base: 6_000_000, delta: 700_000 });
+
+    // 작은 승인 차수(400만) → 줄 없음(D-730) · 승인 취소 → 줄 없음.
+    const third = await createRevisionFromCurrent(s.pm, { projectId: s.projectId, fromRevisionId: second.revisionId });
+    const thirdLines = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, third.revisionId));
+    const big = thirdLines.find((line) => line.quoteAmountKrw === 5_000_000);
+    if (!big) throw new Error("복사된 500만 줄이 없습니다");
+    await db.update(quoteLines).set({ archivedAt: new Date() }).where(eq(quoteLines.id, big.id));
+    await addExecutionLine(third.revisionId, 3_000_000);
+    await approve(s.pm, third.revisionId);
+    await setCustomerApproval(s.pm, third.revisionId, null, { now: NOW });
+    expect(await entriesOf(s.projectId)).toHaveLength(2);
+
+    // PO 1,000만 → 기준이 승인 견적(2차 600만)에서 PO로: +400만 × 70%.
+    await savePo({ projectId: s.projectId, revisionId: third.revisionId, lead: s.lead, teamId: s.teamId }, 10_000_000, "in_progress");
+    expect((await entriesOf(s.projectId)).at(-1)).toMatchObject({ reason: "po_amount_change", base: 10_000_000, delta: 2_800_000 });
+
+    // PO가 있으면 새 승인은 기준을 바꾸지 않는다.
+    await addExecutionLine(third.revisionId, 20_000_000);
+    await approve(s.pm, third.revisionId);
+    expect(await entriesOf(s.projectId)).toHaveLength(3);
+    expect(await budgetOf(s.projectId)).toBe(7_000_000);
+  });
+});
+
+describe("처음 원가율 → 처음 줄 (07-24 Task 2 · D-747 · U3)", () => {
+  async function seedTargets() {
+    const po = await setup("in_progress");
+    await db.update(projects).set({ preEstimateAmountKrw: 10_000_000 }).where(eq(projects.id, po.projectId));
+    const approved = await setup("in_progress");
+    await addExecutionLine(approved.revisionId, 5_000_000);
+    await db.update(quoteRevisions).set({ customerApprovedAt: new Date("2026-09-18T15:00:00.000Z") }).where(eq(quoteRevisions.id, approved.revisionId));
+    const zero = await setup("in_progress");
+    const done = await setup("completed");
+    await db.update(projects).set({ preEstimateAmountKrw: 10_000_000 }).where(eq(projects.id, done.projectId));
+    return { po, approved, zero, done };
+  }
+
+  it("원가율 비움 → 70 저장: 같은 tx initial 줄 둘 · 기준 0과 완료는 없음 · 75 재저장 · 줄 없는 새 프로젝트만 · 0 저장", async () => {
+    await setCostRate(null);
+    const admin = await makeAdmin();
+    const t = await seedTargets();
+
+    expect(await saveCostRateSetting(admin, RATE_DEF, 70)).toEqual({ firstSave: true, createdCount: 2 });
+    expect(await getSettingValue(PROJECT_COST_RATE_PCT)).toBe(70);
+    expect(await entriesOf(t.po.projectId)).toEqual([{ reason: "initial", base: 10_000_000, rate: "70.0", delta: 7_000_000, memo: null }]);
+    expect(await entriesOf(t.approved.projectId)).toEqual([{ reason: "initial", base: 5_000_000, rate: "70.0", delta: 3_500_000, memo: null }]);
+    expect(await entriesOf(t.zero.projectId)).toEqual([]);
+    expect(await entriesOf(t.done.projectId)).toEqual([]);
+
+    expect(await saveCostRateSetting(admin, RATE_DEF, 75)).toEqual({ firstSave: false, createdCount: 0 });
+    expect(await entriesOf(t.po.projectId)).toHaveLength(1);
+
+    const late = await setup("in_progress");
+    await db.update(projects).set({ preEstimateAmountKrw: 2_000_000 }).where(eq(projects.id, late.projectId));
+    expect(await saveCostRateSetting(admin, RATE_DEF, 75)).toEqual({ firstSave: false, createdCount: 1 });
+    expect(await entriesOf(late.projectId)).toEqual([{ reason: "initial", base: 2_000_000, rate: "75.0", delta: 1_500_000, memo: null }]);
+
+    const later = await setup("in_progress");
+    await db.update(projects).set({ preEstimateAmountKrw: 2_000_000 }).where(eq(projects.id, later.projectId));
+    expect(await saveCostRateSetting(admin, RATE_DEF, 0)).toEqual({ firstSave: false, createdCount: 0 });
+    expect(await entriesOf(later.projectId)).toEqual([]);
+  });
+
+  it("원가율 0 첫 저장은 firstSave · 0건", async () => {
+    await setCostRate(null);
+    const admin = await makeAdmin();
+    await seedTargets();
+    expect(await saveCostRateSetting(admin, RATE_DEF, 0)).toEqual({ firstSave: true, createdCount: 0 });
+    expect(await db.select().from(projectBudgetEntries)).toEqual([]);
+  });
+
+  it("설정 저장이 거부되면(권한 · 검증) 줄도 값도 없다", async () => {
+    await setCostRate(null);
+    await seedTargets();
+    const staff = await makeViewer(DEFAULT_ROLE_ID);
+    await expect(saveCostRateSetting(staff, RATE_DEF, 70)).rejects.toThrow();
+    await expect(saveCostRateSetting(await makeAdmin(), RATE_DEF, 101)).rejects.toThrow();
+    expect(await getSettingValue(PROJECT_COST_RATE_PCT)).toBeNull();
+    expect(await db.select().from(projectBudgetEntries)).toEqual([]);
+  });
+
+  it("가져오기(afterApply 주입) — 같은 tx initial 줄 · 검증 실패면 줄 없음 · 시스템 행위자는 작성자가 없어 전부 되돌린다", async () => {
+    await setCostRate(null);
+    const admin = await makeAdmin();
+    const t = await seedTargets();
+    const payload = (value: unknown) => ({ schemaVersion: "1", exportedAt: new Date().toISOString(), settings: { [PROJECT_COST_RATE_PCT.key]: value } });
+
+    await expect(importSettings(admin, payload(101), { afterApply: seedInitialBudgets })).rejects.toThrow();
+    expect(await db.select().from(projectBudgetEntries)).toEqual([]);
+
+    await expect(importSettings(SYSTEM_VIEWER, payload(70), { afterApply: seedInitialBudgets })).rejects.toThrow("예산 줄 작성자 없음");
+    expect(await getSettingValue(PROJECT_COST_RATE_PCT)).toBeNull();
+    expect(await db.select().from(projectBudgetEntries)).toEqual([]);
+
+    await importSettings(admin, payload(70), { afterApply: seedInitialBudgets });
+    expect(await getSettingValue(PROJECT_COST_RATE_PCT)).toBe(70);
+    expect(await entriesOf(t.po.projectId)).toEqual([{ reason: "initial", base: 10_000_000, rate: "70.0", delta: 7_000_000, memo: null }]);
+  });
+
+  it("afterApply 없이 가져오면 기존 동작 그대로 — 줄 없음", async () => {
+    await setCostRate(null);
+    const admin = await makeAdmin();
+    await seedTargets();
+    await importSettings(admin, { schemaVersion: "1", exportedAt: new Date().toISOString(), settings: { [PROJECT_COST_RATE_PCT.key]: 70 } });
+    expect(await getSettingValue(PROJECT_COST_RATE_PCT)).toBe(70);
+    expect(await db.select().from(projectBudgetEntries)).toEqual([]);
+  });
+});
+
+describe("예산 직접 수정 (07-24 Task 2 · D-729)", () => {
+  async function withBudget() {
+    await setCostRate(70);
+    const s = await setup();
+    await savePo(s, 10_000_000);
+    return s;
+  }
+
+  async function budgetLogs(projectId: string) {
+    return (await db.select().from(actionLog).where(eq(actionLog.entityId, projectId))).filter((row) => row.actionType === "budget_manual_change");
+  }
+
+  it("700만 → 500만: manual −200만(base · 율 NULL · memo) + 행동 로그 같은 tx", async () => {
+    const s = await withBudget();
+    const viewer = await makeBudgetViewer();
+    expect(await setBudgetManually(viewer, s.projectId, { budgetKrw: 5_000_000, expectedBudgetKrw: 7_000_000, memo: "  오입력 정정 " })).toEqual({ budgetKrw: 5_000_000 });
+    expect((await entriesOf(s.projectId)).at(-1)).toEqual({ reason: "manual", base: null, rate: null, delta: -2_000_000, memo: "오입력 정정" });
+    const logs = await budgetLogs(s.projectId);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.actorId).toBe(viewer.id);
+    expect(logs[0]?.detail).toEqual({ changes: { budgetKrw: [7_000_000, 5_000_000] }, memo: "오입력 정정" });
+  });
+
+  it("사유 공백 · 501자 · 음수 · 소수 · 같은 값 · 경합 · 쓰기 없음은 줄 · 로그 없음", async () => {
+    const s = await withBudget();
+    const viewer = await makeBudgetViewer();
+    const call = (input: { budgetKrw: number; expectedBudgetKrw: number; memo: string }, who = viewer) => setBudgetManually(who, s.projectId, input);
+    await expect(call({ budgetKrw: 5_000_000, expectedBudgetKrw: 7_000_000, memo: "   " })).rejects.toThrow("사유 · 입력");
+    await expect(call({ budgetKrw: 5_000_000, expectedBudgetKrw: 7_000_000, memo: "가".repeat(501) })).rejects.toThrow("사유 · 500자 이하");
+    await expect(call({ budgetKrw: -1, expectedBudgetKrw: 7_000_000, memo: "정정" })).rejects.toThrow("예산은 0 이상 · 금액 수정");
+    await expect(call({ budgetKrw: 1.5, expectedBudgetKrw: 7_000_000, memo: "정정" })).rejects.toThrow("예산은 0 이상 · 금액 수정");
+    await expect(call({ budgetKrw: 5_000_000, expectedBudgetKrw: 6_000_000, memo: "정정" })).rejects.toThrow("다른 사람이 먼저 수정 · 새로 불러오기");
+    expect(await call({ budgetKrw: 7_000_000, expectedBudgetKrw: 7_000_000, memo: "그대로" })).toEqual({ budgetKrw: 7_000_000 });
+    const readOnly = await makeBudgetViewer({ write: false });
+    await expect(call({ budgetKrw: 5_000_000, expectedBudgetKrw: 7_000_000, memo: "정정" }, readOnly)).rejects.toThrow();
+    expect(await entriesOf(s.projectId)).toHaveLength(1);
+    expect(await budgetLogs(s.projectId)).toEqual([]);
+  });
+
+  it("행 범위 밖 프로젝트는 쓰기 권한이 있어도 거부 · 줄 · 로그 없음", async () => {
+    const s = await withBudget();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀 경영관리-${randomUUID()}`, viewScope: "team" });
+    for (const [menu, action] of [["projects", "view"], ["projects.budget", "view"], ["projects.budget", "write"]] as const) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
+    }
+    const otherTeam = await makeViewer(role.id, await makeTeam());
+    await expect(setBudgetManually(otherTeam, s.projectId, { budgetKrw: 5_000_000, expectedBudgetKrw: 7_000_000, memo: "정정" })).rejects.toThrow("프로젝트 없음");
+    expect(await entriesOf(s.projectId)).toHaveLength(1);
+    expect(await budgetLogs(s.projectId)).toEqual([]);
+  });
+
+  it("0으로 내릴 수 있고 그 뒤 PO 증액은 늘어난 만큼만 더한다", async () => {
+    const s = await withBudget();
+    const viewer = await makeBudgetViewer();
+    await setBudgetManually(viewer, s.projectId, { budgetKrw: 0, expectedBudgetKrw: 7_000_000, memo: "취소분" });
+    expect(await budgetOf(s.projectId)).toBe(0);
+    await savePo(s, 11_000_000);
+    expect(await budgetOf(s.projectId)).toBe(700_000);
+  });
+});
+
+describe("프로젝트 화면 DTO에 예산 없음 (07-24 Task 2 · SC-20)", () => {
+  it("시스템 관리자로도 상세 · 목록 DTO에 예산 · 사용액 · 남은 예산 키가 없다", async () => {
+    await setCostRate(70);
+    const s = await setup();
+    await savePo(s, 10_000_000);
+    const admin = await makeAdmin();
+    const detail = await findProject(admin, s.projectId);
+    const list = await loadProjectList(admin, { year: "all" });
+    const keys = JSON.stringify([detail, list]);
+    expect(keys).not.toMatch(/"(budget|budgetKrw|usedKrw|remainingKrw|usage|remaining)[A-Za-z]*"\s*:/);
   });
 });

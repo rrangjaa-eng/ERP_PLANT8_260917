@@ -2,17 +2,26 @@ import type { Viewer } from "@/domain/viewer";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
+import { registerDto } from "@/domain/permissions/dto-registry";
 import { round } from "@/domain/money";
 import { PROJECT_COST_RATE_PCT } from "@/domain/settings/keys";
 import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { projectRowScope } from "@/domain/projects/visibility";
+import { recordAction } from "@/domain/action-log/record";
+import { buildChanges } from "@/domain/action-log/changes";
+import { setSettingValue, type SettingDef } from "@/domain/settings/registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { findSimpleValue } from "@/repositories/settings";
+import { withTransaction } from "@/lib/db-transaction";
+import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
+import { findProjectInScope, lockProjectForWrite } from "@/repositories/projects";
 import {
   findBudgetBasisFacts,
   insertBudgetEntry,
   listBudgetRowFacts,
+  listProjectIdsWithoutBudget,
+  sumBudgetKrw,
+  type BudgetEntryInput,
   type BudgetEntryReason,
 } from "@/repositories/project-budget-entries";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -67,12 +76,104 @@ export async function recordBudgetEvent(
   const costRatePct = await readCostRatePct(tx);
   const deltaKrw = budgetDelta({ newBasisKrw: input.newBasisKrw, prevBasisKrw: input.prevBasisKrw, costRatePct });
   if (deltaKrw === null || costRatePct === null) return 0;
-  await insertBudgetEntry(
+  await insertEntry(
     viewer,
     { projectId, reason: input.reason, baseAmountKrw: input.newBasisKrw, costRatePct: costRatePct.toFixed(1), deltaKrw, memo: null },
     tx,
   );
   return 1;
+}
+
+// 줄의 작성자(created_by)는 users 행을 가리킨다(07-11 FK). 시스템 행위자(SYSTEM_VIEWER — 가져오기 명령 등)는 사람 행이 없어
+// FK 오류로 터지기 전에 읽히는 말로 거부한다 — 부르는 쪽 tx 전체가 되돌아간다(값만 저장되고 줄이 빠지는 일이 없다).
+async function insertEntry(viewer: Viewer, input: BudgetEntryInput, tx: DbOrTx): Promise<void> {
+  if (viewer.id === SYSTEM_VIEWER.id) throw new UserFacingError("예산 줄 작성자 없음 · 사람 계정으로 다시 실행");
+  await insertBudgetEntry(viewer, input, tx);
+}
+
+// ── 처음 원가율(D-747 · U3) ─────────────────────────────────────────────
+
+// 원가율 저장 tx 안에서 부른다(화면 저장 saveCostRateSetting · 가져오기 afterApply). 예산 줄이 하나도 없는 진행 프로젝트마다
+// 그때 기준 × 원가율 「처음」 한 줄. 프로젝트 id 오름으로 잠근 뒤 줄 없음을 다시 본다(그 사이 사건 훅이 줄을 썼으면 건너뛴다).
+// 만든 줄 수를 돌려준다.
+export async function seedInitialBudgets(viewer: Viewer, tx: DbOrTx): Promise<number> {
+  const costRatePct = await readCostRatePct(tx);
+  if (costRatePct === null) return 0;
+  const ids = await listProjectIdsWithoutBudget(viewer, BUDGET_INACTIVE_STATUSES, tx);
+  let created = 0;
+  for (const projectId of ids) {
+    await lockProjectForWrite(viewer, projectId, tx);
+    if ((await sumBudgetKrw(viewer, projectId, tx)).count > 0) continue;
+    created += await recordBudgetEvent(viewer, projectId, { reason: "initial", prevBasisKrw: 0, newBasisKrw: await budgetBasisKrw(projectId, tx) }, tx);
+  }
+  return created;
+}
+
+// 화면 저장(설정 액션이 원가율 키일 때만 부른다 — B-P3-7: 설정 도메인은 프로젝트를 모른다). setSimpleSettingValue와 같은 결:
+// 권한은 tx 밖에서 판정하고(잠근 tx 안에서 전역 풀을 쓰지 않는다), 아니면 setSettingValue가 그대로 거부한다. 값 저장 · 설정
+// 행동 로그 · 처음 줄이 한 tx다. firstSave = 저장 전 원가율이 비었고 저장 뒤 값이 있음(0도 값이다 — D-734).
+export async function saveCostRateSetting(
+  viewer: Viewer,
+  def: SettingDef<unknown>,
+  value: unknown,
+): Promise<{ firstSave: boolean; createdCount: number }> {
+  if (!(await defaultCan(viewer, "admin.settings", "write"))) {
+    await setSettingValue(viewer, def, value);
+    return { firstSave: false, createdCount: 0 };
+  }
+  return withTransaction(async (tx) => {
+    const previous = await readCostRatePct(tx);
+    await setSettingValue(viewer, def, value, {
+      can: () => Promise.resolve(true),
+      withTransaction: (fn) => fn(tx),
+      upsertSimpleValue: (v, key, val, by) => upsertSimpleValue(v, key, val, by, tx),
+      recordAction: (v, logEntry) => recordAction(v, logEntry, { tx }),
+    });
+    const next = await readCostRatePct(tx);
+    const createdCount = await seedInitialBudgets(viewer, tx);
+    return { firstSave: previous === null && next !== null, createdCount };
+  });
+}
+
+// ── 직접 수정(D-729) ─────────────────────────────────────────────────────
+
+const MEMO_MAX = 500;
+
+// 경영관리가 예산을 바로 고친다(감액의 유일한 길). 화면이 보던 값(expectedBudgetKrw)과 잠근 뒤 지금 합이 다르면 덮어쓰지 않는다.
+// 차이 0이면 아무것도 쓰지 않는다. 줄 · 끌 수 없는 행동 로그가 한 tx다.
+export async function setBudgetManually(
+  viewer: Viewer,
+  projectId: string,
+  input: { budgetKrw: number; expectedBudgetKrw: number; memo: string },
+): Promise<{ budgetKrw: number }> {
+  if (!(await defaultCan(viewer, BUDGET_MENU, "write"))) throw new BudgetForbiddenError("예산 수정 권한 없음");
+  const memo = input.memo.trim();
+  if (memo === "") throw new UserFacingError("사유 · 입력");
+  if (memo.length > MEMO_MAX) throw new UserFacingError("사유 · 500자 이하");
+  if (!Number.isSafeInteger(input.budgetKrw) || input.budgetKrw < 0) throw new UserFacingError("예산은 0 이상 · 금액 수정");
+  const scope = await projectRowScope(viewer);
+
+  return withTransaction(async (tx) => {
+    // 쓰기 권한이 있어도 행 범위(예산 현황 목록과 같은 projectRowScope) 밖 프로젝트는 없는 것과 같다.
+    await lockProjectForWrite(viewer, projectId, tx);
+    if (!(await findProjectInScope(viewer, scope, projectId, tx))) throw new UserFacingError("프로젝트 없음");
+    const { sumKrw } = await sumBudgetKrw(viewer, projectId, tx);
+    if (sumKrw !== input.expectedBudgetKrw) throw new UserFacingError("다른 사람이 먼저 수정 · 새로 불러오기");
+    const deltaKrw = input.budgetKrw - sumKrw;
+    if (deltaKrw === 0) return { budgetKrw: sumKrw };
+    await insertEntry(viewer, { projectId, reason: "manual", baseAmountKrw: null, costRatePct: null, deltaKrw, memo }, tx);
+    await recordAction(
+      viewer,
+      {
+        actionType: "budget_manual_change",
+        entity: "project",
+        entityId: projectId,
+        detail: { changes: buildChanges({ budgetKrw: sumKrw }, { budgetKrw: input.budgetKrw }), memo },
+      },
+      { tx },
+    );
+    return { budgetKrw: input.budgetKrw };
+  });
 }
 
 // ── 예산 현황 읽기(W5 · SC-21) ─────────────────────────────────────────────
@@ -95,6 +196,18 @@ export type BudgetRowDto = {
   remainingKrw?: number;
   poAmountKrw?: number;
 };
+
+// 누수 스캔(07-03 K31) 등록 — 금액 칸만 정보 항목 뒤에 있다(PO 금액은 예산 · 견적 금액 all-of). 식별 · 상태 칸(번호 · 이름 · 상태 낱말 ·
+// 초과 · 계산 가능)은 정보 항목이 아니라 `projects.budget` 메뉴 보기 + 행 범위(projectRowScope) 뒤에서만 나간다.
+registerDto({
+  name: "budgetRow",
+  fields: [
+    { key: "budgetKrw", infoItem: BUDGET_AMOUNT_ITEM },
+    { key: "usedKrw", infoItem: BUDGET_AMOUNT_ITEM },
+    { key: "remainingKrw", infoItem: BUDGET_AMOUNT_ITEM },
+    { key: "poAmountKrw", infoItem: [BUDGET_AMOUNT_ITEM, PO_AMOUNT_ITEM] },
+  ],
+});
 
 export type BudgetTotals = { budgetKrw: number; usedKrw: number; remainingKrw: number };
 

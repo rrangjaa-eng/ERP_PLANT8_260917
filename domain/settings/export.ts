@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import type { Viewer } from "@/domain/viewer";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { buildChanges } from "@/domain/action-log/changes";
@@ -89,6 +90,9 @@ export type ImportDeps = ExportDeps & {
   now: Date;
   // quick 261001-85g: 올해 전 업무 기록이 있는가(빈 새 환경 판정 — 테스트 주입).
   hasPastBusinessRecords: (year: number) => Promise<boolean>;
+  // 07-24(D-747 · B-P3-7): 적용 바로 뒤 같은 tx에서 부르는 주입 훅 — 가져오기 명령이 처음 원가율 예산 줄(seedInitialBudgets)을 넘긴다.
+  // 설정 도메인은 프로젝트 도메인을 import하지 않는다. 훅이 던지면 가져오기 전체가 되돌아간다.
+  afterApply: (viewer: Viewer, tx: DbOrTx) => Promise<unknown>;
 };
 
 type HistorizedImportEntry = { effectiveFrom?: unknown; value?: unknown };
@@ -241,6 +245,7 @@ export async function importSettings(
     }
 
     await applySettingsImport(viewer, { simple, historized }, tx);
+    if (deps?.afterApply) await deps.afterApply(viewer, tx);
     await recordAction(
       viewer,
       {

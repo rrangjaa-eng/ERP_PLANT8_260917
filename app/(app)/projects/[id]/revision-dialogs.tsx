@@ -268,7 +268,7 @@ function ApprovalPanelForm({
   /** 칸을 고치면 지난 서버 거부 이유를 지운다. */
   onEdit: () => void;
 }) {
-  const [basis, setBasis] = useState("");
+  const [basis, setBasis] = useState<string>("purchase_order");
   const [basisError, setBasisError] = useState<string | null>(null);
   const [approvedOn, setApprovedOn] = useState(todayKst);
   const reasonId = useId();

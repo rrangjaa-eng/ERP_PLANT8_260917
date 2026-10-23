@@ -24,3 +24,11 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: action-log.module.css 추가 규칙 3개(`.detailLines` 목록 초기화 · `.detailFirst` overflow-wrap · `.nowrapHeader` white-space) 모두 색 · 서체 · radius 값 0. stylelint 통과.
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: DOM 실측(CI=true 프로덕션 빌드 · /home/user/wt/logs/07-25/dom-audit.json) 가로 넘침 1280/768/375/320 모두 0, 폰 접힌 줄 트리거 높이 51px(>=44) · 시트 가로 넘침 0.
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: /home/user/wt/logs/07-25/dom-1280.png · dom-768.png · dom-375.png · dom-320.png · dom-375-sheet.png · dom-320-sheet.png(판정은 DOM 실측, 스크린샷은 기록용).
+
+## 독립 DOM 감사 고침 (2026-10-23, 감사 `.planning/phases/07-schedule-notify-audit/audit/07-25-dom-audit.md`)
+화면: app/(app)/admin/action-log/
+- [x] P1 키보드: 문서 번호 칸은 값이 바뀐 채 떠날 때만 제출한다 — 근거: 맨 위에서 Tab만으로 표까지 1280/768 24회 · 375/320 19회, 그 사이 문서 새로 불러짐 0(DOM 실측 `logs/07-25/audit2/audit.json`), E2E desktop·mobile-375 통과.
+- [x] P2 시간: 발생 시각을 KST로 보인다(`kstDateTimeOf`, 기간 필터와 같은 시간대) — 근거: UTC 10-22 15:30 행이 표·시트 부제에서 `2026-10-23 00:30`. 새 글자 형식 없음(보관함과 같은 `YYYY-MM-DD HH:mm`).
+- [x] P2 줄 순서: 칸 이름 표 선언 순서 → 표에 없는 키는 키 사전 순 — 근거: 오케스트레이터 결정으로 SC-08 순서 공백을 메운 것이며 되돌릴 수 있다(`detail-lines.ts` `compareFields` 한 곳). 단위 시험 3건 + E2E 앞 3줄 순서.
+- [x] P3 같은 말을 두 번 하지 않는다: 없음 → 없음 줄은 표 칸 · 시트 · `외 N칸` 개수에서 함께 뺀다 — 근거: 줄 함수 한 곳에서 걸러 표와 시트가 같은 목록을 쓴다(단위 3건 · DOM: 표 1줄·단추 0 / 시트 dt 5개).
+- [x] 새 색·서체·radius·클래스 없음 — 근거: CSS 변경 0, 토큰 밖 계산값 0(재실측).

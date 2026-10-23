@@ -96,7 +96,7 @@ actuals:
 1. **[Rule 3] 스모크 지급 목록 행** — 계획은 「지급 목록 열림/404」인데 실제는 `/expenses` 안 보기라 경로 열림 + 선택지 요소 행으로 나눴다(발견 2).
 2. **[Rule 3] 스모크 `/projects/budget`** — 스트리밍 200이라 `screen404` 판정(발견 1).
 3. **[Rule 1] 누수 스캔 시드 대조** — 처음엔 `can()`으로 비시스템 계급 거부를 확인했으나 같은 파일의 앞 describe가 DB 권한을 켜 둬 순서에 기대었다(대표 `admin.vendors` 보기 켜짐). `ROLE_DEFAULT_PERMISSIONS` 시드 표 대조로 바꿨다.
-4. **독립 DOM 감사 미수행** — 아래 「확인하지 않은 것」.
+4. 독립 DOM 감사는 뒤에 오케스트레이터가 실행 — 아래 「독립 DOM 감사 고침」.
 
 ## 호출한 스킬
 
@@ -104,7 +104,7 @@ actuals:
 
 ## 확인하지 않은 것
 
-- **독립 DOM 감사**(실행자가 아닌 별도 에이전트의 `audit/07-25-dom-audit.md`)는 만들지 않았다 — 이 세션에서 별도 에이전트를 띄울 수단이 없었다. 위 DOM 실측은 실행자 측정이라 감사를 대신하지 않는다. 감사 보고서 파일 없음.
+- ~~독립 DOM 감사 미수행~~ → 오케스트레이터가 별도 에이전트로 실행했고 보고서는 `audit/07-25-dom-audit.md`에 있다(아래 「독립 DOM 감사 고침」). 위 「DOM 실측」은 실행자 측정이라 감사를 대신하지 않는다. 고침 뒤 재감사(독립)는 하지 않았다 — 같은 스펙으로 실행자가 다시 잰 값만 보고서 4절에 있다.
 - PR 게이트 `/review` → `/design-review`(Codex 포함) → `/qa`는 하지 않았다(오케스트레이터 몫). 전체 단위·통합·E2E는 CI.
 - 대표 `/admin/action-log` ⑧ 켬 분기(200 + 행 1개 이상)는 시험하지 않았다(⑧ 끔).
 - 사용자 본 화면 눈 확인(스크린샷은 기록용으로만 저장).
@@ -114,6 +114,22 @@ actuals:
 - UI-SPEC SC-08의 「줄 함수(07-04)」 문구는 07-04-PLAN(줄 함수는 07-25 소유)과 어긋난다 — 계획대로 UI-SPEC은 고치지 않았다.
 - `roleId` / `extraRoleIds` 값은 UUID라 이름으로 풀지 못하고 `바뀜` / `N개`로 보인다(이름 해석은 DB 조회가 필요해 줄 함수가 순수가 아니게 된다). 필요하면 후속 판단.
 - `RowSheet`의 `KvList`가 `label`을 React key로 쓴다 — 한 행에 같은 칸 이름이 두 줄이면(예: 계좌번호 두 키) 경고가 난다. 현재 쓰는 쪽에서는 일어나지 않는다.
+
+## 독립 DOM 감사 고침 (감사 `audit/07-25-dom-audit.md`, head `41f36cbe` 기준)
+
+| 감사 항목 | 처리 | 커밋 |
+|---|---|---|
+| P1 문서 번호 blur가 값이 그대로여도 제출 → Tab만으로 표에 못 닿음 | 값이 바뀐 때만 제출(프로젝트 필터와 같은 규칙). E2E desktop `외 N칸` · mobile-375 행 트리거까지 Tab만으로 + 문서 새로 불러짐 0, 값을 바꾸면 Tab/Enter에서 제출 | `7ba35198` |
+| P2 발생 시각 UTC 표시 | `kstDateTimeOf`(표 · 시트 부제). 형식이 `YYYY-MM-DD HH:mm`이라 **초 단위가 빠진다**(저장소 도우미를 그대로 쓰라는 지시) | `aa8e96e7` |
+| P2 상세 줄 순서가 jsonb 키 순서 | 칸 이름 표 선언 순서 → 표에 없는 키는 키 사전 순. **오케스트레이터 결정으로 SC-08 계약 공백을 메운 것(되돌릴 수 있음, `compareFields` 한 곳)** | `f86335d2` |
+| P3 이전 · 이후 둘 다 없음인 줄 | 줄 함수에서 제외해 표 칸 · 시트 · `외 N칸` 개수가 함께 줄어든다 | `f86335d2` |
+| 그 밖 P3(긴 값 높이 · `.nowrapHeader` 사본 · 빈 상태 `필터 지우기` 두 개) | 고치지 않음 — 후속 | — |
+
+- 해석 메모: P3 「before와 after가 둘 다 `—`」인 줄은 코드에 없다(줄 함수의 빈 값 글자는 `없음`, `—`는 changes 자체가 없을 때). 그래서 「없음 → 없음」 줄을 뺐다. 시트 고정 4행(행위자 · 계급 · 대상 · 문서)의 `—`(감사 7번)는 표 칸과 일치시키려고 그대로 뒀다.
+- RED→GREEN: 단위 5건 RED(`red-unit.log`: 순서 3 · 없음→없음 2) → 94 passed. E2E는 고침 전 desktop 2건(KST `2026-10-22 15:30:00` 표시 · Tab 중 `Execution context was destroyed`) · mobile-375 2건 실패 → 고침 뒤 desktop(`action-log` + `role-smoke`) 20 passed · mobile-375(`mobile-action-log`) 4 passed. 순서 · 값 바뀐 blur/Enter 시험은 처음부터 통과(순서는 줄 함수를 먼저 고쳤고, Enter는 브라우저 기본 제출이 이미 동작).
+- lint · typecheck exit 0. 재실측: `audit/07-25-dom-audit.md` 4절. 점검표에 고침 절을 더했다.
+- 호출한 스킬(고침): `superpowers:systematic-debugging` · `superpowers:test-driven-development` · `plant8:design-gate` · `superpowers:verification-before-completion`.
+- 확인하지 않은 것: 초 단위 시각이 필요한지(결정 필요) · 독립 재감사 · 실제 `buildChanges` 행의 순서(픽스처는 직접 넣은 changes).
 
 ## Self-Check: PASSED
 

@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Attachments, type AttachmentsProps, type BulkImportRow } from "../../../ui/attachments/Attachments";
+import { Attachments, type AttachmentsProps, type BulkImportRow, type DoneRow, visibleFiles, withUploaded } from "../../../ui/attachments/Attachments";
 
 // 06.1-03 Task 2 (SP-6103 · G-1 · D-6115) — 첨부 영역 「엑셀 일괄 등록」 변형. 컴포넌트는 서버 DTO를 그리기만 한다(판정 · 계산 · 크기 검사 없음).
 // jsdom 없이(environment: "node") 정적 렌더로 마크업을 단언한다 — 포커스 · 끌어 놓기 · 키는 E2E(dev-components) 몫이다.
@@ -183,5 +183,35 @@ describe("Attachments variant=bulk-import — 거절 · 업로드 중 · 실패 
     const name = `${"가".repeat(76)}.xls`;
     const markup = render([{ ...CARD, key: "r5", fileName: name }]);
     expect(markup).toContain(name);
+  });
+});
+
+// 07-23 E2E 불안정(vendors `서류` 교체): 한 자리에서 A를 올리고 교체로 B를 올린 뒤 부모가 서버 값을 다시 읽으면(files=[B])
+// 이번 업로드 목록에 남은 A가 서버 값 뒤에 붙어 `slice(-1)`이 옛 파일 A를 골랐다 — 새로 고침이 끝난 뒤 자리에 `등록증1`이 다시 섰다.
+describe("Attachments single — 교체 뒤 그릴 파일", () => {
+  const file = (id: string, name: string): DoneRow => ({ id, name, sizeBytes: 1024, createdAt: "2026-10-23T00:00:00.000Z", previewUrl: null });
+  const A = file("a", "등록증1.pdf");
+  const B = file("b", "등록증2.pdf");
+  const names = (rows: DoneRow[]) => rows.map((row) => row.name);
+
+  it("A 업로드 · 새로 고침 → B 교체 업로드 · 새로 고침(서버 값 [B])이면 B 하나만 그린다", () => {
+    let done = withUploaded([], A, true);
+    expect(names(visibleFiles([A], done, [], true))).toEqual(["등록증1.pdf"]);
+    done = withUploaded(done, B, true);
+    // 새로 고침 전(서버 값 아직 [A]) — 이번 업로드 B.
+    expect(names(visibleFiles([A], done, [], true))).toEqual(["등록증2.pdf"]);
+    // 새로 고침 뒤(서버가 A를 떼고 [B]).
+    expect(names(visibleFiles([B], done, [], true))).toEqual(["등록증2.pdf"]);
+  });
+
+  it("교체한 B를 지우면(서버 값 [] · 지운 것 [b]) 옛 A가 되살아나지 않는다", () => {
+    const done = withUploaded(withUploaded([], A, true), B, true);
+    expect(visibleFiles([B], done, ["b"], true)).toEqual([]);
+    expect(visibleFiles([], done, ["b"], true)).toEqual([]);
+  });
+
+  it("여러 파일 갈래는 이번 업로드를 쌓는다(서버 값에 없는 것만 뒤에)", () => {
+    const done = withUploaded(withUploaded([], A, false), B, false);
+    expect(names(visibleFiles([A], done, [], false))).toEqual(["등록증1.pdf", "등록증2.pdf"]);
   });
 });

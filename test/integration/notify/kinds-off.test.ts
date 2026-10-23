@@ -202,6 +202,41 @@ describe("견적 재촉 (N13)", () => {
     await tick([quoteNudgeKind], "2026-10-12");
     expect((await rowsOf(fx.pm, "quote-nudge")).map((row) => row.message)).toEqual(["견적 작성 대기 · 다음 주 행사 · 시작 7일 전"]);
   });
+
+  // 리뷰 F1: 늦게 등록된 프로젝트는 첫 기한(시작 - 7일)이 이미 지났다 — 260907(server/src/notices.ts:2393-2397)처럼 실제 거리로 적고 첫 알림은 1회차 담당 PM만.
+  it("행사가 내일인 프로젝트 — 첫 알림은 1회차 담당 PM만 `시작 1일 전` · 2회차는 첫 알림부터 3영업일 뒤 본인 + 팀장", async () => {
+    const fx = await setupExpenseProject();
+    const late = await project(fx.pm, "내일 행사", "2026-10-13");
+    await enable("quote-nudge");
+
+    await tick([quoteNudgeKind], "2026-10-12");
+    const first = await rowsOf(fx.pm, "quote-nudge");
+    expect(first.map((row) => [row.entityId, row.round, row.message])).toEqual([[late, 1, "견적 작성 대기 · 내일 행사 · 시작 1일 전"]]);
+    expect(await rowsOf(fx.lead, "quote-nudge")).toHaveLength(0);
+
+    await tick([quoteNudgeKind], "2026-10-14");
+    expect((await rowsOf(fx.pm, "quote-nudge")).map((row) => row.round)).toEqual([1]);
+    await tick([quoteNudgeKind], "2026-10-15");
+    expect((await rowsOf(fx.pm, "quote-nudge")).map((row) => [row.round, row.message])).toEqual([
+      [1, "견적 작성 대기 · 내일 행사 · 시작 1일 전"],
+      [2, "견적 작성 대기 · 내일 행사 · 시작한 지 2일 · 2회차"],
+    ]);
+    expect((await rowsOf(fx.lead, "quote-nudge")).map((row) => [row.round, row.message])).toEqual([[2, "견적 작성 대기 · 내일 행사 · 시작한 지 2일 · 2회차"]]);
+  });
+
+  it("오늘 시작 · 이미 시작한 프로젝트 — 첫 알림은 1회차 담당 PM만 `오늘 시작` · `시작한 지 N일`", async () => {
+    const fx = await setupExpenseProject();
+    await project(fx.pm, "오늘 행사", "2026-10-12");
+    await project(fx.pm, "지난 행사", "2026-10-02");
+    await enable("quote-nudge");
+
+    await tick([quoteNudgeKind], "2026-10-12");
+    expect((await rowsOf(fx.pm, "quote-nudge")).map((row) => [row.round, row.message]).sort()).toEqual([
+      [1, "견적 작성 대기 · 오늘 행사 · 오늘 시작"],
+      [1, "견적 작성 대기 · 지난 행사 · 시작한 지 10일"],
+    ]);
+    expect(await rowsOf(fx.lead, "quote-nudge")).toHaveLength(0);
+  });
 });
 
 // ── 임자 없는 증빙 ── 등록 7일 넘은 「공개 · 붙임 0」.

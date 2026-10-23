@@ -107,6 +107,29 @@ export async function insertNotifications(
   return inserted.map((row) => row.id);
 }
 
+// 1회차를 이미 보낸 날(reference_date) — 종류 · 대상별 가장 이른 1회차 행. 사다리 기준일을 첫 알림 날에 묶는 종류(견적 재촉)가 tick 트랜잭션 안에서 읽는다.
+export async function listFirstRoundDates(
+  viewer: Viewer,
+  input: { kind: string; entity: string; entityIds: readonly string[] },
+  tx: DbOrTx = db,
+): Promise<Map<string, string>> {
+  void viewer;
+  if (input.entityIds.length === 0) return new Map();
+  const rows = await tx
+    .select({ entityId: notificationLog.entityId, first: sql<string>`min(${notificationLog.referenceDate})::text` })
+    .from(notificationLog)
+    .where(
+      and(
+        eq(notificationLog.conditionKind, input.kind),
+        eq(notificationLog.entity, input.entity),
+        inArray(notificationLog.entityId, [...input.entityIds]),
+        eq(notificationLog.round, 1),
+      ),
+    )
+    .groupBy(notificationLog.entityId);
+  return new Map(rows.map((row) => [row.entityId, row.first]));
+}
+
 // 04.3-10 — 사건 알림: 정기 tick이 아니라 행동(신청 · QR 생성 · 제출 한도)이 그 트랜잭션 안에서 곧바로 넣는 행이다.
 // tick 잠금을 잡지 않는다 — 같은 중복 키(위 insertNotifications와 같은 충돌 대상)가 같은 행을 막고, email_status 기본
 // pending이라 다음 영업일 tick의 이메일 묶음이 보낸다(04.2 D-4203 규칙 그대로). 돌려준 id 수가 실제 삽입 수다.

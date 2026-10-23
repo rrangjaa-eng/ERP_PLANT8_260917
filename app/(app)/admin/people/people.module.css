@@ -86,6 +86,11 @@
 }
 
 /* 계급 표 머리글은 폰에서 칸이 좁아도 한 글자씩 꺾이지 않는다(defect 3 — 한글은 글자 사이에서 꺾인다). */
+/* 07-21(SYSTEM 개정 10): 계급 표 위 잠김 한 줄 — 표와 붙지 않게 아래 여백만. */
+.ceilingHint {
+  margin: 0 0 var(--s-2);
+}
+
 .rolesTable th {
   white-space: nowrap;
 }

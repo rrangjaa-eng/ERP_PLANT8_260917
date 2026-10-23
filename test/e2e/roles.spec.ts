@@ -11,6 +11,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
 import { archiveTempRoles, insertTempRole } from "./expense-fixture";
 import { makePerson, type Person } from "./leave-org";
+import { createDelegatedAccount, type DelegatedAccount } from "./admin-cap-fixtures";
 
 // defect 2(wave 5 DOM 감사): 계급 이름을 바꾸는 인라인 입력이 <label>도
 // aria-label도 없었다. roles-client.tsx의 RoleRow가
@@ -324,5 +325,99 @@ test.describe("자기 계급 행의 범위 칸(CSO-1 R-1)", () => {
 
     await expect(page.getByLabel("팀장 업무 범위").filter({ visible: true })).toBeEnabled();
     await expect(viewScopeSelect(page, "팀장")).toBeEnabled();
+  });
+});
+
+// 07-21(R14 · R16 화면 · SYSTEM 개정 10): 위임자(admin.people 쓰기 · admin.permissions 쓰기 없음)의 계급 표 — 상한 밖 줄은 글자 · 이름 입력 · `삭제` 없음,
+// 상한 안 줄의 select는 서버가 받는 값만, 하나뿐이면 글자, 표 위 잠김 한 줄. 시드 계급 범위는 바꾸지 않는다(저장 확인은 임시 계급에서만).
+async function loginWith(page: Page, email: string, password: string): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(email);
+  await page.getByLabel("비밀번호").fill(password);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+}
+
+const CEILING_HINT = "계급 지정 권한 없음 · 시스템 관리자";
+
+function visibleRow(page: Page, name: string): Locator {
+  return page.getByRole("row").filter({ hasText: name }).filter({ visible: true });
+}
+
+test.describe("위임자 계급 표 범위 칸(07-21 R14 · 개정 10)", () => {
+  const suffix = randomUUID().slice(0, 6);
+  const companyName = `E2E상한밖-${suffix}`;
+  const teamName = `E2E상한안-${suffix}`;
+  let delegated: DelegatedAccount;
+
+  test.beforeAll(async () => {
+    await insertTempRole({ id: `role-${randomUUID()}`, name: companyName, workScope: "company", viewScope: "company" });
+    await insertTempRole({ id: `role-${randomUUID()}`, name: teamName, workScope: "team", viewScope: "team" });
+    delegated = await createDelegatedAccount({
+      menus: [
+        { menu: "admin.people", action: "view" },
+        { menu: "admin.people", action: "write" },
+        { menu: "admin.archive", action: "view" },
+        { menu: "admin.archive", action: "write" },
+      ],
+      infoItems: ["role.value"],
+      copyFrom: [],
+      viewScope: "team",
+      workScope: "team",
+    });
+  });
+
+  test.afterAll(async () => {
+    await archiveTempRoles();
+  });
+
+  test("1280 위임 계정 — 상한 밖 줄은 글자뿐, 상한 안 줄은 받는 값만, 표 위 잠김 한 줄", async ({ page }) => {
+    await loginWith(page, delegated.email, delegated.password);
+    await page.goto("/admin/people/roles");
+
+    for (const name of ["시스템 관리자", companyName]) {
+      await expect(page.getByLabel(`${name} 업무 범위`)).toHaveCount(0);
+      await expect(page.getByLabel(`${name} 보는 범위`)).toHaveCount(0);
+      await expect(page.getByLabel(`${name} 이름`)).toHaveCount(0);
+      const row = visibleRow(page, name);
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText("전사");
+      await expect(row.getByRole("button", { name: "삭제" })).toHaveCount(0);
+    }
+
+    await expect(page.getByLabel(`${teamName} 업무 범위`)).toHaveCount(0);
+    await expect(visibleRow(page, teamName)).toContainText("자기 팀");
+    await expect(viewScopeSelect(page, teamName).locator("option")).toHaveText(["팀", "본인"]);
+    await expect(page.getByLabel(`${teamName} 이름`)).toBeEnabled();
+
+    const hint = page.getByText(CEILING_HINT, { exact: true }).filter({ visible: true });
+    await expect(hint).toHaveCount(1);
+    const hintBeforeTable = await hint.evaluate((el) => {
+      const table = document.querySelector("main table");
+      return table !== null && (el.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    });
+    expect(hintBeforeTable).toBe(true);
+
+    const saved = page.waitForResponse(ROLES_POST);
+    await viewScopeSelect(page, teamName).selectOption({ label: "본인" });
+    await saved;
+    await page.reload();
+    await expect(selectedLabel(viewScopeSelect(page, teamName))).toHaveText("본인");
+  });
+
+  test("375 위임 계정은 잠김 줄 없음 · 시스템 관리자는 잠김 줄 0 · 상한 밖 계급 보는 범위 선택지 넷(회귀)", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await loginWith(page, delegated.email, delegated.password);
+    await page.goto("/admin/people/roles");
+    await expect(page.getByRole("heading", { name: "계급" }).first()).toBeVisible();
+    await expect(page.getByText(CEILING_HINT, { exact: true }).filter({ visible: true })).toHaveCount(0);
+
+    await page.context().clearCookies();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await loginAs(page);
+    await page.goto("/admin/people/roles");
+    await expect(page.getByRole("heading", { name: "계급" }).first()).toBeVisible();
+    await expect(page.getByText(CEILING_HINT, { exact: true })).toHaveCount(0);
+    await expect(viewScopeSelect(page, companyName).locator("option")).toHaveText(["전사", "본부", "팀", "본인"]);
   });
 });

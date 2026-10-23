@@ -47,7 +47,7 @@ export type PermissionGridLinked = {
   revertSteps: (changes: PermissionGridLinkedChange[]) => { columnId: string; next: boolean }[];
 };
 
-type LinkedResult = { next: boolean; groups: string[]; batches: { rowId: string; changes: PermissionGridLinkedChange[] }[] };
+type LinkedResult = { next: boolean; groups: string[]; kinds: string[]; batches: { rowId: string; changes: PermissionGridLinkedChange[] }[] };
 
 export type PermissionGridProps = {
   /** 시각적으로 숨긴 <caption> 텍스트. */
@@ -280,14 +280,18 @@ export function PermissionGrid({
   // 같이 바뀐 칸(요청 칸 밖)이 있을 때만 결과 줄 — `{메뉴}`는 딸려 바뀐 칸의 묶음 이름.
   function linkedResult(next: boolean, requestedId: string, batches: LinkedResult["batches"]): LinkedResult | null {
     const groups: string[] = [];
+    const kinds: string[] = [];
     for (const batch of batches) {
       for (const change of batch.changes) {
         if (change.columnId === requestedId) continue;
-        const group = columns.find((column) => column.id === change.columnId)?.group ?? "";
+        const column = columns.find((candidate) => candidate.id === change.columnId);
+        const group = column?.group ?? "";
         if (!groups.includes(group)) groups.push(group);
+        // 실제로 바뀐 동작 이름만 — 그 묶음에 없는 동작(예: 계좌 묶음의 승인)을 말하지 않는다.
+        if (column && !kinds.includes(column.label)) kinds.push(column.label);
       }
     }
-    return groups.length > 0 ? { next, groups, batches } : null;
+    return groups.length > 0 ? { next, groups, kinds, batches } : null;
   }
 
   async function handleRevert(model: PermissionGridLinked, target: LinkedResult) {
@@ -374,7 +378,7 @@ export function PermissionGrid({
         <p role="status" className={styles.resultLine}>
           {result ? (
             <>
-              <span>{`${result.groups.join(", ")} · ${result.next ? "보기도 켬" : "쓰기·승인도 끔"}`}</span>
+              <span>{`${result.groups.join(", ")}: ${result.kinds.join(", ")}도 ${result.next ? "켬" : "끔"}`}</span>
               <RowActions>
                 <RowAction pending={reverting} onClick={() => void handleRevert(linked, result)}>
                   되돌리기
@@ -491,18 +495,30 @@ export function PermissionGrid({
               return {
                 label: column.group ? `${column.group} · ${column.label}` : column.label,
                 value: (
-                  <input
-                    type="checkbox"
-                    className={styles.mobileCheckbox}
-                    checked={cell.checked}
-                    disabled={cellDisabled(selectedRow, column, cell.checked)}
-                    aria-label={cellAriaLabel(selectedRow, column)}
-                    aria-busy={cell.status === "saving" ? true : undefined}
-                    aria-disabled={cell.status === "saving" ? true : undefined}
-                    onChange={() => {
-                      void handleCellToggle(selectedRow, column);
-                    }}
-                  />
+                  <span
+                    className={[
+                      styles.mobileCell,
+                      cell.status === "delayed" ? styles.delayed : "",
+                      cell.status === "saving" ? styles.dirty : "",
+                      cell.status === "error" ? styles.errorCell : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    title={cell.reason}
+                  >
+                    <input
+                      type="checkbox"
+                      className={styles.mobileCheckbox}
+                      checked={cell.checked}
+                      disabled={cellDisabled(selectedRow, column, cell.checked)}
+                      aria-label={cellAriaLabel(selectedRow, column)}
+                      aria-busy={cell.status === "saving" ? true : undefined}
+                      aria-disabled={cell.status === "saving" ? true : undefined}
+                      onChange={() => {
+                        void handleCellToggle(selectedRow, column);
+                      }}
+                    />
+                  </span>
                 ),
               };
             })}

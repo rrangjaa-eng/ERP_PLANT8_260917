@@ -540,7 +540,7 @@ test.describe("권한표 딸린 칸(07-21 R7 · K4 · K24 · U5 · U6)", () => {
       }
       saves.release();
 
-      await expect(resultLine(page)).toContainText("거래처 · 보기도 켬");
+      await expect(resultLine(page)).toContainText("거래처: 보기도 켬");
       for (const cell of [account, view]) await expect(cell).not.toHaveAttribute("aria-busy", "true");
       await expect(page.getByRole("alert").filter({ hasText: "저장 실패" })).toHaveCount(0);
       expect(saves.posts()).toBe(1);
@@ -567,7 +567,7 @@ test.describe("권한표 딸린 칸(07-21 R7 · K4 · K24 · U5 · U6)", () => {
       const account = cellOf(page, role, "거래처 계좌 · 서류 수정", "쓰기");
       await view.click();
       for (const cell of [view, write, account]) await expect(cell).not.toBeChecked();
-      await expect(resultLine(page)).toContainText("거래처, 거래처 계좌 · 서류 수정 · 쓰기·승인도 끔");
+      await expect(resultLine(page)).toContainText("거래처, 거래처 계좌 · 서류 수정: 쓰기도 끔");
 
       await page.reload();
       for (const cell of [view, write, account]) await expect(cell).not.toBeChecked();
@@ -642,7 +642,7 @@ test.describe("권한표 딸린 칸(07-21 R7 · K4 · K24 · U5 · U6)", () => {
       const write = cellOf(page, role, "코드표", "쓰기");
       await write.click();
       await expect(view).toBeChecked();
-      await expect(resultLine(page)).toContainText("코드표 · 보기도 켬");
+      await expect(resultLine(page)).toContainText("코드표: 보기도 켬");
       await resultLine(page).getByRole("button", { name: "되돌리기", exact: true }).click();
       await expect(write).not.toBeChecked();
       await expect(view).not.toBeChecked();

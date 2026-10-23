@@ -215,6 +215,11 @@
   margin-top: var(--s-1);
 }
 
+/* 폰 칸 — 체크박스를 감싸 PC `td`와 같은 저장 중 면(.dirty) · 실패 표시(.errorCell)를 받는다. */
+.mobileCell {
+  display: inline-flex;
+}
+
 .mobileCheckbox {
   accent-color: var(--native-accent);
   width: var(--touch-min);
@@ -255,4 +260,17 @@
 
 .resultLine:empty {
   margin: 0;
+}
+
+/* 폰(<700): 결과 줄은 상단 바 아래에 붙어, 아래쪽 칸을 켠 뒤에도 `되돌리기`가 화면 안에 선다(07-21 감사 #3 — 제출 줄 sticky와 같은 방식). 비면 자리 없음. */
+@media (max-width: 699.98px) {
+  .resultLine:not(:empty) {
+    position: sticky;
+    top: var(--bar-h);
+    z-index: var(--z-sticky);
+    padding: var(--s-2) 0;
+    margin-bottom: var(--s-2);
+    background: var(--surface-base);
+    border-bottom: var(--line-w) solid var(--border-row);
+  }
 }

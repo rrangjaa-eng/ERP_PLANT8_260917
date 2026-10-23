@@ -262,6 +262,14 @@
   gap: var(--s-1);
 }
 
+/* K12: 1024 미만에는 이 2차가 없다. 서버 렌더는 폭을 몰라 그려 두므로(use-editable-width 서버 스냅숏 = 참) 수화 전에도 CSS로 먼저 숨긴다 —
+   안 그러면 700에서 이 버튼 때문에 접힌 필터 줄이 수화 뒤 48px 위로 당겨져 표가 밀린다(PR #285 CI e2e). */
+@media (max-width: 1023.98px) {
+  .exportGroup {
+    display: none;
+  }
+}
+
 .exportRow {
   display: flex;
   flex-wrap: wrap;

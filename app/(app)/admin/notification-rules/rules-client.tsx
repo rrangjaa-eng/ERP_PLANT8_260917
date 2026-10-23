@@ -239,7 +239,7 @@ function RuleForm({ row, roles }: { row: RuleRowView; roles: RuleRoleView[] }) {
       <fieldset className={styles.group}>
         <legend className={styles.legend}>받는 사람 추가</legend>
         {roles.map((role) => (
-          <label key={role.id} className={styles.checkRow}>
+          <label key={role.id} className={role.archived ? `${styles.checkRow} ${styles.muted}` : styles.checkRow}>
             <input type="checkbox" name="extraRoleIds" value={role.id} defaultChecked={row.extraRoleIds.includes(role.id)} />
             {role.name}
           </label>

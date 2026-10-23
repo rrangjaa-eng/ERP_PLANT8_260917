@@ -7,6 +7,7 @@ import { changePersonRole, registerPerson, setResignationDate } from "@/domain/p
 import { assignTeam, cancelFutureAssignment } from "@/domain/org";
 import { archive } from "@/domain/archive";
 import { SeatTakenError } from "@/domain/people/seat-rules";
+import { RetiredPersonEditError } from "@/domain/people/retired";
 import { listMemberships } from "@/repositories/team-memberships";
 import { findUserById, setUserArchived, updateUserResignationDate } from "@/repositories/users";
 import { countRows, NOW_2026 } from "./approvals-fixtures";
@@ -373,7 +374,7 @@ async function resignationOf(userId: string): Promise<string | null> {
 }
 
 describe("퇴직일 해제 · 늦추기 자리 중복(06.4 D-6404 · E2)", () => {
-  it("지난 팀장 L의 퇴직일을 지우거나 미래로 늦추면 새 팀장 Z와 겹쳐 거부 · 퇴직일 · 로그 그대로, 지난 날짜끼리는 통과", async () => {
+  it("지난 팀장 L의 퇴직일을 지우면 새 팀장 Z와 겹쳐 거부 · 퇴직일 · 로그 그대로, 다른 날짜로 옮기기는 퇴직자 거부(F24)", async () => {
     const admin = await makeAdmin("관리자");
     const { teamId } = await makeOrgTeam();
     const l = await makeSeated(uniqueName("팀장L"), TEAM_LEAD_ROLE_ID, teamId);
@@ -386,14 +387,14 @@ describe("퇴직일 해제 · 늦추기 자리 중복(06.4 D-6404 · E2)", () =>
     expect(await resignationOf(l.id)).toBe("2026-09-01");
     expect(await countLogs("document_update", "user", l.id)).toBe(logsBefore);
 
-    const later = await refusal(setResignationDate(admin, l.id, "2026-12-31", deps), SeatTakenError);
-    expect(later.message).toBe(`팀장 있음 · ${await nameOf(z.id)}`);
-
     const hidden = await refusal(setResignationDate(admin, l.id, null, { ...deps, visible: () => Promise.resolve(false) }), SeatTakenError);
     expect(hidden.message).toBe("팀장 있음 · 시스템 관리자");
 
-    await setResignationDate(admin, l.id, "2026-09-10", deps);
-    expect(await resignationOf(l.id)).toBe("2026-09-10");
+    // 사용자 결정(카드 2026-10-23 12:34 KST) 「퇴직한 사람의 퇴직일은 비우기만 허용」: 늦추기 · 지난 날짜끼리 옮기기는 자리 검사 전에 거부.
+    // 재직 중 늦추기의 자리 검사는 아래 「퇴직일 늦추기와 예약된 후임」이 잰다.
+    await refusal(setResignationDate(admin, l.id, "2026-12-31", deps), RetiredPersonEditError);
+    await refusal(setResignationDate(admin, l.id, "2026-09-10", deps), RetiredPersonEditError);
+    expect(await resignationOf(l.id)).toBe("2026-09-01");
   });
 
   it("새 팀장 Z를 보관하면 L의 퇴직일 지우기가 통과(겹치는 보유자가 없을 때만)", async () => {

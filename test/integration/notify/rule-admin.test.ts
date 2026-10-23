@@ -6,7 +6,7 @@ import { actionLog, notificationLog, notificationRules, roles } from "@/db/schem
 import { createAccount } from "@/domain/auth/accounts";
 import { CONDITION_KINDS, type EvaluateContext } from "@/domain/notify/condition-kinds";
 import { approvalWaitingKind } from "@/domain/notify/kinds/approval-waiting";
-import { listRuleRows, saveNotificationRule, setRuleEnabled } from "@/domain/notify/rule-admin";
+import { listRuleRoles, listRuleRows, saveNotificationRule, setRuleEnabled } from "@/domain/notify/rule-admin";
 import { runTick } from "@/domain/notify/tick";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { insertRole } from "@/repositories/roles";
@@ -198,5 +198,64 @@ describe("saveNotificationRule — 일수 · 받는 계급 추가 · 이메일(D
 
   it("쓰기 권한이 없으면 거부", async () => {
     await expect(saveNotificationRule(await person(DEFAULT_ROLE_ID), { ...base, kind: "project-end-no-expense", days: 8, version: 0 })).rejects.toThrow();
+  });
+  it("이미 받는 계급에 있던 보관 계급은 저장해도 유지 · 새로 보관 계급을 더하는 것은 거부 (사용자 결정 2026-10-23)", async () => {
+    const viewer = await admin();
+    const kept = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `유지-${randomUUID().slice(0, 8)}` });
+    const added = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `신규-${randomUUID().slice(0, 8)}` });
+    await saveNotificationRule(viewer, { ...base, kind: "settle-nudge", extraRoleIds: [kept.id, TEAM_LEAD_ROLE_ID], version: 0 });
+    await db.update(roles).set({ archivedAt: new Date() }).where(eq(roles.id, kept.id));
+    await db.update(roles).set({ archivedAt: new Date() }).where(eq(roles.id, added.id));
+    // 패널은 보관 계급 체크를 그대로 보내 — 저장이 성공하고 계급이 남는다.
+    await saveNotificationRule(viewer, { ...base, kind: "settle-nudge", extraRoleIds: [kept.id, TEAM_LEAD_ROLE_ID], emailEnabled: false, version: 1 });
+    expect((await ruleRow("settle-nudge"))?.extraRoleIds.sort()).toEqual([kept.id, TEAM_LEAD_ROLE_ID].sort());
+    // 새로 보관 계급을 더하면 거부.
+    await expect(saveNotificationRule(viewer, { ...base, kind: "settle-nudge", extraRoleIds: [kept.id, added.id], version: 2 })).rejects.toThrow("받는 계급");
+    // 체크를 풀면 빠진다.
+    await saveNotificationRule(viewer, { ...base, kind: "settle-nudge", extraRoleIds: [TEAM_LEAD_ROLE_ID], version: 2 });
+    expect((await ruleRow("settle-nudge"))?.extraRoleIds).toEqual([TEAM_LEAD_ROLE_ID]);
+  });
+
+  it("받는 계급 활성 확인은 저장 트랜잭션 안에서 잠근다 — 확인과 저장 사이 보관(TOCTOU)이 새지 않는다", async () => {
+    const viewer = await admin();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `경합-${randomUUID().slice(0, 8)}` });
+    let release: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let archivedInTx: () => void = () => undefined;
+    const archiving = new Promise<void>((resolve) => {
+      archivedInTx = resolve;
+    });
+    // 보관이 아직 커밋되지 않은 채 열려 있는 tx.
+    const archiver = db.transaction(async (tx) => {
+      await tx.update(roles).set({ archivedAt: new Date() }).where(eq(roles.id, role.id));
+      archivedInTx();
+      await hold;
+    });
+    await archiving;
+    const saving = saveNotificationRule(viewer, { ...base, kind: "quote-nudge", extraRoleIds: [role.id], version: 0 }).then(
+      () => "saved",
+      (error: unknown) => (error instanceof Error ? error.message : "error"),
+    );
+    // 잠금이 있으면 저장은 보관 커밋을 기다린다 — 잠금이 없으면 옛 활성 목록으로 먼저 끝난다.
+    const early = await Promise.race([saving, new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 500))]);
+    release();
+    await archiver;
+    expect(early).toBe("waiting");
+    expect(await saving).toContain("받는 계급");
+    expect(await ruleRow("quote-nudge")).toBeUndefined();
+  });
+  it("패널 계급 목록은 활성 계급 + 이미 받는 계급에 있는 보관 계급(archived 표시)만 보인다", async () => {
+    const viewer = await admin();
+    const kept = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `표시-${randomUUID().slice(0, 8)}` });
+    const other = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `숨김-${randomUUID().slice(0, 8)}` });
+    await db.update(roles).set({ archivedAt: new Date() }).where(eq(roles.id, kept.id));
+    await db.update(roles).set({ archivedAt: new Date() }).where(eq(roles.id, other.id));
+    const listed = await listRuleRoles(viewer, [kept.id]);
+    expect(listed.find((role) => role.id === kept.id)).toMatchObject({ name: kept.name, archived: true });
+    expect(listed.some((role) => role.id === other.id)).toBe(false);
+    expect(listed.find((role) => role.id === TEAM_LEAD_ROLE_ID)?.archived).toBeFalsy();
+    expect((await listRuleRoles(viewer)).some((role) => role.id === kept.id)).toBe(false);
   });
 });

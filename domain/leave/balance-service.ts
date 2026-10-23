@@ -9,6 +9,7 @@ import { ForbiddenError, SELF_LEAVE_EDIT_ERROR, UserNotFoundError, ValidationErr
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
 import { withTransaction } from "@/lib/db-transaction";
 import { lockSeatKeys } from "@/repositories/seats";
+import { assertLeaveAdjustableInTx } from "@/domain/people/retired";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { findUserById, type UserRow } from "@/repositories/users";
 import { listLeaveUsage, type LeaveUsageRow } from "@/repositories/leave-usage";
@@ -312,6 +313,8 @@ export async function addLeaveAdjustment(
     // 07-17 독립 검토 L1: 사람 키 잠금 → 재조회 → 상한(assignTeam과 같은 순서) — 계급 변경 · 입사일 변경과 줄 서서
     // 올리기 전 계급 · 바꾸기 전 입사일로 판정하지 않는다. 검증 오류는 tx 안에서 던져 행이 생기지 않는다.
     await lockSeatKeys(viewer, { personIds: [input.userId] }, tx);
+    // F24: 퇴직자는 고치지 못한다(260907 `people.ts:792-797`) — 단 퇴직한 해의 연차 조정만 받는다(카드 2026-10-23 11:14 KST).
+    await assertLeaveAdjustableInTx(viewer, input.userId, input.fiscalYear, today, tx);
     const user = await findUserById(viewer, input.userId, tx);
     if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
     // 07-17 R15: 대상 계급이 내 상한 밖이면 거부 — 화면 숨김은 UX일 뿐(사람 잠금 풀기 · 초기화와 같은 관문).

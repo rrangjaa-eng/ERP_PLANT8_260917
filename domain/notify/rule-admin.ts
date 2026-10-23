@@ -10,7 +10,7 @@ import type { Viewer } from "@/domain/viewer";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { listNotificationRuleRecords, lockNotificationRule, upsertNotificationRule, type NotificationRuleRecord } from "@/repositories/notification-rules";
-import { listRoles } from "@/repositories/roles";
+import { listRoles, lockActiveRoleIds } from "@/repositories/roles";
 
 export const NOTIFICATION_RULES_MENU = "admin.notification-rules";
 export const NOTIFICATION_RULE_INFO_ITEM = "notification_rule.value";
@@ -18,7 +18,7 @@ export const NOTIFICATION_RULE_INFO_ITEM = "notification_rule.value";
 export class RuleConflictError extends UserFacingError {}
 export class RuleInvalidError extends UserFacingError {}
 
-export type RuleRoleView = { id: string; name: string };
+export type RuleRoleView = { id: string; name: string; archived?: true };
 
 export type RuleRowView = {
   kind: string;
@@ -46,10 +46,13 @@ async function assertCanWrite(viewer: Viewer): Promise<void> {
   if (!(await can(viewer, NOTIFICATION_RULES_MENU, "write"))) throw new ForbiddenError("알림 규칙을 고칠 수 없음");
 }
 
-// 규칙 표 한 줄에 쓰는 계급 이름 표 — 활성 계급만(보관 계급은 받는 사람으로 고를 수 없다).
-export async function listRuleRoles(viewer: Viewer): Promise<RuleRoleView[]> {
+// 패널 받는 계급 목록 — 활성 계급 + 이 규칙이 이미 받고 있는 보관 계급(`alsoIds`, archived 표시: 저장해도 유지, 체크를 풀어야 빠진다).
+export async function listRuleRoles(viewer: Viewer, alsoIds: readonly string[] = []): Promise<RuleRoleView[]> {
   await assertCanView(viewer);
-  return (await listRoles(viewer)).map((role) => ({ id: role.id, name: role.name }));
+  const keep = new Set(alsoIds);
+  return (await listRoles(viewer, { includeArchived: true }))
+    .filter((role) => role.archivedAt === null || keep.has(role.id))
+    .map((role) => (role.archivedAt === null ? { id: role.id, name: role.name } : { id: role.id, name: role.name, archived: true as const }));
 }
 
 function toView(kind: ConditionKind, record: NotificationRuleRecord | null, rule: EffectiveRule, roleNames: ReadonlyMap<string, string>): RuleRowView {
@@ -112,6 +115,15 @@ export async function writeRule(viewer: Viewer, kindName: string, expectedVersio
   return withTransaction(async (tx) => {
     const record = await lockNotificationRule(viewer, kind.kind, tx);
     if ((record?.version ?? 0) !== expectedVersion) throw new RuleConflictError("다른 사람이 먼저 수정 · 새로 불러오기");
+    // 새로 더하는 받는 계급만 활성이어야 한다(이미 받던 보관 계급은 유지). 확인과 저장을 한 tx에서 FOR SHARE로 묶어 그 사이 보관이 끼지 못하게 한다.
+    if (change.extraRoleIds) {
+      const already = new Set(record?.extraRoleIds ?? []);
+      const added = change.extraRoleIds.filter((id) => !already.has(id));
+      if (added.length > 0) {
+        const active = new Set(await lockActiveRoleIds(viewer, added, tx));
+        if (added.some((id) => !active.has(id))) throw new RuleInvalidError("받는 계급 없음 · 다시 선택");
+      }
+    }
     const before = effectiveRule(kind, record);
     const row: NotificationRuleRow = {
       kind: kind.kind,
@@ -146,13 +158,13 @@ export type SaveRuleInput = {
   enabled?: boolean;
   // 범위가 있는 종류만 — 안 보내면 그대로. 허용 범위는 종류 `daysRange`(화면에 숫자를 두지 않는다).
   days?: number;
-  // D-748: 회사 전체의 그 계급 — 범위 값은 받지 않는다. 활성 계급만.
+  // D-748: 회사 전체의 그 계급 — 범위 값은 받지 않는다. 새로 더하는 것은 활성 계급만(이미 받던 보관 계급은 유지 — writeRule이 tx 안에서 확인).
   extraRoleIds: string[];
   emailEnabled?: boolean;
   version: number;
 };
 
-// 옆 패널 `{규칙} 수정` 저장(N3 · N6) — 범위 밖 일수 · 보관/없는 계급을 거부하고 writeRule이 version · 행동 로그 · enabled_at을 맡는다.
+// 옆 패널 `{규칙} 수정` 저장(N3 · N6) — 범위 밖 일수를 거부하고(새 보관/없는 계급은 writeRule이 tx 안에서 거부) writeRule이 version · 행동 로그 · enabled_at을 맡는다.
 export async function saveNotificationRule(viewer: Viewer, input: SaveRuleInput): Promise<{ changed: boolean }> {
   await assertCanWrite(viewer);
   const kind = findKind(input.kind);
@@ -164,10 +176,6 @@ export async function saveNotificationRule(viewer: Viewer, input: SaveRuleInput)
     }
   }
   const extraRoleIds = [...new Set(input.extraRoleIds)];
-  if (extraRoleIds.length > 0) {
-    const active = new Set((await listRoles(viewer)).map((role) => role.id));
-    if (extraRoleIds.some((id) => !active.has(id))) throw new RuleInvalidError("받는 계급 없음 · 다시 선택");
-  }
   return writeRule(viewer, kind.kind, input.version, {
     enabled: input.enabled,
     days: input.days,

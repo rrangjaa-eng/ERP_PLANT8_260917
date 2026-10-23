@@ -106,7 +106,10 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
   useEffect(() => {
     const id = pendingFocusIdRef.current;
     if (!id) return;
-    rowRefs.current[id]?.focus();
+    // 접기를 적용한 그림에서 대상을 정한다 — 그 행이 접힌 묶음 안이면 DOM에 없으니 그 묶음의 펼치기 버튼(`aria-controls`가 행 id를 품는다)으로 간다.
+    const target =
+      rowRefs.current[id] ?? document.querySelector<HTMLElement>(`button[aria-controls~="${rowDomId(id)}"]`);
+    target?.focus();
     pendingFocusIdRef.current = null;
   }, [rows]);
 

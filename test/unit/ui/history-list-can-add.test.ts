@@ -30,4 +30,11 @@ describe("HistoryList canAdd(07-17 R15)", () => {
     expect(empty).not.toContain("새 이력 추가");
     expect(render({ entries: [ENTRY], canAdd: false })).not.toContain("새 이력 추가");
   });
+
+  // F24 DOM 감사 P1: 쓸 수 없는 목록(canAdd=false — 퇴직자 · 상한 밖 · 보기만)에서는 예정 발령 「취소」도 그리지 않는다.
+  it("canAdd=false면 예정 줄 「취소」도 없다 · 기본은 그대로 있다", () => {
+    const scheduled = { effectiveFrom: "2099-01-01", displayValue: "나", status: "scheduled" as const };
+    expect(render({ entries: [scheduled] })).toContain("취소");
+    expect(render({ entries: [scheduled], canAdd: false })).not.toContain("취소");
+  });
 });

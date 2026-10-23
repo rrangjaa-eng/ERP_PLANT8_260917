@@ -942,6 +942,37 @@ test.describe("알림함 링크 · 접힘 (07-19 N25 · N26 · U10)", () => {
     await expect(page.getByRole("button", { name: "접기" })).toHaveAttribute("aria-expanded", "true");
   });
 
+  test("마지막 쪽 첫 알림이 접힌 묶음에 들어가면 포커스가 그 묶음의 펼치기 버튼으로 간다(Codex PR #286 P2)", async ({ page }) => {
+    const { fx, expenseId } = await setupLinkedInbox();
+    const now = Date.now();
+    // 첫 쪽 50건은 접히지 않는 일반 알림 · 마지막 쪽(더 보기 뒤)은 같은 날 같은 종류 6건 — 그 첫 건이 접힌 묶음에 들어간다.
+    await seedInboxRows(
+      fx.pm.viewer.id,
+      Array.from({ length: 50 }, (_, index) => ({
+        conditionKind: "test",
+        entity: "test",
+        entityId: `plain-${randomUUID()}`,
+        message: `일반 시험 ${index + 1}`,
+        read: true,
+        createdAt: new Date(now - 60_000 - index * 1000),
+      })),
+    );
+    await seedInboxRows(
+      fx.pm.viewer.id,
+      approvalTurnRows(expenseId, 6, { read: true, at: new Date(now - 3 * 24 * 60 * 60 * 1000) }),
+    );
+    await login(page, fx.pm);
+    await page.goto("/notifications");
+
+    await expect(page.locator("table [data-inbox-row]")).toHaveCount(50);
+    await page.getByRole("button", { name: "더 보기 50건" }).click();
+
+    await expect(page.getByRole("button", { name: /더 보기/ })).toHaveCount(0);
+    const toggle = page.getByRole("button", { name: "펼치기" });
+    await expect(toggle).toHaveCount(1);
+    await expect(toggle).toBeFocused();
+  });
+
   test("로드 뒤 「시각」 머리글이 loading 뼈대와 같은 폭 클래스를 가진다", async ({ page }) => {
     const user = await createEmployee();
     await seedInboxRows(user.userId, [{ conditionKind: "test", entity: "test", entityId: `plain-${randomUUID()}`, message: "머리글 시험" }]);

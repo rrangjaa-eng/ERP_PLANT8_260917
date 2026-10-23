@@ -84,7 +84,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const sortDirection = firstListParam(params.dir) === "desc" ? "desc" : "asc";
   const statusLabel = statusOptions.find((option) => option.value === status)?.label;
 
-  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate, profitRateThreshold, openIssueRequests] = await Promise.all([
+  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate, profitRateThreshold, openIssueRequests, canViewBudget] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
     can(session.viewer, "admin.vendors", "write"),
@@ -108,6 +108,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     getSettingValue(PROJECT_PROFIT_RATE_THRESHOLD),
     // 06-21(SP-4) — 하위 목록 링크 `발행 요청 {N}`. `projects.revenue` 보기가 없으면 null(링크 없음).
     summarizeOpenIssueRequests(session.viewer),
+    // 07-24(SC-21): 하위 목록 링크 `예산 현황` — `projects.budget` 보기가 있을 때만(새 메뉴 없음).
+    can(session.viewer, "projects.budget", "view"),
   ]);
 
   // 등록 폼의 팀 · 담당 PM 칸만 업무 범위로 좁힌다 — 필터 줄은 전체 팀(references.teams)을 계속 쓴다.
@@ -175,6 +177,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           issueRequestsLink={
             openIssueRequests ? { label: openIssueRequests.count > 0 ? `발행 요청 ${openIssueRequests.count}` : "발행 요청", href: "/projects/issue-requests" } : null
           }
+          budgetLink={canViewBudget ? { label: "예산 현황", href: "/projects/budget" } : null}
         />
       }
       summary={total > 0 ? <ListTotals totals={totals} /> : undefined}

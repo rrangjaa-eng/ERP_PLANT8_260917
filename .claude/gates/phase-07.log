@@ -74,3 +74,7 @@ review 2026-10-23T11:02Z session=a8576d42-dd33-5db5-95e4-b803b2f8ab46 (PR #289 0
 cso 2026-10-23T11:02Z session=a8576d42-dd33-5db5-95e4-b803b2f8ab46 (PR #289 07-23 /cso — 헬퍼 거부(64MiB) → Opus 대체 검토: P1 1(C-1, R-1과 같은 근원) → fe898be0 · 델타 서버·화면 경로 재검토 P0~P2 0 · 대체 인정 카드 대기 · 기록 0723-gates.md)
 design-review 2026-10-23T11:02Z session=a8576d42-dd33-5db5-95e4-b803b2f8ab46 (PR #289 07-23 /design-review — Codex 스크립트 실행 · 후보 4건 DOM 실측으로 기각 · 델타 DOM 4폭 통과 · P3 2(F51) · 기록 0723-gates.md)
 qa 2026-10-23T11:02Z session=a8576d42-dd33-5db5-95e4-b803b2f8ab46 (PR #289 07-23 /qa — /browse 실행 불가 → CI=true Playwright 대체 117 통과 · 1 실패(낡은 단언) → 61f80868 · 델타 E2E 18 통과 · 대체 인정 카드 대기 · 기록 0723-gates.md)
+review 2026-10-23T10:43Z session=a8576d42-dd33-5db5-95e4-b803b2f8ab46 (PR #288 07-24 /review — P0~P1 0 · P2 1(setBudgetManually budget.amount 보기 확인 없음) → b8a41f51 · P3 4 · 기록 /mnt/project-files/07-review/0724-gates.md, 훅 줄이 없어 보고서에서 옮김)
+cso 2026-10-23T10:43Z session=a8576d42-dd33-5db5-95e4-b803b2f8ab46 (PR #288 07-24 /cso — 헬퍼 거부(64MiB) → Opus 대체 검토: P2 1(위와 같은 근원) → b8a41f51 · P3 1 · 대체 인정 카드 대기 · 기록 0724-gates.md)
+design-review 2026-10-23T10:43Z session=a8576d42-dd33-5db5-95e4-b803b2f8ab46 (PR #288 07-24 /design-review — Codex 스크립트 실행 · P0~P2 0 · 델타 DOM 4폭 통과(#12 → 9a9e9ca3) · 사용자 결정 후보 2(카드) · 기록 0724-gates.md)
+qa 2026-10-23T10:43Z session=a8576d42-dd33-5db5-95e4-b803b2f8ab46 (PR #288 07-24 /qa — /browse 실행 불가 → CI=true Playwright 대체 통과 · 대체 인정 카드 대기 · 기록 0724-gates.md)

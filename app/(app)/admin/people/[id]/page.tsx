@@ -4,7 +4,7 @@ import { can } from "@/domain/permissions/can";
 import { getPerson } from "@/domain/people";
 import { assignableRoleIds, listAssignableRoles } from "@/domain/permissions/roles";
 import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
-import { listOrgUnits, listTeams } from "@/domain/org";
+import { listAssignableTeams, listOrgUnits } from "@/domain/org";
 import { KvList } from "@/ui/kv-list/KvList";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
@@ -65,7 +65,7 @@ export default async function PersonDetailPage({
     getPerson(session.viewer, id, { withLock: true }),
     listAssignableRoles(session.viewer),
     listOrgUnits(session.viewer),
-    listTeams(session.viewer),
+    listAssignableTeams(session.viewer),
   ]);
   if (!detail) notFound();
 

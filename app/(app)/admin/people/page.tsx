@@ -5,7 +5,7 @@ import { can } from "@/domain/permissions/can";
 import { isRetiredOn, listPeoplePage } from "@/domain/people";
 import { assignableRoleIds, listAssignableRoles, listRoles } from "@/domain/permissions/roles";
 import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
-import { listOrgUnits, listTeams } from "@/domain/org";
+import { listAssignableTeams, listOrgUnits, listTeams } from "@/domain/org";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
@@ -42,10 +42,11 @@ export default async function PeoplePage({
   const q = qParam?.trim() ?? "";
   const lockedOnly = lockedParam === "1";
 
-  const [roles, orgUnits, teams, canArchive, canWrite, allRoles] = await Promise.all([
+  const [roles, orgUnits, teams, assignableTeams, canArchive, canWrite, allRoles] = await Promise.all([
     listAssignableRoles(session.viewer),
     listOrgUnits(session.viewer),
     listTeams(session.viewer),
+    listAssignableTeams(session.viewer),
     can(session.viewer, "admin.archive", "write"),
     can(session.viewer, "admin.people", "write"),
     roleParam ? listRoles(session.viewer) : Promise.resolve([]),
@@ -108,7 +109,8 @@ export default async function PeoplePage({
     unlockCandidates.includes(person) && (!person.roleId || unlockableRoles.has(person.roleId));
 
   const orgUnitNameById = new Map(orgUnits.map((org) => [org.id, org.name]));
-  const teamOptions = teams.map((team) => ({
+  // 07-21 Codex P2: 서버가 거부하는 보관 본부 아래 팀은 선택지에서 뺀다(listAssignableTeams).
+  const teamOptions = assignableTeams.map((team) => ({
     id: team.id,
     name: team.name,
     orgUnitName: orgUnitNameById.get(team.orgUnitId) ?? "",

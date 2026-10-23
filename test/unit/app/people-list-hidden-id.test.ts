@@ -54,7 +54,11 @@ vi.mock("@/domain/permissions/roles", () => ({
   // 06.4 D-6417: 상한 판정은 이 테스트의 관심 밖 — 넘긴 계급을 모두 통과로 둔다.
   assignableRoleIds: (_viewer: unknown, roleIds: string[]) => Promise.resolve(new Set(roleIds)),
 }));
-vi.mock("@/domain/org", () => ({ listOrgUnits: () => Promise.resolve([]), listTeams: () => Promise.resolve([]) }));
+vi.mock("@/domain/org", () => ({
+  listOrgUnits: () => Promise.resolve([]),
+  listTeams: () => Promise.resolve([]),
+  listAssignableTeams: () => Promise.resolve([]),
+}));
 vi.mock("@/app/(app)/admin/people/person-form", async () => {
   const { createElement: h } = await import("react");
   return {

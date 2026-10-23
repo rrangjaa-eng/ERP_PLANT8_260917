@@ -22,6 +22,7 @@ import {
 } from "@/repositories/org-units";
 import {
   listTeams as repoListTeams,
+  listTeamsOfActiveOrgUnits as repoListTeamsOfActiveOrgUnits,
   findTeamById as defaultFindTeamById,
   findTeamsByIds as defaultFindTeamsByIds,
   insertTeam as repoInsertTeam,
@@ -131,6 +132,13 @@ export async function listOrgUnits(viewer: Viewer): Promise<OrgUnitDto[]> {
 export async function listTeams(viewer: Viewer): Promise<TeamDto[]> {
   const scope = await scopeFor(viewer, "team");
   const rows = await repoListTeams(viewer, { scope });
+  return Promise.all(rows.map((row) => project(viewer, row, TEAM_DTO_SPEC))) as Promise<TeamDto[]>;
+}
+
+// 사람 등록 · 발령의 팀 선택지 — 보관된 본부 아래 팀은 서버가 거부하므로 목록에서 뺀다.
+export async function listAssignableTeams(viewer: Viewer): Promise<TeamDto[]> {
+  const scope = await scopeFor(viewer, "team");
+  const rows = await repoListTeamsOfActiveOrgUnits(viewer, { scope });
   return Promise.all(rows.map((row) => project(viewer, row, TEAM_DTO_SPEC))) as Promise<TeamDto[]>;
 }
 

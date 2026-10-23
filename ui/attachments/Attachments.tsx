@@ -252,7 +252,8 @@ function FileAttachments({
   // 부모가 서버 값을 다시 읽는 새로 고침은 한 번에 올린 파일들이 다 끝난 뒤 한 번만 부른다(05 /review B7).
   async function addFiles(list: FileList | File[]) {
     let changed = false;
-    for (const file of Array.from(list)) {
+    // 한 자리 — 끌어 놓기 · 붙여넣기 어느 길로 여럿이 와도 첫 파일 하나만 올린다(나머지는 올라가 봐야 서버에서 서로 덮는다).
+    for (const file of single ? Array.from(list).slice(0, 1) : Array.from(list)) {
       const key = `row-${(counter.current += 1)}`;
       const placeholder: PreparedEvidence = { blob: file, name: file.name, size: file.size, contentType: file.type, sha256: "", previewUrl: null };
       setRows((current) => [...current, { key, prepared: placeholder, state: "uploading", message: null, retry: null }]);

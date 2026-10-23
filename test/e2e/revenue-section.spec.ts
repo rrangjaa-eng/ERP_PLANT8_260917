@@ -921,6 +921,38 @@ test.describe("발행 줄 계산서 파일 (07-22 · W7)", () => {
     expect(await again.getByTestId("attachments-input").evaluate((node) => (node as HTMLInputElement).multiple)).toBe(false);
   });
 
+  test("(Codex P2) 한 자리 칸에 파일 둘을 끌어 놓아도 첫 파일 하나만 올라간다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const roleId = await makeInvoiceRole();
+    const seeded = await seedRevenueProject({ pmRoleId: roleId, issued: [{ entryDate: addDays(today, -3), amount: krw(1_000_000) }] });
+    await login(page, seeded.email, seeded.password);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(seeded.projectUrl);
+
+    await revenueTable(page, "발행 줄").getByRole("button", { name: "계산서 붙이기", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "계산서 붙이기" });
+    await expect(panel).toBeVisible();
+    const puts: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "PUT") puts.push(request.url());
+    });
+    const first = invoicePdf("첫째-계산서.pdf");
+    const second = invoicePdf("둘째-계산서.pdf");
+    await panel.locator('[data-ui="attachments"]').evaluate(
+      (node, files) => {
+        const dt = new DataTransfer();
+        for (const file of files) dt.items.add(new File([file.body], file.name, { type: file.type }));
+        node.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      },
+      [first, second].map((file) => ({ name: file.name, type: file.mimeType, body: file.buffer.toString("latin1") })),
+    );
+    const items = panel.locator('[data-ui="attachments"] li');
+    await expect(items.filter({ hasText: first.name })).toBeVisible({ timeout: 20_000 });
+    await page.waitForTimeout(1500);
+    await expect(items.filter({ hasText: second.name })).toHaveCount(0);
+    expect(puts).toHaveLength(1);
+  });
+
   test("(감사 P2 #1) 패널 안 파일 칸의 cancel(고르기 취소)은 패널을 닫지 않는다", async ({ page }) => {
     const today = kstToday(new Date());
     const roleId = await makeInvoiceRole();

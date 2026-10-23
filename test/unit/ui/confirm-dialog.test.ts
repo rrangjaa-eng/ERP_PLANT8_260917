@@ -7,6 +7,7 @@ import {
   ConfirmDialog,
   secondaryLabelFor,
   initialFocusTarget,
+  canDismiss,
   splitRefreshTail,
   type ConfirmDialogProps,
 } from "../../../ui/confirm-dialog/ConfirmDialog";
@@ -47,6 +48,10 @@ describe("initialFocusTarget — 첫 포커스 대상 표(⑮)", () => {
 
   it("목록형(1차 없음)이면 firstOption이다", () => {
     expect(initialFocusTarget({ optionCount: 3 })).toBe("firstOption");
+  });
+
+  it("07-17 결과 단계(hasResult)면 근거 칸 · 1차보다 먼저 resultValue다", () => {
+    expect(initialFocusTarget({ hasResult: true, hasEvidence: true, hasPrimary: true })).toBe("resultValue");
   });
 });
 
@@ -397,5 +402,76 @@ describe("ConfirmDialog.module.css — 소계 칸 (06.5-06 · SP-65-7)", () => {
     const media = [...code.matchAll(/@media[^{]*\{([\s\S]*?)\n\}/g)].map((match) => match[1] ?? "").join("\n");
     expect(media).not.toContain(".subtotals");
     expect(code).not.toMatch(/^\s*--[\w-]+\s*:/m);
+  });
+});
+
+// 07-17 SYSTEM §7-17 결과 단계(개정 7 · D-P2-2 · U1) — 실행 뒤 같은 창에 일회성 값. `닫기`로만 닫힌다.
+describe("ConfirmDialog — 결과 단계(07-17)", () => {
+  const confirmStep: Partial<ConfirmDialogProps> & Pick<ConfirmDialogProps, "title"> = {
+    title: "비밀번호 초기화",
+    subtitle: "김가나",
+    resultLines: ["기존 비밀번호는 쓸 수 없게 됨 · 잠금도 풀림"],
+    primary: { label: "비밀번호 초기화", onConfirm: () => {} },
+  };
+
+  it("result가 있으면 값 한 줄 · 3차 복사(role=status 자리) · aux · 1차 닫기만 — 확인 단계 결과 줄 · 2차 · 닫기 x 없음", () => {
+    const html = render({ ...confirmStep, result: { label: "임시 비밀번호", value: "Tmp-7Q2x-9kLm" } });
+    expect(html).toContain('data-ui="confirm-result-value"');
+    expect(html).toContain("Tmp-7Q2x-9kLm");
+    expect(html).toMatch(/role="status"[^>]*>.*<span>복사<\/span>/);
+    expect(html).toContain("닫으면 다시 볼 수 없음");
+    expect(html).toMatch(/<button[^>]*><span>닫기<\/span>/);
+    expect(html).not.toContain("기존 비밀번호는 쓸 수 없게 됨");
+    expect(html).not.toContain("<span>취소</span>");
+    expect(html).not.toContain('aria-label="닫기"');
+    expect(html).toContain("비밀번호 초기화");
+  });
+
+  it("값 요소는 Tab으로 닿고(tabindex 0) 값 → 복사 → 닫기 DOM 순서다", () => {
+    const html = render({ ...confirmStep, result: { label: "임시 비밀번호", value: "Tmp-7Q2x-9kLm" } });
+    expect(html).toMatch(/data-ui="confirm-result-value"[^>]*tabindex="0"|tabindex="0"[^>]*data-ui="confirm-result-value"/);
+    const value = html.indexOf("Tmp-7Q2x-9kLm");
+    const copy = html.indexOf("<span>복사</span>");
+    const close = html.indexOf("<span>닫기</span>");
+    expect(value).toBeGreaterThan(-1);
+    expect(value).toBeLessThan(copy);
+    expect(copy).toBeLessThan(close);
+  });
+
+  it("감사 P2 — 값 위에 라벨 `임시 비밀번호`가 보이고, 값(첫 포커스)은 읽기 전용 textbox로 그 라벨을 이름으로 가리킨다", () => {
+    const html = render({ ...confirmStep, result: { label: "임시 비밀번호", value: "Tmp-7Q2x-9kLm" } });
+    const labelId = html.match(/<[^>]*\bid="([^"]+)"[^>]*>임시 비밀번호</)?.[1];
+    expect(labelId).toBeTruthy();
+    const valueTag = html.match(/<p[^>]*data-ui="confirm-result-value"[^>]*>/)?.[0] ?? "";
+    expect(valueTag).toContain('role="textbox"');
+    expect(valueTag).toContain('aria-readonly="true"');
+    expect(valueTag).toContain(`aria-labelledby="${labelId}"`);
+    expect(html.indexOf("임시 비밀번호")).toBeLessThan(html.indexOf("Tmp-7Q2x-9kLm"));
+  });
+
+  it("result가 없으면 결과 단계 요소가 하나도 없고 확인 단계(결과 줄 · 2차 · 닫기 x)는 그대로", () => {
+    const html = render(confirmStep);
+    expect(html).not.toContain("confirm-result-value");
+    expect(html).not.toContain("닫으면 다시 볼 수 없음");
+    expect(html).not.toContain('role="status"');
+    expect(html).toContain("기존 비밀번호는 쓸 수 없게 됨 · 잠금도 풀림");
+    expect(html).toContain("<span>취소</span>");
+    expect(html).toContain('aria-label="닫기"');
+  });
+
+  it("canDismiss — 결과 단계에서는 Esc · 바깥 누름 · 닫기 x가 닫지 않는다(확인 단계는 제출 중만 막음 — 지금 그대로)", () => {
+    expect(canDismiss({ submitting: false, hasResult: true })).toBe(false);
+    expect(canDismiss({ submitting: false, hasResult: false })).toBe(true);
+    expect(canDismiss({ submitting: true, hasResult: false })).toBe(false);
+  });
+
+  it("결과 단계 CSS는 토큰만 — 값 --text-body · 실패 aux --status-danger", () => {
+    const css = readFileSync(resolve(process.cwd(), "ui/confirm-dialog/ConfirmDialog.module.css"), "utf8");
+    const block = (name: string) => css.match(new RegExp(`\\.${name} \\{[^}]*\\}`))?.[0] ?? "";
+    expect(block("resultValue")).toContain("var(--text-body)");
+    expect(block("copyFailed")).toContain("var(--status-danger)");
+    expect(block("resultLabel")).toContain("var(--text-aux)");
+    expect(block("resultLabel")).toContain("var(--text-muted)");
+    expect(styles.resultValue).toBeTruthy();
   });
 });

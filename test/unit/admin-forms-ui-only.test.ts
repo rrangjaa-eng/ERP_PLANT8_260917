@@ -13,16 +13,14 @@ const SCAN_DIRS = ["app/(app)/admin", "app/(app)/account"];
 export const UI_ONLY_EXCLUDED: Record<string, string> = {
   "app/(app)/admin/action-log/filter-bar.tsx": "필터 줄 select — 폼이 아니다(SC-15 제외)",
   "app/(app)/admin/code-tables/code-item-form.tsx": "코드표 인라인 blur 칸 — 표 안 입력이다(SC-15 제외)",
+  "app/(app)/admin/people/page.tsx": "필터 줄 검색칸(ListScreen filters · GET ?q=) — 폼이 아니다(SC-15 제외, 07-17 PLAN N10 범위)",
   "app/(app)/admin/vendors/vendor-search.tsx": "거래처 목록 필터 줄 검색칸 — 폼이 아니다(SC-15 제외, 07-20 V2)",
 };
 
 // 맡은 플랜이 이관하면서 이 목록에서 지운다. 07-25가 비운다.
 export const UI_ONLY_PENDING: Record<string, string> = {
-  "app/(app)/admin/people/person-form.tsx": "07-17 몫",
-  "app/(app)/admin/people/[id]/person-detail-client.tsx": "07-17 몫",
   "app/(app)/admin/people/roles/roles-client.tsx": "07-21 몫",
   "app/(app)/admin/people/org/org-client.tsx": "07-21 몫",
-  "app/(app)/admin/people/[id]/leave-section.tsx": "07-17 몫 — UI-SPEC SC-15 「배정 확인 필요」",
 };
 
 const EXEMPT_INPUT_TYPES = new Set(["checkbox", "radio", "hidden"]);
@@ -97,6 +95,18 @@ describe("관리자 폼 · 내 계정의 ui/ 밖 네이티브 입력 계수 (07-
     for (const path of mine) {
       expect(counts.has(path), `${path}가 계수 대상 폴더에 없다`).toBe(true);
       expect(counts.get(path), `${path}에 ui/ 밖 네이티브 입력 남음`).toBe(0);
+    }
+  });
+
+  it("07-17 몫 세 폼에 ui/ 밖 네이티브 입력이 없고 대기 목록에서 지웠다", () => {
+    const mine = [
+      "app/(app)/admin/people/person-form.tsx",
+      "app/(app)/admin/people/[id]/person-detail-client.tsx",
+      "app/(app)/admin/people/[id]/leave-section.tsx",
+    ];
+    for (const path of mine) {
+      expect(counts.get(path), `${path}에 ui/ 밖 네이티브 입력 남음`).toBe(0);
+      expect(path in UI_ONLY_PENDING, `${path}가 아직 대기 목록에 있다`).toBe(false);
     }
   });
 

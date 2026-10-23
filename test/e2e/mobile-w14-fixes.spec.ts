@@ -68,18 +68,22 @@ for (const width of [375, 320]) {
 
     test(`/admin/people ${width} 행 머리글(이름) 낱말이 쪼개지지 않는다 (B1)`, async ({ page }) => {
       await loginAsAdmin(page);
-      await page.goto("/admin/people");
+      // 목록은 이름순 50명씩 쪽 나눔이라 공유 DB에 사람이 많으면 시드 행이 1쪽에 없다 — 제품의 검색(?q=)으로 시드 이름만 불러온다.
+      await page.goto("/admin/people?q=E2E%20Admin");
       // 시드 이름만 잰다 — 다른 스펙이 남긴 긴 한 낱말 이름은 쪼개져도 되는 경우다.
-      const names = page.locator("table tbody th[scope=row]").filter({ hasText: /^E2E (Admin|Employee)$/ });
-      expect(await names.count()).toBeGreaterThan(0);
-      expect(await brokenWords(names)).toEqual([]);
+      const adminNames = page.locator("table tbody th[scope=row]").filter({ hasText: /^E2E Admin$/ });
+      expect(await adminNames.count()).toBeGreaterThan(0);
+      expect(await brokenWords(adminNames)).toEqual([]);
+      await page.goto("/admin/people?q=E2E%20Employee");
+      const employeeNames = page.locator("table tbody th[scope=row]").filter({ hasText: /^E2E Employee$/ });
+      expect(await brokenWords(employeeNames)).toEqual([]);
     });
 
     // 서브픽셀 경계에서 갈리지 않게 — 행 머리글 칸이 가장 좁아졌을 때(min-width) 안쪽 폭이 가장 긴 낱말 폭보다 4px 넘게 넉넉해야 한다(CI 크로미움에서만 쪼개진 사례).
     test(`/admin/people ${width} 행 머리글 안쪽 폭이 낱말 폭보다 넉넉하다 (B1)`, async ({ page }) => {
       await loginAsAdmin(page);
-      await page.goto("/admin/people");
-      const names = page.locator("table tbody th[scope=row]").filter({ hasText: /^E2E (Admin|Employee)$/ });
+      await page.goto("/admin/people?q=E2E%20Admin");
+      const names = page.locator("table tbody th[scope=row]").filter({ hasText: /^E2E Admin$/ });
       expect(await names.count()).toBeGreaterThan(0);
       const slack = await names.first().evaluate((th) => {
         const style = getComputedStyle(th);

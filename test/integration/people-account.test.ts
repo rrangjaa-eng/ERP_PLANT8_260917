@@ -8,6 +8,9 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError } from "@/domain/people";
 import { getPersonPayoutAccount, revealPersonAccountNumber, updatePersonPayoutAccount } from "@/domain/people/account";
 import { AccountFieldsError } from "@/domain/vendors/account-fields";
+import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
+import { makeAdmin, makeDelegatedRole } from "./admin-cap-fixtures";
+import { makePerson } from "./approvals-fixtures";
 
 async function makeEmployee(): Promise<string> {
   const id = `payout-${randomUUID()}`;
@@ -218,3 +221,48 @@ describe("직원 지급 계좌(06.5 D-6505 · D-6506)", () => {
   });
 });
 
+
+// 사용자 결정(2026-10-23 01:12 KST): 지급 계좌 변경도 대상 계급 상한(assertCanGrantRoles)을 본다 — 지급 게이트(expenses.payments
+// 쓰기 · admin.people 보기 · person.value)를 가진 지급 담당이라도 상한 밖(시스템 관리자)의 지급처는 바꾸지 못한다(07-17 L5 · P3-4).
+describe("지급 계좌 변경의 대상 상한(사용자 결정 2026-10-23)", () => {
+  // 지급 담당 계급 = PM 칸 · 범위 복사 + 지급 게이트 셋.
+  async function paymentsStaff() {
+    const roleId = await makeDelegatedRole({
+      copyFrom: [DEFAULT_ROLE_ID],
+      menus: [
+        { menu: "expenses.payments", action: "write" },
+        { menu: "admin.people", action: "view" },
+      ],
+      infoItems: ["person.value"],
+    });
+    return makePerson("지급 담당", roleId, null);
+  }
+
+  it("지급 담당이 상한 밖(시스템 관리자) 대상의 계좌를 바꾸면 거부 · 계좌 · 기록 그대로", async () => {
+    const staff = await paymentsStaff();
+    const admin = await makeAdmin("관리자 A");
+    const outcome = await updatePersonPayoutAccount(staff, admin.id, {
+      accountBank: "신한",
+      accountHolder: "관리자",
+      accountNumber: "110-123-456789",
+    }).then(
+      () => new Error("거부되어야 하는데 성공함"),
+      (caught: unknown) => caught,
+    );
+    expect(outcome).toBeInstanceOf(RoleGrantForbiddenError);
+    expect((outcome as Error).message).toBe("이 사람 계좌 바꾸기 권한 없음");
+    const row = await readRow(admin.id);
+    expect(row?.accountBank).toBeNull();
+    expect(row?.accountNumberEncrypted).toBeNull();
+    expect(await logsFor(admin.id)).toEqual([]);
+  });
+
+  it("지급 담당이 상한 안(PM) 대상의 계좌를 바꾸면 성공", async () => {
+    const staff = await paymentsStaff();
+    const target = await makePerson("대상 P", DEFAULT_ROLE_ID, null);
+    await updatePersonPayoutAccount(staff, target.id, { accountBank: "신한", accountHolder: "대상", accountNumber: "110-123-456789" });
+    const row = await readRow(target.id);
+    expect(row?.accountBank).toBe("신한");
+    expect(row?.accountNumberLast4).toBe("6789");
+  });
+});

@@ -427,16 +427,17 @@ describe("보관 팀 복원 ∥ 그 팀 사람의 자리 쓰기(06.4 /cso)", () 
     await makeSeated(uniqueName("팀장A"), TEAM_LEAD_ROLE_ID, teamId);
     const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, null);
     await archive(SYSTEM_VIEWER, "team", teamId, deps);
-    // 발령은 점유(후)를 읽은 뒤 행위 기록 INSERT(actor_id 외래키)에서 멈춘다 — 복원은 다른 관리자가 한다.
     const writer = await makeAdmin("발령 관리자");
-
-    const { restored, written } = await restoreDuringRowHold({
-      admin,
-      teamId,
-      userId: writer.id,
-      queryPrefix: 'insert into "action_log"',
-      write: () => assignTeam(writer, { userId: z.id, teamId, effectiveFrom: "2026-09-01" }, deps),
-    });
+    // 07-21(R10): 발령은 잠금 뒤 보관된 팀을 거부한다 — 보관 중 T로의 발령은 경합 없이 거부되므로, 복원이 먼저 T 키를 잡고
+    // 발령이 그 뒤에 줄 서는 순서로 잰다(복원이 커밋한 활성 T에서 둘째 팀장 → 자리 거부).
+    const key = "seat:team:" + teamId;
+    const held = await holdKey(key);
+    const restoring = restore(admin, "team", teamId, deps);
+    for (let tries = 0; tries < 60 && (await waitingOnKey(key)) < 1; tries++) await new Promise((resolve) => setTimeout(resolve, 50));
+    const writing = assignTeam(writer, { userId: z.id, teamId, effectiveFrom: "2026-09-01" }, deps);
+    for (let tries = 0; tries < 60 && (await waitingOnKey(key)) < 2; tries++) await new Promise((resolve) => setTimeout(resolve, 50));
+    await held.release();
+    const [restored, written] = await Promise.allSettled([restoring, writing]);
 
     expectOneWinner(restored, written);
     expect((await teamLeadsOf(teamId)).length).toBeLessThanOrEqual(1);

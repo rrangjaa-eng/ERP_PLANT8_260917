@@ -3,9 +3,9 @@ import { Fragment } from "react";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { isRetiredOn, listPeoplePage } from "@/domain/people";
-import { assignableRoleIds, listAssignableRoles } from "@/domain/permissions/roles";
+import { assignableRoleIds, listAssignableRoles, listRoles } from "@/domain/permissions/roles";
 import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
-import { listOrgUnits, listTeams } from "@/domain/org";
+import { listAssignableTeams, listOrgUnits, listTeams } from "@/domain/org";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
@@ -31,32 +31,51 @@ export const dynamic = "force-dynamic";
 export default async function PeoplePage({
   searchParams,
 }: {
-  searchParams: Promise<{ new?: string; q?: string; locked?: string; page?: string }>;
+  searchParams: Promise<{ new?: string; q?: string; locked?: string; page?: string; role?: string; team?: string; org?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.people", "view"))) notFound();
 
-  const { new: newParam, q: qParam, locked: lockedParam, page: pageParam } = await searchParams;
+  const { new: newParam, q: qParam, locked: lockedParam, page: pageParam, role: roleParam, team: teamParam, org: orgParam } =
+    await searchParams;
   const q = qParam?.trim() ?? "";
   const lockedOnly = lockedParam === "1";
-  const filtered = q !== "" || lockedOnly;
 
-  const [list, roles, orgUnits, teams, canArchive, canWrite] = await Promise.all([
-    // 07-17 SC-11(U1 · U6): 50명/쪽 · 이름 · 이메일 검색 · 잠김 거르기.
-    listPeoplePage(session.viewer, { q, locked: lockedOnly, page: Number(pageParam) || 1 }),
+  const [roles, orgUnits, teams, assignableTeams, canArchive, canWrite, allRoles] = await Promise.all([
     listAssignableRoles(session.viewer),
     listOrgUnits(session.viewer),
     listTeams(session.viewer),
+    listAssignableTeams(session.viewer),
     can(session.viewer, "admin.archive", "write"),
     can(session.viewer, "admin.people", "write"),
+    roleParam ? listRoles(session.viewer) : Promise.resolve([]),
   ]);
+  // 07-21(SC-09 · SC-13): 계급 · 조직 화면 `{N}명` 링크의 소속 필터 하나(계급 → 팀 → 본부 순으로 하나만). 모르는 id면 필터 없이.
+  const memberFilter = (() => {
+    const role = roleParam ? allRoles.find((item) => item.id === roleParam) : undefined;
+    if (role) return { param: "role", id: role.id, label: `계급 · ${role.name}`, query: { roleId: role.id } };
+    const team = teamParam ? teams.find((item) => item.id === teamParam) : undefined;
+    if (team) return { param: "team", id: team.id, label: `팀 · ${team.name}`, query: { teamId: team.id } };
+    const org = orgParam ? orgUnits.find((item) => item.id === orgParam) : undefined;
+    if (org) return { param: "org", id: org.id, label: `본부 · ${org.name}`, query: { orgUnitId: org.id } };
+    return null;
+  })();
+  const filtered = q !== "" || lockedOnly || memberFilter !== null;
+  // 07-17 SC-11(U1 · U6): 50명/쪽 · 이름 · 이메일 검색 · 잠김 거르기.
+  const list = await listPeoplePage(session.viewer, {
+    q,
+    locked: lockedOnly,
+    page: Number(pageParam) || 1,
+    ...memberFilter?.query,
+  });
 
   const people = list.rows;
   const pageHref = (target: number): string => {
     const query = new URLSearchParams();
     if (q) query.set("q", q);
     if (lockedOnly) query.set("locked", "1");
+    if (memberFilter) query.set(memberFilter.param, memberFilter.id);
     if (target > 1) query.set("page", String(target));
     const text = query.toString();
     return text ? `${LIST_HREF}?${text}` : LIST_HREF;
@@ -90,7 +109,8 @@ export default async function PeoplePage({
     unlockCandidates.includes(person) && (!person.roleId || unlockableRoles.has(person.roleId));
 
   const orgUnitNameById = new Map(orgUnits.map((org) => [org.id, org.name]));
-  const teamOptions = teams.map((team) => ({
+  // 07-21 Codex P2: 서버가 거부하는 보관 본부 아래 팀은 선택지에서 뺀다(listAssignableTeams).
+  const teamOptions = assignableTeams.map((team) => ({
     id: team.id,
     name: team.name,
     orgUnitName: orgUnitNameById.get(team.orgUnitId) ?? "",
@@ -157,8 +177,10 @@ export default async function PeoplePage({
             </div>
           ) : null}
           {lockedOnly ? <input type="hidden" name="locked" value="1" /> : null}
+          {memberFilter ? <input type="hidden" name={memberFilter.param} value={memberFilter.id} /> : null}
           {filtered || list.lockedCount > 0 ? (
             <RowActions>
+              {memberFilter ? <span>{memberFilter.label}</span> : null}
               {filtered ? <RowAction href={LIST_HREF}>지우기</RowAction> : null}
               {/* §6-1 끝 링크 — 잠긴 재직자 수(퇴직 · 보관 제외, 0이면 없음). */}
               {list.lockedCount > 0 ? <RowAction href={`${LIST_HREF}?locked=1`}>{`잠김 ${list.lockedCount}`}</RowAction> : null}

@@ -23,6 +23,7 @@ import {
 } from "@/repositories/org-units";
 import {
   listTeams as repoListTeams,
+  listTeamsOfActiveOrgUnits as repoListTeamsOfActiveOrgUnits,
   findTeamById as defaultFindTeamById,
   findTeamsByIds as defaultFindTeamsByIds,
   insertTeam as repoInsertTeam,
@@ -35,6 +36,7 @@ import {
   listMemberships as repoListMemberships,
   insertMembership as repoInsertMembership,
   deleteMembership as repoDeleteMembership,
+  activeTeamMembers,
 } from "@/repositories/team-memberships";
 
 export class ForbiddenError extends UserFacingError {}
@@ -131,6 +133,13 @@ export async function listOrgUnits(viewer: Viewer): Promise<OrgUnitDto[]> {
 export async function listTeams(viewer: Viewer): Promise<TeamDto[]> {
   const scope = await scopeFor(viewer, "team");
   const rows = await repoListTeams(viewer, { scope });
+  return Promise.all(rows.map((row) => project(viewer, row, TEAM_DTO_SPEC))) as Promise<TeamDto[]>;
+}
+
+// 사람 등록 · 발령의 팀 선택지 — 보관된 본부 아래 팀은 서버가 거부하므로 목록에서 뺀다.
+export async function listAssignableTeams(viewer: Viewer): Promise<TeamDto[]> {
+  const scope = await scopeFor(viewer, "team");
+  const rows = await repoListTeamsOfActiveOrgUnits(viewer, { scope });
   return Promise.all(rows.map((row) => project(viewer, row, TEAM_DTO_SPEC))) as Promise<TeamDto[]>;
 }
 
@@ -296,6 +305,14 @@ export async function assignTeam(
   await withTransaction(async (tx) => {
     // 06.4 /cso: 발령할 팀(보관이어도)의 팀 · 본부 키도 같은 층 정렬로 먼저 — 팀 복원과 줄 서고 뒤 자리 키는 다시 기다리지 않는다.
     await lockSeatKeys(viewer, { personIds: [input.userId], teamIds: [input.teamId] }, tx);
+    // 07-21(R10 · T-07-21-02): 잠금 뒤 tx로 팀을 다시 읽는다 — 먼저 커밋된 팀 보관과 줄 서서 보관된 팀으로 발령하지 않는다
+    // (사람 등록 `registerPerson`의 보관 팀 거부와 같은 판정 · 같은 문구).
+    const lockedTeam = await defaultFindTeamById(viewer, input.teamId, tx);
+    if (!lockedTeam || lockedTeam.archivedAt) throw new ValidationError(`존재하지 않거나 보관된 팀: ${input.teamId}`);
+    // 07-21 Codex P2: 빈 본부는 아래 팀이 활성인 채 보관된다 — 팀의 본부도 같은 잠금 뒤에 다시 읽는다(위 자리 키가 그 본부 키를 함께 잡아
+    // 본부 보관과 줄 선다). 복원 거부(`archivedSeatReason`)와 같은 문구.
+    const lockedOrgUnit = await repoFindOrgUnitById(viewer, lockedTeam.orgUnitId, tx);
+    if (lockedOrgUnit?.archivedAt) throw new ValidationError("보관된 본부 · 먼저 옮기기");
     // F24: 퇴직자는 발령하지 못한다(260907 `people.ts:792-797`).
     await assertNotRetiredInTx(viewer, input.userId, today, tx);
     const person = await repoFindUserById(viewer, input.userId, tx);
@@ -307,6 +324,28 @@ export async function assignTeam(
     await assertAssignmentSeatsFree(viewer, { person, before, after, today, showNames }, tx);
     await recordAction(viewer, { actionType: "document_create", entity: "team_membership", entityId: row.id }, { tx });
   });
+}
+
+export type OrgMemberCounts = { teams: Record<string, number>; orgUnits: Record<string, number> };
+
+// 07-21(R10 · SC-13): 팀 · 본부별 소속 활성 사람 수 — 보관 거부(`OrgHasMembersError`) · 사람 목록 `?team=` · `?org=` 필터와 같은 술어
+// (`activeTeamMembers`). 숫자만 돌려준다(정보 항목 아님) — 사람 메뉴 보기가 있어야 한다. 소속 0인 팀 · 본부는 키가 없다.
+export async function orgMemberCounts(viewer: Viewer, deps?: Partial<{ can: typeof defaultCan; now: () => Date }>): Promise<OrgMemberCounts> {
+  if (!(await (deps?.can ?? defaultCan)(viewer, PEOPLE_MENU, "view"))) {
+    throw new ForbiddenError("조직 보기 권한 없음");
+  }
+  const today = kstToday((deps?.now ?? (() => new Date()))());
+  const members = await activeTeamMembers(viewer, { today });
+  const teamSets = new Map<string, Set<string>>();
+  const orgUnitSets = new Map<string, Set<string>>();
+  for (const member of members) {
+    teamSets.set(member.teamId, (teamSets.get(member.teamId) ?? new Set()).add(member.userId));
+    orgUnitSets.set(member.orgUnitId, (orgUnitSets.get(member.orgUnitId) ?? new Set()).add(member.userId));
+  }
+  return {
+    teams: Object.fromEntries([...teamSets].map(([id, users]) => [id, users.size])),
+    orgUnits: Object.fromEntries([...orgUnitSets].map(([id, users]) => [id, users.size])),
+  };
 }
 
 export type CancelAssignmentDeps = {

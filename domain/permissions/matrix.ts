@@ -165,7 +165,7 @@ export async function setPermissionCell(
   viewer: Viewer,
   input: { roleId: string; menu: string; action: PermissionAction; allowed: boolean },
   deps?: Partial<MatrixDeps>,
-): Promise<{ changed: (PermissionCell & { allowed: boolean })[] }> {
+): Promise<{ changed: (PermissionCell & { allowed: boolean })[]; resulting: (PermissionCell & { allowed: boolean })[] }> {
   // 07-15(K24 · T-07-15-07): 메뉴 정의 밖 칸(예: vendors.account 보기)은 저장하지 않는다.
   if (!isDefinedCell(input.menu, input.action)) throw new ForbiddenError("알 수 없는 칸");
 
@@ -246,7 +246,9 @@ export async function setPermissionCell(
       );
       if ((previous ?? false) !== cell.allowed) changed.push(cell);
     }
-    return { changed };
+    // 07-21 Codex P2: 후보 칸(요청 칸 + 딸린 칸)의 저장 뒤 값 — 이미 같은 값이라 쓰지 않은 칸도 이 tx에서 읽은 값이 요청 값과 같다.
+    // 다른 관리자가 그사이 딸린 칸을 이미 켰으면 그 칸은 `changed`에 없지만 화면은 이 값으로 확정한다.
+    return { changed, resulting: candidates };
   });
 }
 

@@ -9,3 +9,11 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// N3 · N6: 옆 패널 `{규칙} 수정` 저장. 돌려주는 값은 바뀌었는지 여부뿐이다.
+registerAction({
+  name: "saveNotificationRuleAction",
+  menu: "admin.notification-rules",
+  action: "write",
+  dtoName: null,
+});

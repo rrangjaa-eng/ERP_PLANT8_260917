@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { actionLog, notificationLog, notificationRules } from "@/db/schema";
+import { actionLog, notificationLog, notificationRules, roles } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { CONDITION_KINDS, type EvaluateContext } from "@/domain/notify/condition-kinds";
 import { approvalWaitingKind } from "@/domain/notify/kinds/approval-waiting";
-import { listRuleRows, setRuleEnabled } from "@/domain/notify/rule-admin";
+import { listRuleRows, saveNotificationRule, setRuleEnabled } from "@/domain/notify/rule-admin";
 import { runTick } from "@/domain/notify/tick";
-import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { insertRole } from "@/repositories/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createTestConditionKind, testCandidate } from "@/test/support/notify-tick";
 
@@ -141,5 +142,61 @@ describe("setRuleEnabled — 즉시 저장 · 행동 로그 · version · enable
     await new Promise((resolve) => setTimeout(resolve, 30));
     await setRuleEnabled(viewer, { kind: "expense-result", enabled: true, version: 2 });
     expect((await ruleRow("expense-result"))!.enabledAt!.getTime()).toBeGreaterThan(first.getTime());
+  });
+});
+
+describe("saveNotificationRule — 일수 · 받는 계급 추가 · 이메일(D-717 · D-748 · N3)", () => {
+  const base = { enabled: undefined, extraRoleIds: [] as string[], emailEnabled: undefined };
+
+  it("종류 범위 밖 일수는 `일수 범위 {min}~{max} · 다시 입력` — 결재 차례 11 · 종료 후 지출결의 없음 31", async () => {
+    const viewer = await admin();
+    await expect(saveNotificationRule(viewer, { ...base, kind: "approval-waiting", days: 11, version: 0 })).rejects.toThrow("일수 범위 0~10 · 다시 입력");
+    await expect(saveNotificationRule(viewer, { ...base, kind: "project-end-no-expense", days: 31, version: 0 })).rejects.toThrow("일수 범위 1~30 · 다시 입력");
+    expect(await ruleRow("approval-waiting")).toBeUndefined();
+  });
+
+  it("범위 없는 종류에 일수를 보내면 거부 · 보관 계급 · 없는 계급 id도 거부", async () => {
+    const viewer = await admin();
+    await expect(saveNotificationRule(viewer, { ...base, kind: "expense-result", days: 3, version: 0 })).rejects.toThrow();
+    const archived = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보관-${randomUUID().slice(0, 8)}` });
+    await db.update(roles).set({ archivedAt: new Date() }).where(eq(roles.id, archived.id));
+    await expect(saveNotificationRule(viewer, { ...base, kind: "project-end-no-expense", days: 7, extraRoleIds: [archived.id], version: 0 })).rejects.toThrow("받는 계급");
+    await expect(saveNotificationRule(viewer, { ...base, kind: "project-end-no-expense", days: 7, extraRoleIds: ["role-없음"], version: 0 })).rejects.toThrow("받는 계급");
+    expect(await ruleRow("project-end-no-expense")).toBeUndefined();
+  });
+
+  it("정상 저장 — 행 · 행동 로그 changes는 바뀐 칸만 · 목록에 받는 계급 이름", async () => {
+    const viewer = await admin();
+    await saveNotificationRule(viewer, { ...base, kind: "project-end-no-expense", days: 10, extraRoleIds: [TEAM_LEAD_ROLE_ID], emailEnabled: false, version: 0 });
+    const row = await ruleRow("project-end-no-expense");
+    expect(row).toMatchObject({ days: 10, extraRoleIds: [TEAM_LEAD_ROLE_ID], emailEnabled: false, version: 1 });
+    const logs = await ruleLogs("project-end-no-expense");
+    expect(logs).toHaveLength(1);
+    const changes = (logs[0]?.detail as { changes: Record<string, unknown> }).changes;
+    expect(Object.keys(changes).sort()).toEqual(["days", "emailEnabled", "extraRoleIds"]);
+    expect(changes.days).toEqual([7, 10]);
+    const listed = (await listRuleRows(viewer)).find((r) => r.kind === "project-end-no-expense");
+    expect(listed).toMatchObject({ days: 10, extraRoleIds: [TEAM_LEAD_ROLE_ID], emailEnabled: false });
+    expect(listed?.extraRoleNames).toHaveLength(1);
+  });
+
+  it("받는 계급만 바꾼 저장은 켠 규칙의 enabled_at을 그대로 둔다", async () => {
+    const viewer = await admin();
+    await setRuleEnabled(viewer, { kind: "expense-result", enabled: true, version: 0 });
+    const turnedOn = (await ruleRow("expense-result"))!.enabledAt!.getTime();
+    await saveNotificationRule(viewer, { ...base, kind: "expense-result", days: undefined, extraRoleIds: [TEAM_LEAD_ROLE_ID], version: 1 });
+    expect((await ruleRow("expense-result"))!.enabledAt!.getTime()).toBe(turnedOn);
+  });
+
+  it("두 관리자가 같은 version으로 저장하면 두 번째는 충돌", async () => {
+    const first = await admin();
+    const second = await admin();
+    await saveNotificationRule(first, { ...base, kind: "project-end-no-expense", days: 9, version: 0 });
+    await expect(saveNotificationRule(second, { ...base, kind: "project-end-no-expense", days: 12, version: 0 })).rejects.toThrow("다른 사람이 먼저 수정 · 새로 불러오기");
+    expect((await ruleRow("project-end-no-expense"))?.days).toBe(9);
+  });
+
+  it("쓰기 권한이 없으면 거부", async () => {
+    await expect(saveNotificationRule(await person(DEFAULT_ROLE_ID), { ...base, kind: "project-end-no-expense", days: 8, version: 0 })).rejects.toThrow();
   });
 });

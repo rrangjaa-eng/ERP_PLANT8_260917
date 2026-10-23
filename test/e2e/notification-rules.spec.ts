@@ -146,3 +146,73 @@ test("알림 규칙 권한이 없는 계급은 404", async ({ page }) => {
   const response = await page.goto("/admin/notification-rules");
   expect(response?.status()).toBe(404);
 });
+
+function editLink(page: Page, label: string) {
+  return ruleRow(page, label).getByRole("link", { name: "수정" });
+}
+
+test("행동 링크 수정 → 패널에서 일수 · 받는 계급 추가 · 이메일을 바꿔 저장하면 닫히고 토스트 · 표가 바뀐다(K10 · N6 · D-748)", async ({ page }) => {
+  await loginAsSysadmin(page);
+  await page.goto("/admin/notification-rules");
+  await editLink(page, "종료 후 지출결의 없음").click();
+  const panel = page.getByRole("dialog", { name: "종료 후 지출결의 없음 수정" });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByLabel("일수")).toHaveValue("7");
+  await expect(panel.getByText("1~30", { exact: true })).toBeVisible();
+  await expect(panel.getByText("기본 받는 사람 · 담당 PM")).toBeVisible();
+  // 범위(팀 · 본부)를 고르는 칸은 없다 — 고른 계급은 회사 전체(D-748).
+  await expect(panel.getByRole("combobox")).toHaveCount(0);
+  const recipients = panel.getByRole("group", { name: "받는 사람 추가" });
+  await recipients.getByRole("checkbox", { name: "팀장" }).check();
+  await expect(panel.getByRole("checkbox", { name: "이메일" })).toBeChecked();
+  await panel.getByLabel("일수").fill("10");
+  await panel.getByRole("button", { name: /규칙 저장/ }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByText("규칙 저장 · 종료 후 지출결의 없음")).toBeVisible();
+  const row = ruleRow(page, "종료 후 지출결의 없음");
+  await expect(row.getByRole("cell").nth(0)).toHaveText("10일");
+  await expect(row.getByRole("cell").nth(2)).toHaveText("담당 PM + 팀장");
+  const [saved] = await db.select().from(notificationRules).where(eq(notificationRules.kind, "project-end-no-expense"));
+  expect(saved).toMatchObject({ days: 10, version: 1 });
+});
+
+test("범위 밖 일수는 `일수 범위 1~30 · 다시 입력`이고 패널이 열린 채 저장되지 않는다(N3)", async ({ page }) => {
+  await loginAsSysadmin(page);
+  await page.goto("/admin/notification-rules");
+  await editLink(page, "종료 후 지출결의 없음").click();
+  const panel = page.getByRole("dialog", { name: "종료 후 지출결의 없음 수정" });
+  await panel.getByLabel("일수").fill("31");
+  await panel.getByRole("button", { name: /규칙 저장/ }).click();
+  await expect(panel.getByText("일수 범위 1~30 · 다시 입력").first()).toBeVisible();
+  await expect(panel).toBeVisible();
+  expect(await db.select().from(notificationRules).where(eq(notificationRules.kind, "project-end-no-expense"))).toEqual([]);
+});
+
+test("결재 결과(사건 종류) 패널에는 일수 칸이 없고 결재 차례 패널 aux는 0~10 · 화면에 고치기 · 허용 1~30 글자가 없다", async ({ page }) => {
+  await loginAsSysadmin(page);
+  await page.goto("/admin/notification-rules");
+  await editLink(page, "결재 결과").click();
+  const eventPanel = page.getByRole("dialog", { name: "결재 결과 수정" });
+  await expect(eventPanel).toBeVisible();
+  await expect(eventPanel.getByLabel("일수")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(eventPanel).toHaveCount(0);
+  await editLink(page, "결재 차례").click();
+  const panel = page.getByRole("dialog", { name: "결재 차례 수정" });
+  await expect(panel.getByText("0~10", { exact: true })).toBeVisible();
+  await expect(page.getByText("고치기")).toHaveCount(0);
+  await expect(page.getByText("허용 1~30")).toHaveCount(0);
+});
+
+test("키보드: 행동 링크 Enter → 패널 첫 칸 포커스 · Esc → 닫힘 · 포커스가 그 링크로 돌아온다", async ({ page }) => {
+  await loginAsSysadmin(page);
+  await page.goto("/admin/notification-rules");
+  const link = editLink(page, "종료 후 지출결의 없음");
+  await link.focus();
+  await page.keyboard.press("Enter");
+  const panel = page.getByRole("dialog", { name: "종료 후 지출결의 없음 수정" });
+  await expect(panel.getByLabel("일수")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(link).toBeFocused();
+});

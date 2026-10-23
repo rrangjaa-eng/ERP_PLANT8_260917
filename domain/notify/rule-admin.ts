@@ -139,3 +139,39 @@ export async function writeRule(viewer: Viewer, kindName: string, expectedVersio
 export function setRuleEnabled(viewer: Viewer, input: { kind: string; enabled: boolean; version: number }): Promise<{ changed: boolean }> {
   return writeRule(viewer, input.kind, input.version, { enabled: input.enabled });
 }
+
+export type SaveRuleInput = {
+  kind: string;
+  // 켬은 체크박스가 즉시 저장한다 — 패널은 보내지 않는다(안 보내면 그대로).
+  enabled?: boolean;
+  // 범위가 있는 종류만 — 안 보내면 그대로. 허용 범위는 종류 `daysRange`(화면에 숫자를 두지 않는다).
+  days?: number;
+  // D-748: 회사 전체의 그 계급 — 범위 값은 받지 않는다. 활성 계급만.
+  extraRoleIds: string[];
+  emailEnabled?: boolean;
+  version: number;
+};
+
+// 옆 패널 `{규칙} 수정` 저장(N3 · N6) — 범위 밖 일수 · 보관/없는 계급을 거부하고 writeRule이 version · 행동 로그 · enabled_at을 맡는다.
+export async function saveNotificationRule(viewer: Viewer, input: SaveRuleInput): Promise<{ changed: boolean }> {
+  await assertCanWrite(viewer);
+  const kind = findKind(input.kind);
+  if (input.days !== undefined) {
+    const range = kind.daysRange;
+    if (!range) throw new RuleInvalidError("일수 칸 없는 규칙 · 새로 불러오기");
+    if (!Number.isInteger(input.days) || input.days < range.min || input.days > range.max) {
+      throw new RuleInvalidError(`일수 범위 ${range.min}~${range.max} · 다시 입력`);
+    }
+  }
+  const extraRoleIds = [...new Set(input.extraRoleIds)];
+  if (extraRoleIds.length > 0) {
+    const active = new Set((await listRoles(viewer)).map((role) => role.id));
+    if (extraRoleIds.some((id) => !active.has(id))) throw new RuleInvalidError("받는 계급 없음 · 다시 선택");
+  }
+  return writeRule(viewer, kind.kind, input.version, {
+    enabled: input.enabled,
+    days: input.days,
+    extraRoleIds,
+    emailEnabled: input.emailEnabled,
+  });
+}

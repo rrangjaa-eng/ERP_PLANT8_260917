@@ -35,7 +35,8 @@ export function PayoutAccountSection({
   account: PayoutAccountView;
   /** 해제 항목(`vendor.account_number_unmasked`) — 거짓이면 `번호 보기`를 그리지 않는다(문구 없음). */
   canReveal: boolean;
-  editHref: string;
+  /** null이면 `계좌 적기 · 바꾸기`를 그리지 않는다(상한 밖 대상, 문구 없음). */
+  editHref: string | null;
 }) {
   const empty = !account.bank && !account.holder && !account.masked;
   return (
@@ -54,11 +55,13 @@ export function PayoutAccountSection({
             ]}
           />
           {/* 3차는 글자만 바뀌는 같은 요소 — 저장 뒤 SidePanel이 연 요소(이 링크)로 포커스를 돌린다. */}
-          <p className={styles.payoutAction}>
-            <Link href={editHref} className={buttonLinkClassName("tertiary")}>
-              {empty ? "계좌 적기" : "계좌 바꾸기"}
-            </Link>
-          </p>
+          {editHref ? (
+            <p className={styles.payoutAction}>
+              <Link href={editHref} className={buttonLinkClassName("tertiary")}>
+                {empty ? "계좌 적기" : "계좌 바꾸기"}
+              </Link>
+            </p>
+          ) : null}
         </div>
       </DetailScreen.Section>
     </div>

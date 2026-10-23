@@ -35,7 +35,32 @@ async function openSettings(page: Page) {
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/account$/);
   await page.goto("/admin/settings");
+  await waitSettingsReady(page);
+}
+
+async function waitSettingsReady(page: Page) {
   await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
+  // 제목은 서버 HTML로 먼저 보인다 — 하이드레이션이 커밋되기 전에 고른 값은 React가 버려 즉시 저장도, 단계 저장 버튼 켜짐도
+  // 일어나지 않는다(PR #279 CI e2e (2): 자기 승인이 「건너뜀」 그대로 · 「2단 저장」 aria-disabled 30초). `__reactProps$`는 렌더
+  // 중에 붙어 커밋 전에도 보이므로(waitForHydration) 섹션의 파이버가 커밋된 트리(root.current)에 있는지까지 본다.
+  await expect.poll(() => leaveRoute(page).evaluate(isHydrationCommitted)).toBe(true);
+}
+
+type ReactFiber = { return: ReactFiber | null; child: ReactFiber | null; sibling: ReactFiber | null; stateNode: unknown };
+// 렌더 중(커밋 전) 트리는 root.current가 아니다 — 커밋된 트리에 이 DOM 요소를 가진 파이버가 있어야 처리기가 산다.
+function isHydrationCommitted(element: Element): boolean {
+  const key = Object.keys(element).find((name) => name.startsWith("__reactFiber$"));
+  if (!key) return false;
+  let fiber = (element as unknown as Record<string, ReactFiber>)[key]!;
+  while (fiber.return) fiber = fiber.return;
+  const stack = [(fiber.stateNode as { current: ReactFiber | null }).current];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node) continue;
+    if (node.stateNode === element) return true;
+    stack.push(node.child, node.sibling);
+  }
+  return false;
 }
 
 function checkedText(page: Page, label: string) {
@@ -109,7 +134,10 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_SELF_APPROVAL);
     try {
       await openSettings(page);
+      // 즉시 저장 요청이 끝나기 전에 새로 고치면 요청이 끊겨 저장이 안 된다 — 응답을 받은 뒤에 새로 고친다.
+      const saved = page.waitForResponse((response) => response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined);
       await leaveRoute(page).getByLabel("자기 승인").selectOption({ label: "본인 승인" });
+      await saved;
       await expect(async () => {
         await page.reload();
         await expect(checkedText(page, "자기 승인")).toHaveText("본인 승인");
@@ -495,7 +523,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
       await expect(page).not.toHaveURL(/\/admin\/settings$/);
       await page.goto("/admin/settings");
-      await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
+      await waitSettingsReady(page);
       await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
 
       await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);

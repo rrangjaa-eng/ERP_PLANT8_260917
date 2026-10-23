@@ -5,6 +5,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { runTick, type TickResult } from "@/domain/notify/tick";
 import { createTestConditionKind, testCandidate, type TestConditionKind } from "@/test/support/notify-tick";
+import { approvalTurnRows, seedInboxRows, setupLinkedInbox } from "./notify-inbox-fixture";
 
 // 04.2-09 Task 2 — 폰 375 「더보기」 시트 계정 그룹 「알림함 N」(S1-b · S1-menu-item).
 // 파일명 접두어 mobile-*.spec.ts로 mobile-375 프로젝트에서만 돈다(playwright.config.ts).
@@ -106,6 +107,66 @@ test.describe("알림함 목록 완성 — 폰 375 (Task 3 · S1-inbox-list/long
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
+});
+
+test.describe("알림함 링크 — 폰 375 (07-19 U10)", () => {
+  async function loginPm(page: import("@playwright/test").Page, person: { email: string; password: string }): Promise<void> {
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(person.email);
+    await page.getByLabel("비밀번호").fill(person.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+  }
+
+  function tokenAsColor(page: import("@playwright/test").Page, name: string): Promise<string> {
+    return page.evaluate((token) => {
+      const probe = document.createElement("span");
+      probe.style.color = `var(${token})`;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    }, name);
+  }
+
+  test("링크 있는 행은 행 전체가 링크 — 높이 44 이상 · 시각 칸을 눌러도 이동 · 색 --text-strong · 밑줄 없음", async ({ page }) => {
+    const { fx, expenseId } = await setupLinkedInbox();
+    await seedInboxRows(fx.pm.viewer.id, [
+      { conditionKind: "expense-result", entity: "expense-result", entityId: `${expenseId}:${randomUUID()}`, message: "폰 링크 문장" },
+    ]);
+    await loginPm(page, fx.pm);
+    await page.goto("/notifications");
+
+    const link = page.getByRole("link", { name: "폰 링크 문장" });
+    await expect(link).toBeVisible();
+    const box = await link.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await expect(link).toHaveCSS("color", await tokenAsColor(page, "--text-strong"));
+    await expect(link).toHaveCSS("text-decoration-line", "none");
+
+    // 행 높이 안 어디든 — 오른쪽 끝 시각 칸을 눌러도 같은 문서로 간다.
+    const row = page.locator("table tbody tr").filter({ hasText: "폰 링크 문장" });
+    const rowBox = await row.boundingBox();
+    if (!rowBox) throw new Error("행 상자 없음");
+    await page.mouse.click(rowBox.x + rowBox.width - 12, rowBox.y + rowBox.height / 2);
+    await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}$`));
+  });
+
+  test("접힘 줄을 펼치면 행마다 행 전체 링크(44 이상)이고 가로 넘침이 없다", async ({ page }) => {
+    const { fx, expenseId } = await setupLinkedInbox();
+    await seedInboxRows(fx.pm.viewer.id, approvalTurnRows(expenseId, 6));
+    await loginPm(page, fx.pm);
+    await page.goto("/notifications");
+
+    await page.getByRole("button", { name: "펼치기" }).click();
+    const links = page.locator("table").getByRole("link");
+    await expect(links).toHaveCount(6);
+    for (const box of await links.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))) {
+      expect(box).toBeGreaterThanOrEqual(44);
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });
 });

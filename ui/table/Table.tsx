@@ -910,7 +910,10 @@ export function Table<Row>({
                   styles[`prio-${column.priority}`],
                   collapseClass(column),
                   column.align === "right" ? styles.alignRight : "",
-                ].join(" ")}
+                  column.headerClassName,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 aria-sort={column.sort?.direction ? (column.sort.direction === "asc" ? "ascending" : "descending") : undefined}
                 aria-describedby={column.headerDescribedBy}
               >

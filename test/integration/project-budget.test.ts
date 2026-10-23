@@ -473,8 +473,20 @@ describe("예산 직접 수정 (07-24 Task 2 · D-729)", () => {
     for (const [menu, action] of [["projects", "view"], ["projects.budget", "view"], ["projects.budget", "write"]] as const) {
       await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
     }
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "budget.amount", visible: true });
     const otherTeam = await makeViewer(role.id, await makeTeam());
     await expect(setBudgetManually(otherTeam, s.projectId, { budgetKrw: 5_000_000, expectedBudgetKrw: 7_000_000, memo: "정정" })).rejects.toThrow("프로젝트 없음");
+    expect(await entriesOf(s.projectId)).toHaveLength(1);
+    expect(await budgetLogs(s.projectId)).toEqual([]);
+  });
+
+  // 게이트 R-1 · C-1: 쓰기 권한이 있어도 금액을 못 보는 역할은 예상 금액 대조(맞으면 ok · 틀리면 충돌 문구)로 금액을 알아내거나
+  // 값을 모른 채 덮어쓸 수 있었다. 금액 보기 확인이 대조 · 쓰기보다 먼저다 — 맞는 값 · 틀린 값 모두 같은 거부.
+  it("쓰기는 있어도 budget.amount를 못 보면 맞는 예상 값 · 틀린 예상 값 모두 같은 거부 · 줄 · 로그 없음", async () => {
+    const s = await withBudget();
+    const blind = await makeBudgetViewer({ amount: false });
+    await expect(setBudgetManually(blind, s.projectId, { budgetKrw: 7_300_001, expectedBudgetKrw: 7_000_000, memo: "정정" })).rejects.toThrow("예산 금액 보기 권한 없음");
+    await expect(setBudgetManually(blind, s.projectId, { budgetKrw: 7_300_001, expectedBudgetKrw: 6_000_000, memo: "정정" })).rejects.toThrow("예산 금액 보기 권한 없음");
     expect(await entriesOf(s.projectId)).toHaveLength(1);
     expect(await budgetLogs(s.projectId)).toEqual([]);
   });

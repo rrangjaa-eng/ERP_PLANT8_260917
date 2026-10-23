@@ -149,6 +149,8 @@ export async function setBudgetManually(
   input: { budgetKrw: number; expectedBudgetKrw: number; memo: string },
 ): Promise<{ budgetKrw: number }> {
   if (!(await defaultCan(viewer, BUDGET_MENU, "write"))) throw new BudgetForbiddenError("예산 수정 권한 없음");
+  // 금액을 못 보는 역할은 예상 금액 대조(맞으면 ok · 틀리면 충돌 문구)로 금액을 알아내거나 모른 채 덮어쓸 수 있다 — 대조 · 쓰기보다 먼저 막는다.
+  if (!(await defaultVisible(viewer, BUDGET_AMOUNT_ITEM))) throw new BudgetForbiddenError("예산 금액 보기 권한 없음");
   const memo = input.memo.trim();
   if (memo === "") throw new UserFacingError("사유 · 입력");
   if (memo.length > MEMO_MAX) throw new UserFacingError("사유 · 500자 이하");

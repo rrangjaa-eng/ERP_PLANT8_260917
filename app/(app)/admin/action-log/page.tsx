@@ -6,7 +6,7 @@ import { detailLines } from "@/domain/action-log/detail-lines";
 import { CORE_ACTION_TYPES, ACTION_TYPE_LABELS, type CoreActionType } from "@/domain/action-log/record";
 import { isPrunableActionType } from "@/domain/action-log/prune-scope";
 import { listPeople } from "@/domain/people";
-import { kstDateTimeOf } from "@/lib/kst-date";
+import { kstDateTimeSecondsOf } from "@/lib/kst-date";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ActionLogTable, type ActionLogRowView } from "./action-log-table";
@@ -100,7 +100,7 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
     return {
       key: String(row.seq),
       // 발생 시각은 KST(기간 필터 경계와 같은 시간대, 모든 시간은 한국 시간) — 서버가 글자로 만들고 화면은 자르지 않는다.
-      occurredAt: row.occurredAt ? kstDateTimeOf(new Date(row.occurredAt)) : null,
+      occurredAt: row.occurredAt ? kstDateTimeSecondsOf(new Date(row.occurredAt)) : null,
       actionType: row.actionTypeLabel ?? row.actionType ?? "—",
       actorName: row.actorName ?? null,
       actorRoleName: row.actorRoleName ?? null,

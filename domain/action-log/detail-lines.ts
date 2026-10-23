@@ -9,6 +9,19 @@ export type DetailLine = { label: string; before: string; after: string };
 const CHANGED = "바뀜";
 const NONE = "없음";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// 계급 id(`role-sysadmin` · `role-<uuid>`) — 이름 풀이는 DB 조회가 필요해 뒤 결정. 지금은 UUID와 같이 바뀜 · 개수로 줄인다.
+const ROLE_ID = /^role-/;
+
+function isInternalId(value: unknown): boolean {
+  return typeof value === "string" && (UUID.test(value) || ROLE_ID.test(value));
+}
+
+// 범위 라벨 — 계급 화면(app/(app)/admin/people/roles/roles-client.tsx)의 VIEW_SCOPE_LABEL · WORK_SCOPE_LABEL과 같은 글자.
+// 그 표는 클라이언트 파일에 있어 domain이 가져올 수 없으므로 같은 값을 둔다(계급 화면 라벨을 바꾸면 여기도).
+const SCOPE_LABELS: Record<string, Record<string, string>> = {
+  workScope: { team: "자기 팀", company: "전사" },
+  viewScope: { company: "전사", org_unit: "본부", team: "팀", own: "본인" },
+};
 
 // 칸 이름 표 — 설정 키는 레지스트리 라벨, 권한 칸은 메뉴 라벨 + 동작 낱말을 쓰므로 여기엔 나머지가 든다.
 export const CHANGE_FIELD_LABELS: Record<string, string> = {
@@ -58,13 +71,13 @@ function formatPlain(value: unknown): string {
   if (typeof value === "boolean") return value ? "켬" : "끔";
   if (typeof value === "number") return Number.isFinite(value) ? value.toLocaleString("en-US", { maximumFractionDigits: 20 }) : CHANGED;
   if (typeof value === "string") {
-    if (UUID.test(value)) return CHANGED;
+    if (isInternalId(value)) return CHANGED;
     if (/^\d{4}-\d{2}-\d{2}T/.test(value)) return value.slice(0, 10);
     return value === "" ? NONE : value;
   }
   if (Array.isArray(value)) {
     if (value.length === 0) return NONE;
-    if (value.every((item) => typeof item === "string" && UUID.test(item))) return `${value.length}개`;
+    if (value.every(isInternalId)) return `${value.length}개`;
     if (value.some((item) => isRecord(item) || Array.isArray(item))) return CHANGED;
     return value.map(formatPlain).join(", ");
   }
@@ -74,7 +87,8 @@ function formatPlain(value: unknown): string {
 function formatValue(field: string, value: unknown): string {
   if (LAST4_FIELDS.has(field)) return maskLast4(value);
   if (CHANGED_ONLY_FIELDS.has(field)) return value === null || value === undefined ? NONE : CHANGED;
-  return formatPlain(value);
+  const scopeLabel = typeof value === "string" ? SCOPE_LABELS[field]?.[value] : undefined;
+  return scopeLabel ?? formatPlain(value);
 }
 
 function settingLabel(key: string): string | undefined {

@@ -79,6 +79,25 @@ describe("detailLines (07-25 K16)", () => {
     expect(lines?.[1]).toEqual({ label: "받는 계급", before: "없음", after: "2개" });
   });
 
+  it("계급 id(role-…)는 UUID처럼 바뀜 · 개수로 줄인다 — 이름 풀이는 DB 조회가 필요해 뒤 결정", () => {
+    const lines = detailLines({
+      changes: {
+        roleId: ["role-team-lead", "role-3f2a9c10-1b2c-4d3e-8f40-0123456789ab"],
+        extraRoleIds: [[], ["role-sysadmin", "role-ceo"]],
+      },
+    });
+    expect(lines?.[0]).toEqual({ label: "계급", before: "바뀜", after: "바뀜" });
+    expect(lines?.[1]).toEqual({ label: "받는 계급", before: "없음", after: "2개" });
+    expect(detailLines({ changes: { roleId: [null, "role-sysadmin"] } })?.[0]).toEqual({ label: "계급", before: "없음", after: "바뀜" });
+  });
+
+  it("업무 범위 · 보는 범위는 계급 화면과 같은 한글 라벨로 보인다", () => {
+    const lines = detailLines({ changes: { workScope: ["team", "company"], viewScope: ["own", "org_unit"] } });
+    expect(lines?.find((line) => line.label === "업무 범위")).toEqual({ label: "업무 범위", before: "자기 팀", after: "전사" });
+    expect(lines?.find((line) => line.label === "보는 범위")).toEqual({ label: "보는 범위", before: "본인", after: "본부" });
+    expect(detailLines({ changes: { viewScope: ["team", "company"] } })?.[0]).toMatchObject({ before: "팀", after: "전사" });
+  });
+
   it("권한 칸은 메뉴 라벨 + 동작 낱말, 정보 항목 칸은 항목 이름", () => {
     const allowed = detailLines({ menu: "projects", action: "write", changes: { allowed: [null, true] } });
     expect(allowed?.[0]?.label).toBe("프로젝트 쓰기");

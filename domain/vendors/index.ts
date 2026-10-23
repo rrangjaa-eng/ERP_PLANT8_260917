@@ -448,6 +448,12 @@ export async function createVendor(
   if (!(await canFn(viewer, VENDORS_MENU, "write"))) {
     throw new ForbiddenError("거래처 등록 권한 없음");
   }
+  // 사용자 결정(2026-10-23): 새 거래처도 계좌 세 칸 중 하나라도 실으면 `vendors.account` 쓰기가 필요하다 — 계좌 권한 없는 편집자가
+  // 새 거래처를 만들며 자기 계좌를 넣는 지급 사기 경로를 막는다(260907은 등록 권한 하나였다 · server/src/vendors.ts:773). 판정은 칸 오류보다 먼저.
+  const accountGiven = present(input.accountBank) !== null || present(input.accountHolder) !== null || present(input.accountNumber) !== null;
+  if (accountGiven && !(await canFn(viewer, VENDOR_ACCOUNT_MENU, "write"))) {
+    throw new ForbiddenError("계좌 수정 권한 없음");
+  }
 
   // 04.5-05: 행 삽입보다 먼저 판정한다(실패 시 행 없음). 새 행이라 경합이 없어 트랜잭션을 더하지 않는다.
   const { inputDefs, knownKeys } = await vendorInputFieldKeys(viewer);
@@ -466,7 +472,6 @@ export async function createVendor(
   const duplicates = await repoFindVendorsByNormalizedName(viewer, normalizedName);
 
   // 06.5 D-6506 · REVIEWS DH-3: 계좌 칸 판정(account-fields.ts) + 07-20 C-35 자릿수 — 행 삽입 전, 실패 시 행 없음.
-  // 새 거래처의 계좌 입력은 등록 권한으로 된다(플랜 07-20 플래그된 가정 — `vendors.account`는 기존 거래처 변경만).
   const accountNumber = assertAccountInput(
     { bank: null, holder: null, hasNumber: false },
     { bank: input.accountBank ?? null, holder: input.accountHolder ?? null, number: input.accountNumber },

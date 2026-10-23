@@ -56,6 +56,7 @@ async function readyTeamDraft(viewer: Viewer, vendorId: string, paymentMethod = 
       supply: { currency: "KRW", amount: 100_000, fxRate: 1 },
       evidenceType: "tax_invoice",
       paymentMethod,
+      note: "팀 운영비",
     },
   });
   return expenseId;
@@ -289,6 +290,7 @@ describe("직원 지급처 — 네 쓰기 경로의 지급처 하나(D-6517 · �
         supply: { currency: "KRW", amount: 100_000, fxRate: 1 },
         evidenceType: "tax_invoice",
         paymentMethod: "bank_transfer",
+        note: "팀 운영비",
       },
     });
     expect(await blockOf(fx.pm, expenseId)).toMatchObject({ reason: MISSING, target: "payeeAccount" });

@@ -225,7 +225,8 @@ async function toVendorDto(viewer: Viewer, row: VendorRow, visibleKeys: Readonly
 
 export type VendorListDeps = { can: typeof defaultCan };
 
-// 07-20 V2: 목록 · 파일 받기가 같은 거르개 — 숨김 포함 · 갈래(그 쪽 + 둘 다) · 검색어(이름 · 사업자 번호 숫자 포함).
+// 07-20 V2: 목록 · 파일 받기가 같은 거르개 — 숨김 포함 · 갈래(그 쪽 + 둘 다) · 검색어(이름 · 사업자 번호 앞부분).
+// 게이트 P2: 번호 조건은 검색어가 숫자 · 하이픈만일 때만 건다 — `제2공장`의 「2」가 번호 부분 일치로 무관한 거래처를 끌어왔다.
 export type VendorListFilter = { includeHidden?: boolean; kind?: VendorSide | null; q?: string };
 
 export function vendorListQuery(filter: VendorListFilter): { includeHidden: boolean; kinds: VendorKind[] | null; nameQuery: string; digitsQuery: string | null } {
@@ -234,7 +235,7 @@ export function vendorListQuery(filter: VendorListFilter): { includeHidden: bool
     includeHidden: filter.includeHidden ?? false,
     kinds: filter.kind ? vendorKindsFor(filter.kind) : null,
     nameQuery: normalizeVendorName(q),
-    digitsQuery: businessNoDigits(q),
+    digitsQuery: /^[0-9-]+$/.test(q) ? businessNoDigits(q) : null,
   };
 }
 

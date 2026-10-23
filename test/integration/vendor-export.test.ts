@@ -23,6 +23,15 @@ function tag(): string {
   return `검색-${randomUUID().slice(0, 8)}`;
 }
 
+// 실행마다 다른 「2」로 시작하는 유효 사업자 번호(xxx-xx-xxxxx) — 같은 DB를 다시 써도 중복 막기에 안 걸린다.
+function uniqueBizNoWith2(): string {
+  const nine = `2${String(Math.floor(Math.random() * 90_000_000) + 10_000_000)}`;
+  const weights = [1, 3, 7, 1, 3, 7, 1, 3, 5];
+  const sum = weights.reduce((acc, w, i) => acc + Number(nine[i]) * w, 0) + Math.floor((Number(nine[8]) * 5) / 10);
+  const digits = `${nine}${(10 - (sum % 10)) % 10}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+}
+
 describe("거래처 검색 q (07-20 V2)", () => {
   it("이름 포함 · 사업자 번호 숫자 포함 · 갈래 필터와 함께", async () => {
     const t = tag();
@@ -35,6 +44,25 @@ describe("거래처 검색 q (07-20 V2)", () => {
     expect(byNo.map((v) => v.id)).not.toContain(b.id);
     expect((await listVendors(SYSTEM_VIEWER, { q: t, kind: "client" })).map((v) => v.id)).toEqual([b.id]);
     expect((await listVendors(SYSTEM_VIEWER, { q: t })).map((v) => v.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
+  it("글자와 숫자가 섞인 검색어(`제2공장`)는 이름으로만 찾는다 — 사업자 번호 숫자를 끌어오지 않는다(게이트 P2)", async () => {
+    const t = tag();
+    const bizNo = uniqueBizNoWith2();
+    const { vendor: plant } = await createVendor(SYSTEM_VIEWER, { name: `${t}-제2공장` });
+    const { vendor: other } = await createVendor(SYSTEM_VIEWER, { name: `${t}-무관`, businessNo: bizNo });
+    const ids = (await listVendors(SYSTEM_VIEWER, { q: "제2공장" })).map((v) => v.id);
+    expect(ids).toContain(plant.id);
+    expect(ids).not.toContain(other.id);
+  });
+
+  it("사업자 번호는 숫자 · 하이픈만인 검색어로 앞부분 일치만 — 가운데 숫자로는 안 걸린다", async () => {
+    const t = tag();
+    const bizNo = uniqueBizNoWith2();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: `${t}-번호`, businessNo: bizNo });
+    expect((await listVendors(SYSTEM_VIEWER, { q: bizNo.slice(0, 6) })).map((v) => v.id)).toContain(vendor.id);
+    expect((await listVendors(SYSTEM_VIEWER, { q: bizNo.replace(/-/g, "").slice(0, 5) })).map((v) => v.id)).toContain(vendor.id);
+    expect((await listVendors(SYSTEM_VIEWER, { q: bizNo.replace(/-/g, "").slice(3, 9) })).map((v) => v.id)).not.toContain(vendor.id);
   });
 
   it("`%` · `_`는 와일드카드가 아니다", async () => {

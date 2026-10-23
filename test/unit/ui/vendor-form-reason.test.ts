@@ -11,8 +11,10 @@ const CODE = SOURCE.split("\n")
   .join("\n");
 
 describe("거래처 폼 이유 자리 (04.5-06)", () => {
-  it("폼 상단 오류 상자 컴포넌트가 코드에 없다", () => {
-    expect(CODE.match(/FormAlert/g) ?? []).toHaveLength(0);
+  // 07-20 V3: 폼 상단 상자는 version 충돌(다른 사람이 먼저 수정) 하나에만 쓴다 — 칸 오류 · 막힘 이유는 여전히 이유 자리 · 칸 아래.
+  it("폼 상단 오류 상자는 version 충돌 한 자리에만 있다", () => {
+    expect(CODE.match(/<FormAlert>/g) ?? []).toHaveLength(1);
+    expect(CODE).toMatch(/\{versionConflict \? \([\s\S]*?<FormAlert>\s*\{versionConflict\}/);
   });
 
   // 04.6-04: 이유 자리(행동 줄 위 한 줄)와 1차 버튼은 `PanelForm`이 그린다 — 호출부는 `reasonId`로 id를 주고,
@@ -49,8 +51,10 @@ describe("거래처 폼 이유 자리 (04.5-06)", () => {
 
   // 04.5-06 Task 2: 보관된 선택지가 현재 값 — 활성화된 옵션(disabled는 FormData에서 빠져 「안 바꿈」과 「지움」을 구분할 수 없다)
   it("저장값이 활성 선택지에 없을 때 더하는 옵션은 disabled가 아니고 글자가 「{값} (보관됨)」이다", () => {
-    expect(CODE).toMatch(/<option value=\{archivedValue\}>\{archivedValue\} \(보관됨\)<\/option>/);
+    // 07-20 N10: 네이티브 select → ui/select — 옵션은 options 배열의 한 원소다.
+    expect(CODE).toMatch(/\{ value: archivedValue, label: `\$\{archivedValue\} \(보관됨\)` \}/);
     expect(CODE).not.toMatch(/<option[^>]*\bdisabled\b/);
+    expect(CODE).not.toMatch(/disabled: true/);
   });
 
   it("폼에 없는 칸의 서버 오류는 staleFieldsReason으로 막힘 이유 · 새로 불러오기가 된다(칸 정의 키와 비교)", () => {

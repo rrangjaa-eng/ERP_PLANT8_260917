@@ -40,7 +40,8 @@ test.describe("폰 375 /admin/vendors 3차 버튼 터치 목표 (defect 2)", () 
 
     const row = page.locator("tr", { hasText: vendorName });
 
-    const revealButton = row.getByRole("button", { name: "번호 보기" });
+    // 07-20 SC-16: 폰 P1은 이름 · 갈래 · 상태 — 계좌(「번호 보기」)는 바로 아래 접힘 줄(P2)에 있다.
+    const revealButton = row.locator("xpath=following-sibling::tr[1]").getByRole("button", { name: "번호 보기" });
     const revealBox = await revealButton.boundingBox();
     expect(revealBox).not.toBeNull();
     expect(revealBox!.width).toBeGreaterThanOrEqual(44);
@@ -151,12 +152,24 @@ test.describe("폰 375 /admin/vendors 구분 링크 터치 목표 (261006-biv)",
   test("「전체」 · 「클라이언트」 · 「협력사」 링크가 각각 44×44 이상이다", async ({ page }) => {
     await loginAsSysadmin(page);
     await page.goto("/admin/vendors");
-    const nav = page.getByRole("navigation", { name: "구분" });
+    const nav = page.getByRole("navigation", { name: "갈래" });
     for (const name of ["전체", "클라이언트", "협력사"]) {
       const box = await nav.getByRole("link", { name, exact: true }).boundingBox();
       expect(box, name).not.toBeNull();
       expect(box!.width, name).toBeGreaterThanOrEqual(44);
       expect(box!.height, name).toBeGreaterThanOrEqual(44);
     }
+  });
+});
+
+// 07-20 K12: 폰에는 `파일 받기`가 없고 검색칸은 있다.
+test.describe("폰 375 /admin/vendors 파일 받기 없음 · 검색칸 (07-20 K12 · V2)", () => {
+  test("`파일 받기` 버튼이 DOM에 없고 검색칸이 있다 · 필터 줄이 가로로 넘치지 않는다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/vendors");
+    await expect(page.getByRole("searchbox", { name: "검색" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "파일 받기" })).toHaveCount(0);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });

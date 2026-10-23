@@ -1,7 +1,7 @@
-import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { roles } from "@/db/schema";
+import { roles, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import { normalizeRoleName } from "@/domain/permissions/role-name";
 
@@ -75,20 +75,43 @@ export async function setRoleViewScope(viewer: Viewer, id: string, viewScope: st
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다 — archived_at이 이미
 // 있으면(보관) / 없으면(복원) WHERE절이 걸러 0행이 갱신되고 원래 값이 유지된다.
-export async function setRoleArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+export async function setRoleArchived(viewer: Viewer, id: string, value: boolean, tx: DbOrTx = db): Promise<boolean> {
   // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
   const rows = value
-    ? await db
+    ? await tx
         .update(roles)
         .set({ archivedAt: new Date(), archivedBy: viewer.id })
         .where(and(eq(roles.id, id), isNull(roles.archivedAt)))
         .returning({ id: roles.id })
-    : await db
+    : await tx
         .update(roles)
         .set({ archivedAt: null, archivedBy: null })
         .where(and(eq(roles.id, id), isNotNull(roles.archivedAt)))
         .returning({ id: roles.id });
   return rows.length > 0;
+}
+
+// 07-15(R17): 계급 보관 전 계급 행 잠금(tx 안) — 행이 없으면 null.
+export async function lockRoleForUpdate(viewer: Viewer, id: string, tx: DbOrTx): Promise<RoleRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(roles).where(eq(roles.id, id)).for("update");
+  return row ?? null;
+}
+
+// 07-15(R17): 그 계급의 활성 소속 수 — 보관 안 됨 ∧ 퇴직일 안 지남(countActiveAdmins의 기본 활성 조건과 같다).
+export async function countActiveMembersOfRole(viewer: Viewer, roleId: string, asOf: string, tx: DbOrTx = db): Promise<number> {
+  void viewer;
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(users)
+    .where(
+      and(
+        eq(users.roleId, roleId),
+        isNull(users.archivedAt),
+        or(isNull(users.resignationDate), gte(users.resignationDate, asOf)),
+      ),
+    );
+  return row?.n ?? 0;
 }
 
 // 멱등 시드 전용 — 이미 있으면 건드리지 않는다(onConflictDoNothing).

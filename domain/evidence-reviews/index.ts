@@ -16,6 +16,7 @@ import {
   type EvidenceGateInput,
   type ExpenseActionBar,
 } from "@/domain/payments/action-row";
+import { fileVisibilityFor } from "@/domain/evidence/private-files";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_PREPAID_DUE_DAYS } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
@@ -154,6 +155,8 @@ class EvidenceStampChangedSignal extends Error {
   constructor(
     readonly uploadedBy: string | null,
     readonly at: Date,
+    readonly privateToOwner: boolean,
+    readonly evidenceType: string | null,
   ) {
     super("증빙 지문 다름");
   }
@@ -203,7 +206,7 @@ export async function confirmEvidence(
         const alive = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [locked.id] }, tx);
         const stamp = evidenceStampOf({ fileIds: alive.map((file) => file.id), evidenceDate: locked.evidenceDate });
         const latest = alive.at(-1);
-        if (stamp !== input.evidenceStamp) throw new EvidenceStampChangedSignal(latest?.uploadedBy ?? null, latest?.createdAt ?? locked.updatedAt);
+        if (stamp !== input.evidenceStamp) throw new EvidenceStampChangedSignal(latest?.uploadedBy ?? null, latest?.createdAt ?? locked.updatedAt, latest?.privateToOwner ?? false, locked.evidenceType);
       }
       const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
       const approval = approvalGateDecision({ approvalState: instance?.status ?? null, stepName: null });
@@ -249,6 +252,11 @@ export async function confirmEvidence(
     });
   } catch (error) {
     if (!(error instanceof EvidenceStampChangedSignal)) throw error;
+    // 07-27(L-3): 이 보는 사람에게 숨은 파일이면 올린 사람 이름 · 시각을 내지 않는다.
+    const visibility = await fileVisibilityFor(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, evidenceType: error.evidenceType });
+    if (!visibility.visible({ uploadedBy: error.uploadedBy, privateToOwner: error.privateToOwner })) {
+      throw new EvidenceReviewConflictError("다른 사람이 증빙을 바꿈 · 새로 고침");
+    }
     const name = error.uploadedBy ? (await findUserNamesByIds(viewer, [error.uploadedBy])).get(error.uploadedBy) : undefined;
     throw new EvidenceReviewConflictError(`${name ? `${name}이` : "다른 사람이"} ${formatKstTime(error.at)}에 증빙을 바꿈 · 새로 고침`);
   }

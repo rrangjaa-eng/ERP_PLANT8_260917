@@ -13,7 +13,9 @@ export type ExpenseDraftDto = {
   vendorId: string | null;
   evidenceType: string | null;
   paymentMethod: string | null;
+  // 07 D-715 — 유효 예정일(수동 ?? 자동). 저장 칸은 지급 권한자 수동값만.
   scheduledPaymentDate: string | null;
+  scheduledPaymentManual: boolean;
   note: string | null;
   installment: boolean;
   version: number;
@@ -29,6 +31,7 @@ export const EXPENSE_DRAFT_DTO_SPEC: DtoSpec<ExpenseDraftDto, ExpenseDraftDto> =
     { key: "evidenceType", from: "evidenceType", infoItem: "expense.value" },
     { key: "paymentMethod", from: "paymentMethod", infoItem: "expense.value" },
     { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
+    { key: "scheduledPaymentManual", from: "scheduledPaymentManual", infoItem: "expense.value" },
     { key: "note", from: "note", infoItem: "expense.value" },
     { key: "installment", from: "installment", infoItem: "expense.value" },
     { key: "version", from: "version", infoItem: "expense.value" },
@@ -88,6 +91,11 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   evidenceDate: string | null;
   // 06.5 V15(카드 ①): 회사 대납 면제의 받는 인원 — 금액 정보 항목(금액을 못 보는 계급에는 빠진다).
   recipientCount: number;
+  // 07(D-715 · D-731 · C6): 자동 계산일(수동이어도 셈함) · 밀림 사유 · 규칙 줄(07-01 payRuleLine) · 수동 날짜가 지급 요일이 아니면 `{요일}요일 아님`(07-01 payOffWeekdayText).
+  autoPaymentDate: string;
+  paymentPushReason: "cutoff" | "no-slot" | null;
+  paymentRuleLine: string;
+  paymentOffWeekday: string | null;
 };
 
 export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocumentDto> = {
@@ -132,6 +140,10 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "prepaidReason", from: "prepaidReason", infoItem: "expense.value" },
     { key: "evidenceDate", from: "evidenceDate", infoItem: "expense.value" },
     { key: "recipientCount", from: "recipientCount", infoItem: "expense.amount" },
+    { key: "autoPaymentDate", from: "autoPaymentDate", infoItem: "expense.value" },
+    { key: "paymentPushReason", from: "paymentPushReason", infoItem: "expense.value" },
+    { key: "paymentRuleLine", from: "paymentRuleLine", infoItem: "expense.value" },
+    { key: "paymentOffWeekday", from: "paymentOffWeekday", infoItem: "expense.value" },
   ],
 };
 
@@ -164,7 +176,9 @@ export type ExpenseDetailDto = {
   evidenceFiles: { id: string; name: string; sizeBytes: number; contentType: string }[];
   // 06.1-14(G15 · 카드 G-N2): 보이는 파일이 0인데 숨긴 G15 파일이 있는 문서의 잠김 행 글자(건수 · 파일 이름 없음), 아니면 null.
   hiddenEvidenceNotice: string | null;
+  // 07 D-715 — 유효 예정일(수동 ?? 자동). 저장 칸은 지급 권한자 수동값만.
   scheduledPaymentDate: string | null;
+  scheduledPaymentManual: boolean;
   paymentMethodName: string | null;
   note: string | null;
   drafterName: string;
@@ -194,6 +208,7 @@ export const EXPENSE_DETAIL_DTO_SPEC: DtoSpec<ExpenseDetailDto, ExpenseDetailDto
     { key: "evidenceFiles", from: "evidenceFiles", infoItem: "expense.value" },
     { key: "hiddenEvidenceNotice", from: "hiddenEvidenceNotice", infoItem: "expense.value" },
     { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
+    { key: "scheduledPaymentManual", from: "scheduledPaymentManual", infoItem: "expense.value" },
     { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "note", from: "note", infoItem: "expense.value" },
     { key: "drafterName", from: "drafterName", infoItem: "approval.value" },
@@ -245,7 +260,9 @@ export type ExpenseListRowDto = {
   // 06.5 D-6517: 직원 지급처 이름(사람 정보) — 지급처 열은 거래처 이름 → 직원 이름. 06.5-08 목록 검색이 이 칸을 이어 쓴다(EP2-D5).
   payeeUserName: string | null;
   supply: Money | null;
+  // 07 D-715 — 유효 예정일(수동 ?? 자동). 저장 칸은 지급 권한자 수동값만.
   scheduledPaymentDate: string | null;
+  scheduledPaymentManual: boolean;
   drafterName: string;
   // `작성 중` / `{단계} 결재 중` / `반려` / `회수` / `승인`, 날짜는 MM-DD(서울 — 반려 · 회수 · 승인만).
   statusWord: string;
@@ -264,6 +281,7 @@ export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRo
     { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "supply", from: "supply", infoItem: "expense.amount" },
     { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
+    { key: "scheduledPaymentManual", from: "scheduledPaymentManual", infoItem: "expense.value" },
     { key: "drafterName", from: "drafterName", infoItem: "expense.value" },
     { key: "statusWord", from: "statusWord", infoItem: "expense.value" },
     { key: "statusDate", from: "statusDate", infoItem: "expense.value" },

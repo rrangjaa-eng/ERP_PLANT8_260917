@@ -7,7 +7,13 @@
 export const PERMISSION_ACTIONS = ["view", "write", "approve"] as const;
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
 
-export type MenuDef = { key: string; label: string };
+// 07-15(K24 · D-739): 선택 칸 actions가 그 메뉴의 칸을 정한다 — 없으면 PERMISSION_ACTIONS 셋 전부. 권한표 열 · 시스템 관리자 시드 ·
+// setPermissionCell이 menuActions 하나로 같은 정의를 쓴다(정의 밖 칸은 저장 거부).
+export type MenuDef = { key: string; label: string; actions?: readonly PermissionAction[] };
+
+export function menuActions(menu: MenuDef): readonly PermissionAction[] {
+  return menu.actions ?? PERMISSION_ACTIONS;
+}
 
 export const MENUS: MenuDef[] = [
   { key: "projects", label: "프로젝트" },
@@ -30,6 +36,8 @@ export const MENUS: MenuDef[] = [
   // 04-13(D-83): 경영관리의 원가 보정(조정 줄) — 프로젝트 상태와 무관하게 조정 줄만 만들고 고친다. 매출 기록
   // (projects.revenue)과 다른 일이라 따로 두고, 시드 계급에 경영관리가 없어 기본값은 아무에게도 켜지 않는다.
   { key: "projects.adjustment", label: "견적 조정 줄" },
+  // 07-15(D-722 · D-729): 예산 현황 — 시드 계급 중 시스템 관리자만 MENUS 루프로 켜고, 경영관리 쓰기는 배포 뒤 권한표에서 켠다.
+  { key: "projects.budget", label: "예산 현황" },
   { key: "expenses", label: "지출결의" },
   { key: "expenses.team", label: "팀 지출결의 보기" },
   // 05-09(사용자 결정 2026-09-26 PR #89 · 2026-10-04): 승인 뒤 증빙 무효 처리 · 결재 중 증빙 붙이기 — 경영관리의 일이라 지출결의 쓰기와
@@ -50,11 +58,16 @@ export const MENUS: MenuDef[] = [
   // 04.5-09: 화면 항목(커스텀 칸) 관리 — 시드는 시스템 관리자 view·write만 insert-if-absent로 준다.
   { key: "admin.field-definitions", label: "화면 항목" },
   { key: "admin.people", label: "사람" },
-  { key: "admin.vendors", label: "거래처" },
+  // 07-15(D-739): 거래처 칸은 셋 — 보기 · 쓰기(등록 · 수정)와 아래 계좌 · 서류 쓰기. 승인은 읽는 곳이 없어 칸에서 뺐다(옛 DB 행은 남음).
+  { key: "admin.vendors", label: "거래처", actions: ["view", "write"] },
+  // 07-15(AQ-16): admin. 접두로 두지 않는다 — admin.* 키는 관리 인덱스에 화면이 있어야 한다.
+  { key: "vendors.account", label: "거래처 계좌 · 서류 수정", actions: ["write"] },
   { key: "admin.corp-cards", label: "법인카드 마스터" },
   { key: "admin.permissions", label: "권한표" },
   { key: "admin.visibility", label: "정보 노출표" },
   { key: "admin.settings", label: "설정" },
+  // 07-15(NOTI-03 · PC-08): 알림 규칙 화면(07-19)의 권한 키. 시드 시스템 관리자 루프는 07-19 머지 전까지 이 키를 건너뛴다.
+  { key: "admin.notification-rules", label: "알림 규칙" },
   { key: "admin.action-log", label: "행동 로그" },
   { key: "admin.archive", label: "보관함" },
   // 04.3-02 — 확인증 행사 관리(수령자 QR 확인증 발급). 시드가 시스템

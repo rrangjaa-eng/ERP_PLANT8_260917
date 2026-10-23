@@ -49,9 +49,11 @@ function validBusinessNo(): string {
 }
 
 // 지출결의 쓰기만 가진 직원(거래처 화면 권한 없음) · 지출결의 쓰기도 없는 사람.
-async function makeExpenseWriter(opts: { expenses: boolean }): Promise<Viewer> {
+// 07-23 R-1: 계좌 세 칸을 실으려면 `vendors.account` 쓰기도 있어야 한다(account).
+async function makeExpenseWriter(opts: { expenses: boolean; account?: boolean }): Promise<Viewer> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `일자리-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   if (opts.expenses) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "write", allowed: true });
+  if (opts.account) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "vendors.account", action: "write", allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "vendor.value", visible: true });
   return makePerson(opts.expenses ? "기획사원" : "구경꾼", role.id, null);
 }
@@ -126,8 +128,8 @@ describe("확인 표시 (V4)", () => {
 });
 
 describe("일하는 자리 등록 (SC-18 · D-745 · K20)", () => {
-  it("지출결의 쓰기 보유자 → 저장 · 확인 전 · 갈래 없으면 협력사 · 계좌 세 칸 · 행동 로그(거래처 화면 권한 없이)", async () => {
-    const staff = await makeExpenseWriter({ expenses: true });
+  it("지출결의 쓰기 + 계좌 쓰기 보유자 → 저장 · 확인 전 · 갈래 없으면 협력사 · 계좌 세 칸 · 행동 로그(거래처 화면 권한 없이)", async () => {
+    const staff = await makeExpenseWriter({ expenses: true, account: true });
     const vendor = await registerVendorFromWork(staff, { name: `일자리-${randomUUID()}`, accountBank: "국민", accountHolder: "주식회사 일자리", accountNumber: "123-456-789012" });
     const row = await vendorRow(vendor.id);
     expect(row.confirmedAt).toBeNull();
@@ -140,6 +142,27 @@ describe("일하는 자리 등록 (SC-18 · D-745 · K20)", () => {
     expect(logs.map((log) => [log.actionType, (log.detail as { source?: string } | null)?.source])).toEqual([["document_create", "workplace"]]);
   });
 
+  // 07-23 R-1 = /cso C-1 · 사용자 결정(10/23 15:44): 계좌 권한 없는 편집자는 새 거래처 등록에서도 계좌를 넣지 못한다(createVendor와 같은 규칙).
+  it.each([
+    ["은행", { accountBank: "국민" }],
+    ["예금주", { accountHolder: "주식회사 일자리" }],
+    ["번호", { accountNumber: "123-456-789012" }],
+  ])("지출결의 쓰기만(계좌 쓰기 없음) + 계좌 %s → 거부 · 행 없음", async (_label, account) => {
+    const staff = await makeExpenseWriter({ expenses: true });
+    const name = `계좌거부-${randomUUID()}`;
+    const error = await registerVendorFromWork(staff, { name, ...account }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((error as Error).message).toBe("계좌 수정 권한 없음");
+    expect(await db.select().from(vendors).where(eq(vendors.name, name))).toHaveLength(0);
+  });
+
+  it("지출결의 쓰기만(계좌 쓰기 없음) + 계좌 칸 없음 → 저장(계좌 비움)", async () => {
+    const staff = await makeExpenseWriter({ expenses: true });
+    const vendor = await registerVendorFromWork(staff, { name: `계좌없이-${randomUUID()}`, accountBank: " ", accountHolder: "" });
+    const row = await vendorRow(vendor.id);
+    expect([row.accountBank, row.accountHolder, row.accountNumberLast4]).toEqual([null, null, null]);
+  });
+
   it("지출결의 쓰기 없음 → 거부 · 행 없음", async () => {
     const outsider = await makeExpenseWriter({ expenses: false });
     const name = `거부-${randomUUID()}`;
@@ -148,7 +171,7 @@ describe("일하는 자리 등록 (SC-18 · D-745 · K20)", () => {
   });
 
   it("예금주 없이 은행 · 번호만 → 칸 오류(기존 계좌 판정) · 클라이언트 갈래 → 거부", async () => {
-    const staff = await makeExpenseWriter({ expenses: true });
+    const staff = await makeExpenseWriter({ expenses: true, account: true });
     await expect(registerVendorFromWork(staff, { name: `예금주-${randomUUID()}`, accountBank: "국민", accountNumber: "123456789012" })).rejects.toBeInstanceOf(AccountFieldsError);
     await expect(registerVendorFromWork(staff, { name: `고객-${randomUUID()}`, kind: "client" })).rejects.toThrow("갈래 선택");
   });

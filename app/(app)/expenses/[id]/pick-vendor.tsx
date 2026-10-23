@@ -94,16 +94,19 @@ export function VendorPickDialog({
 // `취소 Esc`는 고르기 창을 다시 열지 않고 연 자리(지급처 칸 단추)로 포커스가 돌아간다.
 export function WorkVendorPanel({
   name,
+  canEditAccount,
   onClose,
   onVendor,
 }: {
   name: string;
+  // 07-23 R-1: `vendors.account` 쓰기 — 없으면 계좌 세 칸을 그리지 않는다(새 등록의 accountHidden · 서버도 거부).
+  canEditAccount: boolean;
   onClose: () => void;
   onVendor: (vendor: WorkplaceVendor, how: "registered" | "picked") => void | Promise<void>;
 }) {
   return (
     <SidePanel title="거래처 등록" onClose={onClose} returnFocusTo={() => document.getElementById("vendor-pick")}>
-      <VendorForm evidenceTypes={[]} fieldDefs={[]} newKind="supplier" paymentTermDefault={0} workplace={{ name, onVendor }} />
+      <VendorForm evidenceTypes={[]} fieldDefs={[]} newKind="supplier" paymentTermDefault={0} canEditAccount={canEditAccount} workplace={{ name, onVendor }} />
     </SidePanel>
   );
 }

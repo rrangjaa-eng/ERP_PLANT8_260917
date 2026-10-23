@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { approvalRoutes, approvalSteps, expenses, projects, vendors } from "@/db/schema";
+import { approvalRoutes, approvalSteps, expenses, permissionMatrix, projects, users, vendors, visibilityMatrix } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { confirmEvidence } from "@/domain/evidence-reviews";
@@ -29,6 +29,18 @@ function validBusinessNo(): string {
   const valid = Array.from({ length: 10 }, (_, d) => `${digits.slice(0, 9)}${d}`).find((candidate) => businessNoProblem(candidate) === null);
   if (!valid) throw new Error("검증합 번호 없음");
   return valid;
+}
+
+// 07-23 R-1(사용자 결정 10/23): 계좌 세 칸은 `vendors.account` 쓰기 보유자만 넣는다. 기안 PM을 role-pm 칸을 그대로 옮긴 임시 계급 + 계좌 쓰기로
+// 옮긴다(공용 role-pm을 바꾸면 다른 스펙이 흔들린다). 문서를 만들기 전에 부른다.
+async function grantAccountWrite(fx: ExpenseE2E): Promise<void> {
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E일자리계좌-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
+  const cells = await db.select({ menu: permissionMatrix.menu, action: permissionMatrix.action }).from(permissionMatrix).where(and(eq(permissionMatrix.roleId, "role-pm"), eq(permissionMatrix.allowed, true)));
+  for (const { menu, action } of [...cells, { menu: "vendors.account", action: "write" }]) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
+  const items = await db.select({ infoItem: visibilityMatrix.infoItem }).from(visibilityMatrix).where(and(eq(visibilityMatrix.roleId, "role-pm"), eq(visibilityMatrix.visible, true)));
+  for (const { infoItem } of items) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  await db.update(users).set({ roleId: role.id }).where(eq(users.id, fx.pm.viewer.id));
+  fx.pm.viewer = { ...fx.pm.viewer, roleId: role.id };
 }
 
 async function openDraft(page: Page, fx: ExpenseE2E, key: LineKey): Promise<string> {
@@ -79,6 +91,7 @@ test.describe("일하는 자리 거래처 바로 등록 (07-23 SC-18)", () => {
 
   test("0건 → 고르기 닫힘 · 등록 패널(이름 채움 · 협력사 · 계좌 세 칸 · 지급 기한 없음 · 첫 포커스 이름) → 저장 → 지급처 칸 · 토스트 · `확인 전` · 포커스 지급처", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
+    await grantAccountWrite(fx);
     const page = await loginPage(browser, baseURL, fx.pm);
     await openDraft(page, fx, "hold");
     const name = `현장설비-${randomUUID().slice(0, 6)}`;
@@ -110,6 +123,7 @@ test.describe("일하는 자리 거래처 바로 등록 (07-23 SC-18)", () => {
 
   test("U16 — 등록 실패(예금주 없음)는 패널이 열린 채 첫 오류 칸 포커스 · 고르기 창 없음 / `취소 Esc` → 고르기 창 없음 · 포커스 지급처 칸", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
+    await grantAccountWrite(fx);
     const page = await loginPage(browser, baseURL, fx.pm);
     await openDraft(page, fx, "retry");
     const name = `예금주없음-${randomUUID().slice(0, 6)}`;
@@ -133,6 +147,23 @@ test.describe("일하는 자리 거래처 바로 등록 (07-23 SC-18)", () => {
     await expect(again).toHaveCount(0);
     await expect(page.getByRole("dialog", { name: /^지급처 (고르기|바꾸기)$/ })).toHaveCount(0);
     await expect(page.locator("#vendor-pick")).toBeFocused();
+    await page.context().close();
+  });
+
+  // 07-23 R-1 = /cso C-1: 지출결의 쓰기만 있는 PM — 계좌 세 칸이 아예 없고 등록은 계좌 없이 된다(새 거래처라도 첫 계좌는 계좌 권한자가 넣는다).
+  test("R-1 — 계좌 쓰기 없음 → 등록 패널에 계좌 세 칸 없음 · 저장 → 지급처 칸 · 계좌 비움", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+    const name = `계좌없음-${randomUUID().slice(0, 6)}`;
+    const panel = await openRegisterPanel(page, name);
+    await expect(panel.getByLabel("이름")).toHaveValue(name);
+    for (const label of ["계좌 은행", "예금주", "계좌번호"]) await expect(panel.getByLabel(label, { exact: true })).toHaveCount(0);
+    await panel.getByRole("button", { name: /^거래처 등록/ }).click();
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByTestId("expense-vendor")).toHaveText(name);
+    const [row] = await db.select({ bank: vendors.accountBank, holder: vendors.accountHolder, last4: vendors.accountNumberLast4 }).from(vendors).where(eq(vendors.name, name));
+    expect(row).toEqual({ bank: null, holder: null, last4: null });
     await page.context().close();
   });
 
@@ -211,6 +242,7 @@ async function methodCell(page: Page, itemName: string) {
 test.describe("N2 — 일하는 자리 등록 거래처의 사후 확인 (07-23)", () => {
   test("등록 거래처로 승인 → 지급 목록 계좌 아래 `거래처 확인 전` → 경영관리 `확인됨으로 표시` → 사라짐", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
+    await grantAccountWrite(fx);
     const manager = await makeManager(fx);
     const page = await loginPage(browser, baseURL, fx.pm);
     const id = await openDraft(page, fx, "worst");

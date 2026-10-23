@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { actionLog, approvalRoutes, approvalSteps, expensePayments, expenses, notificationLog, notificationRules } from "@/db/schema";
 import { approveDocument, rejectDocument } from "@/domain/approvals";
-import { confirmEvidence } from "@/domain/evidence-reviews";
+import { confirmEvidence, waiveEvidence } from "@/domain/evidence-reviews";
 import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
 import { preCutoffUnapprovedKind } from "@/domain/notify/kinds/pre-cutoff-unapproved";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -16,7 +16,7 @@ import { expenseResultKind } from "@/domain/notify/kinds/expense-result";
 import { runTick } from "@/domain/notify/tick";
 import type { Viewer } from "@/domain/viewer";
 import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "../fixtures/expenses";
-import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired } from "../fixtures/payments";
+import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired } from "../fixtures/payments";
 
 // 07-14 결재 결과(N11 · N19 · D-716 · D-744) — 꺼 둔 사건 종류. 켠 규칙의 고정 되돌아보기 창(하한 enabled_at) 안 사건을 사건 id 키로 한 번.
 // 2026-10-16 금 · 17 토 · 19 월 · 20 화.
@@ -207,6 +207,22 @@ describe("결재 결과 — 반려 · 금액 바뀜 · 지급 완료 · 지급 �
     expect(changed).toHaveLength(1);
     expect(changed[0]?.message).toBe(`금액 바뀜 · ${TITLE}`);
     expect(changed[0]?.entityId.startsWith(`${doc.expenseId}:`)).toBe(true);
+  });
+
+  it("증빙 없이 닫힘(경영관리 증빙 면제 — 끌 수 없는 evidence_waive) → 기안자 `증빙 없이 닫힘 · {문서 제목}` 한 번(사용자 결정 2026-10-23 · 260907 expenses.ts:6330-6362)", async () => {
+    await setEvidenceRequired(false);
+    const fx = await setupExpenseProject();
+    await enableRule("2026-10-01T00:00:00+09:00");
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    await moveActedAt(doc.instanceId, "2026-10-10T15:00:00+09:00");
+    const payer = await makePayer();
+    await waiveEvidence(payer, { expenseId: doc.expenseId, version: await versionOf(doc.expenseId), reason: "현장 영수증 분실" });
+    await db.update(actionLog).set({ occurredAt: new Date("2026-10-16T15:00:00+09:00") }).where(and(eq(actionLog.actionType, "evidence_waive"), eq(actionLog.entityId, doc.expenseId)));
+    await tick([expenseResultKind], "2026-10-19");
+    await tick([expenseResultKind], "2026-10-20");
+    const closed = byWord(await rowsOf(fx.pm), "증빙 없이 닫힘");
+    expect(closed.map((row) => row.message)).toEqual([`증빙 없이 닫힘 · ${TITLE}`]);
+    expect(closed[0]?.entityId.startsWith(`${doc.expenseId}:`)).toBe(true);
   });
 
   it("지급 완료 → `지급 완료 · {문서 제목}` · 지급 취소 → `지급 취소 · {문서 제목}` — 각 한 번, `지급됨` 없음", async () => {

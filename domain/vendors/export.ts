@@ -61,13 +61,21 @@ export function serializeVendorsAsCsv(rows: readonly VendorDto[], evidenceLabels
   return { filename: `vendors-${Date.now()}.csv`, contentType: "text/csv; charset=utf-8", body: `﻿${lines.join("\r\n")}\r\n` };
 }
 
-export type VendorExportDeps = { countVendors: (viewer: Viewer, filter: VendorExportFilter) => Promise<number> };
+export type VendorExportDeps = {
+  countVendors: (viewer: Viewer, filter: VendorExportFilter) => Promise<number>;
+  listVendors: (viewer: Viewer, filter: VendorExportFilter) => Promise<VendorDto[]>;
+};
 
 export async function exportVendorsCsv(viewer: Viewer, filter: VendorExportFilter, deps?: Partial<VendorExportDeps>): Promise<VendorExportFile> {
   if (!(await can(viewer, "admin.vendors", "view"))) throw new ForbiddenError("거래처 보기 권한 없음");
   // 수를 먼저 센다(D-736) — 넘으면 행을 읽지도 기록하지도 않는다.
   if ((await (deps?.countVendors ?? countVendors)(viewer, filter)) > VENDOR_EXPORT_LIMIT) throw new VendorExportTooManyError();
-  const [rows, evidenceTypes] = await Promise.all([listVendors(viewer, filter), listCodeItems(viewer, "evidence_type", { includeInactive: true })]);
+  const [rows, evidenceTypes] = await Promise.all([
+    (deps?.listVendors ?? listVendors)(viewer, filter),
+    listCodeItems(viewer, "evidence_type", { includeInactive: true }),
+  ]);
+  // 세기와 읽기는 한 스냅숏이 아니다 — 사이에 늘어난 행도 상한으로 다시 막는다(Codex #285).
+  if (rows.length > VENDOR_EXPORT_LIMIT) throw new VendorExportTooManyError();
   // 끌 수 없는 기록(excel_export)을 직렬화 전에 — 기록이 실패하면 파일이 없다. detail에는 거르개 · 건수만(계좌 · 사업자 번호 없음).
   await recordAction(viewer, {
     actionType: "excel_export",

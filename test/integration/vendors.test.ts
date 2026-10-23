@@ -817,10 +817,24 @@ describe("거래처 계좌 권한 · 자릿수 · 사업자 번호 문구(07-20 
     await expect(updateVendor(writer, row.id, { name: row.name, accountBank: "신한 ", accountHolder: "홍길동" })).resolves.toBeTruthy();
   });
 
-  it("새 거래처 등록 + 계좌는 등록 권한으로 된다(계좌 권한 없어도)", async () => {
+  it("사용자 결정(10/23) — 계좌 권한 없는 사람이 새 거래처에 계좌(은행 · 예금주 · 번호 중 하나라도)를 실으면 ForbiddenError · 행 없음", async () => {
     const writer = await makeVendorWriterWithoutAccount();
-    const { vendor } = await createVendor(writer, { name: uniqueName(), accountBank: "신한", accountHolder: "홍길동", accountNumber: "1101234567" });
-    expect(vendor.accountNumberLast4).toBe("4567");
+    for (const account of [
+      { accountBank: "신한", accountHolder: "홍길동", accountNumber: "1101234567" },
+      { accountBank: "신한" },
+      { accountHolder: "홍길동" },
+      { accountNumber: "1101234567" },
+    ]) {
+      const name = uniqueName();
+      await expect(createVendor(writer, { name, ...account })).rejects.toThrow(new ForbiddenError("계좌 수정 권한 없음"));
+      expect(await db.select().from(vendors).where(eq(vendors.name, name))).toHaveLength(0);
+    }
+  });
+
+  it("계좌 권한 없는 사람도 계좌 없이(빈 칸 포함) 새 거래처를 등록할 수 있다", async () => {
+    const writer = await makeVendorWriterWithoutAccount();
+    const { vendor } = await createVendor(writer, { name: uniqueName(), accountBank: " ", accountHolder: "", accountNumber: "" });
+    expect(vendor.accountNumberLast4).toBeNull();
   });
 
   it("C-35 — 계좌번호는 하이픈 · 공백을 지운 숫자로 저장하고(뒤 4자리 숫자), 10~16자리 밖이면 칸 오류 `숫자 10~16자리 · 다시 입력`", async () => {

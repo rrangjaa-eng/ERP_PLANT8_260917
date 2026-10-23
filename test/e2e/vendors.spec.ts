@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
-import { createFixtureUser, uniqueBusinessNo } from "./fixtures";
+import { archiveE2EFieldDefinitions, createE2EFieldDefinition, createE2EVendorEditor, createFixtureUser, uniqueBusinessNo } from "./fixtures";
+import { waitForHydration } from "./leave-org";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
@@ -742,6 +743,8 @@ test.describe("거래처 사업자 번호 · 계좌 칸 (07-20 SC-17)", () => {
     await page.goto("/admin/vendors?new=1");
     const panel = panelOf(page);
     const field = panel.getByLabel("사업자 번호");
+    // 하이드레이션 전에 친 글자는 onInput(숫자 · 하이픈만 남김)을 거치지 않는다(07-23 관찰) — 처리기가 붙은 뒤에 친다.
+    await waitForHydration(field);
     await field.pressSequentially("123-45-678a90");
     await expect(field).toHaveValue("123-45-67890");
     await field.blur();
@@ -950,6 +953,69 @@ test.describe("거래처 검색 · 파일 받기 (07-20 SC-16)", () => {
       await expect(button).not.toHaveAttribute("aria-busy", "true");
     } finally {
       await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+});
+
+// 07-20 게이트(2026-10-23): 패널 Form.Field + Select 줄 아래 간격(design-review P2) · 계좌 권한 없는 편집자의 등록 계좌 칸(사용자 결정).
+test.describe("거래처 패널 select 줄 간격 · 등록 계좌 권한 (07-20 게이트)", () => {
+  const panelOf = (page: import("@playwright/test").Page) => page.locator('dialog[data-ui="side-panel"]');
+  const WIDTHS = [375, 320, 768, 1280];
+  const PREFIX = "E2E거래처간격";
+
+  // 칸 줄(라벨의 부모) 아래 끝 → 폼에서 다음 라벨 위 끝. 패널 열림 모션 중에도 같은 순간을 재도록 한 번의 평가로 잰다.
+  async function gapsBelow(page: import("@playwright/test").Page, ids: string[]): Promise<Record<string, number>> {
+    return page.locator("#vendor-form").evaluate((form, wanted) => {
+      const labels = [...form.querySelectorAll("label[for]")];
+      const out: Record<string, number> = {};
+      for (const id of wanted) {
+        const index = labels.findIndex((label) => label.getAttribute("for") === id);
+        const row = labels[index]?.parentElement;
+        const next = labels[index + 1];
+        if (!row || !next) throw new Error(`칸 또는 다음 라벨 없음: ${id}`);
+        out[id] = Math.round((next.getBoundingClientRect().top - row.getBoundingClientRect().bottom) * 10) / 10;
+      }
+      return out;
+    }, ids);
+  }
+
+  async function login(page: import("@playwright/test").Page, account: { email: string; password: string }) {
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(account.email);
+    await page.getByLabel("비밀번호").fill(account.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+  }
+
+  test("`갈래` · `기본 증빙 종류` 줄 아래가 TextField 줄 아래(`이름`)와 같은 16px다 (375 · 320 · 768 · 1280)", async ({ page }) => {
+    await loginAsSysadmin(page);
+    for (const width of WIDTHS) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/admin/vendors?new=1");
+      await expect(panelOf(page).getByLabel("기본 증빙 종류")).toBeVisible();
+      const gaps = await gapsBelow(page, ["name", "kind", "defaultEvidenceType"]);
+      expect(gaps, `폭 ${width}`).toEqual({ name: 16, kind: 16, defaultEvidenceType: 16 });
+    }
+  });
+
+  test("`vendors.account` 없는 편집자의 등록 패널에는 계좌 세 칸이 없고, 사용자 정의 select 줄 아래도 16px다 (375 · 320 · 768 · 1280)", async ({ page }) => {
+    const editor = await createE2EVendorEditor();
+    try {
+      const select = await createE2EFieldDefinition({ label: `${PREFIX}계약`, type: "select", required: false, options: ["갑", "을"], sortOrder: 0, onlyRoleId: editor.roleId });
+      await createE2EFieldDefinition({ label: `${PREFIX}메모`, type: "text", required: false, sortOrder: 1, onlyRoleId: editor.roleId });
+      await login(page, editor);
+      for (const width of WIDTHS) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto("/admin/vendors?new=1");
+        const panel = panelOf(page);
+        await expect(panel.getByLabel("기본 증빙 종류")).toBeVisible();
+        await expect(panel.locator("#accountBank, #accountHolder, #accountNumber")).toHaveCount(0);
+        await expect(panel.getByText(/계좌/)).toHaveCount(0);
+        const gaps = await gapsBelow(page, ["name", `cf_${select.key}`]);
+        expect(gaps, `폭 ${width}`).toEqual({ name: 16, [`cf_${select.key}`]: 16 });
+      }
+    } finally {
+      await archiveE2EFieldDefinitions(PREFIX);
     }
   });
 });

@@ -8,6 +8,7 @@ import { createRole, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { archive } from "@/domain/archive";
 import { setResignationDate, ValidationError } from "@/domain/people";
 import { restoreUser, PersonNotRestorableError } from "@/domain/people/restore";
+import { RETIRED_EDIT_MESSAGE, RetiredPersonEditError } from "@/domain/people/retired";
 import { findUserById, setUserArchived, updateUserResignationDate } from "@/repositories/users";
 import { NOW_2026 } from "./approvals-fixtures";
 import { makeAdmin, makeOrgTeam, makeSeated, uniqueName } from "./admin-cap-fixtures";
@@ -134,28 +135,30 @@ describe("퇴직일 지우기 — 보관된 팀 · 계급이면 거부(07-21 사
     expect((await findUserById(SYSTEM_VIEWER, person.id))?.resignationDate).toBe("2026-09-01");
   });
 
-  it("보관된 계급의 퇴직자 퇴직일을 미래로 늦추기 → 「보관된 계급 · 먼저 바꾸기」 · 퇴직일 그대로", async () => {
+  // F24 사용자 결정(카드 2026-10-23 12:34 KST) 「퇴직한 사람의 퇴직일은 비우기만 허용」이 main에 먼저 들어와, 늦추기는 보관 판정보다 앞에서 F24 거부를 받는다.
+  it("보관된 계급의 퇴직자 퇴직일을 미래로 늦추기 → F24 퇴직자 거부 · 퇴직일 그대로", async () => {
     const admin = await makeAdmin("관리자");
     const roleId = await newRole();
     const person = await makeSeated(uniqueName("퇴직"), roleId, null);
     await updateUserResignationDate(SYSTEM_VIEWER, person.id, "2026-09-01");
     await archive(admin, "roles", roleId, deps);
 
-    const error = await refusal(setResignationDate(admin, person.id, "2026-12-31", deps), ValidationError);
+    const error = await refusal(setResignationDate(admin, person.id, "2026-12-31", deps), RetiredPersonEditError);
 
-    expect(error.message).toBe("보관된 계급 · 먼저 바꾸기");
+    expect(error.message).toBe(RETIRED_EDIT_MESSAGE);
     expect((await findUserById(SYSTEM_VIEWER, person.id))?.resignationDate).toBe("2026-09-01");
   });
 
-  it("퇴직자 퇴직일을 다른 지난 날로 고치는 것은 보관된 계급이어도 된다 — 활성이 되지 않는다", async () => {
+  it("퇴직자 퇴직일을 다른 지난 날로 고치기 → F24 퇴직자 거부(보관된 계급과 무관) · 퇴직일 그대로", async () => {
     const admin = await makeAdmin("관리자");
     const roleId = await newRole();
     const person = await makeSeated(uniqueName("퇴직"), roleId, null);
     await updateUserResignationDate(SYSTEM_VIEWER, person.id, "2026-09-01");
     await archive(admin, "roles", roleId, deps);
 
-    await setResignationDate(admin, person.id, "2026-08-31", deps);
-    expect((await findUserById(SYSTEM_VIEWER, person.id))?.resignationDate).toBe("2026-08-31");
+    const error = await refusal(setResignationDate(admin, person.id, "2026-08-31", deps), RetiredPersonEditError);
+    expect(error.message).toBe(RETIRED_EDIT_MESSAGE);
+    expect((await findUserById(SYSTEM_VIEWER, person.id))?.resignationDate).toBe("2026-09-01");
   });
 
   it("계급 보관이 계급 행을 잡은 동안 퇴직일 지우기는 기다렸다가 보관을 보고 거부한다(FOR SHARE)", async () => {

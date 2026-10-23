@@ -133,3 +133,29 @@ test("보기만 하는 계급에게는 붙이기 · 지우기가 없다", async 
   await expect(section.getByRole("button", { name: "서류 붙이기" })).toHaveCount(0);
   await expect(section.getByLabel("종류")).toHaveCount(0);
 });
+
+test("(감사 P2 #2 · #3) 키보드: 처음 올리면 포커스가 새 목록 안에 남고, 마지막 서류를 지우면 서류 붙이기로 간다", async ({ page }) => {
+  const { pm, teamId } = await makePm();
+  const project = await makeProject(teamId, pm.userId);
+  await login(page, pm);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`/projects/${project.id}`);
+  const section = documentsSection(page);
+  const chooser = page.waitForEvent("filechooser");
+  await section.getByRole("button", { name: "서류 붙이기", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  const pdf = uniquePdf("포커스.pdf");
+  await (await chooser).setFiles(pdf);
+  const row = section.locator('[data-ui="attachments"] li').filter({ hasText: pdf.name });
+  await expect(row).toBeVisible({ timeout: UPLOAD_WAIT });
+  await expect.poll(() => page.evaluate(() => document.activeElement?.tagName), { timeout: UPLOAD_WAIT }).not.toBe("BODY");
+  expect(await section.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+
+  await row.getByRole("button", { name: "삭제" }).focus();
+  await page.keyboard.press("Enter");
+  const confirm = page.getByRole("dialog", { name: "서류 삭제" });
+  await expect(confirm).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(section.getByText("서류 없음", { exact: true })).toBeVisible({ timeout: UPLOAD_WAIT });
+  await expect(section.getByRole("button", { name: "서류 붙이기", exact: true })).toBeFocused();
+});

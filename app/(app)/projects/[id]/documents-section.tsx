@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
@@ -79,6 +79,9 @@ export function DocumentsSection({
     resolve: (ok: boolean) => void;
   } | null>(null);
   const kindRef = useRef(kind);
+  const emptyRef = useRef<HTMLDivElement>(null);
+  // 마지막 서류를 지우면 누른 `삭제`가 사라진다 — EMPTY가 서는 때 포커스를 `서류 붙이기`로 옮긴다.
+  const focusEmptyRef = useRef(false);
   const kindId = useId();
   const pickerId = useId();
   const files = useMemo(
@@ -89,6 +92,8 @@ export function DocumentsSection({
   // 같은 누름 안에서 첨부 영역을 그린 뒤 그 빈 영역(파일 고르기)을 누른다 — 사용자 활성화가 남아 있어 고르기 창이 열린다.
   function startAdding() {
     flushSync(() => setAdding(true));
+    // 누른 버튼이 사라지므로 새로 선 종류 칸으로 포커스를 옮기고 나서 고르기를 연다.
+    document.getElementById(kindId)?.focus();
     document.getElementById(pickerId)?.click();
   }
 
@@ -138,7 +143,10 @@ export function DocumentsSection({
       // 지운 뒤 남은 서류가 없으면 EMPTY(`서류 없음` + `서류 붙이기`)로 돌아간다.
       remove: async (fileId) => {
         const removed = Boolean((await removeEvidenceAction({ fileId }))?.data);
-        if (removed) setAdding(false);
+        if (removed) {
+          focusEmptyRef.current = true;
+          setAdding(false);
+        }
         return removed;
       },
       viewUrl: async (fileId) =>
@@ -158,14 +166,23 @@ export function DocumentsSection({
 
   const showEmpty = files.length === 0 && !adding;
 
+  useEffect(() => {
+    if (!showEmpty || !focusEmptyRef.current) return;
+    focusEmptyRef.current = false;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    emptyRef.current?.querySelector("button")?.focus();
+  }, [showEmpty]);
+
   return (
     <DetailScreen.Section title="서류">
       {showEmpty ? (
         canWrite ? (
-          <ListEmpty
-            message="서류 없음"
-            action={{ label: "서류 붙이기", onClick: startAdding }}
-          />
+          <div ref={emptyRef}>
+            <ListEmpty
+              message="서류 없음"
+              action={{ label: "서류 붙이기", onClick: startAdding }}
+            />
+          </div>
         ) : (
           <ListEmpty message="서류 없음" />
         )

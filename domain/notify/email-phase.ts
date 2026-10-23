@@ -2,6 +2,7 @@ import { log } from "@/lib/log";
 import { emailErrorCode, type EmailMessage, type EmailSender, type SendOutcome } from "@/lib/email/sender";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { composeDigest } from "@/domain/notify/digest";
+import { notificationHref } from "@/domain/notify/href";
 import {
   claimNextEmailBundle,
   finishEmailPhase,
@@ -95,9 +96,15 @@ export async function runEmailPhase(input: EmailPhaseInput, deps: EmailPhaseDeps
     });
     if (!bundle) break;
 
+    // 07-14 C-P2-5: 줄 끝 `열기`는 받는 사람 { id, roleId }가 볼 수 있는 문서만(시스템 주체로 판정하지 않는다).
+    // 링크 판정이 실패해도 이미 선점한 묶음은 링크 없이 보낸다(행이 sending에 남지 않게).
+    const hrefs = await notificationHref({ id: bundle.recipientId, roleId: bundle.roleId }, bundle.rows).catch((error: unknown) => {
+      log.warn("notify.email_href_failed", { message: error instanceof Error ? error.message : String(error) });
+      return bundle.rows.map(() => undefined);
+    });
     const digest = composeDigest({
       kstDate: input.kstDate,
-      messages: bundle.rows.map((row) => row.message),
+      messages: bundle.rows.map((row, index) => ({ text: row.message, href: hrefs[index] })),
       serviceUrl: deps.serviceUrl,
     });
     let sendResult: SendOutcome;

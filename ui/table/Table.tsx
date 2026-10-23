@@ -54,6 +54,8 @@ export type TableSelection<Row> = {
   blockedLink?: (row: Row) => { label: string; href: string; newTab: boolean } | null;
   /** 06.5-06(SP-65-5 ①) — 막힘 · 고를 수 없음 이유가 없는 행의 정보 줄(muted). 한 행 아래 줄은 하나다(막힘 > 정보). */
   noteReason?: (row: Row) => string | null;
+  /** 07-16(J11) — 처리할 수 없는 참고 행(예: 결재 중). 체크박스 · 이유 줄을 그리지 않는다(Tab 순서 밖). 고를 수 있음은 거짓이어야 한다. */
+  hidden?: (row: Row) => boolean;
   /** 표 안 `Ctrl+Enter` — 선택 표에는 새 줄이 없다(DR-8). 화면 1차(`{동사} N`)와 같은 일. */
   onPrimary?: () => void;
 };
@@ -952,9 +954,10 @@ export function Table<Row>({
 
               // 06-29(SP-1) — 고른 행 = selectedIds에 있고 지금 고를 수 있는 행. 막힌 행은 배경 칠 없이 이유 글자만.
               const gate = selection?.selectable(row);
-              const rowSelectable = gate === true;
+              const selectHidden = selection?.hidden?.(row) === true;
+              const rowSelectable = gate === true && !selectHidden;
               const rowSelected = rowSelectable && selectedIdSet.has(rowId);
-              const gateReason = gate !== undefined && gate !== true ? gate.reason : null;
+              const gateReason = gate !== undefined && gate !== true && !selectHidden ? gate.reason : null;
               const blockedText = selection?.blockedReason?.(row) ?? null;
               const gateReasonId = gateReason !== null ? `${selectIdPrefix}-${rowId}-select-reason` : undefined;
               const blockedReasonId = blockedText ? `${selectIdPrefix}-${rowId}-select-blocked` : undefined;
@@ -977,17 +980,19 @@ export function Table<Row>({
                           }
                         }}
                       >
-                        <label className={styles.selectLabel}>
-                          <input
-                            type="checkbox"
-                            tabIndex={enableGridKeyboard ? -1 : undefined}
-                            aria-label={`${selection.rowLabel(row)} 고르기`}
-                            aria-disabled={rowSelectable ? undefined : "true"}
-                            aria-describedby={[gateReasonId, blockedReasonId, noteId].filter(Boolean).join(" ") || undefined}
-                            checked={rowSelected}
-                            onChange={() => toggleRowSelection(row)}
-                          />
-                        </label>
+                        {selectHidden ? null : (
+                          <label className={styles.selectLabel}>
+                            <input
+                              type="checkbox"
+                              tabIndex={enableGridKeyboard ? -1 : undefined}
+                              aria-label={`${selection.rowLabel(row)} 고르기`}
+                              aria-disabled={rowSelectable ? undefined : "true"}
+                              aria-describedby={[gateReasonId, blockedReasonId, noteId].filter(Boolean).join(" ") || undefined}
+                              checked={rowSelected}
+                              onChange={() => toggleRowSelection(row)}
+                            />
+                          </label>
+                        )}
                       </td>
                     ) : null}
                     {columns.map((column, colIndex) => {

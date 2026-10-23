@@ -23,6 +23,7 @@ import {
 } from "@/domain/expenses";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX, expenseDraftFieldsSchema } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatch } from "@/domain/payments/batch";
+import { moveToThisWeek, revertScheduledPayDates } from "@/domain/payments";
 import { exportBankTransferFile, summarizeTransferPayees } from "@/domain/payments/bank-transfer";
 import { getEvidenceConfirmView, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
@@ -55,12 +56,12 @@ const expenseIdSchema = z.string().uuid();
 const draftFieldsInput = expenseDraftFieldsSchema;
 
 // 줄 수 상한 = 차수 줄 상한 기본값 — 견적 줄 표 Ctrl+A → Ctrl+E가 한 차수의 줄 전부를 보낸다(05-08 검토 #5).
-// 05-16 fields — `/expenses/new`에서 줄을 고르기 전에 적어 둔 비고 · 지급 예정일 · 지급 방식(임시 저장과 같은 검증). 견적 줄 표는 보내지 않는다.
+// 05-16 fields — `/expenses/new`에서 줄을 고르기 전에 적어 둔 비고 · 희망 지급일 · 희망 사유(07-16) · 지급 방식(임시 저장과 같은 검증). 견적 줄 표는 보내지 않는다.
 export const createExpenseFromLinesAction = authedActionClient
   .schema(
     z.object({
       lineIds: z.array(z.string().uuid()).min(1).max(QUOTE_LINE_MAX_PER_REVISION_DEFAULT),
-      fields: draftFieldsInput.pick({ note: true, scheduledPaymentDate: true, paymentMethod: true }).optional(),
+      fields: draftFieldsInput.pick({ note: true, requestedPaymentDate: true, requestedPaymentReason: true, paymentMethod: true }).optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -141,7 +142,16 @@ export const previewExpenseAction = authedActionClient
   .schema(z.object({ expenseId: expenseIdSchema, fields: draftFieldsInput }))
   .action(async ({ parsedInput, ctx }) => {
     const preview = await previewExpense(ctx.viewer, parsedInput);
-    return { taxLine: preview.taxLine ?? null, block: preview.block ?? null, fieldErrors: preview.fieldErrors ?? {}, teamName: preview.teamName ?? null };
+    return {
+      taxLine: preview.taxLine ?? null,
+      block: preview.block ?? null,
+      fieldErrors: preview.fieldErrors ?? {},
+      teamName: preview.teamName ?? null,
+      // 07-16(SC-02): 폼 읽기 줄 `지급 예정일` — 유효 예정일 · 수동 지정 · 규칙 줄.
+      scheduledPaymentDate: preview.scheduledPaymentDate ?? null,
+      scheduledPaymentManual: preview.scheduledPaymentManual ?? false,
+      paymentRuleLine: preview.paymentRuleLine ?? null,
+    };
   });
 
 // 제출 — 같은 문서 두 번 제출(폰 두 번 탭 · 응답 유실 뒤 재시도)은 오류가 아니라 결과(`already_submitted`)다. 화면이 문서 화면으로
@@ -402,3 +412,30 @@ const evidenceConfirmViewSchema = z.object({ expenseId: z.string().uuid(), rowVe
 export const getEvidenceConfirmViewAction = authedActionClient
   .schema(evidenceConfirmViewSchema)
   .action(async ({ parsedInput, ctx }) => getEvidenceConfirmView(ctx.viewer, parsedInput));
+
+// 07-16(J9 · D-742 · K6 · N4): 「이번 주로」 — 마감 지나 밀린 건을 이번 주 지급일로 수동 지정(확인 창 없음). 건마다 결과(옮김 · 거부)를 그대로 돌려준다 —
+// 판정(지급 권한 · 보임 · 밀림 · 이번 주 지급일 지남 · version)은 07-06 도메인. 되돌리기는 옮긴 건의 이전 값(null = 자동) · 새 version으로 다시 저장한다.
+const scheduleItemsMax = 200;
+
+export const moveToThisWeekAction = authedActionClient
+  .schema(z.object({ items: z.array(z.object({ expenseId: expenseIdSchema, version: z.number().int().min(1) })).min(1).max(scheduleItemsMax) }))
+  .action(async ({ parsedInput, ctx }) => {
+    const result = await moveToThisWeek(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    return result;
+  });
+
+export const revertScheduledPayDatesAction = authedActionClient
+  .schema(
+    z.object({
+      items: z
+        .array(z.object({ expenseId: expenseIdSchema, date: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR).nullable(), version: z.number().int().min(1) }))
+        .min(1)
+        .max(scheduleItemsMax),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const result = await revertScheduledPayDates(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    return result;
+  });

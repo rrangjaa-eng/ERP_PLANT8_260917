@@ -12,6 +12,7 @@ import {
   CONFIRM_SUPPLY_SAME,
   CORRECTED_SUPPLY_EMPTY,
   DIFF_REASON_REQUIRED,
+  NOT_BUSINESS_DAY,
   scheduleDirtyBar,
   type ExpenseActionBar,
 } from "@/domain/payments/action-row";
@@ -26,7 +27,16 @@ import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import barStyles from "@/app/(app)/leave/[id]/document-actions.module.css";
 import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
 import { cancelExpensePaymentAction, completeExpensePaymentAction, confirmEvidenceAction, saveScheduledPayDateAction } from "./actions";
-import { diffReasonNeeded, PaymentFields, PaymentPanelProvider as PaymentFieldsProvider, transferError, transferNumber, usePaymentPanel, type PaymentFieldErrors } from "./payment-section";
+import {
+  diffReasonNeeded,
+  PaymentFields,
+  PaymentPanelProvider as PaymentFieldsProvider,
+  transferError,
+  transferNumber,
+  usePaymentPanel,
+  type PaymentFieldErrors,
+  type PaymentScheduleValueProps,
+} from "./payment-section";
 import { CORRECTED_SUPPLY_ID, correctedSupplyInput, EvidenceEditProvider, useEvidenceEdit, type DocSupply } from "./evidence-review-section";
 import styles from "./expense.module.css";
 import listStyles from "../expenses.module.css";
@@ -48,7 +58,13 @@ export function PaymentPanelProvider({ view, supply, children }: { view: Partial
   );
 }
 
-export function PaymentSection(props: { paymentMethod: string | null; paymentMethodName: string | null; scheduledPaymentDate: string | null }) {
+export function PaymentSection(props: {
+  paymentMethod: string | null;
+  paymentMethodName: string | null;
+  scheduledPaymentDate: string | null;
+  scheduleValueProps: PaymentScheduleValueProps;
+  requested: { date: string | null; reason: string | null };
+}) {
   return (
     <DetailScreen.Section title="지급">
       <PaymentFields {...props} />
@@ -132,7 +148,8 @@ export function PaymentActionRow() {
       refreshPreview();
     },
     onError: ({ error }) => {
-      const dateError = error.validationErrors?.scheduledPayDate?._errors?.[0];
+      // 07-16(SC-03): 휴일 · 주말 서버 거부도 칸 아래(서버 사유 그대로 — 화면 검증과 같은 문구).
+      const dateError = error.validationErrors?.scheduledPayDate?._errors?.[0] ?? (error.serverError === NOT_BUSINESS_DAY ? NOT_BUSINESS_DAY : undefined);
       if (dateError && schedule) {
         setSchedule({ ...schedule, error: dateError });
         requestAnimationFrame(() => document.getElementById("payment-scheduled-date")?.focus());
@@ -173,21 +190,23 @@ export function PaymentActionRow() {
     },
   });
 
-  // 1차는 서버가 정한 행(resolveExpenseActionRow) — 예정일 칸이 dirty인 동안만 같은 순수 함수로 P1(`예정일 저장`)로 바꾼다.
+  // 1차는 서버가 정한 행(resolveExpenseActionRow) — 예정일 칸이 열린 동안은 같은 순수 함수로 P1(`예정일 저장`)로 바꾸고(07-16 U13 · 화면당 1차 하나),
+  // 원래 1차(`지급 완료` — 칸은 그 행에만 열린다)는 2차 꼴로 내린다. 칸을 닫으면(저장 · 취소 · Esc) 원래 1차로 돌아온다.
   const serverBar: ExpenseActionBar | null = view.row
     ? { ...view.row, blockReason: view.row.blockReason ?? null, secondary: view.row.secondary ?? null, tertiary: view.row.tertiary ?? null }
     : null;
-  const bar = serverBar && scheduleDirty ? scheduleDirtyBar(serverBar) : serverBar;
+  const bar = serverBar && schedule !== null ? scheduleDirtyBar(serverBar) : serverBar;
+  const lowered = bar !== serverBar ? (serverBar?.primary ?? null) : null;
   const ready = view.expenseId !== undefined && view.version !== undefined;
-  const canPay = bar?.primary === "pay" && ready;
+  const canPay = (bar?.primary === "pay" || lowered === "pay") && ready;
   const canSaveSchedule = bar?.primary === "saveSchedule" && ready;
   const canConfirm = bar?.primary === "confirm" && ready;
   // 열린 고침 칸이 비면 1차는 비활성 + 빈 칸 이유(칸 오류로 되풀이하지 않는다 — 이유는 버튼 옆 한 자리만).
   const confirmBlock = canConfirm && evidenceInput.open && evidenceInput.raw === "" && !evidenceInput.fieldError ? CORRECTED_SUPPLY_EMPTY : null;
   // 버튼 = 실제 동작(SYSTEM §8) — 고침 칸 값이 지금 공급가와 다를 때만 `공급가액 고쳐 확인`.
   const confirmLabel = evidenceInput.corrected === undefined ? CONFIRM_SUPPLY_SAME : CONFIRM_SUPPLY_CORRECTED;
-  // P3 증빙 없음 · 짝 아님 · 지급 총액 볼 권한 없음 — `지급 완료` 비활성 + 이유(block).
-  const blockReason = bar?.blockReason ?? null;
+  // P3 증빙 없음 · 짝 아님 · 지급 총액 볼 권한 없음 — `지급 완료` 비활성 + 이유(block). 예정일 칸이 열려 2차로 내려도 같은 이유(서버 행).
+  const blockReason = serverBar?.blockReason ?? null;
   // 06.5-11 W-2: 지급일 칸 오류(미래)가 서 있는 동안 1차는 일괄 대화상자의 blockedBy처럼 꺼진 모양 — 이유는 칸 아래 오류 줄 한 자리(aria-describedby), 날짜를 바꾸면 풀린다.
   const payDateBlocked = Boolean(fieldErrors.payDate);
   const paid = view.row?.row === "P6" && view.payDate !== undefined;
@@ -198,6 +217,12 @@ export function PaymentActionRow() {
 
   function saveSchedule() {
     if (!canSaveSchedule || !schedule || submittingRef.current || view.expenseId === undefined || view.version === undefined) return;
+    // 값을 바꾸지 않았으면 저장할 것이 없다 — 칸만 닫고 `지급 예정일 바꾸기`로 포커스(Esc와 같은 끝).
+    if (!scheduleDirty) {
+      setSchedule(null);
+      requestAnimationFrame(() => document.getElementById("payment-schedule-edit")?.focus());
+      return;
+    }
     submittingRef.current = true;
     setPending(true);
     setConflict(null);
@@ -300,13 +325,15 @@ export function PaymentActionRow() {
   }, [previewing]);
 
   // 예정일 저장 · 지급 취소 뒤 응답으로 다시 읽은 표에 1차가 서면 그 1차로 포커스(r2 F5).
+  // 예정일 칸이 열린 동안은 `지급 완료`가 2차라 1차 자리가 아니다 — 칸이 닫혀 1차로 돌아온 때를 본다.
+  const payIsPrimary = canPay && !canSaveSchedule;
   useEffect(() => {
-    if ((justSavedScheduleRef.current || justCancelledRef.current) && canPay) {
+    if ((justSavedScheduleRef.current || justCancelledRef.current) && payIsPrimary) {
       justSavedScheduleRef.current = false;
       justCancelledRef.current = false;
       primaryRef.current?.querySelector("button")?.focus();
     }
-  }, [canPay]);
+  }, [payIsPrimary]);
 
   // 06-20(C-1 · UI-SPEC S1 「문서 화면 왕복」): `from=pay`로 열었을 때만 행동 줄 오른쪽 3차 `지급 대상으로`(서버가 새로 만든 href),
   // 증빙이 `확인됨`이고 같은 필터에 다음 `확인 전`이 있으면 같은 자리에 `다음 확인 전 {번호}`. 1차 규칙은 그대로다.
@@ -328,11 +355,20 @@ export function PaymentActionRow() {
         {conflict ? <ConflictLine message={conflict} /> : null}
         <div className={payReturn ? `${barStyles.buttons} ${listStyles.payReturnButtons}` : barStyles.buttons}>
           {canSaveSchedule ? (
-            <span className={barStyles.primaryWrap} ref={primaryRef}>
-              <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={saveSchedule}>
-                예정일 저장
-              </Button>
-            </span>
+            <>
+              <span className={barStyles.primaryWrap} ref={primaryRef}>
+                <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={saveSchedule}>
+                  예정일 저장
+                </Button>
+              </span>
+              {lowered === "pay" ? (
+                <span className={barStyles.secondaryWrap}>
+                  <Button variant="secondary" disabled={blockReason !== null || payDateBlocked} disabledReason={blockReason ?? undefined} onClick={pay}>
+                    지급 완료
+                  </Button>
+                </span>
+              ) : null}
+            </>
           ) : canConfirm ? (
             <span className={barStyles.primaryWrap} ref={primaryRef}>
               <Button

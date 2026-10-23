@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
-import { createExpenseFromLines } from "@/domain/expenses";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { expenses } from "@/db/schema";
+import { createExpenseFromLines, getExpense } from "@/domain/expenses";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -24,6 +27,16 @@ async function openDraft(page: Page, fx: ExpenseE2E, key: LineKey): Promise<stri
   await page.goto(`/expenses/${expenseId}`);
   await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
   return expenseId;
+}
+
+// 07-06 D-714 · D-704: 작성자가 적은 지급 예정일은 칸(DB)에 쓰이지 않고, 화면 칸은 유효 예정일(자동값)로 찬다.
+async function expectAutoPayDate(page: Page, fx: ExpenseE2E): Promise<void> {
+  const expenseId = page.url().split("/").at(-1) ?? "";
+  const [row] = await db.select({ date: expenses.scheduledPaymentDate }).from(expenses).where(eq(expenses.id, expenseId));
+  expect(row?.date).toBeNull();
+  const effective = (await getExpense(fx.pm.viewer, { expenseId }))?.scheduledPaymentDate;
+  expect(effective).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue(effective ?? "");
 }
 
 async function openNew(page: Page): Promise<void> {
@@ -353,10 +366,10 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.phone.itemName}`);
     await expect(page.getByLabel("비고", { exact: true })).toHaveValue("웨이브9 저장 안 한 메모");
-    await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue("");
+    await expectAutoPayDate(page, fx);
   });
 
-  test("05-16 — /expenses/new에서 비고 · 지급 예정일을 적고 줄을 고르면 지워짐 글자 없이 비고가 만들어진 문서에 남고, 지급 예정일은 다시 열면 빈 칸(07-01 D-714)", async ({ browser, baseURL }) => {
+  test("05-16 — /expenses/new에서 비고 · 지급 예정일을 적고 줄을 고르면 지워짐 글자 없이 비고가 만들어진 문서에 남고, 지급 예정일은 칸에 쓰이지 않고 자동값으로 보인다(07-01 D-714 · 07-06 D-704)", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openNew(page);
@@ -372,7 +385,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.hold.itemName}`);
     await expect(page.getByLabel("비고", { exact: true })).toHaveValue("새 문서 메모");
-    await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue("");
+    await expectAutoPayDate(page, fx);
   });
 
   test("웨이브 9 D2 · D3 · D5 — 1차 버튼 설명은 결과 줄 · 검색 칸은 거르는 동안 제자리 · 부제 `프로젝트 N · 고를 수 있는 줄 M` · `지급처 N`", async ({ browser, baseURL }) => {

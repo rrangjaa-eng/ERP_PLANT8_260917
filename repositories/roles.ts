@@ -20,6 +20,18 @@ export async function listRoles(
     .orderBy(roles.sortOrder, roles.name);
 }
 
+// 활성(보관 안 된) 계급 id만 돌려주며 그 행을 FOR SHARE로 잡는다 — 보관(UPDATE)은 이 tx가 끝날 때까지 기다린다.
+export async function lockActiveRoleIds(viewer: Viewer, ids: string[], tx: DbOrTx): Promise<string[]> {
+  void viewer;
+  if (ids.length === 0) return [];
+  const rows = await tx
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(inArray(roles.id, ids), isNull(roles.archivedAt)))
+    .for("share");
+  return rows.map((row) => row.id);
+}
+
 export async function findRoleById(viewer: Viewer, id: string): Promise<RoleRow | null> {
   void viewer;
   const [row] = await db.select().from(roles).where(eq(roles.id, id)).limit(1);

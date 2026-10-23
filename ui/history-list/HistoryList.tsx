@@ -52,6 +52,8 @@ export type HistoryListProps = {
    * idPrefix와 같은 이유로 호출부가 넘긴다.
    */
   caption: string;
+  /** 07-17 R15 — 거짓이면 「새 이력 추가」를 그리지 않는다(상한 밖 대상처럼 쓸 수 없는 화면). 기본 참. */
+  canAdd?: boolean;
 };
 
 function defaultValueFor(kind: HistoryValueKind): string {
@@ -125,6 +127,7 @@ export function HistoryList({
   onRetry,
   idPrefix,
   caption,
+  canAdd = true,
 }: HistoryListProps) {
   const [adding, setAdding] = useState(false);
   const [effectiveFrom, setEffectiveFrom] = useState("");
@@ -220,7 +223,7 @@ export function HistoryList({
   ) : null;
 
   if (entries.length === 0 && !adding) {
-    return <ListEmpty message="이 값의 이력이 없습니다" action={{ label: "새 이력 추가", onClick: openAdd }} />;
+    return <ListEmpty message="이 값의 이력이 없습니다" action={canAdd ? { label: "새 이력 추가", onClick: openAdd } : undefined} />;
   }
 
   return (
@@ -267,7 +270,7 @@ export function HistoryList({
           ))}
         </tbody>
       </table>
-      {!adding ? (
+      {!adding && canAdd ? (
         <div className={styles.addRowTrigger}>
           <Button variant="tertiary" onClick={openAdd}>
             새 이력 추가

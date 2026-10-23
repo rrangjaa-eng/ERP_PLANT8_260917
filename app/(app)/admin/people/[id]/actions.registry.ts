@@ -40,3 +40,11 @@ registerAction({
   action: "view",
   dtoName: null,
 });
+
+// 07-17 D-P2-7: 일회성 비밀 — 행 DTO 아님 · 메뉴 쓰기 + 상한 + 자기 제외로 게이트 · 로그 · 캐시 · URL 없음.
+registerAction({
+  name: "resetPersonPasswordAction",
+  menu: "admin.people",
+  action: "write",
+  dtoName: null,
+});

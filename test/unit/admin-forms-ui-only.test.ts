@@ -14,11 +14,11 @@ export const UI_ONLY_EXCLUDED: Record<string, string> = {
   "app/(app)/admin/action-log/filter-bar.tsx": "필터 줄 select — 폼이 아니다(SC-15 제외)",
   "app/(app)/admin/code-tables/code-item-form.tsx": "코드표 인라인 blur 칸 — 표 안 입력이다(SC-15 제외)",
   "app/(app)/admin/people/page.tsx": "필터 줄 검색칸(ListScreen filters · GET ?q=) — 폼이 아니다(SC-15 제외, 07-17 PLAN N10 범위)",
+  "app/(app)/admin/vendors/vendor-search.tsx": "거래처 목록 필터 줄 검색칸 — 폼이 아니다(SC-15 제외, 07-20 V2)",
 };
 
 // 맡은 플랜이 이관하면서 이 목록에서 지운다. 07-25가 비운다.
 export const UI_ONLY_PENDING: Record<string, string> = {
-  "app/(app)/admin/vendors/vendor-form.tsx": "07-20 몫",
   "app/(app)/admin/people/roles/roles-client.tsx": "07-21 몫",
   "app/(app)/admin/people/org/org-client.tsx": "07-21 몫",
 };

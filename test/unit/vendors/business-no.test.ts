@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { businessNoDigits, businessNoProblem } from "@/domain/vendors";
+import { businessNoDigits, businessNoProblem } from "@/domain/vendors/business-no";
 import { vendorKindToAdd } from "@/domain/vendors/kind";
 
 // 거래처 사업자번호 중복 막기(PR A) — 비교는 숫자만 뽑은 값이다(SQL `[^0-9]` 제거와 같은 결과).
@@ -56,12 +56,12 @@ describe("businessNoProblem — 10자리 · 검증 숫자", () => {
   });
 
   it("검증 숫자가 틀리면 막는다", () => {
-    expect(businessNoProblem("214-86-10231")).toBe("사업자번호 검증 숫자 틀림 · 다시 확인");
+    expect(businessNoProblem("214-86-10231")).toBe("사업자 번호 확인 · 다시 입력");
   });
 
   it("9자리 · 11자리 · 숫자 없음은 10자리 아님이다", () => {
-    expect(businessNoProblem("214-86-1023")).toBe("사업자번호 10자리 아님");
-    expect(businessNoProblem("214-86-102321")).toBe("사업자번호 10자리 아님");
-    expect(businessNoProblem("---")).toBe("사업자번호 10자리 아님");
+    expect(businessNoProblem("214-86-1023")).toBe("사업자 번호 확인 · 다시 입력");
+    expect(businessNoProblem("214-86-102321")).toBe("사업자 번호 확인 · 다시 입력");
+    expect(businessNoProblem("---")).toBe("사업자 번호 확인 · 다시 입력");
   });
 });

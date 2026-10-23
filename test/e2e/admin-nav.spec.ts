@@ -66,6 +66,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
       "권한표",
       "정보 노출표",
       "시스템 설정",
+      "알림 규칙",
       "행동 로그",
       "보관함",
       "공휴일",
@@ -79,7 +80,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     await expect(menu.getByRole("menuitem", { name: "설정", exact: true })).toHaveCount(0);
   });
 
-  test("/admin 인덱스에 그룹 머리글 셋(마스터·설정·권한·운영 기록)과 항목 링크 12개가 전부 보인다", async ({
+  test("/admin 인덱스에 그룹 머리글 셋(마스터·설정·권한·운영 기록)과 항목 링크 13개가 전부 보인다", async ({
     page,
   }) => {
     await loginAsSysadmin(page);
@@ -101,6 +102,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
       "권한표",
       "정보 노출표",
       "시스템 설정",
+      "알림 규칙",
       "시스템 상태",
       "행동 로그",
       "보관함",

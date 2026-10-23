@@ -619,7 +619,7 @@ export type ExpenseListRow = ExpenseRow & {
 // 목록 한 쪽 — 한 쿼리. 보임 범위 · 보기(그룹 순위) 조건의 서브쿼리 q가 group_rank와 그룹별 정렬 키를 열로 만들고, 바깥 쿼리가
 // ORDER BY group_rank, <그룹별 CASE 키>, id 한 곳에서 줄 세운 뒤에만 LIMIT · OFFSET으로 자른다(리뷰 Round 2 M2 — PostgreSQL은
 // ORDER BY 식 안에서 SELECT 별칭을 읽지 못해 서브쿼리 열로 둔다). 그룹 안: 작성 중 = 고친 시각 ↓ · 반려 · 회수 = 상태 바뀐 시각 ↓ ·
-// 결재 중 = 제출 시각 ↑ · 승인 = 지급 예정일 ↑(없음은 끝).
+// 결재 중 = 제출 시각 ↑ · 승인 = 미지급 건의 유효 예정일 순서(approvedOrder 위치 — 07-06) → 지급 끝난 건의 실제 지급일 ↑ → 번호.
 // 05-09(05-08 검토 #6): 승인 뒤 증빙 추가가 인스턴스 updated_at을 올리므로 승인 날짜는 지금 차수 단계의 마지막 처리 시각에서 읽는다
 // (반려 · 회수에서는 증빙 변경이 인스턴스를 건드리지 않아 updated_at = 상태 바뀐 시각 그대로).
 // 07-01: 승인된 인스턴스의 지금 차수 승인 단계는 전부 action = 'approved'라 필터를 더해도 statusChangedAtExpr 결과는 같다.
@@ -652,9 +652,35 @@ export async function listCurrentRoundApprovedAt(
   return new Map(rows.map((row) => [row.id, row.approvedAt]));
 }
 
+// 07-06(AQ-01 · B-P2-1): 승인 묶음 사전 정렬 재료 — 보임 범위 · 검색이 같은 미지급 승인 건(살아 있는 지급 없음)의 최소 칸만. 지급 끝난 승인 건은
+// 읽지 않는다(그 뒤에 SQL 키로 선다). 도메인이 07-01 로더로 유효 예정일을 셈해 순서 배열을 listExpensePage에 넘긴다(날짜 규칙을 SQL로 다시 쓰지 않는다).
+export type UnpaidApprovedScheduleSource = Pick<ExpenseRow, "id" | "number" | "submittedAt" | "scheduledPaymentDate" | "vendorId">;
+
+const liveExpensePaymentExists = sql`exists (select 1 from expense_payments ep where ep.expense_id = ${expenses.id} and ep.cancelled_at is null)`;
+
+export async function listUnpaidApprovedScheduleSources(
+  viewer: Viewer,
+  input: { scope: ExpenseScope; documentKind: string; search?: ExpenseSearch },
+): Promise<UnpaidApprovedScheduleSource[]> {
+  return db
+    .select({ id: expenses.id, number: expenses.number, submittedAt: expenses.submittedAt, scheduledPaymentDate: expenses.scheduledPaymentDate, vendorId: expenses.vendorId })
+    .from(expenses)
+    .leftJoin(approvalInstances, instanceJoin(input.documentKind))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .where(
+      and(
+        scopeCondition(viewer, input.scope),
+        ranksCondition([EXPENSE_GROUP_RANKS.approved]),
+        sql`not ${liveExpensePaymentExists}`,
+        input.search ? expenseSearchCondition(viewer, input.search.query, input.search.fields) : undefined,
+      ),
+    );
+}
+
 export async function listExpensePage(
   viewer: Viewer,
-  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; limit: number; offset: number; search?: ExpenseSearch },
+  // approvedOrder — 미지급 승인 건 id의 유효 예정일 순서(도메인 사전 정렬). 배열 밖 승인 건(지급 끝남)은 그 뒤 실제 지급일 ↑ → 번호 → id.
+  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; limit: number; offset: number; search?: ExpenseSearch; approvedOrder?: readonly string[] },
 ): Promise<ExpenseListRow[]> {
   const q = db
     .select({
@@ -663,7 +689,9 @@ export async function listExpensePage(
       editedKey: sql<Date>`${expenses.updatedAt}`.as("edited_key"),
       statusKey: sql<Date | null>`${approvalInstances.updatedAt}`.as("status_key"),
       submittedKey: sql<Date | null>`${expenses.submittedAt}`.as("submitted_key"),
-      payKey: sql<string | null>`${expenses.scheduledPaymentDate}`.as("pay_key"),
+      payKey: sql<number | null>`array_position(string_to_array(${(input.approvedOrder ?? []).join(",")}, ',')::uuid[], ${expenses.id})`.as("pay_key"),
+      paidKey: sql<string | null>`(select min(ep.pay_date) from expense_payments ep where ep.expense_id = ${expenses.id} and ep.cancelled_at is null)`.as("paid_key"),
+      numberKey: sql<string | null>`${expenses.number}`.as("number_key"),
     })
     .from(expenses)
     .leftJoin(approvalInstances, instanceJoin(input.documentKind))
@@ -700,6 +728,8 @@ export async function listExpensePage(
       sql`case when ${q.groupRank} = 2 then ${q.statusKey} end desc`,
       sql`case when ${q.groupRank} = 3 then ${q.submittedKey} end asc`,
       sql`case when ${q.groupRank} = 4 then ${q.payKey} end asc nulls last`,
+      sql`case when ${q.groupRank} = 4 then ${q.paidKey} end asc nulls last`,
+      sql`case when ${q.groupRank} = 4 then ${q.numberKey} end asc`,
       asc(q.id),
     )
     .limit(input.limit)

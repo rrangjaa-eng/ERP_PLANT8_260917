@@ -6,6 +6,7 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { planAccountNumberUpdate } from "@/domain/vendors";
 import {
   adjacentActionGaps,
   expectGapsAtLeastToken,
@@ -948,6 +949,51 @@ test.describe("거래처 검색 · 파일 받기 (07-20 SC-16)", () => {
       await expect(page.locator('[class*="Toast-module"]')).toHaveCount(0);
       await expect(error).toHaveAttribute("role", "alert");
       await expect(button).not.toHaveAttribute("aria-busy", "true");
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+});
+
+// 07-23 Task 1(V9 · AQ-35 · SC-17 ⑩): 수정 패널 맨 아래 `계좌 변경 기록` — 변경 뒤 `····1234 → ····5678` · 변경한 사람 · 일시, 이력 없으면 `이력 없음`.
+test.describe("거래처 계좌 변경 기록 (07-23 SC-17 ⑩)", () => {
+  const panelOf = (page: import("@playwright/test").Page) => page.locator('dialog[data-ui="side-panel"]');
+
+  test("계좌번호를 바꿔 저장 → 다시 열면 맨 아래 `계좌 변경 기록`에 일시 · 변경한 사람 · `····1234 → ····5678` / 바꾸기 전은 `이력 없음` / 등록 패널에는 없음", async ({ page }) => {
+    const name = `E2E계좌기록-${randomUUID()}`;
+    const plan = planAccountNumberUpdate("110123451234");
+    if (plan.kind !== "set") throw new Error("계좌 계획 없음");
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name,
+      normalizedName: name.toLowerCase(),
+      kind: "supplier",
+      accountBank: "신한은행",
+      accountHolder: "홍길동",
+      accountNumberEncrypted: plan.accountNumberEncrypted,
+      accountNumberLast4: plan.accountNumberLast4,
+    });
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto("/admin/vendors?new=1");
+      await expect(panelOf(page).getByRole("heading", { name: "계좌 변경 기록" })).toHaveCount(0);
+
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const panel = panelOf(page);
+      const history = panel.getByRole("region", { name: "계좌 변경 기록" });
+      await expect(history.getByText("이력 없음")).toBeVisible();
+
+      await panel.getByLabel("새 계좌번호").fill("220987655678");
+      await panel.getByRole("button", { name: "거래처 저장" }).click();
+      await expect(panel).toHaveCount(0);
+
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const rows = panelOf(page).getByRole("region", { name: "계좌 변경 기록" }).getByRole("listitem");
+      await expect(rows).toHaveCount(1);
+      await expect(rows.first()).toContainText("····1234 → ····5678");
+      await expect(rows.first()).toContainText("E2E Admin");
+      await expect(rows.first()).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+      await expect(rows.first()).not.toContainText("220987655678");
     } finally {
       await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
     }

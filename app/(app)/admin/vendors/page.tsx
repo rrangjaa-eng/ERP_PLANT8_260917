@@ -20,6 +20,8 @@ import { AccountNumberCell } from "./account-number";
 import { revealVendorAccountNumberAction } from "./actions";
 import { VendorExportButton } from "./export-button";
 import { VendorSearch } from "./vendor-search";
+import { AccountHistory } from "./account-history";
+import { listAccountChanges } from "@/domain/vendors/account-changes";
 import styles from "./vendors.module.css";
 
 const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
@@ -95,6 +97,8 @@ export default async function VendorsPage({
   const editingVendor = editId
     ? (vendors.find((vendor) => vendor.id === editId && vendor.archivedAt === null) ?? null)
     : null;
+  // 07-23 SC-17 ⑩: 수정 패널의 계좌 변경 기록(최신 위 · 뒤 4자리만).
+  const accountHistory = editingVendor ? await listAccountChanges(session.viewer, editingVendor.id) : [];
   const cancelHref = vendorsHref(includeHidden, { kind: kindFilter, q: query });
   // 표 행만 거른다 — editingVendor는 거르지 않은 목록에서 찾는다(걸러보기 · 검색 중 갈래 · 이름을 바꿔 저장해도 패널이 그대로).
   const shownVendors = filteredVendors ?? vendors;
@@ -150,7 +154,17 @@ export default async function VendorsPage({
               newKind={kindFilter ?? undefined}
               canEditAccount={canEditAccount}
               paymentTermDefault={paymentTermDefault}
-            />
+            >
+              <AccountHistory
+                items={accountHistory.map((item) => ({
+                  id: item.id ?? "",
+                  changedAt: item.changedAt ?? "—",
+                  changedByName: item.changedByName ?? "—",
+                  beforeLast4: item.beforeLast4 ?? null,
+                  afterLast4: item.afterLast4 ?? null,
+                }))}
+              />
+            </VendorForm>
           </VendorPanel>
         ) : null
       }

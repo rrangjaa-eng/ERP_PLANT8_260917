@@ -274,3 +274,53 @@
   font-size: var(--text-aux);
   color: var(--status-danger);
 }
+
+/* 07-23 SC-17 ⑨⑩ · U12: 수정 패널 맨 아래 섹션(`서류` · `계좌 변경 기록`) — 섹션 선 아래 소제목(aux · muted). 새 색 · 크기 없음(역할 토큰). */
+.panelSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding-top: var(--s-4);
+  border-top: var(--line-w) solid var(--border-row);
+}
+
+.panelSectionTitle {
+  margin: 0;
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+/* 계좌 변경 기록 한 줄 — 일시 · 변경한 사람 · 뒤 4자리 전후. 좁으면 줄을 꺾는다(가로 넘침 없음). */
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.historyRow {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--s-3);
+  row-gap: var(--s-1);
+  font-size: var(--text-aux);
+  color: var(--text-strong);
+}
+
+.historyAt {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.historyValue {
+  white-space: nowrap;
+}
+
+.historyEmpty {
+  margin: 0;
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}

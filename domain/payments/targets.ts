@@ -44,6 +44,7 @@ import { canExportBankTransferFile } from "@/domain/payments/transfer-gate";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import { loadPayCalendar, loadPaySchedules } from "@/domain/payments/pay-schedule-load";
 import { payWeekGroupLabel, payWeekIndex, thisWeekPayDate, type PaySchedule } from "@/domain/payments/pay-schedule";
+import { accountChangedSinceLastPayment } from "@/domain/vendors/account-changes";
 
 // 06-15(EXP-09 · UI-SPEC S1): 지급 대상 목록 — 결재 통과 · 지급 전 · 종결 아님 지출결의. 행마다 고를 수 있는지(selectable)와 이유는
 // 06-04 resolveExpenseActionRow(P4 = 고를 수 있음)가 정하고, 그 입력은 문서 화면(getPaymentView)과 같은 게이트 둘(payment.evidence-required ·
@@ -248,8 +249,19 @@ function titleOf(
   return `${[row.projectName, row.itemName].filter(Boolean).join(" · ")}${seq}`;
 }
 
-function toDto(target: ScheduledPaymentTarget, shared: PaymentShared, transferFileAt: ReadonlyMap<string, string>): PaymentTargetRowDto {
+// 07-23 N2: 지급처가 거래처인 행(직원 지급처 문서는 줄 거래처가 있어도 그 계좌로 나가지 않는다).
+function vendorPayeeOf(row: Pick<PaymentTargetRow, "vendorId" | "payeeUserId">): string | null {
+  return row.payeeUserId === null ? row.vendorId : null;
+}
+
+function toDto(
+  target: ScheduledPaymentTarget,
+  shared: PaymentShared,
+  transferFileAt: ReadonlyMap<string, string>,
+  changedVendors: ReadonlySet<string>,
+): PaymentTargetRowDto {
   const { row } = target;
+  const vendorPayee = vendorPayeeOf(row);
   return {
     id: row.id,
     number: row.number,
@@ -273,6 +285,8 @@ function toDto(target: ScheduledPaymentTarget, shared: PaymentShared, transferFi
     paymentPushReason: target.schedule.pushReason,
     paymentScheduleFailed: target.schedule.failed === true,
     paymentCutoffReason: target.cutoffReason,
+    vendorConfirmed: vendorPayee === null || row.vendorConfirmedAt !== null,
+    accountChanged: vendorPayee !== null && changedVendors.has(vendorPayee),
   };
 }
 
@@ -282,10 +296,12 @@ export async function projectPaymentTargets(
   shared: PaymentShared,
   transferFileAt: ReadonlyMap<string, string> = new Map(),
 ): Promise<Partial<PaymentTargetRowDto>[]> {
+  // 07-23 AQ-36: 계좌 바뀜은 쪽의 거래처 지급처 묶음으로 한 번 묻는다(행마다 부르지 않는다).
+  const changedVendors = await accountChangedSinceLastPayment(viewer, targets.flatMap((target) => vendorPayeeOf(target.row) ?? []));
   // 06-20(O-17) — 계좌 칸은 문서 화면과 같은 투영 함수 하나. 지급 방식 코드 · 거래처 id · 직원 지급처 id(06.5 D-6517)는 스펙 밖 키라 projectMany가 버린다.
   const rows = await projectPaymentAccounts(
     viewer,
-    targets.map((target) => ({ ...toDto(target, shared, transferFileAt), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId, payeeUserId: target.row.payeeUserId })),
+    targets.map((target) => ({ ...toDto(target, shared, transferFileAt, changedVendors), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId, payeeUserId: target.row.payeeUserId })),
   );
   return projectMany(viewer, rows, PAYMENT_TARGET_ROW_DTO_SPEC);
 }

@@ -103,6 +103,7 @@ export function VendorForm({
   newKind = DEFAULT_NEW_VENDOR_KIND,
   canEditAccount = true,
   paymentTermDefault,
+  children,
 }: {
   evidenceTypes: EvidenceTypeOption[];
   fieldDefs: VendorFieldDefinition[];
@@ -113,6 +114,8 @@ export function VendorForm({
   canEditAccount?: boolean;
   /** 07-20 N6: 지급 기한 빈 칸 placeholder — 회사 기본 일수(설정 payment.term_days). */
   paymentTermDefault: number;
+  /** 07-23 SC-17 ⑨⑩: 수정 패널 맨 아래 섹션(서류 · 계좌 변경 기록) — 등록 패널에는 없다. */
+  children?: ReactNode;
 }) {
   const isEditing = editing !== null;
   const defaultKind = editing?.kind ?? newKind;
@@ -515,6 +518,7 @@ export function VendorForm({
       {duplicateCount ? (
         <p className={styles.duplicateNotice}>같은 이름의 거래처가 이미 있습니다 · 확인</p>
       ) : null}
+      {isEditing ? children : null}
     </PanelForm>
   );
 }

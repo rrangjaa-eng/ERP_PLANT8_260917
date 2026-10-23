@@ -1,4 +1,4 @@
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { scopeFor } from "@/domain/permissions/scope-for";
@@ -31,6 +31,7 @@ import { isUniqueViolation } from "@/lib/pg-errors";
 import { AccountFieldsError, accountFieldsChanged, judgeAccountFields, present } from "@/domain/vendors/account-fields";
 import { businessNoDigits, businessNoProblem } from "@/domain/vendors/business-no";
 import { normalizeAccountDigits } from "@/domain/vendors/account-digits";
+import { hadAccount, writeAccountChange } from "@/domain/vendors/account-changes";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -577,6 +578,7 @@ export async function updateVendor(
   // 건드리지 않는 정의 · 보임 변경과의 순서까지 행 잠금이 정하지는 않는다(같은 tx 한 문 스냅숏).
   // 07-20: 본문 · 계좌번호 쓰기를 한 트랜잭션으로(반쯤 저장 0) — 기대 version 조건이 0행이면 충돌로 되돌린다.
   const submitted = input.customFields;
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
   try {
     await withTransaction(async (tx) => {
       let payload = updatePayload;
@@ -608,6 +610,20 @@ export async function updateVendor(
         );
       }
       // kind === "keep" → 두 컬럼 모두 건드리지 않는다.
+
+      // 07-23 V9 · AQ-35: 있던 계좌의 세 칸 중 하나라도 바뀌면 같은 트랜잭션에 뒤 4자리 전후 기록 + 행동 로그(끌 수 없음) — 실패하면 저장도 없다.
+      // 처음 넣는 계좌(전 값 없음)는 변경이 아니다(AQ-36 — `확인 전`이 맡는다).
+      // 시스템 주체(시드 · 운영 스크립트)는 사람이 아니라 changed_by(users FK)를 채울 수 없다 — 사람의 저장만 기록한다(행동 로그도 actor NULL로 남는 주체).
+      if (accountChanged && hadAccount(storedAccount) && viewer.id !== SYSTEM_VIEWER.id) {
+        const afterNumberLast4 =
+          accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : accountNumberPlan.kind === "clear" ? null : existing.accountNumberLast4;
+        const last4 = await writeAccountChange(
+          viewer,
+          { vendorId: id, beforeNumberLast4: existing.accountNumberLast4, afterNumberLast4, source: "admin" },
+          tx,
+        );
+        await recordAction(viewer, { actionType: "vendor_account_change", entity: VENDOR_ENTITY, entityId: id, detail: { ...last4, source: "admin" } }, { tx });
+      }
     });
   } catch (error) {
     if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
@@ -618,7 +634,6 @@ export async function updateVendor(
 
   // 결함 3: 수정을 document_create로 남기면 생성 9건처럼 보인다(독립 감사가
   // 실측 — 수정 8건이 document_create 9건으로 나타났다). 수정 전용 종류로 남긴다.
-  const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_update", entity: VENDOR_ENTITY, entityId: id });
 
   const updated = await repoFindVendorById(viewer, id);

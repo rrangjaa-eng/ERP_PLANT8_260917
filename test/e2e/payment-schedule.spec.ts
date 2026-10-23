@@ -2,13 +2,15 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { approvalRoutes, approvalSteps, expenses, projects } from "@/db/schema";
+import { approvalRoutes, approvalSteps, expenses, projects, vendors } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { loadHolidayLookup } from "@/domain/holidays/calendar";
 import { payRuleLine, payWeekGroupLabel, payWeekIndex, resolvePaySchedule, type PaySchedule } from "@/domain/payments/pay-schedule";
-import { saveScheduledPayDate } from "@/domain/payments";
+import { previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { completePaymentsBatch } from "@/domain/payments/batch";
+import { updateVendor } from "@/domain/vendors";
 import { isBusinessDay } from "@/domain/holidays/business-day";
 import { loadPayScheduleConfig } from "@/domain/payments/pay-schedule-load";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -452,6 +454,65 @@ test.describe("상세 지급 예정일 표시 · 수정 (07-16 Task 2 · SC-03)"
     await page.keyboard.press("Escape");
     await expect(page.locator("#payment-scheduled-date")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "지급 예정일 바꾸기" })).toBeFocused();
+    await page.context().close();
+  });
+});
+
+// ── 07-23 Task 1(N2 · B-P2-5 · V9 · AQ-36) ─────────────────────────────────────────────────────────────
+
+// 거래처 관리 + 계좌 수정(vendors.account) 계급 — 도메인으로 계좌를 바꾼다(화면 흐름은 vendors.spec.ts).
+async function makeVendorAccountEditor(fx: ExpenseE2E): Promise<Person> {
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E계좌-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  for (const menu of ["admin.vendors", "vendors.account"]) {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action: "write", allowed: true });
+  }
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "vendor.value", visible: true });
+  return makePerson("계좌관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+}
+
+async function methodCell(page: Page, itemName: string) {
+  const table = page.getByRole("grid", { name: "지급 대상" });
+  await expect(table).toBeVisible();
+  const index = await table.locator("thead th").evaluateAll((cells) => cells.findIndex((cell) => cell.textContent?.trim() === "지급 방식"));
+  expect(index).toBeGreaterThanOrEqual(0);
+  const row = table.locator("tbody tr").filter({ has: page.getByRole("link", { name: itemName, exact: false }) });
+  await expect(row).toHaveCount(1);
+  return row.locator(":scope > th, :scope > td").nth(index);
+}
+
+test.describe("지급 목록 계좌 아래 한 값 `확인 전 > 계좌 바뀜` (07-23 N2)", () => {
+  test("확인 전 거래처 → `확인 전` 하나 · 확인됨 + 계좌 바뀜 → `계좌 바뀜` · 그 거래처로 지급 처리 뒤 사라짐", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const editor = await makeVendorAccountEditor(fx);
+    const issuedOn = addDays(seoulToday(), -3);
+    const paid = await approvedDoc(fx, "tracer", payer, { issuedOn });
+    await approvedDoc(fx, "hold", payer, { issuedOn });
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const before = await methodCell(page, fx.lines.hold.itemName);
+    await expect(before.getByText("확인 전", { exact: true })).toHaveCount(1);
+    await expect(before.getByText("계좌 바뀜", { exact: true })).toHaveCount(0);
+
+    await db.update(vendors).set({ confirmedAt: new Date(), confirmedBy: editor.viewer.id }).where(eq(vendors.id, fx.vendorId));
+    const [vendor] = await db.select({ version: vendors.version }).from(vendors).where(eq(vendors.id, fx.vendorId));
+    await updateVendor(editor.viewer, fx.vendorId, { name: fx.vendorName, accountNumber: "220987655678", expectedVersion: vendor?.version ?? 0 });
+    await page.reload();
+    const changed = await methodCell(page, fx.lines.hold.itemName);
+    await expect(changed.getByText("계좌 바뀜", { exact: true })).toHaveCount(1);
+    await expect(changed.getByText("확인 전", { exact: true })).toHaveCount(0);
+
+    const preview = await previewPayable(payer.viewer, { expenseId: paid.id, payDate: seoulToday() });
+    const result = await completePaymentsBatch(payer.viewer, {
+      payDate: seoulToday(),
+      rows: [{ expenseId: paid.id, expenseVersion: await docVersion(paid.id), expectedPayableKrw: preview.payableKrw ?? 0 }],
+    });
+    expect(result.processed).toBe(1);
+    await page.reload();
+    const after = await methodCell(page, fx.lines.hold.itemName);
+    await expect(after.getByText("계좌 바뀜", { exact: true })).toHaveCount(0);
     await page.context().close();
   });
 });

@@ -33,9 +33,12 @@ td:has(.unread) {
   margin-top: var(--s-2);
 }
 
-/* 「시각」 머리글 — 로드 뒤 표(inbox-list.tsx)와 loading.tsx 뼈대가 같은 클래스로 같은 폭(내용 폭)을 갖는다. */
+/* 「시각」 머리글 — 로드 뒤 표(inbox-list.tsx)와 loading.tsx 뼈대가 같은 클래스로 같은 폭을 갖는다.
+   뼈대 본문은 colSpan 막대라 내용(`14:26`) 폭이 없어 머리글 글자 폭(46)으로 줄었다(DOM 감사 0719 #1: 46 → 62).
+   내용 폭(숫자 5자, tabular-nums)만큼 바닥 폭을 두어 둘이 같게 한다. 안쪽 여백은 첫·끝 칸 --s-4 · --cell-pad-x와 같다. */
 .time {
   width: 1%;
+  min-width: calc(6ch + var(--s-4) + var(--cell-pad-x));
 }
 
 /* N25 — 알림 문장 링크. 글자색은 본문 강조색(accent 아님), 밑줄은 hover · focus에만. */

@@ -471,6 +471,47 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     await expect(page.locator("main table thead th")).toHaveText(["내용", "시각"]);
   });
 
+  for (const width of [1280, 768, 375, 320]) {
+    test(`느린 응답 — 뼈대 머리글 폭이 로드 뒤 표와 ±1px로 같다(07-19 DOM 감사 #1 · ${width}폭)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width < 700 ? 800 : 900 });
+      const user = await createEmployee();
+      const kind = createTestConditionKind([
+        testCandidate({ recipientId: user.userId, entityId: randomUUID(), referenceDate: "2026-01-01" }),
+      ]);
+      await tickOnce(kind);
+      await login(page, user);
+
+      const prefetched = page.waitForResponse((response) => response.url().includes("/notifications") && response.request().headers()["next-router-prefetch"] === "1");
+      await page.evaluate(() => (window as unknown as { next: { router: { prefetch(url: string): void } } }).next.router.prefetch("/notifications"));
+      await prefetched;
+      await page.waitForLoadState("networkidle");
+      await page.route(
+        (url) => url.pathname === "/notifications",
+        async (route) => {
+          await new Promise((resolve) => setTimeout(resolve, 2500));
+          await route.continue();
+        },
+      );
+      await page.evaluate(() => (window as unknown as { next: { router: { push(url: string): void } } }).next.router.push("/notifications"));
+
+      const headerWidths = (scope: string) =>
+        page.locator(`${scope} thead th`).evaluateAll((cells) => cells.filter((cell) => cell.getBoundingClientRect().width > 0).map((cell) => cell.getBoundingClientRect().width));
+
+      const skeleton = page.locator('[data-ui="table-skeleton"]');
+      await expect
+        .poll(async () => (await skeleton.count()) > 0 && parseFloat(await skeleton.first().evaluate((element) => getComputedStyle(element).opacity)) > 0)
+        .toBe(true);
+      const before = await headerWidths('[data-ui="table-skeleton"]');
+      await expect(skeleton).toHaveCount(0);
+      await expect(page.locator("main table thead th")).toHaveText(["내용", "시각"]);
+      const after = await headerWidths("main table");
+      console.log(`[07-19 header-width] ${width}px skeleton=${before.map((w) => w.toFixed(1)).join(",")} loaded=${after.map((w) => w.toFixed(1)).join(",")}`);
+
+      expect(before).toHaveLength(after.length);
+      before.forEach((w, index) => expect(Math.abs(w - (after[index] ?? Number.NaN))).toBeLessThanOrEqual(1));
+    });
+  }
+
   test("email_status='failed' 행에만 이메일 발송 실패 보조 줄, 결과 불명(unknown)엔 없음", async ({ page }) => {
     const user = await createEmployee();
     const failedId = randomUUID();

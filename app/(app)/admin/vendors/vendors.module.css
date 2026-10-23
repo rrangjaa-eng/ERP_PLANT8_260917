@@ -150,6 +150,11 @@
   margin-bottom: var(--s-4);
 }
 
+/* 게이트 P2(07-20): 패널의 Form.Field 줄(select)은 아래 간격이 없다 — card-form.tsx · corp-cards.module.css `.field`와 같은 감싸개로 칸 사이 --field-gap(16px). */
+.field {
+  margin: 0 0 var(--s-4);
+}
+
 /* 07-20 V3(SC-17 · U12): 패널 상단 동시 수정 FormAlert — 포커스를 받는 감싸개(tabIndex -1). 칸 사이와 같은 아래 간격. */
 .formAlert {
   margin: 0 0 var(--s-4);

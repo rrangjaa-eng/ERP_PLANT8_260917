@@ -8,7 +8,7 @@ import type { VendorKind } from "@/domain/vendors/kind";
 
 export type VendorRow = InferSelectModel<typeof vendors>;
 
-// 07-20 V2: 목록 거르개 — 갈래(kinds) · 검색어(정규화 이름 부분 일치, 숫자가 있으면 사업자 번호 숫자 부분 일치도). 검색어는 매개변수이고
+// 07-20 V2: 목록 거르개 — 갈래(kinds) · 검색어(정규화 이름 부분 일치, digitsQuery가 있으면 사업자 번호 숫자 앞부분 일치도). 검색어는 매개변수이고
 // `%` · `_` · `\`는 글자로 막는다(ILIKE 와일드카드 아님). 260907은 이름 ILIKE 또는 번호 앞부분 일치(server/src/vendors.ts:541-542).
 export type VendorListOpts = {
   scope: Scope;
@@ -31,7 +31,7 @@ function listConditions(opts: VendorListOpts) {
     const byName = ilike(vendors.normalizedName, likeContains(opts.nameQuery));
     conditions.push(
       opts.digitsQuery
-        ? or(byName, sql`regexp_replace(${vendors.businessNo}, '[^0-9]', '', 'g') LIKE ${likeContains(opts.digitsQuery)}`)
+        ? or(byName, sql`regexp_replace(${vendors.businessNo}, '[^0-9]', '', 'g') LIKE ${`${opts.digitsQuery}%`}`)
         : byName,
     );
   }

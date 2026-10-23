@@ -144,7 +144,7 @@ export function VendorForm({
   editing?: EditingVendor | null;
   /** 등록 「갈래」 기본값 — 목록이 갈래로 걸러져 있으면 그 갈래(`?kind=`), 아니면 협력사(261006-biv D-3 · D-745). */
   newKind?: VendorKind;
-  /** 07-20 R8: 기존 거래처 계좌 세 칸을 바꿀 수 있나(`vendors.account` 쓰기) — 아니면 읽기 줄이고 세 칸을 보내지 않는다. 등록은 늘 입력 칸. */
+  /** 07-20 R8: 계좌 세 칸을 넣거나 바꿀 수 있나(`vendors.account` 쓰기) — 아니면 수정은 읽기 줄, 등록은 칸 자체가 없다(사용자 결정 10/23). 둘 다 세 칸을 보내지 않는다. */
   canEditAccount?: boolean;
   /** 07-20 N6: 지급 기한 빈 칸 placeholder — 회사 기본 일수(설정 payment.term_days). */
   paymentTermDefault: number;
@@ -158,6 +158,8 @@ export function VendorForm({
   const isEditing = editing !== null;
   const defaultKind = editing?.kind ?? newKind;
   const accountReadOnly = isEditing && !canEditAccount;
+  // 사용자 결정(2026-10-23): 계좌 권한 없는 편집자의 등록에는 계좌 칸을 그리지 않는다(권한 없는 칸은 안 그림 · 서버 createVendor도 거부).
+  const accountHidden = !isEditing && !canEditAccount;
   const router = useRouter();
   const panelRef = useRef<PanelFormHandle>(null);
   // 제출 직후 같은 틱의 두 번째 제출(Ctrl+Enter 연타)을 막는 동기 가드 — isExecuting은 다음 렌더에야 참이 된다(D7 · R15-ii).
@@ -469,22 +471,25 @@ export function VendorForm({
         </div>
       ) : null}
       <TextField id="name" name="name" label="이름" required defaultValue={editing?.name ?? workplace?.name} error={nameError} />
-      <Form.Field id="kind" label="갈래">
-        <Select
-          id="kind"
-          name="kind"
-          options={workplace ? WORK_KIND_OPTIONS : KIND_OPTIONS}
-          hideEmptyOption
-          defaultValue={defaultKind}
-          error={kindError}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (!isVendorKind(next)) return;
-            setKind(next);
-            if (!servesSide(next, "supplier")) setTermDays("");
-          }}
-        />
-      </Form.Field>
+      {/* 게이트 P2: Form.Field 줄은 아래 간격이 없다(TextField 줄만 16px) — card-form.tsx `.field` 감싸개 결로 칸 사이 --s-4를 맞춘다. */}
+      <div className={styles.field}>
+        <Form.Field id="kind" label="갈래">
+          <Select
+            id="kind"
+            name="kind"
+            options={workplace ? WORK_KIND_OPTIONS : KIND_OPTIONS}
+            hideEmptyOption
+            defaultValue={defaultKind}
+            error={kindError}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (!isVendorKind(next)) return;
+              setKind(next);
+              if (!servesSide(next, "supplier")) setTermDays("");
+            }}
+          />
+        </Form.Field>
+      </div>
       <div className={styles.businessNoGroup}>
         <TextField
           id="businessNo"
@@ -537,17 +542,19 @@ export function VendorForm({
       ) : null}
 
       {workplace ? null : (
-        <Form.Field id="defaultEvidenceType" label="기본 증빙 종류">
-          <Select
-            id="defaultEvidenceType"
-            name="defaultEvidenceType"
-            options={evidenceTypes}
-            defaultValue={editing?.defaultEvidenceType ?? ""}
-          />
-        </Form.Field>
+        <div className={styles.field}>
+          <Form.Field id="defaultEvidenceType" label="기본 증빙 종류">
+            <Select
+              id="defaultEvidenceType"
+              name="defaultEvidenceType"
+              options={evidenceTypes}
+              defaultValue={editing?.defaultEvidenceType ?? ""}
+            />
+          </Form.Field>
+        </div>
       )}
 
-      {accountReadOnly && editing ? (
+      {accountHidden ? null : accountReadOnly && editing ? (
         // 07-20 R8: 계좌 수정 권한이 없으면 세 칸은 읽기 줄(번호는 마스킹) — 폼은 세 칸을 보내지 않는다.
         <KvList
           items={[
@@ -733,18 +740,20 @@ function VendorCustomField({
     // disabled 옵션은 FormData에서 빠져 「안 바꿈」과 「지움」을 구분할 수 없다(UI-SPEC O2). 판정은 서버(05)가 한다.
     const archivedValue = stringValue !== "" && !options.includes(stringValue) ? stringValue : null;
     return (
-      <Form.Field id={id} label={def.label}>
-        <Select
-          id={id}
-          name={id}
-          options={[
-            ...options.map((option) => ({ value: option, label: option })),
-            ...(archivedValue !== null ? [{ value: archivedValue, label: `${archivedValue} (보관됨)` }] : []),
-          ]}
-          defaultValue={stringValue}
-          error={error}
-        />
-      </Form.Field>
+      <div className={styles.field}>
+        <Form.Field id={id} label={def.label}>
+          <Select
+            id={id}
+            name={id}
+            options={[
+              ...options.map((option) => ({ value: option, label: option })),
+              ...(archivedValue !== null ? [{ value: archivedValue, label: `${archivedValue} (보관됨)` }] : []),
+            ]}
+            defaultValue={stringValue}
+            error={error}
+          />
+        </Form.Field>
+      </div>
     );
   }
 

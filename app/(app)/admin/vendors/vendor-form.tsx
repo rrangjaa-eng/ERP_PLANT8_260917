@@ -13,6 +13,7 @@ import {
   markVendorConfirmedAction,
   unmarkVendorConfirmedAction,
 } from "./actions";
+import { registerVendorFromWorkAction, pickExistingVendorFromWorkAction } from "@/app/(app)/expenses/actions";
 import { CONTACTS_ADD_ID, VendorContacts, readContacts, type VendorContactValue } from "./vendor-contacts";
 import { TextField } from "@/ui/input/TextField";
 import { Form } from "@/ui/form/Form";
@@ -70,6 +71,17 @@ type BusinessNoConflict = {
   hidden: boolean;
   addSide: VendorSide | null;
   message: string;
+  /** 07-23 K20 — 일하는 자리 등록: 지급처로 고를 수 있는 거래처(숨김 · 보관 아님)면 3차 `이 거래처로`. */
+  selectable?: boolean;
+};
+
+// 07-23 SC-18 · K20: 일하는 자리(지출결의 지급처 고르기)에서 연 등록 패널 — 저장 · 충돌 줄 행동만 바꾼다. 결과 거래처를 넘기면 호출부가 지급처 칸을 채운다.
+export type WorkplaceVendor = { id: string; name: string; defaultEvidenceType: string | null; confirmed: boolean };
+export type WorkplaceRegister = {
+  /** 이름 칸 첫 값(고르기 검색어). */
+  name: string;
+  /** 등록(registered) 또는 `이 거래처로`(picked)로 정해진 거래처 — 끝나면 패널이 닫힌다. */
+  onVendor: (vendor: WorkplaceVendor, how: "registered" | "picked") => void | Promise<void>;
 };
 
 function existingVendorHref(conflict: BusinessNoConflict): string {
@@ -92,6 +104,14 @@ function customFieldDefaultValue(def: VendorFieldDefinition, value: unknown): st
 }
 
 const KIND_OPTIONS = VENDOR_KINDS.map((kind) => ({ value: kind, label: VENDOR_KIND_LABELS[kind] }));
+// 일하는 자리 등록은 지급처가 될 수 있는 갈래만(클라이언트 전용은 지급처로 못 고른다 — 할 수 없는 선택지는 숨긴다).
+const WORK_KIND_OPTIONS = KIND_OPTIONS.filter((option) => servesSide(option.value, "supplier"));
+
+// 등록 · 고르기 결과 거래처(VendorDto — 「거래처 정보」를 못 보면 칸이 빠진다)를 지급처 칸 값으로.
+function workplaceVendorOf(vendor: { id?: string; name?: string; defaultEvidenceType?: string | null; confirmedAt?: Date | null } | undefined): WorkplaceVendor | null {
+  if (!vendor?.id || vendor.name === undefined) return null;
+  return { id: vendor.id, name: vendor.name, defaultEvidenceType: vendor.defaultEvidenceType ?? null, confirmed: Boolean(vendor.confirmedAt) };
+}
 
 // 07-20 J5: 지급 기한 칸 글자 → 보낼 값. 빈 칸 = 회사 기본(null), 숫자만 받는다(그 밖은 NaN — 서버 zod가 막는다).
 function paymentTermDaysValue(raw: string): number | null {
@@ -116,6 +136,7 @@ export function VendorForm({
   canEditAccount = true,
   paymentTermDefault,
   contacts = [],
+  workplace = null,
   children,
 }: {
   evidenceTypes: EvidenceTypeOption[];
@@ -131,6 +152,8 @@ export function VendorForm({
   contacts?: VendorContactValue[];
   /** 07-23 SC-17 ⑨⑩: 수정 패널 맨 아래 섹션(서류 · 계좌 변경 기록) — 등록 패널에는 없다. */
   children?: ReactNode;
+  /** 07-23 SC-18: 일하는 자리 등록 — 지급 기한 · 기본 증빙 종류 · 담당자 · 사용자 정의 칸을 그리지 않고, 성공하면 결과를 넘기고 닫힌다. */
+  workplace?: WorkplaceRegister | null;
 }) {
   const isEditing = editing !== null;
   const defaultKind = editing?.kind ?? newKind;
@@ -154,7 +177,7 @@ export function VendorForm({
   // 07-20 J5: 갈래에 협력사가 있을 때만 지급 기한 칸 — 클라이언트로 바꾸면 칸이 사라지고 값을 비운다.
   const [kind, setKind] = useState<VendorKind>(defaultKind);
   const [termDays, setTermDays] = useState(editing?.paymentTermDays?.toString() ?? "");
-  const showTermDays = servesSide(kind, "supplier");
+  const showTermDays = servesSide(kind, "supplier") && workplace === null;
 
   // 두 액션 모두 훅 규칙대로 매 렌더 무조건 호출하고, isEditing으로 어느
   // 쪽 결과를 화면에 쓸지만 고른다(조건부 훅 호출 금지).
@@ -190,7 +213,30 @@ export function VendorForm({
       submitLockRef.current = false;
     },
   });
-  const { result, isExecuting, reset } = isEditing ? updateState : createState;
+  // 07-23 SC-18: 일하는 자리 등록 — 성공하면 지급처 칸을 채우게 넘기고 닫는다(패널 intent edit). 실패는 관리 화면 등록과 같은 칸 오류 · 충돌 줄.
+  const workState = useAction(registerVendorFromWorkAction, {
+    onSuccess: async ({ data }) => {
+      if (data && "businessNoConflict" in data) {
+        setBusinessNoConflict(data.businessNoConflict);
+        return;
+      }
+      const vendor = workplaceVendorOf(data?.vendor);
+      if (vendor && workplace) await workplace.onVendor(vendor, "registered");
+      panelRef.current?.succeed();
+    },
+    onSettled: () => {
+      submitLockRef.current = false;
+    },
+  });
+  // K20 `이 거래처로` — 이미 있는 거래처를 지급처로(클라이언트 전용이면 서버가 둘 다로 올린다).
+  const pickExistingState = useAction(pickExistingVendorFromWorkAction, {
+    onSuccess: async ({ data }) => {
+      const vendor = workplaceVendorOf(data?.vendor);
+      if (vendor && workplace) await workplace.onVendor(vendor, "picked");
+      panelRef.current?.succeed();
+    },
+  });
+  const { result, isExecuting, reset } = workplace ? workState : isEditing ? updateState : createState;
   // 「갈래 더하기」 — 기존 거래처의 갈래만 켜고 그 거래처 수정 패널로 넘어간다(입력하던 칸은 옮기지 않는다).
   const addKindState = useAction(addVendorKindAction, {
     onSuccess: () => {
@@ -222,6 +268,7 @@ export function VendorForm({
     setVersionConflict(null);
     // 지난 「갈래 더하기」 실패 문구는 새 제출과 무관하다 — 남기면 등록이 성공해도 칸이 오류로 보인다.
     addKindState.reset();
+    pickExistingState.reset();
     const formData = new FormData(event.currentTarget);
     submittedBusinessNoRef.current = getStringField(formData, "businessNo");
 
@@ -245,7 +292,17 @@ export function VendorForm({
       paymentTermDays: showTermDays ? paymentTermDaysValue(termDays) : null,
     };
 
-    if (isEditing) {
+    if (workplace) {
+      // 07-23 SC-18: 일하는 자리 등록 — 이름 · 갈래 · 사업자 번호 · 계좌 세 칸만(그 밖의 칸은 그리지 않았다).
+      workState.execute({
+        name: baseFields.name,
+        kind: baseFields.kind,
+        businessNo: baseFields.businessNo,
+        accountBank: getStringField(formData, "accountBank") || undefined,
+        accountHolder: getStringField(formData, "accountHolder") || undefined,
+        accountNumber: getStringField(formData, "accountNumber") || undefined,
+      });
+    } else if (isEditing) {
       // 07-20 R8 · B-P2-4: 읽기 줄이면 계좌 세 칸을 아예 보내지 않는다(서버가 저장값 유지). 입력 칸이면 빈 값까지 보낸다(빈 값 = 비움).
       // 계좌번호 — 「지우기」 체크 시 null(지움), 칸이 비었으면 undefined(안 바꿈, M-5), 값이 있으면 그 문자열(새 값으로 교체).
       const account = accountReadOnly
@@ -324,8 +381,16 @@ export function VendorForm({
   // 같은 사업자번호 오류 줄의 다음 한 수 — 「원인 · 다음 행동」 한 줄 안에 붙인다(field-definition-form 「보관함에서 복원」과 같은 모양).
   // 「거래처 정보」를 못 보면(name null) 링크를 내지 않고, 「갈래 더하기」가 실패하면 다시 눌러도 같은 실패라 치운다.
   // 07-20 V5 · K20: 같은 갈래면 3차 `열기`(`?editId=` 그 거래처 수정 패널), 갈래가 다르면 3차 `갈래 더하기`.
-  const conflictAction =
-    businessNoConflict && businessNoConflict.name !== null && !addKindState.result.serverError ? (
+  // 07-23 K20: 일하는 자리에서는 3차가 `이 거래처로`(고를 수 있는 거래처만 — 숨김 · 보관이면 문구만).
+  const workConflictAction =
+    workplace && businessNoConflict?.selectable && !pickExistingState.result.serverError ? (
+      <Button variant="tertiary" pending={pickExistingState.isExecuting} onClick={() => pickExistingState.execute({ id: businessNoConflict.id })}>
+        이 거래처로
+      </Button>
+    ) : null;
+  const conflictAction = workplace
+    ? workConflictAction
+    : businessNoConflict && businessNoConflict.name !== null && !addKindState.result.serverError ? (
       businessNoConflict.archived ? (
         <Link href="/admin/archive" className={buttonLinkClassName("tertiary")}>
           보관함에서 복원
@@ -369,14 +434,16 @@ export function VendorForm({
     (serverReason?.text ?? null)
   );
 
-  const businessNoError = conflictAction ? undefined : (addKindState.result.serverError ?? businessNoConflict?.message ?? businessNoBlurError ?? undefined);
+  const businessNoError = conflictAction
+    ? undefined
+    : (pickExistingState.result.serverError ?? addKindState.result.serverError ?? businessNoConflict?.message ?? businessNoBlurError ?? undefined);
 
   return (
     <PanelForm
       ref={panelRef}
       id="vendor-form"
       label={isEditing ? "거래처 저장" : "거래처 등록"}
-      intent={isEditing ? "edit" : "create"}
+      intent={isEditing || workplace ? "edit" : "create"}
       onSubmit={handleSubmit}
       pending={isExecuting}
       blockedReason={blocked ? serverReason?.text : undefined}
@@ -401,12 +468,12 @@ export function VendorForm({
           </FormAlert>
         </div>
       ) : null}
-      <TextField id="name" name="name" label="이름" required defaultValue={editing?.name} error={nameError} />
+      <TextField id="name" name="name" label="이름" required defaultValue={editing?.name ?? workplace?.name} error={nameError} />
       <Form.Field id="kind" label="갈래">
         <Select
           id="kind"
           name="kind"
-          options={KIND_OPTIONS}
+          options={workplace ? WORK_KIND_OPTIONS : KIND_OPTIONS}
           hideEmptyOption
           defaultValue={defaultKind}
           error={kindError}
@@ -469,14 +536,16 @@ export function VendorForm({
         </div>
       ) : null}
 
-      <Form.Field id="defaultEvidenceType" label="기본 증빙 종류">
-        <Select
-          id="defaultEvidenceType"
-          name="defaultEvidenceType"
-          options={evidenceTypes}
-          defaultValue={editing?.defaultEvidenceType ?? ""}
-        />
-      </Form.Field>
+      {workplace ? null : (
+        <Form.Field id="defaultEvidenceType" label="기본 증빙 종류">
+          <Select
+            id="defaultEvidenceType"
+            name="defaultEvidenceType"
+            options={evidenceTypes}
+            defaultValue={editing?.defaultEvidenceType ?? ""}
+          />
+        </Form.Field>
+      )}
 
       {accountReadOnly && editing ? (
         // 07-20 R8: 계좌 수정 권한이 없으면 세 칸은 읽기 줄(번호는 마스킹) — 폼은 세 칸을 보내지 않는다.
@@ -526,9 +595,9 @@ export function VendorForm({
         </>
       )}
 
-      <VendorContacts initial={contacts} error={contactsError} />
+      {workplace ? null : <VendorContacts initial={contacts} error={contactsError} />}
 
-      {fieldDefs.length > 0 ? (
+      {fieldDefs.length > 0 && !workplace ? (
         <div className={styles.customFields} data-testid="vendor-custom-fields">
           {fieldDefs.map((def) => (
             <VendorCustomField

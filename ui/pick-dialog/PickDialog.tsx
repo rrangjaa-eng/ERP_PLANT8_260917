@@ -75,6 +75,11 @@ type PickDialogBaseProps = {
   emptyNextStep?: { label: string; onSelect: () => void } | null;
   /** 06-29(C13) — 목록 로드 오류 줄의 명사형 이름(기본 `목록 불러오기 실패`). 뒤에 ` · ` + 2차 `다시 시도`. */
   failedLine?: string;
+  /**
+   * 07-23(SC-18 · U11) — 검색어가 있을 때의 끝 3차(예 `새 거래처 · "{검색어}"`). 다듬은 검색어를 받아 라벨 · 동작을 돌려준다. 주면 검색어가 있는 한
+   * 결과 목록 맨 끝에 늘 서고, 0건이면 빈 문구 뒤(`검색 지우기` 자리)에 선다. 누르면 목록을 먼저 닫고 `onSelect()`. 안 주면 05 그대로.
+   */
+  searchTail?: (query: string) => { label: string; onSelect: () => void };
 };
 
 export type PickDialogSingleProps = PickDialogBaseProps & {
@@ -135,6 +140,15 @@ export function pickRejectionClears(rejectedId: string | null, next: PickRow | n
   return next !== null && next.selectable && next.id !== rejectedId;
 }
 
+// 07-23 SC-18 — 검색어 끝 3차를 세울지(다듬은 검색어가 있고 prop이 있을 때만).
+export function pickSearchTail(
+  query: string,
+  tail: ((query: string) => { label: string; onSelect: () => void }) | undefined,
+): { label: string; onSelect: () => void } | null {
+  const trimmed = query.trim();
+  return tail && trimmed !== "" ? tail(trimmed) : null;
+}
+
 // 06.1 SP-6106 ⑸ — 넘침 바닥 줄(`limit` 기본 50).
 export function pickTruncatedText(limit: number | undefined): string {
   return `${limit ?? 50}건 넘음 · 검색으로 좁히기`;
@@ -160,7 +174,7 @@ export function PickDialog(props: PickDialogProps) {
 const DEFAULT_FAILED_LINE = "목록 불러오기 실패";
 
 function PickDialogInner(props: PickDialogProps) {
-  const { onClose, title, subtitle, searchLabel, search, primaryLabel, noun, emptyNextStep, failedLine = DEFAULT_FAILED_LINE } = props;
+  const { onClose, title, subtitle, searchLabel, search, primaryLabel, noun, emptyNextStep, failedLine = DEFAULT_FAILED_LINE, searchTail } = props;
   const many = props.mode === "multiple" ? props : null;
   const single = props.mode === "multiple" ? null : props;
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -387,6 +401,20 @@ function PickDialogInner(props: PickDialogProps) {
     </Button>
   ) : null;
 
+  // 07-23 SC-18 — 보이는 목록이 지금 검색어의 결과일 때만(오는 중 · 오류 중에는 옛 검색어로 등록하지 않는다).
+  const tail = !loading && !failed && result !== null ? pickSearchTail(query, searchTail) : null;
+  const tailButton = tail ? (
+    <Button
+      variant="tertiary"
+      onClick={() => {
+        closeNow();
+        tail.onSelect();
+      }}
+    >
+      {tail.label}
+    </Button>
+  ) : null;
+
   let empty: ReactNode = null;
   if (noSearchHit) {
     if (query.trim() === "" && result?.emptyDefault) {
@@ -415,15 +443,17 @@ function PickDialogInner(props: PickDialogProps) {
       empty = (
         <p className={styles.empty}>
           {`${pickEmptyText(noun, "no-match")} · `}
-          <Button
-            variant="tertiary"
-            onClick={() => {
-              setQuery("");
-              searchInputRef.current?.focus();
-            }}
-          >
-            검색 지우기
-          </Button>
+          {tailButton ?? (
+            <Button
+              variant="tertiary"
+              onClick={() => {
+                setQuery("");
+                searchInputRef.current?.focus();
+              }}
+            >
+              검색 지우기
+            </Button>
+          )}
         </p>
       );
     }
@@ -534,6 +564,7 @@ function PickDialogInner(props: PickDialogProps) {
             {empty}
             {noneSelectable && !empty && !noneSelectableReason ? <p className={styles.empty}>{pickEmptyText(noun, "none-selectable")}</p> : null}
             {result?.truncated ? <p className={styles.more}>{pickTruncatedText(result.limit)}</p> : null}
+            {tailButton && rows.length > 0 ? <p className={styles.more}>{tailButton}</p> : null}
           </>
         )}
       </div>

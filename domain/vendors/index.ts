@@ -739,6 +739,93 @@ export async function unmarkVendorConfirmed(
   return setVendorConfirmedState(viewer, input.id, false, deps);
 }
 
+// 07-23 SC-18 · D-745 · K20: 일하는 자리(지출결의 지급처 고르기) 거래처 바로 등록 · 이미 있는 거래처 고르기.
+export type WorkVendorInput = {
+  name: string;
+  kind?: VendorKind;
+  businessNo?: string | null;
+  accountBank?: string | null;
+  accountHolder?: string | null;
+  accountNumber?: string | null;
+};
+
+export class WorkVendorKindError extends UserFacingError {}
+
+const EXPENSES_MENU = "expenses";
+const WORK_SOURCE = "workplace";
+const WORK_NOT_PICKABLE_MESSAGE = "고를 수 없는 거래처 · 다른 거래처 고르기";
+
+// 권한 = 지출결의 쓰기(G13 「누구나」 — 거래처 화면 권한 없이). 판정은 관리 화면 등록과 같은 함수(사업자 번호 검증합 · 중복 · 계좌 칸 · 07-20 계좌 자릿수 ·
+// 예금주 필수). 갈래는 지급처가 될 수 있는 것만(협력사 · 둘 다 — 기본 협력사 D-745), 지급 기한은 회사 기본(NULL), 사용자 정의 칸 없음.
+// 확인 전(confirmed_at NULL — 경영관리가 거래처 패널에서 사후 확인 V4). 같은 사업자 번호면 DuplicateBusinessNoError(그 거래처 id · 이름 · 숨김 · 보관 —
+// 화면이 숨김 · 보관 아닌 것만 `이 거래처로`로 고르게 한다).
+export async function registerVendorFromWork(viewer: Viewer, input: WorkVendorInput, deps?: Partial<VendorWriteDeps>): Promise<VendorDto> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, EXPENSES_MENU, "write"))) throw new ForbiddenError("거래처 등록 권한 없음");
+  const kind = input.kind ?? "supplier";
+  if (!servesSide(kind, "supplier")) throw new WorkVendorKindError("갈래 선택");
+  const visibleFn = deps?.visible ?? defaultVisible;
+  assertBusinessNoValid(input.businessNo);
+  await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: kind, visible: visibleFn, can: canFn });
+  const accountNumber = assertAccountInput(
+    { bank: null, holder: null, hasNumber: false },
+    { bank: input.accountBank ?? null, holder: input.accountHolder ?? null, number: input.accountNumber },
+  );
+  const accountNumberPlan = planAccountNumberUpdate(accountNumber);
+
+  let row: VendorRow;
+  try {
+    row = await repoInsertVendor(viewer, {
+      name: input.name,
+      normalizedName: normalizeVendorName(input.name),
+      businessNo: input.businessNo ?? null,
+      defaultEvidenceType: null,
+      accountBank: present(input.accountBank),
+      accountHolder: present(input.accountHolder),
+      accountNumberEncrypted: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null,
+      accountNumberLast4: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null,
+      customFields: {},
+      kind,
+      paymentTermDays: null,
+      confirmedAt: null,
+      confirmedBy: null,
+    });
+  } catch (error) {
+    if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
+      await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: kind, visible: visibleFn, can: canFn });
+    }
+    throw error;
+  }
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await recordAction(viewer, { actionType: "document_create", entity: VENDOR_ENTITY, entityId: row.id, detail: { source: WORK_SOURCE } });
+  return toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY));
+}
+
+// K20 `이 거래처로` — 등록 패널의 중복 줄에서 이미 있는 거래처를 지급처로 고른다. 숨김 · 보관은 고를 수 없다(지급처 고르기 목록과 같은 규칙).
+// 클라이언트 전용이면 D31(06.1 증빙 자동 등록)과 같은 꼴로 둘 다로 올리고 행동 로그(전 · 후 갈래)를 같은 트랜잭션에 남긴다.
+export async function pickExistingVendorFromWork(
+  viewer: Viewer,
+  input: { id: string },
+  deps?: Partial<Pick<VendorWriteDeps, "can" | "recordAction">>,
+): Promise<VendorDto> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, EXPENSES_MENU, "write"))) throw new ForbiddenError("거래처 고르기 권한 없음");
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  const row = await withTransaction(async (tx) => {
+    const locked = await repoFindVendorByIdForUpdate(viewer, input.id, tx);
+    if (!locked || locked.archivedAt !== null || locked.hidden) throw new UserFacingError(WORK_NOT_PICKABLE_MESSAGE);
+    if (vendorKindToAdd(locked.kind, "supplier", false) === null) return locked;
+    await repoUpdateVendor(viewer, locked.id, { kind: "both" }, tx);
+    await recordAction(
+      viewer,
+      { actionType: "document_update", entity: VENDOR_ENTITY, entityId: locked.id, detail: { source: WORK_SOURCE, kind: { from: locked.kind, to: "both" } } },
+      { tx },
+    );
+    return (await repoFindVendorByIdForUpdate(viewer, locked.id, tx)) ?? locked;
+  });
+  return toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY));
+}
+
 // 숨김 플래그 — 보관함(archived)과는 다른 메커니즘이다(03-UI-SPEC.md 비활성화
 // 표현 규칙). 되돌릴 수 있는 상태 변경이라 OPS-05 핵심 행동 종류에 대응하는
 // 항목이 없어 recordAction을 부르지 않는다(setCodeItemActive·

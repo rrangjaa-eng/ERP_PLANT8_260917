@@ -12,6 +12,7 @@ import { collectionOverdueKind } from "@/domain/notify/kinds/collection-overdue"
 import { quoteNudgeKind } from "@/domain/notify/kinds/quote-nudge";
 import { rejectedIdleKind } from "@/domain/notify/kinds/rejected-idle";
 import { settleNudgeKind } from "@/domain/notify/kinds/settle-nudge";
+import { vendorAccountChangedKind } from "@/domain/notify/kinds/vendor-account-changed";
 import type { NotifyTx } from "@/repositories/notifications";
 
 export { NOTIFY_EVENT_LOOKBACK_DAYS, NOTIFY_KIND_EVAL_MAX } from "@/domain/notify/limits";
@@ -72,7 +73,9 @@ export const CONDITION_KINDS: readonly ConditionKind[] = [
   settleNudgeKind,
   rejectedIdleKind,
   quoteNudgeKind,
+  // 07-23(N14 · D-716) 계좌 바뀜 — SC-07 표에서 견적 재촉 다음 · 임자 없는 증빙 앞(꺼 둔 종류).
+  vendorAccountChangedKind,
   orphanEvidenceKind,
-  // 07-22(N22 · D-716) 수금 지연 — SC-07 마지막 행(07-23 계좌 바뀜은 견적 재촉과 임자 없는 증빙 사이).
+  // 07-22(N22 · D-716) 수금 지연 — SC-07 마지막 행.
   collectionOverdueKind,
 ];

@@ -56,7 +56,8 @@ describe("등록부 (SC-07 순서 · D-718 · D-744)", () => {
       "settle-nudge",
       "rejected-idle",
       "quote-nudge",
-      // 07-23 계좌 바뀜은 여기(견적 재촉과 임자 없는 증빙 사이)에 끼운다.
+      // 07-23 계좌 바뀜 — 견적 재촉과 임자 없는 증빙 사이.
+      "vendor-account-changed",
       "orphan-evidence",
       // 07-22 수금 지연 — SC-07 마지막 행.
       "collection-overdue",

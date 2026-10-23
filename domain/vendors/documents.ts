@@ -14,7 +14,8 @@ import { findVendorDocumentById, listVendorDocumentFiles, replaceOtherVendorDocu
 // 05 domain/evidence의 주인 표 `vendor_document` 줄이 부른다(이 파일은 evidence 도메인을 import하지 않는다 — 순환 · 07-22 프로젝트 서류와 같은 꼴).
 // 파일 하나 = 서류 행 하나(files.owner_id = vendor_documents.id). 사업자등록증 · 통장 사본 각 한 자리 — 새 파일을 넣기 직전(beforeAdd) 같은
 // 거래처 · 같은 종류의 이전 서류 행과 그 파일을 같은 트랜잭션에서 뗀다. 보기 · 붙이기 = `vendors.account` 쓰기(통장 사본에 계좌 전체 — D-739 「계좌 · 서류 수정」),
-// 그 밖의 거래처 보기 권한자는 개수만. 260907에는 거래처 서류가 없었다(UI-SPEC SC-17 「260907」 줄).
+// 그 밖의 거래처 보기 권한자는 개수만. 260907 vendor_documents 표(db/schema/010_tables.sql:5314-5345 — 사업자등록증 · 통장사본 · 신분증, 알맹이는 저장소)와 같은 뜻에
+// 종류는 둘(신분증은 이 플랜 범위 밖), 알맹이는 05 증빙 파일 한 벌로 둔다.
 
 export const VENDOR_DOCUMENT_KIND = "vendor_document";
 export const VENDOR_DOCUMENT_KINDS = ["registration", "bankbook"] as const satisfies readonly VendorDocumentKind[];

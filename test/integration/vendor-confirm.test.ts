@@ -5,10 +5,21 @@ import { db } from "@/db/client";
 import { actionLog, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { withTransaction } from "@/lib/db-transaction";
-import { businessNoProblem, createVendor, ForbiddenError, markVendorConfirmed, unmarkVendorConfirmed } from "@/domain/vendors";
+import {
+  businessNoProblem,
+  createVendor,
+  DuplicateBusinessNoError,
+  ForbiddenError,
+  markVendorConfirmed,
+  pickExistingVendorFromWork,
+  registerVendorFromWork,
+  unmarkVendorConfirmed,
+} from "@/domain/vendors";
+import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { ensureVendorsForLines } from "@/domain/evidence-import/vendor-autocreate";
 import { EVIDENCE_FORMATS } from "@/domain/evidence-import/registry";
 import { insertRole } from "@/repositories/roles";
+import { insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { makePerson } from "./approvals-fixtures";
 
@@ -27,6 +38,22 @@ async function vendorRow(id: string) {
   const [row] = await db.select().from(vendors).where(eq(vendors.id, id));
   if (!row) throw new Error("거래처 없음");
   return row;
+}
+
+// 검증합을 맞춘 사업자번호(숫자 10자리).
+function validBusinessNo(): string {
+  const digits = `${Math.floor(Math.random() * 9e9) + 1e9}`;
+  const valid = Array.from({ length: 10 }, (_, d) => `${digits.slice(0, 9)}${d}`).find((candidate) => businessNoProblem(candidate) === null);
+  if (!valid) throw new Error("검증합 번호 없음");
+  return valid;
+}
+
+// 지출결의 쓰기만 가진 직원(거래처 화면 권한 없음) · 지출결의 쓰기도 없는 사람.
+async function makeExpenseWriter(opts: { expenses: boolean }): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `일자리-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+  if (opts.expenses) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "write", allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "vendor.value", visible: true });
+  return makePerson(opts.expenses ? "기획사원" : "구경꾼", role.id, null);
 }
 
 // 06.1 증빙 등록이 쓰는 자동 등록 경로 그대로(사업자번호 있는 줄 → 없으면 협력사로 만든다).
@@ -95,5 +122,67 @@ describe("확인 표시 (V4)", () => {
     expect(row.confirmedAt).toBeNull();
     expect(row.version).toBe(before.version);
     expect(await db.select().from(actionLog).where(and(eq(actionLog.actionType, "vendor_confirm"), eq(actionLog.entityId, autoId)))).toHaveLength(0);
+  });
+});
+
+describe("일하는 자리 등록 (SC-18 · D-745 · K20)", () => {
+  it("지출결의 쓰기 보유자 → 저장 · 확인 전 · 갈래 없으면 협력사 · 계좌 세 칸 · 행동 로그(거래처 화면 권한 없이)", async () => {
+    const staff = await makeExpenseWriter({ expenses: true });
+    const vendor = await registerVendorFromWork(staff, { name: `일자리-${randomUUID()}`, accountBank: "국민", accountHolder: "주식회사 일자리", accountNumber: "123-456-789012" });
+    const row = await vendorRow(vendor.id);
+    expect(row.confirmedAt).toBeNull();
+    expect(row.confirmedBy).toBeNull();
+    expect(row.kind).toBe("supplier");
+    expect(row.accountBank).toBe("국민");
+    expect(row.accountHolder).toBe("주식회사 일자리");
+    expect(row.accountNumberLast4).toBe("9012");
+    const logs = await db.select().from(actionLog).where(and(eq(actionLog.entityId, vendor.id), eq(actionLog.actorId, staff.id)));
+    expect(logs.map((log) => [log.actionType, (log.detail as { source?: string } | null)?.source])).toEqual([["document_create", "workplace"]]);
+  });
+
+  it("지출결의 쓰기 없음 → 거부 · 행 없음", async () => {
+    const outsider = await makeExpenseWriter({ expenses: false });
+    const name = `거부-${randomUUID()}`;
+    await expect(registerVendorFromWork(outsider, { name })).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await db.select().from(vendors).where(eq(vendors.name, name))).toHaveLength(0);
+  });
+
+  it("예금주 없이 은행 · 번호만 → 칸 오류(기존 계좌 판정) · 클라이언트 갈래 → 거부", async () => {
+    const staff = await makeExpenseWriter({ expenses: true });
+    await expect(registerVendorFromWork(staff, { name: `예금주-${randomUUID()}`, accountBank: "국민", accountNumber: "123456789012" })).rejects.toBeInstanceOf(AccountFieldsError);
+    await expect(registerVendorFromWork(staff, { name: `고객-${randomUUID()}`, kind: "client" })).rejects.toThrow("갈래 선택");
+  });
+
+  it("같은 사업자 번호 → 오류에 그 거래처 id · 이름(숨김 · 보관 아님 = 고를 수 있음)", async () => {
+    const staff = await makeExpenseWriter({ expenses: true });
+    const businessNo = validBusinessNo();
+    const existing = await insertVendor(SYSTEM_VIEWER, { name: "이미있음", normalizedName: "이미있음", businessNo, kind: "supplier" });
+    const error = await registerVendorFromWork(staff, { name: "새이름", businessNo }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(DuplicateBusinessNoError);
+    expect((error as DuplicateBusinessNoError).existing).toMatchObject({ id: existing.id, name: "이미있음", hidden: false, archived: false });
+    expect((error as DuplicateBusinessNoError).message).toBe("이미 등록됨 · 이미있음");
+  });
+
+  it("이미 있는 거래처 고르기 — 협력사 · 둘 다는 그대로, 클라이언트 전용은 둘 다로 올리고 행동 로그, 숨김 · 보관은 고를 수 없음", async () => {
+    const staff = await makeExpenseWriter({ expenses: true });
+    const supplier = await insertVendor(SYSTEM_VIEWER, { name: "협력", normalizedName: "협력", kind: "supplier" });
+    const client = await insertVendor(SYSTEM_VIEWER, { name: "고객만", normalizedName: "고객만", kind: "client" });
+    const hidden = await insertVendor(SYSTEM_VIEWER, { name: "숨김", normalizedName: "숨김", kind: "supplier" });
+    await setVendorHidden(SYSTEM_VIEWER, hidden.id, true);
+    const archived = await insertVendor(SYSTEM_VIEWER, { name: "보관", normalizedName: "보관", kind: "supplier" });
+    await setVendorArchived(SYSTEM_VIEWER, archived.id, true);
+
+    expect(await pickExistingVendorFromWork(staff, { id: supplier.id })).toMatchObject({ id: supplier.id, name: "협력" });
+    expect((await vendorRow(supplier.id)).version).toBe(supplier.version);
+
+    await pickExistingVendorFromWork(staff, { id: client.id });
+    expect((await vendorRow(client.id)).kind).toBe("both");
+    const logs = await db.select().from(actionLog).where(eq(actionLog.entityId, client.id));
+    expect(logs.map((log) => [log.actionType, log.detail])).toEqual([["document_update", { source: "workplace", kind: { from: "client", to: "both" } }]]);
+
+    await expect(pickExistingVendorFromWork(staff, { id: hidden.id })).rejects.toThrow("고를 수 없는 거래처");
+    await expect(pickExistingVendorFromWork(staff, { id: archived.id })).rejects.toThrow("고를 수 없는 거래처");
+    const outsider = await makeExpenseWriter({ expenses: false });
+    await expect(pickExistingVendorFromWork(outsider, { id: supplier.id })).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

@@ -1094,14 +1094,16 @@ test.describe("거래처 담당자 · 서류 · 확인 표시 (07-23 SC-17 ⑦�
       await expect(documents.getByText("사업자등록증", { exact: true })).toBeVisible();
       await expect(documents.getByText("통장 사본", { exact: true })).toBeVisible();
 
+      // 올리는 중인 줄에도 파일 이름이 선다 — 마친 줄(크기 · 날짜 줄)까지 기다린다(05 submitLineExpense와 같은 꼴).
+      const done = (name: string) => documents.locator('[data-ui="attachments"] li').filter({ hasText: name }).getByText(/^\d+KB · \d{2}-\d{2}$/);
       await inputs.nth(0).setInputFiles(pdf("등록증1.pdf"));
-      await expect(documents.locator('[data-ui="attachments"] li').filter({ hasText: "등록증1.pdf" })).toBeVisible({ timeout: 20_000 });
+      await expect(done("등록증1.pdf")).toBeVisible({ timeout: 20_000 });
       await inputs.nth(1).setInputFiles(pdf("통장.pdf"));
-      await expect(documents.locator('[data-ui="attachments"] li').filter({ hasText: "통장.pdf" })).toBeVisible({ timeout: 20_000 });
+      await expect(done("통장.pdf")).toBeVisible({ timeout: 20_000 });
       await expect(documents.getByRole("button", { name: /^교체/ })).toHaveCount(2);
 
       await inputs.nth(0).setInputFiles(pdf("등록증2.pdf"));
-      await expect(documents.locator('[data-ui="attachments"] li').filter({ hasText: "등록증2.pdf" })).toBeVisible({ timeout: 20_000 });
+      await expect(done("등록증2.pdf")).toBeVisible({ timeout: 20_000 });
       await page.goto(`/admin/vendors?editId=${vendor.id}`);
       const again = panelOf(page).getByRole("region", { name: "서류" });
       await expect(again.locator('[data-ui="attachments"] li')).toHaveCount(2);

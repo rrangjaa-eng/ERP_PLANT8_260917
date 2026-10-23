@@ -6,7 +6,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { archiveContacts, insertContact, listLiveContacts, lockLiveContacts, updateContact } from "@/repositories/vendor-details";
 
-// 07-23 V7 · N4: 거래처 담당자 — 여럿(260907은 한 명 칸). 거래처 저장과 같은 트랜잭션 · 같은 version 검사로 목록 전체를 맞춘다(보낸 순서 = 정한 순서).
+// 07-23 V7 · N4: 거래처 담당자 — 여럿(260907 vendor_contacts 표와 같은 뜻 — 이름 필수 · 연락처 · 이메일 · 빼면 보관, db/schema/010_tables.sql:5259-5309). 거래처 저장과 같은 트랜잭션 · 같은 version 검사로 목록 전체를 맞춘다(보낸 순서 = 정한 순서).
 // 빠진 줄은 보관한다. 판정(상한 · 이름 · 이메일)은 트랜잭션 전 — 거절이면 거래처 본문도 저장하지 않는다.
 
 export const VENDOR_CONTACTS_MAX = 5;

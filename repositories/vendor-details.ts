@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { expensePayments, expenses, files, users, vendorAccountChanges, vendorContacts, vendorDocuments } from "@/db/schema";
+import { expensePayments, expenses, files, users, vendorAccountChanges, vendorContacts, vendorDocuments, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 07-23: 거래처 묶음 표(07-11 S3) 읽기 · 쓰기 — 계좌 변경 기록 · 담당자 · 서류. 판정(권한 · 노출)은 domain/vendors가 한다.
@@ -49,6 +49,20 @@ export async function findVendorsChangedSinceLastPayment(viewer: Viewer, vendorI
     .groupBy(vendorAccountChanges.vendorId)
     .having(sql`max(${vendorAccountChanges.changedAt}) > coalesce(${lastPaid}, '-infinity'::timestamp)`);
   return rows.map((row) => row.vendorId);
+}
+
+// N14 · 계좌 바뀜 알림(NOTI-03) — 되돌아보기 하한(ctx.since) 뒤 변경 기록을 오래된 순으로(보관 거래처 제외). 상한 + 1행까지 읽어 넘침을 안다.
+export type AccountChangeSinceRow = { vendorId: string; vendorName: string; changedAt: Date };
+
+export async function listAccountChangesSince(viewer: Viewer, since: Date, limit: number, tx: DbOrTx = db): Promise<AccountChangeSinceRow[]> {
+  void viewer;
+  return tx
+    .select({ vendorId: vendorAccountChanges.vendorId, vendorName: vendors.name, changedAt: vendorAccountChanges.changedAt })
+    .from(vendorAccountChanges)
+    .innerJoin(vendors, eq(vendors.id, vendorAccountChanges.vendorId))
+    .where(and(isNull(vendors.archivedAt), sql`${vendorAccountChanges.changedAt} >= ${since.toISOString()}::timestamp`))
+    .orderBy(asc(vendorAccountChanges.changedAt), asc(vendorAccountChanges.id))
+    .limit(limit + 1);
 }
 
 // ── 담당자(V7) ──────────────────────────────────────────────────────────

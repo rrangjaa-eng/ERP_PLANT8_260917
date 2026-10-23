@@ -207,8 +207,11 @@ describe("결재 시트 상세 — 문자열 행", () => {
     expect(valueOf("지급처")).toEqual(["스테이지원"]);
     expect(valueOf("증빙 종류")).toEqual(["세금계산서"]);
     expect(valueOf("공급가액")).toEqual(["12,400,000", "부가세 10% 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙"]);
-    expect(valueOf("지급 예정일")).toEqual(["—"]);
-    expect(detail?.rows.find((row) => row.label === "지급 예정일")?.tone).toBe("muted");
+    // 07-06 D-704: 지급 예정일 = 유효 예정일(빈 칸 없음) — 상세 DTO와 같은 로더 값.
+    const effective = (await getExpense(fx.pm, { expenseId }))?.scheduledPaymentDate;
+    expect(effective).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(valueOf("지급 예정일")).toEqual([effective]);
+    expect(detail?.rows.find((row) => row.label === "지급 예정일")?.tone).toBe("default");
     expect(valueOf("지급 방식")).toEqual(["계좌이체"]);
     expect(valueOf("비고")).toEqual(["1차 선금"]);
   });

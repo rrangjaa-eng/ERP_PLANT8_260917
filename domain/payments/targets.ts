@@ -42,8 +42,8 @@ import { addDays, kstDayStart } from "@/lib/kst-date";
 import { findTransferFileTimes } from "@/repositories/action-log";
 import { canExportBankTransferFile } from "@/domain/payments/transfer-gate";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
-import { loadPaySchedules } from "@/domain/payments/pay-schedule-load";
-import { payWeekGroupLabel, payWeekIndex, type PaySchedule } from "@/domain/payments/pay-schedule";
+import { loadPayCalendar, loadPaySchedules } from "@/domain/payments/pay-schedule-load";
+import { payWeekGroupLabel, payWeekIndex, thisWeekPayDate, type PaySchedule } from "@/domain/payments/pay-schedule";
 
 // 06-15(EXP-09 · UI-SPEC S1): 지급 대상 목록 — 결재 통과 · 지급 전 · 종결 아님 지출결의. 행마다 고를 수 있는지(selectable)와 이유는
 // 06-04 resolveExpenseActionRow(P4 = 고를 수 있음)가 정하고, 그 입력은 문서 화면(getPaymentView)과 같은 게이트 둘(payment.evidence-required ·
@@ -81,29 +81,33 @@ export type JudgedPaymentTarget = {
   evidenceStatus: EvidenceStatus;
   // 「파일만 있음」 — 파일 서식 증빙 종류 ∧ 살아 있는 파일 ≥ 1 ∧ 살아 있는 붙임 0 ∧ 면제 아님(06.1-10 · 06.1-12 묶음 읽기 결과만).
   fileOnly: boolean;
+  // 07-06(D-715 · P1): 판정 때 한 번 셈한 지급 일정 — 지급 총액의 세금 기준일 · 목록 정렬 · 묶음이 이 값 하나를 쓴다.
+  schedule: PaySchedule;
 };
 
 // 07-01(D-715): 지급 일정(유효 예정일 = 수동 지정 ?? 자동)이 붙은 판정 — 목록 · 정렬 · 묶음 · 「다음 확인 전」이 이 값 하나를 쓴다.
 // cutoffReason = gate `payment.cutoff` 판정 이유(그 주 소속 — 통과면 null). 지급 처리 동작은 막지 않는다(D-703 · J7).
-export type ScheduledPaymentTarget = JudgedPaymentTarget & { schedule: PaySchedule; cutoffReason: string | null };
+export type ScheduledPaymentTarget = JudgedPaymentTarget & { cutoffReason: string | null };
 
 async function cutoffReasonOf(row: PaymentTargetRow, schedule: PaySchedule): Promise<string | null> {
   const decision = await gate(row, "payment.cutoff", schedule);
   return decision.allowed ? null : decision.reason;
 }
 
-type JudgeContext = { shared: PaymentShared; today: string; amountVisible: boolean };
+// today = 지급 총액의 지급일 자리(일괄 미리보기는 모달 지급일). scheduleAt = 지급 일정 로더의 오늘 · 지금.
+type JudgeContext = { shared: PaymentShared; today: string; amountVisible: boolean; scheduleAt: { today: string; now: Date } };
 
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // 지급 총액(DB 없음 — 세율은 shared 캐시) — 06-03 basisOf와 같은 순서. 금액 · 세금 규칙이 없으면 null(단건 경로는 TAX_UNAVAILABLE).
-async function payableOf(row: PaymentTargetRow, ctx: JudgeContext): Promise<number | null> {
+// 07-06(P1 · B-P1-3): 기준일 사슬의 지급 예정일 자리는 유효 예정일(이미 셈한 PaySchedule.payDate — 다시 셈하지 않는다).
+async function payableOf(row: PaymentTargetRow, ctx: Pick<JudgeContext, "shared" | "today">, scheduledPaymentDate: string): Promise<number | null> {
   if (row.supplyAmountKrw === null) return null;
   const taxRule = ctx.shared.taxRuleOf(row.evidenceType);
   if (!taxRule) return null;
   const amount = pickPaymentAmount({ supplyAmountKrw: row.supplyAmountKrw });
   const dates = pickTaxDates(
-    { paidDate: ctx.today, scheduledPaymentDate: row.scheduledPaymentDate, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
+    { paidDate: ctx.today, scheduledPaymentDate, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
     { ruleKind: taxRule.ruleKind, codeBasis: taxRule.basisDate, basisWithholding: ctx.shared.basisWithholding, basisVat: ctx.shared.basisVat, todayKst: ctx.today },
   );
   const rates = await ctx.shared.ratesFor(dates.basisDate);
@@ -131,9 +135,14 @@ function isFileOnly(row: PaymentTargetRow, sources: { fileCount: number; linkCou
 }
 
 async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], ctx: JudgeContext): Promise<JudgedPaymentTarget[]> {
-  const withEvidence = await evidenceSourcesOf(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) });
+  const [withEvidence, schedules] = await Promise.all([
+    evidenceSourcesOf(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) }),
+    loadPaySchedules(viewer, rows, ctx.scheduleAt),
+  ]);
   const judged: JudgedPaymentTarget[] = [];
   for (const row of rows) {
+    const schedule = schedules.get(row.id);
+    if (!schedule) continue;
     const hasLiveEvidence = withEvidence.has(row.id);
     const evidenceCtx: EvidenceGateInput = {
       evidenceRequired: ctx.shared.evidenceRequired,
@@ -149,7 +158,7 @@ async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], c
       { approvalState: row.approvalStatus, paid: row.paid, hasEvidence: hasLiveEvidence, waived: evidenceCtx.waived, confirmation: evidenceCtx.confirmation, evidence, pair },
       { canPay: true, amountVisible: ctx.amountVisible },
     );
-    const payableKrw = await payableOf(row, ctx);
+    const payableKrw = await payableOf(row, ctx, schedule.payDate);
     const reason = reasonOf(row, bar, payableKrw);
     judged.push({
       row,
@@ -159,6 +168,7 @@ async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], c
       payableKrw,
       evidenceStatus: resolveEvidenceStatus({ hasEvidence: hasLiveEvidence, prepaid: row.prepaid, review: row.review }),
       fileOnly: isFileOnly(row, withEvidence.get(row.id)),
+      schedule,
     });
   }
   return judged;
@@ -182,15 +192,11 @@ async function assertPayer(viewer: Viewer): Promise<void> {
 
 export type PaymentTargetDeps = Partial<Pick<PaymentSharedDeps, "loadTaxRates">> & { today?: string; now?: Date; shared?: PaymentShared };
 
-// 07-01(D-715): 판정 행마다 지급 일정을 한 번에 붙이고 계산 실패(R15) → 유효 예정일 → 번호 → id로 줄 세운다(목록이 메모리 전체라 도메인이
+// 07-01(D-715): 판정 행(지급 일정은 judgeTargets가 이미 셈함)을 계산 실패(R15) → 유효 예정일 → 번호 → id로 줄 세운다(목록이 메모리 전체라 도메인이
 // 다시 정렬 — repositories/payment-targets.ts의 SQL 순서는 저장 칸 기준 선순서일 뿐이다). 행마다 gate `payment.cutoff` 판정을 붙인다(판정 경로 하나 — EXP-12).
-async function withSchedules(viewer: Viewer, judged: readonly JudgedPaymentTarget[], today: string, now: Date): Promise<ScheduledPaymentTarget[]> {
-  const schedules = await loadPaySchedules(viewer, judged.map((target) => target.row), { today, now });
+async function withSchedules(judged: readonly JudgedPaymentTarget[]): Promise<ScheduledPaymentTarget[]> {
   const scheduled: ScheduledPaymentTarget[] = [];
-  for (const target of judged) {
-    const schedule = schedules.get(target.row.id);
-    if (schedule) scheduled.push({ ...target, schedule, cutoffReason: await cutoffReasonOf(target.row, schedule) });
-  }
+  for (const target of judged) scheduled.push({ ...target, cutoffReason: await cutoffReasonOf(target.row, target.schedule) });
   return scheduled.sort((a, b) => compareTargetKey(targetKeyOf(a), targetKeyOf(b)));
 }
 
@@ -207,7 +213,8 @@ export async function listAllPaymentTargets(
   // 06.5 D-6508: 검색 열은 지급 대상 보기의 DTO 열(기안자 이름 없음 — D2) × 정보 항목. 보는 범위는 visibleRows가 그 뒤에 거른다(AND).
   const search = await buildExpenseSearch(viewer, "paymentTargets", input.q);
   const rows = await visibleRows(viewer, await listPaymentTargetRows(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, teamId, ...(search ? { search } : {}) }), today);
-  const judged = await withSchedules(viewer, await judgeTargets(viewer, rows, { shared, today, amountVisible: await visible(viewer, "expense.amount") }), today, deps?.now ?? new Date());
+  const scheduleAt = { today, now: deps?.now ?? new Date() };
+  const judged = await withSchedules(await judgeTargets(viewer, rows, { shared, today, amountVisible: await visible(viewer, "expense.amount"), scheduleAt }));
   const filter = PAYMENT_EVIDENCE_FILTERS.find((candidate) => candidate.value === input.evidence);
   if (!filter) return judged;
   return filter.row === null ? judged.filter((target) => target.fileOnly) : judged.filter((target) => target.bar.row === filter.row);
@@ -228,6 +235,8 @@ export type PaymentTargetList = {
   // S2 결과 줄 ② `선결제 N건 · 증빙 기한 지급일부터 N일`의 날수(설정).
   prepaidDueDays: number;
   approvingByWeek: ApprovingPaymentWeek[];
+  // 07-06(J9 · K6): 「이번 주로」가 옮길 이번 주 지급일 — 그 날이 지났으면(오늘 > 이번 주 지급일) null(07-16이 `이번 주로`를 숨긴다).
+  thisWeekMove: { payDate: string } | null;
 };
 
 function titleOf(
@@ -313,7 +322,14 @@ export async function listPaymentTargets(
     page: { page, pageCount, total: all.length, pageSize },
     prepaidDueDays: all.some((target) => target.row.prepaid) ? await loadPrepaidDueDays() : 0,
     approvingByWeek: await listApprovingByWeek(viewer, input, { shared, today, now: deps?.now ?? new Date(), amountVisible }),
+    thisWeekMove: await thisWeekMoveOf(today),
   };
+}
+
+async function thisWeekMoveOf(today: string): Promise<{ payDate: string } | null> {
+  const { cfg, lookup } = await loadPayCalendar([Number(today.slice(0, 4))]);
+  const payDate = thisWeekPayDate(today, cfg, lookup);
+  return today > payDate ? null : { payDate };
 }
 
 // 07-01(J11 데이터): 같은 팀 · 검색 조건 · 같은 보임 범위의 결재 중 지출결의를 「지금 승인되면」 일정(approvedAt null → now 기준)으로 셈해
@@ -334,7 +350,7 @@ async function listApprovingByWeek(
     if (!schedule || schedule.failed || schedule.payDate < ctx.today) continue;
     const week = payWeekIndex(schedule.payDate, ctx.today);
     if (week !== 0 && week !== 1) continue;
-    picked.push({ row, schedule, payableKrw: await payableOf(row, ctx), status: (await cutoffReasonOf(row, schedule)) ?? "결재 중" });
+    picked.push({ row, schedule, payableKrw: await payableOf(row, ctx, schedule.payDate), status: (await cutoffReasonOf(row, schedule)) ?? "결재 중" });
   }
   picked.sort((a, b) => compareTargetKey({ failed: false, payDate: a.schedule.payDate, number: a.row.number, id: a.row.id }, { failed: false, payDate: b.schedule.payDate, number: b.row.number, id: b.row.id }));
   const dtos = await projectMany(
@@ -375,11 +391,11 @@ async function transferFileTimes(viewer: Viewer, targets: readonly JudgedPayment
 export async function rejudgePaymentTargets(
   viewer: Viewer,
   ids: readonly string[],
-  ctx: { shared: PaymentShared; today?: string },
+  ctx: { shared: PaymentShared; today?: string; now?: Date },
 ): Promise<Map<string, JudgedPaymentTarget>> {
   const today = ctx.today ?? seoulToday();
   const rows = await visibleRows(viewer, await findPaymentTargetRowsByIds(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, ids }), today);
-  const judged = await judgeTargets(viewer, rows, { shared: ctx.shared, today, amountVisible: await visible(viewer, "expense.amount") });
+  const judged = await judgeTargets(viewer, rows, { shared: ctx.shared, today, amountVisible: await visible(viewer, "expense.amount"), scheduleAt: { today, now: ctx.now ?? new Date() } });
   return new Map(judged.map((target) => [target.row.id, target]));
 }
 
@@ -427,7 +443,7 @@ export async function sumSelectedTransfers(
     today,
   );
   const amountVisible = await visible(viewer, "expense.amount");
-  const judged = await judgeTargets(viewer, rows, { shared, today: input.payDate ?? today, amountVisible });
+  const judged = await judgeTargets(viewer, rows, { shared, today: input.payDate ?? today, amountVisible, scheduleAt: { today, now: deps?.now ?? new Date() } });
   const diffs: Record<string, number> = {};
   const transfers: number[] = [];
   for (const target of judged) {

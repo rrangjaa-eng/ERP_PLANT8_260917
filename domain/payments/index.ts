@@ -42,7 +42,10 @@ import { withTransaction } from "@/lib/db-transaction";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { formatKstTime } from "@/domain/holidays/business-day";
+import { formatKstTime, isBusinessDay, type HolidayLookup } from "@/domain/holidays/business-day";
+import { buildChanges } from "@/domain/action-log/changes";
+import { loadPayCalendar, loadPaySchedules } from "@/domain/payments/pay-schedule-load";
+import { payOffWeekdayText, thisWeekPayDate } from "@/domain/payments/pay-schedule";
 import { evidenceGateInputs, evidenceStampOf, loadPrepaidDueDays, resolveEvidenceStatus, SupplyCorrectionCapError, correctedSupplyColumns, type EvidenceStatus } from "@/domain/evidence-reviews";
 import { prepaidDueInfo, type PrepaidDue } from "@/domain/evidence-reviews/prepaid";
 import { findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repositories/expense-evidence-reviews";
@@ -266,6 +269,8 @@ export type PaymentInputs = {
   drafterName: string;
   amount: PaymentAmount | null;
   tax: (PaymentTax & { rates: TaxRates }) | null;
+  // 07-06(D-715 · P1): 사전 조회 때 셈한 자동 예정일 — 잠금 뒤 판정이 잠근 행의 수동 값 ?? 이 값을 세금 기준일로 쓴다(DB 없음). 없으면 저장값만.
+  autoPayDate?: string;
 };
 
 // 잠근 행이든 사전 조회 행이든 같은 규칙으로 기준(세금 규칙 · 기준일 · 받는 인원 · 금액)을 정한다 — DB 없음.
@@ -305,7 +310,9 @@ export async function loadPaymentInputs(
   const drafterName = (await findUserNamesByIds(viewer, [row.drafterId])).get(row.drafterId) ?? "";
   const today = seoulToday(input.now);
   const payDate = input.payDate ?? null;
-  const basisRow = input.scheduledPayDate === undefined ? row : { ...row, scheduledPaymentDate: input.scheduledPayDate };
+  // 07-06(P1): 세금 기준일의 「지급 예정일」 = 유효 예정일(수동 ?? 자동) — 목록 · 승인 스냅숏과 같은 값.
+  const schedule = (await loadPaySchedules(viewer, [row], { today, now: input.now ?? new Date() })).get(row.id);
+  const basisRow = { ...row, scheduledPaymentDate: input.scheduledPayDate ?? schedule?.payDate ?? row.scheduledPaymentDate };
   const { amount, tax } = basisOf(basisRow, { shared: ctxShared, payDate, today });
   return {
     expenseId: row.id,
@@ -319,6 +326,7 @@ export async function loadPaymentInputs(
     drafterName,
     amount,
     tax: tax ? { ...tax, rates: await ctxShared.ratesFor(tax.dates.basisDate) } : null,
+    ...(schedule ? { autoPayDate: schedule.autoPayDate } : {}),
   };
 }
 
@@ -388,7 +396,10 @@ export async function judgeLockedPayment(input: {
   const pair = await gate(locked, "payment.method-evidence-mismatch", pairGateCtx(locked, input.shared));
   if (!pair.allowed) throw new GateBlockedError(pair.reason);
 
-  const basis = basisOf(locked, { shared: input.shared, payDate: input.payDate, today: pre.today });
+  const basis = basisOf(
+    { ...locked, scheduledPaymentDate: locked.scheduledPaymentDate ?? pre.autoPayDate ?? null },
+    { shared: input.shared, payDate: input.payDate, today: pre.today },
+  );
   if (!sameBasis(pre, { evidenceType: locked.evidenceType, ...basis })) {
     if (!pre.tax || !basis.amount || !basis.tax || basis.tax.dates.basisDate !== pre.tax.rates.asOf) throw new BasisChangedSignal();
     const fresh = await decidePayable(
@@ -627,43 +638,157 @@ export async function cancelExpensePayment(
   });
 }
 
-// ── 지급 예정일 저장(06-04 · SP-3 ②) ───────────────────────────────────
-// 예정일만 바꾼다(미래 날짜 허용 — Q6). 권한은 트랜잭션 전. 한 트랜잭션: 문서 행 FOR UPDATE → version → 결재 통과(같은 tx) →
-// 살아 있는 지급 없음 → 조건 UPDATE(예정일 · version + 1) → 행동 로그 document_update(전후 날짜, 같은 tx).
+// ── 지급 예정일 저장(06-04 · SP-3 ② · 07-06 D-714) ─────────────────────
+// 예정일만 바꾼다(미래 날짜 허용 — Q6). 권한 · 보임은 트랜잭션 전, 공휴일 표도 트랜잭션 전(후보 보장이 쓰기라 행 잠금 tx와 겹치지 않게).
+// 한 트랜잭션: 문서 행 FOR UPDATE → version → 결재 통과(같은 tx) → 살아 있는 지급 없음 → 영업일(null = 자동 복귀는 판정 없음) →
+// 조건 UPDATE(예정일 · 기록 칸 · version + 1) → 끌 수 없는 행동 로그 payment_schedule_change(전후 날짜, 같은 tx).
+const NOT_BUSINESS_DAY = "영업일만 선택 · 다시 선택";
+const THIS_WEEK_PASSED = "이번 주 지급일 지남";
+const NOT_PUSHED = "마감 지나 밀림 아님 · 새로 고침";
+
+async function writeScheduledPayDate(
+  viewer: Viewer,
+  input: { expenseId: string; date: string | null; version: number },
+  ctx: { lookup: HolidayLookup; now: Date },
+  tx: DbOrTx,
+): Promise<{ before: string | null; version: number }> {
+  const locked = await lockExpenseForUpdate(viewer, input.expenseId, tx);
+  if (!locked) throw new PaymentNotFoundError();
+  const conflict = `다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`;
+  if (locked.version !== input.version) throw new PaymentConflictError(conflict);
+  const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
+  const decision = await gate(locked, "payment.approval-required", { approvalState: instance?.status ?? null, stepName: null });
+  if (!decision.allowed) throw new GateBlockedError(decision.reason);
+  if (await findLivePayment(viewer, locked.id, tx)) throw new PaymentConflictError(ALREADY_PAID);
+  if (input.date !== null && !isBusinessDay(input.date, ctx.lookup)) throw new UserFacingError(NOT_BUSINESS_DAY);
+  const version = await updateScheduledPaymentDate(
+    viewer,
+    { expenseId: locked.id, date: input.date, setBy: viewer.id, setAt: ctx.now, expectedVersion: locked.version, updatedBy: viewer.id },
+    tx,
+  );
+  if (version === null) throw new PaymentConflictError(conflict);
+  await recordAction(
+    viewer,
+    {
+      actionType: "payment_schedule_change",
+      entity: "expense",
+      entityId: locked.id,
+      documentId: locked.id,
+      detail: { changes: buildChanges({ scheduledPaymentDate: locked.scheduledPaymentDate }, { scheduledPaymentDate: input.date }) },
+    },
+    { tx },
+  );
+  return { before: locked.scheduledPaymentDate, version };
+}
+
+async function assertSchedulePayer(viewer: Viewer): Promise<void> {
+  if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+}
+
+const yearOf = (date: string) => Number(date.slice(0, 4));
+
+// offWeekday — 수동 날짜가 설정 지급 요일이 아니면 참(저장은 허용, 화면이 `{요일}요일 아님` 한 줄 — C6).
 export async function saveScheduledPayDate(
   viewer: Viewer,
-  input: { expenseId: string; scheduledPayDate: string; version: number },
-): Promise<{ version: number }> {
-  if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+  input: { expenseId: string; scheduledPayDate: string | null; version: number },
+  deps?: { now?: Date },
+): Promise<{ version: number; offWeekday: boolean }> {
+  await assertSchedulePayer(viewer);
   await assertExpenseVisible(viewer, input.expenseId);
-  return withTransaction(async (tx) => {
-    const locked = await lockExpenseForUpdate(viewer, input.expenseId, tx);
-    if (!locked) throw new PaymentNotFoundError();
-    const conflict = `다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`;
-    if (locked.version !== input.version) throw new PaymentConflictError(conflict);
-    const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
-    const decision = await gate(locked, "payment.approval-required", { approvalState: instance?.status ?? null, stepName: null });
-    if (!decision.allowed) throw new GateBlockedError(decision.reason);
-    if (await findLivePayment(viewer, locked.id, tx)) throw new PaymentConflictError(ALREADY_PAID);
-    const version = await updateScheduledPaymentDate(
-      viewer,
-      { expenseId: locked.id, date: input.scheduledPayDate, expectedVersion: locked.version, updatedBy: viewer.id },
-      tx,
-    );
-    if (version === null) throw new PaymentConflictError(conflict);
-    await recordAction(
-      viewer,
-      {
-        actionType: "document_update",
-        entity: "expense",
-        entityId: locked.id,
-        documentId: locked.id,
-        detail: { field: "scheduledPaymentDate", before: locked.scheduledPaymentDate, after: input.scheduledPayDate },
-      },
-      { tx },
-    );
-    return { version };
+  const now = deps?.now ?? new Date();
+  const date = input.scheduledPayDate;
+  const { cfg, lookup } = await loadPayCalendar([yearOf(seoulToday(now)), ...(date ? [yearOf(date)] : [])]);
+  const { version } = await withTransaction((tx) => writeScheduledPayDate(viewer, { expenseId: input.expenseId, date, version: input.version }, { lookup, now }, tx));
+  return { version, offWeekday: date !== null && payOffWeekdayText(date, cfg) !== null };
+}
+
+type ScheduleRejected = { expenseId: string; reason: string };
+
+// 여러 건 저장의 공통 꼴(부분 결과): 보임 사전 조회(트랜잭션 전) → 한 트랜잭션에서 id 순(잠금 순서 고정)으로 건마다 판정 · 저장.
+// 거부는 사용자 오류(UserFacingError)만 그 건의 사유로 모으고, 다른 오류는 전체를 되돌린다(쓰기 전 판정이라 tx는 계속 쓸 수 있다).
+async function eachVisible<Item extends { expenseId: string }>(
+  viewer: Viewer,
+  items: readonly Item[],
+  rejected: ScheduleRejected[],
+): Promise<{ item: Item; row: ExpenseRow }[]> {
+  const visibleItems: { item: Item; row: ExpenseRow }[] = [];
+  for (const item of [...items].sort((a, b) => (a.expenseId < b.expenseId ? -1 : a.expenseId > b.expenseId ? 1 : 0))) {
+    try {
+      visibleItems.push({ item, row: await assertExpenseVisible(viewer, item.expenseId) });
+    } catch (error) {
+      if (!(error instanceof UserFacingError)) throw error;
+      rejected.push({ expenseId: item.expenseId, reason: error.message });
+    }
+  }
+  return visibleItems;
+}
+
+async function rejectOnUserError(rejected: ScheduleRejected[], expenseId: string, run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    if (!(error instanceof UserFacingError)) throw error;
+    rejected.push({ expenseId, reason: error.message });
+  }
+}
+
+// ── 이번 주로(07-06 J9 · K6 · B-P2-3) ──────────────────────────────────
+// 마감 지나 다음 주로 밀린 승인 건(pushReason cutoff)을 이번 주 지급일(07-01 thisWeekPayDate — 상수 요일 아님)로 수동 지정한다.
+// 오늘이 그 날보다 늦으면(K6) 트랜잭션을 열지 않고 전부 거부. 밀림 판정은 트랜잭션 전 로더로(잠근 version이 사전 조회 version과 같아야
+// 저장되므로 판정이 낡지 않는다). 확인 창이 없으므로 서버가 모든 판정을 하고, 건마다 결과를 돌려준다(부분 결과).
+export async function moveToThisWeek(
+  viewer: Viewer,
+  input: { items: readonly { expenseId: string; version: number }[] },
+  deps?: { now?: Date },
+): Promise<{ moved: { expenseId: string; before: string | null; version: number }[]; rejected: ScheduleRejected[] }> {
+  await assertSchedulePayer(viewer);
+  const now = deps?.now ?? new Date();
+  const today = seoulToday(now);
+  const { cfg, lookup } = await loadPayCalendar([yearOf(today)]);
+  const payDate = thisWeekPayDate(today, cfg, lookup);
+  if (today > payDate) return { moved: [], rejected: input.items.map((item) => ({ expenseId: item.expenseId, reason: THIS_WEEK_PASSED })) };
+  const rejected: ScheduleRejected[] = [];
+  const targets = await eachVisible(viewer, input.items, rejected);
+  const schedules = await loadPaySchedules(viewer, targets.map((target) => target.row), { today, now });
+  const moved: { expenseId: string; before: string | null; version: number }[] = [];
+  await withTransaction(async (tx) => {
+    for (const { item } of targets) {
+      if (schedules.get(item.expenseId)?.pushReason !== "cutoff") {
+        rejected.push({ expenseId: item.expenseId, reason: NOT_PUSHED });
+        continue;
+      }
+      await rejectOnUserError(rejected, item.expenseId, async () => {
+        const written = await writeScheduledPayDate(viewer, { expenseId: item.expenseId, date: payDate, version: item.version }, { lookup, now }, tx);
+        moved.push({ expenseId: item.expenseId, ...written });
+      });
+    }
   });
+  return { moved, rejected };
+}
+
+// 되돌리기(N4 — 확인 창 대신): 이번 주로 · 자동 복귀의 반환(이전 값 · 새 version)을 그대로 받아 이전 값으로 저장한다. null = 자동(기록 칸도 NULL),
+// 날짜면 기록 칸은 되돌린 사람 · 그때. 그 사이 version이 바뀐 건은 충돌로 그 건만 거부.
+export async function revertScheduledPayDates(
+  viewer: Viewer,
+  input: { items: readonly { expenseId: string; date: string | null; version: number }[] },
+  deps?: { now?: Date },
+): Promise<{ reverted: { expenseId: string; version: number }[]; rejected: ScheduleRejected[] }> {
+  await assertSchedulePayer(viewer);
+  const now = deps?.now ?? new Date();
+  const dates = input.items.flatMap((item) => (item.date ? [yearOf(item.date)] : []));
+  const { lookup } = await loadPayCalendar([yearOf(seoulToday(now)), ...dates]);
+  const rejected: ScheduleRejected[] = [];
+  const targets = await eachVisible(viewer, input.items, rejected);
+  const reverted: { expenseId: string; version: number }[] = [];
+  await withTransaction(async (tx) => {
+    for (const { item } of targets) {
+      await rejectOnUserError(rejected, item.expenseId, async () => {
+        const written = await writeScheduledPayDate(viewer, { expenseId: item.expenseId, date: item.date, version: item.version }, { lookup, now }, tx);
+        reverted.push({ expenseId: item.expenseId, version: written.version });
+      });
+    }
+  });
+  return { reverted, rejected };
 }
 
 // ── 지급 총액 미리보기(06-04 · S5 loading) ─────────────────────────────

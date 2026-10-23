@@ -23,10 +23,11 @@ import { HOLIDAYS_MENU, restoreHoliday } from "@/domain/holidays/admin";
 import { toKstDate } from "@/domain/holidays/business-day";
 import { restoreUser } from "@/domain/people/restore";
 import { relinkUnknownCardRecords as defaultRelinkUnknownCardRecords } from "@/domain/evidence-import/card-relink";
-import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
+import { assertCanEditRole, assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { lockSeatKeys } from "@/repositories/seats";
 import { setUserArchived } from "@/repositories/users";
+import { countActiveMembersOfRole, findRoleById, lockRoleForUpdate, setRoleArchived } from "@/repositories/roles";
 import { findTeamById, setTeamArchived } from "@/repositories/teams";
 import { setOrgUnitArchived } from "@/repositories/org-units";
 import { assertNoSeatDuplicates, SeatTakenError, seatDuplicateBaseline } from "@/domain/people/seat-rules";
@@ -49,6 +50,12 @@ const CORP_CARD_LAST4_UNIQUE_INDEX = "corp_cards_issuer_last4_key";
 // 06.4 D-6416(문구 표(D3) 본인 보관 행 — `SELF_LEAVE_EDIT_ERROR` 꼴).
 export class SelfArchiveError extends UserFacingError {}
 export const SELF_ARCHIVE_MESSAGE = "본인 보관 불가 · 다른 관리자에게 요청";
+// 07-15(R17): 소속 활성 사람이 남은 계급은 보관하지 않는다 — 화면은 count로 문구를 만든다.
+export class RoleHasMembersError extends UserFacingError {
+  constructor(readonly count: number) {
+    super(`소속 ${count}명 · 먼저 다른 계급으로 옮기기`);
+  }
+}
 
 export type ArchiveDeps = {
   can: typeof defaultCan;
@@ -117,8 +124,31 @@ async function archiveUser(viewer: Viewer, id: string, deps?: Partial<ArchiveDep
   });
 }
 
+// 07-15(R16 · R17): 계급 보관 — 시드 계급 보호 → 상한(위임자는 상한 밖 계급을 못 보관) → 계급 행 잠금 뒤 활성 소속 수.
+// 잠금 뒤 세어 보관 중 다른 저장이 끼어도 보관 쪽 판정은 커밋된 값을 본다. SYSTEM_VIEWER(테스트 훅 · CLI)는 소속 막기만 면제
+// (last-admin O4 선례) — 상한은 시드 성질로 통과.
+async function archiveRole(viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>): Promise<void> {
+  const row = await findRoleById(viewer, id);
+  if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
+  if (row.isSeed) throw new ProtectedRowError("보호된 항목은 보관할 수 없음");
+  await assertCanEditRole(viewer, id, (before) => before);
+  const today = kstToday((deps?.now ?? (() => new Date()))());
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await withTransaction(async (tx) => {
+    const locked = await lockRoleForUpdate(viewer, id, tx);
+    if (!locked || locked.archivedAt !== null) return;
+    if (viewer.id !== SYSTEM_VIEWER.id) {
+      const count = await countActiveMembersOfRole(viewer, id, today, tx);
+      if (count > 0) throw new RoleHasMembersError(count);
+    }
+    if (!(await setRoleArchived(viewer, id, true, tx))) return;
+    await recordAction(viewer, { actionType: "archive", entity: "roles", entityId: id }, { tx });
+  });
+}
+
 const DOMAIN_ARCHIVERS: Partial<Record<string, (viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>) => Promise<void>>> = {
   user: archiveUser,
+  roles: archiveRole,
 };
 
 // 보관은 대상 행의 보관 시각이 이미 있으면 그 값을 유지한 채 성공으로

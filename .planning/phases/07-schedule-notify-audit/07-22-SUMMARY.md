@@ -110,7 +110,7 @@ completed: 2026-10-23
 - files_modified 밖 파일: quote-table.tsx(prop 전달) · ui/attachments(metaLead · single · confirmRemove) · customer-approval-basis 시험 · project-info-panel E2E 고정물 · leak-scan import · recipients.ts · repositories/permissions.ts · repositories/settings.ts · domain/holidays/calendar.ts · kinds-off 목록 · domain/settings/keys.ts · 상세/목록 단위 시험.
 - TDD: Task 2의 E2E 스펙은 화면 뒤에 썼다(통합 · 단위는 먼저).
 - 서류 섹션 위치: 계획의 "정보 면 아래" 대신 매출 면 뒤.
-- 계산서 링크는 폰(<1024)에서 숨김(p3 열) — 매출 표가 폰에서 보기 전용(DR-36)이라 열면 읽기 전용 패널.
+- 계산서 링크는 폰(<700)에서 숨김(1024 미만은 읽기 패널)(p3 열) — 매출 표가 폰에서 보기 전용(DR-36)이라 열면 읽기 전용 패널.
 - 파일 DTO(evidenceFile)가 `expense.value`로 칸을 가려, 계산서 파일을 보려면 그 항목도 필요(적립금 시험 선례).
 - **독립 DOM 감사 미실시** — 이 실행자에는 하위 에이전트를 띄울 도구가 없다. `audit/07-22-dom-audit.md`는 만들지 않았다(자기 감사는 독립이 아님). 오케스트레이터가 별도 감사 에이전트(CI=true · 375/320/768/1280)를 띄워야 한다.
 

@@ -32,6 +32,7 @@ import { insertMembership } from "@/repositories/team-memberships";
 import { withTransaction } from "@/lib/db-transaction";
 import { deferred, waitForLockWaiter } from "./lock-race";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
+import { backdateActionLog } from "@/test/support/action-log-backdate";
 
 // 04-06(D-75) — 프로젝트 상태 다섯 값. 04-20·04-21이 같은 파일에 전환
 // describe를 더한다. 이 목록은 db/migrations/0012_project_status_five_values.sql
@@ -691,7 +692,7 @@ describe("부제의 마지막 변경일 (04-21, D-50 · CEO A-30 · 엔지 리�
     const [log] = await statusLogs(projectId);
     if (!log) throw new Error("status_change 로그가 없습니다");
     // 등록일(오늘)과 다른 날로 옮겨 두 갈래를 구분한다 — 2026-08-31T20:00Z = KST 2026-09-01.
-    await db.update(actionLog).set({ occurredAt: new Date("2026-08-31T20:00:00Z") }).where(eq(actionLog.seq, log.seq));
+    await backdateActionLog(log.seq, new Date("2026-08-31T20:00:00Z"));
     const dto = await findProject(lead, projectId);
     if (!dto) throw new Error("팀장이 상세를 보지 못했습니다");
     expect(await lastStatusChangeOn(lead, dto)).toBe("2026-09-01");

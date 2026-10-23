@@ -24,6 +24,7 @@ import { exportBankTransferFileAction } from "@/app/(app)/expenses/actions";
 import { addApprovedRevision, makeEvidenceManager, setupExpenseProject, submitReadyDraft, testVendorAccount, type ExpenseFixture } from "./fixtures/expenses";
 import { makePerson } from "./approvals-fixtures";
 import { approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
+import { backdateActionLog } from "@/test/support/action-log-backdate";
 
 // 06.5-06(D-6504 · UI-SPEC V5): 신한 대량이체 파일 — 고정 게이트(지급 쓰기 ∧ 계좌 해제 항목 ∧ 금액 보임) · 재판정 · 문서 지급처 계좌 ·
 // 직렬화 전 excel_export 기록(평문 계좌 없음). 문서는 06-15 일괄 지급 픽스처(증빙 0 · 증빙 필수 끔 = P4)로 만든다.
@@ -531,7 +532,7 @@ describe("신한 이체 파일 — 막힌 건(06.5 Task 2)", () => {
       .limit(2)
       .offset(1);
     if (!old) throw new Error("기록 없음");
-    await db.update(actionLog).set({ occurredAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }).where(eq(actionLog.seq, old.seq));
+    await backdateActionLog(old.seq, new Date(Date.now() - 2 * 24 * 60 * 60 * 1000));
 
     const rows = (await listPaymentTargets(payer, {})).groups.flatMap((group) => group.rows);
     expect(rows.find((row) => row.id === today.expenseId)?.transferFileAt).toBe(result.time);

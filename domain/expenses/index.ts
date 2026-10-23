@@ -1587,6 +1587,7 @@ async function loadSubmitFacts(
     // 보관 · 비활성 코드는 빈 칸이 아니라 쓰지 않는 코드로 막는다(C4 — 폼에는 이름으로 보인다). 코드 판정은 트랜잭션 전에 읽은 값이다.
     evidenceType: row.evidenceType,
     paymentMethod: row.paymentMethod,
+    note: row.note,
     evidenceTypeInactive: row.evidenceType ? !codes.evidence.has(row.evidenceType) : false,
     paymentMethodInactive: row.paymentMethod ? !codes.payment.has(row.paymentMethod) : false,
     methodEvidencePairs: methodEvidencePairsOf({

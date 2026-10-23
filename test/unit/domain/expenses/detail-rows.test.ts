@@ -39,7 +39,7 @@ describe("buildExpenseDetailRows", () => {
       { label: "공급가액", value: full.taxLine, tone: "default" },
       { label: "지급 예정일", value: "2026-09-19", tone: "default" },
       { label: "지급 방식", value: "계좌이체", tone: "default" },
-      { label: "비고", value: "—", tone: "muted" },
+      { label: "상세", value: "—", tone: "muted" },
     ]);
   });
 
@@ -50,7 +50,7 @@ describe("buildExpenseDetailRows", () => {
 
   it("회사 대납 문서(받는 인원 값이 있다)면 공급가액 행들 다음에 `받는 인원 {N}명`(06.5 V15)", () => {
     const labels = buildExpenseDetailRows({ ...full, recipientCount: 5 }).rows;
-    expect(labels.map((row) => row.label)).toEqual(["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "공급가액", "받는 인원", "지급 예정일", "지급 방식", "비고"]);
+    expect(labels.map((row) => row.label)).toEqual(["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "공급가액", "받는 인원", "지급 예정일", "지급 방식", "상세"]);
     expect(labels.find((row) => row.label === "받는 인원")).toEqual({ label: "받는 인원", value: "5명", tone: "default" });
   });
 
@@ -128,7 +128,7 @@ describe("buildExpenseDetailRows — 비공개 증빙 잠김 행", () => {
 
   it("파일 0 + 잠김 글자면 지급 방식 다음 · 비고 앞에 muted 증빙 행 하나", () => {
     const rows = buildExpenseDetailRows({ ...full, evidenceFiles: [], hiddenEvidenceNotice: "비공개 증빙 · 경영관리만" }).rows;
-    expect(rows.map((row) => row.label)).toEqual(["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "공급가액", "지급 예정일", "지급 방식", "증빙", "비고"]);
+    expect(rows.map((row) => row.label)).toEqual(["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "공급가액", "지급 예정일", "지급 방식", "증빙", "상세"]);
     expect(rows.find((row) => row.label === "증빙")).toEqual({ label: "증빙", value: "비공개 증빙 · 경영관리만", tone: "muted" });
   });
 

@@ -17,6 +17,7 @@ const PASSING: ExpenseSubmitFacts = {
   supplyAmountKrw: 12_400_000,
   evidenceType: "tax_invoice",
   paymentMethod: "bank_transfer",
+  note: "행사 운영비",
   evidenceTypeInactive: false,
   paymentMethodInactive: false,
   prepaid: false,

@@ -79,7 +79,7 @@ test.describe("지출결의 폼 — 지급 예정일 읽기 줄 · 희망 지급
     const reason = page.getByLabel("희망 사유");
 
     // 07-28 결합(실행 순서) — 제출 흐름은 상세(비고)를 먼저 채운다.
-    await page.getByLabel("비고", { exact: true }).fill("행사 운영비");
+    await page.getByLabel("상세", { exact: true }).fill("행사 운영비");
     await expect(reason).toHaveCount(0);
     // 감사 #7(P3): 입력 칸이 형식을 잡는다 — 오늘(KST)보다 앞 날짜는 고를 수 없다.
     await expect(date).toHaveAttribute("min", cal.today);
@@ -134,7 +134,7 @@ test.describe("지출결의 폼 — 지급 예정일 읽기 줄 · 희망 지급
     await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
     await expect(page.getByLabel("희망 지급일")).toHaveValue(past);
 
-    await page.getByLabel("비고", { exact: true }).fill("행사 운영비");
+    await page.getByLabel("상세", { exact: true }).fill("행사 운영비");
     await page.getByRole("button", { name: /^임시 저장/ }).click();
     await expect
       .poll(async () => (await db.select({ note: expenses.note, date: expenses.requestedPaymentDate }).from(expenses).where(eq(expenses.id, id)))[0])

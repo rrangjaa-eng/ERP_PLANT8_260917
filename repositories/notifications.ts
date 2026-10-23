@@ -158,10 +158,10 @@ export async function hasEventNotification(
 // ── 결재 처리 자동 읽음 (07-14 N16 · G33 · K25) ───────────────────────
 
 // 결재 차례 알림(approval-waiting · entity approval-step · entityId = 단계 id, 대표 폴백 자리는 `{차수 id}:fallback`) 중 이 단계들의 안 읽은 행을
-// 받는 사람 가리지 않고(그 단계 후보 전원 · 2회차 팀장 — 단계가 닫히면 모두 할 일 없음) 읽음으로. 결재 트랜잭션 안에서 부른다.
+// 처리한 사람 본인 것만(recipientId) 읽음으로 — 다른 후보 · 2회차 팀장 행은 그대로 둔다(사용자 결정 2026-10-23). 결재 트랜잭션 안에서 부른다.
 // 다른 트랜잭션(이메일 선점)이 잡은 행은 SKIP LOCKED로 건너뛴다 — 결재가 메일 트랜잭션을 기다리지 않는다. 건너뛴 행은 다음 tick이 정리한다.
 // read_at은 UTC 저장(openInbox와 같은 꼴). 돌려준 수 = 읽음으로 바꾼 행 수.
-export async function markStepNotificationsRead(viewer: Viewer, input: { stepIds: readonly string[] }, tx: DbOrTx): Promise<number> {
+export async function markStepNotificationsRead(viewer: Viewer, input: { stepIds: readonly string[]; recipientId: string }, tx: DbOrTx): Promise<number> {
   void viewer;
   if (input.stepIds.length === 0) return 0;
   const marked = await tx.execute<{ id: number }>(sql`
@@ -172,6 +172,7 @@ export async function markStepNotificationsRead(viewer: Viewer, input: { stepIds
       where condition_kind = 'approval-waiting'
         and entity = 'approval-step'
         and entity_id = any(${sql.param([...input.stepIds])}::text[])
+        and recipient_id = ${input.recipientId}
         and read_at is null
       FOR UPDATE SKIP LOCKED
     )

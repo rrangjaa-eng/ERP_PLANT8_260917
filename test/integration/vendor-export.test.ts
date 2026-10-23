@@ -8,7 +8,7 @@ import { SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { upsertVisibility } from "@/repositories/permissions";
 import { queryActionLog } from "@/repositories/action-log";
 import { EXPORT_REGISTRY } from "@/lib/actions/registry";
-import { createVendor, listVendors, ForbiddenError } from "@/domain/vendors";
+import { createVendor, listVendors, ForbiddenError, type VendorDto } from "@/domain/vendors";
 import { exportVendorsCsv, VendorExportTooManyError } from "@/domain/vendors/export";
 
 // 07-20 V1 · V2 · D-736: 거래처 검색(`q`) · 파일 받기(CSV — 뒤 4자리 · 수식 방어 · 상한 5,000 · excel_export 기록).
@@ -111,6 +111,15 @@ describe("거래처 파일 받기 (07-20 V1 · D-736)", () => {
     const admin = await makeUser(SYSADMIN_ROLE_ID);
     await expect(
       exportVendorsCsv(admin, { q: "", includeHidden: false, kind: null }, { countVendors: () => Promise.resolve(5001) }),
+    ).rejects.toBeInstanceOf(VendorExportTooManyError);
+    expect(await queryActionLog(SYSTEM_VIEWER, { actorId: admin.id, actionType: "excel_export" })).toHaveLength(0);
+  });
+
+  it("센 뒤 읽은 행이 5,001곳이면(사이에 늘어남) VendorExportTooManyError — 기록 없음", async () => {
+    const admin = await makeUser(SYSADMIN_ROLE_ID);
+    const many = Array.from({ length: 5001 }, () => ({}) as VendorDto);
+    await expect(
+      exportVendorsCsv(admin, { q: "", includeHidden: false, kind: null }, { countVendors: () => Promise.resolve(1), listVendors: () => Promise.resolve(many) }),
     ).rejects.toBeInstanceOf(VendorExportTooManyError);
     expect(await queryActionLog(SYSTEM_VIEWER, { actorId: admin.id, actionType: "excel_export" })).toHaveLength(0);
   });

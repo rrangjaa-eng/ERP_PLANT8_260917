@@ -183,6 +183,43 @@ test.describe("PO 번호 · 고치기 하나 (N1 · D-737)", () => {
     await expect(poNumber).toHaveValue("PO-SECOND");
   });
 
+  test("느린 프레임에서도 `openProjectInfoEdit` 직후 PO 번호 입력이 시작일로 새지 않는다", async ({ page }) => {
+    // CI(바쁜 러너)에서 `고치기`의 rAF 포커스(시작일)가 fill의 focus와 insertText 사이에 끼어 글자가 시작일(date)로 샜다.
+    // 그 순서를 고정해 재현한다: rAF 콜백을 400ms 묶어 두되, 면 안의 다른 칸이 포커스를 받으면 그 직후에 풀어 준다.
+    await page.addInitScript(() => {
+      const raf = window.requestAnimationFrame.bind(window);
+      let queue: FrameRequestCallback[] = [];
+      const flush = () => {
+        const pending = queue;
+        queue = [];
+        for (const callback of pending) raf(callback);
+      };
+      const flushNow = () => {
+        const pending = queue;
+        queue = [];
+        for (const callback of pending) callback(performance.now());
+      };
+      window.requestAnimationFrame = (callback) => {
+        if (queue.length === 0) setTimeout(flush, 400);
+        queue.push(callback);
+        return 0;
+      };
+      document.addEventListener("focusin", (event) => {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest("#project-info") && target.id !== "period-start") queueMicrotask(flushNow);
+      });
+    });
+    const { lead, project } = await setup();
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await openProjectInfoEdit(page);
+
+    const poNumber = projectInfo(page).getByLabel("PO 번호", { exact: true });
+    await poNumber.fill("PO-SLOW");
+    await expect(poNumber).toHaveValue("PO-SLOW");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+  });
+
   test("첫 Esc는 원래 값으로 돌리고 칸은 열려 있으며, 두 번째 Esc가 닫고 포커스가 `고치기`로 온다", async ({ page }) => {
     const { lead, project } = await setup();
     await login(page, lead);

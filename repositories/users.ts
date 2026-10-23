@@ -157,6 +157,21 @@ export async function updateUserResignationDate(
   await tx.update(users).set({ resignationDate, updatedAt: new Date() }).where(eq(users.id, userId));
 }
 
+// F24: 퇴직자 쓰기 잠금 재조회 — 쓰기 tx 안에서 사람 행을 FOR SHARE로 잡아 tx 끝까지 퇴직일이 바뀌지 않게 한다.
+export async function findUserResignationForShare(
+  viewer: Viewer,
+  userId: string,
+  tx: DbOrTx,
+): Promise<{ resignationDate: string | null } | null> {
+  void viewer;
+  const [row] = await tx
+    .select({ resignationDate: users.resignationDate })
+    .from(users)
+    .where(eq(users.id, userId))
+    .for("share");
+  return row ?? null;
+}
+
 // 06.4(D-6403 · O2): 재직 관리자 = 보관 안 됨 ∧ 퇴직일 안 지남 ∧ `admin.permissions` 쓰기 계급. 계급 보관(roles.archived_at)은
 // `can()`이 보지 않으므로 여기서도 보지 않는다.
 export async function countActiveAdmins(

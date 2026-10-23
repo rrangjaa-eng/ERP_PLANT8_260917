@@ -77,7 +77,7 @@ async function setupWorld(): Promise<World> {
   if (!lineId) throw new Error("견적 줄 없음");
   await changeProjectStatus(fx.lead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(otherPm.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(otherPm.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   return { fx, otherPm, projectId: project.id, projectLabel: `${project.number} ${projectName}`, lineId, itemName };
 }
 

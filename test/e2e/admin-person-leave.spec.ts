@@ -279,7 +279,9 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
     });
   });
 
-  test("지난해 퇴직(CXF2-C-F2-01 · C-N01): 기본 섹션 연도 = 퇴직 연도 · 조정도 그 해 · 올해 보기는 보통 줄 · 퇴직 전 해는 퇴직 줄 없음", async ({ browser, baseURL }) => {
+  // 사용자 결정 F24(카드 2026-10-23 10:02 KST · 260907 `server/src/people.ts:792-797`) + 카드 2026-10-23 11:14 KST 「퇴직한 해 연차
+  // 조정만 허용」: 퇴직자는 퇴직한 해를 볼 때만 연차 조정 폼(연차만)이 있고, 다른 해에는 폼이 없다. 입사일 칸 없음 · 퇴직일 칸은 남음.
+  test("지난해 퇴직(CXF2-C-F2-01 · C-N01 · F24): 기본 섹션 연도 = 퇴직 연도 · 조정도 그 해(연차만) · 올해 보기는 보통 줄 · 폼 없음 · 퇴직 전 해는 퇴직 줄 없음", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const year = yearOf(today);
       const resignationDate = `${year - 1}-06-30`;
@@ -289,6 +291,10 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
       await page.goto(`/admin/people/${target.id}`);
 
       await expect(section(page).getByText(`${year - 1} 회계연도`, { exact: true })).toBeVisible();
+      await expect(page.getByText("퇴직한 사람 · 정보 변경 없음", { exact: true })).toHaveCount(1);
+      await expect(page.locator("#hireDate")).toHaveCount(0);
+      await expect(page.locator("#resignationDate")).toHaveCount(1);
+      expect(await bucketOptions(page)).toEqual(["연차"]);
       await addAdjustment(page, { days: "1", reason: "퇴직 정정" });
       expect(await fiscalYearOf(target.id, "퇴직 정정")).toBe(year - 1);
       const resigned = await expectedLines({
@@ -309,12 +315,31 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
       await expect(section(page).getByText(`${year} 회계연도`, { exact: true })).toBeVisible();
       await expect(balance(page).first()).not.toHaveText(/^퇴직 /);
       await expect(balance(page)).toHaveText(await expectedLines({ hireDate: null, resignationDate, fiscalYear: year, today }));
-      await addAdjustment(page, { days: "1", reason: "올해 정정" });
-      expect(await fiscalYearOf(target.id, "올해 정정")).toBe(year);
+      await expect(page.locator("#leave-adjustment-form")).toHaveCount(0);
 
       await page.goto(`/admin/people/${target.id}?year=${year - 2}`);
       await expect(balance(page).first()).not.toHaveText(/^퇴직 /);
       await expect(balance(page)).toHaveText(await expectedLines({ hireDate: null, resignationDate, fiscalYear: year - 2, today }));
+      await expect(page.locator("#leave-adjustment-form")).toHaveCount(0);
+      await page.context().close();
+    });
+  });
+
+  // 사용자 결정(카드 2026-10-23 12:34 KST) 「퇴직한 사람의 퇴직일은 비우기만 허용」: 다른 날짜로 옮기면 칸 오류 줄에 같은 거부 문구 ·
+  // 칸은 저장값으로 돌아가고, 새로 고쳐도 퇴직일 그대로.
+  test("퇴직자 퇴직일 옮기기(F24 · 카드 12:34): 칸 오류에 거부 문구 · 저장값으로 · 새로 고침 뒤에도 그대로", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const resignationDate = `${yearOf(today) - 1}-06-30`;
+      const target = await makeTarget("퇴직 옮기기");
+      await setResignationDate(SYSTEM_VIEWER, target.id, resignationDate);
+      const page = await adminPage(browser, baseURL);
+      await page.goto(`/admin/people/${target.id}`);
+
+      await blurSave(page, "퇴직일", `${yearOf(today) - 1}-05-31`);
+      await expect(section(page).getByText("퇴직한 사람 · 정보 변경 없음", { exact: true })).toBeVisible();
+      await expect(section(page).getByLabel("퇴직일")).toHaveValue(resignationDate);
+      await page.reload();
+      await expect(section(page).getByLabel("퇴직일")).toHaveValue(resignationDate);
       await page.context().close();
     });
   });

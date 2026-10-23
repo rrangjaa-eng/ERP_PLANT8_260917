@@ -108,7 +108,7 @@ async function preSettleEvidencePending(browser: Browser, baseURL: string | unde
   if (!lineId) throw new Error("견적 줄이 없습니다");
   await changeProjectStatus(org.teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(org.drafter.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(org.drafter.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   await saveRevenue(SYSTEM_VIEWER, project.id, {
     issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: `${lastYear}-12-31`, amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }],
   });
@@ -278,7 +278,7 @@ async function paymentAndSettlementActions(browser: Browser, baseURL: string | u
   if (!expenseLineId || !cardLineId) throw new Error("견적 줄이 없습니다");
   await changeProjectStatus(teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(drafter.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(drafter.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   await saveRevenue(SYSTEM_VIEWER, project.id, {
     issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: `${lastYear}-12-31`, amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }],
   });
@@ -493,7 +493,7 @@ async function inProgressProjectLines(
   if (lineIds.length !== executions.length) throw new Error("견적 줄이 없습니다");
   await changeProjectStatus(input.teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(input.pm.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(input.pm.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   return { projectId: project.id, lineIds };
 }
 

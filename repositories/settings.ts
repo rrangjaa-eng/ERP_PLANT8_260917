@@ -48,9 +48,11 @@ export async function findEffectiveValue(
   viewer: Viewer,
   key: string,
   asOf: string,
+  // 07-22 — 알림 tick 잠금 트랜잭션 안에서는 그 tx로 읽는다.
+  tx: DbOrTx = db,
 ): Promise<SettingHistorizedRow | null> {
   void viewer;
-  const [row] = await db
+  const [row] = await tx
     .select()
     .from(settingsHistorized)
     .where(and(eq(settingsHistorized.key, key), lte(settingsHistorized.effectiveFrom, asOf)))

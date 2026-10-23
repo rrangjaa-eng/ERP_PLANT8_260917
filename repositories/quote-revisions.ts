@@ -121,23 +121,37 @@ export async function approvalBasis(viewer: Viewer, revisionId: string, tx: DbOr
   return row;
 }
 
-// 04-14(D-56) — 고객 승인 표시 켜기(승인 순간·승인자) · 끄기(둘 다 null).
+// 04-14(D-56) — 고객 승인 표시 켜기(승인 순간·승인자) · 끄기(둘 다 null). 07-18 — 근거 · 메모도 같은 한 쌍으로 켜고 끈다(끄면 둘 다 null).
 export async function setRevisionApproval(
   viewer: Viewer,
   revisionId: string,
-  input: { customerApprovedAt: Date | null; customerApprovedBy: string | null },
+  input: {
+    customerApprovedAt: Date | null;
+    customerApprovedBy: string | null;
+    customerApprovalBasis: QuoteRevisionRow["customerApprovalBasis"];
+    customerApprovalMemo: string | null;
+  },
   tx: DbOrTx,
 ): Promise<void> {
   void viewer;
   await tx
     .update(quoteRevisions)
-    .set({ customerApprovedAt: input.customerApprovedAt, customerApprovedBy: input.customerApprovedBy, updatedAt: new Date() })
+    .set({
+      customerApprovedAt: input.customerApprovedAt,
+      customerApprovedBy: input.customerApprovedBy,
+      customerApprovalBasis: input.customerApprovalBasis,
+      customerApprovalMemo: input.customerApprovalMemo,
+      updatedAt: new Date(),
+    })
     .where(eq(quoteRevisions.id, revisionId));
 }
 
 // 04-14(S5 · CEO 리뷰 §7 · B-18 · ENG-D9) — 차수별 줄 수(견적 줄 + 견적 외 비용, 보관 제외) · 견적 합계 · 내용 토큰을
 // GROUP BY 한 번으로. 합계는 bigint를 JS 숫자로 바꿔 돌려준다(node-pg는 bigint를 문자열로 준다 — 04-17 C-01과 같은 규칙).
-export type RevisionSummaryRow = Pick<QuoteRevisionRow, "id" | "seq" | "createdAt" | "customerApprovedAt" | "customerApprovedBy"> &
+export type RevisionSummaryRow = Pick<
+  QuoteRevisionRow,
+  "id" | "seq" | "createdAt" | "customerApprovedAt" | "customerApprovedBy" | "customerApprovalBasis" | "customerApprovalMemo"
+> &
   ApprovalBasis & { lineCount: number };
 
 export async function summarizeRevisions(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<RevisionSummaryRow[]> {
@@ -149,6 +163,8 @@ export async function summarizeRevisions(viewer: Viewer, projectId: string, tx: 
       createdAt: quoteRevisions.createdAt,
       customerApprovedAt: quoteRevisions.customerApprovedAt,
       customerApprovedBy: quoteRevisions.customerApprovedBy,
+      customerApprovalBasis: quoteRevisions.customerApprovalBasis,
+      customerApprovalMemo: quoteRevisions.customerApprovalMemo,
       totalKrw: APPROVABLE_TOTAL.mapWith(Number),
       contentToken: CONTENT_TOKEN,
       approvableLineCount: APPROVABLE_COUNT,

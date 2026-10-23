@@ -26,6 +26,7 @@ import "@/domain/vendors";
 import "@/domain/projects";
 import "@/domain/projects/references";
 import "@/domain/projects/members";
+import "@/domain/projects/documents";
 import "@/domain/quotes/lines";
 import "@/domain/quotes/revisions";
 import "@/domain/revenue";

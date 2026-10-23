@@ -36,11 +36,14 @@ import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/
 import { moneyFromRow, moneyToColumns, normalizeMoneyInput, MoneyInputError, type Currency, type Money, type MoneyInput } from "@/domain/money";
 import { validatePreEstimateChange } from "@/domain/projects/pre-estimate";
 import { validateNewProjectPeriod } from "@/domain/projects/period";
+import { summarizeProjectProfit, type ProjectProfitSummary } from "@/domain/projects/profit-summary";
 import { rememberFxAfterCommit } from "@/domain/quotes/lines";
+import { collectionOverdueByProject } from "@/domain/revenue";
 import {
   listProjectsPage as repoListProjectsPage,
   aggregateProjects as repoAggregateProjects,
   findProjectInScope,
+  getProjectProfitRow,
   insertProject as repoInsertProject,
   PROJECT_SORT_KEYS,
   type ProjectListFilter,
@@ -99,6 +102,8 @@ export type ProjectDto = {
   version: number;
   archivedAt: Date | null;
   createdAt: Date;
+  // 07-18(W2 · D-737) — PO 번호(선택 · 중복 허용).
+  poNumber: string | null;
   // 04-44(DR-28 · 계약 8) — 총 매출 예상가. 견적 금액과 같은 정보 항목이라 볼 수 없으면 키가 없다.
   preEstimate?: Money;
 };
@@ -134,6 +139,7 @@ export const PROJECT_DTO_SPEC: DtoSpec<ProjectDtoSource, ProjectDto> = {
     { key: "version", from: "version", infoItem: "project.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "project.value" },
     { key: "createdAt", from: "createdAt", infoItem: "project.value" },
+    { key: "poNumber", from: "poNumber", infoItem: "project.value" },
     { key: "preEstimate", from: "preEstimate", infoItem: "quote.amount" },
   ],
 };
@@ -184,6 +190,8 @@ export type ProjectListItemDto = {
   profitRate?: number | null;
   /** 04-18(D-81) — 수주중이면서 종료일이 KST 오늘보다 앞(상세와 같은 isEndDatePassed). */
   endDatePassed?: boolean;
+  /** 07-22(N22 · SC-20) — 수금 지연(collectionStatus — 상세 매출 면과 같은 판정). revenue.paid_amount를 볼 때만. */
+  collectionOverdue?: boolean;
 };
 
 // 04-17(D-90) — attributionLabel: 보기 범위 밖에서 끝나는 행의 기간 칸 2행(`2027 귀속`), 범위 안이면 null.
@@ -192,7 +200,7 @@ export type ProjectListItemWithGroup = ProjectListItemDto & { groupLabel: string
 const PROFIT_INFO_ITEMS = ["quote.amount", "revenue.issued_amount"] as const;
 
 // 04-18 — 투영 원본은 리포지토리 행 + 요청당 한 번 구한 KST 오늘로 판정한 종료일 지남.
-type ProjectListSource = ProjectListRow & { endDatePassed: boolean };
+type ProjectListSource = ProjectListRow & { endDatePassed: boolean; collectionOverdue: boolean };
 
 const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListSource, ProjectListItemDto> = {
   fields: [
@@ -212,6 +220,7 @@ const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListSource, ProjectListItemDto> = {
     { key: "profitKrw", from: "netProfitKrw", infoItem: PROFIT_INFO_ITEMS },
     { key: "profitRate", from: "profitRate", infoItem: PROFIT_INFO_ITEMS },
     { key: "endDatePassed", from: "endDatePassed", infoItem: "project.value" },
+    { key: "collectionOverdue", from: "collectionOverdue", infoItem: "revenue.paid_amount" },
   ],
 };
 
@@ -335,6 +344,7 @@ export type ProjectListDeps = {
   repo: { aggregate: typeof repoAggregateProjects; listPage: typeof repoListProjectsPage };
   teams: typeof repoListTeams;
   visible: ProjectDeps["visible"];
+  collectionOverdue: typeof collectionOverdueByProject;
 };
 
 // 드리즐이 PG 오류를 cause로 감싼다 — 운영 로그에는 PG 코드만(필터 값·금액 없음).
@@ -428,7 +438,16 @@ export async function loadProjectList(
   )) as ProjectListTotals;
 
   const todayKst = kstToday(now());
-  const sources = rows.map((row) => ({ ...row, endDatePassed: isEndDatePassed({ status: row.status, endDate: row.endDate, todayKst }) }));
+  // 07-22(SC-20) — 수금 지연은 입금을 볼 수 있을 때만 판정한다(못 보면 읽지도 않는다 — 칸은 투영이 뺀다).
+  const collection =
+    rows.length > 0 && (await (deps?.visible ?? defaultVisible)(viewer, "revenue.paid_amount"))
+      ? await (deps?.collectionOverdue ?? collectionOverdueByProject)(viewer, rows.map((row) => row.id), { today: todayKst })
+      : null;
+  const sources = rows.map((row) => ({
+    ...row,
+    endDatePassed: isEndDatePassed({ status: row.status, endDate: row.endDate, todayKst }),
+    collectionOverdue: collection?.get(row.id)?.overdue ?? false,
+  }));
   const dtos = (await projectMany(viewer, sources, PROJECT_LIST_DTO_SPEC, projectDeps)) as ProjectListItemDto[];
   const hasFilter = isUserFiltered(params, thisYear);
   return {
@@ -476,6 +495,17 @@ export async function findProject(
   if (row.archivedAt !== null && !scope.includeArchived) return null;
 
   return (await project(viewer, withPreEstimate(row), PROJECT_DTO_SPEC)) as ProjectDto;
+}
+
+// 07-18 사후 고침 — 상세 정보 면 `손익`. 목록과 같은 행 식을 한 프로젝트에 적용한다(보기 범위 조건을 목록과 같이 건다).
+export async function loadProjectProfit(viewer: Viewer, projectId: string): Promise<ProjectProfitSummary | null> {
+  // 07-18 /review P1 — 목록 손익 열과 같은 정보 항목(PROFIT_INFO_ITEMS 모두)을 볼 때만 읽는다. 못 보면 값이 서버를 떠나지 않는다.
+  for (const infoItem of PROFIT_INFO_ITEMS) {
+    if (!(await defaultVisible(viewer, infoItem))) return null;
+  }
+  const scope = await projectRowScope(viewer);
+  const row = await getProjectProfitRow(viewer, scope, projectId);
+  return row ? summarizeProjectProfit(row) : null;
 }
 
 // 04-11(A-07 · 엔지 리뷰 A P3): 목록 요청의 자동 정산 입구 — 요청당 한 번, loadProjectList가

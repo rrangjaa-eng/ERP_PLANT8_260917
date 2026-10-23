@@ -114,6 +114,7 @@ async function preSettleEvidencePending(browser: Browser, baseURL: string | unde
   const created = await createExpenseFromLines(org.drafter.viewer, { lineIds: [lineId] });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  await saveExpenseDraft(org.drafter.viewer, { expenseId, expectedVersion: 1, fields: { note: "시안 캡처용 상세" } });
   const context = await browser.newContext({ baseURL });
   try {
     const page = await context.newPage();
@@ -304,6 +305,7 @@ async function paymentAndSettlementActions(browser: Browser, baseURL: string | u
   const created = await createExpenseFromLines(drafter.viewer, { lineIds: [expenseLineId] });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  await saveExpenseDraft(drafter.viewer, { expenseId, expectedVersion: 1, fields: { note: "시안 캡처용 상세" } });
   const context = await browser.newContext({ baseURL });
   try {
     const page = await context.newPage();
@@ -602,6 +604,7 @@ async function evidenceIntakeFilled(browser: Browser, baseURL: string | undefine
   const created = await createExpenseFromLines(drafter.viewer, { lineIds: [expenseLineId] });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  await saveExpenseDraft(drafter.viewer, { expenseId, expectedVersion: 1, fields: { note: "시안 캡처용 상세" } });
   const context = await browser.newContext({ baseURL });
   try {
     const page = await context.newPage();
@@ -797,7 +800,7 @@ async function evidencePrivateType(browser: Browser, baseURL: string | undefined
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   const draft = await findExpenseById(drafter.viewer, expenseId);
   if (!draft) throw new Error("작성 중 문서를 찾지 못했다");
-  await saveExpenseDraft(drafter.viewer, { expenseId, expectedVersion: draft.version, fields: { evidenceType: PRIVATE_EVIDENCE_TYPE } });
+  await saveExpenseDraft(drafter.viewer, { expenseId, expectedVersion: draft.version, fields: { evidenceType: PRIVATE_EVIDENCE_TYPE, note: "시안 캡처용 상세" } });
 
   // 증빙 올리기가 브라우저 경로라 올리기 · 제출만 화면으로 한다(preSettleEvidencePending 꼴).
   const context = await browser.newContext({ baseURL });

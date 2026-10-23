@@ -93,6 +93,9 @@ function paymentTermDaysValue(raw: string): number | null {
 // 성공 뒤(UQ-8 B): 등록은 패널을 열어 둔 채 칸을 비우고(`PanelForm`이 폼 reset · 첫 칸 포커스) 수정은 닫힌다.
 // 계좌번호 입력은 값을 클라이언트 상태에만 담고 제출 후 즉시 비운다(PanelForm의 폼 reset).
 // 07-20(SC-17): 칸 순서 이름 → 갈래 → 사업자 번호 → 지급 기한(협력사 갈래만) → 기본 증빙 종류 → 계좌 → 사용자 정의 칸. select는 모두 `ui/select`(N10).
+// 새로 불러오기 → 폼 재마운트 사이에 건너가는 표지 — 컴포넌트 상태는 재마운트로 사라지므로 모듈에 둔다.
+let refocusAfterReload = false;
+
 export function VendorForm({
   evidenceTypes,
   fieldDefs,
@@ -176,6 +179,13 @@ export function VendorForm({
       if (businessNoConflict) router.push(existingVendorHref(businessNoConflict));
     },
   });
+
+  // 07-20 V3: 새로 불러오기가 폼을 새로 마운트하면 눌렀던 단추가 사라져 포커스가 body로 떨어진다 — 새 폼이 서면 이름 칸으로 옮긴다.
+  useEffect(() => {
+    if (!refocusAfterReload) return;
+    refocusAfterReload = false;
+    document.getElementById("name")?.focus();
+  }, []);
 
   // 07-20 V3 · U12: FormAlert가 나타나면 패널 본문을 맨 위로 올리고 포커스를 알림으로(아래에 있던 사람도 본다).
   useEffect(() => {
@@ -352,7 +362,13 @@ export function VendorForm({
         <div id="vendor-form-alert" ref={alertRef} tabIndex={-1} className={styles.formAlert}>
           <FormAlert>
             {versionConflict}{" "}
-            <Button variant="tertiary" onClick={() => router.refresh()}>
+            <Button
+              variant="tertiary"
+              onClick={() => {
+                refocusAfterReload = true;
+                router.refresh();
+              }}
+            >
               새로 불러오기
             </Button>
           </FormAlert>

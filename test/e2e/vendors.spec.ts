@@ -659,6 +659,22 @@ test.describe("거래처 지급 기한 · 동시 수정 (07-20 SC-17)", () => {
     }
   });
 
+  test("지급 기한 단위 `일`이 입력 칸과 같은 세로 중심에 선다 (375 · 1280, ±4px)", async ({ page }) => {
+    await loginAsSysadmin(page);
+    for (const width of [375, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/admin/vendors?new=1");
+      const panel = panelOf(page);
+      // 패널 열림 모션 중에는 두 상자가 따로 움직여 보인다 — 한 번의 평가로 같은 순간의 두 중심을 잰다.
+      const gap = await panel.locator("#paymentTermDays").evaluate((input) => {
+        const unit = document.getElementById("paymentTermDays-unit")!;
+        const center = (el: Element) => el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2;
+        return Math.abs(center(input) - center(unit));
+      });
+      expect(gap, `폭 ${width} 입력 중심 ↔ 단위 중심 차`).toBeLessThanOrEqual(4);
+    }
+  });
+
   test("같은 거래처를 두 페이지로 열고 A 저장 → B 저장은 패널 상단 FormAlert · 본문 맨 위 · 포커스 알림 → 새로 불러오기로 최신 값", async ({ page, context }) => {
     const name = `E2E동시수정-${randomUUID()}`;
     const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), kind: "supplier" });
@@ -688,6 +704,8 @@ test.describe("거래처 지급 기한 · 동시 수정 (07-20 SC-17)", () => {
       await alert.getByRole("button", { name: "새로 불러오기" }).click();
       await expect(panel.getByLabel("이름")).toHaveValue(`${name}-A`);
       await expect(panel.locator("#vendor-form-alert")).toHaveCount(0);
+      // 새로 불러오기는 폼을 새로 마운트한다 — 포커스가 body로 떨어지지 않고 패널 안(이름 칸)에 남는다.
+      await expect(panel.locator("#name")).toBeFocused();
     } finally {
       await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
     }

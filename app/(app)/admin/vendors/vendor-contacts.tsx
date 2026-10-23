@@ -17,6 +17,8 @@ export type VendorContactValue = { id: string; name: string; phone: string | nul
 
 type Row = { key: string; id: string; name: string; phone: string; email: string };
 
+// 새 줄 키만 이 카운터로 만든다 — 저장된 줄은 담당자 id로 만든다. 모듈 카운터는 서버 렌더와 브라우저에서 값이 갈라져(서버는 요청마다 쌓인다)
+// 저장된 줄 칸 id가 하이드레이션 뒤에도 서버 값으로 남고, Enter · `삭제` 포커스가 그 id를 못 찾았다(07-23 DOM 감사 P1).
 let rowSeq = 0;
 function nextKey(): string {
   rowSeq += 1;
@@ -42,7 +44,7 @@ export function readContacts(formData: FormData): { id?: string; name: string; p
 
 export function VendorContacts({ initial, error }: { initial: VendorContactValue[]; error?: string }) {
   const [rows, setRows] = useState<Row[]>(() =>
-    initial.map((item) => ({ key: nextKey(), id: item.id, name: item.name, phone: item.phone ?? "", email: item.email ?? "" })),
+    initial.map((item) => ({ key: `contact-${item.id}`, id: item.id, name: item.name, phone: item.phone ?? "", email: item.email ?? "" })),
   );
   const containerRef = useRef<HTMLDivElement>(null);
   // 줄을 더하거나 지운 뒤 옮길 포커스 — 그린 다음에 옮긴다.

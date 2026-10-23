@@ -1070,6 +1070,45 @@ test.describe("거래처 담당자 · 서류 · 확인 표시 (07-23 SC-17 ⑦�
     }
   });
 
+  // DOM 감사 P1(0723): 저장된 줄의 칸 id가 서버 렌더와 클라이언트에서 갈라져(모듈 카운터) 다시 불러온 뒤 Enter · `삭제` 포커스가 엉뚱한 곳으로 갔다.
+  test("다시 불러온 저장된 담당자 줄 — 첫 줄 이메일 Enter → 둘째 줄 이름 / 첫 줄 `삭제` → 다음 줄 `삭제`", async ({ page }) => {
+    const vendor = await freshVendor("E2E담당자저장줄");
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      // 담당자 셋을 저장해 둔다.
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const add = panelOf(page).getByRole("button", { name: "담당자 더하기" });
+      await waitForHydration(add);
+      for (const name of ["담당A", "담당B", "담당C"]) {
+        await add.click();
+        await page.keyboard.type(name);
+      }
+      await panelOf(page).getByRole("button", { name: "거래처 저장" }).click();
+      await expect(panelOf(page)).toHaveCount(0);
+
+      // 주소로 다시 열고 한 번 더 새로 고친다 — 저장된 줄이 서버 렌더로 와서 하이드레이션된다(감사가 본 「다시 불러온 뒤」와 같은 꼴).
+      // 서버 렌더를 두 번 거치게 해 서버 쪽 값이 새로 뜬 브라우저 쪽 값과 우연히 같아지지 않게 한다.
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      await expect(panelOf(page).locator("[data-contact-row]")).toHaveCount(3);
+      await page.reload();
+      const rows = panelOf(page).locator("[data-contact-row]");
+      await expect(rows).toHaveCount(3);
+      await waitForHydration(rows.nth(0).getByLabel("이메일"));
+      await expect(rows.nth(0).getByLabel("이름", { exact: true })).toHaveValue("담당A");
+
+      await rows.nth(0).getByLabel("이메일").press("Enter");
+      await expect(rows.nth(1).getByLabel("이름", { exact: true })).toBeFocused();
+
+      await rows.nth(0).getByRole("button", { name: "삭제" }).click();
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0).getByRole("button", { name: "삭제" })).toBeFocused();
+      await expect(rows.nth(0).getByLabel("이름", { exact: true })).toHaveValue("담당B");
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+
   test("수정 패널 맨 아래 소제목 `서류` · `계좌 변경 기록` — 두 자리 `사업자등록증` · `통장 사본` 붙이기 · `교체` / 등록 패널에는 두 섹션 없음", async ({ page }) => {
     const vendor = await freshVendor("E2E서류");
     const pdf = (name: string) => ({ name, mimeType: "application/pdf", buffer: Buffer.from(`%PDF-1.4\n% ${randomUUID()}\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n`) });

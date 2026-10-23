@@ -276,7 +276,9 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     await expect(panel.locator("dd").filter({ hasText: "5,000,000" })).toHaveCount(1);
     const top = panel.locator("table", { has: page.locator("caption", { hasText: "예산 이력" }) }).locator("tbody tr").first();
     await expect(top).toContainText("직접 수정");
-    await expect(top).toContainText("−2,000,000");
+    // 07-24 감사 #8: 이력 변동분 음수도 표와 같은 하이픈 마이너스(SYSTEM §2-4).
+    await expect(top).toContainText("-2,000,000");
+    await expect(top).not.toContainText("−");
     await expect(top).toContainText("오입력 정정");
     await expect(page.locator('[data-ui="toast"]')).toHaveCount(0);
 
@@ -360,4 +362,131 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     await expect(secondSection.getByRole("link", { name: "예산 현황" })).toHaveCount(0);
     await second.context.close();
   });
+});
+
+// 07-24 독립 DOM 감사(0724-dom-audit.md) 지적 — 4폭(1280 · 768 · 375 · 320) DOM 단언.
+// 서버 액션은 화면 URL로 가는 POST다 — 본문의 인자 이름으로 저장(expectedBudgetKrw)과 이력 다음 쪽(cursor 문자열)을 가른다.
+const AUDIT_WIDTHS = [1280, 768, 375, 320] as const;
+
+function isSave(body: string | null): boolean {
+  return body?.includes("expectedBudgetKrw") ?? false;
+}
+
+function isMore(body: string | null): boolean {
+  return /"cursor":"/.test(body ?? "");
+}
+
+async function openHistoryAt(page: Page, name: string, width: number) {
+  const row = budgetTable(page).locator("tbody tr", { hasText: name });
+  // 폰(700 미만)은 행동 열이 숨고 행 탭 칸이 같은 시트를 연다.
+  if (width >= 700) await row.getByRole("button", { name: "예산 이력" }).click();
+  else await budgetTable(page).getByRole("button", { name: new RegExp(`· ${name} 상세 보기$`) }).click();
+  await expect(historyPanel(page)).toBeVisible();
+}
+
+test.describe("예산 현황 — 감사 지적 (07-24 DOM 감사)", () => {
+  for (const width of AUDIT_WIDTHS) {
+    test(`${width} — 더 보기 실패 · 포커스 · 저장 실패 · 저장 중 닫기 무시 · 충돌 새로 불러오기 · 입력 버리기 확인 · PO 없음`, async ({ browser }) => {
+      await setCostRate(70);
+      const team = await makeTeam();
+      const name = `E2E감사-${randomUUID().slice(0, 8)}`;
+      const noPo = `E2E감사PO없음-${randomUUID().slice(0, 8)}`;
+      const id = await makeProject(team, name, 1_000_000);
+      for (let step = 2; step <= 11; step += 1) {
+        await saveProjectLedger(team.lead, id, { seenStatus: "in_progress", preEstimate: { currency: "KRW", amount: step * 1_000_000, fxRate: 1, fxRateTouched: false } });
+      }
+      // PO 0 + 승인 견적 기준 예산 줄(감사 픽스처 「PO 없음」과 같은 상태 — 기준이 없으면 행이 서지 않는다).
+      const noPoId = await makeProject(team, noPo, null);
+      await db.insert(projectBudgetEntries).values({ projectId: noPoId, reason: "new_approved_revision", baseAmountKrw: 5_000_000, costRatePct: "70", deltaKrw: 3_500_000, createdBy: team.pmId });
+      const user = await budgetUser(team.teamId);
+      const { page, context } = await openAs(browser, user, "/projects/budget", width);
+
+      // #7: PO 0 행의 PO 금액 칸은 `PO 없음`(PO 열은 700 이상에서만 보인다).
+      if (width >= 700) {
+        const poCells = budgetTable(page).locator("tbody tr", { hasText: noPo }).locator("td");
+        await expect(poCells.filter({ hasText: /^PO 없음$/ })).toHaveCount(1);
+      }
+
+      await openHistoryAt(page, name, width);
+      const panel = historyPanel(page);
+      const rows = panel.locator("table", { has: page.locator("caption", { hasText: "예산 이력" }) }).locator("tbody tr");
+      await expect(rows).toHaveCount(10);
+
+      // #1(loadMore) · #11: 다음 쪽 읽기 실패 → 명사형 한 줄(role=alert) · `더 보기`가 다시 눌린다.
+      await page.route("**/projects/budget*", (route) => (route.request().method() === "POST" && isMore(route.request().postData()) ? route.abort() : route.fallback()));
+      const more = panel.getByRole("button", { name: "더 보기" });
+      await more.click();
+      await expect(panel.getByRole("alert")).toHaveText("예산 이력 불러오기 실패");
+      await expect(more).not.toHaveAttribute("aria-disabled", "true");
+      await page.unrouteAll({ behavior: "wait" });
+
+      // #5: 키보드로 `더 보기` → 다 붙으면 버튼이 사라져도 포커스는 패널 안 `프로젝트 열기`.
+      await more.focus();
+      await page.keyboard.press("Enter");
+      await expect(rows).toHaveCount(11);
+      await expect(more).toHaveCount(0);
+      await expect(panel.getByRole("alert")).toHaveCount(0);
+      await expect(panel.getByRole("link", { name: "프로젝트 열기" })).toBeFocused();
+
+      // #1: 저장 중 네트워크 실패 → 처리 중이 풀리고 오류 한 줄(role=alert) · `취소` 다시 켜짐 · 입력 그대로.
+      await panel.getByRole("button", { name: "예산 바꾸기" }).click();
+      await panel.getByLabel("예산", { exact: true }).fill("8000000");
+      await panel.getByLabel("사유", { exact: true }).fill("감사 저장");
+      await page.route("**/projects/budget*", (route) => (route.request().method() === "POST" && isSave(route.request().postData()) ? route.abort() : route.fallback()));
+      const save = panel.getByRole("button", { name: /예산 저장/ });
+      await save.click();
+      await expect(panel.getByRole("alert")).toHaveText("저장 실패 · 다시 시도");
+      await expect(save).not.toHaveAttribute("aria-disabled", "true");
+      await expect(panel.getByRole("button", { name: /취소/ })).toBeEnabled();
+      await expect(panel.getByLabel("사유", { exact: true })).toHaveValue("감사 저장");
+      await page.unrouteAll({ behavior: "wait" });
+
+      // #2: 저장 중 Esc 두 번 · 닫기(x)는 무시된다 — 편집 · 패널이 남고, 저장이 끝나면 결과가 패널에 선다.
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/projects/budget*", async (route) => {
+        if (route.request().method() === "POST" && isSave(route.request().postData())) await held;
+        await route.fallback();
+      });
+      await save.click();
+      await expect(save).toHaveAttribute("aria-disabled", "true");
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await panel.getByRole("button", { name: "닫기" }).click();
+      await expect(panel).toBeVisible();
+      await expect(save).toBeVisible();
+      release();
+      await expect(save).toHaveCount(0);
+      await expect(panel.locator("dd").filter({ hasText: /^8,000,000$/ })).toHaveCount(1);
+      await page.unrouteAll({ behavior: "wait" });
+
+      // #4: 충돌 → 오류 줄의 `새로 불러오기`가 현재 값 · `예산` 칸 · 맨 위 줄을 새 값으로 바꾸고 포커스를 `예산` 칸에 둔다.
+      await panel.getByRole("button", { name: "예산 바꾸기" }).click();
+      await panel.getByLabel("예산", { exact: true }).fill("9000000");
+      await panel.getByLabel("사유", { exact: true }).fill("충돌 확인");
+      await saveProjectLedger(team.lead, id, { seenStatus: "in_progress", preEstimate: { currency: "KRW", amount: 12_000_000, fxRate: 1, fxRateTouched: false } });
+      await save.click();
+      const conflict = panel.getByRole("alert");
+      await expect(conflict).toContainText("다른 사람이 먼저 수정");
+      await conflict.getByRole("button", { name: "새로 불러오기" }).click();
+      await expect(panel.getByRole("alert")).toHaveCount(0);
+      await expect(panel.locator("dd").filter({ hasText: /^8,700,000$/ })).toHaveCount(1);
+      await expect(rows.first()).toContainText("PO 금액 변경");
+      await expect(panel.getByLabel("예산", { exact: true })).toHaveValue("8,700,000");
+      await expect(panel.getByLabel("예산", { exact: true })).toBeFocused();
+      await expect(panel.getByLabel("사유", { exact: true })).toHaveValue("충돌 확인");
+
+      // #3: 사유를 입력한 채 닫기(x) → `입력 버리기` 확인 창. 확인하면 닫힌다.
+      await panel.getByRole("button", { name: "닫기" }).click();
+      const discard = page.getByRole("dialog", { name: "입력 버리기" });
+      await expect(discard).toBeVisible();
+      await discard.getByRole("button", { name: "입력 버리기" }).click();
+      await expect(panel).toHaveCount(0);
+
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+      await context.close();
+    });
+  }
 });

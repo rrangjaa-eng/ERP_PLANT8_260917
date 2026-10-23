@@ -16,7 +16,7 @@ import { makeAdmin, makeAdminRole, makeOrgTeam } from "./admin-cap-fixtures";
 
 // 사용자 결정 F24(카드 2026-10-23 10:02 KST): 퇴직한 사람은 지급 계좌까지 어떤 정보도 고치지 못한다 —
 // 260907 `server/src/people.ts:792-797`(left_date가 있으면 409 「퇴사한 사원은 고칠 수 없습니다」)와 같은 판정.
-// 퇴직 경계는 isRetiredOn(퇴직일 당일까지 재직, 다음 날부터 퇴직). 퇴직일 자체는 재입사 경로라 막지 않는다
+// 퇴직 경계는 isRetiredOn(퇴직일 당일까지 재직, 다음 날부터 퇴직). 퇴직일은 지우기(재입사)만 받는다
 // (260907 `/api/people/:id/rejoin` `people.ts:1155`).
 
 function kstDayOffset(days: number): string {
@@ -124,5 +124,48 @@ describe("퇴직자 정보 변경 잠금(F24)", () => {
     const id = await personResigned(kstDayOffset(-1));
     await setResignationDate(SYSTEM_VIEWER, id, null);
     expect((await readRow(id))?.resignationDate).toBeNull();
+  });
+
+  // 사용자 결정(카드 2026-10-23 12:34 KST) 「퇴직한 사람의 퇴직일은 비우기만 허용」: 퇴직자의 퇴직일은 지우기(재입사)만 받는다 —
+  // 다른 과거 · 미래 날짜로 옮기기는 같은 거부. 아직 퇴직 전(퇴직일 없음 · 미래)이면 그대로 넣고 바꾼다.
+  describe("퇴직일 — 퇴직자는 비우기만", () => {
+    it.each([
+      { label: "다른 과거 날짜", days: -400 },
+      { label: "미래 날짜", days: 30 },
+    ])("퇴직자 → $label — 거부 · 퇴직일 그대로", async ({ days }) => {
+      const stored = kstDayOffset(-1);
+      const id = await personResigned(stored);
+      await refusedRetired(setResignationDate(SYSTEM_VIEWER, id, kstDayOffset(days)));
+      expect((await readRow(id))?.resignationDate).toBe(stored);
+    });
+
+    it("퇴직자 → 비운 뒤 다시 넣기(두 단계) — 성공", async () => {
+      const id = await personResigned(kstDayOffset(-1));
+      await setResignationDate(SYSTEM_VIEWER, id, null);
+      await setResignationDate(SYSTEM_VIEWER, id, kstDayOffset(10));
+      expect((await readRow(id))?.resignationDate).toBe(kstDayOffset(10));
+    });
+
+    it("미래 퇴직일인 재직자 → 다른 날짜 — 성공", async () => {
+      const id = await personResigned(kstDayOffset(30));
+      await setResignationDate(SYSTEM_VIEWER, id, kstDayOffset(60));
+      expect((await readRow(id))?.resignationDate).toBe(kstDayOffset(60));
+    });
+
+    it("퇴직일 없는 재직자 → 퇴직일 넣기 — 성공", async () => {
+      const person = await makePerson("대상 P", DEFAULT_ROLE_ID, null);
+      await setResignationDate(SYSTEM_VIEWER, person.id, kstDayOffset(20));
+      expect((await readRow(person.id))?.resignationDate).toBe(kstDayOffset(20));
+    });
+
+    it("연말 경계 — 12-31 퇴직자는 1-1(KST)부터 옮기기 거부, 12-31 당일은 성공", async () => {
+      const lastDayEmployed = () => new Date("2025-12-31T05:00:00+09:00");
+      const firstDayRetired = () => new Date("2026-01-01T00:30:00+09:00");
+      const id = await personResigned("2025-12-31");
+      await refusedRetired(setResignationDate(SYSTEM_VIEWER, id, "2025-12-30", { now: firstDayRetired }));
+      expect((await readRow(id))?.resignationDate).toBe("2025-12-31");
+      await setResignationDate(SYSTEM_VIEWER, id, "2026-01-15", { now: lastDayEmployed });
+      expect((await readRow(id))?.resignationDate).toBe("2026-01-15");
+    });
   });
 });

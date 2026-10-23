@@ -11,7 +11,7 @@ export function isRetiredOn(resignationDate: string | null, today: string): bool
 
 // 사용자 결정 F24(카드 2026-10-23 10:02 KST): 퇴직한 사람은 지급 계좌까지 어떤 정보도 고치지 못한다 — 260907
 // `server/src/people.ts:792-797`(left_date가 있으면 409 「퇴사한 사원은 고칠 수 없습니다」)와 같은 판정.
-// 퇴직일 자체는 재입사 경로라 막지 않는다(260907 `/api/people/:id/rejoin` `people.ts:1155`).
+// 퇴직일은 지우기만 받는다 — 재입사 경로(260907 `/api/people/:id/rejoin` `people.ts:1155`). 다른 날짜로 옮기기는 거부(카드 10-23 12:34).
 // domain/org도 부르므로 domain/people(index)를 import하지 않는다(순환 방지) — 오류 클래스도 여기 둔다.
 export const RETIRED_EDIT_MESSAGE = "퇴직한 사람 · 정보 변경 없음";
 

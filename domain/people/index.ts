@@ -721,8 +721,9 @@ async function setEmploymentDate(
       // 어떤 날짜의 퇴직일도 넣지 않는다 — 미래 날짜는 시간 경과로 0명이 되는 시한폭탄(RESEARCH Pitfall 7).
       // 07-17 독립 검토 M1: 입사일도 같은 잠금 → 재조회 → 대상 계급 상한(관리자 키는 마지막 관리자 판정이 있는 퇴직일만).
       await lockSeatKeys(viewer, { personIds: [userId], admin: field === "resignation_date" }, tx);
-      // F24: 입사일은 퇴직자면 거부. 퇴직일은 재입사 경로라 막지 않는다(260907 `people.ts:1155` rejoin).
-      if (field === "hire_date") await assertNotRetiredInTx(viewer, userId, today, tx);
+      // F24: 입사일은 퇴직자면 거부. 퇴직일은 지우기(재입사, 260907 `people.ts:1155` rejoin)만 받는다 — 사용자 결정
+      // (카드 2026-10-23 12:34 KST) 「퇴직한 사람의 퇴직일은 비우기만 허용」: 다른 날짜로 옮기기는 같은 거부.
+      if (field === "hire_date" || value !== null) await assertNotRetiredInTx(viewer, userId, today, tx);
       const fresh = await repoFindUserById(viewer, userId, tx);
       if (!fresh) throw new UserNotFoundError("사람 찾을 수 없음");
       // K-R1 사용자 확정(2026-10-11 카드 「막기」) · D-6411: 대상 계급 C가 내 상한 밖이면 날짜를 넣지도 지우지도 못한다.

@@ -325,6 +325,25 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
     });
   });
 
+  // 사용자 결정(카드 2026-10-23 12:34 KST) 「퇴직한 사람의 퇴직일은 비우기만 허용」: 다른 날짜로 옮기면 칸 오류 줄에 같은 거부 문구 ·
+  // 칸은 저장값으로 돌아가고, 새로 고쳐도 퇴직일 그대로.
+  test("퇴직자 퇴직일 옮기기(F24 · 카드 12:34): 칸 오류에 거부 문구 · 저장값으로 · 새로 고침 뒤에도 그대로", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const resignationDate = `${yearOf(today) - 1}-06-30`;
+      const target = await makeTarget("퇴직 옮기기");
+      await setResignationDate(SYSTEM_VIEWER, target.id, resignationDate);
+      const page = await adminPage(browser, baseURL);
+      await page.goto(`/admin/people/${target.id}`);
+
+      await blurSave(page, "퇴직일", `${yearOf(today) - 1}-05-31`);
+      await expect(section(page).getByText("퇴직한 사람 · 정보 변경 없음", { exact: true })).toBeVisible();
+      await expect(section(page).getByLabel("퇴직일")).toHaveValue(resignationDate);
+      await page.reload();
+      await expect(section(page).getByLabel("퇴직일")).toHaveValue(resignationDate);
+      await page.context().close();
+    });
+  });
+
   test("올해 퇴직은 퇴직 줄 하나(금액 없음), 다음 해 퇴직은 올해 보통 줄", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const year = yearOf(today);

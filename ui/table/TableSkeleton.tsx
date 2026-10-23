@@ -5,7 +5,8 @@ import styles from "./TableSkeleton.module.css";
 // `--surface-muted` 행 3개(편집 표는 합계 줄 뼈대), 애니메이션 없이 300ms 지연 표시(빨리 끝나는 스트리밍에서는 보이지 않는다).
 // 표 면 · 머리글 클래스는 Table.module.css와 같다. 훅 · 지시문이 없는 서버 컴포넌트다.
 export type TableSkeletonProps = {
-  columns: { key: string; label: string; align?: "left" | "right" }[];
+  // className: 로드 뒤 `Table` 열의 `headerClassName`과 같은 값을 주면 머리글 폭이 앞뒤로 같다.
+  columns: { key: string; label: string; align?: "left" | "right"; className?: string }[];
   /** 편집 표 — 합계 줄 뼈대를 더한다. */
   withFooter?: boolean;
 };
@@ -22,7 +23,7 @@ export function TableSkeleton({ columns, withFooter = false }: TableSkeletonProp
               <th
                 key={column.key}
                 scope="col"
-                className={[tableStyles.headerCell, column.align === "right" ? tableStyles.alignRight : ""].filter(Boolean).join(" ")}
+                className={[tableStyles.headerCell, column.align === "right" ? tableStyles.alignRight : "", column.className ?? ""].filter(Boolean).join(" ")}
               >
                 {column.label}
               </th>

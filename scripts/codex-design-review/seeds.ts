@@ -28,6 +28,9 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
+import { setResignationDate } from "@/domain/people";
+import { lockoutConfig } from "@/domain/auth/lockout";
+import { recordAttempt } from "@/repositories/login-attempts";
 import { setSettingValue } from "@/domain/settings/registry";
 import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
@@ -831,6 +834,26 @@ async function evidencePrivateType(browser: Browser, baseURL: string | undefined
   return { vars: { expenseId }, viewer: teamLead };
 }
 
+// people-list-filled: 07-17 사람 목록 · 상세 캡처용 — 시스템 관리자가 보는 사람 12명(잠김 2 · 퇴직 1 · 팀장 1 · 나머지는 임시 비밀번호 사용 중).
+// {lockedId}는 잠긴 재직자 한 명(상세 로그인 섹션의 `잠금 풀기` · `비밀번호 초기화`가 함께 보이는 상태).
+async function peopleListFilled(): Promise<SeedResult> {
+  const today = seoulToday();
+  const yearStart = `${today.slice(0, 4)}-01-01`;
+  const suffix = randomUUID().slice(0, 6);
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처사람본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처사람팀-${suffix}` });
+  const people: Person[] = [];
+  for (let i = 0; i < 12; i += 1) people.push(await makePerson("사람", i === 3 ? "role-team-lead" : "role-pm", team.id, yearStart));
+  const { threshold } = await lockoutConfig();
+  for (const person of people.slice(0, 2)) {
+    for (let i = 0; i < threshold; i += 1) await recordAttempt(SYSTEM_VIEWER, { email: person.email, success: false, ip: null });
+  }
+  const retired = people[2];
+  if (retired) await setResignationDate(SYSTEM_VIEWER, retired.viewer.id, `${Number(today.slice(0, 4)) - 1}-12-31`);
+  const viewer = await makePerson("관리", "role-sysadmin", team.id, yearStart);
+  return { vars: { lockedId: people[0]?.viewer.id ?? "" }, viewer };
+}
+
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
   switch (name) {
     case "pre-settle-evidence-pending":
@@ -845,5 +868,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return evidenceAuthorPick();
     case "evidence-private-type":
       return evidencePrivateType(browser, baseURL);
+    case "people-list-filled":
+      return peopleListFilled();
   }
 }

@@ -1,6 +1,6 @@
 /* SYSTEM.md §6-1 목록 · §6-3 폼 템플릿(D-39). 값은 역할 토큰만 쓴다(스킨 A).
    04.6-14: 표(StaticTable)와 행 행동(RowActions)이 공용 컴포넌트로 옮겨 화면별 표 · 행 행동 · 등록 링크 규칙을 지웠다.
-   패널 안 select는 라벨 위 · 칸 전폭(.panelSelect)이고, PC 라벨 열 격자(.selectLabel)는 페이지 폼(사람 상세 계급 변경)만 쓴다. */
+   패널 안 select는 라벨 위 · 칸 전폭(.panelSelect — 조직 화면, 07-21 이관 전)이다. */
 
 /* 로그인 상태 배지: PC는 · 로 이어 한 줄. */
 .badges {
@@ -28,6 +28,47 @@
   }
 }
 
+/* 07-17 N10: 사람 등록 패널의 Form.Field(Select) 줄 — TextField 줄과 같은 아래 여백. */
+.panelField {
+  margin: 0 0 var(--s-4);
+}
+
+/* 07-17 N10: 사람 상세 연차 칸(TextField) — 줄 간격은 Form(--s-6)이 맡아 TextField 줄 아래 여백을 지운다. PC(≥700)는 라벨 열 96 + --s-2
+   격자라 칸 아래 힌트가 입력 칸과 같은 x에서 시작한다(§7-2 「입력 아래」 · 설정 화면 .field 꼴). 칸 폭은 이관 전 Form.Field 폭 그대로. */
+.leaveField > :global([data-ui="field-row"]) {
+  margin-bottom: 0;
+}
+
+.leaveHint {
+  margin: var(--s-1) 0 0;
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+@media (min-width: 700px) {
+  .leaveField {
+    display: grid;
+    grid-template-columns: var(--label-w) minmax(0, 1fr);
+    column-gap: var(--s-2);
+  }
+
+  .leaveField > * {
+    grid-column: 1 / -1;
+  }
+
+  .leaveField > .leaveHint {
+    grid-column: 2;
+  }
+
+  .inputShort {
+    max-width: var(--field-w-short);
+  }
+
+  .inputLong {
+    max-width: var(--field-w-long);
+  }
+}
+
 /* 패널 안 select 묶음 — 모든 폭에서 라벨 위 · 칸 전폭(04.6-04 패널 배치). */
 .panelSelect {
   display: flex;
@@ -39,48 +80,9 @@
   margin: 0 0 var(--s-4);
 }
 
-/* 페이지 폼 select 묶음(사람 상세 계급 변경) — 폰은 위 세로 쌓기가 기본값이다. */
-.selectLabel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-1);
-  font-size: var(--text-aux);
-  font-weight: var(--fw-medium);
-  color: var(--text-muted);
+/* 사람 상세 계급 변경 줄 — 위아래 여백(07-17 N10: 칸은 Form.Field · Select가 그린다). */
+.roleChange {
   margin: var(--s-2) 0;
-}
-
-/* §6-3 · §7-2 · §7-15 — PC 폼 라벨 열 96(--label-w) + --s-2(TextField · Form.Field와
-   같은 열), select 칸 폭은 페이지 폼 칸 폭 역할 토큰(--field-w-select). */
-@media (min-width: 700px) {
-  .selectLabel {
-    display: grid;
-    grid-template-columns: var(--label-w) minmax(0, 1fr);
-    column-gap: var(--s-2);
-    align-items: start;
-  }
-
-  /* 라벨 글자 높이를 TextField 라벨(padding-top --s-1)과 맞춘다. */
-  .selectLabel > label {
-    padding-top: var(--s-1);
-  }
-
-  .selectLabel > :not(label) {
-    grid-column: 2;
-  }
-
-  .selectLabel > select {
-    width: var(--field-w-select);
-    max-width: 100%;
-  }
-
-  /* 계급 변경 오류(묶음 뒤 형제)는 select와 같은 x에서 시작한다(§7-2 「입력 아래」). 간격 목록 밖의 라벨 열 폭이라 margin이 아니라
-     상대 위치로 민다 — 밀린 만큼 폭을 줄여 칸 밖으로 넘지 않는다. */
-  .selectLabel + .registeredHint {
-    position: relative;
-    inset-inline-start: calc(var(--label-w) + var(--s-2));
-    width: calc(100% - var(--label-w) - var(--s-2));
-  }
 }
 
 /* 계급 표 머리글은 폰에서 칸이 좁아도 한 글자씩 꺾이지 않는다(defect 3 — 한글은 글자 사이에서 꺾인다). */
@@ -185,4 +187,74 @@
 /* 사람 상세 「지급 계좌」 섹션의 3차 링크 위 여백. */
 .payoutAction {
   margin: var(--s-4) 0 0;
+}
+
+/* 07-17 SC-12 사람 상세 로그인 섹션의 3차 둘(`잠금 풀기` · `비밀번호 초기화`) — 지급 계좌 3차와 같은 위 여백. */
+.loginActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin: var(--s-4) 0 0;
+}
+
+/* 07-17 SC-11 표 위 결과 줄(`잠금 풀기 · {이름}`) — 04.2-09 목록 결과 줄과 같은 꼴(되돌리기 없음). */
+.resultLine {
+  margin: 0 0 var(--s-3);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.resultFailed {
+  color: var(--status-danger);
+}
+
+/* 07-17 SC-11 필터 줄: 검색 칸(맨 앞, Enter 제출) → 3차 `지우기` · 끝 링크 `잠김 N`(§6-1). 지출결의 목록 검색 칸과 같은 선언
+   (다른 라우트 CSS 모듈 import 금지). 폰(<700)은 검색 칸이 줄 전폭이고 링크는 다음 줄로 접힌다. */
+.filterForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-2) var(--s-3);
+  max-width: 100%;
+}
+
+.searchLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--label-gap);
+  width: var(--field-w-short);
+  max-width: 100%;
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.textInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--field-h, var(--control-h));
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.textInput::placeholder {
+  color: var(--text-faint);
+}
+
+.textInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+@media (max-width: 699.98px) {
+  .searchLabel {
+    flex: 1 1 100%;
+    width: auto;
+  }
 }

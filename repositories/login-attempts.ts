@@ -1,6 +1,6 @@
-import { and, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, eq, exists, gte, isNull, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { loginAttempts } from "@/db/schema";
+import { loginAttempts, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // viewer는 Phase 3의 scopeFor(viewer) 자리 — 지금은 받기만 한다(4계층 규칙,
@@ -25,6 +25,32 @@ export async function countOpenFailures(
       ),
     );
   return row?.count ?? 0;
+}
+
+// 07-17 SC-11: 창 안 열린 실패 수가 임계 이상인 이메일(소문자) 묶음 — 사람 목록이 사람마다 묻지 않게 한 질의로.
+// 묶기 · 비교 모두 lower(email) — 시도 행 이메일의 대소문자가 사람 이메일과 다를 수 있다(부록 ND).
+// 07-17 Codex P2: 없는 사람 이메일은 묶음에 넣지 않음 — 비인증 실패 기록이 묶음(IN 목록)을 키우지 못하게.
+export async function listLockedEmails(
+  viewer: Viewer,
+  opts: { threshold: number; since: Date },
+  tx: DbOrTx = db,
+): Promise<Set<string>> {
+  void viewer;
+  const email = sql<string>`lower(${loginAttempts.email})`;
+  const rows = await tx
+    .select({ email })
+    .from(loginAttempts)
+    .where(
+      and(
+        eq(loginAttempts.success, false),
+        isNull(loginAttempts.resolvedAt),
+        gte(loginAttempts.attemptedAt, opts.since),
+        exists(tx.select({ one: sql`1` }).from(users).where(sql`lower(${users.email}) = ${email}`)),
+      ),
+    )
+    .groupBy(email)
+    .having(sql`count(*) >= ${opts.threshold}`);
+  return new Set(rows.map((row) => row.email));
 }
 
 export async function recordAttempt(

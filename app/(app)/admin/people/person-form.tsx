@@ -6,6 +6,7 @@ import { registerPersonAction, archivePersonAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
+import { Select } from "@/ui/select/Select";
 import { kstToday } from "@/lib/kst-date";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { usePanel } from "@/ui/side-panel/SidePanel";
@@ -112,51 +113,44 @@ export function PersonForm({
     >
       <TextField id="name" name="name" label="이름" required error={nameError} />
       <TextField id="email" name="email" label="이메일" type="email" required error={emailError} />
-      <div className={styles.panelSelect}>
-        <label htmlFor="roleId">계급</label>
-        <select
-          className={roleError ? `${styles.select} ${styles.selectInvalid}` : styles.select}
-          id="roleId"
-          name="roleId"
-          required
-          // 06.4(D-6402 · D8 · D9): 선택지는 서버가 계산한 통과 계급만 — 숨김은 UX, 서버 거부가 관문. 없으면 막힘 이유, 하나면 미리 선택
-          defaultValue={roles.length === 1 ? roles[0]?.id : ""}
-          aria-invalid={roleError ? true : undefined}
-          aria-describedby={roleError ? "roleId-error" : undefined}
-        >
-          <option value="" disabled>
-            {roles.length === 0 ? "—" : "계급 선택"}
-          </option>
-          {roles.map((role) => (
-            <option key={role.id} value={role.id}>
-              {role.name}
-            </option>
-          ))}
-        </select>
-        {roleError ? <Form.Error id="roleId-error">{roleError}</Form.Error> : null}
+      {/* 07-17 N10(SC-15): 계급 · 팀은 공용 Select — 라벨 · 오류 줄은 Form.Field · Select 것(항목 · 순서 그대로). */}
+      <div className={styles.panelField}>
+        <Form.Field id="roleId" label="계급">
+          <Select
+            id="roleId"
+            name="roleId"
+            required
+            hideEmptyOption
+            // 06.4(D-6402 · D8 · D9): 선택지는 서버가 계산한 통과 계급만 — 숨김은 UX, 서버 거부가 관문. 없으면 막힘 이유, 하나면 미리 선택
+            defaultValue={roles.length === 1 ? roles[0]?.id : ""}
+            error={roleError}
+            options={[
+              { value: "", label: roles.length === 0 ? "—" : "계급 선택" },
+              ...roles.map((role) => ({ value: role.id, label: role.name })),
+            ]}
+          />
+        </Form.Field>
       </div>
-      <div className={styles.panelSelect}>
-        <label htmlFor="teamId">팀</label>
-        <select
-          className={styles.select}
-          id="teamId"
-          name="teamId"
-          defaultValue=""
-          // 사용자 카드 2026-10-13 「오늘로 채우기」: 팀을 고르면 비어 있는 발령일만 오늘(KST)로 채운다 — 입력한 날짜는 덮지 않는다.
-          onChange={(event) => {
-            const effectiveFrom = event.currentTarget.form?.elements.namedItem("effectiveFrom");
-            if (event.currentTarget.value && effectiveFrom instanceof HTMLInputElement && !effectiveFrom.value) {
-              effectiveFrom.value = kstToday(new Date());
-            }
-          }}
-        >
-          <option value="">배정 없음</option>
-          {teams.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.orgUnitName} · {team.name}
-            </option>
-          ))}
-        </select>
+      <div className={styles.panelField}>
+        <Form.Field id="teamId" label="팀">
+          <Select
+            id="teamId"
+            name="teamId"
+            hideEmptyOption
+            defaultValue=""
+            options={[
+              { value: "", label: "배정 없음" },
+              ...teams.map((team) => ({ value: team.id, label: `${team.orgUnitName} · ${team.name}` })),
+            ]}
+            // 사용자 카드 2026-10-13 「오늘로 채우기」: 팀을 고르면 비어 있는 발령일만 오늘(KST)로 채운다 — 입력한 날짜는 덮지 않는다.
+            onChange={(event) => {
+              const effectiveFrom = event.currentTarget.form?.elements.namedItem("effectiveFrom");
+              if (event.currentTarget.value && effectiveFrom instanceof HTMLInputElement && !effectiveFrom.value) {
+                effectiveFrom.value = kstToday(new Date());
+              }
+            }}
+          />
+        </Form.Field>
       </div>
       <TextField id="effectiveFrom" name="effectiveFrom" label="발령일" type="date" error={effectiveFromError} />
       {/* 04.1-06(D-96): 입사일 필수 — 네이티브 필수 속성은 두지 않는다(브라우저 말풍선이 서버 문구를 가린다, §7-15 · C-13). */}

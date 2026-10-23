@@ -120,7 +120,7 @@ actuals:
 | 감사 항목 | 처리 | 커밋 |
 |---|---|---|
 | P1 문서 번호 blur가 값이 그대로여도 제출 → Tab만으로 표에 못 닿음 | 값이 바뀐 때만 제출(프로젝트 필터와 같은 규칙). E2E desktop `외 N칸` · mobile-375 행 트리거까지 Tab만으로 + 문서 새로 불러짐 0, 값을 바꾸면 Tab/Enter에서 제출 | `7ba35198` |
-| P2 발생 시각 UTC 표시 | `kstDateTimeOf`(표 · 시트 부제). 형식이 `YYYY-MM-DD HH:mm`이라 **초 단위가 빠진다**(저장소 도우미를 그대로 쓰라는 지시) | `aa8e96e7` |
+| P2 발생 시각 UTC 표시 | `kstDateTimeOf`(표 · 시트 부제). 형식이 `YYYY-MM-DD HH:mm`이라 초 단위가 빠졌다 → 아래 R-2에서 초를 다시 넣음 | `aa8e96e7` |
 | P2 상세 줄 순서가 jsonb 키 순서 | 칸 이름 표 선언 순서 → 표에 없는 키는 키 사전 순. **오케스트레이터 결정으로 SC-08 계약 공백을 메운 것(되돌릴 수 있음, `compareFields` 한 곳)** | `f86335d2` |
 | P3 이전 · 이후 둘 다 없음인 줄 | 줄 함수에서 제외해 표 칸 · 시트 · `외 N칸` 개수가 함께 줄어든다 | `f86335d2` |
 | 그 밖 P3(긴 값 높이 · `.nowrapHeader` 사본 · 빈 상태 `필터 지우기` 두 개) | 고치지 않음 — 후속 | — |
@@ -130,6 +130,20 @@ actuals:
 - lint · typecheck exit 0. 재실측: `audit/07-25-dom-audit.md` 4절. 점검표에 고침 절을 더했다.
 - 호출한 스킬(고침): `superpowers:systematic-debugging` · `superpowers:test-driven-development` · `plant8:design-gate` · `superpowers:verification-before-completion`.
 - 확인하지 않은 것: 초 단위 시각이 필요한지(결정 필요) · 독립 재감사 · 실제 `buildChanges` 행의 순서(픽스처는 직접 넣은 changes).
+
+## 게이트 보고 후속 고침 (R-1 · R-2, `0725-gates.md`)
+
+| 항목 | 처리 | 커밋 |
+|---|---|---|
+| R-1 (P2) 계급 id · 범위 코드가 날것으로 보임 | `role-…` 값을 UUID와 같게 단일은 `바뀜`, 목록은 `N개`. 업무 범위 · 보는 범위는 계급 화면(`roles-client.tsx`)의 `WORK_SCOPE_LABEL` · `VIEW_SCOPE_LABEL`과 같은 글자(자기 팀 · 전사 / 전사 · 본부 · 팀 · 본인). 그 표가 클라이언트 파일 안이고 `domain/permissions`는 건드릴 수 없어 같은 값을 `detail-lines.ts`에 한 벌 두었다(계급 화면 라벨을 바꾸면 여기도 바꿔야 함) | `4c1d692d` |
+| R-2 (P3) 발생 시각 초 누락 | `lib/kst-date.ts`에 `kstDateTimeSecondsOf`(`YYYY-MM-DD HH:mm:ss`, KST, h23)를 `kstDateTimeOf` 옆에 더하고 `page.tsx`가 이 함수를 쓴다(표 · 시트 부제가 같은 값). E2E 기대 글자 `2026-10-23 00:30:00` | `25d53846` |
+
+- 결정 기록: 계급 **이름** 풀이(`role-team-lead` → 「팀장」 등)는 DB 조회가 필요해 줄 함수가 순수가 아니게 되므로 하지 않았다 — 후속 결정.
+- RED→GREEN: 단위 5건 RED(`fix2/red.log`: `kstDateTimeSecondsOf` 3 · 계급 id 1 · 범위 라벨 1) → 단위 `test/unit/action-log` + `kst-date` 7 files · 115 passed(`fix2/green.log`). E2E는 기대 글자만 바꿔 RED 단계를 따로 돌리지 않았다(단위 RED가 형식 변화를 이미 잡음).
+- lint · typecheck exit 0(처음 lint가 `isInternalId` 타입 가드가 `never`로 좁혀 2건 실패 → 반환형을 `boolean`으로 바꿔 통과).
+- E2E(CI=true, flock, `--no-deps`): desktop `action-log` + `role-smoke` 20 passed · mobile-375 `mobile-action-log` 4 passed(`fix2/e2e-desktop.log` · `e2e-mobile.log`).
+- 호출한 스킬: `superpowers:test-driven-development` · `plant8:design-gate`(점검표 R-2 절) · `superpowers:verification-before-completion`. 실패는 lint 타입 오류 한 건뿐이라 원인이 즉시 보여 `systematic-debugging`은 부르지 않았다.
+- 확인하지 않은 것: 실제 `people` 계급 변경 · 알림 규칙이 남긴 행을 화면에서 본 것(줄 함수 단위로만) · 320 폭 재실측 · 독립 재감사. 위 「확인하지 않은 것」의 초 단위 필요 여부는 이 고침으로 해소됐다.
 
 ## Self-Check: PASSED
 

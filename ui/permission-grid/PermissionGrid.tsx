@@ -111,6 +111,25 @@ export function resyncCells(
   return next;
 }
 
+// 딸린 칸 저장 성공 확정 — 요청 칸은 next, 예측 칸은 누르기 전 값(= !next, 예측은 next와 다른 칸만 고른다)으로 둔 뒤
+// 서버 `changed`가 실제로 바꾼 칸만 덮는다. 예측이 서버와 어긋나도 새로고침 전까지 틀린 값을 보이지 않는다(0721 /review P3-1).
+export function settleLinkedCells(
+  prev: Record<string, CellState>,
+  rowId: string,
+  requestedKey: string,
+  predictedKeys: string[],
+  next: boolean,
+  changed: readonly PermissionGridChange[],
+): Record<string, CellState> {
+  const out = { ...prev, [requestedKey]: { checked: next, status: "idle" as const } };
+  for (const cellKey of predictedKeys) out[cellKey] = { checked: !next, status: "idle" };
+  for (const change of changed) {
+    const cellKey = buildCellKey(rowId, change.columnId);
+    if (out[cellKey]) out[cellKey] = { checked: change.checked, status: "idle" };
+  }
+  return out;
+}
+
 function ColumnCheckbox({
   checked,
   indeterminate,
@@ -259,15 +278,7 @@ export function PermissionGrid({
     mark("saving", next);
     try {
       const changed = (await onToggle(rowId, columnId, next)) ?? [];
-      setCells((prev) => {
-        const out = { ...prev };
-        for (const cellKey of keys) out[cellKey] = { checked: next, status: "idle" };
-        for (const change of changed) {
-          const cellKey = buildCellKey(rowId, change.columnId);
-          if (out[cellKey]) out[cellKey] = { checked: change.checked, status: "idle" };
-        }
-        return out;
-      });
+      setCells((prev) => settleLinkedCells(prev, rowId, key, predicted, next, changed));
       return { ok: true, changes: changed.map((change) => ({ columnId: change.columnId, before: !change.checked, after: change.checked })) };
     } catch {
       mark("error", !next, "저장 실패 · 다시 시도");

@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
 import { test, expect, type Page } from "@playwright/test";
 import { db } from "@/db/client";
-import { notificationRules } from "@/db/schema";
+import { notificationRules, roles } from "@/db/schema";
 import { CONDITION_KINDS } from "@/domain/notify/condition-kinds";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { insertRole } from "@/repositories/roles";
 import { createFixtureUser } from "./fixtures";
 
 // 07-19 SC-05 알림 규칙 화면(N1 · N2 · N4 · U6 · D-744). 규칙 표는 전역 한 벌이라 이 스펙은 직렬로 돌고 자기가 만진 규칙 행을 끝에 지운다.
@@ -174,6 +176,47 @@ test("행동 링크 수정 → 패널에서 일수 · 받는 계급 추가 · �
   await expect(row.getByRole("cell").nth(2)).toHaveText("담당 PM + 팀장");
   const [saved] = await db.select().from(notificationRules).where(eq(notificationRules.kind, "project-end-no-expense"));
   expect(saved).toMatchObject({ days: 10, version: 1 });
+});
+
+test("보관된 받는 계급은 패널에 흐린 줄로 보이고 체크된 채 저장해도 유지 · 체크를 풀면 빠진다(사용자 결정 2026-10-23)", async ({ page }) => {
+  const roleId = `role-e2e-${Date.now()}`;
+  const roleName = `보관됨-${Date.now().toString(36)}`;
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: roleName });
+  await db.update(roles).set({ archivedAt: new Date() }).where(eq(roles.id, roleId));
+  await db.insert(notificationRules).values({ kind: "project-end-no-expense", extraRoleIds: [roleId], version: 1 });
+  try {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/notification-rules");
+    await expect(ruleRow(page, "종료 후 지출결의 없음").getByRole("cell").nth(2)).toContainText(`+ ${roleName}`);
+    await editLink(page, "종료 후 지출결의 없음").click();
+    const panel = page.getByRole("dialog", { name: "종료 후 지출결의 없음 수정" });
+    const box = panel.getByRole("group", { name: "받는 사람 추가" }).getByRole("checkbox", { name: roleName });
+    await expect(box).toBeChecked();
+    const mutedColor = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--text-muted)";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    await expect(panel.locator("label").filter({ hasText: roleName })).toHaveCSS("color", mutedColor);
+    await panel.getByLabel("일수").fill("9");
+    await panel.getByRole("button", { name: /규칙 저장/ }).click();
+    await expect(panel).toHaveCount(0);
+    const [kept] = await db.select().from(notificationRules).where(eq(notificationRules.kind, "project-end-no-expense"));
+    expect(kept).toMatchObject({ days: 9, extraRoleIds: [roleId], version: 2 });
+    await editLink(page, "종료 후 지출결의 없음").click();
+    const again = page.getByRole("dialog", { name: "종료 후 지출결의 없음 수정" });
+    await again.getByRole("group", { name: "받는 사람 추가" }).getByRole("checkbox", { name: roleName }).uncheck();
+    await again.getByRole("button", { name: /규칙 저장/ }).click();
+    await expect(again).toHaveCount(0);
+    const [dropped] = await db.select().from(notificationRules).where(eq(notificationRules.kind, "project-end-no-expense"));
+    expect(dropped?.extraRoleIds).toEqual([]);
+  } finally {
+    await db.delete(notificationRules).where(eq(notificationRules.kind, "project-end-no-expense"));
+    await db.delete(roles).where(eq(roles.id, roleId));
+  }
 });
 
 test("범위 밖 일수는 `일수 범위 1~30 · 다시 입력`이고 패널이 열린 채 저장되지 않는다(N3)", async ({ page }) => {

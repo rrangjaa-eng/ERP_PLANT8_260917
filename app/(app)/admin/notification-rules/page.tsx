@@ -20,7 +20,7 @@ export default async function NotificationRulesPage({ searchParams }: { searchPa
   // 등록부에 없는 editId · saved는 조용히 무시한다 — 없는 대상을 오류로 다루지 않는다.
   const editing = canWrite && editId ? (rows.find((row) => row.kind === editId) ?? null) : null;
   const savedRow = saved ? (rows.find((row) => row.kind === saved) ?? null) : null;
-  const roles = editing ? await listRuleRoles(viewer) : [];
+  const roles = editing ? await listRuleRoles(viewer, editing.extraRoleIds) : [];
 
   return (
     <ListScreen title="알림 규칙" panel={editing ? <RulePanel key={editing.kind} row={editing} roles={roles} /> : null}>

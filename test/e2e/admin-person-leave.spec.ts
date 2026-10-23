@@ -319,6 +319,29 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
     });
   });
 
+  // 07-21 게이트 사용자 결정(2026-10-23 「막기」): 퇴직자의 계급이 보관됐으면 퇴직일을 지워 다시 활성으로 만들지 않는다 — 칸 오류 한 줄 ·
+  // 값은 저장된 퇴직일로 돌아가고 새로 고침 뒤에도 그대로다.
+  test("보관된 계급의 퇴직자 퇴직일 지우기 → 칸 오류 `보관된 계급 · 먼저 바꾸기` · 퇴직일 그대로", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const resignationDate = `${yearOf(today) - 1}-12-31`;
+      const roleId = (await createRole(SYSTEM_VIEWER, { name: `보관계급${randomUUID().slice(0, 5)}` })).id;
+      const name = `보관계급퇴직${randomUUID().slice(0, 5)}`;
+      const { userId } = await registerPerson(SYSTEM_VIEWER, { name, email: `e2e-person-leave-${randomUUID()}@example.test`, roleId });
+      await setResignationDate(SYSTEM_VIEWER, userId, resignationDate);
+      await setRoleArchived(SYSTEM_VIEWER, roleId, true);
+      const page = await adminPage(browser, baseURL);
+      await page.goto(`/admin/people/${userId}`);
+      await expect(section(page).getByLabel("퇴직일")).toHaveValue(resignationDate);
+
+      await blurSave(page, "퇴직일", "");
+      await expect(section(page).getByText("보관된 계급 · 먼저 바꾸기", { exact: true })).toBeVisible();
+      await expect(section(page).getByLabel("퇴직일")).toHaveValue(resignationDate);
+      await page.reload();
+      await expect(section(page).getByLabel("퇴직일")).toHaveValue(resignationDate);
+      await page.context().close();
+    });
+  });
+
   test("올해 퇴직은 퇴직 줄 하나(금액 없음), 다음 해 퇴직은 올해 보통 줄", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const year = yearOf(today);

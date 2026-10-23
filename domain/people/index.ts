@@ -34,6 +34,7 @@ import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
 import { assertSeatsFree, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
+import { archivedSeatReason } from "@/domain/people/restore";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
   listUsers as repoListUsers,
@@ -775,6 +776,11 @@ async function setEmploymentDate(
       await assertCanGrantRoles(viewer, [fresh.roleId], tx);
       if (field === "resignation_date") {
         if (value !== null) await assertNotLastAdmin(viewer, { userId, asOf: today }, tx);
+        // 07-21 게이트 사용자 결정(2026-10-23 「막기」): 퇴직자가 이 저장으로 활성이 되면(지우기 · 오늘 이후로 늦추기) 팀 · 본부 · 계급 보관을 본다.
+        if (fresh.archivedAt === null && isRetiredOn(fresh.resignationDate, today) && !isRetiredOn(value, today)) {
+          const reason = await archivedSeatReason(viewer, { userId, roleId: fresh.roleId, today }, tx);
+          if (reason) throw new ValidationError(reason);
+        }
         if (fresh.roleId !== null) {
           // 조건 분기 없이 늘 계산 — newSeats가 늘어난 날짜만 돌려주므로 당기기 · 같은 값은 빈 결과로 잠금 · 쿼리 없이 지나간다.
           const occupied = await listOccupiedTeams(viewer, userId, today, tx);

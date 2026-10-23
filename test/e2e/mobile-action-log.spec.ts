@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test";
 import { recordAction } from "@/domain/action-log/record";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { loginAsSysadmin } from "./row-actions-helpers";
+import { insertKstMidnightRow } from "./action-log-kst-fixture";
 
 // 07-25 K16 · SC-08 · U9 — 폰(375 · 320)에서 행동 로그 행은 두 줄(P1 발생 시각 + 행동 종류 / 접힌 줄 첫 요소 = 상세 첫 줄)이고,
 // 행을 탭하면 시트에 바뀐 칸 전체가 보인다. 시트를 닫으면 포커스는 그 행 트리거로 돌아간다.
@@ -61,6 +62,26 @@ test.describe("행동 로그 폰 행 탭 시트 (07-25 K16)", () => {
 
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
+    await expect(folded).toBeFocused();
+  });
+
+  // DOM 감사 P1: Tab만으로 필터 줄을 지나 행 트리거까지 가고, 그 사이 페이지가 다시 불러지지 않는다.
+  test("Tab만으로 필터 줄을 지나 행 트리거까지 가고 페이지가 다시 불러지지 않는다", async ({ page }) => {
+    const token = `e2e-phone-tab-${randomUUID().slice(0, 8)}`;
+    await insertKstMidnightRow(token);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/action-log?documentId=${token}`);
+    const folded = page.locator('td[role="button"]', { hasText: token }).first();
+    await expect(folded).toBeVisible();
+    await page.evaluate(() => document.body.setAttribute("data-tab-marker", "1"));
+
+    let reachedRow = false;
+    for (let step = 0; step < 80 && !reachedRow; step += 1) {
+      await page.keyboard.press("Tab");
+      reachedRow = await page.evaluate(() => document.activeElement?.matches('td[role="button"]') ?? false);
+    }
+    expect(reachedRow).toBe(true);
+    expect(await page.evaluate(() => document.body.getAttribute("data-tab-marker"))).toBe("1");
     await expect(folded).toBeFocused();
   });
 

@@ -7,6 +7,7 @@ import { recordAction } from "@/domain/action-log/record";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { createDelegatedAccount } from "./admin-cap-fixtures";
+import { insertKstMidnightRow } from "./action-log-kst-fixture";
 
 // ADMN-10·OPS-05: 필터 → 내보내기 → 정리 → 정리가 다시 로그에 남는 end-to-end.
 test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
@@ -372,6 +373,39 @@ test.describe("행동 로그 상세 칸 (07-25 K16)", () => {
     await page.goto("/admin/action-log?actionType=settings_change");
     const row = page.locator("tbody tr", { hasText: token }).first();
     await expect(row.locator('[data-ui="action-log-detail"]')).toHaveText("—");
+  });
+
+  // DOM 감사 P1: 문서 번호 칸의 blur 제출이 값이 그대로여도 일어나 Tab만으로는 표에 닿지 못했다(포커스가 BODY로 돌아감).
+  test("Tab만으로 필터 줄을 지나 표까지 가고 페이지가 다시 불러지지 않는다", async ({ page }) => {
+    const token = `e2e-tab-${randomUUID().slice(0, 8)}`;
+    await insertKstMidnightRow(token);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/action-log?documentId=${token}`);
+    await expect(page.locator("tbody tr", { hasText: token }).first()).toBeVisible();
+    await page.evaluate(() => document.body.setAttribute("data-tab-marker", "1"));
+
+    let reachedTable = false;
+    for (let step = 0; step < 80 && !reachedTable; step += 1) {
+      await page.keyboard.press("Tab");
+      reachedTable = await page.evaluate(() => Boolean(document.activeElement?.closest("table")));
+    }
+    expect(reachedTable).toBe(true);
+    expect(await page.evaluate(() => document.body.getAttribute("data-tab-marker"))).toBe("1");
+    await expect(page.locator("tbody tr", { hasText: token }).first().getByRole("button", { name: /^외 \d+칸$/ })).toBeFocused();
+  });
+
+  test("문서 번호를 바꾸고 Tab으로 나가거나 Enter를 누르면 그때만 제출한다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/action-log");
+    const input = page.getByLabel("문서 번호");
+    await input.fill("e2e-blur-change");
+    await input.press("Tab");
+    await expect(page).toHaveURL(/documentId=e2e-blur-change/);
+
+    const again = page.getByLabel("문서 번호");
+    await again.fill("e2e-enter-change");
+    await again.press("Enter");
+    await expect(page).toHaveURL(/documentId=e2e-enter-change/);
   });
 
   test("R10 — 메뉴 view는 있고 정보 항목 action_log.detail이 꺼진 계급은 404(500 아님)", async ({ page }) => {

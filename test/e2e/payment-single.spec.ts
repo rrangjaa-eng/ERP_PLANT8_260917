@@ -293,7 +293,9 @@ test.describe("지급 예정일 제자리 저장 (06-04 · SP-3 ②)", () => {
     await field.fill(future);
     const save = page.getByRole("button", { name: /^예정일 저장/ });
     await expect(save).toBeVisible();
-    await expect(page.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
+    // 07-16(U13 · 공통 계약 1): 칸이 열린 동안 1차는 `예정일 저장` 하나 — `지급 완료`는 2차 꼴로 남는다(그 전 계약: 숨김).
+    await expect(page.locator('main [data-ui="primary-button"]:visible')).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).not.toHaveAttribute("data-ui", "primary-button");
 
     await field.press("Escape");
     await expect(section.getByLabel("지급 예정일")).toHaveCount(0);

@@ -30,8 +30,9 @@ async function state(page: Page): Promise<unknown> {
       reason: ids.map((id) => (document.getElementById(id)?.innerText ?? "").replace(/\s+/g, " ").trim()).join(" / "),
       primary: document.querySelectorAll('[data-ui="primary-button"]').length,
       scroll: [document.documentElement.scrollWidth, document.documentElement.clientWidth],
-      approvalLine: rect(document.querySelector("#expense-form dl")),
-      scheduledPaymentDate: rect(document.getElementById("scheduledPaymentDate")),
+      // 07-16: 폼 안 KvList가 둘(지급 예정일 읽기 줄 · 결재선) — 결재선은 마지막 dl. 작성자 날짜 칸은 희망 지급일.
+      approvalLine: rect([...document.querySelectorAll("#expense-form dl")].at(-1) ?? null),
+      requestedPaymentDate: rect(document.getElementById("requestedPaymentDate")),
       formBar: rect(document.querySelector('[class*="formBar"]')),
       formBarPosition: document.querySelector('[class*="formBar"]') ? getComputedStyle(document.querySelector('[class*="formBar"]') as Element).position : null,
     };

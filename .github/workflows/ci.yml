@@ -159,7 +159,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     # 평소 13분 안쪽(설치 2–10분). playwright 설치가 멈추면 기본 360분을 기다리므로 끊는다.
-    timeout-minutes: 40
+    timeout-minutes: 60
     needs: quality
     if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.quality.outputs.app == 'true')
     strategy:

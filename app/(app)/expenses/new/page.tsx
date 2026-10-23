@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { seoulToday } from "@/lib/dates";
 import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { previewRoute, RouteBlockedError } from "@/domain/approvals";
@@ -37,6 +38,7 @@ export default async function NewExpensePage() {
     <div className={styles.column}>
       <DetailScreen title={defaults.teamName ? `지출결의 — ${defaults.teamName}` : "지출결의"}>
         <ExpenseForm
+          today={seoulToday()}
           data={{
             id: "",
             version: 0,
@@ -52,6 +54,10 @@ export default async function NewExpensePage() {
             amount: null,
             fxRate: currencies.find((item) => item.value === "KRW")?.fxRate ?? 1,
             scheduledPaymentDate: null,
+            scheduledPaymentManual: false,
+            paymentRuleLine: null,
+            requestedPaymentDate: null,
+            requestedPaymentReason: null,
             note: null,
             installment: false,
             installmentMode: "none",

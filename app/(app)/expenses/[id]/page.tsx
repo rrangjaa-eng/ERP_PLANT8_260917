@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { seoulToday } from "@/lib/dates";
 import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, previewRoute, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE, RouteBlockedError } from "@/domain/approvals";
@@ -259,6 +260,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
       >
         {readRows.length > 0 ? <KvList items={readRows} /> : null}
         <ExpenseForm
+          today={seoulToday()}
           key={expense.quoteLineId ?? expense.itemName ?? "team"}
           data={{
             id,
@@ -275,6 +277,10 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
             amount: supply?.amount ?? null,
             fxRate: supply?.fxRate ?? currencies.find((item) => item.value === (supply?.currency ?? "KRW"))?.fxRate ?? 1,
             scheduledPaymentDate: expense.scheduledPaymentDate ?? null,
+            scheduledPaymentManual: expense.scheduledPaymentManual ?? false,
+            paymentRuleLine: expense.paymentRuleLine ?? null,
+            requestedPaymentDate: expense.requestedPaymentDate ?? null,
+            requestedPaymentReason: expense.requestedPaymentReason ?? null,
             note: expense.note ?? null,
             installment: expense.installment ?? false,
             installmentMode: expense.installmentMode ?? "none",

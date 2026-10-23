@@ -1,15 +1,17 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import type { PaymentViewDto } from "@/domain/payments";
 import { AMOUNT_HIDDEN, TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Num } from "@/ui/num/Num";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { formatKrw, numberInputRejectionReason } from "@/lib/format-number";
-import { previewPayableAction } from "./actions";
+import { previewPayableAction, saveScheduledPayDateAction } from "./actions";
 import { PaymentAccountValue } from "../payment-targets-table";
 import styles from "./expense.module.css";
 
@@ -299,23 +301,91 @@ function ScheduleField({ expenseId, schedule, onChange, onClose }: { expenseId: 
   );
 }
 
+// 07-16(SC-03 · D-731 · D-742 · C6): `지급 예정일` 값 — 값 뒤 `수동 지정` · `마감 지나 밀림` 글자 태그 또는 muted `(자동)`, 바로 아래 규칙 줄(07-01 payRuleLine
+// 그대로 — 수동이면 `결재 마감 면제`), 수동이면 `자동 계산 MM-DD`, 수동 날짜가 지급 요일이 아니면 warning 한 줄(07-01 payOffWeekdayText 그대로).
+// 요일 · 마감 글자는 화면이 만들지 않고 DTO 문자열만 그린다(D-715). 지급 섹션이 있든 없든(expense-document.tsx) 같은 모양.
+export type PaymentScheduleValueProps = {
+  date: string | null;
+  manual: boolean;
+  autoDate: string | null;
+  pushReason: "cutoff" | "no-slot" | null;
+  ruleLine: string | null;
+  offWeekday: string | null;
+};
+
+export function PaymentScheduleValue({ date, manual, autoDate, pushReason, ruleLine, offWeekday }: PaymentScheduleValueProps) {
+  if (date === null) return <span className={styles.muted}>—</span>;
+  return (
+    <>
+      <span>
+        <span className={styles.nowrap}>{date}</span>
+        {manual ? (
+          <>
+            {" "}
+            <StatusTag status="수동 지정" variant="text" />
+          </>
+        ) : pushReason === "cutoff" ? (
+          <>
+            {" "}
+            <StatusTag status="마감 지나 밀림" variant="text" />
+          </>
+        ) : (
+          <span className={styles.muted}>{" (자동)"}</span>
+        )}
+      </span>
+      {ruleLine ? <span className={`${styles.subLine} ${styles.muted}`}>{ruleLine}</span> : null}
+      {manual && autoDate ? <span className={`${styles.subLine} ${styles.muted}`}>{`자동 계산 ${autoDate.slice(5)}`}</span> : null}
+      {offWeekday ? <span className={styles.drift}>{offWeekday}</span> : null}
+    </>
+  );
+}
+
+// 희망 지급일 · 희망 사유(기안자가 적은 값 — 있을 때만 줄이 선다). 지급 예정일 줄 바로 앞(지급 섹션 없는 문서는 expense-document.tsx가 같은 두 줄).
+function requestedPaymentItems(requested: { date: string | null; reason: string | null }): KvItem[] {
+  const items: KvItem[] = [];
+  if (requested.date) items.push({ label: "희망 지급일", value: requested.date });
+  if (requested.reason) items.push({ label: "희망 사유", value: <span className={styles.subLine}>{requested.reason}</span> });
+  return items;
+}
+
+const AUTO_FAILED = "결과를 받지 못함 · 새로 고침";
+
 export function PaymentFields({
   paymentMethod,
   paymentMethodName,
   scheduledPaymentDate,
+  scheduleValueProps,
+  requested,
 }: {
   paymentMethod: string | null;
   paymentMethodName: string | null;
   scheduledPaymentDate: string | null;
+  scheduleValueProps: PaymentScheduleValueProps;
+  requested: { date: string | null; reason: string | null };
 }) {
-  const { view, fields, setFields, preview, previewing, fieldErrors, setFieldErrors, schedule, setSchedule } = usePaymentPanel();
+  const router = useRouter();
+  const { view, fields, setFields, preview, previewing, refreshPreview, fieldErrors, setFieldErrors, schedule, setSchedule } = usePaymentPanel();
   const dash = <span className={styles.muted}>—</span>;
   const paid = view.row?.row === "P6";
   const canPay = view.row?.primary === "pay";
   const label = transferLabel(paymentMethod);
+  // N4 — `자동으로 되돌리기` 결과 줄(되돌릴 수동 값 · 응답 version) · 거부 사유. 다음 제자리 행동까지 남는다(토스트 없음).
+  const [autoResult, setAutoResult] = useState<{ before: string; version: number } | null>(null);
+  const [autoError, setAutoError] = useState<string | null>(null);
+  const [autoPending, setAutoPending] = useState(false);
+  // 응답 뒤(비동기) 상태로 그린 버튼은 그린 뒤에 포커스한다 — rAF가 렌더보다 먼저 돌면 포커스가 body로 빠진다(inbox-list와 같은 꼴).
+  const focusAfterRef = useRef<"undo" | "edit" | null>(null);
+  useEffect(() => {
+    const target = focusAfterRef.current;
+    if (target === null) return;
+    document.getElementById(target === "undo" ? "payment-schedule-undo" : "payment-schedule-edit")?.focus();
+    focusAfterRef.current = null;
+  }, [autoResult]);
 
   // 3차 `지급 예정일 바꾸기`는 지급 전 지급 권한자에게만(P3 · P4 — 1차가 `지급 완료`인 행). 열면 그 행이 제자리 날짜 칸이 된다.
   function openSchedule() {
+    setAutoResult(null);
+    setAutoError(null);
     setSchedule({ original: scheduledPaymentDate ?? "", value: scheduledPaymentDate ?? "" });
     requestAnimationFrame(() => document.getElementById("payment-scheduled-date")?.focus());
   }
@@ -323,22 +393,75 @@ export function PaymentFields({
     setSchedule(null);
     requestAnimationFrame(() => document.getElementById("payment-schedule-edit")?.focus());
   }
+
+  // null 저장 = 자동 계산 복귀(07-06 saveScheduledPayDate). 확인 창 없이 → 값 바로 아래 결과 줄 + `되돌리기`(포커스).
+  async function saveAuto(date: string | null, version: number): Promise<{ version: number } | null> {
+    if (autoPending || view.expenseId === undefined) return null;
+    setAutoPending(true);
+    setAutoError(null);
+    let response: Awaited<ReturnType<typeof saveScheduledPayDateAction>> | undefined;
+    try {
+      response = await saveScheduledPayDateAction({ expenseId: view.expenseId, scheduledPayDate: date, version });
+    } catch {
+      response = undefined;
+    }
+    setAutoPending(false);
+    router.refresh();
+    if (!response?.data) {
+      setAutoError(response?.serverError ?? response?.validationErrors?.scheduledPayDate?._errors?.[0] ?? AUTO_FAILED);
+      return null;
+    }
+    refreshPreview();
+    return response.data;
+  }
+  async function revertToAuto() {
+    if (scheduledPaymentDate === null || view.version === undefined) return;
+    const before = scheduledPaymentDate;
+    const saved = await saveAuto(null, view.version);
+    if (!saved) return;
+    focusAfterRef.current = "undo";
+    setAutoResult({ before, version: saved.version });
+  }
+  async function undoAuto() {
+    if (!autoResult) return;
+    const saved = await saveAuto(autoResult.before, autoResult.version);
+    if (!saved) return;
+    focusAfterRef.current = "edit";
+    setAutoResult(null);
+  }
+
   const scheduleValue = (
     <>
-      {scheduledPaymentDate ?? dash}
+      <PaymentScheduleValue {...scheduleValueProps} />
       {view.row?.ownerNote ? <span className={`${styles.subLine} ${styles.muted}`}>{view.row.ownerNote}</span> : null}
+      {autoResult ? (
+        <span role="status" className={styles.subLine}>
+          {"자동 계산으로 복귀 · "}
+          <Button id="payment-schedule-undo" variant="tertiary" pending={autoPending} onClick={() => void undoAuto()}>
+            되돌리기
+          </Button>
+        </span>
+      ) : null}
+      {autoError ? <span className={`${styles.subLine} ${styles.blockedReason}`}>{autoError}</span> : null}
     </>
   );
-  const items: KvItem[] = [];
+  const items: KvItem[] = [...requestedPaymentItems(requested)];
   if (!(canPay && schedule)) {
     items.push({
       label: "지급 예정일",
       value: canPay ? (
-        <span className={styles.valueRow}>
+        <span className={`${styles.valueRow} ${styles.scheduleRow}`}>
           <span className={styles.fill}>{scheduleValue}</span>
-          <Button id="payment-schedule-edit" variant="tertiary" onClick={openSchedule}>
-            지급 예정일 바꾸기
-          </Button>
+          <span>
+            {scheduleValueProps.manual && !autoResult ? (
+              <Button variant="tertiary" pending={autoPending} onClick={() => void revertToAuto()}>
+                자동으로 되돌리기
+              </Button>
+            ) : null}
+            <Button id="payment-schedule-edit" variant="tertiary" onClick={openSchedule}>
+              지급 예정일 바꾸기
+            </Button>
+          </span>
         </span>
       ) : (
         scheduleValue

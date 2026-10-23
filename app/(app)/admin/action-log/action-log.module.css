@@ -82,8 +82,24 @@
   min-height: var(--touch-min);
 }
 
-/* 상세 칸(JSON 글자)은 길어도 표를 밀어내지 않는다 — 줄바꿈하고 말줄임하지 않는다. */
+/* 상세 칸(바뀐 칸 줄)은 길어도 표를 밀어내지 않는다 — 줄바꿈하고 말줄임하지 않는다. */
 .detail {
+  overflow-wrap: anywhere;
+}
+
+/* 머리글은 한 줄 — 상세 칸이 폭을 나눠 쓰는 768에서 머리글이 두세 줄로 눌리지 않게 한다(옛 StaticTable `nowrapHeader`와 같은 규칙). */
+.nowrapHeader {
+  white-space: nowrap;
+}
+
+.detailLines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 폰 접힌 줄 안 상세 첫 줄 — 줄바꿈하고 말줄임하지 않는다. */
+.detailFirst {
   overflow-wrap: anywhere;
 }
 

@@ -250,6 +250,10 @@ export type InboxRow = {
   createdAt: Date;
   readAt: Date | null;
   emailStatus: string;
+  // 07-19: 착지 링크(entity · entityId)와 접힘 종류(conditionKind)를 알림함 DTO가 만든다.
+  conditionKind: string;
+  entity: string;
+  entityId: string;
 };
 
 // (created_at, id) 키셋 — 페이지 사이 삽입에도 중복·누락이 없다(D-4218 · Codex #20).
@@ -276,6 +280,9 @@ export async function listInbox(
       createdAt: notificationLog.createdAt,
       readAt: notificationLog.readAt,
       emailStatus: notificationLog.emailStatus,
+      conditionKind: notificationLog.conditionKind,
+      entity: notificationLog.entity,
+      entityId: notificationLog.entityId,
     })
     .from(notificationLog)
     .where(and(...conditions))
@@ -332,6 +339,9 @@ export async function openInbox(
     created_at: string | null;
     read_at: string | null;
     email_status: string | null;
+    condition_kind: string | null;
+    entity: string | null;
+    entity_id: string | null;
     was_marked: boolean | null;
   }>(sql`
     WITH opened AS (SELECT now() AS at),
@@ -345,7 +355,7 @@ export async function openInbox(
            RETURNING notification_log.id
          ),
          page AS (
-           SELECT id, message, created_at, read_at, email_status,
+           SELECT id, message, created_at, read_at, email_status, condition_kind, entity, entity_id,
                   (id IN (SELECT id FROM marked)) AS was_marked
            FROM notification_log
            WHERE recipient_id = ${opts.recipientId}
@@ -365,7 +375,15 @@ export async function openInbox(
 
   const rows = result.rows
     .filter(
-      (row): row is typeof row & { id: number; message: string; created_at: string; email_status: string } =>
+      (row): row is typeof row & {
+        id: number;
+        message: string;
+        created_at: string;
+        email_status: string;
+        condition_kind: string;
+        entity: string;
+        entity_id: string;
+      } =>
         row.id !== null,
     )
     .map((row) => ({
@@ -374,6 +392,9 @@ export async function openInbox(
       createdAt: parsePgTimestamp(row.created_at),
       readAt: row.read_at ? parsePgTimestamp(row.read_at) : null,
       emailStatus: row.email_status,
+      conditionKind: row.condition_kind,
+      entity: row.entity,
+      entityId: row.entity_id,
       wasMarked: row.was_marked === true,
     }));
 

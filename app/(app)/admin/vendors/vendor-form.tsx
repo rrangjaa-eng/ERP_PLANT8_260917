@@ -4,7 +4,16 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
-import { createVendorAction, updateVendorAction, setVendorHiddenAction, archiveVendorAction, addVendorKindAction } from "./actions";
+import {
+  createVendorAction,
+  updateVendorAction,
+  setVendorHiddenAction,
+  archiveVendorAction,
+  addVendorKindAction,
+  markVendorConfirmedAction,
+  unmarkVendorConfirmedAction,
+} from "./actions";
+import { CONTACTS_ADD_ID, VendorContacts, readContacts, type VendorContactValue } from "./vendor-contacts";
 import { TextField } from "@/ui/input/TextField";
 import { Form } from "@/ui/form/Form";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
@@ -14,6 +23,7 @@ import { SidePanel, editLinkFor } from "@/ui/side-panel/SidePanel";
 import { Select } from "@/ui/select/Select";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { KvList } from "@/ui/kv-list/KvList";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { maskTail4 } from "@/lib/mask-tail4";
 import { DEFAULT_NEW_VENDOR_KIND, VENDOR_KINDS, VENDOR_KIND_LABELS, isVendorKind, servesSide, type VendorKind, type VendorSide } from "@/domain/vendors/kind";
@@ -48,6 +58,8 @@ export type EditingVendor = {
   customFields: Record<string, unknown>;
   paymentTermDays: number | null;
   version: number;
+  /** 07-23 V4: NULL = 확인 전(자동 등록 · 일하는 자리 등록). */
+  confirmedAt: Date | null;
 };
 
 // 같은 사업자번호 거래처가 있음 — 서버가 데이터로 돌려준다(actions.ts businessNoConflict). name이 null이면 「거래처 정보」를 못 보는 사람이라 링크를 내지 않는다.
@@ -103,6 +115,7 @@ export function VendorForm({
   newKind = DEFAULT_NEW_VENDOR_KIND,
   canEditAccount = true,
   paymentTermDefault,
+  contacts = [],
   children,
 }: {
   evidenceTypes: EvidenceTypeOption[];
@@ -114,6 +127,8 @@ export function VendorForm({
   canEditAccount?: boolean;
   /** 07-20 N6: 지급 기한 빈 칸 placeholder — 회사 기본 일수(설정 payment.term_days). */
   paymentTermDefault: number;
+  /** 07-23 SC-17 ⑦: 저장된 담당자(정한 순서). 등록은 빈 목록. */
+  contacts?: VendorContactValue[];
   /** 07-23 SC-17 ⑨⑩: 수정 패널 맨 아래 섹션(서류 · 계좌 변경 기록) — 등록 패널에는 없다. */
   children?: ReactNode;
 }) {
@@ -217,6 +232,8 @@ export function VendorForm({
       if (!isEditing && raw === "" && !def.required) continue;
       customFields[def.key] = raw;
     }
+    // 07-23 V7: 담당자 줄 — 수정은 목록 전체(빈 목록 = 모두 뺌), 등록은 줄이 있을 때만.
+    const contactList = readContacts(formData);
     // select가 세 값만 내므로 좁히기는 타입용이다.
     const rawKind = getStringField(formData, "kind");
     const baseFields = {
@@ -247,6 +264,7 @@ export function VendorForm({
         ...baseFields,
         ...account,
         customFields: fieldDefs.length === 0 ? undefined : customFields,
+        contacts: contactList,
       });
     } else {
       createState.execute({
@@ -255,6 +273,7 @@ export function VendorForm({
         accountHolder: getStringField(formData, "accountHolder") || undefined,
         accountNumber: getStringField(formData, "accountNumber") || undefined,
         customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
+        contacts: contactList.length > 0 ? contactList : undefined,
       });
     }
   }
@@ -266,6 +285,9 @@ export function VendorForm({
   const accountBankError = result.validationErrors?.accountBank?._errors?.[0];
   const accountHolderError = result.validationErrors?.accountHolder?._errors?.[0];
   const accountNumberError = accountNumberBlurError ?? result.validationErrors?.accountNumber?._errors?.[0];
+  // 담당자 오류는 목록 전체에 한 줄(domain VendorContactsError) — 줄별 모양(배열)은 쓰지 않는다.
+  const contactsErrors = result.validationErrors?.contacts;
+  const contactsError = contactsErrors && !Array.isArray(contactsErrors) && "_errors" in contactsErrors ? contactsErrors._errors?.[0] : undefined;
   const maskedCurrent = editing ? maskTail4(editing.accountNumberLast4) : "";
 
   // 04.5-06: 칸 오류는 칸 아래에, 요약은 1차 옆 이유 자리에 — 화면 순서(기본 칸 먼저, 그다음 커스텀 칸 정렬 순서).
@@ -278,6 +300,7 @@ export function VendorForm({
   if (accountBankError) errorFields.push({ label: "계좌 은행", id: "accountBank" });
   if (accountHolderError) errorFields.push({ label: "예금주", id: "accountHolder" });
   if (accountNumberError) errorFields.push({ label: isEditing ? "새 계좌번호" : "계좌번호", id: "accountNumber" });
+  if (contactsError) errorFields.push({ label: "담당자", id: CONTACTS_ADD_ID });
   for (const def of fieldDefs) {
     if (customFieldErrors?.[def.key]?._errors?.[0]) errorFields.push({ label: def.label, id: `cf_${def.key}` });
   }
@@ -360,6 +383,7 @@ export function VendorForm({
       reason={reasonNode}
       reasonId="vendor-form-reason"
     >
+      {editing ? <VendorConfirmLine vendorId={editing.id} confirmed={editing.confirmedAt !== null} canConfirm={canEditAccount} /> : null}
       {versionConflict ? (
         // 07-20 V3: 패널 상단 FormAlert + 3차 `새로 불러오기`(서버 값으로 다시 연다 — page의 VendorForm key가 version을 담아 새로 마운트).
         <div id="vendor-form-alert" ref={alertRef} tabIndex={-1} className={styles.formAlert}>
@@ -502,6 +526,8 @@ export function VendorForm({
         </>
       )}
 
+      <VendorContacts initial={contacts} error={contactsError} />
+
       {fieldDefs.length > 0 ? (
         <div className={styles.customFields} data-testid="vendor-custom-fields">
           {fieldDefs.map((def) => (
@@ -520,6 +546,67 @@ export function VendorForm({
       ) : null}
       {isEditing ? children : null}
     </PanelForm>
+  );
+}
+
+// 07-23 V4 · N4 · U6: 수정 패널 머리 확인 표시 — `확인 전` 태그 + 3차 `확인됨으로 표시`(계좌 · 서류 권한자만, 누르면 즉시) → 태그 `확인됨` + 같은 줄
+// 3차 `되돌리기`(알림 없음). 저장은 version을 올리고 목록을 다시 읽으므로 폼이 새로 마운트된다(page key) — 누른 뜻을 모듈에 두고 새 줄이 서면
+// 그 단추로 포커스를 옮긴다(refocusAfterReload와 같은 꼴). 방금 확인한 거래처만 `확인됨` 줄을 보인다(이미 확인된 거래처는 머리 줄이 없다).
+const CONFIRM_MARK_ID = "vendor-confirm-mark";
+const CONFIRM_UNDO_ID = "vendor-confirm-undo";
+let recentlyConfirmedId: string | null = null;
+let confirmFocus: { id: string; target: "mark" | "undo" } | null = null;
+
+function VendorConfirmLine({ vendorId, confirmed, canConfirm }: { vendorId: string; confirmed: boolean; canConfirm: boolean }) {
+  // 같은 틱의 두 번째 누름(더블 클릭)을 막는 동기 잠금 — isExecuting은 다음 렌더에야 참이 된다.
+  const lockRef = useRef(false);
+  const settle = {
+    onSettled: () => {
+      lockRef.current = false;
+    },
+    onError: () => {
+      confirmFocus = null;
+    },
+  };
+  const markState = useAction(markVendorConfirmedAction, settle);
+  const unmarkState = useAction(unmarkVendorConfirmedAction, settle);
+  const busy = markState.isExecuting || unmarkState.isExecuting;
+  const error = markState.result.serverError ?? unmarkState.result.serverError;
+
+  useEffect(() => {
+    const intent = confirmFocus;
+    if (!intent || intent.id !== vendorId) return;
+    if ((intent.target === "undo") !== confirmed) return;
+    confirmFocus = null;
+    document.getElementById(intent.target === "undo" ? CONFIRM_UNDO_ID : CONFIRM_MARK_ID)?.focus();
+  }, [vendorId, confirmed]);
+
+  function run(next: boolean) {
+    if (lockRef.current || busy) return;
+    lockRef.current = true;
+    recentlyConfirmedId = next ? vendorId : null;
+    confirmFocus = { id: vendorId, target: next ? "undo" : "mark" };
+    if (next) markState.execute({ id: vendorId });
+    else unmarkState.execute({ id: vendorId });
+  }
+
+  if (confirmed && recentlyConfirmedId !== vendorId) return null;
+  return (
+    <div className={styles.confirmLine}>
+      <StatusTag status={confirmed ? "확인됨" : "확인 전"} variant="text" />
+      {canConfirm ? (
+        <Button
+          id={confirmed ? CONFIRM_UNDO_ID : CONFIRM_MARK_ID}
+          variant="tertiary"
+          pending={busy}
+          aria-busy={busy ? "true" : undefined}
+          onClick={() => run(!confirmed)}
+        >
+          {confirmed ? "되돌리기" : "확인됨으로 표시"}
+        </Button>
+      ) : null}
+      {error ? <Form.Error>{error}</Form.Error> : null}
+    </div>
   );
 }
 

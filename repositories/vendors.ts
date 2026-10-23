@@ -178,6 +178,9 @@ export type VendorInsertInput = {
   customFields?: Record<string, unknown>;
   kind?: VendorKind;
   paymentTermDays?: number | null;
+  // 07-23 V4: 확인 표시 — 관리 화면 등록만 채운다. 자동 등록 · 일하는 자리 등록은 주지 않아 NULL(확인 전).
+  confirmedAt?: Date | null;
+  confirmedBy?: string | null;
 };
 
 export async function insertVendor(viewer: Viewer, input: VendorInsertInput, tx: DbOrTx = db): Promise<VendorRow> {
@@ -195,6 +198,8 @@ export async function insertVendor(viewer: Viewer, input: VendorInsertInput, tx:
       customFields: input.customFields ?? {},
       kind: input.kind,
       paymentTermDays: input.paymentTermDays ?? null,
+      confirmedAt: input.confirmedAt ?? null,
+      confirmedBy: input.confirmedBy ?? null,
     })
     .returning();
   if (!row) throw new Error("vendors insert가 행을 반환하지 않았습니다.");
@@ -251,6 +256,17 @@ export async function updateVendorAccountNumber(
       updatedAt: new Date(),
     })
     .where(eq(vendors.id, id));
+}
+
+// 07-23 V4: 확인 표시 켬 · 끔 — 조건부 갱신(이미 그 상태면 0행 · version 그대로)이라 연타 · 경합에도 한 번만 바뀐다. 보관된 거래처는 고치지 않는다.
+// 바뀌었으면 새 version, 아니면 null.
+export async function setVendorConfirmed(viewer: Viewer, id: string, confirmed: boolean, tx: DbOrTx): Promise<number | null> {
+  const rows = await tx
+    .update(vendors)
+    .set(confirmed ? { confirmedAt: new Date(), confirmedBy: viewer.id, ...BUMP_VERSION } : { confirmedAt: null, confirmedBy: null, ...BUMP_VERSION })
+    .where(and(eq(vendors.id, id), isNull(vendors.archivedAt), confirmed ? isNull(vendors.confirmedAt) : isNotNull(vendors.confirmedAt)))
+    .returning({ version: vendors.version });
+  return rows[0]?.version ?? null;
 }
 
 export async function setVendorHidden(viewer: Viewer, id: string, hidden: boolean): Promise<void> {

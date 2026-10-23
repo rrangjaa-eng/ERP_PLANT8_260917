@@ -999,3 +999,169 @@ test.describe("거래처 계좌 변경 기록 (07-23 SC-17 ⑩)", () => {
     }
   });
 });
+
+// 07-23 Task 2(V7 · V8 · V4 · N4 · U6 · U12): 수정 패널 담당자 줄(최대 5 · 폼 상태 삭제 · Enter 포커스) · 서류 두 자리 · 머리 확인 표시 · 목록 상태 한 값.
+test.describe("거래처 담당자 · 서류 · 확인 표시 (07-23 SC-17 ⑦⑨ · SC-16)", () => {
+  const panelOf = (page: import("@playwright/test").Page) => page.locator('dialog[data-ui="side-panel"]');
+  const isActionPost = (request: { method: () => string; url: () => string }) => request.method() === "POST" && request.url().includes("/admin/vendors");
+
+  async function freshVendor(prefix: string) {
+    const name = `${prefix}-${randomUUID().slice(0, 8)}`;
+    // 저장소 직접 insert = 자동 등록과 같은 경로(confirmed_at NULL — 확인 전).
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), kind: "supplier" });
+    return { name, id: vendor.id };
+  }
+
+  test("`담당자 더하기` 다섯 번 → 다섯 줄 · 버튼 비활성 / 이메일 칸 Enter → 다음 줄 이름 칸(마지막 줄은 `담당자 더하기`) · 저장 요청 0 / 저장 뒤 다시 열면 남음 / 줄 `삭제` → 바로 사라짐 · 알림 · 결과 줄 없음 / `취소 Esc` → 다시 열면 지우기 전 그대로", async ({ page }) => {
+    const vendor = await freshVendor("E2E담당자");
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const panel = panelOf(page);
+      const add = panel.getByRole("button", { name: "담당자 더하기" });
+      const rows = panel.locator("[data-contact-row]");
+      await expect(rows).toHaveCount(0);
+
+      for (let i = 0; i < 5; i += 1) await add.click();
+      await expect(rows).toHaveCount(5);
+      await expect(add).toHaveAttribute("aria-disabled", "true");
+      // 새 줄을 더하면 그 줄 이름 칸으로 간다 — 다섯째 줄.
+      await expect(rows.nth(4).getByLabel("이름", { exact: true })).toBeFocused();
+      for (let i = 0; i < 5; i += 1) await rows.nth(i).getByLabel("이름", { exact: true }).fill(`담당${i + 1}`);
+
+      let posts = 0;
+      page.on("request", (request) => {
+        if (isActionPost(request)) posts += 1;
+      });
+      await rows.nth(0).getByLabel("이메일").press("Enter");
+      await expect(rows.nth(1).getByLabel("이름", { exact: true })).toBeFocused();
+      await rows.nth(4).getByLabel("이메일").press("Enter");
+      await expect(add).toBeFocused();
+      expect(posts).toBe(0);
+
+      await panel.getByRole("button", { name: "거래처 저장" }).click();
+      await expect(panel).toHaveCount(0);
+
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const saved = panelOf(page).locator("[data-contact-row]");
+      await expect(saved).toHaveCount(5);
+      await expect(saved.nth(1).getByLabel("이름", { exact: true })).toHaveValue("담당2");
+
+      await saved.nth(1).getByRole("button", { name: "삭제" }).click();
+      await expect(saved).toHaveCount(4);
+      await expect(saved.nth(1).getByLabel("이름", { exact: true })).toHaveValue("담당3");
+      await expect(page.locator('[class*="Toast-module"]')).toHaveCount(0);
+      await expect(panelOf(page).getByText(/삭제됨|담당자 삭제/)).toHaveCount(0);
+
+      // 저장 전 폼 상태 — `취소 Esc`(바뀐 칸 확인 창 `입력 버리기`)가 되돌리기다.
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "입력 버리기" }).click();
+      await expect(panelOf(page)).toHaveCount(0);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const reopened = panelOf(page).locator("[data-contact-row]");
+      await expect(reopened).toHaveCount(5);
+      await expect(reopened.nth(1).getByLabel("이름", { exact: true })).toHaveValue("담당2");
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+
+  test("수정 패널 맨 아래 소제목 `서류` · `계좌 변경 기록` — 두 자리 `사업자등록증` · `통장 사본` 붙이기 · `교체` / 등록 패널에는 두 섹션 없음", async ({ page }) => {
+    const vendor = await freshVendor("E2E서류");
+    const pdf = (name: string) => ({ name, mimeType: "application/pdf", buffer: Buffer.from(`%PDF-1.4\n% ${randomUUID()}\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n`) });
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto("/admin/vendors?new=1");
+      await expect(panelOf(page).getByRole("heading", { name: "서류" })).toHaveCount(0);
+      await expect(panelOf(page).getByRole("heading", { name: "계좌 변경 기록" })).toHaveCount(0);
+
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const panel = panelOf(page);
+      const documents = panel.getByRole("region", { name: "서류" });
+      await expect(documents.getByRole("heading", { name: "서류", exact: true })).toBeVisible();
+      await expect(panel.getByRole("heading", { name: "계좌 변경 기록" })).toBeVisible();
+      // 소제목 = aux · muted(U12) — 두 섹션 머리가 같은 모양.
+      const [docTitle, historyTitle] = await Promise.all([
+        documents.getByRole("heading").evaluate((el) => [getComputedStyle(el).fontSize, getComputedStyle(el).color]),
+        panel.getByRole("heading", { name: "계좌 변경 기록" }).evaluate((el) => [getComputedStyle(el).fontSize, getComputedStyle(el).color]),
+      ]);
+      expect(docTitle).toEqual(historyTitle);
+
+      const inputs = documents.getByTestId("attachments-input");
+      await expect(inputs).toHaveCount(2);
+      await expect(documents.getByText("사업자등록증", { exact: true })).toBeVisible();
+      await expect(documents.getByText("통장 사본", { exact: true })).toBeVisible();
+
+      await inputs.nth(0).setInputFiles(pdf("등록증1.pdf"));
+      await expect(documents.locator('[data-ui="attachments"] li').filter({ hasText: "등록증1.pdf" })).toBeVisible({ timeout: 20_000 });
+      await inputs.nth(1).setInputFiles(pdf("통장.pdf"));
+      await expect(documents.locator('[data-ui="attachments"] li').filter({ hasText: "통장.pdf" })).toBeVisible({ timeout: 20_000 });
+      await expect(documents.getByRole("button", { name: /^교체/ })).toHaveCount(2);
+
+      await inputs.nth(0).setInputFiles(pdf("등록증2.pdf"));
+      await expect(documents.locator('[data-ui="attachments"] li').filter({ hasText: "등록증2.pdf" })).toBeVisible({ timeout: 20_000 });
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const again = panelOf(page).getByRole("region", { name: "서류" });
+      await expect(again.locator('[data-ui="attachments"] li')).toHaveCount(2);
+      await expect(again.getByText("등록증1.pdf")).toHaveCount(0);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+
+  test("목록 상태 `확인 전` → 패널 머리 `확인 전` + `확인됨으로 표시`(저장 중 aria-busy · 두 번 눌러도 요청 1회) → `확인됨` + 같은 줄 `되돌리기`(포커스 · 알림 없음) → `되돌리기` → `확인 전` → 다시 표시 → 목록 `—`", async ({ page }) => {
+    const vendor = await freshVendor("E2E확인");
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?q=${encodeURIComponent(vendor.name)}`);
+      const row = page.getByRole("row").filter({ hasText: vendor.name });
+      await expect(row.getByText("확인 전", { exact: true })).toBeVisible();
+
+      await page.goto(`/admin/vendors?q=${encodeURIComponent(vendor.name)}&editId=${vendor.id}`);
+      const panel = panelOf(page);
+      await expect(panel.getByText("확인 전", { exact: true })).toBeVisible();
+      const mark = panel.getByRole("button", { name: "확인됨으로 표시" });
+
+      let posts = 0;
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/admin/vendors**", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        posts += 1;
+        await held;
+        await route.continue();
+      });
+      await mark.click();
+      await expect(mark).toHaveAttribute("aria-busy", "true");
+      await expect(mark).toHaveAttribute("aria-disabled", "true");
+      await mark.click({ force: true });
+      expect(posts).toBe(1);
+      release();
+
+      const undo = panelOf(page).getByRole("button", { name: "되돌리기" });
+      await expect(undo).toBeFocused();
+      await expect(panelOf(page).getByText("확인됨", { exact: true })).toBeVisible();
+      await expect(panelOf(page).getByText("확인 전", { exact: true })).toHaveCount(0);
+      await expect(page.locator('[class*="Toast-module"]')).toHaveCount(0);
+      await page.unroute("**/admin/vendors**");
+
+      await undo.click();
+      const markAgain = panelOf(page).getByRole("button", { name: "확인됨으로 표시" });
+      await expect(markAgain).toBeFocused();
+      await expect(panelOf(page).getByText("확인 전", { exact: true })).toBeVisible();
+
+      await markAgain.click();
+      await expect(panelOf(page).getByRole("button", { name: "되돌리기" })).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(panelOf(page)).toHaveCount(0);
+      await expect(page.getByRole("row").filter({ hasText: vendor.name }).getByText("확인 전", { exact: true })).toHaveCount(0);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+});

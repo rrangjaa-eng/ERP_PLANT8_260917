@@ -57,3 +57,10 @@ registerAction({
   action: "view",
   dtoName: "VendorDto",
 });
+
+// 07-23 V4 · N4: 확인 표시 켬 · 끔 — 상태 · version만 돌려준다(DTO 없음). 문은 계좌 · 서류와 같은 vendors.account 쓰기(D-739 · AQ-34).
+registerAction({ name: "markVendorConfirmedAction", menu: "vendors.account", action: "write", dtoName: null });
+registerAction({ name: "unmarkVendorConfirmedAction", menu: "vendors.account", action: "write", dtoName: null });
+
+// 07-23 V8: 거래처 서류 붙이기 시작 — 서명 PUT 주소만 돌려준다(DTO 없음). 문은 domain 주인 표(vendors.account 쓰기).
+registerAction({ name: "requestVendorDocumentUploadAction", menu: "vendors.account", action: "write", dtoName: null });

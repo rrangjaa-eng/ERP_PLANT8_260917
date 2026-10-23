@@ -280,6 +280,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
+  margin-bottom: var(--s-4);
   padding-top: var(--s-4);
   border-top: var(--line-w) solid var(--border-row);
 }
@@ -323,4 +324,52 @@
   margin: 0;
   font-size: var(--text-aux);
   color: var(--text-muted);
+}
+
+/* 07-23 SC-17 V4 · N4: 수정 패널 머리 확인 표시 줄 — 상태 낱말 + 3차 단추(실패는 같은 줄 끝 한 줄). 칸 사이와 같은 아래 간격. */
+.confirmLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-4);
+}
+
+/* 07-23 SC-17 ⑦ · V7: 담당자 반복 줄 — 이름 · 연락처 · 이메일 세 칸 + 줄 끝 `삭제`. 폰은 한 열로 쌓는다(가로 넘침 없음). */
+.contacts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: var(--s-4);
+}
+
+.contactsTitle {
+  margin: 0 0 var(--s-1);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.contactRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  column-gap: var(--s-2);
+  align-items: end;
+  align-self: stretch;
+}
+
+.contactRemove {
+  display: flex;
+  align-items: center;
+  min-height: var(--field-h, var(--control-h));
+  margin-bottom: var(--s-4);
+}
+
+@media (max-width: 699.98px) {
+  .contactRow {
+    grid-template-columns: minmax(0, 1fr);
+    padding-bottom: var(--s-2);
+    border-bottom: var(--line-w) solid var(--border-row);
+    margin-bottom: var(--s-2);
+  }
 }

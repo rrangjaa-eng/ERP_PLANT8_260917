@@ -21,6 +21,7 @@ import {
   updateVendor as repoUpdateVendor,
   updateVendorAccountNumber as repoUpdateVendorAccountNumber,
   setVendorHidden as repoSetVendorHidden,
+  setVendorConfirmed as repoSetVendorConfirmed,
   type VendorRow,
 } from "@/repositories/vendors";
 import { readVendorFieldAccess } from "@/repositories/permissions";
@@ -32,6 +33,7 @@ import { AccountFieldsError, accountFieldsChanged, judgeAccountFields, present }
 import { businessNoDigits, businessNoProblem } from "@/domain/vendors/business-no";
 import { normalizeAccountDigits } from "@/domain/vendors/account-digits";
 import { hadAccount, writeAccountChange } from "@/domain/vendors/account-changes";
+import { judgeContacts, saveVendorContacts, type VendorContactInput } from "@/domain/vendors/contacts";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -158,6 +160,8 @@ export type VendorDto = {
   archivedAt: Date | null;
   paymentTermDays: number | null;
   version: number;
+  // 07-23 V4: NULL = 확인 전(자동 등록 · 일하는 자리 등록) — 목록 상태 열 · 수정 패널 머리 태그.
+  confirmedAt: Date | null;
 };
 
 export const VENDOR_DTO_SPEC: DtoSpec<VendorRow, VendorDto> = {
@@ -175,6 +179,7 @@ export const VENDOR_DTO_SPEC: DtoSpec<VendorRow, VendorDto> = {
     { key: "archivedAt", from: "archivedAt", infoItem: "vendor.value" },
     { key: "paymentTermDays", from: "paymentTermDays", infoItem: "vendor.value" },
     { key: "version", from: "version", infoItem: "vendor.value" },
+    { key: "confirmedAt", from: "confirmedAt", infoItem: "vendor.value" },
   ],
 };
 
@@ -381,6 +386,8 @@ export type VendorInput = {
   paymentTermDays?: number | null;
   /** 07-20(V3) updateVendor 전용 — 패널이 읽은 version. 주면 그 사이 누가 고쳤을 때 VendorVersionConflictError. */
   expectedVersion?: number;
+  /** 07-23(V7) 담당자 목록 전체 — undefined = 안 바꿈 · 배열 = 이 순서 그대로(빠진 줄은 보관). 거래처 저장과 같은 트랜잭션. */
+  contacts?: VendorContactInput[];
 };
 
 // MAST-01 리뷰 M-5 — 계좌번호 갱신 계획을 순수 함수로 뽑는다. undefined(안 바꿈) ·
@@ -476,21 +483,34 @@ export async function createVendor(
   const accountNumberPlan = planAccountNumberUpdate(accountNumber);
   const accountNumberEncrypted = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null;
   const accountNumberLast4 = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null;
+  // 07-23 V7: 담당자 판정도 행 삽입 전 — 거절이면 거래처도 없다.
+  const contacts = input.contacts === undefined ? null : judgeContacts(input.contacts);
 
   let row: VendorRow;
   try {
-    row = await repoInsertVendor(viewer, {
-      name: input.name,
-      normalizedName,
-      businessNo: input.businessNo ?? null,
-      defaultEvidenceType: input.defaultEvidenceType ?? null,
-      accountBank: present(input.accountBank),
-      accountHolder: present(input.accountHolder),
-      accountNumberEncrypted,
-      accountNumberLast4,
-      customFields,
-      kind: input.kind,
-      paymentTermDays,
+    // 07-23: 담당자와 한 트랜잭션(반쯤 저장 0). V4: 관리 화면 등록은 사람이 연 패널이라 곧 확인됨(시스템 주체는 사람 칸이 비어 있다 — users FK).
+    row = await withTransaction(async (tx) => {
+      const inserted = await repoInsertVendor(
+        viewer,
+        {
+          name: input.name,
+          normalizedName,
+          businessNo: input.businessNo ?? null,
+          defaultEvidenceType: input.defaultEvidenceType ?? null,
+          accountBank: present(input.accountBank),
+          accountHolder: present(input.accountHolder),
+          accountNumberEncrypted,
+          accountNumberLast4,
+          customFields,
+          kind: input.kind,
+          paymentTermDays,
+          confirmedAt: new Date(),
+          confirmedBy: viewer.id === SYSTEM_VIEWER.id ? null : viewer.id,
+        },
+        tx,
+      );
+      if (contacts !== null) await saveVendorContacts(viewer, inserted.id, contacts, tx);
+      return inserted;
     });
   } catch (error) {
     // 조회와 삽입 사이 경합으로 유일 색인이 먼저 걸리면 같은 조회로 같은 오류로 바꾼다(domain/custom-fields/admin.ts 선례).
@@ -579,6 +599,8 @@ export async function updateVendor(
   // 07-20: 본문 · 계좌번호 쓰기를 한 트랜잭션으로(반쯤 저장 0) — 기대 version 조건이 0행이면 충돌로 되돌린다.
   const submitted = input.customFields;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
+  // 07-23 V7: 담당자 판정은 첫 쓰기 전 — 거절이면 본문도 그대로 둔다.
+  const contacts = input.contacts === undefined ? null : judgeContacts(input.contacts);
   try {
     await withTransaction(async (tx) => {
       let payload = updatePayload;
@@ -598,6 +620,8 @@ export async function updateVendor(
       }
       const changed = await repoUpdateVendor(viewer, id, payload, tx, expectedVersion);
       if (changed === 0 && expectedVersion !== undefined) throw new VendorVersionConflictError();
+      // 07-23 V7: 같은 version 조건을 지난 뒤에만 담당자를 맞춘다 — 충돌이면 위에서 되돌아가 담당자도 저장되지 않는다.
+      if (contacts !== null) await saveVendorContacts(viewer, id, contacts, tx);
 
       if (accountNumberPlan.kind === "clear") {
         await repoUpdateVendorAccountNumber(viewer, id, { accountNumberEncrypted: null, accountNumberLast4: null }, tx);
@@ -673,6 +697,46 @@ export async function addVendorKind(
 
   const row = await repoFindVendorById(viewer, id);
   return row ? toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY)) : null;
+}
+
+// 07-23 V4 · N4 · AQ-34: 확인 표시 — 자동 등록 · 일하는 자리 등록 거래처(confirmed_at NULL)를 경영관리가 사후에 확인한다. 권한은 계좌 · 서류와 같은
+// `vendors.account` 쓰기(D-739). 이미 그 상태면 바꾸지 않고(연타 한 번) 행동 로그도 없다. 바뀌면 version + 1(07-20 쓰기 꼴) · 행동 로그(끌 수 없음)를 한 트랜잭션에.
+export type VendorConfirmState = { confirmed: boolean; version: number };
+
+async function setVendorConfirmedState(
+  viewer: Viewer,
+  id: string,
+  confirmed: boolean,
+  deps?: Partial<Pick<VendorWriteDeps, "can" | "recordAction">>,
+): Promise<VendorConfirmState> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, VENDOR_ACCOUNT_MENU, "write"))) throw new ForbiddenError("거래처 확인 권한 없음");
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  return withTransaction(async (tx) => {
+    const locked = await repoFindVendorByIdForUpdate(viewer, id, tx);
+    if (!locked || locked.archivedAt !== null) throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
+    const version = await repoSetVendorConfirmed(viewer, id, confirmed, tx);
+    if (version === null) return { confirmed: locked.confirmedAt !== null, version: locked.version };
+    await recordAction(viewer, { actionType: "vendor_confirm", entity: VENDOR_ENTITY, entityId: id, detail: { confirmed } }, { tx });
+    return { confirmed, version };
+  });
+}
+
+export async function markVendorConfirmed(
+  viewer: Viewer,
+  input: { id: string },
+  deps?: Partial<Pick<VendorWriteDeps, "can" | "recordAction">>,
+): Promise<VendorConfirmState> {
+  return setVendorConfirmedState(viewer, input.id, true, deps);
+}
+
+// `되돌리기` — 방금 누른 확인을 되돌린다(확인 창 대신 되돌리기, N4).
+export async function unmarkVendorConfirmed(
+  viewer: Viewer,
+  input: { id: string },
+  deps?: Partial<Pick<VendorWriteDeps, "can" | "recordAction">>,
+): Promise<VendorConfirmState> {
+  return setVendorConfirmedState(viewer, input.id, false, deps);
 }
 
 // 숨김 플래그 — 보관함(archived)과는 다른 메커니즘이다(03-UI-SPEC.md 비활성화

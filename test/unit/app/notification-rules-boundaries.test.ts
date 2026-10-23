@@ -20,11 +20,11 @@ vi.mock("@/ui/list-empty/ListEmpty", async (importActual) => {
 });
 
 describe("규칙 화면 오류 경계 error.tsx (K18)", () => {
-  it("한 줄 `불러오지 못했습니다 · 다시 시도` + 3차 `다시 시도` 버튼이고 눌림이 retry를 부른다", () => {
+  it("한 줄 `불러오기 실패 · 다시 시도`(명사형 — error-copy-noun-style) + 3차 `다시 시도` 버튼이고 눌림이 retry를 부른다", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const retry = vi.fn();
     const markup = renderToStaticMarkup(createElement(NotificationRulesError, { error: new Error("원문 오류"), retry }));
-    expect(markup).toContain("불러오지 못했습니다 · 다시 시도");
+    expect(markup).toContain("불러오기 실패 · 다시 시도");
     expect(markup).toMatch(/<button[^>]*>다시 시도<\/button>/);
     expect(markup).toContain("알림 규칙");
     expect(markup).not.toContain("원문 오류");

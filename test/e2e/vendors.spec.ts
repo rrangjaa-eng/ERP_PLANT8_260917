@@ -1000,9 +1000,11 @@ test.describe("거래처 패널 select 줄 간격 · 등록 계좌 권한 (07-20
 
   test("`vendors.account` 없는 편집자의 등록 패널에는 계좌 세 칸이 없고, 사용자 정의 select 줄 아래도 16px다 (375 · 320 · 768 · 1280)", async ({ page }) => {
     const editor = await createE2EVendorEditor();
+    // 보관해도 라벨은 남는다 — 같은 DB로 다시 돌릴 때 이름이 겹치지 않게 접미어를 붙인다.
+    const stamp = randomUUID().slice(0, 8);
     try {
-      const select = await createE2EFieldDefinition({ label: `${PREFIX}계약`, type: "select", required: false, options: ["갑", "을"], sortOrder: 0, onlyRoleId: editor.roleId });
-      await createE2EFieldDefinition({ label: `${PREFIX}메모`, type: "text", required: false, sortOrder: 1, onlyRoleId: editor.roleId });
+      const select = await createE2EFieldDefinition({ label: `${PREFIX}계약-${stamp}`, type: "select", required: false, options: ["갑", "을"], sortOrder: 0, onlyRoleId: editor.roleId });
+      await createE2EFieldDefinition({ label: `${PREFIX}메모-${stamp}`, type: "text", required: false, sortOrder: 1, onlyRoleId: editor.roleId });
       await login(page, editor);
       for (const width of WIDTHS) {
         await page.setViewportSize({ width, height: 900 });

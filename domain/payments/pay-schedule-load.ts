@@ -10,15 +10,19 @@ import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { resolvePayScheduleSafe, type PaySchedule, type PayScheduleConfig } from "@/domain/payments/pay-schedule";
 import { listEarliestIssuedOnForExpenses } from "@/repositories/evidence-record-links";
 import { listCurrentRoundApprovedAt } from "@/repositories/expenses";
+import { listPaymentTermDays } from "@/repositories/vendors";
 import { log } from "@/lib/log";
 
 export type PayScheduleSource = {
   id: string;
   submittedAt: Date | null;
   scheduledPaymentDate: string | null;
-  // 거래처 지급 기한(07-02 칸 · 07-06 읽기) — 없으면 회사 기본.
-  vendorTermDays?: number | null;
+  // 07-06(J5): 거래처 지급 기한(협력사 갈래 칸)을 읽는 열쇠 — 없거나 칸이 비면 회사 기본.
+  vendorId: string | null;
 };
+
+// 그 문서에 쓴 기한 일수(거래처 기한 ?? 회사 기본) — 규칙 줄 `기한 {N}일`이 같은 값을 쓴다.
+export type LoadedPaySchedule = PaySchedule & { termDays: number };
 
 const NO_DATES: ReadonlySet<string> = new Set();
 
@@ -46,23 +50,26 @@ export async function loadPaySchedules(
   rows: readonly PayScheduleSource[],
   opts: { today: string; now: Date },
   deps?: CalendarDeps,
-): Promise<Map<string, PaySchedule>> {
+): Promise<Map<string, LoadedPaySchedule>> {
   if (rows.length === 0) return new Map();
   const ids = rows.map((row) => row.id);
-  const [cfg, issuedOn, approvedAt] = await Promise.all([
+  const vendorIds = [...new Set(rows.flatMap((row) => (row.vendorId ? [row.vendorId] : [])))];
+  const [cfg, issuedOn, approvedAt, vendorTerms] = await Promise.all([
     loadPayScheduleConfig(),
     listEarliestIssuedOnForExpenses(viewer, ids),
     listCurrentRoundApprovedAt(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, expenseIds: ids }),
+    listPaymentTermDays(viewer, vendorIds),
   ]);
   const bases = new Map(rows.map((row) => [row.id, issuedOn.get(row.id) ?? (row.submittedAt ? toKstDate(row.submittedAt) : opts.today)]));
   // 수동 지정일의 해도 읽는다 — 그 날의 마감(표시용)을 셀 때 읽지 않은 해에 닿아 행이 계산 실패로 떨어지지 않게(D-742).
   const manualDates = rows.flatMap((row) => (row.scheduledPaymentDate ? [row.scheduledPaymentDate] : []));
   const lookup = await holidayLookupFor([...[...bases.values(), ...manualDates].map((date) => Number(date.slice(0, 4))), Number(opts.today.slice(0, 4))], deps);
-  const schedules = new Map<string, PaySchedule>();
+  const schedules = new Map<string, LoadedPaySchedule>();
   for (const row of rows) {
+    const termDays = (row.vendorId ? vendorTerms.get(row.vendorId) : undefined) ?? cfg.termDays;
     const schedule = resolvePayScheduleSafe({
       baseDate: bases.get(row.id) ?? opts.today,
-      termDays: row.vendorTermDays ?? cfg.termDays,
+      termDays,
       manualDate: row.scheduledPaymentDate,
       approvedAt: approvedAt.get(row.id) ?? null,
       now: opts.now,
@@ -70,7 +77,14 @@ export async function loadPaySchedules(
       cfg,
     });
     if (schedule.failed) log.error("payment.schedule_failed", { expenseId: row.id });
-    schedules.set(row.id, schedule);
+    schedules.set(row.id, { ...schedule, termDays });
   }
   return schedules;
+}
+
+// 07-06: 설정 지급 요일 · 공휴일 표를 한 번에(트랜잭션 밖에서 — 공휴일 후보 보장이 쓰기라 행 잠금 tx와 겹치지 않게). 수동 지정의 영업일 판정 ·
+// 이번 주 지급일(thisWeekPayDate)이 쓴다.
+export async function loadPayCalendar(years: readonly number[], deps?: CalendarDeps): Promise<{ cfg: PayScheduleConfig; lookup: HolidayLookup }> {
+  const [cfg, lookup] = await Promise.all([loadPayScheduleConfig(), holidayLookupFor(years, deps)]);
+  return { cfg, lookup };
 }

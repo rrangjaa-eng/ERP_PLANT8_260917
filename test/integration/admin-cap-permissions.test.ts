@@ -91,7 +91,13 @@ describe("권한표 칸 끄기 마지막 관리자(06.4 D-6403 · D-6412)", () =
       .from(actionLog)
       .where(and(eq(actionLog.entity, "permission_matrix"), eq(actionLog.entityId, roleB)));
     expect(logs).toHaveLength(logsBefore + 1);
-    expect(logs.at(-1)?.detail).toEqual({ roleId: roleB, menu: "admin.permissions", action: "write", allowed: false });
+    expect(logs.at(-1)?.detail).toEqual({
+      roleId: roleB,
+      menu: "admin.permissions",
+      action: "write",
+      allowed: false,
+      changes: { allowed: [true, false] },
+    });
   });
 
   it("행위자의 퇴직일이 미래(퇴직 예정)면 남은 관리자로 세지 않아 거부 · 칸 · 로그 그대로(D-6412)", async () => {

@@ -83,4 +83,7 @@ export const INFO_ITEMS: InfoItemDef[] = [
   // 06.1(D-6112): 증빙 기록의 내용 칸과 금액 칸 — 공개된 증빙은 금액까지 다른 팀에 보이는 것이 사용자 채택이라 기본값 참.
   { key: "evidence.value", label: "증빙 내용", staffDefault: true },
   { key: "evidence.amount", label: "증빙 금액", staffDefault: true },
+  // 07-15(NOTI-03 · UI-SPEC SC-20): 알림 규칙 값 · 예산(경영관리 전용) — 새 기능 정보라 기본 숨김.
+  { key: "notification_rule.value", label: "알림 규칙 정보", staffDefault: false },
+  { key: "budget.amount", label: "예산", staffDefault: false },
 ];

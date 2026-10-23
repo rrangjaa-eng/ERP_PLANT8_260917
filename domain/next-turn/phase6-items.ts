@@ -4,6 +4,7 @@ import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { sumKrw } from "@/domain/money";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
+import { payWeekIndex } from "@/domain/payments/pay-schedule";
 import { listPurchaseRequests } from "@/domain/purchase-requests";
 import { summarizeOpenIssueRequests, type OpenIssueRequestSummary } from "@/domain/issue-requests";
 import { computePreSettleCheck, loadPreSettleInputs } from "@/domain/pre-settle-check";
@@ -11,7 +12,6 @@ import { projectRowScope } from "@/domain/projects/visibility";
 import { findOldestRequestedPurchaseAt, listSettlingProjectsOfPm } from "@/repositories/next-turn";
 import { seoulToday } from "@/lib/dates";
 import { formatKrw } from "@/lib/format-number";
-import { addDays } from "@/lib/kst-date";
 
 // 06-23(S19 · UA-611 · O-15 · O-1): 「내 차례」 Phase 6 항목 — 05 공급 함수(listNextTurnItems)가 결재 · 막힘 뒤에 이어 붙인다.
 // 경영관리 몫은 묶음 한 줄씩(목록이 다음 한 수 — 경영관리 전용 화면 없음), 정렬 · 6줄 절단은 ui buildNextTurnView가 한다.
@@ -20,12 +20,6 @@ import { addDays } from "@/lib/kst-date";
 export type PaymentBundleTarget = { scheduledPaymentDate: string | null; evidenceStatus: string; payableKrw: number | null };
 
 const PAYMENT_ACTION = { label: "지급 대상 보기", href: "/expenses?status=지급 대상" };
-
-// 서울 달력 날짜의 그 주 일요일(월~일 주).
-function sundayOf(today: string): string {
-  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
-  return addDays(today, (7 - weekday) % 7);
-}
 
 // 예정일 지남 · 오늘이 있으면 [오늘], 없고 이번 주(남은 날)에 예정이 있으면 [대기], 둘 다 없으면 줄 없음. 예정일 없는 대상 · 다음 주 이후는 세지 않는다(PN-1).
 export function buildPaymentBundle(targets: readonly PaymentBundleTarget[], today: string, amountVisible = true): NextTurnEntry | null {
@@ -36,8 +30,8 @@ export function buildPaymentBundle(targets: readonly PaymentBundleTarget[], toda
     const label = `지급 — 예정일 지남·오늘 ${due.length}건${unconfirmed > 0 ? ` · 확인 전 ${unconfirmed}건` : ""}`;
     return { key: "phase6-payment", tag: "오늘", label, reason: "", measureText: measure(due), action: PAYMENT_ACTION };
   }
-  const sunday = sundayOf(today);
-  const week = targets.filter((target) => target.scheduledPaymentDate !== null && target.scheduledPaymentDate <= sunday);
+  // 이번 주(월~일) = 지급 주 셈 한 곳(D-715 payWeekIndex).
+  const week = targets.filter((target) => target.scheduledPaymentDate !== null && payWeekIndex(target.scheduledPaymentDate, today) <= 0);
   if (week.length === 0) return null;
   return { key: "phase6-payment", tag: "대기", label: `지급 — 이번 주 ${week.length}건`, reason: "", measureText: measure(week), action: PAYMENT_ACTION };
 }
@@ -86,9 +80,10 @@ export async function listPhase6NextTurnItems(viewer: Viewer, today: string): Pr
   const entries: NextTurnEntry[] = [];
   if (await can(viewer, "expenses.payments", "write")) {
     // 06-15 지급 대상 정의 그대로 — 쪽 없는 함수 한 번(E-31). 묶음은 필터 전체 행으로 센다.
+    // 07-06(D-715): 예정일 = 그 목록이 이미 셈한 유효 예정일(PaySchedule — 로더를 다시 부르지 않는다).
     const targets = await listAllPaymentTargets(viewer, {}, { today });
     const bundle = buildPaymentBundle(
-      targets.map((target) => ({ scheduledPaymentDate: target.row.scheduledPaymentDate, evidenceStatus: target.evidenceStatus, payableKrw: target.payableKrw })),
+      targets.map((target) => ({ scheduledPaymentDate: target.schedule.payDate, evidenceStatus: target.evidenceStatus, payableKrw: target.payableKrw })),
       today,
       await visible(viewer, "expense.amount"),
     );

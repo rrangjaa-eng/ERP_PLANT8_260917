@@ -117,10 +117,7 @@ test.describe("보관된 계급을 가진 사람의 상세 화면", () => {
 
     const stamp = Date.now();
     const roleName = `E2E보관계급-${stamp}`;
-    await page.goto("/admin/people/roles?new=1");
-    await page.locator("#role-form").getByLabel("이름").fill(roleName);
-    await page.locator("#role-form button[type=submit]").click();
-    await expect(page.getByLabel(`${roleName} 이름`)).toBeVisible();
+    const role = await createRole(SYSTEM_VIEWER, { name: roleName });
 
     const personName = `보관계급사람-${stamp}`;
     await page.goto("/admin/people");
@@ -132,12 +129,11 @@ test.describe("보관된 계급을 가진 사람의 상세 화면", () => {
     await page.getByRole("button", { name: "사람 등록" }).click();
     await expect(page.getByText(/초기 비밀번호 — /)).toBeVisible();
 
-    // 계급을 보관한다 — 두 단계 삭제.
-    await page.goto("/admin/people/roles");
-    const roleRow = page.getByRole("row").filter({ has: page.getByLabel(`${roleName} 이름`) });
-    await roleRow.getByRole("button", { name: "삭제" }).click();
-    await roleRow.getByRole("button", { name: "삭제" }).click();
+    // 계급을 보관한다 — 07-15(R17) 뒤 화면은 소속이 남은 계급의 보관을 막으므로, 그런 계급(옛 데이터)은
+    // 시스템 주체 경로(R17 면제)로 만든다.
+    await archive(SYSTEM_VIEWER, "roles", role.id);
     // 보관된 계급은 기본 목록에서 빠진다.
+    await page.goto("/admin/people/roles");
     await expect(page.getByLabel(`${roleName} 이름`)).toHaveCount(0);
 
     // 07-17: 목록이 50명/쪽 — 검색으로 그 행을 연다.

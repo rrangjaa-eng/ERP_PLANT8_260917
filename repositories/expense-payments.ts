@@ -47,15 +47,23 @@ export async function bumpExpenseVersion(
 }
 
 // 06-04 — 지급 예정일만 바꾸는 조건 UPDATE(SP-3 ②). version이 같을 때만 예정일 · version + 1. 0행이면 null(동시성).
+// 07-06(D-714): 기록 칸(누가 · 언제)을 예정일과 함께 쓴다 — 날짜가 null(자동 복귀)이면 셋 다 NULL(CHECK expenses_scheduled_payment_set_check).
 export async function updateScheduledPaymentDate(
   viewer: Viewer,
-  input: { expenseId: string; date: string; expectedVersion: number; updatedBy: string },
+  input: { expenseId: string; date: string | null; setBy: string | null; setAt: Date | null; expectedVersion: number; updatedBy: string },
   tx: DbOrTx,
 ): Promise<number | null> {
   void viewer;
   const [row] = await tx
     .update(expenses)
-    .set({ scheduledPaymentDate: input.date, version: sql`${expenses.version} + 1`, updatedAt: new Date(), updatedBy: input.updatedBy })
+    .set({
+      scheduledPaymentDate: input.date,
+      scheduledPaymentSetBy: input.date === null ? null : input.setBy,
+      scheduledPaymentSetAt: input.date === null ? null : input.setAt,
+      version: sql`${expenses.version} + 1`,
+      updatedAt: new Date(),
+      updatedBy: input.updatedBy,
+    })
     .where(and(eq(expenses.id, input.expenseId), eq(expenses.version, input.expectedVersion), isNull(expenses.deletedAt)))
     .returning({ version: expenses.version });
   return row?.version ?? null;

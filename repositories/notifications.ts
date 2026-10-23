@@ -22,7 +22,8 @@ export type DedupKey = {
   round: number;
 };
 
-export type NotificationInsert = DedupKey & { referenceDate: string; message: string };
+// emailStatus: 규칙 이메일 끔이면 skipped_rule_off로 넣어 메일 묶음에서 뺀다(D-717). 생략하면 pending.
+export type NotificationInsert = DedupKey & { referenceDate: string; message: string; emailStatus?: "skipped_rule_off" };
 
 // tick 전체(평가·삽입·실행 기록)를 시도형 advisory lock을 잡은 한 트랜잭션에서
 // 돌린다. 잠금은 트랜잭션 종료로 저절로 풀린다. 문장 대기 한도 5s(문장 다섯
@@ -251,7 +252,7 @@ export async function openInbox(
     WITH opened AS (SELECT now() AS at),
          marked AS (
            UPDATE notification_log
-           SET read_at = opened.at
+           SET read_at = opened.at AT TIME ZONE 'UTC'
            FROM opened
            WHERE notification_log.recipient_id = ${opts.recipientId}
              AND notification_log.read_at IS NULL
@@ -375,6 +376,31 @@ export type EmailBundle = {
 // 형으로 잡아(Codex 3차 추가 #1) 미완 목록·평가 실패 표시와 행을 한 시점에서 읽는다.
 // 가장 최근 영업일 실행이 평가에 실패했으면 아무도 고르지 않는다(Codex 4차 E3).
 export async function claimNextEmailBundle(
+  viewer: Viewer,
+  opts: { runId: number; dayStart: Date; now: Date; deadlineMs?: number },
+): Promise<EmailBundle | null> {
+  try {
+    return await claimNextEmailBundleTx(viewer, opts);
+  } catch (error) {
+    // P3 #5: 겹친 tick이 tick 잠금을 쥔 채 5s를 넘기면 잠금 대기가 lock_timeout(55P03) 또는 statement_timeout(57014)에 걸린다 —
+    // 500 대신 그날 선점을 건너뛴다(행은 pending 그대로, 다음 영업일 tick이 보낸다).
+    const code = pgErrorCode(error);
+    if (code === "55P03" || code === "57014") return null;
+    throw error;
+  }
+}
+
+function pgErrorCode(error: unknown): string | null {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && typeof current === "object" && current !== null; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+async function claimNextEmailBundleTx(
   viewer: Viewer,
   opts: { runId: number; dayStart: Date; now: Date; deadlineMs?: number },
 ): Promise<EmailBundle | null> {

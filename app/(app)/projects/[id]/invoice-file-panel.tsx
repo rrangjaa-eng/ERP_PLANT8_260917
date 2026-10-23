@@ -27,6 +27,8 @@ import styles from "./project-detail.module.css";
 // 파일 목록 · 쓰기 권리(canAdd · deletableFileIds) · 한도는 열 때 서버에서 한 번 읽고, 바뀐 뒤에는 다시 읽고 router.refresh로 줄의 `계산서 1`을 고친다.
 // 닫으면 포커스는 SidePanel 계약대로 연 요소(줄의 행동 링크)로 돌아간다.
 
+type KnownInvoiceFile = { fileId: string; name: string; sizeBytes: number; createdAt: string };
+
 type Loaded = {
   files: AttachmentFile[];
   canAdd: boolean;
@@ -41,7 +43,9 @@ type ServerFile = {
   createdAt?: Date | string;
 };
 
-function toAttachmentFile(file: ServerFile): AttachmentFile {
+function toAttachmentFile(file: ServerFile, known?: KnownInvoiceFile): AttachmentFile {
+  // 파일 DTO는 칸 전부를 expense.value로 가린다(id 포함). 계산서는 발행 줄을 볼 수 있으면 읽는 파일이라(invoiceFileRights) 줄 링크가 이미 받은 값으로 채운다.
+  if (!file.id && known) return { id: known.fileId, name: known.name, sizeBytes: known.sizeBytes, createdAt: known.createdAt };
   return {
     id: file.id ?? "",
     name: file.originalName ?? "",
@@ -50,12 +54,12 @@ function toAttachmentFile(file: ServerFile): AttachmentFile {
   };
 }
 
-async function loadInvoice(entryId: string): Promise<Loaded | null> {
+async function loadInvoice(entryId: string, known?: KnownInvoiceFile): Promise<Loaded | null> {
   try {
     const data = (await getInvoiceFileAction({ entryId }))?.data;
     if (!data) return null;
     return {
-      files: data.files.map(toAttachmentFile),
+      files: data.files.map((file) => toAttachmentFile(file, known)),
       canAdd: data.actions.canAdd,
       deletableIds: data.actions.deletableFileIds,
       maxMb: data.maxMb,
@@ -71,6 +75,7 @@ export function InvoiceFilePanel({
   entryDate,
   amount,
   readOnly,
+  knownFile,
   onClose,
 }: {
   title: string;
@@ -79,6 +84,8 @@ export function InvoiceFilePanel({
   amount: number;
   /** 1024 미만(매출 표 보기 전용 — DR-36) — 서버가 쓰기를 줘도 파일 행만 그린다. */
   readOnly: boolean;
+  /** 줄 링크가 받은 살아 있는 파일(id · 이름) — 파일 DTO가 이름을 가리는 계급에서 이름 자리를 채운다. */
+  knownFile?: KnownInvoiceFile;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -97,9 +104,9 @@ export function InvoiceFilePanel({
   }, []);
 
   const reload = useCallback(async () => {
-    const next = await loadInvoice(entryId);
+    const next = await loadInvoice(entryId, knownFile);
     if (mountedRef.current) setLoaded(next ?? "error");
-  }, [entryId]);
+  }, [entryId, knownFile]);
 
   useEffect(() => {
     void reload();

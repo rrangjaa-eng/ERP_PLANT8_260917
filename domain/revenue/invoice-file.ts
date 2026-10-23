@@ -91,7 +91,8 @@ export async function replaceInvoiceFile(viewer: Viewer, owner: InvoiceFileOwner
   await markOwnerFilesRemoved(viewer, { ownerKind: REVENUE_INVOICE_KIND, ownerId: owner.id, removedBy: viewer.id, at: new Date() }, tx);
 }
 
-export type InvoiceFileLink = { fileId: string; name: string };
+// 이름 · 크기 · 올린 때까지 싣는다 — 파일 DTO가 expense.value로 가리는 계급도 발행 줄을 볼 수 있으면 읽는 파일이라(invoiceFileRights.read) 패널 파일 행을 채운다.
+export type InvoiceFileLink = { fileId: string; name: string; sizeBytes: number; createdAt: string };
 
 // 매출 면 발행 줄의 `계산서 1` 링크 재료 — 줄 id → 살아 있는 파일. 발행 줄을 볼 수 없으면 빈 객체.
 export async function listInvoiceFiles(viewer: Viewer, projectId: string): Promise<Record<string, InvoiceFileLink>> {
@@ -100,7 +101,7 @@ export async function listInvoiceFiles(viewer: Viewer, projectId: string): Promi
   const links: Record<string, InvoiceFileLink> = {};
   // 올린 순 — 같은 줄에 둘이 남는 일은 없지만(교체) 있으면 마지막 것.
   for (const file of await listAliveByOwners(viewer, { ownerKind: REVENUE_INVOICE_KIND, ownerIds: entryIds })) {
-    links[file.ownerId] = { fileId: file.id, name: file.originalName };
+    links[file.ownerId] = { fileId: file.id, name: file.originalName, sizeBytes: file.sizeBytes, createdAt: file.createdAt.toISOString() };
   }
   return links;
 }

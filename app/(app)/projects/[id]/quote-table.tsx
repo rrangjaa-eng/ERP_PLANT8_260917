@@ -1080,7 +1080,7 @@ export function QuoteLedger({
   emptyState: QuoteTableEmptyState;
   revenue: RevenueDto;
   /** 07-22(W7 · SC-20) — 저장된 발행 줄 id → 살아 있는 계산서 파일(listInvoiceFiles). 발행 줄을 못 보면 빈 객체. */
-  invoiceFiles?: Record<string, { fileId: string; name: string }>;
+  invoiceFiles?: Record<string, { fileId: string; name: string; sizeBytes: number; createdAt: string }>;
   /** 06-18(S16) — 매출 섹션 「발행 요청」 표(서버가 칸 노출 · 권리를 가려 보낸다). */
   issueRequests: IssueRequestsProps;
   canWriteEntries: boolean;

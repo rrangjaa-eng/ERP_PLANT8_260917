@@ -64,11 +64,11 @@ describe("발행 줄 계산서 파일", () => {
 
     const first = await attach(finance, issueId, "계산서-1.pdf");
     expect((await liveFiles(issueId)).map((row) => row.id)).toEqual([first.id]);
-    expect(await listInvoiceFiles(finance, projectId)).toEqual({ [issueId]: { fileId: first.id, name: "계산서-1.pdf" } });
+    expect(await listInvoiceFiles(finance, projectId)).toEqual({ [issueId]: { fileId: first.id, name: "계산서-1.pdf", sizeBytes: 90_000, createdAt: new Date(first.createdAt ?? 0).toISOString() } });
 
     const second = await attach(finance, issueId, "계산서-2.pdf");
     expect((await liveFiles(issueId)).map((row) => row.id)).toEqual([second.id]);
-    expect(await listInvoiceFiles(finance, projectId)).toEqual({ [issueId]: { fileId: second.id, name: "계산서-2.pdf" } });
+    expect(await listInvoiceFiles(finance, projectId)).toEqual({ [issueId]: { fileId: second.id, name: "계산서-2.pdf", sizeBytes: 90_000, createdAt: new Date(second.createdAt ?? 0).toISOString() } });
 
     const owned = await getOwnedEvidence(finance, { ownerKind: REVENUE_INVOICE_KIND, ownerId: issueId });
     expect(owned.files.map((file) => file.id)).toEqual([second.id]);
@@ -93,7 +93,7 @@ describe("발행 줄 계산서 파일", () => {
     const owned = await getOwnedEvidence(reader, { ownerKind: REVENUE_INVOICE_KIND, ownerId: issueId });
     expect(owned.files.map((row) => row.id)).toEqual([file.id]);
     expect(owned.actions.canAdd).toBe(false);
-    expect(await listInvoiceFiles(reader, projectId)).toEqual({ [issueId]: { fileId: file.id, name: "계산서.pdf" } });
+    expect(await listInvoiceFiles(reader, projectId)).toEqual({ [issueId]: { fileId: file.id, name: "계산서.pdf", sizeBytes: 90_000, createdAt: new Date(file.createdAt ?? 0).toISOString() } });
   });
 
   it("발행 줄을 못 보는 사람에게는 파일 목록 · 링크 재료가 없다", async () => {

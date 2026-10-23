@@ -240,7 +240,7 @@ export function RevenueSection({
   /** 07-22(N22 · SC-20) — 수금 지연. 입금 항목(revenue.paid_amount)을 볼 때만 서버가 싣는다(잔액과 같은 항목). */
   collectionOverdue?: boolean;
   /** 07-22(W7 · SC-20) — 저장된 발행 줄 id → 살아 있는 계산서 파일. 발행 줄을 볼 때만 서버가 채운다. */
-  invoiceFiles?: Record<string, { fileId: string; name: string }>;
+  invoiceFiles?: Record<string, { fileId: string; name: string; sizeBytes: number; createdAt: string }>;
   /** 04-49(DR-3 · 계약 3) — 저장 요청 중. 칸은 값을 보인 채 readOnly, 추가·통화 바꾸기는 무동작이다. */
   saveLocked?: boolean;
   /** /design-review H-1 — 저장 중 비활성 추가 버튼이 aria-describedby로 가리키는 일괄 저장 버튼 id. */
@@ -545,6 +545,7 @@ export function RevenueSection({
         <InvoiceFilePanel
           title={!canEditEntries ? "계산서" : invoiceFiles[invoiceFor.id] ? "계산서 교체" : "계산서 붙이기"}
           readOnly={!canEditEntries}
+          knownFile={invoiceFiles[invoiceFor.id]}
           entryId={invoiceFor.id}
           entryDate={invoiceFor.entryDate}
           amount={invoiceFor.amount}

@@ -37,4 +37,21 @@ describe("settleLinkedCells — 서버 changed로 예측 칸 확정", () => {
     expect(next[requested]).toEqual({ checked: true, status: "idle" });
     expect(next[predictedA]).toEqual({ checked: false, status: "idle" });
   });
+
+  it("다른 관리자가 이미 켠 딸린 칸은 changed에 없어도 resulting 값(켬)으로 확정한다(07-21 Codex P2)", () => {
+    const write = buildCellKey(row, "vendors::write");
+    const view = buildCellKey(row, "vendors::view");
+    const prev = {
+      [write]: { checked: true, status: "saving" as const },
+      [view]: { checked: true, status: "saving" as const },
+    };
+    // 쓰기 켬(next=true) — 화면은 보기가 꺼진 줄로 알았지만 DB에선 이미 켜져 있어 서버 changed는 쓰기뿐, resulting은 둘 다 켬.
+    const next = settleLinkedCells(prev, row, write, [view], true, [
+      { columnId: "vendors::write", checked: true },
+      { columnId: "vendors::view", checked: true },
+    ]);
+
+    expect(next[write]).toEqual({ checked: true, status: "idle" });
+    expect(next[view]).toEqual({ checked: true, status: "idle" });
+  });
 });

@@ -5,6 +5,7 @@ import {
   PermissionGrid,
   type PermissionGridChange,
   type PermissionGridLinked,
+  type PermissionGridSaved,
   type PermissionGridRow,
   type PermissionGridColumn,
 } from "@/ui/permission-grid/PermissionGrid";
@@ -54,15 +55,22 @@ function columnAriaLabelFor(kind: PermissionGridClientKind, column: PermissionGr
   return `${column.label} 전체 선택`;
 }
 
-// 07-21(F8): 권한표 액션의 `changed`({ menu, action, allowed })를 그리드 꼴(열 id · 값)로.
-function changedCells(data: unknown): PermissionGridChange[] {
-  if (typeof data !== "object" || data === null || !("changed" in data) || !Array.isArray(data.changed)) return [];
-  return data.changed.flatMap((cell: unknown) => {
+// 07-21(F8): 권한표 액션의 칸 목록({ menu, action, allowed })을 그리드 꼴(열 id · 값)로.
+function gridCells(list: unknown): PermissionGridChange[] {
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((cell: unknown) => {
     if (typeof cell !== "object" || cell === null) return [];
     const { menu, action, allowed } = cell as { menu?: unknown; action?: unknown; allowed?: unknown };
     if (typeof menu !== "string" || typeof action !== "string" || typeof allowed !== "boolean") return [];
     return [{ columnId: `${menu}::${action}`, checked: allowed }];
   });
+}
+
+// 07-21 Codex P2: `changed`(실제로 바뀐 칸 — 결과 줄 · 되돌리기)와 `resulting`(요청 칸 + 딸린 칸의 저장 뒤 값 — 표시 값)을 함께.
+export function savedCells(data: unknown): PermissionGridSaved {
+  if (typeof data !== "object" || data === null) return { changed: [], resulting: [] };
+  const record = data as { changed?: unknown; resulting?: unknown };
+  return { changed: gridCells(record.changed), resulting: gridCells(record.resulting) };
 }
 
 function buildActionInput(
@@ -93,14 +101,14 @@ export function PermissionGridClient<TInput>({
         }
       : undefined;
 
-  async function handleToggle(rowId: string, columnId: string, next: boolean): Promise<PermissionGridChange[]> {
+  async function handleToggle(rowId: string, columnId: string, next: boolean): Promise<PermissionGridSaved> {
     const input = buildActionInput(kind, rowId, columnId, next) as unknown as TInput;
     const result = await toggleAction(input);
     if (result.serverError || result.validationErrors) {
       const message = typeof result.serverError === "string" ? result.serverError : "저장 실패";
       throw new Error(message);
     }
-    return changedCells(result.data);
+    return savedCells(result.data);
   }
 
   return (

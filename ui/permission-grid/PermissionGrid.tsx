@@ -39,6 +39,8 @@ type CellState = { checked: boolean; status: CellStatus; reason?: string };
 // 07-21(R7 화면 · SYSTEM §7-13 개정 8 · K4 · U5 · U6): 딸린 칸 — 칸 하나를 바꾸면 서버가 같이 바꾸는 칸이 있는 격자(권한표)만 넘긴다.
 // ui는 app 모듈을 import하지 않으므로 예측 · 원복 순서 함수는 prop으로만 받는다. 없으면(정보 노출표 · 설정 짝 격자) 지금 동작 그대로.
 export type PermissionGridChange = { columnId: string; checked: boolean };
+/** 딸린 칸 저장 응답 — `changed`는 실제로 바뀐 칸(결과 줄 · 되돌리기), `resulting`은 요청 칸 + 딸린 칸의 저장 뒤 값(표시 값). */
+export type PermissionGridSaved = { changed: readonly PermissionGridChange[]; resulting: readonly PermissionGridChange[] };
 export type PermissionGridLinkedChange = { columnId: string; before: boolean; after: boolean };
 export type PermissionGridLinked = {
   /** 그 칸을 next로 바꿀 때 같이 바뀔 칸(열 id, 요청 칸 제외). */
@@ -65,8 +67,8 @@ export type PermissionGridProps = {
   /** ERROR 상태 — 있으면 격자 대신 한 줄을 그린다. */
   errorMessage?: string | null;
   onRetry?: () => void;
-  /** 딸린 칸 모드면 서버가 실제로 바꾼 칸(요청 칸 포함)을 돌려준다 — 그 값이 최종이다. */
-  onToggle: (rowId: string, columnId: string, next: boolean) => Promise<readonly PermissionGridChange[] | void>;
+  /** 딸린 칸 모드면 서버가 실제로 바꾼 칸과 저장 뒤 값을 돌려준다 — `resulting`이 표시 값이다. */
+  onToggle: (rowId: string, columnId: string, next: boolean) => Promise<PermissionGridSaved | void>;
   linked?: PermissionGridLinked;
   /** 저장 실패 토스트의 이름 — 기본 `권한`. */
   saveNoun?: string;
@@ -112,18 +114,19 @@ export function resyncCells(
 }
 
 // 딸린 칸 저장 성공 확정 — 요청 칸은 next, 예측 칸은 누르기 전 값(= !next, 예측은 next와 다른 칸만 고른다)으로 둔 뒤
-// 서버 `changed`가 실제로 바꾼 칸만 덮는다. 예측이 서버와 어긋나도 새로고침 전까지 틀린 값을 보이지 않는다(0721 /review P3-1).
+// 서버 `resulting`(요청 칸 + 딸린 칸의 저장 뒤 값)으로 덮는다. 예측이 서버와 어긋나도(0721 /review P3-1), 다른 관리자가 그사이
+// 딸린 칸을 이미 바꿔 서버 `changed`에 없어도(07-21 Codex P2) 새로고침 전까지 DB와 다른 값을 보이지 않는다.
 export function settleLinkedCells(
   prev: Record<string, CellState>,
   rowId: string,
   requestedKey: string,
   predictedKeys: string[],
   next: boolean,
-  changed: readonly PermissionGridChange[],
+  resulting: readonly PermissionGridChange[],
 ): Record<string, CellState> {
   const out = { ...prev, [requestedKey]: { checked: next, status: "idle" as const } };
   for (const cellKey of predictedKeys) out[cellKey] = { checked: !next, status: "idle" };
-  for (const change of changed) {
+  for (const change of resulting) {
     const cellKey = buildCellKey(rowId, change.columnId);
     if (out[cellKey]) out[cellKey] = { checked: change.checked, status: "idle" };
   }
@@ -252,7 +255,7 @@ export function PermissionGrid({
     }
   }
 
-  // 딸린 칸 모드의 칸 하나 저장 — 요청 칸 + 예측 칸을 저장 중으로 → 서버 `changed`로 확정 · 실패면 둘 다 이전 값 + 실패 표시.
+  // 딸린 칸 모드의 칸 하나 저장 — 요청 칸 + 예측 칸을 저장 중으로 → 서버 `resulting`으로 확정 · 실패면 둘 다 이전 값 + 실패 표시.
   async function commitLinked(
     model: PermissionGridLinked,
     rowId: string,
@@ -277,8 +280,8 @@ export function PermissionGrid({
       });
     mark("saving", next);
     try {
-      const changed = (await onToggle(rowId, columnId, next)) ?? [];
-      setCells((prev) => settleLinkedCells(prev, rowId, key, predicted, next, changed));
+      const { changed, resulting } = (await onToggle(rowId, columnId, next)) ?? { changed: [], resulting: [] };
+      setCells((prev) => settleLinkedCells(prev, rowId, key, predicted, next, resulting));
       return { ok: true, changes: changed.map((change) => ({ columnId: change.columnId, before: !change.checked, after: change.checked })) };
     } catch {
       mark("error", !next, "저장 실패 · 다시 시도");

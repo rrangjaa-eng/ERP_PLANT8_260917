@@ -353,7 +353,8 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await expect(reasonLine).toHaveText(/^이미 지급됨 · .+ · \d{2}:\d{2} · 새로 고침$/);
     expect(await colorOf(reasonLine)).toBe(await tokenAsColor(page, "--status-danger"));
     await expect(rowB.getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByRole("status")).toHaveCount(0);
+    // 토스트(div role=status) 없음 — 07-16부터 표 위 결과 줄(p · batchResult)이 role="status"다(UI-SPEC SC-01).
+    await expect(page.locator('div[role="status"]')).toHaveCount(0);
     expect(await livePaymentCount(a)).toBe(1);
     expect(await livePaymentCount(b)).toBe(1);
     await page.context().close();

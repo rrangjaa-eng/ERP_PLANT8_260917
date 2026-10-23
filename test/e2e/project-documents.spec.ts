@@ -34,7 +34,7 @@ async function makePm(): Promise<{ pm: Account; teamId: string }> {
   return { pm: { userId, email, password: tempPassword }, teamId: team.id };
 }
 
-async function makeProject(teamId: string, pmUserId: string): Promise<{ id: string }> {
+async function makeProject(teamId: string, pmUserId: string): Promise<{ id: string; name: string }> {
   const name = `E2E서류거래처-${randomUUID()}`;
   const client = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase() });
   return createProject(SYSTEM_VIEWER, { clientId: client.id, teamId, pmUserId, name: `E2E서류-${randomUUID().slice(0, 8)}`, startDate: TODAY, endDate: addDays(TODAY, 10) });
@@ -123,6 +123,7 @@ test("보기만 하는 계급에게는 붙이기 · 지우기가 없다", async 
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E서류읽기-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: true });
   const email = `e2e-docs-reader-${randomUUID()}@example.test`;
   const reader = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 서류 읽기", roleId: role.id });
 
@@ -158,4 +159,23 @@ test("(감사 P2 #2 · #3) 키보드: 처음 올리면 포커스가 새 목록 �
   await page.keyboard.press("Enter");
   await expect(section.getByText("서류 없음", { exact: true })).toBeVisible({ timeout: UPLOAD_WAIT });
   await expect(section.getByRole("button", { name: "서류 붙이기", exact: true })).toBeFocused();
+});
+
+// 사용자 결정(10/23 「견적 금액 권한도 확인」 · cso P2-1) — 발주서에 견적 금액이 적히므로 quote.amount를 못 보는 계급에게는 「서류」 섹션이 없다.
+test("견적 금액을 못 보는 계급에게는 서류 섹션이 없다", async ({ page }) => {
+  const { pm, teamId } = await makePm();
+  const project = await makeProject(teamId, pm.userId);
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E서류금액없음-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  for (const infoItem of ["project.value", "vendor.value", "team.value", "person.value"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  }
+  const email = `e2e-docs-noamount-${randomUUID()}@example.test`;
+  const viewer = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 서류 금액 없음", roleId: role.id });
+
+  await login(page, { email, password: viewer.tempPassword });
+  await page.goto(`/projects/${project.id}`);
+  await expect(page.getByRole("heading", { name: project.name, exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "서류", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "서류 붙이기" })).toHaveCount(0);
 });

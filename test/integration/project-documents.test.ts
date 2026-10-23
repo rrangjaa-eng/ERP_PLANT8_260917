@@ -10,8 +10,8 @@ import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
-import { completeEvidenceUpload, removeEvidence } from "@/domain/evidence";
-import { listProjectDocuments, projectHasPurchaseOrder, PROJECT_DOCUMENT_KIND } from "@/domain/projects/documents";
+import { completeEvidenceUpload, createEvidenceViewUrl, removeEvidence } from "@/domain/evidence";
+import { listProjectDocuments, projectDocumentOwner, projectDocumentRights, projectHasPurchaseOrder, PROJECT_DOCUMENT_KIND } from "@/domain/projects/documents";
 import { requestProjectDocumentUpload } from "@/domain/projects/document-upload";
 import { hasProjectDocument } from "@/repositories/project-documents";
 import { createMemoryStorage, type MemoryStorage } from "./fakes/memory-storage";
@@ -27,11 +27,18 @@ async function setup(): Promise<{ projectId: string; pm: Viewer }> {
   return { projectId: project.id, pm: { id: userId, roleId: DEFAULT_ROLE_ID } };
 }
 
-// 전사 보는 범위 · 프로젝트 보기만(쓰기 없음).
-async function makeReader(): Promise<Viewer> {
+// 전사 보는 범위 · 프로젝트 보기만(쓰기 없음). quoteAmount=false면 견적 금액을 못 보는 계급(cso P2-1 실측 계급과 같은 모양).
+async function makeReader(opts: { quoteAmount?: boolean; write?: boolean } = {}): Promise<Viewer> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `서류읽기-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
-  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+  if (opts.write) {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.period", action: "write", allowed: true });
+  }
+  for (const infoItem of ["project.value", "vendor.value", "team.value", "person.value"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  }
+  if (opts.quoteAmount !== false) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: true });
   const { userId } = await createAccount(SYSTEM_VIEWER, { email: `reader-${randomUUID()}@example.test`, name: "서류 읽기", roleId: role.id });
   return { id: userId, roleId: role.id };
 }
@@ -124,5 +131,45 @@ describe("프로젝트 서류 — 권리", () => {
     await db.update(projects).set({ status: "completed", startDate: "2026-01-01", endDate: "2026-01-31" }).where(eq(projects.id, projectId));
     expect((await listProjectDocuments(pm, projectId))?.canWrite).toBe(false);
     await expect(attach(pm, projectId, "purchase_order")).rejects.toThrow();
+  });
+});
+
+// 사용자 결정(10/23 「견적 금액 권한도 확인」 · cso P2-1) — 발주서에는 견적 금액이 적혀 있으므로 서류 읽기 = 행 범위 ∧ quote.amount 노출
+// (견적 차수 증빙 revisionEvidenceRights와 같은 기준). 쓰기는 읽기를 전제로 한다.
+describe("프로젝트 서류 — 견적 금액 노출", () => {
+  it("quote.amount를 못 보는 계급은 권리 read=false · 받기 거부 · 섹션 데이터 없음", async () => {
+    const { projectId, pm } = await setup();
+    const po = await attach(pm, projectId, "purchase_order");
+    const reader = await makeReader({ quoteAmount: false });
+    const [doc] = await db.select({ id: projectDocuments.id }).from(projectDocuments).where(eq(projectDocuments.projectId, projectId));
+    if (!doc) throw new Error("서류 행이 없습니다");
+
+    const owner = await projectDocumentOwner(reader, doc.id);
+    if (!owner) throw new Error("범위 안 프로젝트의 서류 주인이 없습니다");
+    expect(await projectDocumentRights(reader, owner)).toEqual({ read: false, write: false });
+    expect(await createEvidenceViewUrl(reader, { fileId: po.id }, { storage: createMemoryStorage() })).toBeNull();
+    expect(await listProjectDocuments(reader, projectId)).toBeNull();
+  });
+
+  it("quote.amount 없는 쓰기 계급도 붙이기는 없는 프로젝트로 거부되고 행이 생기지 않는다", async () => {
+    const { projectId } = await setup();
+    const writer = await makeReader({ quoteAmount: false, write: true });
+    const before = (await db.select().from(projectDocuments).where(eq(projectDocuments.projectId, projectId))).length;
+    await expect(attach(writer, projectId, "other")).rejects.toThrow("존재하지 않는 프로젝트");
+    expect((await db.select().from(projectDocuments).where(eq(projectDocuments.projectId, projectId))).length).toBe(before);
+  });
+
+  it("quote.amount를 보는 같은 모양의 계급은 그대로 읽고 받는다", async () => {
+    const { projectId, pm } = await setup();
+    const po = await attach(pm, projectId, "purchase_order");
+    const reader = await makeReader();
+    const [doc] = await db.select({ id: projectDocuments.id }).from(projectDocuments).where(eq(projectDocuments.projectId, projectId));
+    if (!doc) throw new Error("서류 행이 없습니다");
+
+    const owner = await projectDocumentOwner(reader, doc.id);
+    if (!owner) throw new Error("범위 안 프로젝트의 서류 주인이 없습니다");
+    expect(await projectDocumentRights(reader, owner)).toEqual({ read: true, write: false });
+    expect(await createEvidenceViewUrl(reader, { fileId: po.id }, { storage: createMemoryStorage() })).not.toBeNull();
+    expect((await listProjectDocuments(reader, projectId))?.documents).toHaveLength(1);
   });
 });

@@ -1,6 +1,7 @@
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { can } from "@/domain/permissions/can";
+import { visible } from "@/domain/permissions/visible";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { denyWrite } from "@/domain/rules/deny-write";
@@ -28,7 +29,7 @@ export async function projectHasPurchaseOrder(viewer: Viewer, projectId: string)
 
 // ── 프로젝트 서류 주인(07-22 · W3 · SC-20) ──────────────────────────────────────────────────────────────────
 // 05 domain/evidence의 주인 표 `project_document` 줄이 부른다(이 파일은 evidence 도메인을 import하지 않는다 — 순환). 파일 하나 = 서류 행 하나
-// (files.owner_id = project_documents.id). 읽기 = 프로젝트 행 범위, 쓰기 = 07-18 정보 면 저장 권리(periodEditRights — 담당 PM · 팀장, 완료 아님)
+// (files.owner_id = project_documents.id). 읽기 = 프로젝트 행 범위 ∧ quote.amount 노출(발주서에 견적 금액이 적힘 — 사용자 결정 10/23, 견적 차수 증빙과 같은 기준), 쓰기 = 읽기 ∧ 07-18 정보 면 저장 권리(periodEditRights — 담당 PM · 팀장, 완료 아님)
 // ∧ 서류 · 프로젝트 보관 아님. 지우기 = 05 증빙 지우기(파일 removed_at) — 살아 있는 파일이 없는 서류 행은 목록 · hasProjectDocument가 세지 않는다.
 
 export const PROJECT_DOCUMENT_KIND = "project_document";
@@ -98,7 +99,13 @@ async function canEditProject(viewer: Viewer, project: ProjectRow): Promise<bool
   return periodEditRights({ status, isAssignedPm: project.pmUserId === viewer.id, canWrite, canEditPeriod, actorCoversTeam }) !== "none";
 }
 
+// 서류 읽기 = 범위 안 프로젝트 ∧ quote.amount 노출 — 목록 · 붙이기 시작 · 증빙 주인 표(받기 · 지우기)가 같은 판정을 쓴다.
+async function findReadableProject(viewer: Viewer, projectId: string): Promise<ProjectRow | null> {
+  return (await visible(viewer, "quote.amount")) ? findVisibleProject(viewer, projectId) : null;
+}
+
 export async function projectDocumentRights(viewer: Viewer, owner: ProjectDocumentOwner): Promise<{ read: boolean; write: boolean }> {
+  if (!(await visible(viewer, "quote.amount"))) return { read: false, write: false };
   return { read: true, write: projectDocumentWriteOpen(owner) && (await canEditProject(viewer, owner.project)) };
 }
 
@@ -117,7 +124,7 @@ export function denyProjectDocumentWrite(viewer: Viewer, projectId: string): nev
 
 // 붙이기 시작 전 판정(document-upload.ts) — 못 보면 없는 프로젝트, 보지만 못 쓰면 거부.
 export async function assertProjectDocumentWritable(viewer: Viewer, projectId: string): Promise<ProjectRow> {
-  const project = await findVisibleProject(viewer, projectId);
+  const project = await findReadableProject(viewer, projectId);
   if (!project) throw projectDocumentNotFound();
   if (!(await canEditProject(viewer, project))) denyProjectDocumentWrite(viewer, project.id);
   return project;
@@ -149,9 +156,9 @@ registerDto({ name: "projectDocument", fields: PROJECT_DOCUMENT_DTO_SPEC.fields.
 
 export type ProjectDocumentList = { canWrite: boolean; maxMb: number; documents: Partial<ProjectDocumentDto>[] };
 
-// 상세 「서류」 섹션 — 살아 있는 파일이 있는 서류만, 올린 순. 프로젝트를 볼 수 없으면 null.
+// 상세 「서류」 섹션 — 살아 있는 파일이 있는 서류만, 올린 순. 서류를 읽을 수 없으면(프로젝트 범위 밖 · quote.amount 없음) null → 섹션 없음.
 export async function listProjectDocuments(viewer: Viewer, projectId: string): Promise<ProjectDocumentList | null> {
-  const project = await findVisibleProject(viewer, projectId);
+  const project = await findReadableProject(viewer, projectId);
   if (!project) return null;
   const [rows, canWrite, maxMb] = await Promise.all([listProjectDocumentFiles(viewer, project.id), canEditProject(viewer, project), getSettingValue(EVIDENCE_MAX_SIZE_MB)]);
   const documents = await projectMany(

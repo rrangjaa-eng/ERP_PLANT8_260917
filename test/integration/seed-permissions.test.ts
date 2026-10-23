@@ -349,8 +349,9 @@ describe("시드 계급 기본값 표 리팩터 전후 행 집합(07-05 D-722)",
     expect(visibility).toEqual(SEED_ROLE_VISIBLE_ITEMS_BEFORE_0705);
 
     // 재시드는 행을 바꾸지 않고, 반환 카운트는 리팩터 전 값과 같다(시스템 관리자 루프 + 시드 계급 표).
+    // 07-19: 알림 규칙 메뉴(view · write · approve 셋)가 시스템 관리자 루프에 들어와 권한 128 → 131(PC-08 예외 지움).
     const result = await seedMasterData(SYSTEM_VIEWER);
-    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 128, visibility: 190 });
+    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 131, visibility: 190 });
   });
 });
 
@@ -397,10 +398,15 @@ describe("07 새 권한 키 · 정보 항목 시드(07-15)", () => {
     }
   });
 
-  it("admin.notification-rules는 MENUS에 있지만 빈 DB 시드 뒤 어느 계급에도 켜진 행이 없다(PC-08 — 07-19가 시드 예외를 지운다)", async () => {
+  it("admin.notification-rules는 빈 DB 시드 뒤 시스템 관리자에게만 켜진 행이 있다(PC-08 — 07-19가 화면과 함께 시드 예외를 지움 · 07-05 표 ⑤)", async () => {
     expect(MENUS.find((menu) => menu.key === "admin.notification-rules")?.label).toBe("알림 규칙");
     const rows = (await db.select().from(permissionMatrix)).filter((row) => row.menu === "admin.notification-rules" && row.allowed);
-    expect(rows).toEqual([]);
+    expect(rows.length).toBeGreaterThan(0);
+    expect([...new Set(rows.map((row) => row.roleId))]).toEqual([SYSADMIN_ROLE_ID]);
+    expect(await can({ id: "viewer-admin", roleId: SYSADMIN_ROLE_ID }, "admin.notification-rules", "view")).toBe(true);
+    for (const roleId of SEED_ROLES_4) {
+      expect(await can({ id: `viewer-${roleId}`, roleId }, "admin.notification-rules", "view"), roleId).toBe(false);
+    }
   });
 
   it("시스템 관리자 행: vendors.account는 write 한 줄 · admin.vendors는 view · write 두 줄만(정의 밖 칸 행 없음 — K24 · D-739)", async () => {

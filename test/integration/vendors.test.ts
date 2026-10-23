@@ -10,6 +10,7 @@ import { upsertVisibility, upsertPermission } from "@/repositories/permissions";
 import { recordAction } from "@/domain/action-log/record";
 import { queryActionLog } from "@/repositories/action-log";
 import { archive, listArchive, restore } from "@/domain/archive";
+import { insertRole } from "@/repositories/roles";
 import {
   listVendors,
   searchVendors,
@@ -23,10 +24,19 @@ import {
   DuplicateBusinessNoError,
   InvalidBusinessNoError,
   ForbiddenError,
+  VendorVersionConflictError,
+  PaymentTermDaysError,
 } from "@/domain/vendors";
 
 import { AccountFieldsError } from "@/domain/vendors/account-fields";
-import { insertVendor } from "@/repositories/vendors";
+import {
+  insertVendor,
+  listPaymentTermDays,
+  updateVendor as repoUpdateVendor,
+  updateVendorAccountNumber as repoUpdateVendorAccountNumber,
+  setVendorHidden as repoSetVendorHidden,
+  setVendorArchived as repoSetVendorArchived,
+} from "@/repositories/vendors";
 
 const REVEAL_ITEM = "vendor.account_number_unmasked";
 
@@ -161,7 +171,8 @@ describe("vendors (MAST-01, 실제 Postgres)", () => {
 
     const before = await countMaskRevealLogs(vendor.id);
     const revealed = await revealAccountNumber(pmViewer, vendor.id);
-    expect(revealed).toBe(plaintext);
+    // 07-20 C-35: 하이픈 · 공백을 지운 숫자로 저장한다.
+    expect(revealed).toBe(plaintext.replaceAll("-", ""));
     const after = await countMaskRevealLogs(vendor.id);
     expect(after).toBe(before + 1);
 
@@ -182,7 +193,7 @@ describe("vendors (MAST-01, 실제 Postgres)", () => {
           },
         }),
     });
-    expect(revealed).toBe(plaintext);
+    expect(revealed).toBe(plaintext.replaceAll("-", ""));
     const after = await countMaskRevealLogs(vendor.id);
     expect(after).toBe(before + 1);
   });
@@ -208,8 +219,9 @@ describe("vendors (MAST-01, 실제 Postgres)", () => {
       accountNumber: "110-222-340000",
     });
 
-    const valueA = "999-888-770001";
-    const valueB = "999-888-770002";
+    // 07-20 C-35: 저장은 숫자만이라 숫자로 비교한다.
+    const valueA = "999888770001";
+    const valueB = "999888770002";
     await Promise.all([
       updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, accountNumber: valueA }),
       updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, accountNumber: valueB }),
@@ -518,7 +530,7 @@ describe("vendors 사업자번호 10자리 · 검증 숫자 (실제 Postgres)", 
     const bad = good.slice(0, 9) + String((Number(good[9]) + 1) % 10);
     const error = await createVendor(SYSTEM_VIEWER, { name, businessNo: bad }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(InvalidBusinessNoError);
-    expect((error as Error).message).toBe("사업자번호 검증 숫자 틀림 · 다시 확인");
+    expect((error as Error).message).toBe("사업자 번호 확인 · 다시 입력");
     expect(await countByName(name)).toBe(0);
   });
 
@@ -594,14 +606,14 @@ describe("계좌 칸 저장 판정(06.5 D-6506 · DH-3)", () => {
     expect(row?.accountHolder).toBe("홍길동");
   });
 
-  it("수정 — 번호를 지우며 예금주를 비우면 통과, 은행 칸 생략(실효 null) + keep도 통과", async () => {
+  it("수정 — 번호를 지우며 예금주를 비우면 통과, 은행 칸 생략(07-20 B-P2-4: 저장값 유지) + keep도 통과", async () => {
     const { vendor } = await createVendor(SYSTEM_VIEWER, {
       name: uniqueName(),
       accountBank: "신한",
       accountHolder: "홍길동",
       accountNumber: "110-222-330004",
     });
-    await updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, accountBank: "신한", accountNumber: null });
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, accountBank: "신한", accountHolder: "", accountNumber: null });
     let [row] = await db.select().from(vendors).where(eq(vendors.id, vendor.id));
     expect(row?.accountNumberEncrypted).toBeNull();
     expect(row?.accountHolder).toBeNull();
@@ -614,7 +626,7 @@ describe("계좌 칸 저장 판정(06.5 D-6506 · DH-3)", () => {
     });
     await updateVendor(SYSTEM_VIEWER, other.id, { name: other.name });
     [row] = await db.select().from(vendors).where(eq(vendors.id, other.id));
-    expect(row?.accountBank).toBeNull();
+    expect(row?.accountBank).toBe("신한");
     expect(row?.accountNumberEncrypted).not.toBeNull();
   });
 
@@ -655,3 +667,208 @@ describe("계좌 칸 저장 판정(06.5 D-6506 · DH-3)", () => {
   });
 });
 
+
+// 07-20 Task 1(J5 · V3 · B-P2-6): 지급 기한 · version — 패널 저장은 읽은 version을 보내고, 거래처 행을 고치는 쓰기는 모두 version을 올린다.
+describe("거래처 지급 기한 · version(07-20 J5 · V3 · B-P2-6)", () => {
+  async function versionOf(id: string): Promise<number> {
+    const [row] = await db.select({ version: vendors.version }).from(vendors).where(eq(vendors.id, id));
+    if (!row) throw new Error("거래처 행 없음");
+    return row.version;
+  }
+
+  async function termOf(id: string): Promise<number | null> {
+    const [row] = await db.select({ days: vendors.paymentTermDays }).from(vendors).where(eq(vendors.id, id));
+    return row?.days ?? null;
+  }
+
+  it("협력사 지급 기한 30을 읽은 version으로 저장 → version + 1 · 지급 일정 계산이 30을 읽는다", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), kind: "supplier" });
+    const before = await versionOf(vendor.id);
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, paymentTermDays: 30, expectedVersion: before });
+    expect(await versionOf(vendor.id)).toBe(before + 1);
+    expect((await listPaymentTermDays(SYSTEM_VIEWER, [vendor.id])).get(vendor.id)).toBe(30);
+  });
+
+  it("지급 기한 0 · 181 · 소수는 거부 `지급 기한 1~180 · 다시 입력` — 값 그대로", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), kind: "supplier", paymentTermDays: 45 });
+    for (const days of [0, 181, 1.5]) {
+      await expect(updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, paymentTermDays: days })).rejects.toThrow(
+        new PaymentTermDaysError("지급 기한 1~180 · 다시 입력"),
+      );
+    }
+    expect(await termOf(vendor.id)).toBe(45);
+  });
+
+  it("클라이언트 갈래에 지급 기한 → 거부 · 클라이언트로 바꾸면 저장된 기한이 비워진다 · 빈 값(null)은 회사 기본(NULL)", async () => {
+    await expect(createVendor(SYSTEM_VIEWER, { name: uniqueName(), kind: "client", paymentTermDays: 30 })).rejects.toBeInstanceOf(
+      PaymentTermDaysError,
+    );
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), kind: "both", paymentTermDays: 30 });
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, kind: "client" });
+    expect(await termOf(vendor.id)).toBeNull();
+
+    const { vendor: supplier } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), kind: "supplier", paymentTermDays: 20 });
+    await updateVendor(SYSTEM_VIEWER, supplier.id, { name: supplier.name, paymentTermDays: null });
+    expect(await termOf(supplier.id)).toBeNull();
+    // 보내지 않으면(undefined) 그대로
+    await updateVendor(SYSTEM_VIEWER, supplier.id, { name: supplier.name, paymentTermDays: 15 });
+    await updateVendor(SYSTEM_VIEWER, supplier.id, { name: `${supplier.name}-고침` });
+    expect(await termOf(supplier.id)).toBe(15);
+  });
+
+  it("같은 version으로 두 번 저장 → 두 번째는 VendorVersionConflictError이고 값이 그대로", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), kind: "supplier" });
+    const read = await versionOf(vendor.id);
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { name: `${vendor.name}-A`, expectedVersion: read });
+    await expect(
+      updateVendor(SYSTEM_VIEWER, vendor.id, { name: `${vendor.name}-B`, paymentTermDays: 90, expectedVersion: read }),
+    ).rejects.toBeInstanceOf(VendorVersionConflictError);
+    const [row] = await db.select().from(vendors).where(eq(vendors.id, vendor.id));
+    expect(row?.name).toBe(`${vendor.name}-A`);
+    expect(row?.paymentTermDays).toBeNull();
+    expect(row?.version).toBe(read + 1);
+  });
+
+  it("커스텀 칸을 보내는(행을 잠그는) 저장도 오래된 version이면 VendorVersionConflictError", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), kind: "supplier" });
+    const read = await versionOf(vendor.id);
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, expectedVersion: read });
+    await expect(
+      updateVendor(SYSTEM_VIEWER, vendor.id, { name: `${vendor.name}-B`, customFields: {}, expectedVersion: read }),
+    ).rejects.toBeInstanceOf(VendorVersionConflictError);
+  });
+
+  it("B-P2-6 — 저장소 쓰기 다섯(일반 갱신 · 계좌번호 · 숨김 · 보관 · 복원)이 각각 version을 1 올리고, 그 앞에 읽은 version의 패널 저장은 충돌", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), kind: "client" });
+    const writes: [string, () => Promise<unknown>][] = [
+      ["updateVendor(자동 등록 꼴)", () => repoUpdateVendor(SYSTEM_VIEWER, vendor.id, { kind: "both" })],
+      ["updateVendorAccountNumber", () => repoUpdateVendorAccountNumber(SYSTEM_VIEWER, vendor.id, { accountNumberEncrypted: null, accountNumberLast4: null })],
+      ["setVendorHidden", () => repoSetVendorHidden(SYSTEM_VIEWER, vendor.id, true)],
+      ["setVendorArchived(true)", () => repoSetVendorArchived(SYSTEM_VIEWER, vendor.id, true)],
+      ["setVendorArchived(false)", () => repoSetVendorArchived(SYSTEM_VIEWER, vendor.id, false)],
+    ];
+    for (const [label, write] of writes) {
+      const before = await versionOf(vendor.id);
+      await write();
+      expect(await versionOf(vendor.id), label).toBe(before + 1);
+    }
+    await repoSetVendorHidden(SYSTEM_VIEWER, vendor.id, false);
+    const stale = (await versionOf(vendor.id)) - 1;
+    await expect(updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, expectedVersion: stale })).rejects.toBeInstanceOf(
+      VendorVersionConflictError,
+    );
+  });
+});
+
+// 07-20 Task 2(R8 · B-P2-4 · C-35 · V5 · V6): 계좌 권한 · 보내지 않은 칸 유지 · 계좌번호 자릿수 · 사업자 번호 문구.
+describe("거래처 계좌 권한 · 자릿수 · 사업자 번호 문구(07-20 R8 · B-P2-4 · C-35 · V5)", () => {
+  // 거래처 쓰기(admin.vendors write)는 있고 계좌 수정(vendors.account write)은 없는 새 계급의 실제 사람.
+  async function makeVendorWriterWithoutAccount(): Promise<{ id: string; roleId: string }> {
+    const roleId = `role-vendor-writer-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `거래처 쓰기 ${roleId.slice(-8)}` });
+    for (const action of ["view", "write"]) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "admin.vendors", action, allowed: true });
+    }
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "vendor.value", visible: true });
+    const id = `vendor-writer-${randomUUID()}`;
+    await db.insert(users).values({ id, name: "거래처 쓰기", email: `${randomUUID()}@test.local`, roleId });
+    return { id, roleId };
+  }
+
+  async function seeded() {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, {
+      name: uniqueName(),
+      accountBank: "신한",
+      accountHolder: "홍길동",
+      accountNumber: "110-222-345678",
+    });
+    const [row] = await db.select().from(vendors).where(eq(vendors.id, vendor.id));
+    if (!row) throw new Error("거래처 행 없음");
+    return row;
+  }
+
+  it("계좌 권한 없는 사람이 기존 거래처 계좌번호 · 은행 · 예금주를 바꾸면 ForbiddenError(`계좌 수정 권한 없음`) · 값 그대로", async () => {
+    const writer = await makeVendorWriterWithoutAccount();
+    const row = await seeded();
+    for (const change of [{ accountNumber: "3333-01-1234567" }, { accountBank: "국민" }, { accountHolder: "김철수" }]) {
+      await expect(updateVendor(writer, row.id, { name: row.name, ...change })).rejects.toThrow(new ForbiddenError("계좌 수정 권한 없음"));
+    }
+    const [after] = await db.select().from(vendors).where(eq(vendors.id, row.id));
+    expect(after).toMatchObject({ accountBank: "신한", accountHolder: "홍길동", accountNumberEncrypted: row.accountNumberEncrypted, name: row.name });
+  });
+
+  it("B-P2-4 — 같은 사람이 계좌 세 칸을 보내지 않고 이름만 저장하면 성공하고 세 칸이 그대로", async () => {
+    const writer = await makeVendorWriterWithoutAccount();
+    const row = await seeded();
+    await updateVendor(writer, row.id, { name: `${row.name}-고침` });
+    const [after] = await db.select().from(vendors).where(eq(vendors.id, row.id));
+    expect(after).toMatchObject({
+      name: `${row.name}-고침`,
+      accountBank: "신한",
+      accountHolder: "홍길동",
+      accountNumberEncrypted: row.accountNumberEncrypted,
+      accountNumberLast4: "5678",
+    });
+  });
+
+  it("같은 사람이 저장값과 같은 세 칸을 보내면 바뀐 것이 없어 성공", async () => {
+    const writer = await makeVendorWriterWithoutAccount();
+    const row = await seeded();
+    await expect(updateVendor(writer, row.id, { name: row.name, accountBank: "신한 ", accountHolder: "홍길동" })).resolves.toBeTruthy();
+  });
+
+  it("사용자 결정(10/23) — 계좌 권한 없는 사람이 새 거래처에 계좌(은행 · 예금주 · 번호 중 하나라도)를 실으면 ForbiddenError · 행 없음", async () => {
+    const writer = await makeVendorWriterWithoutAccount();
+    for (const account of [
+      { accountBank: "신한", accountHolder: "홍길동", accountNumber: "1101234567" },
+      { accountBank: "신한" },
+      { accountHolder: "홍길동" },
+      { accountNumber: "1101234567" },
+    ]) {
+      const name = uniqueName();
+      await expect(createVendor(writer, { name, ...account })).rejects.toThrow(new ForbiddenError("계좌 수정 권한 없음"));
+      expect(await db.select().from(vendors).where(eq(vendors.name, name))).toHaveLength(0);
+    }
+  });
+
+  it("계좌 권한 없는 사람도 계좌 없이(빈 칸 포함) 새 거래처를 등록할 수 있다", async () => {
+    const writer = await makeVendorWriterWithoutAccount();
+    const { vendor } = await createVendor(writer, { name: uniqueName(), accountBank: " ", accountHolder: "", accountNumber: "" });
+    expect(vendor.accountNumberLast4).toBeNull();
+  });
+
+  it("C-35 — 계좌번호는 하이픈 · 공백을 지운 숫자로 저장하고(뒤 4자리 숫자), 10~16자리 밖이면 칸 오류 `숫자 10~16자리 · 다시 입력`", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), accountBank: "신한", accountHolder: "홍길동", accountNumber: "110-123 456789" });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-sysadmin", infoItem: REVEAL_ITEM, visible: true });
+    expect(await revealAccountNumber(SYSTEM_VIEWER, vendor.id)).toBe("110123456789");
+
+    for (const bad of ["123456789", "12345678901234567", "110-12a-456789"]) {
+      const error = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), accountNumber: bad }).catch((e: unknown) => e);
+      expect(error, bad).toBeInstanceOf(AccountFieldsError);
+      expect((error as AccountFieldsError).fieldErrors).toEqual({ accountNumber: "숫자 10~16자리 · 다시 입력" });
+    }
+    const error = await updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, accountNumber: "12-34" }).catch((e: unknown) => e);
+    expect((error as AccountFieldsError).fieldErrors).toEqual({ accountNumber: "숫자 10~16자리 · 다시 입력" });
+  });
+
+  it("V5 — 같은 번호 문구 `이미 등록됨 · {이름}` · 다른 갈래면 `이미 등록됨 · {이름}({갈래})` · 검증합 틀림은 `사업자 번호 확인 · 다시 입력`", async () => {
+    const no = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "supplier" });
+    const same = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "supplier" }).catch((e: unknown) => e);
+    expect((same as DuplicateBusinessNoError).message).toBe(`이미 등록됨 · ${vendor.name}`);
+    const other = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "client" }).catch((e: unknown) => e);
+    expect((other as DuplicateBusinessNoError).message).toBe(`이미 등록됨 · ${vendor.name}(협력사)`);
+    const bad = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: "214-86-10231" }).catch((e: unknown) => e);
+    expect(bad).toBeInstanceOf(InvalidBusinessNoError);
+    expect((bad as InvalidBusinessNoError).message).toBe("사업자 번호 확인 · 다시 입력");
+  });
+
+  it("V6 — 갈래 · 번호를 그대로 둔 이름 저장은 갈래 · 중복 검사 없이 통과(같은 번호의 보관 거래처가 있어도)", async () => {
+    const no = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "client" });
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { name: `${vendor.name}-고침`, kind: "client", businessNo: no.replaceAll("-", "") });
+    const [after] = await db.select().from(vendors).where(eq(vendors.id, vendor.id));
+    expect(after?.name).toBe(`${vendor.name}-고침`);
+    expect(after?.kind).toBe("client");
+  });
+});

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
-import { createFixtureUser, uniqueBusinessNo } from "./fixtures";
+import { archiveE2EFieldDefinitions, createE2EFieldDefinition, createE2EVendorEditor, createFixtureUser, uniqueBusinessNo } from "./fixtures";
+import { waitForHydration } from "./leave-org";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
@@ -64,13 +65,14 @@ test.describe("거래처 관리 화면 (MAST-01)", () => {
 
     // 「번호 보기」를 누르면 평문이 보이고 라벨이 「가리기」로 바뀐다.
     await row.getByRole("button", { name: "번호 보기" }).click();
-    await expect(row.getByText(accountNumber)).toBeVisible();
+    // 07-20 C-35: 계좌번호는 하이픈 · 공백을 지운 숫자로 저장한다.
+    await expect(row.getByText(accountNumber.replaceAll("-", ""))).toBeVisible();
     await expect(row.getByRole("button", { name: "가리기" })).toBeVisible();
 
     // 「가리기」를 누르면 다시 마스킹된다(클라이언트 상태만, 서버 재호출 없음).
     await row.getByRole("button", { name: "가리기" }).click();
     await expect(row.getByText("****-**-4455")).toBeVisible();
-    await expect(row.getByText(accountNumber)).toHaveCount(0);
+    await expect(row.getByText(accountNumber.replaceAll("-", ""))).toHaveCount(0);
 
     // 숨김으로 바꾸면 기본 목록에서 사라지고 「숨김 포함」으로 다시 보인다.
     await row.getByRole("button", { name: "숨기기" }).click();
@@ -178,7 +180,7 @@ test.describe("거래처 수정 왕복 (MAST-01 · M-5)", () => {
 
     // 이름만 바꾸고, 「새 계좌번호」는 비워 둔 채 저장한다.
     await form.getByLabel("이름").fill(after);
-    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await page.getByRole("button", { name: "거래처 저장" }).click();
 
     // 저장이 끝나면 수정 모드를 나간다(vendor-form.tsx의 onSuccess가
     // router.replace로 목록으로 돌아간다) — 그것을 먼저 확인하고 이동한다.
@@ -195,7 +197,8 @@ test.describe("거래처 수정 왕복 (MAST-01 · M-5)", () => {
     const row = page.locator("tr", { hasText: after });
     await expect(row.getByText("****-**-4455")).toBeVisible();
     await row.getByRole("button", { name: "번호 보기" }).click();
-    await expect(row.getByText(accountNumber)).toBeVisible();
+    // 07-20 C-35: 계좌번호는 하이픈 · 공백을 지운 숫자로 저장한다.
+    await expect(row.getByText(accountNumber.replaceAll("-", ""))).toBeVisible();
 
     // 정리 — 계좌번호 있는 거래처를 기본 목록에 남기지 않는다.
     await row.getByRole("button", { name: "숨기기" }).click();
@@ -453,13 +456,13 @@ test.describe("거래처 구분 (261006-biv)", () => {
     const both = await make("둘다", "both");
     const created: string[] = [];
     const rowOf = (name: string) => page.locator("tbody tr", { hasText: name }).first();
-    const kindNav = page.getByRole("navigation", { name: "구분" });
+    const kindNav = page.getByRole("navigation", { name: "갈래" });
     try {
       await page.setViewportSize({ width: 1280, height: 800 });
       await loginAsSysadmin(page);
       await page.goto("/admin/vendors");
 
-      await expect(page.getByRole("columnheader", { name: "구분" })).toBeVisible();
+      await expect(page.getByRole("columnheader", { name: "갈래" })).toBeVisible();
       await expect(rowOf(client.name).getByRole("cell", { name: "클라이언트", exact: true })).toBeVisible();
       await expect(rowOf(supplier.name).getByRole("cell", { name: "협력사", exact: true })).toBeVisible();
       await expect(rowOf(both.name).getByRole("cell", { name: "둘 다", exact: true })).toBeVisible();
@@ -488,7 +491,7 @@ test.describe("거래처 구분 (261006-biv)", () => {
       // 등록 — 「구분」은 협력사로 열리고, 이름만 넣고 등록하면 새 행 구분이 「협력사」다.
       await page.getByRole("link", { name: "거래처 등록" }).click();
       const panel = page.locator('dialog[data-ui="side-panel"]');
-      await expect(panel.getByLabel("구분")).toHaveValue("supplier");
+      await expect(panel.getByLabel("갈래")).toHaveValue("supplier");
       const newName = `${tag}-새거래처`;
       created.push(newName);
       await panel.getByLabel("이름").fill(newName);
@@ -501,9 +504,9 @@ test.describe("거래처 구분 (261006-biv)", () => {
       // 수정 — 저장값으로 열리고, 「둘 다」로 바꿔 저장하면 그 행 구분이 「둘 다」다.
       await rowOf(client.name).getByRole("link", { name: "수정" }).click();
       const form = page.locator("#vendor-form");
-      await expect(form.getByLabel("구분")).toHaveValue("client");
-      await form.getByLabel("구분").selectOption("both");
-      await page.getByRole("button", { name: "거래처 수정" }).click();
+      await expect(form.getByLabel("갈래")).toHaveValue("client");
+      await form.getByLabel("갈래").selectOption("both");
+      await page.getByRole("button", { name: "거래처 저장" }).click();
       await expect(form).toHaveCount(0);
       await page.goto("/admin/vendors");
       await expect(rowOf(client.name).getByRole("cell", { name: "둘 다", exact: true })).toBeVisible();
@@ -518,7 +521,7 @@ test.describe("거래처 구분 (261006-biv)", () => {
   test("?new=1&kind=client로 열면 등록 「구분」이 클라이언트다(프로젝트 화면 「클라이언트 등록」)", async ({ page }) => {
     await loginAsSysadmin(page);
     await page.goto("/admin/vendors?new=1&kind=client");
-    await expect(page.locator('dialog[data-ui="side-panel"]').getByLabel("구분")).toHaveValue("client");
+    await expect(page.locator('dialog[data-ui="side-panel"]').getByLabel("갈래")).toHaveValue("client");
   });
 
   test("검증 숫자가 틀린 사업자번호는 칸 아래 문구로 막히고 저장되지 않는다", async ({ page }) => {
@@ -529,7 +532,7 @@ test.describe("거래처 구분 (261006-biv)", () => {
     await dialog.getByLabel("이름").fill(name);
     await dialog.getByLabel("사업자 번호").fill("214-86-10231");
     await dialog.getByRole("button", { name: "거래처 등록" }).click();
-    await expect(dialog.getByText("사업자번호 검증 숫자 틀림 · 다시 확인")).toBeVisible();
+    await expect(dialog.getByText("사업자 번호 확인 · 다시 입력")).toBeVisible();
     await expect(dialog.getByLabel("사업자 번호")).toHaveValue("214-86-10231");
     expect(await findVendorsByNormalizedName(SYSTEM_VIEWER, name.toLowerCase())).toHaveLength(0);
   });
@@ -543,20 +546,20 @@ test.describe("거래처 구분 (261006-biv)", () => {
       await page.goto("/admin/vendors?new=1");
       const dialog = page.locator('dialog[data-ui="side-panel"]');
       await dialog.getByLabel("이름").fill(`E2E중복신규-${randomUUID()}`);
-      await dialog.getByLabel("구분").selectOption("supplier");
+      await dialog.getByLabel("갈래").selectOption("supplier");
       await dialog.getByLabel("사업자 번호").fill(businessNo.replaceAll("-", ""));
       await dialog.getByRole("button", { name: "거래처 등록" }).click();
 
       // 다음 한 수는 오류 줄 안에 붙는다(「원인 · 다음 행동」 — field-definition-form 「보관함에서 복원」과 같은 모양).
-      await expect(dialog.locator("#businessNo-error")).toHaveText(`같은 사업자번호 거래처 있음 · ${existingName}(클라이언트) · 구분 더하기`);
-      await expect(dialog.locator("#businessNo-error").getByRole("button", { name: "구분 더하기" })).toBeVisible();
+      await expect(dialog.locator("#businessNo-error")).toHaveText(`이미 등록됨 · ${existingName}(클라이언트) · 갈래 더하기`);
+      await expect(dialog.locator("#businessNo-error").getByRole("button", { name: "갈래 더하기" })).toBeVisible();
       await expect(dialog.getByLabel("사업자 번호")).toHaveAttribute("aria-describedby", "businessNo-error");
       await expect(dialog.locator("#vendor-form-reason")).toContainText("사업자 번호 1칸");
       await expect(dialog.getByLabel("사업자 번호")).toHaveValue(businessNo.replaceAll("-", ""));
 
-      await dialog.getByRole("button", { name: "구분 더하기" }).click();
+      await dialog.getByRole("button", { name: "갈래 더하기" }).click();
       await expect(page).toHaveURL(new RegExp(`editId=${existing.id}`));
-      await expect(page.locator("#vendor-form").getByLabel("구분")).toHaveValue("both");
+      await expect(page.locator("#vendor-form").getByLabel("갈래")).toHaveValue("both");
     } finally {
       await setVendorHidden(SYSTEM_VIEWER, existing.id, true);
     }
@@ -570,16 +573,16 @@ test.describe("거래처 구분 (261006-biv)", () => {
       await page.goto("/admin/vendors?new=1");
       const dialog = page.locator('dialog[data-ui="side-panel"]');
       await dialog.getByLabel("이름").fill(`E2E구분실패신규-${randomUUID()}`);
-      await dialog.getByLabel("구분").selectOption("supplier");
+      await dialog.getByLabel("갈래").selectOption("supplier");
       await dialog.getByLabel("사업자 번호").fill(businessNo);
       await dialog.getByRole("button", { name: "거래처 등록" }).click();
-      await expect(dialog.getByRole("button", { name: "구분 더하기" })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "갈래 더하기" })).toBeVisible();
 
       await setVendorArchived(SYSTEM_VIEWER, existing.id, true);
-      await dialog.getByRole("button", { name: "구분 더하기" }).click();
+      await dialog.getByRole("button", { name: "갈래 더하기" }).click();
       await expect(dialog.locator("#businessNo-error")).toHaveText("보관됐거나 존재하지 않는 거래처는 수정할 수 없음");
       // 다시 눌러도 같은 실패라 「구분 더하기」를 치운다(할 수 없는 선택지는 숨김 — 보관함 복원 거부 행과 같은 처리).
-      await expect(dialog.getByRole("button", { name: "구분 더하기" })).toHaveCount(0);
+      await expect(dialog.getByRole("button", { name: "갈래 더하기" })).toHaveCount(0);
       await expect(page).not.toHaveURL(/editId=/);
     } finally {
       await setVendorHidden(SYSTEM_VIEWER, existing.id, true);
@@ -597,12 +600,12 @@ test.describe("거래처 구분 (261006-biv)", () => {
       await page.goto("/admin/vendors?new=1");
       const dialog = page.locator('dialog[data-ui="side-panel"]');
       await dialog.getByLabel("이름").fill(newName);
-      await dialog.getByLabel("구분").selectOption("supplier");
+      await dialog.getByLabel("갈래").selectOption("supplier");
       await dialog.getByLabel("사업자 번호").fill(businessNo);
       await dialog.getByRole("button", { name: "거래처 등록" }).click();
-      await expect(dialog.getByRole("button", { name: "구분 더하기" })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "갈래 더하기" })).toBeVisible();
       await setVendorArchived(SYSTEM_VIEWER, existing.id, true);
-      await dialog.getByRole("button", { name: "구분 더하기" }).click();
+      await dialog.getByRole("button", { name: "갈래 더하기" }).click();
       await expect(dialog.locator("#businessNo-error")).toHaveText("보관됐거나 존재하지 않는 거래처는 수정할 수 없음");
 
       await dialog.getByLabel("사업자 번호").fill(uniqueBusinessNo());
@@ -613,6 +616,438 @@ test.describe("거래처 구분 (261006-biv)", () => {
     } finally {
       await setVendorHidden(SYSTEM_VIEWER, existing.id, true);
       for (const row of await findVendorsByNormalizedName(SYSTEM_VIEWER, newName.toLowerCase())) await setVendorHidden(SYSTEM_VIEWER, row.id, true);
+    }
+  });
+});
+
+// 07-20 Task 1(J5 · V3 · D-745 · N6 · U12): 지급 기한 칸 · 동시 수정 FormAlert · 행동 줄 하단 고정.
+test.describe("거래처 지급 기한 · 동시 수정 (07-20 SC-17)", () => {
+  const panelOf = (page: import("@playwright/test").Page) => page.locator('dialog[data-ui="side-panel"]');
+
+  test("등록 갈래 기본 협력사 · 지급 기한 placeholder 60 · aux 1~180 · 30 저장 → 다시 열면 30 · 클라이언트로 바꾸면 칸이 사라진다", async ({ page }) => {
+    const name = `E2E지급기한-${randomUUID()}`;
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto("/admin/vendors?new=1");
+      const panel = panelOf(page);
+      await expect(panel.getByLabel("갈래")).toHaveValue("supplier");
+      const term = panel.getByLabel("지급 기한");
+      await expect(term).toHaveAttribute("placeholder", "60");
+      await expect(panel.locator("#paymentTermDays-hint")).toHaveText("1~180");
+      await expect(panel.locator("#paymentTermDays-unit")).toHaveText("일");
+      await panel.getByLabel("이름").fill(name);
+      await term.fill("30");
+      await panel.getByRole("button", { name: "거래처 등록" }).click();
+      await expect(panel.getByRole("status")).toHaveText("거래처 등록됨");
+      await page.keyboard.press("Escape");
+      await expect(panel).toHaveCount(0);
+
+      await page.locator("tbody tr", { hasText: name }).getByRole("link", { name: "수정" }).click();
+      await expect(panel.getByLabel("지급 기한")).toHaveValue("30");
+      await panel.getByLabel("갈래").selectOption("client");
+      await expect(panel.getByLabel("지급 기한")).toHaveCount(0);
+      await panel.getByLabel("갈래").selectOption("both");
+      await expect(panel.getByLabel("지급 기한")).toHaveValue("");
+      await panel.getByLabel("갈래").selectOption("client");
+      await panel.getByRole("button", { name: "거래처 저장" }).click();
+      await expect(panel).toHaveCount(0);
+      const [row] = await findVendorsByNormalizedName(SYSTEM_VIEWER, name.toLowerCase());
+      expect(row?.kind).toBe("client");
+      expect(row?.paymentTermDays).toBeNull();
+    } finally {
+      for (const row of await findVendorsByNormalizedName(SYSTEM_VIEWER, name.toLowerCase())) await setVendorHidden(SYSTEM_VIEWER, row.id, true);
+    }
+  });
+
+  test("지급 기한 단위 `일`이 입력 칸과 같은 세로 중심에 선다 (375 · 1280, ±4px)", async ({ page }) => {
+    await loginAsSysadmin(page);
+    for (const width of [375, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/admin/vendors?new=1");
+      const panel = panelOf(page);
+      // 패널 열림 모션 중에는 두 상자가 따로 움직여 보인다 — 한 번의 평가로 같은 순간의 두 중심을 잰다.
+      const gap = await panel.locator("#paymentTermDays").evaluate((input) => {
+        const unit = document.getElementById("paymentTermDays-unit")!;
+        const center = (el: Element) => el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2;
+        return Math.abs(center(input) - center(unit));
+      });
+      expect(gap, `폭 ${width} 입력 중심 ↔ 단위 중심 차`).toBeLessThanOrEqual(4);
+    }
+  });
+
+  test("같은 거래처를 두 페이지로 열고 A 저장 → B 저장은 패널 상단 FormAlert · 본문 맨 위 · 포커스 알림 → 새로 불러오기로 최신 값", async ({ page, context }) => {
+    const name = `E2E동시수정-${randomUUID()}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), kind: "supplier" });
+    try {
+      await page.setViewportSize({ width: 1280, height: 560 });
+      await loginAsSysadmin(page);
+      const other = await context.newPage();
+      await other.setViewportSize({ width: 1280, height: 560 });
+      for (const p of [page, other]) await p.goto(`/admin/vendors?editId=${vendor.id}`);
+
+      await panelOf(other).getByLabel("이름").fill(`${name}-A`);
+      await panelOf(other).getByRole("button", { name: "거래처 저장" }).click();
+      await expect(panelOf(other)).toHaveCount(0);
+
+      const panel = panelOf(page);
+      await panel.getByLabel("이름").fill(`${name}-B`);
+      const body = panel.locator("#vendor-form > div").first();
+      await body.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+      await panel.getByRole("button", { name: "거래처 저장" }).click();
+      const alert = panel.locator("#vendor-form-alert");
+      await expect(alert.getByRole("alert")).toContainText("다른 사람이 먼저 수정 · 새로 불러오기");
+      await expect(alert).toBeFocused();
+      expect(await body.evaluate((el) => el.scrollTop)).toBe(0);
+      const [stored] = await findVendorsByNormalizedName(SYSTEM_VIEWER, `${name}-a`.toLowerCase());
+      expect(stored?.name).toBe(`${name}-A`);
+
+      await alert.getByRole("button", { name: "새로 불러오기" }).click();
+      await expect(panel.getByLabel("이름")).toHaveValue(`${name}-A`);
+      await expect(panel.locator("#vendor-form-alert")).toHaveCount(0);
+      // 새로 불러오기는 폼을 새로 마운트한다 — 포커스가 body로 떨어지지 않고 패널 안(이름 칸)에 남는다.
+      await expect(panel.locator("#name")).toBeFocused();
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+
+  test("U12 — 수정 패널 본문을 맨 아래로 내려도 1차 `거래처 저장` · `취소 Esc`가 뷰포트 안이고 행동 줄 bottom = 패널 bottom", async ({ page }) => {
+    const name = `E2E행동줄-${randomUUID()}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), kind: "supplier" });
+    try {
+      await page.setViewportSize({ width: 1280, height: 480 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const panel = panelOf(page);
+      await panel.locator("#vendor-form > div").first().evaluate((el) => el.scrollTo(0, el.scrollHeight));
+      await expect(panel.getByRole("button", { name: "거래처 저장" })).toBeInViewport();
+      await expect(panel.getByRole("button", { name: /취소/ })).toBeInViewport();
+      const [actionsBottom, panelBottom] = await panel.evaluate((dialog) => {
+        const actions = dialog.querySelector("#vendor-form > div:last-child") as HTMLElement;
+        return [actions.getBoundingClientRect().bottom, dialog.getBoundingClientRect().bottom];
+      });
+      expect(Math.abs(actionsBottom - panelBottom)).toBeLessThanOrEqual(1);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+});
+
+// 07-20 Task 2(V5 · V6 · K20 · C-35 · R8): 사업자 번호 줄 · `열기` · `갈래` 용어 · 계좌번호 자릿수 · 계좌 권한 읽기 줄.
+test.describe("거래처 사업자 번호 · 계좌 칸 (07-20 SC-17)", () => {
+  const panelOf = (page: import("@playwright/test").Page) => page.locator('dialog[data-ui="side-panel"]');
+
+  test("검증합 틀린 번호는 blur에서 `사업자 번호 확인 · 다시 입력` · 입력 중 숫자 · 하이픈만 남는다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/vendors?new=1");
+    const panel = panelOf(page);
+    const field = panel.getByLabel("사업자 번호");
+    // 하이드레이션 전에 친 글자는 onInput(숫자 · 하이픈만 남김)을 거치지 않는다(07-23 관찰) — 처리기가 붙은 뒤에 친다.
+    await waitForHydration(field);
+    await field.pressSequentially("123-45-678a90");
+    await expect(field).toHaveValue("123-45-67890");
+    await field.blur();
+    await expect(panel.locator("#businessNo-error")).toHaveText("사업자 번호 확인 · 다시 입력");
+    await field.fill(uniqueBusinessNo());
+    await field.blur();
+    await expect(panel.locator("#businessNo-error")).toHaveCount(0);
+  });
+
+  test("같은 갈래의 기존 번호 → `이미 등록됨 · {이름}` + `열기` → ?editId= 그 거래처 수정 패널", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const businessNo = uniqueBusinessNo();
+    const existingName = `E2E열기-${randomUUID()}`;
+    const existing = await insertVendor(SYSTEM_VIEWER, { name: existingName, normalizedName: existingName.toLowerCase(), businessNo, kind: "supplier" });
+    try {
+      await page.goto("/admin/vendors?new=1");
+      const panel = panelOf(page);
+      await panel.getByLabel("이름").fill(`E2E열기신규-${randomUUID()}`);
+      await panel.getByLabel("사업자 번호").fill(businessNo);
+      await panel.getByRole("button", { name: "거래처 등록" }).click();
+      await expect(panel.locator("#businessNo-error")).toHaveText(`이미 등록됨 · ${existingName} · 열기`);
+      const open = panel.locator("#businessNo-error").getByRole("link", { name: "열기" });
+      await expect(open).toHaveAttribute("href", `/admin/vendors?editId=${existing.id}`);
+      // backstop: 오류 줄의 행동이 Tab으로 닿는다
+      await panel.getByLabel("사업자 번호").focus();
+      await page.keyboard.press("Tab");
+      await expect(open).toBeFocused();
+      await open.click();
+      await expect(page).toHaveURL(new RegExp(`editId=${existing.id}`));
+      await expect(page.locator("#vendor-form").getByLabel("이름")).toHaveValue(existingName);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, existing.id, true);
+    }
+  });
+
+  test("목록 열 머리글 · 갈래 nav · 패널 라벨이 `갈래`이고 `구분` 낱말이 화면에 없다", async ({ page }) => {
+    // 열 머리글은 보이는 거래처가 있을 때만 그려진다 — 앞 시험이 남긴 행에 기대지 않고 하나 만든다.
+    const name = `E2E갈래-${randomUUID().slice(0, 8)}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), kind: "supplier" });
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto("/admin/vendors?new=1");
+      await expect(page.getByRole("columnheader", { name: "갈래" })).toBeVisible();
+      await expect(page.getByRole("navigation", { name: "갈래" })).toBeVisible();
+      await expect(panelOf(page).getByLabel("갈래")).toBeVisible();
+      await expect(page.getByText("구분", { exact: true })).toHaveCount(0);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+
+  test("계좌번호 `110-123 4567` blur → `1101234567` · 9자리 blur → `숫자 10~16자리 · 다시 입력`", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/vendors?new=1");
+    const field = panelOf(page).getByLabel("계좌번호");
+    await field.fill("110-123 4567");
+    await field.blur();
+    await expect(field).toHaveValue("1101234567");
+    await field.fill("123456789");
+    await field.blur();
+    await expect(panelOf(page).locator("#accountNumber-error")).toHaveText("숫자 10~16자리 · 다시 입력");
+  });
+
+  test("R8 — `vendors.account` 없는 계정의 수정 패널은 계좌 세 칸이 읽기 줄(마스킹)이고, 이름만 저장해도 계좌가 그대로 · 있는 계정은 입력 칸", async ({ page, browser }) => {
+    const name = `E2E계좌권한-${randomUUID()}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name,
+      normalizedName: name.toLowerCase(),
+      kind: "supplier",
+      accountBank: "신한",
+      accountHolder: "홍길동",
+      accountNumberEncrypted: "v1:e2e-cipher",
+      accountNumberLast4: "4567",
+    });
+    const roleId = `role-e2e-vendor-writer-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 거래처 쓰기 ${roleId.slice(-12)}`, sortOrder: 99 });
+    try {
+      for (const action of ["view", "write"] as const) await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "admin.vendors", action, allowed: true });
+      await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "vendor.value", visible: true });
+      const writer = await createFixtureUser({ roleId });
+      const context = await browser.newContext();
+      const writerPage = await context.newPage();
+      await writerPage.goto("/login");
+      await writerPage.getByLabel("이메일").fill(writer.email);
+      await writerPage.getByLabel("비밀번호").fill(writer.password);
+      await writerPage.getByRole("button", { name: "로그인" }).click();
+      await expect(writerPage).toHaveURL(/\/account$/);
+      await writerPage.goto(`/admin/vendors?editId=${vendor.id}`);
+      const panel = panelOf(writerPage);
+      for (const label of ["계좌 은행", "예금주", "새 계좌번호", "계좌번호"]) await expect(panel.getByRole("textbox", { name: label })).toHaveCount(0);
+      await expect(panel.getByText("신한", { exact: true })).toBeVisible();
+      await expect(panel.getByText("홍길동", { exact: true })).toBeVisible();
+      await expect(panel.getByText("****-**-4567")).toBeVisible();
+      await panel.getByLabel("이름").fill(`${name}-고침`);
+      await panel.getByRole("button", { name: "거래처 저장" }).click();
+      await expect(panel).toHaveCount(0);
+      const [after] = await findVendorsByNormalizedName(SYSTEM_VIEWER, `${name}-고침`.toLowerCase());
+      expect(after).toMatchObject({ accountBank: "신한", accountHolder: "홍길동", accountNumberEncrypted: "v1:e2e-cipher" });
+      await context.close();
+
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      await expect(panelOf(page).getByRole("textbox", { name: "계좌 은행" })).toBeVisible();
+      await expect(panelOf(page).getByRole("textbox", { name: "새 계좌번호" })).toBeVisible();
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+      await setRoleArchived(SYSTEM_VIEWER, roleId, true);
+    }
+  });
+});
+
+// 07-20 Task 3(V1 · V2 · K12 · D-736 · U16): 검색칸 · 필터 줄 2차 `파일 받기`.
+test.describe("거래처 검색 · 파일 받기 (07-20 SC-16)", () => {
+  test("검색칸 Enter → ?q= · 결과 · `지우기` · 결과 0 → EMPTY + `필터 지우기`", async ({ page }) => {
+    const t = `E2E검색-${randomUUID().slice(0, 8)}`;
+    const a = await insertVendor(SYSTEM_VIEWER, { name: `${t}-하나`, normalizedName: `${t}-하나`.toLowerCase(), kind: "supplier" });
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto("/admin/vendors");
+      const search = page.getByRole("searchbox", { name: "검색" });
+      await expect(search).toHaveAttribute("placeholder", "거래처 이름·사업자 번호");
+      await search.fill(t);
+      await search.press("Enter");
+      await expect(page).toHaveURL(new RegExp(`q=${encodeURIComponent(t)}`));
+      await expect(page.locator("tbody tr:visible")).toHaveCount(1);
+      await expect(page.locator("tbody tr", { hasText: a.name })).toBeVisible();
+      await page.getByRole("link", { name: "지우기", exact: true }).click();
+      await expect(page).not.toHaveURL(/q=/);
+
+      await page.goto(`/admin/vendors?q=${encodeURIComponent(`${t}-없음`)}`);
+      await expect(page.getByText("조건에 맞는 거래처가 없습니다")).toBeVisible();
+      await page.getByRole("link", { name: "필터 지우기" }).click();
+      await expect(page).not.toHaveURL(/q=/);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, a.id, true);
+    }
+  });
+
+  test("필터 줄 2차 `파일 받기` → 내려받기 · 첫 줄 머리글 · 행 수 = 화면 결과 수 · 결과 줄 · 토스트 없음", async ({ page }) => {
+    const t = `E2E파일-${randomUUID().slice(0, 8)}`;
+    const made = [];
+    for (const suffix of ["가", "나"]) made.push(await insertVendor(SYSTEM_VIEWER, { name: `${t}-${suffix}`, normalizedName: `${t}-${suffix}`.toLowerCase(), kind: "supplier" }));
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?q=${encodeURIComponent(t)}`);
+      const button = page.getByRole("button", { name: "파일 받기" });
+      await expect(button).toHaveClass(/secondary/);
+      const downloadPromise = page.waitForEvent("download");
+      await button.click();
+      const download = await downloadPromise;
+      const text = (await (await import("node:fs/promises")).readFile((await download.path()) ?? "", "utf8")).replace(/^﻿/, "");
+      const lines = text.trimEnd().split("\r\n");
+      expect(lines[0]).toBe("이름,갈래,사업자 번호,지급 기한,계좌 은행,예금주,계좌번호,기본 증빙 종류,숨김");
+      expect(lines.length - 1).toBe(await page.locator("tbody tr:visible").count());
+      // 결과 줄 · 토스트 없음(ui/toast 요소가 없다).
+      await expect(page.locator('[class*="Toast-module"]')).toHaveCount(0);
+      await expect(page.locator("#vendors-export-error")).toHaveCount(0);
+    } finally {
+      for (const vendor of made) await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+
+  test("U16 — 생성 중 `aria-busy` · `aria-disabled` · 다시 눌러도 요청 1회 / 실패 → 버튼 아래 `파일 받기 실패 · 다시 시도`(--status-danger) · 토스트 없음", async ({ page }) => {
+    // `파일 받기`는 보이는 거래처가 있을 때만 그려진다 — 앞 시험이 남긴 행에 기대지 않고 하나 만든다.
+    const name = `E2E받기실패-${randomUUID().slice(0, 8)}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), kind: "supplier" });
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?q=${encodeURIComponent(name)}`);
+      const button = page.getByRole("button", { name: "파일 받기" });
+      let posts = 0;
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/admin/vendors**", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        posts += 1;
+        await held;
+        await route.abort();
+      });
+      await button.click();
+      await expect(button).toHaveAttribute("aria-busy", "true");
+      await expect(button).toHaveAttribute("aria-disabled", "true");
+      await button.click({ force: true });
+      expect(posts).toBe(1);
+      release();
+      const error = page.locator("#vendors-export-error");
+      await expect(error).toHaveText("파일 받기 실패 · 다시 시도");
+      const [errorColor, dangerColor] = await error.evaluate((el) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--status-danger)";
+        document.body.append(probe);
+        const pair = [getComputedStyle(el).color, getComputedStyle(probe).color];
+        probe.remove();
+        return pair;
+      });
+      expect(errorColor).toBe(dangerColor);
+      // 토스트 없음 — 실패는 버튼 아래 오류 줄 하나뿐이다(ui/toast 요소가 없다).
+      await expect(page.locator('[class*="Toast-module"]')).toHaveCount(0);
+      await expect(error).toHaveAttribute("role", "alert");
+      await expect(button).not.toHaveAttribute("aria-busy", "true");
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+
+  // 07-20 CI e2e 실패(PR #285): `파일 받기`는 서버 렌더에는 그려지고(useEditableWidth 서버 스냅숏 = 참) 1024 미만에서는 수화 뒤에 사라졌다.
+  // 700에서는 그 버튼 때문에 필터 줄이 한 줄 더 접혔다가 수화 뒤 48px 위로 당겨져, 느린 수화 중에 잰 행 동작 상자가 어긋났다.
+  // 수화 전(스크립트 차단) 화면에서도 1024 미만에는 버튼이 보이지 않아야 한다 — 표 위치가 수화 전후로 같다.
+  for (const width of [700, 768]) {
+    test(`${width}: 수화 전 서버 렌더에도 \`파일 받기\`가 보이지 않고 표 위치가 수화 뒤와 같다 (레이아웃 이동 없음)`, async ({ page }) => {
+      const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E이동-${randomUUID().slice(0, 8)}`, normalizedName: `e2e이동-${randomUUID()}` });
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        const tableTop = (target: import("@playwright/test").Page) =>
+          target.locator("table").evaluate((element) => element.getBoundingClientRect().top);
+
+        const ssr = await page.context().newPage();
+        await ssr.setViewportSize({ width, height: 800 });
+        await ssr.route("**/*", (route) => (route.request().resourceType() === "script" ? route.abort() : route.continue()));
+        await ssr.goto("/admin/vendors");
+        await expect(ssr.getByRole("button", { name: "파일 받기" })).toBeHidden();
+        const before = await tableTop(ssr);
+        await ssr.close();
+
+        await page.goto("/admin/vendors");
+        await waitForHydration(page.getByRole("searchbox", { name: "검색" }));
+        await expect(page.getByRole("button", { name: "파일 받기" })).toHaveCount(0);
+        expect(Math.abs((await tableTop(page)) - before), `${width}px 수화 전후 표 위치 차`).toBeLessThanOrEqual(0.5);
+      } finally {
+        await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+      }
+    });
+  }
+});
+
+// 07-20 게이트(2026-10-23): 패널 Form.Field + Select 줄 아래 간격(design-review P2) · 계좌 권한 없는 편집자의 등록 계좌 칸(사용자 결정).
+test.describe("거래처 패널 select 줄 간격 · 등록 계좌 권한 (07-20 게이트)", () => {
+  const panelOf = (page: import("@playwright/test").Page) => page.locator('dialog[data-ui="side-panel"]');
+  const WIDTHS = [375, 320, 768, 1280];
+  const PREFIX = "E2E거래처간격";
+
+  // 칸 줄(라벨의 부모) 아래 끝 → 폼에서 다음 라벨 위 끝. 패널 열림 모션 중에도 같은 순간을 재도록 한 번의 평가로 잰다.
+  async function gapsBelow(page: import("@playwright/test").Page, ids: string[]): Promise<Record<string, number>> {
+    return page.locator("#vendor-form").evaluate((form, wanted) => {
+      const labels = [...form.querySelectorAll("label[for]")];
+      const out: Record<string, number> = {};
+      for (const id of wanted) {
+        const index = labels.findIndex((label) => label.getAttribute("for") === id);
+        const row = labels[index]?.parentElement;
+        const next = labels[index + 1];
+        if (!row || !next) throw new Error(`칸 또는 다음 라벨 없음: ${id}`);
+        out[id] = Math.round((next.getBoundingClientRect().top - row.getBoundingClientRect().bottom) * 10) / 10;
+      }
+      return out;
+    }, ids);
+  }
+
+  async function login(page: import("@playwright/test").Page, account: { email: string; password: string }) {
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(account.email);
+    await page.getByLabel("비밀번호").fill(account.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+  }
+
+  test("`갈래` · `기본 증빙 종류` 줄 아래가 TextField 줄 아래(`이름`)와 같은 16px다 (375 · 320 · 768 · 1280)", async ({ page }) => {
+    await loginAsSysadmin(page);
+    for (const width of WIDTHS) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/admin/vendors?new=1");
+      await expect(panelOf(page).getByLabel("기본 증빙 종류")).toBeVisible();
+      const gaps = await gapsBelow(page, ["name", "kind", "defaultEvidenceType"]);
+      expect(gaps, `폭 ${width}`).toEqual({ name: 16, kind: 16, defaultEvidenceType: 16 });
+    }
+  });
+
+  test("`vendors.account` 없는 편집자의 등록 패널에는 계좌 세 칸이 없고, 사용자 정의 select 줄 아래도 16px다 (375 · 320 · 768 · 1280)", async ({ page }) => {
+    const editor = await createE2EVendorEditor();
+    // 보관해도 라벨은 남는다 — 같은 DB로 다시 돌릴 때 이름이 겹치지 않게 접미어를 붙인다.
+    const stamp = randomUUID().slice(0, 8);
+    try {
+      const select = await createE2EFieldDefinition({ label: `${PREFIX}계약-${stamp}`, type: "select", required: false, options: ["갑", "을"], sortOrder: 0, onlyRoleId: editor.roleId });
+      await createE2EFieldDefinition({ label: `${PREFIX}메모-${stamp}`, type: "text", required: false, sortOrder: 1, onlyRoleId: editor.roleId });
+      await login(page, editor);
+      for (const width of WIDTHS) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto("/admin/vendors?new=1");
+        const panel = panelOf(page);
+        await expect(panel.getByLabel("기본 증빙 종류")).toBeVisible();
+        await expect(panel.locator("#accountBank, #accountHolder, #accountNumber")).toHaveCount(0);
+        await expect(panel.getByText(/계좌/)).toHaveCount(0);
+        const gaps = await gapsBelow(page, ["name", `cf_${select.key}`]);
+        expect(gaps, `폭 ${width}`).toEqual({ name: 16, [`cf_${select.key}`]: 16 });
+      }
+    } finally {
+      await archiveE2EFieldDefinitions(PREFIX);
     }
   });
 });

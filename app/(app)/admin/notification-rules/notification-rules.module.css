@@ -1,0 +1,115 @@
+/* SC-05 알림 규칙 표 — 표 면 · 머리글 · 칸은 공용 `ui/table`이 그린다. 이 파일은 규칙 화면에만 있는 모양(꺼 둔 행 · 켬 체크박스 · 오류 줄)이다. 값은 역할 토큰만. */
+
+/* 꺼 둔 규칙은 muted 행 — 순서는 등록 순서로 고정이라 켜고 꺼도 행이 움직이지 않는다. */
+.muted {
+  color: var(--text-muted);
+}
+
+.check {
+  accent-color: var(--native-accent);
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  margin: 0;
+}
+
+/* 요청 중에는 누름을 무시한다(aria-disabled) — 네이티브 disabled가 아니라 탭 순서에 남는다. */
+.check[aria-disabled="true"] {
+  cursor: progress;
+}
+
+/* 표 위 오류 줄 — 켬 저장 실패 + 3차 다시 시도. */
+.alert {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-2);
+  font-size: var(--text-aux);
+  color: var(--status-danger);
+}
+
+@media (max-width: 699.98px) {
+  /* §3 터치 목표 — 폰에서 체크박스 칸은 44px. */
+  .check {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
+}
+
+/* 옆 패널 `{규칙} 수정`(K10 · N6) — 일수 칸은 단위가 입력 밖 오른쪽 정적 글자이고 범위(aux)는 칸 아래 한 줄(settings.module.css 단위 칸과 같은 모양). */
+.daysField {
+  margin: 0 0 var(--s-4);
+}
+
+.withUnit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--s-2);
+}
+
+/* TextField 줄을 풀어(display: contents) 라벨(윗줄 전폭) · 입력 칸 묶음 · 단위를 한 격자에 둔다 — 단위는 입력 칸 높이 줄에 붙는다. */
+/* 패널 폼이 TextField 줄을 display: block으로 덮는다(Form.module.css) — 한 단계 더 구체적인 선택자로 푼다. */
+.daysField .withUnit > :first-child {
+  display: contents;
+}
+
+.daysField .withUnit > :first-child > label {
+  grid-column: 1 / -1;
+}
+
+.unit {
+  display: flex;
+  align-items: center;
+  height: var(--field-h, var(--control-h));
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+.aux {
+  margin: var(--s-1) 0 0;
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+.readLine {
+  margin: 0 0 var(--s-4);
+  font-size: var(--text-body);
+  color: var(--text-muted);
+}
+
+.group {
+  margin: 0 0 var(--s-4);
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.legend {
+  padding: 0;
+  margin-bottom: var(--s-1);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--text-body);
+}
+
+.checkRow input {
+  accent-color: var(--native-accent);
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  margin: 0;
+  flex-shrink: 0;
+}
+
+@media (max-width: 699.98px) {
+  .checkRow {
+    min-height: var(--touch-min);
+  }
+}

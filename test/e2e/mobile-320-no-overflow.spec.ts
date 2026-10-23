@@ -191,9 +191,10 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
       await expectFoldAttached(page, vendor.name, { last: false });
 
       // 번호 보기가 실패하면 칸 안에 오류 한 줄이 뜬다 — 그 줄도 넘치지 않는다
-      // (자리 표시 암호문이라 복호화가 실패한다).
-      await vendorRow.getByRole("button", { name: "번호 보기" }).click();
-      await expect(vendorRow.getByText("번호 불러오기 실패 · 다시 시도")).toBeVisible();
+      // (자리 표시 암호문이라 복호화가 실패한다). 07-20 SC-16: 폰 P1은 이름 · 갈래 · 상태 — 계좌는 접힘 줄(P2)에 있다.
+      const vendorFold = vendorRow.locator("xpath=following-sibling::tr[1]");
+      await vendorFold.getByRole("button", { name: "번호 보기" }).click();
+      await expect(vendorFold.getByText("번호 불러오기 실패 · 다시 시도")).toBeVisible();
       expectMeasured("번호 보기 실패", await measure(page));
 
       // 폰 칸 접기가 풀리는 가장 좁은 태블릿 폭(700)에서도 같은 화면이 넘치지 않는다.

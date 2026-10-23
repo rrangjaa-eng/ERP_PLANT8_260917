@@ -12,7 +12,7 @@ export default function RolesError({ error, retry }: { error: Error & { digest?:
 
   return (
     <DetailScreen title="계급">
-      <ListEmpty message="불러오지 못했습니다 · 다시 시도" action={{ label: "다시 시도", onClick: retry }} tone="error" />
+      <ListEmpty message="계급 불러오기 실패" action={{ label: "다시 시도", onClick: retry }} tone="error" />
     </DetailScreen>
   );
 }

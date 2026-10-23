@@ -15,7 +15,8 @@ describe.each(["roles", "org"])("%s 라우트 경계", (route) => {
     expect(existsSync(errorFile)).toBe(true);
     const text = readFileSync(errorFile, "utf8");
     expect(text.trimStart().startsWith('"use client"')).toBe(true);
-    expect(text).toContain('message="불러오지 못했습니다 · 다시 시도"');
+    // 오류 문구 명사형 가드(error-copy-noun-style)와 같은 꼴 — 「~하지 못했습니다」 대신 `{대상} 불러오기 실패`(결재함 · 공휴일 error와 같다).
+    expect(text).toContain(`message="${route === "roles" ? "계급" : "조직"} 불러오기 실패"`);
     expect(text).toContain('action={{ label: "다시 시도", onClick: retry }}');
     expect(text).toContain('tone="error"');
     expect(text).not.toMatch(/error\.(message|stack|digest)/);

@@ -12,7 +12,7 @@ export default function OrgError({ error, retry }: { error: Error & { digest?: s
 
   return (
     <DetailScreen title="조직">
-      <ListEmpty message="불러오지 못했습니다 · 다시 시도" action={{ label: "다시 시도", onClick: retry }} tone="error" />
+      <ListEmpty message="조직 불러오기 실패" action={{ label: "다시 시도", onClick: retry }} tone="error" />
     </DetailScreen>
   );
 }

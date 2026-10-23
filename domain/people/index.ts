@@ -382,16 +382,18 @@ export async function registerPerson(
     throw new ValidationError(HIRE_DATE_FORMAT_ERROR);
   }
 
-  // 상한 → 자리(Pitfall 2). 사람이 아직 없어 사람 키 없이 도착 팀 · 본부 키만 잡는다. 보관 본부는 점유 구간 함수처럼 본부 없음.
+  // 상한 → 자리(Pitfall 2). 사람이 아직 없어 사람 키 없이 도착 팀 · 본부 키만 잡는다. 보관 본부는 위에서 거부했다.
   const today = seoulTodayOf(deps);
   const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
   const orgUnit = seat ? await repoFindOrgUnitById(viewer, seat.orgUnitId) : null;
+  // 07-21 Codex P2: 팀은 활성이어도 본부가 보관됐으면 계정을 만들기 전에 거부한다 — 발령(`assignTeam`)의 잠금 뒤 재검사와 같은 문구.
+  if (orgUnit?.archivedAt) throw new ValidationError("보관된 본부 · 먼저 옮기기");
   await withTransaction(async (tx) => {
     await assertCanGrantRoles(viewer, [input.roleId], tx);
     if (!seat) return;
     const occupied: OccupiedTeamRow = {
       teamId: seat.teamId,
-      orgUnitId: orgUnit && !orgUnit.archivedAt ? orgUnit.id : null,
+      orgUnitId: orgUnit?.id ?? null,
       from: seat.effectiveFrom > today ? seat.effectiveFrom : today,
       to: null,
     };

@@ -1,13 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { archive, OrgHasMembersError } from "@/domain/archive";
-import { assignTeam, orgMemberCounts, ForbiddenError as OrgForbiddenError } from "@/domain/org";
-import { listPeoplePage, roleMemberCounts, ForbiddenError as PeopleForbiddenError } from "@/domain/people";
+import { createAccount } from "@/domain/auth/accounts";
+import { assignTeam, orgMemberCounts, ForbiddenError as OrgForbiddenError, ValidationError as OrgValidationError } from "@/domain/org";
+import {
+  listPeoplePage,
+  registerPerson,
+  roleMemberCounts,
+  ForbiddenError as PeopleForbiddenError,
+  ValidationError as PeopleValidationError,
+} from "@/domain/people";
 import { countActiveMembersOfRole } from "@/repositories/roles";
 import { findTeamById } from "@/repositories/teams";
 import { findOrgUnitById } from "@/repositories/org-units";
-import { insertMembership } from "@/repositories/team-memberships";
+import { insertMembership, listMemberships } from "@/repositories/team-memberships";
 import { updateUserResignationDate, setUserArchived } from "@/repositories/users";
 import { NOW_2026, makePerson } from "./approvals-fixtures";
 import { addTeam, countLogs, holdKey, makeAdmin, makeDelegatedRole, makeOrgTeam, makeSeated, uniqueName, waitingOnKey } from "./admin-cap-fixtures";
@@ -147,6 +155,40 @@ describe("팀 보관 ∥ 그 팀 발령(07-21 T-07-21-02)", () => {
     expect(results[1]?.status).toBe("rejected");
     expect(await teamArchived(teamId)).toBe(true);
     expect((await orgMemberCounts(admin, deps)).teams[teamId] ?? 0).toBe(0);
+  });
+});
+
+describe("보관된 본부 아래 활성 팀으로 배치 거부(07-21 Codex P2 — 복원 거부의 짝)", () => {
+  // 빈 본부는 아래 팀이 활성인 채 보관된다(D-P3-10) — 팀 보관만 보면 그 팀으로 사람을 배치할 수 있었다.
+  async function archivedOrgTeam(): Promise<{ teamId: string }> {
+    const { orgUnitId, teamId } = await makeOrgTeam();
+    await archive(SYSTEM_VIEWER, "org_unit", orgUnitId, deps);
+    expect(await teamArchived(teamId)).toBe(false);
+    return { teamId };
+  }
+
+  it("발령 → 「보관된 본부 · 먼저 옮기기」 · 발령 줄 없음", async () => {
+    const admin = await makeAdmin("관리자");
+    const { orgUnitId: liveOrg } = await makeOrgTeam();
+    const person = await makeSeated(uniqueName("발령"), DEFAULT_ROLE_ID, await addTeam(liveOrg));
+    const { teamId } = await archivedOrgTeam();
+
+    const error = await refusal(assignTeam(admin, { userId: person.id, teamId, effectiveFrom: "2026-09-01" }, deps), OrgValidationError);
+
+    expect(error.message).toBe("보관된 본부 · 먼저 옮기기");
+    expect((await listMemberships(SYSTEM_VIEWER, person.id)).some((row) => row.teamId === teamId)).toBe(false);
+  });
+
+  it("사람 등록 → 계정을 만들기 전에 같은 문구로 거부", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await archivedOrgTeam();
+    const spy = vi.fn(createAccount);
+    const input = { name: uniqueName("새 사람"), email: `${randomUUID()}@example.test`, roleId: DEFAULT_ROLE_ID, teamId, effectiveFrom: "2026-09-01" };
+
+    const error = await refusal(registerPerson(admin, input, { ...deps, createAccount: spy }), PeopleValidationError);
+
+    expect(error.message).toBe("보관된 본부 · 먼저 옮기기");
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 

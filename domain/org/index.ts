@@ -300,6 +300,10 @@ export async function assignTeam(
     // (사람 등록 `registerPerson`의 보관 팀 거부와 같은 판정 · 같은 문구).
     const lockedTeam = await defaultFindTeamById(viewer, input.teamId, tx);
     if (!lockedTeam || lockedTeam.archivedAt) throw new ValidationError(`존재하지 않거나 보관된 팀: ${input.teamId}`);
+    // 07-21 Codex P2: 빈 본부는 아래 팀이 활성인 채 보관된다 — 팀의 본부도 같은 잠금 뒤에 다시 읽는다(위 자리 키가 그 본부 키를 함께 잡아
+    // 본부 보관과 줄 선다). 복원 거부(`archivedSeatReason`)와 같은 문구.
+    const lockedOrgUnit = await repoFindOrgUnitById(viewer, lockedTeam.orgUnitId, tx);
+    if (lockedOrgUnit?.archivedAt) throw new ValidationError("보관된 본부 · 먼저 옮기기");
     const person = await repoFindUserById(viewer, input.userId, tx);
     // 07-17 R15: 대상 계급이 내 상한 밖이면 발령하지 못한다 — 화면 숨김은 UX일 뿐(퇴직일 진입점과 같은 잠금 뒤 재조회 판정).
     await assertCanGrantRoles(viewer, [person?.roleId ?? null], tx);

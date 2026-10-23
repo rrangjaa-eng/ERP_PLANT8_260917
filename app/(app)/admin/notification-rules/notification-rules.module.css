@@ -1,0 +1,36 @@
+/* SC-05 알림 규칙 표 — 표 면 · 머리글 · 칸은 공용 `ui/table`이 그린다. 이 파일은 규칙 화면에만 있는 모양(꺼 둔 행 · 켬 체크박스 · 오류 줄)이다. 값은 역할 토큰만. */
+
+/* 꺼 둔 규칙은 muted 행 — 순서는 등록 순서로 고정이라 켜고 꺼도 행이 움직이지 않는다. */
+.muted {
+  color: var(--text-muted);
+}
+
+.check {
+  accent-color: var(--native-accent);
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  margin: 0;
+}
+
+/* 요청 중에는 누름을 무시한다(aria-disabled) — 네이티브 disabled가 아니라 탭 순서에 남는다. */
+.check[aria-disabled="true"] {
+  cursor: progress;
+}
+
+/* 표 위 오류 줄 — 켬 저장 실패 + 3차 다시 시도. */
+.alert {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-2);
+  font-size: var(--text-aux);
+  color: var(--status-danger);
+}
+
+@media (max-width: 699.98px) {
+  /* §3 터치 목표 — 폰에서 체크박스 칸은 44px. */
+  .check {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
+}

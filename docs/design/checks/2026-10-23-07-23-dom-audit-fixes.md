@@ -1,5 +1,5 @@
 # 07-23 DOM 감사 지적 고침(P1 담당자 줄 키 · P2 확인 표시 실패 줄 · P2 지급 목록 거래처 배지 낱말) — 점검표
-화면: app/(app)/admin/vendors/vendor-contacts.tsx, app/(app)/admin/vendors/vendor-form.tsx
+화면: app/(app)/admin/vendors/vendor-contacts.tsx, app/(app)/admin/vendors/vendor-form.tsx, app/(app)/expenses/payment-targets-table.tsx, ui/status-tag/status-map.ts
 기준: BRIEF.md · frontend.md 화면 사용성 원칙 · CHECKLIST.md §1 · SYSTEM.md §7-5(상태 낱말 한 값) · 감사 보고서 07-review/0723-dom-audit.md #1~#3
 
 ## 원칙
@@ -8,7 +8,7 @@
 - [x] 할 수 없는 선택지는 숨기거나 비활성화했다 — 근거: `담당자 더하기` 5명 상한 비활성은 그대로(기존 E2E `aria-disabled` 통과).
 - [x] 주 버튼 하나: 이 화면의 다음 행동이 주 버튼 하나로 보인다 — 근거: 패널 주 버튼 `거래처 저장` 하나 그대로 · 담당자 단추는 3차.
 - [x] 위험한 동작(삭제 등)은 떨어뜨려 두고 위험 색이다 — 근거: 줄 `삭제`는 저장 전 폼 상태만 지우고 `취소 Esc`가 되돌리기(07-23 결정 그대로) — 바꾸지 않았다.
-- [x] 같은 말을 두 번 하지 않는다(라벨과 칸 안 글자, 태그와 줄 등) — 근거: 실패 줄은 서버 거절(serverError)이 있으면 그 문장만, 없을 때만 실패 문구 — 한 줄만 선다(`error = serverError ?? 끊김 문구`).
+- [x] 같은 말을 두 번 하지 않는다(라벨과 칸 안 글자, 태그와 줄 등) — 근거: 실패 줄은 서버 거절(serverError)이 있으면 그 문장만, 없을 때만 실패 문구 — 한 줄만 선다(`error = serverError ?? 끊김 문구`). 지급 목록: 한 행에 증빙 칸 `확인 전`과 지급 방식 칸 거래처 `확인 전`이 둘 서던 것을 거래처 쪽 `거래처 확인 전`으로 갈랐다 — 폰 접힌 줄(열 머리 없음)에서도 뜻이 선다(DOM 감사 #3 권장안 (b) · 사용자 카드 답 대기 — 반대면 이 커밋만 되돌린다). 증빙 쪽 `확인 전`은 그대로.
 - [x] 빈 화면은 설명보다 첫 행동 버튼이 먼저다 — 근거: 담당자 0명이면 `담당자 더하기`만(그대로).
 - [x] 키보드만으로 끝난다(표는 엑셀 키 구성) — 근거: 이것이 이번 고침이다. 저장된 줄 키 = `contact-{담당자 id}`라 서버 렌더 id와 브라우저 id가 같다 → 다시 불러온 뒤 첫 줄 이메일 Enter → 둘째 줄 이름, 첫 줄 `삭제` → 다음 줄 `삭제` 포커스(E2E `다시 불러온 저장된 담당자 줄` RED → GREEN, CI=true).
 - [x] 같은 종류의 행동은 같은 모양이다(링크·버튼 섞지 않음) — 근거: 단추 모양 변화 없음.
@@ -17,6 +17,6 @@
 - [x] §1의 결정을 하나도 어기지 않았다(웜톤 · 견적 엑셀식 · 옆 패널 · 스킨 A …) — 근거: 옆 패널 · 색 · 간격 그대로, CSS 변경 0.
 
 ## 시스템
-- [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: .css 변경 0 · 새 클래스 이름 0 — 실패 줄은 기존 `Form.Error`(`--status-danger`) 부품.
+- [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: .css 변경 0 · 새 클래스 이름 0 — 실패 줄은 기존 `Form.Error`(`--status-danger`) 부품. 새 낱말 `거래처 확인 전`은 status-map.ts에 기존 색 종류 `accent`로만 더했다(새 색 0 · StatusTag text 변형 그대로).
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 레이아웃 변경 없음 — 감사 4폭 실측(넘침 0 · `삭제` 44×44) 그대로 유효.
-- [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 해당 없음 — CLAUDE.md §6 「스크린샷 육안 판정 금지」에 따라 DOM 실측(Playwright activeElement 단언, CI=true 빌드 1280)으로 확인했다. 로그 /home/user/wt/logs/07-23/fix-p1-green.log · fix-p2-green.log(끊김 → 실패 줄 보임 · 다시 누름 → 줄 사라짐 · 되돌리기 끊김 → 줄 남음 단언).
+- [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 해당 없음 — CLAUDE.md §6 「스크린샷 육안 판정 금지」에 따라 DOM 실측(Playwright activeElement 단언, CI=true 빌드 1280)으로 확인했다. 로그 /home/user/wt/logs/07-23/fix-p1-green.log · fix-p2-green.log(끊김 → 실패 줄 보임 · 다시 누름 → 줄 사라짐 · 되돌리기 끊김 → 줄 남음 단언). · badge-green-e2e.log(지급 목록 지급 방식 칸 `거래처 확인 전` 1 → 확인 뒤 0).

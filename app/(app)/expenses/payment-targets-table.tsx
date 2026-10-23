@@ -209,10 +209,11 @@ export function PaymentAccountValue({ account }: { account: PaymentAccount }) {
   );
 }
 
-// 07-23 SC-01 · N2 · V9: 결제 방법 열 계좌 아래 한 값 `확인 전 > 계좌 바뀜` — 지급처 거래처가 확인 전이면 `확인 전`, 확인됐고 계좌가 바뀐 뒤 첫 지급 전이면 `계좌 바뀜`.
+// 07-23 SC-01 · N2 · V9: 결제 방법 열 계좌 아래 한 값 `거래처 확인 전 > 계좌 바뀜` — 지급처 거래처가 확인 전이면 `거래처 확인 전`, 확인됐고 계좌가 바뀐 뒤 첫 지급 전이면 `계좌 바뀜`.
+// 증빙 칸 `확인 전`과 한 행에 서므로 거래처 쪽은 `거래처`를 붙인다(DOM 감사 #3 — 폰 접힌 줄에는 열 머리가 없다).
 // 둘 다 표시만 — 지급 선택 · 처리 판정은 손대지 않는다(G13 사후 확인). 키가 없으면(vendor.value 숨김) 그리지 않는다.
-function vendorFlagOf(row: Pick<PaymentTargetScreenRow, "vendorConfirmed" | "accountChanged">): "확인 전" | "계좌 바뀜" | null {
-  if (row.vendorConfirmed === false) return "확인 전";
+function vendorFlagOf(row: Pick<PaymentTargetScreenRow, "vendorConfirmed" | "accountChanged">): "거래처 확인 전" | "계좌 바뀜" | null {
+  if (row.vendorConfirmed === false) return "거래처 확인 전";
   return row.accountChanged === true ? "계좌 바뀜" : null;
 }
 

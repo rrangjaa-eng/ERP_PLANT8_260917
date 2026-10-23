@@ -209,7 +209,7 @@ async function methodCell(page: Page, itemName: string) {
 }
 
 test.describe("N2 — 일하는 자리 등록 거래처의 사후 확인 (07-23)", () => {
-  test("등록 거래처로 승인 → 지급 목록 계좌 아래 `확인 전` → 경영관리 `확인됨으로 표시` → 사라짐", async ({ browser, baseURL }) => {
+  test("등록 거래처로 승인 → 지급 목록 계좌 아래 `거래처 확인 전` → 경영관리 `확인됨으로 표시` → 사라짐", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const manager = await makeManager(fx);
     const page = await loginPage(browser, baseURL, fx.pm);
@@ -230,14 +230,14 @@ test.describe("N2 — 일하는 자리 등록 거래처의 사후 확인 (07-23)
 
     const payPage = await loginPage(browser, baseURL, manager, { width: 1280, height: 900 });
     await payPage.goto("/expenses");
-    await expect((await methodCell(payPage, fx.lines.worst.itemName)).getByText("확인 전", { exact: true })).toHaveCount(1);
+    await expect((await methodCell(payPage, fx.lines.worst.itemName)).getByText("거래처 확인 전", { exact: true })).toHaveCount(1);
 
     await payPage.goto(`/admin/vendors?editId=${vendor.id}`);
     await payPage.getByRole("button", { name: "확인됨으로 표시" }).click();
     await expect(payPage.getByRole("button", { name: "되돌리기" })).toBeVisible();
 
     await payPage.goto("/expenses");
-    await expect((await methodCell(payPage, fx.lines.worst.itemName)).getByText("확인 전", { exact: true })).toHaveCount(0);
+    await expect((await methodCell(payPage, fx.lines.worst.itemName)).getByText("거래처 확인 전", { exact: true })).toHaveCount(0);
     await payPage.context().close();
   });
 });

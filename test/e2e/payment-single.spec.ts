@@ -12,6 +12,8 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { formatKrw } from "@/lib/format-number";
 import { seoulToday } from "@/lib/dates";
+import { loadHolidayLookup } from "@/domain/holidays/calendar";
+import { isBusinessDay } from "@/domain/holidays/business-day";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { seedCodeItem } from "@/repositories/code-tables";
@@ -172,6 +174,15 @@ function addDays(date: string, days: number): string {
   return at.toISOString().slice(0, 10);
 }
 
+// 07-06(D-714): 수동 지정은 영업일만 — 그 날 이후 첫 영업일(오늘에서 셈한 날이 주말 · 공휴일이어도 시험이 날짜에 따라 깨지지 않게).
+async function businessDayFrom(date: string): Promise<string> {
+  const year = Number(date.slice(0, 4));
+  const lookup = await loadHolidayLookup([year, year + 1]);
+  let day = date;
+  while (!isBusinessDay(day, lookup)) day = addDays(day, 1);
+  return day;
+}
+
 // 06-04(D-604 · D-605): 지급 섹션 칸 — 이체액 · 차이 사유 · 오늘이 아닌 지급일(06.5 D-6518 뒤로는 과거 날짜 — 미래는 거절).
 test.describe("지급 섹션 칸 (06-04)", () => {
   test("이체액을 다르게 + 차이 사유 + 어제 지급일 → 지급 완료 → 읽기 줄 2행에 차이 부호 · 지급일 = 그 날짜", async ({ browser, baseURL }) => {
@@ -265,7 +276,7 @@ test.describe("지급 예정일 제자리 저장 (06-04 · SP-3 ②)", () => {
     const payer = await makePaymentManagerE2E();
     const [row] = await db.select({ scheduled: expenses.scheduledPaymentDate }).from(expenses).where(eq(expenses.id, expenseId));
     const original = row?.scheduled ?? null;
-    const future = addDays(seoulToday(), 45);
+    const future = await businessDayFrom(addDays(seoulToday(), 45));
 
     const page = await loginPage(browser, baseURL, payer);
     await page.goto(`/expenses/${expenseId}`);
@@ -305,8 +316,8 @@ test.describe("지급 예정일 제자리 저장 (06-04 · SP-3 ②)", () => {
     const logs = await db
       .select({ detail: actionLog.detail })
       .from(actionLog)
-      .where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actionType, "document_update")));
-    expect(logs.at(-1)?.detail).toMatchObject({ field: "scheduledPaymentDate", before: original, after: future });
+      .where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actionType, "payment_schedule_change")));
+    expect(logs.at(-1)?.detail).toMatchObject({ changes: { scheduledPaymentDate: [original, future] } });
     await page.context().close();
   });
 });

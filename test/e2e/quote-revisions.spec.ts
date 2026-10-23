@@ -344,6 +344,9 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     const date = sheet.getByLabel("승인일");
     await expect(date).toHaveValue(today);
     await expect(sheet.getByLabel("근거")).toHaveAttribute("aria-required", "true");
+    // 근거는 `발주서`로 미리 골라져 있다(카드 2026-10-23) — 비우면 1차가 `근거 선택`으로 막힌다.
+    await expect(sheet.getByLabel("근거")).toHaveValue("purchase_order");
+    await sheet.getByLabel("근거").selectOption("");
     await primary.click();
     await expect(sheet.locator("p").getByText("근거 선택", { exact: true })).toHaveCount(1);
     await expect(sheet).toBeVisible();

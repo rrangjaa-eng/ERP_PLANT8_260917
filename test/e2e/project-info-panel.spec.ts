@@ -371,7 +371,9 @@ test.describe("고객 승인 섹션 · 승인 표시 패널 (W6 · SC-19)", () =
     const sheet = page.getByRole("dialog", { name: "고객 승인 표시", exact: true });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole("button", { name: /^취소/ })).toContainText("Esc");
-    // 근거를 비운 채 1차 — 서버를 부르지 않고 `근거 선택`.
+    // 근거는 `발주서`로 미리 골라져 있다(카드 2026-10-23) — 비우고 1차를 누르면 서버를 부르지 않고 `근거 선택`.
+    await expect(sheet.getByLabel("근거")).toHaveValue("purchase_order");
+    await sheet.getByLabel("근거").selectOption("");
     await sheet.getByRole("button", { name: /^승인 표시/ }).click();
     // 오류는 칸 아래 한 곳에만 — 이유 줄에 같은 글자를 또 그리지 않는다(옵션 글자는 <p>가 아니다).
     await expect(sheet.locator("p").getByText("근거 선택", { exact: true })).toHaveCount(1);

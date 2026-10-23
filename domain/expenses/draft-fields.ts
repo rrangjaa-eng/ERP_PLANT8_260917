@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CURRENCIES } from "@/domain/money/currency";
 import { isCalendarDate } from "@/lib/dates";
+import { REQUESTED_DATE_MISSING, REQUESTED_DATE_PASSED, REQUESTED_DATE_PAST, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
 
 // 05 /review A12: 지출결의 칸 입력 스키마 하나 — 액션 입력 검증(칸 오류 문구)과 도메인 판정이 같은 스키마를 쓴다. 입력에 세액 · 지급 총액 ·
 // 원화 칸은 없다(사람이 적는 금액은 공급가액 하나, 원화 환산 · 세금은 서버). 팀 id 칸도 없다(귀속 팀은 서버가 사용일 소속으로만 정한다).
@@ -23,7 +24,10 @@ export const expenseDraftFieldsSchema = z
     evidenceType: z.string().min(1).max(100).nullable(),
     paymentMethod: z.string().min(1).max(100).nullable(),
     supply: z.object({ currency: z.enum(CURRENCIES), amount: z.number().min(0), fxRate: z.number() }).strict().nullable(),
-    scheduledPaymentDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR).nullable(),
+    // 07-16(D-714): 작성자는 지급 예정일을 적지 않는다(지급 권한자 길 07-06 saveScheduledPayDate뿐) — 희망 지급일 · 희망 사유 한 쌍만.
+    // 쌍 · 과거 판정은 refine이 아니라 requestedPaymentErrors(아래 — `.pick()`이 깨지지 않게). 사유는 앞뒤 공백을 뗀다(DB CHECK는 NULL 짝만 본다).
+    requestedPaymentDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR).nullable(),
+    requestedPaymentReason: z.string().trim().max(EXPENSE_TEXT_MAX, `희망 사유 ${EXPENSE_TEXT_MAX}자 넘음 · 줄여 적기`).nullable(),
     note: z.string().max(EXPENSE_TEXT_MAX, `비고 ${EXPENSE_TEXT_MAX}자 넘음 · 줄여 적기`).nullable(),
     installment: z.boolean(),
     teamExpenseKind: z.enum(TEAM_EXPENSE_KINDS).nullable(),
@@ -43,3 +47,26 @@ export const expenseDraftFieldsSchema = z
   })
   .strict()
   .partial();
+
+export type RequestedPaymentErrors = Partial<Record<"requestedPaymentDate" | "requestedPaymentReason", string>>;
+
+// 저장은 저장된 희망일(stored — 새 문서는 null)과 다른 값만 과거를 본다. 제출은 지난 희망일을 `희망일 지남`으로 막는다.
+export type RequestedPaymentCheck = { on: "save"; stored: string | null } | { on: "submit" };
+
+// 07-16(SC-02 · AQ-10): 희망 지급일 · 사유 판정 — 둘 다 있거나 둘 다 없어야 하고(빈 사유 = 없음), 희망일은 오늘(넘긴 KST 날짜) 이후. 영업일은 따지지 않는다.
+// 저장 경로(임시 저장 · 줄에서 만들기 · 팀 비용 첫 저장 · 제출)가 합친 값으로 부른다.
+// 사용자 결정 2026-10-23(AQ-10 완화): 희망일이 지난 문서도 다른 칸은 저장 — 날짜를 바꿀 때만 검사.
+export function requestedPaymentErrors(
+  fields: { requestedPaymentDate?: string | null; requestedPaymentReason?: string | null },
+  todayKst: string,
+  check: RequestedPaymentCheck = { on: "save", stored: null },
+): RequestedPaymentErrors {
+  const date = fields.requestedPaymentDate ?? null;
+  const reason = fields.requestedPaymentReason?.trim() ? fields.requestedPaymentReason : null;
+  if (date === null) return reason === null ? {} : { requestedPaymentDate: REQUESTED_DATE_MISSING };
+  if (date < todayKst) {
+    if (check.on === "submit") return { requestedPaymentDate: REQUESTED_DATE_PASSED };
+    if (date !== check.stored) return { requestedPaymentDate: REQUESTED_DATE_PAST };
+  }
+  return reason === null ? { requestedPaymentReason: REQUESTED_REASON_REQUIRED } : {};
+}

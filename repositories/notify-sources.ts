@@ -347,6 +347,28 @@ export async function listExpenseAmountChanges(viewer: Viewer, since: Date, limi
   return rows.map((row) => ({ expenseId: row.expenseId, drafterId: row.drafterId, eventId: `amount-${row.seq}`, at: row.at }));
 }
 
+// 증빙 없이 닫힘 — 경영관리 증빙 면제(끌 수 없는 evidence_waive). 기안자 본인이 한 면제는 뺀다(사용자 결정 2026-10-23 · 260907 「제 건을 제가 닫은 때는 안 낸다」).
+export async function listExpenseEvidenceWaives(viewer: Viewer, since: Date, limit: number, tx: DbOrTx = db): Promise<ExpenseResultEventRow[]> {
+  void viewer;
+  const rows = await tx
+    .select({ expenseId: expenses.id, drafterId: expenses.drafterId, seq: actionLog.seq, at: actionLog.occurredAt })
+    .from(actionLog)
+    .innerJoin(expenses, sql`${expenses.id}::text = ${actionLog.entityId}`)
+    .where(
+      and(
+        eq(actionLog.actionType, "evidence_waive"),
+        eq(actionLog.entity, "expense"),
+        isNull(actionLog.prunedAt),
+        isNull(expenses.deletedAt),
+        sql`${actionLog.actorId} is distinct from ${expenses.drafterId}`,
+        sql`${actionLog.occurredAt} >= ${since.toISOString()}::timestamp`,
+      ),
+    )
+    .orderBy(asc(actionLog.occurredAt), asc(actionLog.seq))
+    .limit(limit + 1);
+  return rows.map((row) => ({ expenseId: row.expenseId, drafterId: row.drafterId, eventId: `waive-${row.seq}`, at: row.at }));
+}
+
 // ── 07-14 재촉 셋(N13) · 임자 없는 증빙 받는 사람(AQ-25) · 착지 링크 재료 ──────────────
 
 // 메뉴 × 쓰기 권한을 가진 계급의 활성 사용자(경영관리 판정 listPaymentManagerIds와 같은 꼴 — 권한표로 해석).
@@ -424,30 +446,33 @@ export async function listRejectedIdleExpenses(
     .limit(limit + 1);
 }
 
-// 견적 재촉 — 보관 · 미수주(lost) · 완료(completed)가 아니고 어느 차수에도 살아 있는 견적 줄이 없는 프로젝트 중 생성이 [from, before)인 것.
-export type QuotelessProjectRow = { id: string; name: string; pmUserId: string; createdAt: Date };
+// 견적 재촉 — 보관 · 미수주(lost) · 완료(completed)가 아니고 어느 차수에도 살아 있는 견적 줄이 없는 프로젝트 중 행사 시작일이 [from, to]인 것.
+// 시작일이 없는 프로젝트(수주중 기간 미정)는 잴 날이 없어 빠진다.
+export type QuotelessProjectRow = { id: string; name: string; pmUserId: string; startDate: string };
 
 export async function listProjectsWithoutQuote(
   viewer: Viewer,
-  window: { from: Date; before: Date },
+  window: { from: string; to: string },
   limit: number,
   tx: DbOrTx = db,
 ): Promise<QuotelessProjectRow[]> {
   void viewer;
-  return tx
-    .select({ id: projects.id, name: projects.name, pmUserId: projects.pmUserId, createdAt: projects.createdAt })
+  const rows = await tx
+    .select({ id: projects.id, name: projects.name, pmUserId: projects.pmUserId, startDate: projects.startDate })
     .from(projects)
     .where(
       and(
         isNull(projects.archivedAt),
         notInArray(projects.status, ["lost", "completed"]),
-        sql`${projects.createdAt} >= ${window.from.toISOString()}::timestamp`,
-        sql`${projects.createdAt} < ${window.before.toISOString()}::timestamp`,
+        isNotNull(projects.startDate),
+        gte(projects.startDate, window.from),
+        lte(projects.startDate, window.to),
         sql`not exists (select 1 from ${quoteLines} ql join ${quoteRevisions} qr on qr.id = ql.revision_id where qr.project_id = ${projects.id} and ql.archived_at is null)`,
       ),
     )
-    .orderBy(asc(projects.createdAt), asc(projects.id))
+    .orderBy(asc(projects.startDate), asc(projects.id))
     .limit(limit + 1);
+  return rows.flatMap((row) => (row.startDate === null ? [] : [{ id: row.id, name: row.name, pmUserId: row.pmUserId, startDate: row.startDate }]));
 }
 
 // 착지 링크(07-14 N25): 결재 단계 id → 문서(종류 · id · 기안자 · 정산이면 프로젝트). 대표 폴백 자리 키(`{차수 id}:fallback`)는 차수로 찾는다.

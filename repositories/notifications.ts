@@ -107,6 +107,29 @@ export async function insertNotifications(
   return inserted.map((row) => row.id);
 }
 
+// 1회차를 이미 보낸 날(reference_date) — 종류 · 대상별 가장 이른 1회차 행. 사다리 기준일을 첫 알림 날에 묶는 종류(견적 재촉)가 tick 트랜잭션 안에서 읽는다.
+export async function listFirstRoundDates(
+  viewer: Viewer,
+  input: { kind: string; entity: string; entityIds: readonly string[] },
+  tx: DbOrTx = db,
+): Promise<Map<string, string>> {
+  void viewer;
+  if (input.entityIds.length === 0) return new Map();
+  const rows = await tx
+    .select({ entityId: notificationLog.entityId, first: sql<string>`min(${notificationLog.referenceDate})::text` })
+    .from(notificationLog)
+    .where(
+      and(
+        eq(notificationLog.conditionKind, input.kind),
+        eq(notificationLog.entity, input.entity),
+        inArray(notificationLog.entityId, [...input.entityIds]),
+        eq(notificationLog.round, 1),
+      ),
+    )
+    .groupBy(notificationLog.entityId);
+  return new Map(rows.map((row) => [row.entityId, row.first]));
+}
+
 // 04.3-10 — 사건 알림: 정기 tick이 아니라 행동(신청 · QR 생성 · 제출 한도)이 그 트랜잭션 안에서 곧바로 넣는 행이다.
 // tick 잠금을 잡지 않는다 — 같은 중복 키(위 insertNotifications와 같은 충돌 대상)가 같은 행을 막고, email_status 기본
 // pending이라 다음 영업일 tick의 이메일 묶음이 보낸다(04.2 D-4203 규칙 그대로). 돌려준 id 수가 실제 삽입 수다.
@@ -158,10 +181,10 @@ export async function hasEventNotification(
 // ── 결재 처리 자동 읽음 (07-14 N16 · G33 · K25) ───────────────────────
 
 // 결재 차례 알림(approval-waiting · entity approval-step · entityId = 단계 id, 대표 폴백 자리는 `{차수 id}:fallback`) 중 이 단계들의 안 읽은 행을
-// 받는 사람 가리지 않고(그 단계 후보 전원 · 2회차 팀장 — 단계가 닫히면 모두 할 일 없음) 읽음으로. 결재 트랜잭션 안에서 부른다.
+// 처리한 사람 본인 것만(recipientId) 읽음으로 — 다른 후보 · 2회차 팀장 행은 그대로 둔다(사용자 결정 2026-10-23). 결재 트랜잭션 안에서 부른다.
 // 다른 트랜잭션(이메일 선점)이 잡은 행은 SKIP LOCKED로 건너뛴다 — 결재가 메일 트랜잭션을 기다리지 않는다. 건너뛴 행은 다음 tick이 정리한다.
 // read_at은 UTC 저장(openInbox와 같은 꼴). 돌려준 수 = 읽음으로 바꾼 행 수.
-export async function markStepNotificationsRead(viewer: Viewer, input: { stepIds: readonly string[] }, tx: DbOrTx): Promise<number> {
+export async function markStepNotificationsRead(viewer: Viewer, input: { stepIds: readonly string[]; recipientId: string }, tx: DbOrTx): Promise<number> {
   void viewer;
   if (input.stepIds.length === 0) return 0;
   const marked = await tx.execute<{ id: number }>(sql`
@@ -172,6 +195,7 @@ export async function markStepNotificationsRead(viewer: Viewer, input: { stepIds
       where condition_kind = 'approval-waiting'
         and entity = 'approval-step'
         and entity_id = any(${sql.param([...input.stepIds])}::text[])
+        and recipient_id = ${input.recipientId}
         and read_at is null
       FOR UPDATE SKIP LOCKED
     )

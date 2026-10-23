@@ -60,7 +60,7 @@ const VISUAL_SPEC_PATTERNS = ["visual.spec.ts", "visual-390.spec.ts"];
 // 공용 설정(결재선 · 증빙 종류 · 짝)을 바꾸는 스펙 — desktop에서 빼고 맨 끝 desktop-settings에서 한 워커로 돈다.
 // evidence-private-type 둘은 공용 코드 항목 `personal_card_receipt`의 「경영관리만 보기」를 끄고 켠다 — desktop 두 워커에서 겹치면
 // 한쪽이 끈 창에 다른 쪽 결재자 화면이 파일 행을 본다(PR #254 CI e2e (1): 파일 행 1 대 0).
-const DESKTOP_SETTINGS_SPECS = ["settings-approval-route.spec.ts", "phase6-keys.spec.ts", "evidence-private-type.spec.ts", "evidence-private-type-audit.spec.ts"];
+const DESKTOP_SETTINGS_SPECS = ["settings-approval-route.spec.ts", "phase6-keys.spec.ts", "evidence-private-type.spec.ts", "evidence-private-type-audit.spec.ts", "payment-weekday-setting.spec.ts"];
 // 증빙 표 셋(기록 · 붙임 · 묶음)을 통째로 비우고(clearEvidence) 회사 전체 목록을 세는 스펙 — 두 워커에서 겹치면 서로의 기록을
 // 지우고 남의 기록을 센다(PR #253 CI e2e (1): 표 없음 · 11줄 대 1줄 · 묶음 FK 위반). desktop에서 빼고 desktop-evidence에서 한 워커로 돈다.
 // evidence-card-fixture.regression-1은 clearEvidence 대신 롯데카드 채움 카드 약 9000장을 넣어 /admin/corp-cards 스펙과 겹치므로 같은 줄에 둔다.

@@ -168,7 +168,7 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/notify-sources.ts", fn: "listProjectsEndedWithoutExpense", reason: "알림 tick(07-10 N4) — 시스템 주체가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(번호 없이 이름 · id · PM만)" },
   { file: "repositories/notify-sources.ts", fn: "listProxyRegistrations", reason: "알림 tick(07-10 N9) — 시스템 주체가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(프로젝트 이름 · PM만)" },
   { file: "repositories/notify-sources.ts", fn: "listSettlingProjectsNotSubmitted", reason: "알림 tick(07-14 정산 상신 재촉) — 시스템 주체(SYSTEM_VIEWER, domain/notify/kinds/settle-nudge.ts만)가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(이름 · id · PM · 종료일만)" },
-  { file: "repositories/notify-sources.ts", fn: "listProjectsWithoutQuote", reason: "알림 tick(07-14 견적 재촉) — 시스템 주체(SYSTEM_VIEWER, domain/notify/kinds/quote-nudge.ts만)가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(이름 · id · PM · 생성일만)" },
+  { file: "repositories/notify-sources.ts", fn: "listProjectsWithoutQuote", reason: "알림 tick(07-14 견적 재촉) — 시스템 주체(SYSTEM_VIEWER, domain/notify/kinds/quote-nudge.ts만)가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(이름 · id · PM · 시작일만)" },
   { file: "repositories/notify-sources.ts", fn: "listArchivedProjectIds", reason: "착지 링크(07-14 N25) — id로 받은 프로젝트만: 호출자 domain/notify/href.ts projectHrefs가 listProjectIdsInScope(projectRowScope)로 거른 id를 넘기고, 돌려주는 것은 그 부분집합(보관 여부)뿐이다" },
   { file: "repositories/payment-targets.ts", fn: "selectRows", reason: "지급 대상 — 도메인 visibleRows(rowScope all 단축 · 아니면 listExpenseIdsInScope — scopeCondition 한 질의)가 거른다(06.2-08 검토 I-1)" },
   { file: "repositories/payment-targets.ts", fn: "listPaidPaymentRows", reason: "지급 완료 — 도메인 listPaidPayments: 지급 권한자 · 지출결의 전사 범위만 통과하고 모두 전부(06.5 카드 ③ · D1), 그 밖은 paidViewAllowed가 거부" },

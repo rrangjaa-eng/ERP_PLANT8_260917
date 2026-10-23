@@ -747,8 +747,8 @@ export async function approveDocument(
             if (!row) throw new Error("지금 단계 행 없음");
             await recordStepAction(viewer, { stepId: row.id, actedBy: viewer.id, action: "approved", selfApproved }, tx);
           }
-          // 07-14 N16 · G33: 처리한 단계의 결재 차례 알림을 받는 사람 모두 읽음(같은 tx · 메일 단계가 잡은 행은 건너뜀 — 다음 tick이 정리).
-          await markStepNotificationsRead(viewer, { stepIds: [actedStepKey(route, outcome)] }, tx);
+          // 07-14 N16 · G33: 처리한 단계의 결재 차례 알림 중 처리한 사람 본인 것만 읽음(사용자 결정 2026-10-23 · 같은 tx · 메일 단계가 잡은 행은 건너뜀 — 다음 tick이 정리).
+          await markStepNotificationsRead(viewer, { stepIds: [actedStepKey(route, outcome)], recipientId: viewer.id }, tx);
           // 05-01 E2: 최종 승인(계산된 status approved)이면 단계 기록 뒤 · 행동 로그 전에 같은 tx로 종류의 훅 — 던지면 전부 롤백.
           if (status === "approved" && finalHook && target) {
             await finalHook.inTx(viewer, target.instance.documentId, tx, prepared);
@@ -819,7 +819,7 @@ export async function rejectDocument(
               if (!row) throw new Error("지금 단계 행 없음");
               await recordStepAction(viewer, { stepId: row.id, actedBy: viewer.id, action: "rejected", selfApproved: false, reason }, tx);
             }
-            await markStepNotificationsRead(viewer, { stepIds: [actedStepKey(route, outcome)] }, tx);
+            await markStepNotificationsRead(viewer, { stepIds: [actedStepKey(route, outcome)], recipientId: viewer.id }, tx);
             return { detail: { stepIndex }, result: { drafterName: graph.instance.drafterName } };
           },
         };

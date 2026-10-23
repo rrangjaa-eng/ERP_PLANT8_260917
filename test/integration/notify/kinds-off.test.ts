@@ -163,16 +163,16 @@ describe("반려 방치 재촉 (N13)", () => {
   });
 });
 
-// ── 견적 재촉 ── 생성 10-05 → 7일 = 10-12.
+// ── 견적 재촉 ── 행사 시작 10-19 → 7일 전 = 10-12(사용자 결정 2026-10-23 · 260907 db/schema/090_views.sql:302와 같은 기준).
 describe("견적 재촉 (N13)", () => {
-  async function project(pm: Viewer, name: string) {
+  async function project(pm: Viewer, name: string, startDate = "2026-10-19") {
     const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}`, ...testVendorAccount() });
-    const created = await createProject(pm, { clientId: client.id, teamId: await teamIdByName("기획1팀"), pmUserId: pm.id, name, startDate: "2026-09-01", endDate: "2026-12-31" });
-    await db.update(projects).set({ createdAt: new Date("2026-10-05T10:00:00+09:00") }).where(eq(projects.id, created.id));
+    const created = await createProject(pm, { clientId: client.id, teamId: await teamIdByName("기획1팀"), pmUserId: pm.id, name, startDate, endDate: "2026-12-31" });
+    await db.update(projects).set({ createdAt: new Date("2026-09-01T10:00:00+09:00") }).where(eq(projects.id, created.id));
     return created.id;
   }
 
-  it("켬 — 견적 줄 0개로 7일 지난 프로젝트 → 담당 PM `견적 작성 대기 · {프로젝트} · 7일` · 보관 · 미수주 · 완료 · 견적 있는 프로젝트 제외 · 끔이면 0", async () => {
+  it("켬 — 견적 줄 0개로 행사 시작 7일 전이 된 프로젝트 → 담당 PM `견적 작성 대기 · {프로젝트} · 시작 7일 전` · 보관 · 미수주 · 완료 · 견적 있는 프로젝트 제외 · 끔이면 0", async () => {
     const fx = await setupExpenseProject();
     const empty = await project(fx.pm, "빈 견적");
     const archived = await project(fx.pm, "보관 견적");
@@ -181,7 +181,7 @@ describe("견적 재촉 (N13)", () => {
     await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, archived));
     await db.update(projects).set({ status: "lost" }).where(eq(projects.id, lost));
     await db.update(projects).set({ status: "completed" }).where(eq(projects.id, done));
-    await db.update(projects).set({ createdAt: new Date("2026-10-05T10:00:00+09:00") }).where(eq(projects.id, fx.projectId));
+    await db.update(projects).set({ startDate: "2026-10-19" }).where(eq(projects.id, fx.projectId));
 
     await tick([quoteNudgeKind], "2026-10-12");
     expect(await rowsOf(fx.pm, "quote-nudge")).toHaveLength(0);
@@ -189,8 +189,55 @@ describe("견적 재촉 (N13)", () => {
     await enable("quote-nudge");
     await tick([quoteNudgeKind], "2026-10-12");
     const rows = await rowsOf(fx.pm, "quote-nudge");
-    expect(rows.map((row) => [row.entityId, row.message])).toEqual([[empty, "견적 작성 대기 · 빈 견적 · 7일"]]);
+    expect(rows.map((row) => [row.entityId, row.message])).toEqual([[empty, "견적 작성 대기 · 빈 견적 · 시작 7일 전"]]);
     expect(rows[0]?.referenceDate).toBe("2026-10-12");
+  });
+
+  it("만든 날이 아니라 행사 시작일로 센다 — 시작 8일 전 tick은 0행, 만든 지 오래돼도 시작이 멀면 0행", async () => {
+    const fx = await setupExpenseProject();
+    await project(fx.pm, "다음 주 행사");
+    await project(fx.pm, "먼 행사", "2026-11-30");
+    await enable("quote-nudge");
+
+    await tick([quoteNudgeKind], "2026-10-08");
+    expect(await rowsOf(fx.pm, "quote-nudge")).toHaveLength(0);
+    await tick([quoteNudgeKind], "2026-10-12");
+    expect((await rowsOf(fx.pm, "quote-nudge")).map((row) => row.message)).toEqual(["견적 작성 대기 · 다음 주 행사 · 시작 7일 전"]);
+  });
+
+  // 리뷰 F1: 늦게 등록된 프로젝트는 첫 기한(시작 - 7일)이 이미 지났다 — 260907(server/src/notices.ts:2393-2397)처럼 실제 거리로 적고 첫 알림은 1회차 담당 PM만.
+  it("행사가 내일인 프로젝트 — 첫 알림은 1회차 담당 PM만 `시작 1일 전` · 2회차는 첫 알림부터 3영업일 뒤 본인 + 팀장", async () => {
+    const fx = await setupExpenseProject();
+    const late = await project(fx.pm, "내일 행사", "2026-10-13");
+    await enable("quote-nudge");
+
+    await tick([quoteNudgeKind], "2026-10-12");
+    const first = await rowsOf(fx.pm, "quote-nudge");
+    expect(first.map((row) => [row.entityId, row.round, row.message])).toEqual([[late, 1, "견적 작성 대기 · 내일 행사 · 시작 1일 전"]]);
+    expect(await rowsOf(fx.lead, "quote-nudge")).toHaveLength(0);
+
+    await tick([quoteNudgeKind], "2026-10-14");
+    expect((await rowsOf(fx.pm, "quote-nudge")).map((row) => row.round)).toEqual([1]);
+    await tick([quoteNudgeKind], "2026-10-15");
+    expect((await rowsOf(fx.pm, "quote-nudge")).map((row) => [row.round, row.message])).toEqual([
+      [1, "견적 작성 대기 · 내일 행사 · 시작 1일 전"],
+      [2, "견적 작성 대기 · 내일 행사 · 시작한 지 2일 · 2회차"],
+    ]);
+    expect((await rowsOf(fx.lead, "quote-nudge")).map((row) => [row.round, row.message])).toEqual([[2, "견적 작성 대기 · 내일 행사 · 시작한 지 2일 · 2회차"]]);
+  });
+
+  it("오늘 시작 · 이미 시작한 프로젝트 — 첫 알림은 1회차 담당 PM만 `오늘 시작` · `시작한 지 N일`", async () => {
+    const fx = await setupExpenseProject();
+    await project(fx.pm, "오늘 행사", "2026-10-12");
+    await project(fx.pm, "지난 행사", "2026-10-02");
+    await enable("quote-nudge");
+
+    await tick([quoteNudgeKind], "2026-10-12");
+    expect((await rowsOf(fx.pm, "quote-nudge")).map((row) => [row.round, row.message]).sort()).toEqual([
+      [1, "견적 작성 대기 · 오늘 행사 · 오늘 시작"],
+      [1, "견적 작성 대기 · 지난 행사 · 시작한 지 10일"],
+    ]);
+    expect(await rowsOf(fx.lead, "quote-nudge")).toHaveLength(0);
   });
 });
 

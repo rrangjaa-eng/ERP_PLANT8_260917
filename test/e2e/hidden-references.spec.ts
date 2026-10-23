@@ -12,6 +12,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { openProjectInfoEdit, projectInfo } from "./project-info-helpers";
 
 // quick 261001-85g DOM 감사 — 등록 폼 선택지가 노출표를 지난 뒤(ADMN-03) 가려진 계급의 화면.
 // D: 거래처 정보가 가려진 계급의 견적 표에는 거래처 열이 없다(사용자 결정 2026-10-01). D2: 목록에 없는 거래처(보관)는 편집기를 열었다 닫아도 그대로다.
@@ -221,11 +222,11 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: writer.roleId, infoItem: "vendor.value", visible: true });
 
     // 줄 밖 저장(총 매출 예상가) — 화면은 다시 그려지지만 견적 줄 상태는 그대로다.
-    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
-    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await openProjectInfoEdit(page);
+    const amount = page.getByLabel("PO 금액", { exact: true });
     await amount.fill("1000000");
     await amount.press("Control+s");
-    await expect(page.getByText("총 매출 예상가 1,000,000", { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByText("1,000,000", { exact: true })).toBeVisible();
     const table = page.getByRole("table", { name: "견적 줄" }).or(page.getByRole("grid", { name: "견적 줄" }));
     await expect(table.getByRole("columnheader", { name: "거래처" })).toBeVisible();
 

@@ -14,6 +14,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { isStrict } from "./design-principles";
 import { checkPrinciples } from "./principles-check";
+import { expandProjectInfo, openProjectInfoEdit, projectInfo } from "./project-info-helpers";
 
 // 04-21(PROJ-04 화면) — 상태 바꾸기 생애 E2E. 계급 권한·정보 노출을 켜는 호출을
 // 두지 않는다(ENG-D2) — 준비 단계가 만드는 것은 사람·발령 이력·프로젝트 행뿐이고,
@@ -327,7 +328,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(reason).toHaveCount(1);
 
     // 「새로 고침」 대신 기간을 저장한다 — 상태 바뀜으로 거부되고 그 저장이 새 상태를 받아 온다(DR-6).
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.getByLabel("종료일").fill(addDays(TODAY, 9));
     await page.getByRole("button", { name: /일괄 저장 1/ }).click();
 
@@ -337,7 +338,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
 
     // 다시 미수주로 돌아와도 버린 거부가 되살아나 트리거를 막지 않는다.
     await db.update(projects).set({ status: "lost" }).where(eq(projects.id, project.id));
-    await page.locator("#period-open").click();
+    await openProjectInfoEdit(page);
     await page.getByLabel("종료일").fill(addDays(TODAY, 10));
     await page.getByRole("button", { name: /일괄 저장 1/ }).click();
     await expect(headerTag(page, "미수주")).toBeVisible();
@@ -376,7 +377,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
       await route.continue();
     });
     await page.getByRole("button", { name: "새로 고침" }).click();
-    const periodOpen = page.locator("#period-open");
+    await expandProjectInfo(page);
+    const periodOpen = projectInfo(page).getByRole("button", { name: "고치기", exact: true });
     await periodOpen.focus();
     releaseRefresh();
 
@@ -416,7 +418,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
       await route.continue();
     });
     await page.getByRole("button", { name: "새로 고침" }).click();
-    const periodOpen = page.locator("#period-open");
+    await expandProjectInfo(page);
+    const periodOpen = projectInfo(page).getByRole("button", { name: "고치기", exact: true });
     await periodOpen.focus();
     releaseRefresh();
 

@@ -17,6 +17,8 @@ import { ACCOUNT_PROBLEMS, accountProblemText } from "@/domain/bank-transfer";
 import { isCheckViolation } from "@/lib/pg-errors";
 import { assertCanGrantRoles, RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
 import { lockSeatKeys } from "@/repositories/seats";
+import { assertNotRetiredInTx } from "@/domain/people/retired";
+import { kstToday } from "@/lib/kst-date";
 import {
   findUserById as repoFindUserById,
   findUserPayoutAccount as repoFindUserPayoutAccount,
@@ -127,10 +129,13 @@ export async function updatePersonPayoutAccount(
 
   const updateRow = deps?.updateUserPayoutAccount ?? repoUpdateUserPayoutAccount;
   const gate = await loadActionLogGate();
+  const today = kstToday(new Date());
   try {
     await withTransaction(async (tx) => {
       // 사용자 결정(2026-10-23): 지급처 변경도 대상 계급 상한 — 사람 키 잠금 → 재조회 → assertCanGrantRoles(07-17 상한 커밋들과 같은 꼴).
       await lockSeatKeys(viewer, { personIds: [userId] }, tx);
+      // F24: 퇴직자는 지급 계좌도 바꾸지 못한다(260907 `people.ts:792-797`).
+      await assertNotRetiredInTx(viewer, userId, today, tx);
       const target = await repoFindUserById(viewer, userId, tx);
       if (!target) throw new UserNotFoundError("사람 찾을 수 없음");
       try {

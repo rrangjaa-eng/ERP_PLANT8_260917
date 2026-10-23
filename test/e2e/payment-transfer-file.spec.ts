@@ -408,7 +408,7 @@ async function payeeTargets(fx: ExpenseE2E, confirmer: Person, vendorIds: readon
     })),
   });
   const basis = await approvalBasis(SYSTEM_VIEWER, next.revisionId);
-  await setCustomerApproval(fx.pm.viewer, next.revisionId, { approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(fx.pm.viewer, next.revisionId, { approvalBasis: "verbal", approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   const lines = await db.select({ id: quoteLines.id, itemName: quoteLines.itemName }).from(quoteLines).where(eq(quoteLines.revisionId, next.revisionId));
   const targets: { id: string; itemName: string }[] = [];
   for (const itemName of names) {

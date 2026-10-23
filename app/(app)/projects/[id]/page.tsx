@@ -3,7 +3,7 @@ import { getSession } from "@/lib/viewer";
 import { log } from "@/lib/log";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
-import { findProject } from "@/domain/projects";
+import { findProject, loadProjectProfit } from "@/domain/projects";
 import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import { lineCardSideFacts } from "@/domain/corp-card-usages/link-targets";
@@ -40,11 +40,14 @@ import { MemberAddHeaderButton, MembersSection, ProjectMembersProvider } from ".
 import type { StatusChangeProps } from "./status-change";
 import type { CustomerApprovalProps, NewRevisionProps } from "./revision-dialogs";
 import { getPerson } from "@/domain/people";
+import { listProjectDocuments, projectHasPurchaseOrder } from "@/domain/projects/documents";
+import { listInvoiceFiles } from "@/domain/revenue/invoice-file";
 import { listLineDoors } from "@/domain/expenses";
 import "@/app/(app)/document-kinds";
 import { getSettlementHeader } from "@/domain/settlements";
 import { getPreSettleCheck, type PreSettleCheckDto } from "@/domain/pre-settle-check";
 import { PreSettleCheckSection } from "./pre-settle-check";
+import { DocumentsSection } from "./documents-section";
 
 // SYSTEM.md §6-2 상세 화면 — 이 리포의 첫 목록/상세 분리 화면. 네 숫자 줄
 // (PNL-01)은 아직 없다(Phase 9). 매출 섹션은 04-02가 더한다. WR-07: 인증 검사를
@@ -148,6 +151,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listRevisionSummaries(session.viewer, project.id),
   ]);
   const currentSummary = revisionSummaries.find((row) => row.revisionId === revision.id);
+  // 07-22(W3 · W7 · SC-20) — 서류 섹션 목록 · 쓰기 권리, 발행 줄 계산서 링크 재료(둘 다 서버가 권리대로 거른다).
+  const [documents, invoiceFiles] = await Promise.all([listProjectDocuments(session.viewer, project.id), listInvoiceFiles(session.viewer, project.id)]);
+  // 07-18(SC-19 · U16) — `손익` 섹션은 손익 메뉴를 볼 수 있는 계급이 금액도 볼 수 있을 때만(서버가 거른다).
+  const profit = canSeeAmount && (await can(session.viewer, "pnl", "view")) ? await loadProjectProfit(session.viewer, project.id) : null;
   // /qa ISSUE-002 · /design-review — 「프로젝트 복사」는 목록 등록 진입점과 같은 규칙(업무 범위로 좁힌 팀 · 담당 PM).
   const scopedCreateReferences =
     canWrite && project.archivedAt === null ? await scopeCreateFormReferences(session.viewer, references, { todayKst }) : null;
@@ -175,17 +182,21 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // 요약 행에 합계 키가 있을 때(견적 금액을 볼 때)만. 승인일 글자는 서버가 만든 KST 날짜 문자열 그대로(B-25).
   const approvedBy = currentSummary?.approvedBy ?? null;
   const approverName = approvedBy ? ((await getPerson(session.viewer, approvedBy))?.person.name ?? null) : null;
-  const approvalText = currentSummary?.approvedOn
-    ? [`고객 승인 ${currentSummary.approvedOn}`, approverName].filter(Boolean).join(" ")
-    : null;
   const seenTotalKrw = currentSummary?.totalKrw;
   const contentToken = currentSummary?.contentToken;
   const canToggleApproval = project.pmUserId === session.viewer.id && canWrite && status !== "completed";
   const customerApproval: CustomerApprovalProps = {
     revisionId: revision.id,
     seq: revision.seq,
-    approvalText,
     approvedOn: currentSummary?.approvedOn ?? null,
+    approverName,
+    basis: currentSummary?.approvalBasis ?? null,
+    memo: currentSummary?.approvalMemo ?? null,
+    // 07-18(W6) — 근거가 발주서인데 발주서 서류가 없으면 면이 경고 글자를 보인다(저장은 막지 않는다).
+    purchaseOrderMissing:
+      currentSummary?.approvedOn != null &&
+      currentSummary.approvalBasis === "purchase_order" &&
+      !(await projectHasPurchaseOrder(session.viewer, project.id)),
     control:
       !canToggleApproval || seenTotalKrw === undefined || contentToken === undefined
       ? null
@@ -277,6 +288,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       status={status}
       period={{ startDate: project.startDate, endDate: project.endDate, rights: periodRights, todayKst }}
       preEstimate={{ value: project.preEstimate ?? null, canEdit: canEditPreEstimate }}
+      poNumber={project.poNumber}
+      profit={profit}
       canSave={canSave}
       frame={frame}
       statusSinceText={`${statusLabel} ${statusSince}`}
@@ -313,6 +326,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         pmName: responsibles?.pmName ?? null,
       })}
       revenue={revenue}
+      invoiceFiles={invoiceFiles}
       issueRequests={{
         rows: issueRequestDtos,
         // 쓰기 판정은 서버가 다시 한다 — 화면은 서버가 계산한 값만 받는다. 수주중 · 진행 · 정산에서만 요청을 만든다(완료 · 미수주는 잠김).
@@ -325,6 +339,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       usdDefaultFxRate={usdDefaultFxRate}
       lineDoors={lineDoors}
     >
+      {/* 07-22(W3 · SC-20) — 매출 섹션 아래 「서류」(발주서 · 기타). 견적 표가 첫 면이라 정보 면 바로 아래가 아니라 원장 아래 첫 섹션이다. */}
+      {documents ? <DocumentsSection projectId={project.id} canWrite={documents.canWrite} maxMb={documents.maxMb} documents={documents.documents} /> : null}
       {/* 06-07(S15) — 매출 섹션 아래 「법인카드 사용」(섹션이 따로 불러 실패해도 다른 섹션은 선다). */}
       <CardUsageSection projectId={project.id} />
       {/* 06.2-12(S2) — 법인카드 사용 → 참여자 → 차수, 섹션이 따로 불러 실패해도 다른 섹션은 선다 */}

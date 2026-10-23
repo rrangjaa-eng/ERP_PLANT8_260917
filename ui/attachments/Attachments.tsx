@@ -27,6 +27,8 @@ export type AttachmentFile = {
   sizeBytes: number;
   createdAt: string;
   voided?: { byName: string | null; at: string; reason: string | null };
+  /** 07-22(SC-20) — 메타 줄 앞 조각(서류 `발주서 · {올린 사람}`). 있으면 `{조각} · {크기} · {MM-DD}`. */
+  metaLead?: string;
 };
 
 export type UploadIntent = { intentId: string; url: string; method: string; headers: Record<string, string> };
@@ -64,6 +66,10 @@ export type AttachmentsProps = {
   voidable?: { ids: readonly string[]; onVoid: (file: AttachmentFile) => void };
   /** 더할 수 없는 이유 한 줄(잠김) — 「하나 더」 자리에 그린다. */
   lockedText?: string;
+  /** 07-22(SC-20 계산서) — 한 자리: 파일 하나만 고르고 마지막 파일 하나만 그리며 「하나 더」 자리가 `교체`다(이전 파일은 서버가 뗀다). */
+  single?: boolean;
+  /** 07-22(SC-20) — 되돌릴 수 없는 `삭제` 앞 확인(확인 창은 부모가 연다). 거짓이면 아무 일도 하지 않는다. */
+  confirmRemove?: (file: AttachmentFile) => Promise<boolean>;
 };
 
 /** 결과 행 2행의 숫자 조각 — value 0이면 그리지 않는다. `kind`는 숫자 색(상태 토큰), `href`가 있으면 조각이 3차 링크다. `unit`은 숫자 뒤 단위(`상쇄 2쌍`의 `쌍`). */
@@ -137,6 +143,8 @@ function FileAttachments({
   deletableIds,
   voidable,
   lockedText,
+  single = false,
+  confirmRemove,
 }: AttachmentsProps) {
   const [rows, setRows] = useState<LocalRow[]>([]);
   const [done, setDone] = useState<DoneRow[]>([]);
@@ -244,7 +252,8 @@ function FileAttachments({
   // 부모가 서버 값을 다시 읽는 새로 고침은 한 번에 올린 파일들이 다 끝난 뒤 한 번만 부른다(05 /review B7).
   async function addFiles(list: FileList | File[]) {
     let changed = false;
-    for (const file of Array.from(list)) {
+    // 한 자리 — 끌어 놓기 · 붙여넣기 어느 길로 여럿이 와도 첫 파일 하나만 올린다(나머지는 올라가 봐야 서버에서 서로 덮는다).
+    for (const file of single ? Array.from(list).slice(0, 1) : Array.from(list)) {
       const key = `row-${(counter.current += 1)}`;
       const placeholder: PreparedEvidence = { blob: file, name: file.name, size: file.size, contentType: file.type, sha256: "", previewUrl: null };
       setRows((current) => [...current, { key, prepared: placeholder, state: "uploading", message: null, retry: null }]);
@@ -266,7 +275,9 @@ function FileAttachments({
     setRows((current) => current.filter((candidate) => candidate.key !== row.key));
   }
 
-  async function removeFile(id: string) {
+  async function removeFile(file: AttachmentFile) {
+    const id = file.id;
+    if (confirmRemove && !(await confirmRemove(file))) return;
     setRemoveFailedId(null);
     let removedOnServer = false;
     try {
@@ -302,10 +313,12 @@ function FileAttachments({
     if (canAdd && event.dataTransfer.files.length > 0) void addFiles(event.dataTransfer.files);
   }
 
-  const listed: (AttachmentFile & { previewUrl: string | null })[] = [
+  const all: (AttachmentFile & { previewUrl: string | null })[] = [
     ...files.filter((file) => !removed.includes(file.id)).map((file) => ({ ...file, previewUrl: null })),
     ...done.filter((file) => !files.some((existing) => existing.id === file.id) && !removed.includes(file.id)),
   ];
+  // 한 자리 — 교체 직후 서버 값을 다시 읽기 전에도 마지막 파일 하나만.
+  const listed = single ? all.slice(-1) : all;
   const empty = listed.length === 0 && rows.length === 0;
   const deletable = (id: string) => (deletableIds ? deletableIds.includes(id) : mode === "edit");
   const dropProps =
@@ -327,7 +340,7 @@ function FileAttachments({
           ref={inputRef}
           type="file"
           accept="image/*,application/pdf"
-          multiple
+          multiple={!single}
           hidden
           data-testid="attachments-input"
           onChange={(event) => {
@@ -386,7 +399,7 @@ function FileAttachments({
                     <span id={`${nameId}-${file.id}`} className={styles.name} title={file.name}>
                       {file.name}
                     </span>
-                    <span className={styles.meta}>{`${sizeOf(file.sizeBytes)} · ${dayOf(file.createdAt)}`}</span>
+                    <span className={styles.meta}>{[file.metaLead, sizeOf(file.sizeBytes), dayOf(file.createdAt)].filter(Boolean).join(" · ")}</span>
                     {removeFailedId === file.id ? <span className={styles.error}>삭제 실패 · 다시 시도</span> : null}
                   </span>
                 )}
@@ -396,7 +409,7 @@ function FileAttachments({
                       크게 보기
                     </a>
                     {!file.voided && deletable(file.id) ? (
-                      <RowAction danger describedBy={`${nameId}-${file.id}`} onClick={() => void removeFile(file.id)}>
+                      <RowAction danger describedBy={`${nameId}-${file.id}`} onClick={() => void removeFile(file)}>
                         삭제
                       </RowAction>
                     ) : null}
@@ -448,8 +461,8 @@ function FileAttachments({
       {canAdd && !empty ? (
         <button ref={pickerRef} id={pickerId} type="button" className={styles.more} aria-labelledby={pickerTextId} onClick={() => inputRef.current?.click()}>
           <span id={pickerTextId}>
-            <span className={styles.pcText}>하나 더 · Ctrl+U</span>
-            <span className={styles.phoneText}>하나 더</span>
+            <span className={styles.pcText}>{single ? "교체 · Ctrl+U" : "하나 더 · Ctrl+U"}</span>
+            <span className={styles.phoneText}>{single ? "교체" : "하나 더"}</span>
           </span>
         </button>
       ) : null}

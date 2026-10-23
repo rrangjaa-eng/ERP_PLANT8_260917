@@ -58,7 +58,7 @@ const PHASE6_WORDS: [string, StatusKind][] = [
   ["선결제 · 증빙 없음", "danger"],
 ];
 
-// 07 개정 1 — 07 화면(지급 목록 · 알림 · 수금 · 로그인 잠김)이 쓰는 낱말 여섯(07-12). `in STATUS_KIND`도 함께 단언한다.
+// 07 개정 1 — 07 화면(지급 목록 · 알림 · 수금 · 로그인 잠김)이 쓰는 낱말 여섯(07-12) + 07-18 손익 `계산 불가`. `in STATUS_KIND`도 함께 단언한다.
 const PHASE7_WORDS: [string, StatusKind][] = [
   ["마감 지나 밀림", "warning"],
   ["수동 지정", "muted"],
@@ -66,6 +66,7 @@ const PHASE7_WORDS: [string, StatusKind][] = [
   ["잠김", "danger"],
   ["초과", "danger"],
   ["수금 지연", "warning"],
+  ["계산 불가", "muted"],
 ];
 
 describe("status-map — 낱말 → 색 한 표", () => {

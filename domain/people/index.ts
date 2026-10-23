@@ -28,6 +28,7 @@ import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
 import { assertSeatsFree, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
+import { assertNotRetiredInTx, isRetiredOn } from "@/domain/people/retired";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
   listUsers as repoListUsers,
@@ -153,11 +154,8 @@ async function lockedEmailSet(viewer: Viewer): Promise<Set<string>> {
   return listLockedEmails(viewer, { threshold, since: windowStart(new Date(), windowMinutes) });
 }
 
-// 07-17 R11 · D-728: 「퇴직」 술어 하나 — 07-09 D-743과 같은 경계(퇴직일 당일까지 재직, 다음 날부터 퇴직).
-// `unlockPerson` 거부 · 목록 `잠금 풀기` 표지 · person-status.ts `퇴직` 낱말이 함께 부른다.
-export function isRetiredOn(resignationDate: string | null, today: string): boolean {
-  return resignationDate !== null && resignationDate < today;
-}
+// F24: 퇴직 술어는 domain/org도 부르므로 순환 없는 모듈로 옮겼다 — 기존 import 경로는 그대로 둔다.
+export { isRetiredOn } from "@/domain/people/retired";
 
 // 이슈 #56: 사람마다 팀·계급·노출표를 따로 조회하던 N+1을 묶음 조회 + 호출
 // 한정 메모로 바꿨다.
@@ -488,6 +486,7 @@ export async function changePersonRole(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
     await lockSeatKeys(viewer, { personIds: [userId], admin: true }, tx);
+    await assertNotRetiredInTx(viewer, userId, today, tx);
     const row = await repoFindUserById(viewer, userId, tx);
     if (!row) throw new UserNotFoundError("사람 찾을 수 없음");
     await assertCanGrantRoles(viewer, [roleId, row.roleId], tx);
@@ -722,6 +721,9 @@ async function setEmploymentDate(
       // 어떤 날짜의 퇴직일도 넣지 않는다 — 미래 날짜는 시간 경과로 0명이 되는 시한폭탄(RESEARCH Pitfall 7).
       // 07-17 독립 검토 M1: 입사일도 같은 잠금 → 재조회 → 대상 계급 상한(관리자 키는 마지막 관리자 판정이 있는 퇴직일만).
       await lockSeatKeys(viewer, { personIds: [userId], admin: field === "resignation_date" }, tx);
+      // F24: 입사일은 퇴직자면 거부. 퇴직일은 지우기(재입사, 260907 `people.ts:1155` rejoin)만 받는다 — 사용자 결정
+      // (카드 2026-10-23 12:34 KST) 「퇴직한 사람의 퇴직일은 비우기만 허용」: 다른 날짜로 옮기기는 같은 거부.
+      if (field === "hire_date" || value !== null) await assertNotRetiredInTx(viewer, userId, today, tx);
       const fresh = await repoFindUserById(viewer, userId, tx);
       if (!fresh) throw new UserNotFoundError("사람 찾을 수 없음");
       // K-R1 사용자 확정(2026-10-11 카드 「막기」) · D-6411: 대상 계급 C가 내 상한 밖이면 날짜를 넣지도 지우지도 못한다.

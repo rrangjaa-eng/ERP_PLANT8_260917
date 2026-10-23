@@ -17,22 +17,23 @@ export function loadRoleUsers(roleIds: readonly string[], today: string, tx?: No
   return listActiveUserIdsByRoles(SYSTEM_VIEWER, roleIds, today, tx);
 }
 
-export function withExtraRoleRecipients<Candidate extends { entity: string; entityId: string; round: number; recipientId: string }>(
+export function withExtraRoleRecipients<Candidate extends { entity: string; entityId: string; round: number; recipientId: string; recipientRoleId?: string | null }>(
   produced: readonly Candidate[],
   extraRoleIds: readonly string[],
   roleUsers: ReadonlyMap<string, readonly string[]>,
 ): Candidate[] {
   if (extraRoleIds.length === 0 || produced.length === 0) return [...produced];
-  const extraIds = [...new Set(extraRoleIds.flatMap((roleId) => roleUsers.get(roleId) ?? []))];
+  // 07-22(G-61) — 계급 사용자 후보는 그 계급을 싣는다(tick의 정보 항목 거르개가 읽는다).
+  const extras = extraRoleIds.flatMap((roleId) => (roleUsers.get(roleId) ?? []).map((recipientId) => ({ recipientId, roleId })));
   const result = [...produced];
   const seen = new Set(produced.map((c) => JSON.stringify([c.entity, c.entityId, c.round, c.recipientId])));
   const templates = new Map(produced.map((c) => [JSON.stringify([c.entity, c.entityId, c.round]), c]));
   for (const template of templates.values()) {
-    for (const recipientId of extraIds) {
+    for (const { recipientId, roleId } of extras) {
       const key = JSON.stringify([template.entity, template.entityId, template.round, recipientId]);
       if (seen.has(key)) continue;
       seen.add(key);
-      result.push({ ...template, recipientId });
+      result.push({ ...template, recipientId, recipientRoleId: roleId });
     }
   }
   return result;

@@ -486,7 +486,7 @@ describe("06-28 종결", () => {
     await closeAs(fx.pm, m2.expenseId);
     const third = await createRevisionFromCurrent(fx.pm, { projectId: fx.projectId, fromRevisionId: extra.revisionId });
     const basis = await approvalBasis(SYSTEM_VIEWER, third.revisionId);
-    await setCustomerApproval(fx.pm, third.revisionId, { approvedOn: "2026-09-25", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+    await setCustomerApproval(fx.pm, third.revisionId, { approvalBasis: "verbal", approvedOn: "2026-09-25", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
     const [lineMPrime] = await db
       .select({ id: quoteLines.id })
       .from(quoteLines)

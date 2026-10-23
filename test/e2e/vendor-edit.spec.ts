@@ -59,7 +59,7 @@ test.describe("거래처 수정 화면 경로 (MAST-01)", () => {
 
     // 링크가 사라진 뒤에도 주소를 직접 치면? 폼이 열리면 안 된다.
     await page.goto(editHref!);
-    await expect(page.getByRole("button", { name: "거래처 수정" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "거래처 저장" })).toHaveCount(0);
   });
 });
 
@@ -93,7 +93,7 @@ test.describe("거래처 기본 증빙 종류 설명 힌트 (D-93, S14)", () => 
     await expect(page.getByRole("cell", { name })).toBeVisible();
 
     await page.locator("tr", { hasText: name }).getByRole("link", { name: "수정" }).click();
-    await expect(page.getByRole("button", { name: "거래처 수정" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "거래처 저장" })).toBeVisible();
 
     const select = page.getByLabel("기본 증빙 종류");
     const field = select.locator("xpath=..");
@@ -210,7 +210,7 @@ test.describe("거래처 딥링크 수정 뒤 포커스 (06.5 OI-9)", () => {
       const dialog = page.locator('dialog[data-ui="side-panel"]');
       await expect(dialog).toBeVisible();
       await dialog.getByLabel("이름").fill(`${name}-고침`);
-      await dialog.getByRole("button", { name: "거래처 수정" }).click();
+      await dialog.getByRole("button", { name: "거래처 저장" }).click();
       await expect(dialog).toHaveCount(0);
       await expect(page.locator("tr", { hasText: `${name}-고침` }).getByRole("link", { name: "수정" })).toBeFocused();
     } finally {

@@ -23,6 +23,7 @@ import "@/domain/corp-cards";
 import "@/domain/people";
 import "@/domain/people/account";
 import "@/domain/vendors";
+import "@/domain/vendors/export";
 import "@/domain/projects";
 import "@/domain/projects/references";
 import "@/domain/projects/members";

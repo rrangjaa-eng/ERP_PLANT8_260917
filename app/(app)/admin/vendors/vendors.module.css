@@ -95,34 +95,6 @@
   margin: var(--s-2) 0;
 }
 
-.selectLabel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-1);
-  font-size: var(--text-aux);
-  font-weight: var(--fw-medium);
-  color: var(--text-muted);
-  margin: 0 0 var(--s-4);
-}
-
-/* 패널 안 select 높이는 같은 패널 입력과 같은 --field-h(D14 · ui/select와 같은 꼴). */
-.select {
-  box-sizing: border-box;
-  width: 100%;
-  height: var(--field-h, var(--control-h));
-  border: var(--line-w) solid var(--border-control);
-  border-radius: var(--radius-control);
-  background: var(--surface-base);
-  color: var(--text-strong);
-  padding: 0 var(--s-2);
-  font-size: var(--text-body);
-}
-
-.select:focus-visible {
-  outline: var(--focus-w) solid var(--focus);
-  outline-offset: var(--focus-offset);
-}
-
 /* 03-06-후속: 거래처 수정 폼의 계좌번호 영역. §7-2 "서버 계산 값은 입력
    바로 아래 한 줄" 규칙과 같은 자리 배치 — 현재 값(마스킹)을 힌트로,
    입력은 새 값 전용이다. */
@@ -160,17 +132,6 @@
   border-top: var(--line-w) solid var(--border-row);
 }
 
-/* 04.5-06: 네이티브 select 칸 아래 오류 — ui/select의 .error · .selectError와 같은 모양(--text-aux --status-danger). */
-.fieldError {
-  margin: var(--s-1) 0 0;
-  color: var(--status-danger);
-  font-size: var(--text-aux);
-}
-
-.selectInvalid {
-  border-color: var(--status-danger);
-}
-
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
 @media (max-width: 699.98px) {
   .clearRow input {
@@ -187,4 +148,118 @@
 
 .businessNoGroup > p {
   margin-bottom: var(--s-4);
+}
+
+/* 07-20 V3(SC-17 · U12): 패널 상단 동시 수정 FormAlert — 포커스를 받는 감싸개(tabIndex -1). 칸 사이와 같은 아래 간격. */
+.formAlert {
+  margin: 0 0 var(--s-4);
+}
+
+.formAlert:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 07-20 J5 · N6: 지급 기한 칸 + 단위 `일`(입력 밖 오른쪽 정적 글자) + aux `1~180` — 설정 화면 .withUnit과 같은 결(라벨 줄 전폭 · 입력 칸 묶음 + 단위 · 아래 보조 한 줄).
+   TextField 줄을 풀어(display: contents) 라벨 · 입력 칸 묶음을 이 격자의 칸으로 쓴다(다른 라우트 CSS 모듈 import 금지라 선언을 옮겨 둔다). */
+.withUnit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--s-2);
+  margin-bottom: var(--s-4);
+}
+
+.withUnit > :first-child {
+  display: contents;
+}
+
+.withUnit > :first-child > label {
+  grid-column: 1 / -1;
+}
+
+.unit {
+  display: flex;
+  align-items: center;
+  height: var(--field-h, var(--control-h));
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+.unitHint {
+  grid-column: 1 / -1;
+  margin: var(--s-1) 0 0;
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+/* 07-20 V2(SC-16 · SYSTEM §6-1 필터 줄): 검색 칸이 맨 앞 — 라벨 위 · 칸 짧은 폭(폰은 줄 전폭), 3차 `지우기`는 칸 옆. 지출결의 검색 칸과 같은 선언. */
+.searchForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--label-gap);
+  width: var(--field-w-short);
+  max-width: 100%;
+  margin: 0;
+}
+
+.searchLabel {
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.searchInput {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--field-h, var(--control-h));
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-size: var(--text-body);
+}
+
+.searchInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+@media (max-width: 699.98px) {
+  .searchForm {
+    flex: 1 1 100%;
+    width: auto;
+  }
+}
+
+/* 07-20 V1 · D-736 · U16: 필터 줄 끝 2차 `파일 받기` — 상한 이유는 옆 한 줄(aux · muted), 실패는 버튼 바로 아래 한 줄(aux · danger). */
+.exportGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.exportRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.exportLimit {
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+.exportError {
+  margin: 0;
+  font-size: var(--text-aux);
+  color: var(--status-danger);
 }

@@ -1,4 +1,4 @@
-import { and, asc, eq, ilike, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { vendors } from "@/db/schema";
@@ -8,21 +8,46 @@ import type { VendorKind } from "@/domain/vendors/kind";
 
 export type VendorRow = InferSelectModel<typeof vendors>;
 
-export async function listVendors(
-  viewer: Viewer,
-  opts: { scope: Scope; includeHidden: boolean },
-): Promise<VendorRow[]> {
-  if (opts.scope.rows === "none") return [];
+// 07-20 V2: 목록 거르개 — 갈래(kinds) · 검색어(정규화 이름 부분 일치, 숫자가 있으면 사업자 번호 숫자 부분 일치도). 검색어는 매개변수이고
+// `%` · `_` · `\`는 글자로 막는다(ILIKE 와일드카드 아님). 260907은 이름 ILIKE 또는 번호 앞부분 일치(server/src/vendors.ts:541-542).
+export type VendorListOpts = {
+  scope: Scope;
+  includeHidden: boolean;
+  kinds?: readonly VendorKind[] | null;
+  nameQuery?: string;
+  digitsQuery?: string | null;
+};
 
+function likeContains(value: string): string {
+  return `%${value.replace(/[\\%_]/g, "\\$&")}%`;
+}
+
+function listConditions(opts: VendorListOpts) {
   const conditions = [];
   if (!opts.scope.includeArchived) conditions.push(isNull(vendors.archivedAt));
   if (!opts.includeHidden) conditions.push(eq(vendors.hidden, false));
+  if (opts.kinds) conditions.push(inArray(vendors.kind, [...opts.kinds]));
+  if (opts.nameQuery) {
+    const byName = ilike(vendors.normalizedName, likeContains(opts.nameQuery));
+    conditions.push(
+      opts.digitsQuery
+        ? or(byName, sql`regexp_replace(${vendors.businessNo}, '[^0-9]', '', 'g') LIKE ${likeContains(opts.digitsQuery)}`)
+        : byName,
+    );
+  }
+  return conditions.length ? and(...conditions) : undefined;
+}
 
-  return db
-    .select()
-    .from(vendors)
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(vendors.normalizedName, vendors.id);
+export async function listVendors(viewer: Viewer, opts: VendorListOpts): Promise<VendorRow[]> {
+  if (opts.scope.rows === "none") return [];
+  return db.select().from(vendors).where(listConditions(opts)).orderBy(vendors.normalizedName, vendors.id);
+}
+
+// 07-20 D-736: 파일 받기 상한 판정 — listVendors와 같은 거르개로 수만 센다.
+export async function countVendors(viewer: Viewer, opts: VendorListOpts): Promise<number> {
+  if (opts.scope.rows === "none") return 0;
+  const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(vendors).where(listConditions(opts));
+  return row?.count ?? 0;
 }
 
 // 자동완성 후보 — 정렬은 domain(searchVendors)이 점수로 다시 매긴다. 여기서는
@@ -152,6 +177,7 @@ export type VendorInsertInput = {
   accountNumberLast4?: string | null;
   customFields?: Record<string, unknown>;
   kind?: VendorKind;
+  paymentTermDays?: number | null;
 };
 
 export async function insertVendor(viewer: Viewer, input: VendorInsertInput, tx: DbOrTx = db): Promise<VendorRow> {
@@ -168,6 +194,7 @@ export async function insertVendor(viewer: Viewer, input: VendorInsertInput, tx:
       accountNumberLast4: input.accountNumberLast4 ?? null,
       customFields: input.customFields ?? {},
       kind: input.kind,
+      paymentTermDays: input.paymentTermDays ?? null,
     })
     .returning();
   if (!row) throw new Error("vendors insert가 행을 반환하지 않았습니다.");
@@ -183,15 +210,28 @@ export type VendorUpdateInput = Partial<{
   accountHolder: string | null;
   customFields: Record<string, unknown>;
   kind: VendorKind;
+  paymentTermDays: number | null;
 }>;
+
+// 07-20(B-P2-6 · G9): 거래처 행을 고치는 쓰기는 모두 version을 1 올린다 — 패널이 읽은 version과 비교해 덮어쓰기를 막는다.
+const BUMP_VERSION = { version: sql`${vendors.version} + 1` };
 
 // 계좌번호를 바꾸지 않는 일반 갱신 — 암호문·뒤 4자리 두 컬럼을 아예 건드리지
 // 않는다(T-03-33과 같은 결: 두 번의 쓰기로 나누지 않는다).
-export async function updateVendor(viewer: Viewer, id: string, input: VendorUpdateInput, tx: DbOrTx = db): Promise<void> {
-  await tx
+// expectedVersion을 주면 그 version일 때만 고친다(07-20 V3) — 바뀐 행 수를 돌려준다(0 = 그 사이 누가 고침 · 없음).
+export async function updateVendor(
+  viewer: Viewer,
+  id: string,
+  input: VendorUpdateInput,
+  tx: DbOrTx = db,
+  expectedVersion?: number,
+): Promise<number> {
+  const rows = await tx
     .update(vendors)
-    .set({ ...input, updatedAt: new Date() })
-    .where(eq(vendors.id, id));
+    .set({ ...input, ...BUMP_VERSION, updatedAt: new Date() })
+    .where(expectedVersion === undefined ? eq(vendors.id, id) : and(eq(vendors.id, id), eq(vendors.version, expectedVersion)))
+    .returning({ id: vendors.id });
+  return rows.length;
 }
 
 // 계좌번호를 바꿀 때 전용 — 암호문 컬럼과 뒤 4자리 컬럼을 같은 UPDATE 문에서
@@ -200,19 +240,21 @@ export async function updateVendorAccountNumber(
   viewer: Viewer,
   id: string,
   input: { accountNumberEncrypted: string | null; accountNumberLast4: string | null },
+  tx: DbOrTx = db,
 ): Promise<void> {
-  await db
+  await tx
     .update(vendors)
     .set({
       accountNumberEncrypted: input.accountNumberEncrypted,
       accountNumberLast4: input.accountNumberLast4,
+      ...BUMP_VERSION,
       updatedAt: new Date(),
     })
     .where(eq(vendors.id, id));
 }
 
 export async function setVendorHidden(viewer: Viewer, id: string, hidden: boolean): Promise<void> {
-  await db.update(vendors).set({ hidden, updatedAt: new Date() }).where(eq(vendors.id, id));
+  await db.update(vendors).set({ hidden, ...BUMP_VERSION, updatedAt: new Date() }).where(eq(vendors.id, id));
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts와 같은 패턴).
@@ -221,12 +263,12 @@ export async function setVendorArchived(viewer: Viewer, id: string, value: boole
   const rows = value
     ? await tx
         .update(vendors)
-        .set({ archivedAt: new Date(), archivedBy: viewer.id })
+        .set({ archivedAt: new Date(), archivedBy: viewer.id, ...BUMP_VERSION })
         .where(and(eq(vendors.id, id), isNull(vendors.archivedAt)))
         .returning({ id: vendors.id })
     : await tx
         .update(vendors)
-        .set({ archivedAt: null, archivedBy: null })
+        .set({ archivedAt: null, archivedBy: null, ...BUMP_VERSION })
         .where(and(eq(vendors.id, id), isNotNull(vendors.archivedAt)))
         .returning({ id: vendors.id });
   return rows.length > 0;

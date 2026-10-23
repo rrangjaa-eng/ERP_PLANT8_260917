@@ -10,6 +10,7 @@ import { encrypt, decrypt } from "@/lib/crypto";
 import { withTransaction } from "@/lib/db-transaction";
 import { resolveCustomFieldsWrite, type InputFieldDef } from "@/domain/custom-fields/preserve";
 import {
+  countVendors as repoCountVendors,
   listVendors as repoListVendors,
   searchVendorsByNormalizedName as repoSearchVendorsByNormalizedName,
   findVendorById as repoFindVendorById,
@@ -25,9 +26,11 @@ import {
 import { readVendorFieldAccess } from "@/repositories/permissions";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
-import { servesSide, vendorKindToAdd, VENDOR_KIND_LABELS, type VendorKind, type VendorSide } from "@/domain/vendors/kind";
+import { servesSide, vendorKindToAdd, vendorKindsFor, VENDOR_KIND_LABELS, type VendorKind, type VendorSide } from "@/domain/vendors/kind";
 import { isUniqueViolation } from "@/lib/pg-errors";
-import { assertAccountFields, present } from "@/domain/vendors/account-fields";
+import { AccountFieldsError, accountFieldsChanged, judgeAccountFields, present } from "@/domain/vendors/account-fields";
+import { businessNoDigits, businessNoProblem } from "@/domain/vendors/business-no";
+import { normalizeAccountDigits } from "@/domain/vendors/account-digits";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -62,23 +65,34 @@ export class DuplicateBusinessNoError extends UserFacingError {
   }
 }
 
-// 숫자만 뽑은 사업자번호 — SQL `regexp_replace(…, '[^0-9]', '', 'g')`와 같은 결과. 숫자가 없으면 null.
-export function businessNoDigits(raw: string | null | undefined): string | null {
-  const digits = (raw ?? "").replace(/\D/g, "");
-  return digits === "" ? null : digits;
-}
-
-// 사업자번호 모양 · 검증 숫자 — 비어 있으면 통과(번호는 필수가 아니다). 국세청 규칙(260907과 같다): 앞 아홉 자리 가중합 + 아홉째×5의 십의 자리.
-export function businessNoProblem(raw: string | null | undefined): string | null {
-  if ((raw ?? "").trim() === "") return null;
-  const digits = businessNoDigits(raw);
-  if (digits === null || digits.length !== 10) return "사업자번호 10자리 아님";
-  const weights = [1, 3, 7, 1, 3, 7, 1, 3, 5];
-  const sum = weights.reduce((acc, weight, i) => acc + Number(digits[i]) * weight, 0) + Math.floor((Number(digits[8]) * 5) / 10);
-  return (10 - (sum % 10)) % 10 === Number(digits[9]) ? null : "사업자번호 검증 숫자 틀림 · 다시 확인";
-}
+export { businessNoDigits, businessNoProblem } from "@/domain/vendors/business-no";
 
 export class InvalidBusinessNoError extends UserFacingError {}
+
+// 07-20(V3 · G9): 패널이 읽은 뒤 누가 먼저 거래처를 고쳤다 — 덮어쓰지 않는다(260907 server/src/vendors.ts:1105-1116 409 stale와 같은 뜻).
+export const VENDOR_VERSION_CONFLICT_MESSAGE = "다른 사람이 먼저 수정 · 새로 불러오기";
+export class VendorVersionConflictError extends UserFacingError {
+  constructor() {
+    super(VENDOR_VERSION_CONFLICT_MESSAGE);
+  }
+}
+
+// 07-20(J5): 거래처 지급 기한 — 1~180일 정수 · 협력사 갈래(협력사 · 둘 다)만(DB CHECK 07-02 · 260907 db/schema/010_tables.sql:5448-5449와 같다).
+export class PaymentTermDaysError extends UserFacingError {}
+const PAYMENT_TERM_DAYS_RANGE_MESSAGE = "지급 기한 1~180 · 다시 입력";
+const PAYMENT_TERM_DAYS_SUPPLIER_MESSAGE = "지급 기한은 협력사만";
+
+// 저장할 지급 기한 — undefined = 안 바꿈. 갈래가 클라이언트면 NULL(클라이언트로 바꾸면 비워진다 · 값을 보냈으면 거부).
+function resolvePaymentTermDays(days: number | null | undefined, kind: VendorKind): number | null | undefined {
+  if (!servesSide(kind, "supplier")) {
+    if (typeof days === "number") throw new PaymentTermDaysError(PAYMENT_TERM_DAYS_SUPPLIER_MESSAGE);
+    return null;
+  }
+  if (typeof days === "number" && !(Number.isInteger(days) && days >= 1 && days <= 180)) {
+    throw new PaymentTermDaysError(PAYMENT_TERM_DAYS_RANGE_MESSAGE);
+  }
+  return days;
+}
 
 function assertBusinessNoValid(raw: string | null | undefined): void {
   const problem = businessNoProblem(raw);
@@ -91,8 +105,9 @@ function duplicateBusinessNoMessage(existing: DuplicateBusinessNoExisting | null
   if (existing === null) return "같은 사업자번호 거래처 있음";
   if (existing.archived) return `보관함에 같은 사업자번호 거래처 있음 · ${existing.name}`;
   if (existing.hidden) return `같은 사업자번호 거래처 있음 · ${existing.name}(숨김)`;
-  if (addSide !== null) return `같은 사업자번호 거래처 있음 · ${existing.name}(${VENDOR_KIND_LABELS[existing.kind]})`;
-  return `같은 사업자번호 거래처 있음 · ${existing.name}`;
+  // 07-20 V5(UI-SPEC SC-17): 살아 있는 거래처 문구 — 다른 갈래면 뒤에 그 갈래(「갈래 더하기」 앞).
+  if (addSide !== null) return `이미 등록됨 · ${existing.name}(${VENDOR_KIND_LABELS[existing.kind]})`;
+  return `이미 등록됨 · ${existing.name}`;
 }
 
 // 선검사 — 같은 숫자 번호의 다른 거래처가 있으면 던진다(없으면 조용히 지난다). wantedKind가 있으면(등록) 「구분 더하기」 갈래도 계산한다.
@@ -120,6 +135,8 @@ async function assertBusinessNoFree(
 }
 
 const VENDORS_MENU = "admin.vendors";
+// 07-15(D-739 「계좌 · 서류 수정」): 기존 거래처의 은행 · 예금주 · 계좌번호를 바꾸는 쓰기(R8).
+const VENDOR_ACCOUNT_MENU = "vendors.account";
 const VENDOR_ENTITY = "vendor";
 const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
 
@@ -138,6 +155,8 @@ export type VendorDto = {
   accountNumberLast4: string | null;
   customFields: Record<string, unknown>;
   archivedAt: Date | null;
+  paymentTermDays: number | null;
+  version: number;
 };
 
 export const VENDOR_DTO_SPEC: DtoSpec<VendorRow, VendorDto> = {
@@ -153,6 +172,8 @@ export const VENDOR_DTO_SPEC: DtoSpec<VendorRow, VendorDto> = {
     { key: "accountNumberLast4", from: "accountNumberLast4", infoItem: "vendor.value" },
     { key: "customFields", from: "customFields", infoItem: "vendor.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "vendor.value" },
+    { key: "paymentTermDays", from: "paymentTermDays", infoItem: "vendor.value" },
+    { key: "version", from: "version", infoItem: "vendor.value" },
   ],
 };
 
@@ -204,14 +225,30 @@ async function toVendorDto(viewer: Viewer, row: VendorRow, visibleKeys: Readonly
 
 export type VendorListDeps = { can: typeof defaultCan };
 
-export async function listVendors(
-  viewer: Viewer,
-  opts?: { includeHidden?: boolean },
-): Promise<VendorDto[]> {
+// 07-20 V2: 목록 · 파일 받기가 같은 거르개 — 숨김 포함 · 갈래(그 쪽 + 둘 다) · 검색어(이름 · 사업자 번호 숫자 포함).
+export type VendorListFilter = { includeHidden?: boolean; kind?: VendorSide | null; q?: string };
+
+export function vendorListQuery(filter: VendorListFilter): { includeHidden: boolean; kinds: VendorKind[] | null; nameQuery: string; digitsQuery: string | null } {
+  const q = (filter.q ?? "").trim();
+  return {
+    includeHidden: filter.includeHidden ?? false,
+    kinds: filter.kind ? vendorKindsFor(filter.kind) : null,
+    nameQuery: normalizeVendorName(q),
+    digitsQuery: businessNoDigits(q),
+  };
+}
+
+export async function listVendors(viewer: Viewer, opts?: VendorListFilter): Promise<VendorDto[]> {
   const scope = await scopeFor(viewer, VENDOR_ENTITY);
-  const rows = await repoListVendors(viewer, { scope, includeHidden: opts?.includeHidden ?? false });
+  const rows = await repoListVendors(viewer, { scope, ...vendorListQuery(opts ?? {}) });
   const visibleKeys = await visibleCustomFieldKeys(viewer, VENDOR_ENTITY);
   return Promise.all(rows.map((row) => toVendorDto(viewer, row, visibleKeys)));
+}
+
+// 07-20 D-736 — 파일 받기 상한 판정용. listVendors와 같은 범위 · 거르개로 수만 센다.
+export async function countVendors(viewer: Viewer, opts?: VendorListFilter): Promise<number> {
+  const scope = await scopeFor(viewer, VENDOR_ENTITY);
+  return repoCountVendors(viewer, { scope, ...vendorListQuery(opts ?? {}) });
 }
 
 // 자동완성 — 검색어를 NFC 정규화 + 소문자로 낮춘 뒤 normalizedName의 부분
@@ -339,6 +376,10 @@ export type VendorInput = {
   customFields?: Record<string, unknown>;
   /** 갈래 — createVendor에서 undefined = DB 기본 'both' · updateVendor에서 undefined = 안 바꿈(M-5와 같은 결). */
   kind?: VendorKind;
+  /** 07-20(J5) 지급 기한(일) — undefined = 안 바꿈 · null = 회사 기본(설정 payment.term_days). 갈래가 클라이언트면 늘 NULL. */
+  paymentTermDays?: number | null;
+  /** 07-20(V3) updateVendor 전용 — 패널이 읽은 version. 주면 그 사이 누가 고쳤을 때 VendorVersionConflictError. */
+  expectedVersion?: number;
 };
 
 // MAST-01 리뷰 M-5 — 계좌번호 갱신 계획을 순수 함수로 뽑는다. undefined(안 바꿈) ·
@@ -370,6 +411,27 @@ export function planAccountNumberUpdate(
   };
 }
 
+// 07-20 C-35: 보낸 계좌번호 글자의 쓰기 종류(planAccountNumberUpdate와 같은 해석 — 하이픈 · 공백만이면 「안 바꿈」).
+function accountNumberKind(raw: string | null | undefined): AccountNumberPlan["kind"] {
+  if (raw === undefined) return "keep";
+  if (raw === null) return "clear";
+  return normalizeAccountDigits(raw).value === "" ? "keep" : "set";
+}
+
+// 계좌 칸 판정(06.5 D-6506) + 계좌번호 자릿수(C-35)를 한 번에 — 칸 오류를 모두 모아 던진다. 통과하면 저장할 계좌번호(숫자만)를 돌려준다.
+function assertAccountInput(
+  stored: { bank: string | null; holder: string | null; hasNumber: boolean },
+  next: { bank: string | null | undefined; holder: string | null | undefined; number: string | null | undefined },
+): string | null | undefined {
+  const digits = typeof next.number === "string" ? normalizeAccountDigits(next.number) : null;
+  const errors = {
+    ...(digits?.error ? { accountNumber: digits.error } : {}),
+    ...judgeAccountFields({ stored, next: { bank: next.bank, holder: next.holder, number: accountNumberKind(next.number) } }),
+  };
+  if (Object.keys(errors).length > 0) throw new AccountFieldsError(errors);
+  return digits ? digits.value : next.number;
+}
+
 export type CreateVendorResult = { vendor: VendorDto; duplicateCount: number };
 
 // 거래처 등록 — 쓰기 권한 확인 → 커스텀 필드 검증 → 계좌번호가 있으면 암호화 +
@@ -397,18 +459,20 @@ export async function createVendor(
   });
   const normalizedName = normalizeVendorName(input.name);
   const visibleFn = deps?.visible ?? defaultVisible;
+  const paymentTermDays = resolvePaymentTermDays(input.paymentTermDays, input.kind ?? "both");
   assertBusinessNoValid(input.businessNo);
   await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: input.kind ?? "both", visible: visibleFn, can: canFn });
   const duplicates = await repoFindVendorsByNormalizedName(viewer, normalizedName);
 
+  // 06.5 D-6506 · REVIEWS DH-3: 계좌 칸 판정(account-fields.ts) + 07-20 C-35 자릿수 — 행 삽입 전, 실패 시 행 없음.
+  // 새 거래처의 계좌 입력은 등록 권한으로 된다(플랜 07-20 플래그된 가정 — `vendors.account`는 기존 거래처 변경만).
+  const accountNumber = assertAccountInput(
+    { bank: null, holder: null, hasNumber: false },
+    { bank: input.accountBank ?? null, holder: input.accountHolder ?? null, number: input.accountNumber },
+  );
   // create에는 "안 바꿈" 개념이 없다 — keep이든 clear든 지울 기존 값이 없으므로
   // 둘 다 "계좌번호 없음"으로 같다.
-  const accountNumberPlan = planAccountNumberUpdate(input.accountNumber);
-  // 06.5 D-6506 · REVIEWS DH-3: 계좌 칸 판정(account-fields.ts) — 행 삽입 전, 실패 시 행 없음.
-  assertAccountFields({
-    stored: { bank: null, holder: null, hasNumber: false },
-    next: { bank: input.accountBank ?? null, holder: input.accountHolder ?? null, number: accountNumberPlan.kind },
-  });
+  const accountNumberPlan = planAccountNumberUpdate(accountNumber);
   const accountNumberEncrypted = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null;
   const accountNumberLast4 = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null;
 
@@ -425,6 +489,7 @@ export async function createVendor(
       accountNumberLast4,
       customFields,
       kind: input.kind,
+      paymentTermDays,
     });
   } catch (error) {
     // 조회와 삽입 사이 경합으로 유일 색인이 먼저 걸리면 같은 조회로 같은 오류로 바꾼다(domain/custom-fields/admin.ts 선례).
@@ -464,14 +529,28 @@ export async function updateVendor(
   if (!existing || existing.archivedAt !== null) {
     throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
   }
+  // 07-20(V3): 읽은 version이 이미 다르면 판정 전에 멈춘다 — 아래 판정은 모두 이 저장값 기준이다(쓰기는 같은 version 조건으로 다시 막는다).
+  const expectedVersion = input.expectedVersion;
+  if (expectedVersion !== undefined && existing.version !== expectedVersion) throw new VendorVersionConflictError();
+  const paymentTermDays = resolvePaymentTermDays(input.paymentTermDays, input.kind ?? existing.kind);
 
-  // 06.5 D-6506 · REVIEWS DH-3 · EP2-B9: 계좌 칸 판정(account-fields.ts)은 첫 쓰기 전에 — 거절이면 본문도 그대로 둔다.
-  // 판정은 저장 뒤 실효값(은행 · 예금주는 이 저장이 그대로 쓰고, 번호는 keep이면 저장값)으로 한다.
-  const accountNumberPlan = planAccountNumberUpdate(input.accountNumber);
-  assertAccountFields({
-    stored: { bank: existing.accountBank, holder: existing.accountHolder, hasNumber: existing.accountNumberEncrypted !== null },
-    next: { bank: input.accountBank ?? null, holder: input.accountHolder ?? null, number: accountNumberPlan.kind },
+  // 07-20 B-P2-4: 보내지 않은 은행 · 예금주(undefined)는 저장값 그대로(쓰지도 않는다) — 보낸 빈 문자열은 「비움」.
+  const storedAccount = { bank: existing.accountBank, holder: existing.accountHolder, hasNumber: existing.accountNumberEncrypted !== null };
+  const nextBank = input.accountBank === undefined ? existing.accountBank : input.accountBank;
+  const nextHolder = input.accountHolder === undefined ? existing.accountHolder : input.accountHolder;
+  // 07-20 R8(D-739): 세 칸이 저장값과 다를 때만 `vendors.account` 쓰기 판정 — 판정은 칸 오류보다 먼저(권한 없는 사람에게 칸 판정을 보이지 않는다).
+  // 260907은 거래처 수정 권한 하나로 계좌까지 바꿨다(server/src/vendors.ts:963 vendor.edit) — 우리는 계좌만 따로 막는다(AQ-16).
+  const accountChanged = accountFieldsChanged({
+    stored: storedAccount,
+    next: { bank: nextBank, holder: nextHolder, number: accountNumberKind(input.accountNumber) },
   });
+  if (accountChanged && !(await canFn(viewer, VENDOR_ACCOUNT_MENU, "write"))) {
+    throw new ForbiddenError("계좌 수정 권한 없음");
+  }
+  // 06.5 D-6506 · REVIEWS DH-3 · EP2-B9: 계좌 칸 판정(account-fields.ts)은 첫 쓰기 전에 — 거절이면 본문도 그대로 둔다.
+  // 판정은 저장 뒤 실효값(은행 · 예금주는 보냈으면 그 값 · 아니면 저장값, 번호는 keep이면 저장값)으로 한다.
+  const accountNumber = assertAccountInput(storedAccount, { bank: nextBank, holder: nextHolder, number: input.accountNumber });
+  const accountNumberPlan = planAccountNumberUpdate(accountNumber);
 
   const normalizedName = normalizeVendorName(input.name);
   const visibleFn = deps?.visible ?? defaultVisible;
@@ -487,22 +566,24 @@ export async function updateVendor(
     normalizedName,
     businessNo: input.businessNo ?? null,
     defaultEvidenceType: input.defaultEvidenceType ?? null,
-    accountBank: present(input.accountBank),
-    accountHolder: present(input.accountHolder),
+    ...(input.accountBank !== undefined ? { accountBank: present(input.accountBank) } : {}),
+    ...(input.accountHolder !== undefined ? { accountHolder: present(input.accountHolder) } : {}),
     ...(input.kind !== undefined ? { kind: input.kind } : {}),
+    ...(paymentTermDays !== undefined ? { paymentTermDays } : {}),
   };
-  // customFields를 보내지 않으면(undefined) 커스텀 열을 건드리지 않는다(M-5) — 경합이 없어 트랜잭션도 없다.
+  // customFields를 보내지 않으면(undefined) 커스텀 열을 건드리지 않는다(M-5).
   // 보내면(04.5-05 · T-04.5-41/44) 행을 잠가 읽은 저장값으로 판정 · 합치고 같은 트랜잭션에서 쓴다. 입력 칸 집합도
   // 잠금 뒤 같은 tx의 한 문으로 읽는다 — 그 문의 스냅숏에 커밋된 정의 · 보임 변경을 한꺼번에 본다. 거래처 행을
   // 건드리지 않는 정의 · 보임 변경과의 순서까지 행 잠금이 정하지는 않는다(같은 tx 한 문 스냅숏).
+  // 07-20: 본문 · 계좌번호 쓰기를 한 트랜잭션으로(반쯤 저장 0) — 기대 version 조건이 0행이면 충돌로 되돌린다.
   const submitted = input.customFields;
   try {
-    if (submitted === undefined) {
-      await repoUpdateVendor(viewer, id, updatePayload);
-    } else {
-      await withTransaction(async (tx) => {
+    await withTransaction(async (tx) => {
+      let payload = updatePayload;
+      if (submitted !== undefined) {
         const locked = await repoFindVendorByIdForUpdate(viewer, id, tx);
         if (!locked || locked.archivedAt !== null) throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
+        if (expectedVersion !== undefined && locked.version !== expectedVersion) throw new VendorVersionConflictError();
         const { inputDefs, knownKeys } = await vendorInputFieldKeys(viewer, tx);
         const customFields = resolveCustomFieldsWrite({
           mode: "update",
@@ -511,25 +592,29 @@ export async function updateVendor(
           stored: locked.customFields as Record<string, unknown>,
           submitted,
         });
-        await repoUpdateVendor(viewer, id, { ...updatePayload, customFields }, tx);
-      });
-    }
+        payload = { ...updatePayload, customFields };
+      }
+      const changed = await repoUpdateVendor(viewer, id, payload, tx, expectedVersion);
+      if (changed === 0 && expectedVersion !== undefined) throw new VendorVersionConflictError();
+
+      if (accountNumberPlan.kind === "clear") {
+        await repoUpdateVendorAccountNumber(viewer, id, { accountNumberEncrypted: null, accountNumberLast4: null }, tx);
+      } else if (accountNumberPlan.kind === "set") {
+        await repoUpdateVendorAccountNumber(
+          viewer,
+          id,
+          { accountNumberEncrypted: accountNumberPlan.accountNumberEncrypted, accountNumberLast4: accountNumberPlan.accountNumberLast4 },
+          tx,
+        );
+      }
+      // kind === "keep" → 두 컬럼 모두 건드리지 않는다.
+    });
   } catch (error) {
     if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
       await assertBusinessNoFree(viewer, input.businessNo, { excludeId: id, visible: visibleFn, can: canFn });
     }
     throw error;
   }
-
-  if (accountNumberPlan.kind === "clear") {
-    await repoUpdateVendorAccountNumber(viewer, id, { accountNumberEncrypted: null, accountNumberLast4: null });
-  } else if (accountNumberPlan.kind === "set") {
-    await repoUpdateVendorAccountNumber(viewer, id, {
-      accountNumberEncrypted: accountNumberPlan.accountNumberEncrypted,
-      accountNumberLast4: accountNumberPlan.accountNumberLast4,
-    });
-  }
-  // kind === "keep" → 두 컬럼 모두 건드리지 않는다.
 
   // 결함 3: 수정을 document_create로 남기면 생성 9건처럼 보인다(독립 감사가
   // 실측 — 수정 8건이 document_create 9건으로 나타났다). 수정 전용 종류로 남긴다.

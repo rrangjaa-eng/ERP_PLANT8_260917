@@ -199,7 +199,7 @@ export default async function PersonDetailPage({
       ) : null}
 
       {/* §3 데이터 표 예외 — 발령 이력 표는 .single-column 밖, 전체 폭(260922-o2b 후속). */}
-      <PersonHistorySection userId={detail.person.id} teamOptions={teamOptions} entries={entries} canAdd={editable} />
+      <PersonHistorySection userId={detail.person.id} teamOptions={teamOptions} entries={entries} canAdd={canWrite && editable} />
     </DetailScreen>
   );
 }

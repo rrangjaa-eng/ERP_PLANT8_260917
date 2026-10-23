@@ -7,7 +7,7 @@ import { recordAction } from "@/domain/action-log/record";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { createDelegatedAccount } from "./admin-cap-fixtures";
-import { insertKstMidnightRow } from "./action-log-kst-fixture";
+import { insertKstMidnightRow, KST_MIDNIGHT_LABEL, UTC_DATE_OF_ROW } from "./action-log-kst-fixture";
 
 // ADMN-10·OPS-05: 필터 → 내보내기 → 정리 → 정리가 다시 로그에 남는 end-to-end.
 test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
@@ -373,6 +373,17 @@ test.describe("행동 로그 상세 칸 (07-25 K16)", () => {
     await page.goto("/admin/action-log?actionType=settings_change");
     const row = page.locator("tbody tr", { hasText: token }).first();
     await expect(row.locator('[data-ui="action-log-detail"]')).toHaveText("—");
+  });
+
+  // DOM 감사 P2-2: 발생 시각은 KST로 보인다(기간 필터 경계와 같은 시간대). UTC 날짜(10-22)와 KST 날짜(10-23)가 갈리는 행으로 잰다.
+  test("발생 시각은 KST로 보인다 — UTC 2026-10-22 15:30은 2026-10-23 00:30", async ({ page }) => {
+    const token = `e2e-kst-${randomUUID().slice(0, 8)}`;
+    await insertKstMidnightRow(token);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/action-log?documentId=${token}`);
+    const row = page.locator("tbody tr", { hasText: token }).first();
+    await expect(row).toContainText(KST_MIDNIGHT_LABEL);
+    expect(await row.innerText()).not.toContain(UTC_DATE_OF_ROW);
   });
 
   // DOM 감사 P1: 문서 번호 칸의 blur 제출이 값이 그대로여도 일어나 Tab만으로는 표에 닿지 못했다(포커스가 BODY로 돌아감).

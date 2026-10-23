@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 import { recordAction } from "@/domain/action-log/record";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { loginAsSysadmin } from "./row-actions-helpers";
-import { insertKstMidnightRow } from "./action-log-kst-fixture";
+import { insertKstMidnightRow, KST_MIDNIGHT_LABEL, UTC_DATE_OF_ROW } from "./action-log-kst-fixture";
 
 // 07-25 K16 · SC-08 · U9 — 폰(375 · 320)에서 행동 로그 행은 두 줄(P1 발생 시각 + 행동 종류 / 접힌 줄 첫 요소 = 상세 첫 줄)이고,
 // 행을 탭하면 시트에 바뀐 칸 전체가 보인다. 시트를 닫으면 포커스는 그 행 트리거로 돌아간다.
@@ -63,6 +63,18 @@ test.describe("행동 로그 폰 행 탭 시트 (07-25 K16)", () => {
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
     await expect(folded).toBeFocused();
+  });
+
+  test("시트 부제의 발생 시각은 KST — UTC 2026-10-22 15:30은 2026-10-23 00:30", async ({ page }) => {
+    const token = `e2e-phone-kst-${randomUUID().slice(0, 8)}`;
+    await insertKstMidnightRow(token);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/action-log?documentId=${token}`);
+    await expect(page.locator("tr", { hasText: token }).first()).toContainText(KST_MIDNIGHT_LABEL);
+    await page.locator('td[role="button"]', { hasText: token }).first().click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet).toContainText(KST_MIDNIGHT_LABEL);
+    expect(await sheet.innerText()).not.toContain(UTC_DATE_OF_ROW);
   });
 
   // DOM 감사 P1: Tab만으로 필터 줄을 지나 행 트리거까지 가고, 그 사이 페이지가 다시 불러지지 않는다.

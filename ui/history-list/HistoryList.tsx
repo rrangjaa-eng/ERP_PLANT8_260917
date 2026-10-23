@@ -52,7 +52,7 @@ export type HistoryListProps = {
    * idPrefix와 같은 이유로 호출부가 넘긴다.
    */
   caption: string;
-  /** 07-17 R15 — 거짓이면 「새 이력 추가」를 그리지 않는다(상한 밖 대상처럼 쓸 수 없는 화면). 기본 참. */
+  /** 07-17 R15 · F24 감사 P1 — 거짓이면 쓰기(「새 이력 추가」 · 예정 줄 「취소」)를 그리지 않는다(상한 밖 · 퇴직자 · 보기만처럼 쓸 수 없는 화면). 기본 참. */
   canAdd?: boolean;
 };
 
@@ -135,6 +135,7 @@ export function HistoryList({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [cancellingFrom, setCancellingFrom] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   function openAdd(): void {
     setValue(defaultValueFor(valueKind));
@@ -164,8 +165,12 @@ export function HistoryList({
 
   async function handleCancel(entryEffectiveFrom: string): Promise<void> {
     setCancellingFrom(entryEffectiveFrom);
+    setCancelError(null);
     try {
       await onCancel(entryEffectiveFrom);
+    } catch (error) {
+      // F24 감사 P1: 거부를 삼키지 않는다 — 추가 실패와 같은 오류 한 줄(addError)로 표 아래에 말한다.
+      setCancelError(error instanceof Error ? error.message : "취소 실패 · 다시 시도");
     } finally {
       setCancellingFrom(null);
     }
@@ -254,7 +259,7 @@ export function HistoryList({
                 ) : null}
               </td>
               <td>
-                {entry.status === "scheduled" ? (
+                {entry.status === "scheduled" && canAdd ? (
                   <Button
                     variant="tertiary"
                     pending={cancellingFrom === entry.effectiveFrom}
@@ -270,6 +275,11 @@ export function HistoryList({
           ))}
         </tbody>
       </table>
+      {cancelError ? (
+        <p className={styles.addError} role="alert">
+          {cancelError}
+        </p>
+      ) : null}
       {!adding && canAdd ? (
         <div className={styles.addRowTrigger}>
           <Button variant="tertiary" onClick={openAdd}>

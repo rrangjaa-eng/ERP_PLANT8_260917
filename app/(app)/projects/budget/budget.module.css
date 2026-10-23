@@ -32,3 +32,22 @@
     margin-left: 0;
   }
 }
+
+/* 예산 이력 패널 — 사유 칸은 낱말 위 · 직접 수정 메모 아래 aux 한 줄(SYSTEM §2-4 2행 aux와 같은 글자 크기 · 색). */
+.reason {
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.memo {
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+/* 패널 안 3차 줄(`예산 바꾸기` · `더 보기` · `프로젝트 열기`) — 칸 사이 간격만. */
+.panelAction {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+  margin-block: var(--s-3);
+}

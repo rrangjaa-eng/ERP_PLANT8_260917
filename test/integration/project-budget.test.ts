@@ -14,7 +14,7 @@ import { createProject } from "@/domain/projects";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
-import { listBudgetRows, saveCostRateSetting, seedInitialBudgets, setBudgetManually } from "@/domain/projects/budget";
+import { listBudgetHistory, listBudgetRows, saveCostRateSetting, seedInitialBudgets, setBudgetManually } from "@/domain/projects/budget";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { importSettings } from "@/domain/settings/export";
@@ -499,5 +499,59 @@ describe("프로젝트 화면 DTO에 예산 없음 (07-24 Task 2 · SC-20)", () 
     const list = await loadProjectList(admin, { year: "all" });
     const keys = JSON.stringify([detail, list]);
     expect(keys).not.toMatch(/"(budget|budgetKrw|usedKrw|remainingKrw|usage|remaining)[A-Za-z]*"\s*:/);
+  });
+});
+
+// ── Task 3 ────────────────────────────────────────────────────────────────
+
+describe("예산 이력 읽기 (07-24 Task 3 · SC-21 · K9)", () => {
+  it("최신 위 · 사유 낱말 · 직접 수정 메모 · 현재 예산 · 쓰기 판정", async () => {
+    await setCostRate(70);
+    const s = await setup();
+    await savePo(s, 10_000_000);
+    const viewer = await makeBudgetViewer();
+    await setBudgetManually(viewer, s.projectId, { budgetKrw: 5_000_000, expectedBudgetKrw: 7_000_000, memo: "오입력 정정" });
+
+    const history = await listBudgetHistory(viewer, s.projectId, { cursor: null });
+    expect(history).toMatchObject({ projectId: s.projectId, currentBudgetKrw: 5_000_000, canWrite: true, nextCursor: null });
+    expect(history.entries.map(({ reasonWord, deltaKrw, memo }) => ({ reasonWord, deltaKrw, memo }))).toEqual([
+      { reasonWord: "직접 수정", deltaKrw: -2_000_000, memo: "오입력 정정" },
+      { reasonWord: "PO 금액 변경", deltaKrw: 7_000_000, memo: null },
+    ]);
+    expect(history.entries[0]?.at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+
+    const readOnly = await listBudgetHistory(await makeBudgetViewer({ write: false }), s.projectId, { cursor: null });
+    expect(readOnly.canWrite).toBe(false);
+  });
+
+  it("11줄이면 10줄 + 다음 쪽 · 다음 쪽은 나머지 1줄 · 이력 없으면 빈 목록", async () => {
+    await setCostRate(70);
+    const s = await setup();
+    for (let step = 1; step <= 11; step += 1) await savePo(s, step * 1_000_000);
+    const viewer = await makeBudgetViewer();
+    const first = await listBudgetHistory(viewer, s.projectId, { cursor: null });
+    expect(first.entries).toHaveLength(10);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await listBudgetHistory(viewer, s.projectId, { cursor: first.nextCursor });
+    expect(second.entries).toHaveLength(1);
+    expect(second.nextCursor).toBeNull();
+    expect(new Set([...first.entries, ...second.entries].map((entry) => entry.id)).size).toBe(11);
+
+    const empty = await setup();
+    expect((await listBudgetHistory(viewer, empty.projectId, { cursor: null })).entries).toEqual([]);
+  });
+
+  it("보기 권한 · 금액 정보 항목 · 행 범위가 없으면 거부", async () => {
+    await setCostRate(70);
+    const s = await setup();
+    await savePo(s, 10_000_000);
+    await expect(listBudgetHistory(await makeViewer(DEFAULT_ROLE_ID, s.teamId), s.projectId, { cursor: null })).rejects.toThrow();
+    await expect(listBudgetHistory(await makeBudgetViewer({ amount: false }), s.projectId, { cursor: null })).rejects.toThrow();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀 예산-${randomUUID()}`, viewScope: "team" });
+    for (const [menu, action] of [["projects", "view"], ["projects.budget", "view"]] as const) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
+    }
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "budget.amount", visible: true });
+    await expect(listBudgetHistory(await makeViewer(role.id, await makeTeam()), s.projectId, { cursor: null })).rejects.toThrow("프로젝트 없음");
   });
 });

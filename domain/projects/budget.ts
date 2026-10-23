@@ -13,11 +13,13 @@ import { buildChanges } from "@/domain/action-log/changes";
 import { setSettingValue, type SettingDef } from "@/domain/settings/registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
+import { kstDateTimeOf } from "@/lib/kst-date";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { findProjectInScope, lockProjectForWrite } from "@/repositories/projects";
 import {
   findBudgetBasisFacts,
   insertBudgetEntry,
+  listBudgetEntriesPage,
   listBudgetRowFacts,
   listProjectIdsWithoutBudget,
   sumBudgetKrw,
@@ -300,4 +302,66 @@ export async function listBudgetRows(
       )
     : null;
   return { costRateSet: true, rows, totals, uncomputableCount: rows.length - computed.length, canWrite };
+}
+
+// ── 예산 이력(SC-21 · K9) ─────────────────────────────────────────────────
+
+const HISTORY_PAGE_SIZE = 10;
+
+// 사유 낱말 표 한 곳 — 패널 · 시트가 이 낱말만 쓴다.
+export const BUDGET_REASON_WORD: Record<BudgetEntryReason, string> = {
+  po_amount_change: "PO 금액 변경",
+  new_approved_revision: "새 승인 차수",
+  initial: "처음",
+  manual: "직접 수정",
+};
+
+export type BudgetHistoryEntry = { id: string; at: string; reasonWord: string; deltaKrw: number; memo: string | null };
+
+export type BudgetHistoryDto = {
+  projectId: string;
+  currentBudgetKrw: number;
+  canWrite: boolean;
+  entries: BudgetHistoryEntry[];
+  nextCursor: string | null;
+};
+
+// 이력은 금액 줄이라 예산 현황 보기 + 정보 항목 budget.amount + 행 범위가 다 있어야 한다(하나라도 없으면 거부).
+registerDto({
+  name: "budgetHistory",
+  fields: [
+    { key: "currentBudgetKrw", infoItem: BUDGET_AMOUNT_ITEM },
+    { key: "entries", infoItem: BUDGET_AMOUNT_ITEM },
+  ],
+});
+
+export async function listBudgetHistory(
+  viewer: Viewer,
+  projectId: string,
+  input: { cursor: string | null },
+  deps?: Partial<BudgetReadDeps>,
+): Promise<BudgetHistoryDto> {
+  await assertBudgetView(viewer, deps);
+  const canFn = deps?.can ?? defaultCan;
+  const visibleFn = deps?.visible ?? defaultVisible;
+  const [seeAmount, canWrite, scope] = await Promise.all([
+    visibleFn(viewer, BUDGET_AMOUNT_ITEM),
+    canFn(viewer, BUDGET_MENU, "write"),
+    projectRowScope(viewer),
+  ]);
+  if (!seeAmount) throw new BudgetForbiddenError("예산 금액 보기 권한 없음");
+  if (!(await findProjectInScope(viewer, scope, projectId))) throw new UserFacingError("프로젝트 없음");
+
+  const [{ sumKrw }, page] = await Promise.all([
+    sumBudgetKrw(viewer, projectId),
+    listBudgetEntriesPage(viewer, projectId, { limit: HISTORY_PAGE_SIZE, cursorId: input.cursor }),
+  ]);
+  const entries = page.rows.map((row) => ({
+    id: row.id,
+    at: kstDateTimeOf(row.createdAt),
+    reasonWord: BUDGET_REASON_WORD[row.reason],
+    deltaKrw: row.deltaKrw,
+    memo: row.reason === "manual" ? row.memo : null,
+  }));
+  return { projectId, currentBudgetKrw: sumKrw, canWrite, entries, nextCursor: page.hasMore ? (entries.at(-1)?.id ?? null) : null };
 }

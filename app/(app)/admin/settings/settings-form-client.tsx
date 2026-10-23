@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { TextField } from "@/ui/input/TextField";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
-import { Button } from "@/ui/button/Button";
+import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
@@ -115,6 +116,7 @@ function SimpleFieldEditor({
     return "";
   });
   const error = errorMessageOf(result);
+  const costRate = result.data?.costRate ?? null;
   const hintId = `setting-${fieldKey}-hint`;
   const unitId = `setting-${fieldKey}-unit`;
   const errorId = `setting-${fieldKey}-error`;
@@ -246,6 +248,20 @@ function SimpleFieldEditor({
         input
       )}
       {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
+      {/* 07-24(D-747 · U3): 원가율 첫 저장만 결과 줄 — 확인 창 · 되돌리기 없음. 다음 저장까지 남는다(타이머 없음). */}
+      {costRate?.firstSave ? (
+        <p role="status" className={styles.hint}>
+          {`원가율 저장 · 예산 ${costRate.createdCount}건 생성`}
+          {costRate.canViewBudget ? (
+            <>
+              {" "}
+              <Link href="/projects/budget" className={buttonLinkClassName("tertiary")}>
+                예산 현황
+              </Link>
+            </>
+          ) : null}
+        </p>
+      ) : null}
     </div>
   );
 }

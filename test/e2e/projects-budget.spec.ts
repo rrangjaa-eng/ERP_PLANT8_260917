@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projects, settingsSimple } from "@/db/schema";
+import { projectBudgetEntries, projects, quoteLines, settingsSimple } from "@/db/schema";
 import { createFixtureUser } from "./fixtures";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { saveProjectLedger } from "@/domain/projects/ledger";
+import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { PROJECT_COST_RATE_PCT } from "@/domain/settings/keys";
 import { insertVendor } from "@/repositories/vendors";
@@ -51,11 +52,15 @@ async function makeTeam(): Promise<Team> {
 }
 
 // 팀 범위 경영관리 계정 — write가 거짓이면 보기만(「예산 바꾸기」 없음 — 배포 직후 쓰기 칸이 꺼진 상태와 같다).
-async function budgetUser(teamId: string, opts: { write?: boolean } = {}) {
+// settings가 참이면 시스템 설정 보기 · 쓰기도(원가율 잠김 줄의 3차 · 첫 저장 결과 줄 시험). budget이 거짓이면 예산 현황 메뉴 없이 설정만.
+async function budgetUser(teamId: string, opts: { write?: boolean; settings?: boolean; budget?: boolean } = {}) {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, viewScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
-  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.budget", action: "view", allowed: true });
-  if (opts.write !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.budget", action: "write", allowed: true });
+  if (opts.budget !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.budget", action: "view", allowed: true });
+  if (opts.budget !== false && opts.write !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.budget", action: "write", allowed: true });
+  if (opts.settings) {
+    for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.settings", action, allowed: true });
+  }
   for (const infoItem of ["budget.amount", "quote.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   return createFixtureUser({ roleId: role.id, teamId });
 }
@@ -84,6 +89,21 @@ async function openAs(browser: Browser, user: { email: string; password: string 
   await login(page, user);
   const response = await page.goto(url);
   return { page, context, response };
+}
+
+// 사용액 = 현재 차수 견적 줄 실행가 합(D-733) — 줄 하나를 직접 넣는다.
+async function addExecution(projectId: string, executionKrw: number): Promise<void> {
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
+  if (!revision) throw new Error("1차 차수가 없습니다");
+  await db.insert(quoteLines).values({
+    revisionId: revision.id,
+    subcategory: "기타",
+    itemName: `E2E실행-${randomUUID()}`,
+    unitPriceAmountKrw: executionKrw,
+    executionAmountKrw: executionKrw,
+    quoteAmountKrw: executionKrw,
+    profitKrw: 0,
+  });
 }
 
 function budgetTable(page: Page) {
@@ -123,5 +143,221 @@ test.describe("예산 현황 — 트레이서 (07-24 Task 1)", () => {
     await expect(denied.page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
     await expect(budgetTable(denied.page)).toHaveCount(0);
     await denied.context.close();
+  });
+});
+
+function historyPanel(page: Page) {
+  return page.getByRole("dialog", { name: "예산 이력" });
+}
+
+async function openHistory(page: Page, name: string) {
+  await budgetTable(page).locator("tbody tr", { hasText: name }).getByRole("button", { name: "예산 이력" }).click();
+  await expect(historyPanel(page)).toBeVisible();
+}
+
+test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
+  test("프로젝트 목록 머리 끝 링크 `예산 현황` — 보기 권한자만", async ({ browser }) => {
+    const team = await makeTeam();
+    const user = await budgetUser(team.teamId);
+    const { page, context } = await openAs(browser, user, "/projects");
+    await page.getByRole("link", { name: "예산 현황", exact: true }).click();
+    await expect(page).toHaveURL(/\/projects\/budget$/);
+    await context.close();
+
+    const other = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, teamId: team.teamId });
+    const denied = await openAs(browser, other, "/projects");
+    await expect(denied.page.getByRole("heading", { name: "프로젝트", exact: true })).toBeVisible();
+    await expect(denied.page.getByRole("link", { name: "예산 현황" })).toHaveCount(0);
+    await denied.context.close();
+  });
+
+  test("초과가 맨 위 · 상태 칸 `초과` · 합계 = 행 합 · `전체`면 완료 포함 · 계산 불가 `—` + 배지", async ({ browser }) => {
+    await setCostRate(70);
+    const team = await makeTeam();
+    const over = `E2E초과-${randomUUID().slice(0, 8)}`;
+    const calm = `E2E여유-${randomUUID().slice(0, 8)}`;
+    const done = `E2E완료-${randomUUID().slice(0, 8)}`;
+    const partial = `E2E불가-${randomUUID().slice(0, 8)}`;
+    const overId = await makeProject(team, over, 10_000_000);
+    await addExecution(overId, 9_000_000);
+    await makeProject(team, calm, 2_000_000);
+    const doneId = await makeProject(team, done, 1_000_000);
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, doneId));
+    const partialId = await makeProject(team, partial, null);
+    await db.update(projects).set({ preEstimateAmountKrw: 5_000_000 }).where(eq(projects.id, partialId));
+    const user = await budgetUser(team.teamId);
+
+    const { page, context } = await openAs(browser, user, "/projects/budget");
+    const rows = budgetTable(page).locator("tbody tr").filter({ hasText: /E2E/ });
+    await expect(rows.first()).toContainText(over);
+    const overRow = budgetTable(page).locator("tbody tr", { hasText: over });
+    await expect(overRow.getByText("초과", { exact: true })).toBeVisible();
+    await expect(overRow).toContainText("-2,000,000");
+    await expect(budgetTable(page).locator("tbody tr", { hasText: done })).toHaveCount(0);
+    // 합계 = 계산된 두 행(예산 700만 + 140만 · 사용 900만 · 남은 −60만), 계산 불가 행은 `—`와 배지.
+    const totals = page.getByRole("region", { name: "합계" });
+    await expect(totals).toContainText("8,400,000");
+    await expect(totals).toContainText("9,000,000");
+    await expect(totals).toContainText("-600,000");
+    await expect(totals).toContainText("계산 불가 1건");
+    await expect(budgetTable(page).locator("tbody tr", { hasText: partial })).toContainText("—");
+
+    await page.getByLabel("상태").selectOption("all");
+    await expect(page).toHaveURL(/status=all/);
+    await expect(budgetTable(page).locator("tbody tr", { hasText: done })).toHaveCount(1);
+    await context.close();
+  });
+
+  test("예산 이력 패널 — 산식 · 현재 값 · 최신 위 · 10줄 + 더 보기 · 프로젝트 열기 · 닫으면 그 행 링크로", async ({ browser }) => {
+    await setCostRate(70);
+    const team = await makeTeam();
+    const name = `E2E이력-${randomUUID().slice(0, 8)}`;
+    const id = await makeProject(team, name, 1_000_000);
+    for (let step = 2; step <= 11; step += 1) {
+      await saveProjectLedger(team.lead, id, { seenStatus: "in_progress", preEstimate: { currency: "KRW", amount: step * 1_000_000, fxRate: 1, fxRateTouched: false } });
+    }
+    const user = await budgetUser(team.teamId, { write: false });
+    const { page, context } = await openAs(browser, user, "/projects/budget");
+    await openHistory(page, name);
+    const panel = historyPanel(page);
+    await expect(panel.getByText("PO 금액 × 원가율", { exact: true })).toBeVisible();
+    await expect(panel).toContainText("7,700,000");
+    await expect(panel.locator('[data-ui="primary-button"]')).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "예산 바꾸기" })).toHaveCount(0);
+    const historyRows = panel.locator("table", { has: page.locator("caption", { hasText: "예산 이력" }) }).locator("tbody tr");
+    await expect(historyRows).toHaveCount(10);
+    await expect(historyRows.first()).toContainText("PO 금액 변경");
+    await expect(historyRows.first()).toContainText("+700,000");
+    await expect(panel).not.toContainText("₩");
+    await panel.getByRole("button", { name: "더 보기" }).click();
+    await expect(historyRows).toHaveCount(11);
+    await expect(panel.getByRole("button", { name: "더 보기" })).toHaveCount(0);
+    await expect(panel.getByRole("link", { name: "프로젝트 열기" })).toHaveAttribute("href", `/projects/${id}`);
+
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(budgetTable(page).locator("tbody tr", { hasText: name }).getByRole("button", { name: "예산 이력" })).toBeFocused();
+    await context.close();
+  });
+
+  test("예산 바꾸기 — 1차 등장 · 사유 필수 · 결과는 현재 값과 맨 위 줄 · Esc 두 단계", async ({ browser }) => {
+    await setCostRate(70);
+    const team = await makeTeam();
+    const name = `E2E수정-${randomUUID().slice(0, 8)}`;
+    await makeProject(team, name, 10_000_000);
+    const user = await budgetUser(team.teamId);
+    const { page, context } = await openAs(browser, user, "/projects/budget");
+    await openHistory(page, name);
+    const panel = historyPanel(page);
+    const edit = panel.getByRole("button", { name: "예산 바꾸기" });
+    await expect(panel.locator('[data-ui="primary-button"]')).toHaveCount(0);
+
+    await edit.click();
+    const budget = panel.getByLabel("예산", { exact: true });
+    await expect(budget).toBeFocused();
+    await expect(budget).toHaveValue("7,000,000");
+    await expect(panel.getByRole("button", { name: "예산 저장" })).toBeVisible();
+    await expect(panel.getByRole("button", { name: /취소/ })).toBeVisible();
+    // Esc 첫 번 = 편집만 닫힘(패널 남음 · 포커스 예산 바꾸기), 값 그대로.
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole("button", { name: "예산 저장" })).toHaveCount(0);
+    await expect(edit).toBeFocused();
+    await expect(panel).toContainText("7,000,000");
+
+    await edit.click();
+    await panel.getByLabel("예산", { exact: true }).fill("5000000");
+    await panel.getByRole("button", { name: "예산 저장" }).click();
+    await expect(panel.getByText("사유 · 입력")).toBeVisible();
+    await panel.getByLabel("사유", { exact: true }).fill("오입력 정정");
+    await panel.getByRole("button", { name: "예산 저장" }).click();
+    await expect(panel.getByRole("button", { name: "예산 저장" })).toHaveCount(0);
+    await expect(edit).toBeFocused();
+    await expect(panel.locator("dd").filter({ hasText: "5,000,000" })).toHaveCount(1);
+    const top = panel.locator("table", { has: page.locator("caption", { hasText: "예산 이력" }) }).locator("tbody tr").first();
+    await expect(top).toContainText("직접 수정");
+    await expect(top).toContainText("−2,000,000");
+    await expect(top).toContainText("오입력 정정");
+    await expect(page.locator('[data-ui="toast"]')).toHaveCount(0);
+
+    // 다음 Esc = 패널 닫기 · 포커스는 그 행 링크.
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(budgetTable(page).locator("tbody tr", { hasText: name }).getByRole("button", { name: "예산 이력" })).toBeFocused();
+    await expect(budgetTable(page).locator("tbody tr", { hasText: name })).toContainText("5,000,000");
+    await context.close();
+  });
+
+  test("원가율 비움 → 잠김 줄 + 설정으로 · 0 → 잠기지 않고 예산 0 행(이력 없음) · 대상 없음 → EMPTY", async ({ browser }) => {
+    const team = await makeTeam();
+    const name = `E2E영-${randomUUID().slice(0, 8)}`;
+    await setCostRate(null);
+    await makeProject(team, name, 3_000_000);
+    const user = await budgetUser(team.teamId, { settings: true });
+
+    const { page, context } = await openAs(browser, user, "/projects/budget");
+    await expect(page.getByText("원가율 미설정", { exact: true })).toBeVisible();
+    await expect(budgetTable(page)).toHaveCount(0);
+    await page.getByRole("link", { name: "시스템 설정에서 입력" }).click();
+    await expect(page).toHaveURL(/\/admin\/settings/);
+
+    await setCostRate(0);
+    await page.goto("/projects/budget");
+    const row = budgetTable(page).locator("tbody tr", { hasText: name });
+    await expect(row).toHaveCount(1);
+    await openHistory(page, name);
+    await expect(historyPanel(page).getByText("이력 없음", { exact: true })).toBeVisible();
+    await context.close();
+
+    const emptyTeam = await makeTeam();
+    const emptyUser = await budgetUser(emptyTeam.teamId);
+    const empty = await openAs(browser, emptyUser, "/projects/budget");
+    await expect(empty.page.getByText("예산이 있는 진행 프로젝트가 없습니다", { exact: true })).toBeVisible();
+    await empty.context.close();
+  });
+
+  test("원가율 첫 저장 결과 줄(U3) — `예산 N건 생성` + `예산 현황` · 다시 저장하면 없음 · 예산 권한 없으면 링크 없음", async ({ browser }) => {
+    const team = await makeTeam();
+    await setCostRate(null);
+    const ids = [await makeProject(team, `E2E첫저장-${randomUUID().slice(0, 8)}`, null), await makeProject(team, `E2E첫저장-${randomUUID().slice(0, 8)}`, null)];
+    for (const id of ids) await db.update(projects).set({ preEstimateAmountKrw: 4_000_000 }).where(eq(projects.id, id));
+    const user = await budgetUser(team.teamId, { settings: true });
+    const isServerAction = (response: { request: () => { method: () => string; headers: () => Record<string, string> } }) =>
+      response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined;
+
+    const { page, context } = await openAs(browser, user, "/admin/settings");
+    const projectSection = page.locator("section").filter({ has: page.getByRole("heading", { name: "프로젝트", exact: true }) });
+    const field = projectSection.getByLabel(PROJECT_COST_RATE_PCT.label, { exact: true });
+    await field.fill("12.5");
+    let saved = page.waitForResponse(isServerAction);
+    await field.blur();
+    await saved;
+    const result = projectSection.getByRole("status").filter({ hasText: "원가율 저장" });
+    await expect(result).toHaveText(/^원가율 저장 · 예산 \d+건 생성/);
+    await expect(result.getByRole("link", { name: "예산 현황" })).toHaveAttribute("href", "/projects/budget");
+    await expect(page.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
+    for (const id of ids) {
+      expect(await db.select().from(projectBudgetEntries).where(eq(projectBudgetEntries.projectId, id))).toHaveLength(1);
+    }
+
+    await field.fill("13");
+    saved = page.waitForResponse(isServerAction);
+    await field.blur();
+    await saved;
+    await expect(projectSection.getByRole("status").filter({ hasText: "원가율 저장" })).toHaveCount(0);
+    await context.close();
+
+    await setCostRate(null);
+    const settingsOnly = await budgetUser(team.teamId, { settings: true, budget: false });
+    const second = await openAs(browser, settingsOnly, "/admin/settings");
+    const secondSection = second.page.locator("section").filter({ has: second.page.getByRole("heading", { name: "프로젝트", exact: true }) });
+    const secondField = secondSection.getByLabel(PROJECT_COST_RATE_PCT.label, { exact: true });
+    await secondField.fill("12.5");
+    saved = second.page.waitForResponse(isServerAction);
+    await secondField.blur();
+    await saved;
+    await expect(secondSection.getByRole("status").filter({ hasText: "원가율 저장" })).toBeVisible();
+    await expect(secondSection.getByRole("link", { name: "예산 현황" })).toHaveCount(0);
+    await second.context.close();
   });
 });

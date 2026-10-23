@@ -86,7 +86,7 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
     for (const field of Object.values(fields)) await expect(page.locator(`#cf_${field.key}`)).toBeVisible();
     const businessNo = uniqueBusinessNo();
     await page.locator("#businessNo").fill(businessNo);
-    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await page.getByRole("button", { name: "거래처 저장" }).click();
 
     // 성공 — 목록으로 돌아가 새 사업자 번호가 보이고 폼이 닫힌다.
     await expect(page.locator("#vendor-form")).toHaveCount(0);
@@ -144,7 +144,7 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
     await page.goto(editHref);
     await expect(page.locator(`#cf_${field.key}`)).toHaveValue("연락처 값");
     await page.locator(`#cf_${field.key}`).fill("");
-    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await page.getByRole("button", { name: "거래처 저장" }).click();
 
     await expect(page.locator(`#cf_${field.key}-error`)).toHaveText(REQUIRED_VALUE_EMPTY_MESSAGE);
     await expect(page.locator("#vendor-form-reason")).toContainText(`수정할 수 없음 — ${fieldLabel} 1칸 · `);
@@ -211,14 +211,14 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
     await expect(page.locator("#vendor-form")).toBeVisible();
 
     await archiveE2EVendor(new URL(editHref, "http://x").searchParams.get("editId")!);
-    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await page.getByRole("button", { name: "거래처 저장" }).click();
 
     const reason = page.locator("#vendor-form-reason");
     const line = reason.locator("..");
     await expect(line).toContainText("수정할 수 없음 — 보관된 거래처 · 새로 불러오기");
     await expect(line.getByText("수정할 수 없음")).toHaveCount(1);
-    await expect(page.getByRole("button", { name: "거래처 수정" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "거래처 수정" })).toHaveAttribute("aria-describedby", /vendor-form-reason/);
+    await expect(page.getByRole("button", { name: "거래처 저장" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "거래처 저장" })).toHaveAttribute("aria-describedby", /vendor-form-reason/);
     await expect(reason.getByRole("button", { name: "새로 불러오기" })).toBeVisible();
     const form = page.locator("#vendor-form");
     await expect(form.getByText("다시 시도")).toHaveCount(0);
@@ -255,11 +255,11 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
     await expect(page.locator("#vendor-form")).toBeVisible();
 
     await setPermissionCell(SYSTEM_VIEWER, { roleId: editor.roleId, menu: "admin.vendors", action: "write", allowed: false });
-    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await page.getByRole("button", { name: "거래처 저장" }).click();
 
     const reason = page.locator("#vendor-form-reason");
     await expect(reason.locator("..")).toContainText("수정할 수 없음 — 권한 없음 · 새로 불러오기");
-    await expect(page.getByRole("button", { name: "거래처 수정" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "거래처 저장" })).toBeDisabled();
     await expect(page.locator("#vendor-form").getByText("다시 시도")).toHaveCount(0);
 
     await reason.getByRole("button", { name: "새로 불러오기" }).click();
@@ -331,7 +331,7 @@ test.describe("보관된 선택지가 현재 값 (04.5-06)", () => {
     // 다른 칸만 고쳐 저장 — 성공하고 다시 열어도 그대로다.
     const businessNo = uniqueBusinessNo();
     await page.locator("#businessNo").fill(businessNo);
-    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await page.getByRole("button", { name: "거래처 저장" }).click();
     await expect(page.locator("#vendor-form")).toHaveCount(0);
     await page.goto(hrefA);
     await expect(select.locator("option:checked")).toHaveText("구형 (보관됨)");
@@ -345,7 +345,7 @@ test.describe("보관된 선택지가 현재 값 (04.5-06)", () => {
     // 폼이 열린 사이 보관된 선택지를 새로 고르면 칸 오류 — 저장값은 그대로다.
     await select.selectOption("신형");
     await archiveE2EFieldDefinitionOption(field.id, "신형");
-    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await page.getByRole("button", { name: "거래처 저장" }).click();
     await expect(page.locator(`#cf_${field.key}-error`)).toHaveText(ARCHIVED_OPTION_MESSAGE);
     await expect(page.locator("#vendor-form-reason")).toContainText(`수정할 수 없음 — ${await labelOf(field.id)} 1칸 · `);
     await page.reload();
@@ -355,7 +355,7 @@ test.describe("보관된 선택지가 현재 값 (04.5-06)", () => {
     // 「선택 없음」을 고르면 필수 아님 칸은 지워진다.
     await page.goto(hrefA);
     await select.selectOption("");
-    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await page.getByRole("button", { name: "거래처 저장" }).click();
     await expect(page.locator("#vendor-form")).toHaveCount(0);
     await page.goto(hrefA);
     await expect(select).toHaveValue("");
@@ -381,7 +381,7 @@ test.describe("보관된 선택지가 현재 값 (04.5-06)", () => {
     await page.goto(href);
     await expect(select.locator("option:checked")).toHaveText("구형 (보관됨)");
     await select.selectOption("");
-    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await page.getByRole("button", { name: "거래처 저장" }).click();
     await expect(page.locator(`#cf_${field.key}-error`)).toHaveText(REQUIRED_SELECT_EMPTY_MESSAGE);
   });
 });

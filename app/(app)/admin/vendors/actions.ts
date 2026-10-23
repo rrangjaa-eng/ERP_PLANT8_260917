@@ -4,7 +4,18 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
-import { createVendor, updateVendor, setVendorHidden, revealAccountNumber, addVendorKind, DuplicateBusinessNoError, InvalidBusinessNoError } from "@/domain/vendors";
+import {
+  createVendor,
+  updateVendor,
+  setVendorHidden,
+  revealAccountNumber,
+  addVendorKind,
+  DuplicateBusinessNoError,
+  InvalidBusinessNoError,
+  PaymentTermDaysError,
+  VendorVersionConflictError,
+} from "@/domain/vendors";
+import { exportVendorsCsv } from "@/domain/vendors/export";
 import { CustomFieldsInvalidError } from "@/domain/custom-fields/preserve";
 import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { archive } from "@/domain/archive";
@@ -18,19 +29,24 @@ const customFieldsSchema = z.record(z.string(), z.unknown()).optional();
 // 04.5-05: 스키마는 모듈 안 비공개 상수 — "use server" 파일은 async 함수 밖을 내보낼 수 없다.
 const createVendorSchema = z.object({
   name: z.string().min(1, "이름 필요 · 이름 입력"),
-  kind: z.enum(VENDOR_KINDS, { error: "구분 필요 · 구분 고르기" }),
+  // D-745(SC-17): 갈래가 아닌 값은 거부 — 문구 `갈래 선택`.
+  kind: z.enum(VENDOR_KINDS, { error: "갈래 선택" }),
   businessNo: z.string().optional(),
   defaultEvidenceType: z.string().optional(),
   accountBank: z.string().optional(),
   accountHolder: z.string().optional(),
   accountNumber: z.string().optional(),
+  // 07-20 J5: 지급 기한(일) — null = 회사 기본. 범위 · 갈래 판정은 domain(PaymentTermDaysError).
+  paymentTermDays: z.number().nullable().optional(),
   customFields: customFieldsSchema,
 });
 
 const updateVendorSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1, "이름 필요 · 이름 입력"),
-  kind: z.enum(VENDOR_KINDS, { error: "구분 필요 · 구분 고르기" }),
+  kind: z.enum(VENDOR_KINDS, { error: "갈래 선택" }),
+  // 07-20 V3: 패널이 읽은 version — 그 사이 누가 고쳤으면 덮어쓰지 않는다(VendorVersionConflictError).
+  version: z.number().int(),
   businessNo: z.string().optional(),
   defaultEvidenceType: z.string().optional(),
   accountBank: z.string().optional(),
@@ -40,6 +56,7 @@ const updateVendorSchema = z.object({
   // 바꿈"으로 처리한다(편집 폼이 빈 칸을 그냥 보낼 수도 있어 액션 계층에서
   // 거부하면 자연스러운 "안 바꿈" 조작이 에러가 된다).
   accountNumber: z.string().nullable().optional(),
+  paymentTermDays: z.number().nullable().optional(),
   customFields: customFieldsSchema,
 });
 
@@ -74,6 +91,11 @@ function accountFieldErrors(error: AccountFieldsError): Record<string, { _errors
   return Object.fromEntries(Object.entries(error.fieldErrors).map(([key, message]) => [key, { _errors: [message] }]));
 }
 
+// 07-20 J5: 지급 기한 범위 · 갈래 오류는 그 칸 아래(validationErrors.paymentTermDays).
+function paymentTermDaysErrors(error: PaymentTermDaysError) {
+  return { paymentTermDays: { _errors: [error.message] } };
+}
+
 export const createVendorAction = authedActionClient
   .schema(createVendorSchema)
   .action(async ({ parsedInput, ctx }) => {
@@ -88,6 +110,7 @@ export const createVendorAction = authedActionClient
         returnValidationErrors(createVendorSchema, { customFields: customFieldErrors(error) });
       }
       if (error instanceof AccountFieldsError) returnValidationErrors(createVendorSchema, accountFieldErrors(error));
+      if (error instanceof PaymentTermDaysError) returnValidationErrors(createVendorSchema, paymentTermDaysErrors(error));
       throw error;
     }
   });
@@ -95,9 +118,9 @@ export const createVendorAction = authedActionClient
 export const updateVendorAction = authedActionClient
   .schema(updateVendorSchema)
   .action(async ({ parsedInput, ctx }) => {
-    const { id, ...input } = parsedInput;
+    const { id, version, ...input } = parsedInput;
     try {
-      const vendor = await updateVendor(ctx.viewer, id, input);
+      const vendor = await updateVendor(ctx.viewer, id, { ...input, expectedVersion: version });
       revalidatePath("/admin/vendors");
       return { vendor };
     } catch (error) {
@@ -107,6 +130,9 @@ export const updateVendorAction = authedActionClient
         returnValidationErrors(updateVendorSchema, { customFields: customFieldErrors(error) });
       }
       if (error instanceof AccountFieldsError) returnValidationErrors(updateVendorSchema, accountFieldErrors(error));
+      if (error instanceof PaymentTermDaysError) returnValidationErrors(updateVendorSchema, paymentTermDaysErrors(error));
+      // 07-20 V3: 패널 상단 FormAlert + `새로 불러오기`를 그리도록 데이터로 돌려준다(입력은 덮어쓰지 않았다).
+      if (error instanceof VendorVersionConflictError) return { versionConflict: error.message };
       throw error;
     }
   });
@@ -118,7 +144,7 @@ export const setVendorHiddenAction = authedActionClient
     revalidatePath("/admin/vendors");
   });
 
-// 「구분 더하기」 — 같은 사업자번호 거래처의 갈래만 켠다.
+// 「갈래 더하기」 — 같은 사업자번호 거래처의 갈래만 켠다.
 export const addVendorKindAction = authedActionClient
   .schema(z.object({ id: z.string().min(1), kind: z.enum(["client", "supplier"]), businessNo: z.string() }))
   .action(async ({ parsedInput, ctx }) => {
@@ -142,3 +168,8 @@ export const archiveVendorAction = authedActionClient
     revalidatePath("/admin/vendors");
     revalidatePath("/admin/archive");
   });
+
+// 07-20 V1 · D-736: 필터 줄 `파일 받기` — 목록과 같은 거르개로 서버가 CSV를 만든다(domain/vendors/export.ts).
+export const exportVendorsCsvAction = authedActionClient
+  .schema(z.object({ includeHidden: z.boolean(), kind: z.enum(["client", "supplier"]).nullable(), q: z.string() }))
+  .action(async ({ parsedInput, ctx }) => exportVendorsCsv(ctx.viewer, parsedInput));

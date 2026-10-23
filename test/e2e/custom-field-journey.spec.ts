@@ -53,7 +53,7 @@ async function expectHiddenFrom(page: Page, editHref: string, vendorName: string
   expect(listHtml).not.toContain(label);
   expect(listHtml).not.toContain(value);
   await page.goto(editHref);
-  await expect(page.getByRole("button", { name: "거래처 수정" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "거래처 저장" })).toBeVisible();
   const editHtml = await page.content();
   expect(editHtml).not.toContain(label);
   expect(editHtml).not.toContain(value);
@@ -113,7 +113,7 @@ test("관리 화면에서 만든 칸: 추가 → 보임 → 값 저장 → 계�
     await expectHiddenFrom(editorPage, editHref!, vendorName, label, value);
     const businessNo = uniqueBusinessNo();
     await editorPage.locator("#businessNo").fill(businessNo);
-    await editorPage.getByRole("button", { name: "거래처 수정" }).click();
+    await editorPage.getByRole("button", { name: "거래처 저장" }).click();
     await expect(editorPage.locator("#vendor-form")).toHaveCount(0);
     await expect(editorPage.locator("tr", { hasText: vendorName })).toContainText(businessNo);
 
@@ -130,7 +130,7 @@ test("관리 화면에서 만든 칸: 추가 → 보임 → 값 저장 → 계�
     await expect(listRow(page, label)).toHaveCount(0);
 
     await page.goto(editHref!);
-    await expect(page.getByRole("button", { name: "거래처 수정" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "거래처 저장" })).toBeVisible();
     await expect(page.getByLabel(label, { exact: true })).toHaveCount(0);
     expect(await page.content()).not.toContain(value);
     await page.goto("/admin/visibility");

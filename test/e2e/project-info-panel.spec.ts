@@ -144,6 +144,45 @@ test.describe("PO 번호 · 고치기 하나 (N1 · D-737)", () => {
     await expect(panel.getByText("PO-CANCEL")).toHaveCount(0);
   });
 
+  test("저장 직후 틴트 600ms 안에 PO 번호를 다시 고치면 묶음이 닫히지 않고 새 값이 남는다", async ({ page }) => {
+    const { lead, project } = await setup();
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await openProjectInfoEdit(page);
+
+    const panel = projectInfo(page);
+    const poNumber = panel.getByLabel("PO 번호", { exact: true });
+    await poNumber.fill("PO-FIRST");
+    const saving = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await saving;
+
+    await poNumber.fill("PO-SECOND");
+    await page.waitForTimeout(1_200);
+    await expect(poNumber).toHaveValue("PO-SECOND");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+  });
+
+  test("저장 직후 틴트 안에 `고치기 취소` 뒤 다시 열고 고치면 낡은 닫기가 새 묶음을 닫지 않는다", async ({ page }) => {
+    const { lead, project } = await setup();
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await openProjectInfoEdit(page);
+
+    const panel = projectInfo(page);
+    await panel.getByLabel("PO 번호", { exact: true }).fill("PO-FIRST");
+    const saving = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await saving;
+
+    await panel.getByRole("button", { name: "고치기 취소", exact: true }).click();
+    await panel.getByRole("button", { name: "고치기", exact: true }).click();
+    const poNumber = panel.getByLabel("PO 번호", { exact: true });
+    await poNumber.fill("PO-SECOND");
+    await page.waitForTimeout(1_200);
+    await expect(poNumber).toHaveValue("PO-SECOND");
+  });
+
   test("첫 Esc는 원래 값으로 돌리고 칸은 열려 있으며, 두 번째 Esc가 닫고 포커스가 `고치기`로 온다", async ({ page }) => {
     const { lead, project } = await setup();
     await login(page, lead);

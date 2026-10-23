@@ -1452,6 +1452,17 @@ export function QuoteLedger({
 
   // S13 · S17 · 07-18 — 저장 성공: 600ms --accent-weak 틴트 뒤 묶음(기간 · PO 금액 · PO 번호)이 함께 닫힌다(prefers-reduced-motion이면 바로).
   // 표 밖 면이라 개정 11 대상 밖 — 07-12-SUMMARY 「표 밖 --accent-weak」 그 화면 플랜 몫.
+  const infoCloseTimerRef = useRef<number | null>(null);
+  function cancelInfoCloseTimer() {
+    if (infoCloseTimerRef.current === null) return;
+    window.clearTimeout(infoCloseTimerRef.current);
+    infoCloseTimerRef.current = null;
+    setInfoSaved(false);
+  }
+  useEffect(() => () => {
+    if (infoCloseTimerRef.current !== null) window.clearTimeout(infoCloseTimerRef.current);
+  }, []);
+
   function closeInfoEditAfterSave() {
     const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
@@ -1459,7 +1470,8 @@ export function QuoteLedger({
       return;
     }
     setInfoSaved(true);
-    window.setTimeout(() => {
+    infoCloseTimerRef.current = window.setTimeout(() => {
+      infoCloseTimerRef.current = null;
       setInfoSaved(false);
       closeInfoEdit();
     }, 600);
@@ -1473,6 +1485,7 @@ export function QuoteLedger({
     preEstimateDraft && preEstimateBaselineDraft ? preEstimateDirtyCount(preEstimateDraft, preEstimateBaselineDraft) : 0;
 
   function changePreEstimate(next: PreEstimateDraft) {
+    cancelInfoCloseTimer();
     persistPendingRef.current = true;
     setPreEstimateErrors([]);
     setPreEstimateDraft(next);
@@ -1484,6 +1497,7 @@ export function QuoteLedger({
     : 0;
 
   function changePeriod(next: PeriodDraft) {
+    cancelInfoCloseTimer();
     persistPendingRef.current = true;
     setPeriodErrors([]);
     setPeriodDraft(next);
@@ -1496,6 +1510,7 @@ export function QuoteLedger({
 
   // 묶음을 연다(펼친 면에서 `고치기` · 상태 모달 · 빈 표 `기간 바꾸기` · 복원이 모두 이 길). 이미 열린 칸은 그대로 두고 면을 펼친 뒤 요청한 칸에 포커스한다.
   function openInfoEdit(focus: "start" | "end" = "start") {
+    cancelInfoCloseTimer();
     setInfoOpen(true);
     setPeriodFocus(focus);
     setPeriodDraft((prev) => prev ?? { start: periodBaseline.startDate ?? "", end: periodBaseline.endDate ?? "" });
@@ -1510,11 +1525,13 @@ export function QuoteLedger({
   }
 
   function changePoNumber(next: string) {
+    cancelInfoCloseTimer();
     persistPendingRef.current = true;
     setPoNumberDraft(next);
   }
 
   function closeInfoEdit() {
+    cancelInfoCloseTimer();
     persistPendingRef.current = true;
     setRestoredPeriodBase(null);
     setPeriodErrors([]);

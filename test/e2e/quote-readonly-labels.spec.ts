@@ -63,7 +63,8 @@ test("보기만 하는 계급도 견적 원장에서 소분류·거래처를 이
 // 편집 계정 · 보기 전용 계정 모두 이름으로 읽고, 끈 분류는 편집 선택지에 나오지 않는다.
 test("비활성 견적 분류를 쓰던 줄도 편집 · 보기 전용 계정 모두 이름으로 보고, 선택지엔 그 분류가 없다", async ({ page }) => {
   const suffix = randomUUID().slice(0, 8);
-  const item = await insertCodeItem(SYSTEM_VIEWER, { tableKey: "quote_subcategory", value: `e2e_off_${suffix}`, label: `끈분류-${suffix}` });
+  // 정렬 900 — 정렬 0이면 잠깐 켜진 동안 다른 스펙의 「첫 활성 소분류」 고르기(quote-revisions 등)에 잡혀, 곧 끈 뒤 그쪽 저장이 거부된다.
+  const item = await insertCodeItem(SYSTEM_VIEWER, { tableKey: "quote_subcategory", value: `e2e_off_${suffix}`, label: `끈분류-${suffix}`, sortOrder: 900 });
   const viewerRoleId = `role-e2e-readonly-${randomUUID()}`;
   await insertRole(SYSTEM_VIEWER, { id: viewerRoleId, name: `E2E 보기만 ${viewerRoleId.slice(-12)}`, sortOrder: 99, workScope: "company", viewScope: "company" });
   for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: "role-ceo" })) {

@@ -71,7 +71,8 @@ describe("07-06 Task 1 — 상세 DTO 유효 예정일 (D-715 · D-714)", () => 
     expect(first?.scheduledPaymentManual).toBe(false);
 
     const { version } = await columnsOf(expenseId);
-    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: version, fields: { scheduledPaymentDate: first?.scheduledPaymentDate ?? null, note: "왕복" } });
+    // 07-16(D-714): 작성자 입력에는 지급 예정일 키가 없다 — 되돌려 보낼 길 자체가 없어 저장은 다른 칸만 싣는다.
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: version, fields: { note: "왕복" } });
     expect(await columnsOf(expenseId)).toMatchObject({ date: null, setBy: null, setAt: null });
     const again = await getExpense(fx.pm, { expenseId });
     expect(again).toMatchObject({ scheduledPaymentDate: first?.scheduledPaymentDate, scheduledPaymentManual: false, note: "왕복" });

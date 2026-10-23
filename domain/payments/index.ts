@@ -23,7 +23,9 @@ import {
   CANCEL_REASON_REQUIRED,
   DIFF_REASON_REQUIRED,
   FUTURE_PAY_DATE,
+  NOT_BUSINESS_DAY,
   resolveExpenseActionRow,
+  THIS_WEEK_PASSED,
   TRANSFER_FRACTION,
   TRANSFER_NOT_NUMBER,
   TRANSFER_NOT_POSITIVE,
@@ -642,8 +644,6 @@ export async function cancelExpensePayment(
 // 예정일만 바꾼다(미래 날짜 허용 — Q6). 권한 · 보임은 트랜잭션 전, 공휴일 표도 트랜잭션 전(후보 보장이 쓰기라 행 잠금 tx와 겹치지 않게).
 // 한 트랜잭션: 문서 행 FOR UPDATE → version → 결재 통과(같은 tx) → 살아 있는 지급 없음 → 영업일(null = 자동 복귀는 판정 없음) →
 // 조건 UPDATE(예정일 · 기록 칸 · version + 1) → 끌 수 없는 행동 로그 payment_schedule_change(전후 날짜, 같은 tx).
-const NOT_BUSINESS_DAY = "영업일만 선택 · 다시 선택";
-const THIS_WEEK_PASSED = "이번 주 지급일 지남";
 const NOT_PUSHED = "마감 지나 밀림 아님 · 새로 고침";
 
 async function writeScheduledPayDate(

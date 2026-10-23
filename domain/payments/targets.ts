@@ -223,7 +223,8 @@ export async function listAllPaymentTargets(
 export type PaymentTargetGroup = { label: string; tone?: "warning"; rows: Partial<PaymentTargetRowDto>[] };
 
 // 07-01(J11 데이터 — 화면은 07-16): 지금 승인되면 이번 주 · 다음 주에 들어갈 결재 중 지출결의. groups · total에는 들어가지 않는다.
-export type ApprovingPaymentWeek = { label: string; count: number; sumKrw: number | null; rows: Partial<ApprovingPaymentRowDto>[] };
+// page = 이 하위 그룹이 서는 쪽 — 그 주 지급 대상 그룹의 마지막 행이 있는 쪽, 그 주 지급 대상이 없으면 1쪽(07-16 감사 #4 — 쪽마다 되풀이하지 않는다).
+export type ApprovingPaymentWeek = { label: string; count: number; sumKrw: number | null; rows: Partial<ApprovingPaymentRowDto>[]; page: number };
 
 export type PaymentTargetList = {
   groups: PaymentTargetGroup[];
@@ -315,13 +316,19 @@ export async function listPaymentTargets(
   // EP1-13: 검색도 필터다 — 검색으로 0건이어도 「필터 없이 하나라도 있나」를 q 없이 다시 센다.
   const filtered = Boolean(input.evidence) || Boolean(input.team) || normalizeListQuery(input.q) !== null;
   const hasAny = all.length > 0 || (filtered && (await listAllPaymentTargets(viewer, {}, { ...deps, today, shared })).length > 0);
+  const lastIndexOf = new Map<string, number>();
+  all.forEach((target, index) => lastIndexOf.set(payWeekGroupLabel(target.schedule, today).label, index));
+  const approvingByWeek = (await listApprovingByWeek(viewer, input, { shared, today, now: deps?.now ?? new Date(), amountVisible })).map((week) => {
+    const last = lastIndexOf.get(week.label);
+    return { ...week, page: last === undefined ? 1 : Math.floor(last / pageSize) + 1 };
+  });
   return {
     groups,
     total: amountVisible ? { count: all.length, sumKrw: sumKrw(all.map((target) => target.payableKrw ?? 0)) } : null,
     hasAny,
     page: { page, pageCount, total: all.length, pageSize },
     prepaidDueDays: all.some((target) => target.row.prepaid) ? await loadPrepaidDueDays() : 0,
-    approvingByWeek: await listApprovingByWeek(viewer, input, { shared, today, now: deps?.now ?? new Date(), amountVisible }),
+    approvingByWeek,
     thisWeekMove: await thisWeekMoveOf(today),
   };
 }
@@ -338,7 +345,7 @@ async function listApprovingByWeek(
   viewer: Viewer,
   input: { team?: string | null; q?: string | null },
   ctx: { shared: PaymentShared; today: string; now: Date; amountVisible: boolean },
-): Promise<ApprovingPaymentWeek[]> {
+): Promise<Omit<ApprovingPaymentWeek, "page">[]> {
   const teamId = input.team && UUID_SHAPE.test(input.team) ? input.team : null;
   const search = await buildExpenseSearch(viewer, "paymentTargets", input.q);
   const rows = await visibleRows(viewer, await listApprovingPaymentTargetRows(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, teamId, ...(search ? { search } : {}) }), ctx.today);

@@ -45,6 +45,12 @@ export const INACTIVE_EVIDENCE_TYPE = "쓰지 않는 증빙 종류 · 증빙 종
 export const INACTIVE_PAYMENT_METHOD = "쓰지 않는 지급 방식 · 지급 방식 고르기";
 // 06-10(A#19 · EXP-13): 선결제 표시 · 사유 빔 — 저장 거부와 제출 막힘이 같은 글자다.
 export const PREPAID_REASON_REQUIRED = "선결제 사유 없음 · 사유 적기";
+// 07-16(SC-02 · D-714 · AQ-10): 희망 지급일 · 희망 사유 칸 오류(domain/expenses/draft-fields.ts requestedPaymentErrors). 폼이 글자로 칸을 가른다(선결제 사유와 같은 꼴).
+export const REQUESTED_REASON_REQUIRED = "희망 사유 · 입력";
+export const REQUESTED_DATE_PAST = "오늘 이후 날짜 · 다시 선택";
+export const REQUESTED_DATE_MISSING = "희망 지급일 없음 · 날짜 선택";
+// 사용자 결정 2026-10-23: 제출 때 저장된 희망일이 지났으면(저장은 날짜를 바꿀 때만 과거를 본다).
+export const REQUESTED_DATE_PASSED = "희망일 지남";
 
 export type ExpenseSubmitFacts = {
   // ① 견적 줄 문서의 현재 차수 고객 승인 사실(팀 비용 null).

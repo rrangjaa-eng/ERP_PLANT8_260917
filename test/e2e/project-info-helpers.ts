@@ -25,6 +25,11 @@ export async function openProjectInfoEdit(page: Page): Promise<void> {
   const panel = projectInfo(page);
   await panel.getByRole("button", { name: "고치기", exact: true }).click();
   await expect(panel.getByRole("button", { name: "고치기 취소", exact: true })).toBeVisible();
+  // 묶음을 열면 화면이 시작일로 포커스를 옮긴다(칸 마운트 효과 + 다음 프레임 rAF). 그 포커스가 끝나기 전에 다른 칸을
+  // fill하면 바쁜 CI에서 rAF가 fill의 focus와 입력 사이에 끼어 글자가 시작일(date)로 샌다 — 둘 다 끝난 뒤 돌려준다.
+  // 앞서 걸린 rAF가 먼저 불리므로 한 프레임을 기다리면 화면의 rAF도 지난 것이다.
+  await expect(panel.getByLabel("시작일", { exact: true })).toBeFocused();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 }
 
 // `고치기 취소` — 묶음 전체 원복 + 닫기 + 포커스 `고치기`.

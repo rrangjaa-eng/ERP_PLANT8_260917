@@ -112,6 +112,8 @@ describe("트레이서 — 월차 적립 → 연차 최종 승인 → 월차부�
     await setResignationDate(SYSTEM_VIEWER, org.lead.id, "2026-09-20");
     expect((await listOrgSnapshot(SYSTEM_VIEWER, "2026-09-24")).map((row) => row.id)).not.toContain(org.lead.id);
 
+    // F24(카드 2026-10-23 12:34 KST): 퇴직자의 퇴직일은 비우기만 — 다른 날짜는 비운 뒤 다시 넣는다(두 단계).
+    await setResignationDate(SYSTEM_VIEWER, org.lead.id, null);
     await setResignationDate(SYSTEM_VIEWER, org.lead.id, "2026-09-24");
     expect((await listOrgSnapshot(SYSTEM_VIEWER, "2026-09-24")).map((row) => row.id)).toContain(org.lead.id);
   });

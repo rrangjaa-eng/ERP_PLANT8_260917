@@ -28,6 +28,7 @@ import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { testVendorAccount } from "../integration/fixtures/expenses";
 import { archiveTempRoles, insertTempRole, makeEvidenceManagerE2E, uniqueReceipt } from "./expense-fixture";
 import { loginPage, makePerson, setupLeaveOrg, waitForHydration, type LeaveOrg } from "./leave-org";
+import { projectInfo } from "./project-info-helpers";
 
 // 06-19(PROJ-06 · UI-SPEC S18): 정산 프로젝트 상세의 「완료 전 점검」 섹션과 머리 줄 `정산 결재 올리기` 막힘이 한 판정이다.
 // 준비는 도메인 함수(지출결의 제출만 화면 — 증빙 업로드가 브라우저 경로다). 줄 하나 · 발행 줄 1건이라 막힘은 반려 지출결의 1건뿐이다.
@@ -111,7 +112,7 @@ async function setupSettling(browser: Browser, baseURL: string | undefined, outc
   if (!lineId) throw new Error("견적 줄이 없습니다");
   await changeProjectStatus(org.teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(org.drafter.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(org.drafter.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   await saveRevenue(SYSTEM_VIEWER, project.id, {
     issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: `${lastYear}-12-31`, amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }],
   });
@@ -274,7 +275,7 @@ async function setupUnmatchedSettling(
   await changeProjectStatus(org.teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
   if (line.approve !== false) {
     const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-    await setCustomerApproval(org.drafter.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+    await setCustomerApproval(org.drafter.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   }
   if (line.issued) {
     await saveRevenue(SYSTEM_VIEWER, project.id, { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: today, amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }] });
@@ -549,7 +550,7 @@ test.describe("완료 전 점검 — 섹션 마감(S18 · 06-22)", () => {
     const pending = section.getByRole("button", { name: "1차 고객 승인 전", exact: true });
     await waitForHydration(pending);
     await pending.click();
-    await expect(page.getByRole("button", { name: /^고객 승인 표시/ })).toBeFocused();
+    await expect(projectInfo(page).getByRole("button", { name: "승인 표시", exact: true })).toBeFocused();
   });
 
   test("점검 실패 — 섹션 자리 `점검 불러오지 못함` + 2차 `다시 시도` · `정산 결재 올리기` aria-disabled + `점검 결과 없음` · 3차 `다시 시도`", async ({ browser, baseURL }) => {

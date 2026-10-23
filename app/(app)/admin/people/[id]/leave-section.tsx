@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
+import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -12,6 +13,7 @@ import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { addLeaveAdjustmentAction, setHireDateAction, setResignationDateAction } from "./actions";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
+import peopleStyles from "../people.module.css";
 import { DayNumbers } from "@/app/(app)/leave/day-numbers";
 
 // 04.1-06 S9 — 관리자 사람 상세 `연차` 섹션. 2px 섹션 선 + 제목(발령 이력 섹션과 같은 모양), 칸은 단일 기둥 720 ·
@@ -33,8 +35,14 @@ export type LeaveSectionProps = {
   datesVisible: boolean;
   adjustments: LeaveAdjustmentRow[];
   canWrite: boolean;
-  // 06.4(D-6417 · R2): 대상 계급이 상한 밖이면 퇴직일 칸만 그리지 않는다(입사일 칸은 그대로) — 기본 참.
-  resignationWritable?: boolean;
+  // 06.4(D-6417 · R2) · 07-17 독립 검토 M1: 대상 계급이 상한 밖이면 입사일 · 퇴직일 칸을 그리지 않는다 — 기본 참.
+  datesWritable?: boolean;
+  // F24: 퇴직자는 입사일 칸을 그리지 않는다(퇴직일 칸은 재입사 경로라 남김) — 기본 참.
+  hireDateWritable?: boolean;
+  // 07-17 R15: 대상 계급이 상한 밖이면 연차 조정 추가 폼도 그리지 않는다 — 기본 참.
+  adjustWritable?: boolean;
+  // 카드 2026-10-23 11:14 KST: 퇴직자는 퇴직한 해 연차 조정만 — 월차 옵션을 이유 줄 없이 뺀다. 기본 거짓.
+  annualOnly?: boolean;
   // 오늘 기준 월차 조정 거부 이유(04.1-03 checkLeaveAdjustment 문구 그대로) — 있으면 `월차` 옵션을 뺀다(CX-R5).
   monthlyBlockedReason: string | null;
 };
@@ -52,7 +60,7 @@ const COLUMNS: TableColumn<LeaveAdjustmentRow>[] = [
 ];
 
 function EmploymentDate({ userId, id, label, initial, kind }: { userId: string; id: string; label: string; initial: string | null; kind: "hire" | "resignation" }) {
-  // 06.4(D-6417 · R2): 상한 밖 대상은 퇴직일 칸 없음 · 거부되면 저장값으로
+  // 06.4(D-6417 · R2) · 07-17 M1: 상한 밖 대상은 날짜 칸 없음 · 거부되면 저장값으로
   const savedRef = useRef(initial ?? "");
   const [value, setValue] = useState(initial ?? "");
   const callbacks = {
@@ -65,22 +73,22 @@ function EmploymentDate({ userId, id, label, initial, kind }: { userId: string; 
   const resignation = useAction(setResignationDateAction, callbacks);
   const { execute, result } = kind === "hire" ? hire : resignation;
   const error = result.serverError ?? result.validationErrors?.date?._errors?.[0];
+  // 07-17 N10(SC-15): 공용 TextField — 라벨 · 오류 줄은 TextField 것, blur 저장 · 짧은 칸 폭은 그대로.
   return (
-    <Form.Field id={id} label={label} width="short">
-      <input
+    <div className={peopleStyles.leaveField}>
+      <TextField
         id={id}
+        label={label}
         type="date"
         value={value}
-        className={leaveStyles.textInput}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${id}-error` : undefined}
+        className={peopleStyles.inputShort}
+        error={error}
         onChange={(event) => setValue(event.target.value)}
         onBlur={() => {
           if (value !== savedRef.current) execute({ userId, date: value });
         }}
       />
-      {error ? <Form.Error id={`${id}-error`}>{error}</Form.Error> : null}
-    </Form.Field>
+    </div>
   );
 }
 
@@ -90,7 +98,8 @@ export function LeaveSection(props: LeaveSectionProps) {
   const [amountDays, setAmountDays] = useState("");
   const [reason, setReason] = useState("");
   // 고른 `월차`를 쓸 수 없게 되면(입사일 재저장 뒤 재렌더) 선택값을 `연차`로 되돌린다(CX2-03).
-  if (monthlyBlockedReason && bucket === "monthly") setBucket("annual");
+  const monthlyAllowed = !monthlyBlockedReason && props.annualOnly !== true;
+  if (!monthlyAllowed && bucket === "monthly") setBucket("annual");
   const { execute, result, isExecuting } = useAction(addLeaveAdjustmentAction, {
     onSuccess: ({ data }) => {
       if (data && "added" in data) {
@@ -103,7 +112,7 @@ export function LeaveSection(props: LeaveSectionProps) {
   const rejected = result.data && "rejected" in result.data ? result.data.rejected : null;
   const fieldError = (field: string) => (rejected?.field === field ? rejected.message : undefined);
   const fiscalYearError = fieldError("fiscalYear") ?? result.validationErrors?.fiscalYear?._errors?.[0];
-  const bucketOptions = [{ value: "annual", label: "연차" }, ...(monthlyBlockedReason ? [] : [{ value: "monthly", label: "월차" }])];
+  const bucketOptions = [{ value: "annual", label: "연차" }, ...(monthlyAllowed ? [{ value: "monthly", label: "월차" }] : [])];
   const primaryLabel = year !== thisYear && bucket === "annual" ? `${year} 연차 조정 추가` : "연차 조정 추가";
   const reasonBlocked = reason.trim() === "";
 
@@ -118,12 +127,12 @@ export function LeaveSection(props: LeaveSectionProps) {
     <div role="region" aria-label="연차">
       <DetailScreen.Section title="연차">
         <div className="single-column">
-          {canWrite && props.datesVisible ? (
+          {canWrite && props.datesVisible && props.datesWritable !== false ? (
             <Form onSubmit={(event) => event.preventDefault()}>
-              <EmploymentDate userId={userId} id="hireDate" label="입사일" initial={props.hireDate} kind="hire" />
-              {props.resignationWritable !== false ? (
-                <EmploymentDate userId={userId} id="resignationDate" label="퇴직일" initial={props.resignationDate} kind="resignation" />
+              {props.hireDateWritable !== false ? (
+                <EmploymentDate userId={userId} id="hireDate" label="입사일" initial={props.hireDate} kind="hire" />
               ) : null}
+              <EmploymentDate userId={userId} id="resignationDate" label="퇴직일" initial={props.resignationDate} kind="resignation" />
             </Form>
           ) : null}
           {/* `잔고` 줄 — 사람 상세 위 KvList와 dl을 겹치지 않게(단일 기둥 단언은 main의 dl 하나를 잰다) 라벨 · 값 한 묶음으로. */}
@@ -154,7 +163,7 @@ export function LeaveSection(props: LeaveSectionProps) {
               </div>
             </div>
           </div>
-          {canWrite ? (
+          {canWrite && props.adjustWritable !== false ? (
             <Form id="leave-adjustment-form" onSubmit={handleSubmit}>
               <Form.Field id="adjustBucket" label="잔고" width="select">
                 <Select
@@ -166,40 +175,39 @@ export function LeaveSection(props: LeaveSectionProps) {
                 />
                 {monthlyBlockedReason ? <Form.Hint>{monthlyBlockedReason}</Form.Hint> : null}
               </Form.Field>
-              <Form.Field id="adjustDays" label="일수" width="short">
-                <input
+              {/* 07-17 N10(SC-15): 일수 · 사유는 공용 TextField — 오류가 있으면 오류 줄이 힌트 자리를 대신한다(이관 전과 같음). */}
+              <div className={peopleStyles.leaveField}>
+                <TextField
                   id="adjustDays"
+                  label="일수"
                   type="text"
                   inputMode="decimal"
                   autoComplete="off"
                   value={amountDays}
                   onChange={(event) => setAmountDays(event.target.value)}
-                  className={leaveStyles.textInput}
-                  aria-invalid={fieldError("amountDays") ? true : undefined}
-                  aria-describedby={fieldError("amountDays") ? "adjustDays-error" : "adjustDays-hint"}
+                  className={peopleStyles.inputShort}
+                  error={fieldError("amountDays")}
+                  hintId={fieldError("amountDays") ? undefined : "adjustDays-hint"}
                 />
-                {fieldError("amountDays") ? (
-                  <Form.Error id="adjustDays-error">{fieldError("amountDays")}</Form.Error>
-                ) : (
-                  <span id="adjustDays-hint">
-                    <Form.Hint>빼려면 -1처럼</Form.Hint>
-                  </span>
+                {fieldError("amountDays") ? null : (
+                  <p id="adjustDays-hint" className={peopleStyles.leaveHint}>
+                    빼려면 -1처럼
+                  </p>
                 )}
-              </Form.Field>
-              <Form.Field id="adjustReason" label="사유" width="long">
-                <input
+              </div>
+              <div className={peopleStyles.leaveField}>
+                <TextField
                   id="adjustReason"
+                  label="사유"
                   type="text"
                   maxLength={500}
                   autoComplete="off"
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
-                  className={leaveStyles.textInput}
-                  aria-invalid={fieldError("reason") ? true : undefined}
-                  aria-describedby={fieldError("reason") ? "adjustReason-error" : undefined}
+                  className={peopleStyles.inputLong}
+                  error={fieldError("reason")}
                 />
-                {fieldError("reason") ? <Form.Error id="adjustReason-error">{fieldError("reason")}</Form.Error> : null}
-              </Form.Field>
+              </div>
               <Form.Actions>
                 <Button
                   type="submit"

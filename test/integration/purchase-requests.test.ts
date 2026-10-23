@@ -185,7 +185,7 @@ async function setStatus(projectId: string, status: string): Promise<void> {
 // 06-34(G-06-D): 고객 승인 표시 — 진행 · 정산 프로젝트의 구매 요청 신청은 최신 차수가 승인돼 있어야 한다.
 async function approve(fx: PurchaseFx): Promise<void> {
   const basis = await approvalBasis(SYSTEM_VIEWER, fx.revisionId);
-  await setCustomerApproval(fx.pm, fx.revisionId, { approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(fx.pm, fx.revisionId, { approvalBasis: "verbal", approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
 }
 
 async function nextRevision(fx: PurchaseFx): Promise<{ revisionId: string; copyOf: (lineId: string) => Promise<string> }> {

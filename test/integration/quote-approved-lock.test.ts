@@ -73,7 +73,7 @@ async function quoteTotal(revisionId: string): Promise<number> {
 
 async function approve(pm: Viewer, revisionId: string) {
   const basis = await approvalBasis(SYSTEM_VIEWER, revisionId);
-  await setCustomerApproval(pm, revisionId, { approvedOn: kstToday(new Date()), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(pm, revisionId, { approvalBasis: "verbal", approvedOn: kstToday(new Date()), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
   return basis.totalKrw;
 }
 

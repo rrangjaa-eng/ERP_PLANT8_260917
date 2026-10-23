@@ -1,14 +1,18 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
-import { getPerson } from "@/domain/people";
+import { getPerson, isRetiredOn } from "@/domain/people";
+import { RETIRED_EDIT_MESSAGE, retirementYearOf } from "@/domain/people/retired";
 import { assignableRoleIds, listAssignableRoles } from "@/domain/permissions/roles";
 import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
 import { listOrgUnits, listTeams } from "@/domain/org";
 import { KvList } from "@/ui/kv-list/KvList";
+import { Form } from "@/ui/form/Form";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
-import { PersonRoleChange, PersonHistorySection } from "./person-detail-client";
+import { PersonLoginActions, PersonRoleChange, PersonHistorySection } from "./person-detail-client";
+import { personLoginStatus, personLoginWord } from "../person-status";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { seoulToday } from "@/lib/dates";
 import { kstDateOf } from "@/lib/kst-date";
 import { getLeaveBalanceForUser, listLeaveAdjustmentsForUser } from "@/domain/leave/balance-service";
@@ -60,7 +64,7 @@ export default async function PersonDetailPage({
 
   const { id } = await params;
   const [detail, roles, orgUnits, teams] = await Promise.all([
-    getPerson(session.viewer, id),
+    getPerson(session.viewer, id, { withLock: true }),
     listAssignableRoles(session.viewer),
     listOrgUnits(session.viewer),
     listTeams(session.viewer),
@@ -100,6 +104,19 @@ export default async function PersonDetailPage({
   const showRoleChange = canWrite && session.viewer.id !== id && "roleId" in detail.person;
   const targetOutOfCeiling = currentRoleId !== null && !assignableCurrent.has(currentRoleId);
   const lockedReason = targetOutOfCeiling || roles.length === 0 ? GRANT_FORBIDDEN_MESSAGE : null;
+  // 07-17 SC-12 · R15 · D-728: 로그인 섹션 — `로그인 상태` 한 값(노출표가 잠김 키를 가리면 섹션 없음). 두 행동은 쓰기 · 자기 아님 ·
+  // 보관 아님 · 상한 안에서만, `잠금 풀기`는 잠긴 재직자에게만(퇴직자는 값 `퇴직`). 상한 밖이면 연차 조정 · 이력 추가 · 날짜 칸도 그리지 않는다.
+  // 사용자 결정(2026-10-23): 퇴직자는 `비밀번호 초기화`도 없다(서버 resetPersonPassword가 같은 판정으로 거부).
+  const loginWord = "locked" in detail.person ? personLoginWord(personLoginStatus(detail.person, today)) : null;
+  const loginWritable =
+    canWrite && session.viewer.id !== id && !detail.person.archivedAt && !targetOutOfCeiling && loginWord !== "퇴직";
+  // 사용자 결정 F24(카드 2026-10-23 10:02 KST): 퇴직자는 어떤 정보도 고치지 못한다(260907 `server/src/people.ts:792-797`) —
+  // 계급 · 입사일 · 연차 조정 · 계좌 바꾸기 · 새 이력 추가를 그리지 않고 잠김 한 줄. 퇴직일 칸은 재입사 경로라 남긴다(서버도 같은 판정).
+  const retiredDate = detail.person.resignationDate ?? current.resignationDate ?? null;
+  const retired = isRetiredOn(retiredDate, today);
+  const editable = !targetOutOfCeiling && !retired;
+  // 사용자 결정(카드 2026-10-23 11:14 KST) 「퇴직한 해 연차 조정만 허용」: 퇴직자는 퇴직한 해를 볼 때만 연차 조정 폼(연차만)이 있다.
+  const adjustable = !targetOutOfCeiling && (!retired || (retiredDate !== null && leaveYear === retirementYearOf(retiredDate)));
   const balanceLines = balance.annual
     ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null, resignation: balance.resignation ?? null }).map((line) => line.text)
     : [];
@@ -135,10 +152,27 @@ export default async function PersonDetailPage({
           ]}
         />
 
-        {showRoleChange ? (
+        {retired && (canWrite || payoutAccount !== null) ? <Form.Hint>{RETIRED_EDIT_MESSAGE}</Form.Hint> : null}
+        {showRoleChange && !retired ? (
           <PersonRoleChange userId={id} roles={roles} currentRoleId={currentRoleId} lockedReason={lockedReason} />
         ) : null}
       </div>
+
+      {loginWord ? (
+        // 섹션 틀은 `DetailScreen.Section` — 접근 가능한 이름은 바깥 region이 지킨다(연차 · 지급 계좌와 같은 꼴).
+        <div role="region" aria-label="로그인">
+          <DetailScreen.Section title="로그인">
+            <div className="single-column">
+              <KvList
+                items={[
+                  { label: "로그인 상태", value: loginWord === "정상" ? "정상" : <StatusTag status={loginWord} variant="text" /> },
+                ]}
+              />
+              {loginWritable ? <PersonLoginActions userId={id} name={detail.person.name} canUnlock={loginWord === "잠김"} /> : null}
+            </div>
+          </DetailScreen.Section>
+        </div>
+      ) : null}
 
       <LeaveSection
         userId={id}
@@ -151,19 +185,25 @@ export default async function PersonDetailPage({
         adjustments={adjustmentRows}
         // 사용자 결정(2026-09-29 A) — 자기 연차 · 입사일 · 퇴직일은 바꾸지 못한다(서버도 거부) — 쓰기 칸을 그리지 않는다.
         canWrite={canWrite && session.viewer.id !== id}
-        resignationWritable={!targetOutOfCeiling}
-        monthlyBlockedReason={blocked?.field === "bucket" ? blocked.message : null}
+        datesWritable={!targetOutOfCeiling}
+        hireDateWritable={!retired}
+        adjustWritable={adjustable}
+        annualOnly={retired}
+        monthlyBlockedReason={!retired && blocked?.field === "bucket" ? blocked.message : null}
       />
 
-      {payoutView ? <PayoutAccountSection userId={id} account={payoutView} canReveal={canRevealAccount} editHref={editAccountHref} /> : null}
-      {payoutView && query.editAccount === "1" ? (
+      {/* 사용자 결정(2026-10-23): 상한 밖 대상은 지급 계좌를 바꾸지 못한다 — `계좌 바꾸기` · 패널 없음(서버 updatePersonPayoutAccount 상한). */}
+      {payoutView ? (
+        <PayoutAccountSection userId={id} account={payoutView} canReveal={canRevealAccount} editHref={editable ? editAccountHref : null} />
+      ) : null}
+      {payoutView && editable && query.editAccount === "1" ? (
         <SidePanel title="지급 계좌 수정" closeHref={baseHref}>
           <PayoutAccountPanel userId={id} account={payoutView} />
         </SidePanel>
       ) : null}
 
       {/* §3 데이터 표 예외 — 발령 이력 표는 .single-column 밖, 전체 폭(260922-o2b 후속). */}
-      <PersonHistorySection userId={detail.person.id} teamOptions={teamOptions} entries={entries} />
+      <PersonHistorySection userId={detail.person.id} teamOptions={teamOptions} entries={entries} canAdd={canWrite && editable} />
     </DetailScreen>
   );
 }

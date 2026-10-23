@@ -115,7 +115,7 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
 
   await changeProjectStatus(org.teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(org.drafter.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(org.drafter.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
 
   return {
     pm: org.drafter,

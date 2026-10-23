@@ -438,7 +438,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     if (!current) throw new Error("현재 차수가 없다");
     const second = await createRevisionFromCurrent(fx.pm.viewer, { projectId: fx.projectId, fromRevisionId: current.id });
     const basis = await approvalBasis(SYSTEM_VIEWER, second.revisionId);
-    await setCustomerApproval(fx.pm.viewer, second.revisionId, { approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+    await setCustomerApproval(fx.pm.viewer, second.revisionId, { approvalBasis: "verbal", approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
 
     await page.goto(`/expenses/${expenseId}`);
     await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));

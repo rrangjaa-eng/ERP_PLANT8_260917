@@ -58,6 +58,8 @@ describe("등록부 (SC-07 순서 · D-718 · D-744)", () => {
       "quote-nudge",
       // 07-23 계좌 바뀜은 여기(견적 재촉과 임자 없는 증빙 사이)에 끼운다.
       "orphan-evidence",
+      // 07-22 수금 지연 — SC-07 마지막 행.
+      "collection-overdue",
     ]);
     // D-718: 구매 처리 결과 알림은 없다.
     expect(names.filter((name) => /purchase/i.test(name))).toEqual([]);

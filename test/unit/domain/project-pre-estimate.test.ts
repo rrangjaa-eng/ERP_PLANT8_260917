@@ -14,7 +14,7 @@ describe("validatePreEstimateChange — 결정표", () => {
 
   it("음수 금액 → 금액 칸 「총 매출 예상가는 0 이상」", () => {
     expect(validatePreEstimateChange({ currency: "KRW", amount: -1, fxRate: 1 })).toEqual([
-      { field: "amount", reason: "총 매출 예상가는 0 이상 · 금액 수정" },
+      { field: "amount", reason: "PO 금액은 0 이상 · 금액 수정" },
     ]);
   });
 
@@ -50,7 +50,7 @@ describe("validatePreEstimateChange — 결정표", () => {
 
   it("금액과 환율이 둘 다 틀리면 칸마다 하나씩", () => {
     expect(validatePreEstimateChange({ currency: "USD", amount: -5, fxRate: 0 })).toEqual([
-      { field: "amount", reason: "총 매출 예상가는 0 이상 · 금액 수정" },
+      { field: "amount", reason: "PO 금액은 0 이상 · 금액 수정" },
       { field: "fxRate", reason: "환율 0 이하 · 환율 수정" },
     ]);
   });

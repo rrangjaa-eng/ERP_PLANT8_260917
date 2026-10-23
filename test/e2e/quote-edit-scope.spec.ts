@@ -11,6 +11,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertVendor } from "@/repositories/vendors";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { chooseApprovalBasis, expandProjectInfo, openProjectInfoEdit, projectInfo, submitApproval } from "./project-info-helpers";
 
 // 04-30(D-78 · 사용자 D10·D12 · UI-SPEC rev 5 S4) — 견적 표의 편집 범위가 서버 셀 단계(DTO cellEditability)와
 // 구조 판정(structuralEditability)대로 그려지는지. 날짜는 전부 오늘(KST)에서 더해 만든다(A-18). 계급 권한·정보
@@ -645,7 +646,7 @@ const hintRow = (page: Page) => page.locator("p", { has: page.locator("kbd", { h
 const primarySave = (page: Page) => page.getByRole("button", { name: /일괄 저장/ });
 
 async function changePeriodEnd(page: Page, value: string) {
-  await page.locator("#period-open").click();
+  await openProjectInfoEdit(page);
   await page.locator("#period-end").fill(value);
 }
 
@@ -800,17 +801,20 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await expect(primarySave(page)).toContainText("일괄 저장 1");
 
     await page.reload();
+    // 토스트는 4초 뒤 스스로 사라진다 — 면 펼치기는 토스트 전에 하고, 토스트 뒤에는 패널 열기 · 근거 고르기 · 제출만 남긴다.
+    await expandProjectInfo(page);
     await page.getByRole("button", { name: "버림", exact: true }).click();
     const undoToast = page.getByRole("status").filter({ hasText: "편집을 버렸습니다" });
     await expect(undoToast).toBeVisible();
 
-    await page.getByRole("button", { name: "고객 승인 표시", exact: true }).click();
+    await projectInfo(page).getByRole("button", { name: "승인 표시", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "고객 승인 표시", exact: true });
-    const approved = page.waitForResponse((response) => response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined);
-    await dialog.getByRole("button", { name: /고객 승인 표시/ }).click();
-    await approved;
+    await chooseApprovalBasis(dialog, "verbal");
+    // 참여자 목록 읽기 같은 다른 서버 액션 응답이 먼저 오지 않게 승인 요청만 기다린다.
+    await submitApproval(page, dialog.getByRole("button", { name: /^승인 표시/ }));
 
-    await expect(undoToast).toHaveCount(0, { timeout: 1000 });
+    // 승인 뒤 새로 고침이 칸을 잠그며 거둔다 — 승인 응답 뒤 화면 다시 그림(개발 서버 약 1.5초)까지 기다리되 자동 소멸(4초)보다 짧게 본다.
+    await expect(undoToast).toHaveCount(0, { timeout: 2500 });
     await expect(page.getByRole("status").filter({ hasText: "되돌리기" })).toHaveCount(0);
   });
 

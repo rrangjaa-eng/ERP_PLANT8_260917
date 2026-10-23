@@ -4,7 +4,9 @@ import { scopeFor } from "@/domain/permissions/scope-for";
 import { project, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
+import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertSeatsFree, newSeats } from "@/domain/people/seat-rules";
+import { assertNotRetiredInTx } from "@/domain/people/retired";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
 import { findUserById as repoFindUserById, type UserRow } from "@/repositories/users";
@@ -294,7 +296,11 @@ export async function assignTeam(
   await withTransaction(async (tx) => {
     // 06.4 /cso: 발령할 팀(보관이어도)의 팀 · 본부 키도 같은 층 정렬로 먼저 — 팀 복원과 줄 서고 뒤 자리 키는 다시 기다리지 않는다.
     await lockSeatKeys(viewer, { personIds: [input.userId], teamIds: [input.teamId] }, tx);
+    // F24: 퇴직자는 발령하지 못한다(260907 `people.ts:792-797`).
+    await assertNotRetiredInTx(viewer, input.userId, today, tx);
     const person = await repoFindUserById(viewer, input.userId, tx);
+    // 07-17 R15: 대상 계급이 내 상한 밖이면 발령하지 못한다 — 화면 숨김은 UX일 뿐(퇴직일 진입점과 같은 잠금 뒤 재조회 판정).
+    await assertCanGrantRoles(viewer, [person?.roleId ?? null], tx);
     const before = await listOccupiedTeams(viewer, input.userId, today, tx);
     const row = await insertMembership(viewer, input, tx);
     const after = await listOccupiedTeams(viewer, input.userId, today, tx);
@@ -347,7 +353,11 @@ export async function cancelFutureAssignment(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
     await lockSeatKeys(viewer, { personIds: [input.userId] }, tx);
+    // F24: 퇴직자의 미래 발령도 취소하지 못한다(260907 `people.ts:792-797`).
+    await assertNotRetiredInTx(viewer, input.userId, today, tx);
     const person = await repoFindUserById(viewer, input.userId, tx);
+    // 07-17 R15: 대상 계급이 내 상한 밖이면 미래 발령도 취소하지 못한다 — assignTeam과 같은 잠금 뒤 재조회 판정.
+    await assertCanGrantRoles(viewer, [person?.roleId ?? null], tx);
     const before = await listOccupiedTeams(viewer, input.userId, today, tx);
     const deletedId = await deleteMembership(viewer, input.userId, input.effectiveFrom, tx);
     if (deletedId === null) {

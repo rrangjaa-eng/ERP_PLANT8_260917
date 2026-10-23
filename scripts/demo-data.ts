@@ -189,7 +189,7 @@ async function teamIdByName(name: string): Promise<string> {
 
 async function approveRevision(viewer: Viewer, revisionId: string, approvedOn: string): Promise<void> {
   const basis = await approvalBasis(SYSTEM_VIEWER, revisionId);
-  await setCustomerApproval(viewer, revisionId, { approvedOn, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await setCustomerApproval(viewer, revisionId, { approvalBasis: "verbal", approvedOn, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
 }
 
 // 증빙 파일은 행만 넣는다 — 저장소 객체가 없어 화면의 「증빙 열기」는 동작하지 않는다(제출 게이트의 증빙 1개 이상만 채운다).

@@ -361,7 +361,7 @@ async function makeVendorHiddenPerson(): Promise<Person> {
 }
 
 test.describe("행 행동 갈래", () => {
-  test("거래처 없는 줄은 글자 `거래처 없음` + 3차 `거래처 고르기`(누르면 그 줄 거래처 셀 편집), 취소 줄 셀은 비어 있다", async ({ browser, baseURL }) => {
+  test("거래처 없는 줄은 글자 `거래처 없음` + 3차 `거래처 고르기`(누르면 그 줄 거래처 셀 편집), 취소 줄 셀은 이유 낱말 `취소된 줄`만", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
     await page.goto(`/projects/${fx.projectId}`);
@@ -374,7 +374,8 @@ test.describe("행 행동 갈래", () => {
     await expect(rowOf(page, fx.lines.noVendor.itemName).getByRole("gridcell").nth(VENDOR_COLUMN).getByRole("combobox", { name: "거래처" })).toBeVisible();
 
     const cancelled = doorCellOf(page, fx.lines.cancelled.itemName);
-    await expect(cancelled).toHaveText("");
+    // 07-18(SC-22) — 버튼 대신 이유 낱말
+    await expect(cancelled).toHaveText("취소된 줄");
     await expect(cancelled.getByRole("button")).toHaveCount(0);
     await expect(cancelled.getByRole("link")).toHaveCount(0);
   });

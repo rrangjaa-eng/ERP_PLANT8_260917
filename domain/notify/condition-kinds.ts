@@ -8,6 +8,7 @@ import { payWeekAlertKind } from "@/domain/notify/kinds/pay-week-alert";
 import { prepaidEvidenceKind } from "@/domain/notify/kinds/prepaid-evidence";
 import { projectEndNoExpenseKind } from "@/domain/notify/kinds/project-end-no-expense";
 import { proxyRegisteredKind } from "@/domain/notify/kinds/proxy-registered";
+import { collectionOverdueKind } from "@/domain/notify/kinds/collection-overdue";
 import { quoteNudgeKind } from "@/domain/notify/kinds/quote-nudge";
 import { rejectedIdleKind } from "@/domain/notify/kinds/rejected-idle";
 import { settleNudgeKind } from "@/domain/notify/kinds/settle-nudge";
@@ -23,6 +24,8 @@ export type NotificationCandidate = {
   // YYYY-MM-DD(KST) — 조건이 가리키는 날. 상한으로 자를 때 오래된 건 우선의 기준.
   referenceDate: string;
   message: string;
+  // 07-22(G-61) — 받는 사람의 계급. 종류에 recipientInfoItem이 있으면 tick이 이 계급의 정보 항목 노출로 거른다(없으면 버린다).
+  recipientRoleId?: string | null;
 };
 
 export type EvaluateContext = {
@@ -49,6 +52,8 @@ export type ConditionKind = {
   ladder?: boolean;
   // 규칙 화면 읽기 줄의 기본 받는 사람 글자(07-19) — 판정과 무관.
   defaultRecipientLabel: string;
+  // 07-22(G-61 · D-748) — 받는 사람의 계급이 이 정보 항목을 볼 때만 행(담당 PM · 받는 계급 추가 모두). 없으면 거르지 않는다.
+  recipientInfoItem?: string;
   evaluate(ctx: EvaluateContext): Promise<NotificationCandidate[]>;
 };
 
@@ -68,4 +73,6 @@ export const CONDITION_KINDS: readonly ConditionKind[] = [
   rejectedIdleKind,
   quoteNudgeKind,
   orphanEvidenceKind,
+  // 07-22(N22 · D-716) 수금 지연 — SC-07 마지막 행(07-23 계좌 바뀜은 견적 재촉과 임자 없는 증빙 사이).
+  collectionOverdueKind,
 ];

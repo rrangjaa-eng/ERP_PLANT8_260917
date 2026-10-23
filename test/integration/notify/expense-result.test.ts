@@ -17,6 +17,7 @@ import { runTick } from "@/domain/notify/tick";
 import type { Viewer } from "@/domain/viewer";
 import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "../fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired } from "../fixtures/payments";
+import { backdateActionLog } from "@/test/support/action-log-backdate";
 
 // 07-14 결재 결과(N11 · N19 · D-716 · D-744) — 꺼 둔 사건 종류. 켠 규칙의 고정 되돌아보기 창(하한 enabled_at) 안 사건을 사건 id 키로 한 번.
 // 2026-10-16 금 · 17 토 · 19 월 · 20 화.
@@ -200,7 +201,9 @@ describe("결재 결과 — 반려 · 금액 바뀜 · 지급 완료 · 지급 �
     await moveActedAt(doc.instanceId, "2026-10-10T15:00:00+09:00");
     const payer = await makePayer();
     await confirmEvidence(payer, { expenseId: doc.expenseId, version: await versionOf(doc.expenseId), correctedSupplyAmount: 12_000_000 });
-    await db.update(actionLog).set({ occurredAt: new Date("2026-10-16T15:00:00+09:00") }).where(and(eq(actionLog.actionType, "evidence_amount_change"), eq(actionLog.entityId, doc.expenseId)));
+    // 07-13 action_log 불변 트리거 — 시각 당기기는 시험 전용 backdateActionLog로만.
+    const [logged] = await db.select({ seq: actionLog.seq }).from(actionLog).where(and(eq(actionLog.actionType, "evidence_amount_change"), eq(actionLog.entityId, doc.expenseId)));
+    await backdateActionLog(logged!.seq, new Date("2026-10-16T15:00:00+09:00"));
     await tick([expenseResultKind], "2026-10-19");
     await tick([expenseResultKind], "2026-10-20");
     const changed = byWord(await rowsOf(fx.pm), "금액 바뀜");
@@ -217,7 +220,9 @@ describe("결재 결과 — 반려 · 금액 바뀜 · 지급 완료 · 지급 �
     await moveActedAt(doc.instanceId, "2026-10-10T15:00:00+09:00");
     const payer = await makePayer();
     await waiveEvidence(payer, { expenseId: doc.expenseId, version: await versionOf(doc.expenseId), reason: "현장 영수증 분실" });
-    await db.update(actionLog).set({ occurredAt: new Date("2026-10-16T15:00:00+09:00") }).where(and(eq(actionLog.actionType, "evidence_waive"), eq(actionLog.entityId, doc.expenseId)));
+    // 07-13 action_log 불변 트리거 — 시각 당기기는 시험 전용 backdateActionLog로만.
+    const [logged] = await db.select({ seq: actionLog.seq }).from(actionLog).where(and(eq(actionLog.actionType, "evidence_waive"), eq(actionLog.entityId, doc.expenseId)));
+    await backdateActionLog(logged!.seq, new Date("2026-10-16T15:00:00+09:00"));
     await tick([expenseResultKind], "2026-10-19");
     await tick([expenseResultKind], "2026-10-20");
     const closed = byWord(await rowsOf(fx.pm), "증빙 없이 닫힘");

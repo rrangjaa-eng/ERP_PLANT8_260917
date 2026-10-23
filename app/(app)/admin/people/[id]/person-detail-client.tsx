@@ -1,11 +1,16 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
-import { changePersonRoleAction, assignTeamAction, cancelAssignmentAction } from "../actions";
+import { changePersonRoleAction, assignTeamAction, cancelAssignmentAction, unlockPersonAction } from "../actions";
+import { resetPersonPasswordAction } from "./actions";
+import { Button } from "@/ui/button/Button";
+import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
 import { Form } from "@/ui/form/Form";
+import { Select } from "@/ui/select/Select";
 import styles from "../people.module.css";
 
 function errorMessageOf(result: { serverError?: unknown; validationErrors?: unknown }): string | null {
@@ -52,32 +57,105 @@ export function PersonRoleChange({
 
   return (
     <>
-      <div className={styles.selectLabel}>
-        <label htmlFor="person-role-change">계급 변경</label>
-        <select
-          id="person-role-change"
-          className={styles.select}
-          value={value}
-          aria-busy={isExecuting || undefined}
-          onChange={(event) => {
-            if (isExecuting) return;
-            setValue(event.target.value);
-            executeRoleChange({ userId, roleId: event.target.value });
-          }}
-        >
-          {hasCurrentRole ? null : (
-            <option value="" disabled>
-              계급 선택
-            </option>
-          )}
-          {roles.map((role) => (
-            <option key={role.id} value={role.id}>
-              {role.name}
-            </option>
-          ))}
-        </select>
+      {/* 07-17 N10(SC-15): 공용 Select — 즉시 저장 · 저장 중 aria-busy · 오류 줄(Select 것)은 그대로. */}
+      <div className={styles.roleChange}>
+        <Form.Field id="person-role-change" label="계급 변경" width="select">
+          <Select
+            id="person-role-change"
+            hideEmptyOption
+            value={value}
+            aria-busy={isExecuting || undefined}
+            error={roleError ?? undefined}
+            options={[
+              ...(hasCurrentRole ? [] : [{ value: "", label: "계급 선택" }]),
+              ...roles.map((role) => ({ value: role.id, label: role.name })),
+            ]}
+            onChange={(event) => {
+              // 「계급 선택」(빈 값)은 고를 수 없던 자리 — 저장하지 않는다(이관 전 disabled 옵션과 같은 결과).
+              if (isExecuting || event.target.value === "") return;
+              setValue(event.target.value);
+              executeRoleChange({ userId, roleId: event.target.value });
+            }}
+          />
+        </Form.Field>
       </div>
-      {roleError ? <p className={styles.registeredHint}>{roleError}</p> : null}
+    </>
+  );
+}
+
+// 07-17 SC-12(N4 · D-P2-2 · D-P2-7): 상세 로그인 섹션의 두 행동. `잠금 풀기` 성공의 결과는 위 `로그인 상태` 값 변화뿐(토스트 · 결과 줄 없음 —
+// 액션이 상세 경로를 재검증한다). `비밀번호 초기화`는 확인 모달 → 같은 창 결과 단계. 임시 비밀번호는 이 컴포넌트 상태에만 있고
+// `닫기`가 지운다 — 토스트 · URL · console에 넣지 않고, 화면 갱신은 값과 무관한 `router.refresh`로 한다.
+const RESET_BUTTON_ID = "person-password-reset";
+
+export function PersonLoginActions({ userId, name, canUnlock }: { userId: string; name: string; canUnlock: boolean }) {
+  const router = useRouter();
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+
+  async function unlock() {
+    if (unlocking) return;
+    setUnlocking(true);
+    const result = await unlockPersonAction({ personId: userId }).catch(() => undefined);
+    setUnlocking(false);
+    if (!result || result.serverError || result.validationErrors) {
+      setUnlockError(typeof result?.serverError === "string" ? result.serverError : "잠금 풀기 실패 · 다시 시도");
+      return;
+    }
+    setUnlockError(null);
+    // 사라지는 `잠금 풀기` 자리 — 같은 줄에 남는 `비밀번호 초기화`로.
+    document.getElementById(RESET_BUTTON_ID)?.focus();
+  }
+
+  async function reset() {
+    if (resetting) return;
+    setResetting(true);
+    const result = await resetPersonPasswordAction({ personId: userId }).catch(() => undefined);
+    setResetting(false);
+    if (!result?.data) {
+      setResetError(typeof result?.serverError === "string" ? result.serverError : "비밀번호 초기화 실패 · 다시 시도");
+      return;
+    }
+    setTempPassword(result.data.tempPassword);
+    router.refresh();
+  }
+
+  function close() {
+    setOpen(false);
+    setTempPassword(null);
+    setResetError(null);
+  }
+
+  return (
+    <>
+      <div className={styles.loginActions}>
+        {canUnlock ? (
+          <Button variant="tertiary" pending={unlocking} onClick={() => void unlock()}>
+            잠금 풀기
+          </Button>
+        ) : null}
+        <Button id={RESET_BUTTON_ID} variant="tertiary" onClick={() => setOpen(true)}>
+          비밀번호 초기화
+        </Button>
+      </div>
+      {unlockError ? (
+        <p role="alert" className={`${styles.resultLine} ${styles.resultFailed}`}>
+          {unlockError}
+        </p>
+      ) : null}
+      <ConfirmDialog
+        open={open}
+        onClose={close}
+        title="비밀번호 초기화"
+        subtitle={name}
+        resultLines={["기존 비밀번호는 쓸 수 없게 됨 · 잠금도 풀림"]}
+        primary={{ label: "비밀번호 초기화", onConfirm: () => void reset(), pending: resetting, disabledReason: resetError ?? undefined }}
+        result={tempPassword === null ? undefined : { label: "임시 비밀번호", value: tempPassword }}
+      />
     </>
   );
 }
@@ -86,10 +164,13 @@ export function PersonHistorySection({
   userId,
   teamOptions,
   entries,
+  canAdd = true,
 }: {
   userId: string;
   teamOptions: { value: string; label: string }[];
   entries: HistoryEntry[];
+  // 07-17 R15: 상한 밖 대상이면 「새 이력 추가」를 그리지 않는다.
+  canAdd?: boolean;
 }) {
   const { executeAsync: executeAssign } = useAction(assignTeamAction);
   const { executeAsync: executeCancel } = useAction(cancelAssignmentAction);
@@ -101,6 +182,7 @@ export function PersonHistorySection({
         valueKind={{ kind: "enum", options: teamOptions }}
         idPrefix={`person-team-history-${userId}`}
         caption="소속 발령 이력"
+        canAdd={canAdd}
         onAdd={async ({ effectiveFrom, value }) => {
           const result = await executeAssign({ userId, teamId: value, effectiveFrom });
           const message = errorMessageOf(result ?? {});

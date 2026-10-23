@@ -1,15 +1,26 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { createExpenseFromLines, saveExpenseDraft } from "@/domain/expenses";
+import { approvalInstances, expenses } from "@/db/schema";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { rejectDocument, withdrawDocument } from "@/domain/approvals";
+import { createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND, ExpenseFieldError, getExpense, saveExpenseDraft } from "@/domain/expenses";
+import { REQUESTED_DATE_PASSED, REQUESTED_DATE_PAST, REQUESTED_REASON_REQUIRED } from "@/domain/expenses/gate";
+import { seoulToday } from "@/lib/dates";
 import { listCodeItems } from "@/repositories/code-tables";
-import { setupExpenseProject } from "./fixtures/expenses";
+import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 
 // 05-16 — `/expenses/new`에서 비고 · 지급 예정일 · 지급 방식을 적은 뒤 견적 줄을 고르면 그 값이 만들어지는 작성 중 문서에 같이 저장된다
 // (줄 값만으로 만들고 적은 칸을 지우던 것을 고침). 저장은 insert 한 번이라 값과 문서가 함께 생기거나 함께 안 생긴다.
-// 07-01(D-714 · D-742 계약 변경): 지급 예정일 수동 지정은 지급 권한자 길뿐 — 작성자가 보낸 지급 예정일은 형식만 검증하고 칸에 쓰지 않는다.
+// 07-01(D-714 · D-742 계약 변경): 지급 예정일 수동 지정은 지급 권한자 길뿐. 07-16(B-P1-1): 작성자 입력에는 지급 예정일 키가 없고 희망 지급일 · 희망 사유
+// 한 쌍을 싣는다 — 아래 사례는 같은 뜻(작성자 날짜는 예정일 칸에 쓰이지 않는다)을 희망 칸으로 옮긴 것이다.
+
+function daysFromToday(days: number): string {
+  const at = new Date(`${seoulToday()}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + days);
+  return at.toISOString().slice(0, 10);
+}
 
 async function rowOf(expenseId: string) {
   const [row] = await db.select().from(expenses).where(eq(expenses.id, expenseId)).limit(1);
@@ -25,42 +36,51 @@ async function lastPaymentMethod(): Promise<string> {
 }
 
 describe("줄에서 만들 때 적어 둔 칸을 같이 저장", () => {
-  it("비고 · 지급 방식은 새 작성 중 문서에 저장되고, 지급 예정일을 보내도 칸은 NULL(D-714)", async () => {
+  it("비고 · 희망 지급일 · 희망 사유 · 지급 방식은 새 작성 중 문서에 저장되고 지급 예정일 칸은 NULL(D-714)", async () => {
     const fx = await setupExpenseProject();
     const paymentMethod = await lastPaymentMethod();
+    const hope = daysFromToday(10);
     const result = await createExpenseFromLines(fx.pm, {
       lineIds: [fx.lines.withVendor],
-      fields: { note: "현장 정산 건", scheduledPaymentDate: "2026-11-20", paymentMethod },
+      fields: { note: "현장 정산 건", requestedPaymentDate: hope, requestedPaymentReason: "  행사 전 선금 ", paymentMethod },
     });
     const expenseId = result.created[0]?.expenseId ?? "";
     const row = await rowOf(expenseId);
     expect(row.note).toBe("현장 정산 건");
+    expect(row).toMatchObject({ requestedPaymentDate: hope, requestedPaymentReason: "행사 전 선금" });
     expect(row.scheduledPaymentDate).toBeNull();
     expect(row.paymentMethod).toBe(paymentMethod);
     expect(row.quoteLineId).toBe(fx.lines.withVendor);
   });
 
-  it("칸 없이 부르면 비고 · 지급 예정일은 비어 있다(기존 동작)", async () => {
+  it("칸 없이 부르면 비고 · 희망 칸 · 지급 예정일은 비어 있다(기존 동작)", async () => {
     const fx = await setupExpenseProject();
     const result = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
     const row = await rowOf(result.created[0]?.expenseId ?? "");
     expect(row.note).toBeNull();
+    expect(row).toMatchObject({ requestedPaymentDate: null, requestedPaymentReason: null });
     expect(row.scheduledPaymentDate).toBeNull();
   });
 
   it("null · 생략한 칸은 줄 기본값 그대로다(지급 방식은 첫 코드)", async () => {
     const fx = await setupExpenseProject();
     const first = (await listCodeItems(SYSTEM_VIEWER, { tableKey: "payment_method", scope: { rows: "all", includeArchived: false }, includeInactive: false }))[0]?.value;
-    const result = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { note: "비고만", scheduledPaymentDate: null, paymentMethod: null } });
+    const result = await createExpenseFromLines(fx.pm, {
+      lineIds: [fx.lines.withVendor],
+      fields: { note: "비고만", requestedPaymentDate: null, requestedPaymentReason: null, paymentMethod: null },
+    });
     const row = await rowOf(result.created[0]?.expenseId ?? "");
     expect(row.note).toBe("비고만");
-    expect(row.scheduledPaymentDate).toBeNull();
+    expect(row.requestedPaymentDate).toBeNull();
     expect(row.paymentMethod).toBe(first);
   });
 
-  it("일반 저장과 같은 검증 — 날짜 형식이 틀리거나 비고가 너무 길면 거부하고 문서를 만들지 않는다", async () => {
+  it("일반 저장과 같은 검증 — 희망일 형식이 틀리거나 · 희망일만 있거나(사유 칸 오류) · 비고가 너무 길면 거부하고 문서를 만들지 않는다", async () => {
     const fx = await setupExpenseProject();
-    await expect(createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { scheduledPaymentDate: "2026/11/20" } })).rejects.toThrow();
+    await expect(createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { requestedPaymentDate: "2026/11/20" } })).rejects.toThrow();
+    const onlyDate = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { requestedPaymentDate: daysFromToday(3) } }).catch((e: unknown) => e);
+    expect(onlyDate).toBeInstanceOf(ExpenseFieldError);
+    expect(onlyDate).toMatchObject({ field: "requestedPaymentReason", message: REQUESTED_REASON_REQUIRED });
     await expect(createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { note: "가".repeat(1001) } })).rejects.toThrow();
     const none = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.quoteLineId, fx.lines.withVendor));
     expect(none).toHaveLength(0);
@@ -74,17 +94,112 @@ describe("줄에서 만들 때 적어 둔 칸을 같이 저장", () => {
     expect((await rowOf(first.created[0]?.expenseId ?? "")).note).toBe("처음 비고");
   });
 
-  it("임시 저장(saveExpenseDraft)에 지급 예정일을 실어도 칸은 그대로 — 새 문서는 NULL, D-740 기존 값은 그 값 · 형식 오류는 여전히 거부", async () => {
+  it("임시 저장(saveExpenseDraft)에 희망 두 칸이 저장 · 읽히고 희망일만이면 사유 칸 오류 · 지급 예정일 키는 거부 · D-740 기존 값은 그 값", async () => {
     const fx = await setupExpenseProject();
     const result = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
     const expenseId = result.created[0]?.expenseId ?? "";
-    const saved = await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: (await rowOf(expenseId)).version, fields: { note: "고친 비고", scheduledPaymentDate: "2026-07-10" } });
-    expect(await rowOf(expenseId)).toMatchObject({ note: "고친 비고", scheduledPaymentDate: null });
+    const hope = daysFromToday(5);
+    const saved = await saveExpenseDraft(fx.pm, {
+      expenseId,
+      expectedVersion: (await rowOf(expenseId)).version,
+      fields: { note: "고친 비고", requestedPaymentDate: hope, requestedPaymentReason: "선금" },
+    });
+    expect(await rowOf(expenseId)).toMatchObject({ note: "고친 비고", requestedPaymentDate: hope, requestedPaymentReason: "선금", scheduledPaymentDate: null });
+    expect(await getExpense(fx.pm, { expenseId })).toMatchObject({ requestedPaymentDate: hope, requestedPaymentReason: "선금" });
+
+    const onlyDate = await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: saved.version, fields: { requestedPaymentDate: hope, requestedPaymentReason: "   " } }).catch((e: unknown) => e);
+    expect(onlyDate).toMatchObject({ field: "requestedPaymentReason", message: REQUESTED_REASON_REQUIRED });
 
     await db.update(expenses).set({ scheduledPaymentDate: "2026-07-17" }).where(eq(expenses.id, expenseId));
-    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: saved.version, fields: { scheduledPaymentDate: "2026-07-10" } });
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: saved.version, fields: { note: "다시" } });
     expect((await rowOf(expenseId)).scheduledPaymentDate).toBe("2026-07-17");
 
-    await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: (await rowOf(expenseId)).version, fields: { scheduledPaymentDate: "2026/07/10" } })).rejects.toThrow();
+    // 작성자 입력에는 지급 예정일 키가 없다(strict 스키마 — 타입 밖 입력도 거부).
+    const withSchedule: Record<string, unknown> = { scheduledPaymentDate: "2026-07-10" };
+    await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: (await rowOf(expenseId)).version, fields: withSchedule })).rejects.toThrow();
+  });
+});
+
+// 사용자 결정 2026-10-23(AQ-10 완화 · 독립 검토 L-4): 희망 지급일이 지난 지출결의도 다른 칸은 저장 — 날짜를 바꿀 때만 검사.
+// 제출은 지난 희망일을 날짜 칸 오류 `희망일 지남`으로 막는다. /review P3 F19: 제출 · 팀 비용 첫 저장의 희망일 검사.
+describe("지난 희망 지급일 — 날짜를 바꿀 때만 검사", () => {
+  async function lineDraftWithPastHope(submitFirst = false): Promise<{ pm: Viewer; lead: Viewer; expenseId: string; past: string }> {
+    const fx = await setupExpenseProject();
+    const result = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = result.created[0]?.expenseId ?? "";
+    if (submitFirst) await submitReadyDraft(fx.pm, expenseId);
+    const past = daysFromToday(-2);
+    // 저장할 때는 미래였던 희망일이 날이 지나 과거가 된 문서.
+    await db.update(expenses).set({ requestedPaymentDate: past, requestedPaymentReason: "행사 전 선금" }).where(eq(expenses.id, expenseId));
+    return { pm: fx.pm, lead: fx.lead, expenseId, past };
+  }
+
+  it("임시 저장: 희망일을 그대로 두고 비고만 고치면 저장된다(폼처럼 희망 두 칸을 같이 보내도 · 빼고 보내도)", async () => {
+    const { pm, expenseId, past } = await lineDraftWithPastHope();
+    await saveExpenseDraft(pm, { expenseId, expectedVersion: (await rowOf(expenseId)).version, fields: { note: "비고 고침", requestedPaymentDate: past, requestedPaymentReason: "행사 전 선금" } });
+    expect(await rowOf(expenseId)).toMatchObject({ note: "비고 고침", requestedPaymentDate: past });
+    await saveExpenseDraft(pm, { expenseId, expectedVersion: (await rowOf(expenseId)).version, fields: { note: "다시 고침" } });
+    expect(await rowOf(expenseId)).toMatchObject({ note: "다시 고침", requestedPaymentDate: past });
+  });
+
+  it("임시 저장: 다른 지난 날로 바꾸면 희망 지급일 칸 오류 · 저장 안 됨", async () => {
+    const { pm, expenseId, past } = await lineDraftWithPastHope();
+    const changed = await saveExpenseDraft(pm, {
+      expenseId,
+      expectedVersion: (await rowOf(expenseId)).version,
+      fields: { note: "비고 고침", requestedPaymentDate: daysFromToday(-1), requestedPaymentReason: "행사 전 선금" },
+    }).catch((e: unknown) => e);
+    expect(changed).toBeInstanceOf(ExpenseFieldError);
+    expect(changed).toMatchObject({ field: "requestedPaymentDate", message: REQUESTED_DATE_PAST });
+    expect(await rowOf(expenseId)).toMatchObject({ note: null, requestedPaymentDate: past });
+  });
+
+  it("제출: 희망일이 지났으면 희망 지급일 칸 오류 `희망일 지남` · 제출 안 됨", async () => {
+    const { pm, expenseId } = await lineDraftWithPastHope();
+    const submitted = await submitReadyDraft(pm, expenseId).catch((e: unknown) => e);
+    expect(submitted).toBeInstanceOf(ExpenseFieldError);
+    expect(submitted).toMatchObject({ field: "requestedPaymentDate", message: REQUESTED_DATE_PASSED });
+    expect((await rowOf(expenseId)).number).toBeNull();
+  });
+
+  it("줄에서 만들기: 지난 희망일은 희망 지급일 칸 오류 · 문서를 만들지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const before = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.quoteLineId, fx.lines.withVendor));
+    const created = await createExpenseFromLines(fx.pm, {
+      lineIds: [fx.lines.withVendor],
+      fields: { requestedPaymentDate: daysFromToday(-1), requestedPaymentReason: "선금" },
+    }).catch((e: unknown) => e);
+    expect(created).toBeInstanceOf(ExpenseFieldError);
+    expect(created).toMatchObject({ field: "requestedPaymentDate", message: REQUESTED_DATE_PAST });
+    expect(await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.quoteLineId, fx.lines.withVendor))).toEqual(before);
+  });
+
+  it.each(["reject", "withdraw"] as const)("다시 제출(%s 뒤 번호 있는 문서): 희망일이 지났으면 `희망일 지남` · 다시 제출 안 됨", async (how) => {
+    const { pm, expenseId, lead } = await lineDraftWithPastHope(true);
+    const [instance] = await db
+      .select()
+      .from(approvalInstances)
+      .where(and(eq(approvalInstances.documentKind, EXPENSE_DOCUMENT_KIND), eq(approvalInstances.documentId, expenseId)));
+    if (!instance) throw new Error("결재 인스턴스 없음");
+    if (how === "reject") await rejectDocument(lead, { instanceId: instance.id, expectedVersion: instance.version, reason: "증빙 다시" });
+    else await withdrawDocument(pm, { instanceId: instance.id, expectedVersion: instance.version });
+    const before = await rowOf(expenseId);
+    expect(before.number).not.toBeNull();
+    await db.update(expenses).set({ requestedPaymentDate: daysFromToday(-2), requestedPaymentReason: "행사 전 선금" }).where(eq(expenses.id, expenseId));
+    const again = await submitReadyDraft(pm, expenseId).catch((e: unknown) => e);
+    expect(again).toBeInstanceOf(ExpenseFieldError);
+    expect(again).toMatchObject({ field: "requestedPaymentDate", message: REQUESTED_DATE_PASSED });
+    expect((await rowOf(expenseId)).number).toBe(before.number);
+  });
+
+  it("팀 비용 첫 저장: 지난 희망일은 희망 지급일 칸 오류 · 문서를 만들지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const idempotencyKey = randomUUID();
+    const created = await createTeamExpenseDraft(fx.pm, {
+      idempotencyKey,
+      fields: { teamExpenseKind: "team_overhead", usageDate: daysFromToday(0), content: "팀 회식", requestedPaymentDate: daysFromToday(-1), requestedPaymentReason: "선금" },
+    }).catch((e: unknown) => e);
+    expect(created).toMatchObject({ field: "requestedPaymentDate", message: REQUESTED_DATE_PAST });
+    expect(await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.idempotencyKey, idempotencyKey))).toEqual([]);
   });
 });

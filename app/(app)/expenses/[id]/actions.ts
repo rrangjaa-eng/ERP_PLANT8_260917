@@ -66,10 +66,10 @@ export const previewPayableAction = authedActionClient.schema(previewPayableSche
   }
 });
 
-// 지급 예정일 제자리 저장(SP-3 ②) — 예정일만 바꾼다. 미래 날짜 허용(Q6).
+// 지급 예정일 제자리 저장(SP-3 ②) — 예정일만 바꾼다. 미래 날짜 허용(Q6). 07-16(N4): null = 자동 계산 복귀(07-06 도메인 그대로).
 const saveScheduledPayDateSchema = z.object({
   expenseId: z.string().uuid(),
-  scheduledPayDate: paymentDate,
+  scheduledPayDate: paymentDate.nullable(),
   version: z.number().int().positive(),
 });
 

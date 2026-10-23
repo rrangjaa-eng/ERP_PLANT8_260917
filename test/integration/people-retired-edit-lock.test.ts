@@ -73,20 +73,32 @@ describe("퇴직자 정보 변경 잠금(F24)", () => {
     expect((await readRow(id))?.hireDate).toBe("2020-01-01");
   });
 
-  it("연차 조정 — 거부 · 조정 행 그대로", async () => {
-    const id = await personResigned(kstDayOffset(-1));
-    const admin = await makeAdmin("관리자 A");
-    const before = await countRows("leave_adjustments");
-    await refusedRetired(
-      addLeaveAdjustment(admin, {
-        userId: id,
-        bucket: "annual",
-        fiscalYear: Number(kstDayOffset(0).slice(0, 4)),
-        amountDays: 1,
-        reason: "정산",
-      }),
-    );
-    expect(await countRows("leave_adjustments")).toBe(before);
+  // 사용자 결정(카드 2026-10-23 11:14 KST) 「퇴직한 해 연차 조정만 허용」: 퇴직일이 든 해의 연차 조정만 받고, 다른 해 · 월차는 거부.
+  describe("연차 조정 — 퇴직한 해만", () => {
+    const thisYear = Number(kstDayOffset(0).slice(0, 4));
+    const retiredYear = thisYear - 1;
+    const adjust = (viewer: Awaited<ReturnType<typeof makeAdmin>>, userId: string, input: { bucket: string; fiscalYear: number | null }) =>
+      addLeaveAdjustment(viewer, { userId, ...input, amountDays: 1, reason: "퇴직 정산" });
+
+    it("퇴직한 해(연차) — 조정 행이 생긴다", async () => {
+      const id = await personResigned(`${retiredYear}-06-30`);
+      const admin = await makeAdmin("관리자 A");
+      const before = await countRows("leave_adjustments");
+      await adjust(admin, id, { bucket: "annual", fiscalYear: retiredYear });
+      expect(await countRows("leave_adjustments")).toBe(before + 1);
+    });
+
+    it.each([
+      { label: "퇴직 다음 해(올해)", bucket: "annual", fiscalYear: thisYear },
+      { label: "퇴직 전 해", bucket: "annual", fiscalYear: retiredYear - 1 },
+      { label: "월차(연도 없음)", bucket: "monthly", fiscalYear: null },
+    ])("$label — 거부 · 조정 행 그대로", async ({ bucket, fiscalYear }) => {
+      const id = await personResigned(`${retiredYear}-06-30`);
+      const admin = await makeAdmin("관리자 A");
+      const before = await countRows("leave_adjustments");
+      await refusedRetired(adjust(admin, id, { bucket, fiscalYear }));
+      expect(await countRows("leave_adjustments")).toBe(before);
+    });
   });
 
   it("지급 계좌 — 거부 · 계좌 그대로", async () => {

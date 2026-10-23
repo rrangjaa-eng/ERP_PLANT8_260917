@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { getPerson, isRetiredOn } from "@/domain/people";
-import { RETIRED_EDIT_MESSAGE } from "@/domain/people/retired";
+import { RETIRED_EDIT_MESSAGE, retirementYearOf } from "@/domain/people/retired";
 import { assignableRoleIds, listAssignableRoles } from "@/domain/permissions/roles";
 import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
 import { listOrgUnits, listTeams } from "@/domain/org";
@@ -112,8 +112,11 @@ export default async function PersonDetailPage({
     canWrite && session.viewer.id !== id && !detail.person.archivedAt && !targetOutOfCeiling && loginWord !== "퇴직";
   // 사용자 결정 F24(카드 2026-10-23 10:02 KST): 퇴직자는 어떤 정보도 고치지 못한다(260907 `server/src/people.ts:792-797`) —
   // 계급 · 입사일 · 연차 조정 · 계좌 바꾸기 · 새 이력 추가를 그리지 않고 잠김 한 줄. 퇴직일 칸은 재입사 경로라 남긴다(서버도 같은 판정).
-  const retired = isRetiredOn(detail.person.resignationDate ?? current.resignationDate ?? null, today);
+  const retiredDate = detail.person.resignationDate ?? current.resignationDate ?? null;
+  const retired = isRetiredOn(retiredDate, today);
   const editable = !targetOutOfCeiling && !retired;
+  // 사용자 결정(카드 2026-10-23 11:14 KST) 「퇴직한 해 연차 조정만 허용」: 퇴직자는 퇴직한 해를 볼 때만 연차 조정 폼(연차만)이 있다.
+  const adjustable = !targetOutOfCeiling && (!retired || (retiredDate !== null && leaveYear === retirementYearOf(retiredDate)));
   const balanceLines = balance.annual
     ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null, resignation: balance.resignation ?? null }).map((line) => line.text)
     : [];
@@ -184,8 +187,9 @@ export default async function PersonDetailPage({
         canWrite={canWrite && session.viewer.id !== id}
         datesWritable={!targetOutOfCeiling}
         hireDateWritable={!retired}
-        adjustWritable={editable}
-        monthlyBlockedReason={blocked?.field === "bucket" ? blocked.message : null}
+        adjustWritable={adjustable}
+        annualOnly={retired}
+        monthlyBlockedReason={!retired && blocked?.field === "bucket" ? blocked.message : null}
       />
 
       {/* 사용자 결정(2026-10-23): 상한 밖 대상은 지급 계좌를 바꾸지 못한다 — `계좌 바꾸기` · 패널 없음(서버 updatePersonPayoutAccount 상한). */}

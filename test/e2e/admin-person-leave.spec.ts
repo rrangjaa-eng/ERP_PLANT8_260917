@@ -279,27 +279,24 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
     });
   });
 
-  // 사용자 결정 F24(카드 2026-10-23 10:02 KST): 퇴직자는 연차 조정도 받지 않는다(260907 `server/src/people.ts:792-797`) — 조정은
-  // 퇴직 전에 넣어 두고, 화면은 조정 폼 · 입사일 칸 없이 퇴직 연도 잔고만 보인다(퇴직일 칸은 재입사 경로라 남음).
-  test("지난해 퇴직(CXF2-C-F2-01 · C-N01 · F24): 기본 섹션 연도 = 퇴직 연도 · 조정 폼 없음 · 올해 보기는 보통 줄 · 퇴직 전 해는 퇴직 줄 없음", async ({ browser, baseURL }) => {
+  // 사용자 결정 F24(카드 2026-10-23 10:02 KST · 260907 `server/src/people.ts:792-797`) + 카드 2026-10-23 11:14 KST 「퇴직한 해 연차
+  // 조정만 허용」: 퇴직자는 퇴직한 해를 볼 때만 연차 조정 폼(연차만)이 있고, 다른 해에는 폼이 없다. 입사일 칸 없음 · 퇴직일 칸은 남음.
+  test("지난해 퇴직(CXF2-C-F2-01 · C-N01 · F24): 기본 섹션 연도 = 퇴직 연도 · 조정도 그 해(연차만) · 올해 보기는 보통 줄 · 폼 없음 · 퇴직 전 해는 퇴직 줄 없음", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const year = yearOf(today);
       const resignationDate = `${year - 1}-06-30`;
       const target = await makeTarget("퇴직");
-      const author = await registerPerson(SYSTEM_VIEWER, { name: "조정입력", email: `e2e-author-${randomUUID()}@example.test`, roleId: SYSADMIN_ROLE_ID });
-      await addLeaveAdjustment(
-        { id: author.userId, roleId: SYSADMIN_ROLE_ID },
-        { userId: target.id, bucket: "annual", fiscalYear: year - 1, amountDays: 1, reason: "퇴직 정정" },
-      );
       await setResignationDate(SYSTEM_VIEWER, target.id, resignationDate);
       const page = await adminPage(browser, baseURL);
       await page.goto(`/admin/people/${target.id}`);
 
       await expect(section(page).getByText(`${year - 1} 회계연도`, { exact: true })).toBeVisible();
-      await expect(page.locator("#leave-adjustment-form")).toHaveCount(0);
+      await expect(page.getByText("퇴직한 사람 · 정보 변경 없음", { exact: true })).toHaveCount(1);
       await expect(page.locator("#hireDate")).toHaveCount(0);
       await expect(page.locator("#resignationDate")).toHaveCount(1);
-      await expect(page.getByRole("table", { name: "연차 조정 기록" }).locator("tbody tr").first()).toContainText("퇴직 정정");
+      expect(await bucketOptions(page)).toEqual(["연차"]);
+      await addAdjustment(page, { days: "1", reason: "퇴직 정정" });
+      expect(await fiscalYearOf(target.id, "퇴직 정정")).toBe(year - 1);
       const resigned = await expectedLines({
         hireDate: null,
         resignationDate,
@@ -318,10 +315,12 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
       await expect(section(page).getByText(`${year} 회계연도`, { exact: true })).toBeVisible();
       await expect(balance(page).first()).not.toHaveText(/^퇴직 /);
       await expect(balance(page)).toHaveText(await expectedLines({ hireDate: null, resignationDate, fiscalYear: year, today }));
+      await expect(page.locator("#leave-adjustment-form")).toHaveCount(0);
 
       await page.goto(`/admin/people/${target.id}?year=${year - 2}`);
       await expect(balance(page).first()).not.toHaveText(/^퇴직 /);
       await expect(balance(page)).toHaveText(await expectedLines({ hireDate: null, resignationDate, fiscalYear: year - 2, today }));
+      await expect(page.locator("#leave-adjustment-form")).toHaveCount(0);
       await page.context().close();
     });
   });

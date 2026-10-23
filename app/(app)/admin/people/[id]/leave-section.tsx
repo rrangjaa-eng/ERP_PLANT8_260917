@@ -41,6 +41,8 @@ export type LeaveSectionProps = {
   hireDateWritable?: boolean;
   // 07-17 R15: 대상 계급이 상한 밖이면 연차 조정 추가 폼도 그리지 않는다 — 기본 참.
   adjustWritable?: boolean;
+  // 카드 2026-10-23 11:14 KST: 퇴직자는 퇴직한 해 연차 조정만 — 월차 옵션을 이유 줄 없이 뺀다. 기본 거짓.
+  annualOnly?: boolean;
   // 오늘 기준 월차 조정 거부 이유(04.1-03 checkLeaveAdjustment 문구 그대로) — 있으면 `월차` 옵션을 뺀다(CX-R5).
   monthlyBlockedReason: string | null;
 };
@@ -96,7 +98,8 @@ export function LeaveSection(props: LeaveSectionProps) {
   const [amountDays, setAmountDays] = useState("");
   const [reason, setReason] = useState("");
   // 고른 `월차`를 쓸 수 없게 되면(입사일 재저장 뒤 재렌더) 선택값을 `연차`로 되돌린다(CX2-03).
-  if (monthlyBlockedReason && bucket === "monthly") setBucket("annual");
+  const monthlyAllowed = !monthlyBlockedReason && props.annualOnly !== true;
+  if (!monthlyAllowed && bucket === "monthly") setBucket("annual");
   const { execute, result, isExecuting } = useAction(addLeaveAdjustmentAction, {
     onSuccess: ({ data }) => {
       if (data && "added" in data) {
@@ -109,7 +112,7 @@ export function LeaveSection(props: LeaveSectionProps) {
   const rejected = result.data && "rejected" in result.data ? result.data.rejected : null;
   const fieldError = (field: string) => (rejected?.field === field ? rejected.message : undefined);
   const fiscalYearError = fieldError("fiscalYear") ?? result.validationErrors?.fiscalYear?._errors?.[0];
-  const bucketOptions = [{ value: "annual", label: "연차" }, ...(monthlyBlockedReason ? [] : [{ value: "monthly", label: "월차" }])];
+  const bucketOptions = [{ value: "annual", label: "연차" }, ...(monthlyAllowed ? [{ value: "monthly", label: "월차" }] : [])];
   const primaryLabel = year !== thisYear && bucket === "annual" ? `${year} 연차 조정 추가` : "연차 조정 추가";
   const reasonBlocked = reason.trim() === "";
 

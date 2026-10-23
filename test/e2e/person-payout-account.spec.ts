@@ -179,7 +179,7 @@ test.describe("사람 상세 지급 계좌(06.5 D-6505)", () => {
   // 사용자 결정 F24(카드 2026-10-23 10:02 KST): 퇴직한 사람(퇴직일 다음 날부터)은 어떤 정보도 고치지 못한다 — 260907
   // `server/src/people.ts:792-797`. 화면은 고치기 행동을 그리지 않고 잠김 한 줄만 둔다. 퇴직일 칸은 재입사 경로라 남는다.
   // 서버 거부는 통합 people-retired-edit-lock이 본다.
-  test("퇴직자 상세 — 잠김 한 줄 · 계급 · 입사일 · 연차 조정 · 계좌 바꾸기 · 새 이력 추가 없음 · 퇴직일 칸은 남음", async ({ page }) => {
+  test("퇴직자 상세 — 잠김 한 줄 · 계급 · 입사일 · 계좌 바꾸기 · 새 이력 추가 없음 · 퇴직일 칸 · 퇴직한 해 연차 조정은 남음", async ({ page }) => {
     await login(page, await createFixtureUser({ roleId: SYSADMIN_ROLE_ID }));
     const userId = await makeTarget();
     await updatePersonPayoutAccount(SYSTEM_VIEWER, userId, { accountBank: "신한", accountHolder: "김직원", accountNumber: "110-123-456789" });
@@ -192,7 +192,9 @@ test.describe("사람 상세 지급 계좌(06.5 D-6505)", () => {
     await expect(page.locator("#person-role-change")).toHaveCount(0);
     await expect(page.locator("#hireDate")).toHaveCount(0);
     await expect(page.locator("#resignationDate")).toHaveCount(1);
-    await expect(page.locator("#leave-adjustment-form")).toHaveCount(0);
+    // 카드 2026-10-23 11:14 KST: 퇴직일(어제)이 든 해가 기본 섹션 연도라 연차 조정 폼은 있고 월차는 없다(퇴직한 해 연차만).
+    await expect(page.locator("#leave-adjustment-form")).toHaveCount(1);
+    await expect(page.locator("#adjustBucket option", { hasText: "월차" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "새 이력 추가" })).toHaveCount(0);
     await page.goto(`/admin/people/${userId}?editAccount=1`);
     await expect(section(page)).toBeVisible();

@@ -23,3 +23,23 @@ export async function assertNotRetiredInTx(viewer: Viewer, userId: string, today
   const row = await findUserResignationForShare(viewer, userId, tx);
   if (row !== null && isRetiredOn(row.resignationDate, today)) throw new RetiredPersonEditError(RETIRED_EDIT_MESSAGE);
 }
+
+// 퇴직일이 든 해 — 퇴직자에게 연차 조정을 받는 유일한 회계연도.
+export function retirementYearOf(resignationDate: string): number {
+  return Number(resignationDate.slice(0, 4));
+}
+
+// 사용자 결정(카드 2026-10-23 11:14 KST) 「퇴직한 해 연차 조정만 허용」: 퇴직자에게는 퇴직한 해의 연차 조정만 받는다 —
+// 다른 해 · 월차(연도 없음)는 assertNotRetiredInTx와 같은 거부. 같은 FOR SHARE 재조회로 tx 안에서 판정한다.
+export async function assertLeaveAdjustableInTx(
+  viewer: Viewer,
+  userId: string,
+  fiscalYear: number | null,
+  today: string,
+  tx: DbOrTx,
+): Promise<void> {
+  const row = await findUserResignationForShare(viewer, userId, tx);
+  if (row === null || row.resignationDate === null || !isRetiredOn(row.resignationDate, today)) return;
+  if (fiscalYear !== null && fiscalYear === retirementYearOf(row.resignationDate)) return;
+  throw new RetiredPersonEditError(RETIRED_EDIT_MESSAGE);
+}

@@ -19,11 +19,12 @@ import { rememberFxAfterCommit, SaveRejectedError, type CellFormatError, type Fx
 import { denyWrite } from "@/domain/rules/deny-write";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { getSettingValue as defaultGetSettingValue, type SettingDef } from "@/domain/settings/registry";
+import { findEffectiveValue, findSimpleValue } from "@/repositories/settings";
 import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT, PROJECT_COLLECTION_DUE_DAYS } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstDateOf, kstToday } from "@/lib/kst-date";
 import type { HolidayLookup } from "@/domain/holidays/business-day";
-import { loadHolidayLookup as defaultLoadHolidayLookup } from "@/domain/holidays/calendar";
+import { loadHolidayLookup as defaultLoadHolidayLookup, readHolidayLookup } from "@/domain/holidays/calendar";
 import { LUNAR_TABLE_FIRST_YEAR, LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
 import { collectionStatus, type CollectionIssue, type CollectionStatus } from "@/domain/revenue/collection";
 import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR, EMPTY_ERROR as DATE_EMPTY_ERROR } from "@/domain/projects/period";
@@ -282,15 +283,25 @@ const NO_HOLIDAY_DATES: ReadonlySet<string> = new Set();
 export async function collectionOverdueByProject(
   viewer: Viewer,
   projectIds: readonly string[],
-  opts: { today?: string } = {},
+  // tx — 알림 tick 잠금 트랜잭션. 있으면 설정 · 줄 · 공휴일을 모두 그 tx로 읽는다(풀의 다른 연결 없음 · 공휴일은 보장 없이 읽기만).
+  opts: { today?: string; tx?: DbOrTx } = {},
   deps?: CollectionOverdueDeps,
 ): Promise<Map<string, CollectionStatus>> {
   const result = new Map<string, CollectionStatus>();
   if (projectIds.length === 0) return result;
-  const getValue = deps?.getSettingValue ?? defaultGetSettingValue;
+  const tx = opts.tx;
+  const getValue: RevenueDeps["getSettingValue"] =
+    deps?.getSettingValue ??
+    (tx
+      ? (def, readOpts) =>
+          defaultGetSettingValue(def, readOpts, {
+            findSimpleValue: (v, key) => findSimpleValue(v, key, tx),
+            findEffectiveValue: (v, key, asOf) => findEffectiveValue(v, key, asOf, tx),
+          })
+      : defaultGetSettingValue);
   const [dueDays, rows] = await Promise.all([
     getValue(PROJECT_COLLECTION_DUE_DAYS),
-    (deps?.listCollectionRows ?? repoListCollectionRows)(viewer, projectIds),
+    (deps?.listCollectionRows ?? repoListCollectionRows)(viewer, projectIds, tx),
   ]);
 
   // 같은 날짜의 세율 · 절사 단위 읽기를 한 번으로(T-07-22-05).
@@ -328,7 +339,7 @@ export async function collectionOverdueByProject(
     const to = Math.min(Math.max(...issueYears) + 1, LUNAR_TABLE_LAST_YEAR);
     for (let year = Math.max(Math.min(...issueYears), LUNAR_TABLE_FIRST_YEAR); year <= to; year += 1) inTable.push(year);
     if (inTable.length > 0) {
-      const loaded = await (deps?.loadHolidayLookup ?? defaultLoadHolidayLookup)(inTable);
+      const loaded = await (deps?.loadHolidayLookup ?? (tx ? (years: number[]) => readHolidayLookup(years, tx) : defaultLoadHolidayLookup))(inTable);
       lookup = (year) => (year < LUNAR_TABLE_FIRST_YEAR || year > LUNAR_TABLE_LAST_YEAR ? NO_HOLIDAY_DATES : loaded(year));
     }
   }

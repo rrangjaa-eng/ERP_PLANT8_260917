@@ -1,8 +1,8 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
-import { revenueEntries } from "@/db/schema";
+import { projects, revenueEntries, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
 
@@ -38,6 +38,34 @@ export async function listCollectionRows(viewer: Viewer, projectIds: readonly st
     })
     .from(revenueEntries)
     .where(and(inArray(revenueEntries.projectId, [...projectIds]), isNull(revenueEntries.archivedAt)));
+}
+
+// 07-22(N22 · D-716) — 수금 지연 알림 후보: 보관 안 된 프로젝트 가운데 보관 안 된 발행 줄이 하나라도 있는 것(상태로 거르지 않는다 — 완료도 덜
+// 받았으면 지연, 배지와 같은 정의). 가장 이른 발행 순 · id 순으로 limit개. 담당 PM이 활성(보관 안 됨 · 퇴직일이 오늘 이후)이 아니면 pmRoleId는 null.
+// 시스템 tick(SYSTEM_VIEWER, domain/notify/kinds/collection-overdue.ts)만 부르고 행을 화면에 내지 않는다.
+export type CollectionCandidateProject = { id: string; name: string; pmUserId: string | null; pmRoleId: string | null };
+
+export async function listCollectionCandidateProjects(
+  viewer: Viewer,
+  input: { limit: number; today: string },
+  tx: DbOrTx = db,
+): Promise<CollectionCandidateProject[]> {
+  void viewer;
+  const firstIssue = sql<string>`(select min(${revenueEntries.entryDate}) from ${revenueEntries} where ${revenueEntries.projectId} = ${projects.id} and ${revenueEntries.kind} = 'issue' and ${revenueEntries.archivedAt} is null)`;
+  return tx
+    .select({ id: projects.id, name: projects.name, pmUserId: projects.pmUserId, pmRoleId: users.roleId })
+    .from(projects)
+    .leftJoin(
+      users,
+      and(
+        eq(users.id, projects.pmUserId),
+        isNull(users.archivedAt),
+        or(isNull(users.resignationDate), gte(users.resignationDate, input.today)),
+      ),
+    )
+    .where(and(isNull(projects.archivedAt), sql`${firstIssue} is not null`))
+    .orderBy(asc(firstIssue), asc(projects.id))
+    .limit(input.limit);
 }
 
 export async function findRevenueEntryById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<RevenueEntryRow | null> {

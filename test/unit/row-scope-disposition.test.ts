@@ -162,6 +162,7 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/expenses.ts", fn: "listExpenseAttachCandidates", reason: "증빙 붙이기 후보 — 목록과 같은 scopeCondition(06.2-08 · 06.1-06)" },
   { file: "repositories/expenses.ts", fn: "hasExpenseAttachTarget", reason: "증빙 붙이기 대상 있음 — 목록과 같은 scopeCondition(06.2-08 · 06.1-06)" },
   { file: "repositories/next-turn.ts", fn: "listSettlingProjectsOfPm", reason: "「내 차례」 PM 점검 항목(06-23) — pm_user_id = 보는 사람 ∧ rowScopeCondition(projectRowScope — none이면 PM이라도 0행, 06-23 검토 낮음-1)이 행을 거른다(번호 · 이름 · id만)" },
+  { file: "repositories/revenue-entries.ts", fn: "listCollectionCandidateProjects", reason: "알림 tick(07-22 수금 지연) — 시스템 주체(SYSTEM_VIEWER, domain/notify/kinds/collection-overdue.ts만)가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(이름 · id · PM · PM 계급만)" },
   { file: "repositories/notify-sources.ts", fn: "listDocumentTitles", reason: "알림 문장의 문서 제목(07-10) — 받는 사람은 결재 후보 · 기안자 · 담당 PM으로 이미 정해졌고 문장은 제목뿐(금액 · 개인정보 없음), 범위로 거르지 않는다(시스템 tick)" },
   { file: "repositories/notify-sources.ts", fn: "listProjectsEndedWithoutExpense", reason: "알림 tick(07-10 N4) — 시스템 주체가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(번호 없이 이름 · id · PM만)" },
   { file: "repositories/notify-sources.ts", fn: "listProxyRegistrations", reason: "알림 tick(07-10 N9) — 시스템 주체가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(프로젝트 이름 · PM만)" },

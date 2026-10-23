@@ -6,7 +6,8 @@ import { toKstDate } from "@/domain/holidays/business-day";
 import { isBusinessDayKst } from "@/domain/holidays/calendar";
 import { ensureHolidayCandidates } from "@/domain/holidays/candidates";
 import { LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
-import { CONDITION_KINDS, type ConditionKind } from "@/domain/notify/condition-kinds";
+import { CONDITION_KINDS, type ConditionKind, type NotificationCandidate } from "@/domain/notify/condition-kinds";
+import { visible } from "@/domain/permissions/visible";
 import { loadRoleUsers, withExtraRoleRecipients } from "@/domain/notify/recipients";
 import { effectiveRules, eventWindowSince } from "@/domain/notify/rules";
 import { NOTIFY_TICK_BATCH_MAX } from "@/domain/settings/keys";
@@ -27,6 +28,7 @@ import {
 } from "@/repositories/notifications";
 import { listNotificationRules } from "@/repositories/notification-rules";
 import { findSimpleValue } from "@/repositories/settings";
+import { findVisibility as defaultFindVisibility } from "@/repositories/permissions";
 
 export type TickDeps = {
   now: () => Date;
@@ -44,6 +46,8 @@ export type TickDeps = {
   monotonicNow: () => number;
   // 이메일 결과 기록 — 결과 기록 장애(끊긴 실행)를 테스트가 대체한다(D-4216).
   recordOutcome: typeof recordEmailOutcome;
+  // 07-22(G-61) — 받는 사람 정보 항목 거르개의 노출표 읽기(잠금 tx로) — 테스트가 계급마다 한 번인지 센다.
+  findVisibility: typeof defaultFindVisibility;
 };
 
 export type TickResult =
@@ -70,6 +74,12 @@ function oldestFirst(a: NotificationInsert, b: NotificationInsert): number {
   return 0;
 }
 
+// 07-22(G-61) — 후보에서 받는 사람 계급을 떼어 알림 행 재료만 남긴다.
+function withoutRole({ recipientRoleId, ...rest }: NotificationCandidate): Omit<NotificationCandidate, "recipientRoleId"> {
+  void recipientRoleId;
+  return rest;
+}
+
 export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
   const now = deps?.now ?? (() => new Date());
   const conditionKinds = deps?.conditionKinds ?? CONDITION_KINDS;
@@ -79,6 +89,7 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
     ((tx: NotifyTx) =>
       getSettingValue(NOTIFY_TICK_BATCH_MAX, undefined, { findSimpleValue: (v, k) => findSimpleValue(v, k, tx) }));
   const txDeadlineMs = deps?.txDeadlineMs ?? NOTIFY_TX_DEADLINE_MS;
+  const findVisibility = deps?.findVisibility ?? defaultFindVisibility;
   const emailSender = deps?.emailSender !== undefined ? deps.emailSender : emailSenderFromEnv();
   const serviceUrl = deps?.serviceUrl ?? env.BETTER_AUTH_URL ?? "";
   const monotonicNow = deps?.monotonicNow ?? (() => performance.now());
@@ -137,6 +148,18 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
         // C-P2-13: 종류별 평가 시간을 남기고, 누적이 잠금 기한의 절반을 넘으면 남은 종류는 그날 건너뛴다(평가는 잠금 안에 둔다).
         // 종류 평가 시간은 이메일 예산용 주입 시계(monotonicNow)와 따로 실제 시계로 잰다.
         let spentMs = 0;
+        // 07-22(G-61) — 종류에 recipientInfoItem이 있으면 받는 사람 계급이 그 항목을 볼 때만 남긴다. 계급 · 항목마다 tick 안에서 한 번 판정하고,
+        // 계급을 모르는 후보는 버린다(닫힌 쪽). 행이 없으면 메일도 없다.
+        const seen = new Map<string, Promise<boolean>>();
+        const roleSees = (roleId: string, infoItem: string): Promise<boolean> => {
+          const key = `${roleId}|${infoItem}`;
+          let cached = seen.get(key);
+          if (!cached) {
+            cached = visible({ id: "system", roleId }, infoItem, { findVisibility: (v, r, i) => findVisibility(v, r, i, tx) });
+            seen.set(key, cached);
+          }
+          return cached;
+        };
         for (const [index, kind] of conditionKinds.entries()) {
           const rule = rules.get(kind.kind);
           if (!rule?.enabled) continue;
@@ -157,9 +180,11 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
             const ms = performance.now() - startedMs;
             spentMs += ms;
             log.info("notify.condition_ms", { kind: kind.kind, ms: Math.round(ms), count: produced.length });
+            const infoItem = kind.recipientInfoItem;
             for (const candidate of withExtraRoleRecipients(produced, rule.extraRoleIds, roleUsers)) {
+              if (infoItem && !(candidate.recipientRoleId && (await roleSees(candidate.recipientRoleId, infoItem)))) continue;
               candidates.push({
-                ...candidate,
+                ...withoutRole(candidate),
                 conditionKind: kind.kind,
                 ...(rule.emailEnabled ? {} : { emailStatus: "skipped_rule_off" as const }),
               });

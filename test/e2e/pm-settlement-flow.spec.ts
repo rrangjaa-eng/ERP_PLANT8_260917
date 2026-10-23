@@ -83,7 +83,7 @@ async function makeRevenueRecorder(): Promise<Person> {
 
 // PM이 줄 하나의 작성 중 문서를 만들고 폼에서 이미지 증빙을 올려 제출한다(화면). 문서 id를 돌려준다.
 async function pmSubmitsExpense(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, key: LineKey): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   const page = await loginPage(browser, baseURL, fx.pm);

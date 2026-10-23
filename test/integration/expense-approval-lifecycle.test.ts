@@ -26,7 +26,7 @@ import {
 } from "@/domain/expenses";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { insertVendor } from "@/repositories/vendors";
-import { addApprovedRevision, setupExpenseProject, submitReadyDraft, testVendorAccount, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, setupExpenseProject, submitReadyDraft, testVendorAccount, type ExpenseFixture } from "./fixtures/expenses";
 import { listMyInbox } from "@/domain/approvals";
 import { listLineDoors } from "@/domain/expenses";
 import { getDocumentKind } from "@/domain/approvals/kinds";
@@ -158,11 +158,34 @@ describe("트레이서 — 견적 줄에서 최종 승인까지", () => {
   });
 });
 
+// 07-28(J13 · N8 · T-07-28-01~02): 화면을 거치지 않은 submitExpense도 상세(note)가 비면 거부 — 서버 판정이 화면과 같은 firstExpenseSubmitBlock 한 길이다.
+describe("상세(note) 필수 — 서버 직접 제출", () => {
+  it("상세 없이 · 공백만으로 submitExpense는 거부되고 행은 작성 중 그대로다, 적으면 제출된다", async () => {
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    await attachEvidence(fx.pm, expenseId);
+
+    const blank = await expenseRow(expenseId);
+    expect(blank.note).toBeNull();
+    await expect(submitExpense(fx.pm, { expenseId, expectedVersion: blank.version })).rejects.toThrow("상세 비어 있음 · 상세 입력");
+
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: blank.version, fields: { note: "   " } });
+    const spaces = await expenseRow(expenseId);
+    await expect(submitExpense(fx.pm, { expenseId, expectedVersion: spaces.version })).rejects.toThrow(GateBlockedError);
+    expect((await expenseRow(expenseId)).number).toBeNull();
+
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: spaces.version, fields: { note: "행사 운영비" } });
+    const filled = await expenseRow(expenseId);
+    expect((await submitExpense(fx.pm, { expenseId, expectedVersion: filled.version })).kind).toBe("submitted");
+  });
+});
+
 // 05-05 C1(plan-checker Round 4) — 지출결의 종류가 04.1 상세 계약 셋(loadDetails → detailDto 투영 → buildDetailRows)을 채워
 // 결재함 `내 결재` 항목이 결재 시트 재료(문자열 행)를 갖는다.
 describe("결재 시트 상세 — 문자열 행", () => {
   // 05-10: 살아 있는 증빙 파일이 있으면 지급 방식 다음 · 비고 앞에 증빙 행이 선다(제출 도우미가 파일 한 장을 붙인다).
-  const LABEL_ORDER = ["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "지급 예정일", "지급 방식", "증빙", "비고"];
+  const LABEL_ORDER = ["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "지급 예정일", "지급 방식", "증빙", "상세"];
   const uniqueLabels = (rows: { label: string }[]) => [...new Set(rows.map((row) => row.label))];
 
   it("팀장의 내 결재 항목에 제목 · 부제 · 문자열 행 · 가능 행동이 있고 loadDetails는 한 번만 불린다", async () => {
@@ -213,7 +236,7 @@ describe("결재 시트 상세 — 문자열 행", () => {
     expect(valueOf("지급 예정일")).toEqual([effective]);
     expect(detail?.rows.find((row) => row.label === "지급 예정일")?.tone).toBe("default");
     expect(valueOf("지급 방식")).toEqual(["계좌이체"]);
-    expect(valueOf("비고")).toEqual(["1차 선금"]);
+    expect(valueOf("상세")).toEqual(["1차 선금"]);
   });
 
   it("분할 지급 문서는 프로젝트 · 견적 줄 다음에 분할 지급 행(회차)이 선다", async () => {

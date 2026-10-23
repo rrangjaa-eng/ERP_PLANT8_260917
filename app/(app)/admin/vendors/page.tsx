@@ -20,6 +20,11 @@ import { AccountNumberCell } from "./account-number";
 import { revealVendorAccountNumberAction } from "./actions";
 import { VendorExportButton } from "./export-button";
 import { VendorSearch } from "./vendor-search";
+import { AccountHistory } from "./account-history";
+import { VendorDocuments } from "./vendor-documents";
+import { listAccountChanges } from "@/domain/vendors/account-changes";
+import { listVendorContacts } from "@/domain/vendors/contacts";
+import { listVendorDocuments } from "@/domain/vendors/documents";
 import styles from "./vendors.module.css";
 
 const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
@@ -95,6 +100,14 @@ export default async function VendorsPage({
   const editingVendor = editId
     ? (vendors.find((vendor) => vendor.id === editId && vendor.archivedAt === null) ?? null)
     : null;
+  // 07-23 SC-17 ⑦⑨⑩: 수정 패널의 담당자(정한 순서) · 서류(계좌 · 서류 권한자는 두 자리, 아니면 개수) · 계좌 변경 기록(최신 위 · 뒤 4자리만).
+  const [accountHistory, contacts, documents] = editingVendor
+    ? await Promise.all([
+        listAccountChanges(session.viewer, editingVendor.id),
+        listVendorContacts(session.viewer, editingVendor.id),
+        listVendorDocuments(session.viewer, editingVendor.id),
+      ])
+    : [[], [], null];
   const cancelHref = vendorsHref(includeHidden, { kind: kindFilter, q: query });
   // 표 행만 거른다 — editingVendor는 거르지 않은 목록에서 찾는다(걸러보기 · 검색 중 갈래 · 이름을 바꿔 저장해도 패널이 그대로).
   const shownVendors = filteredVendors ?? vendors;
@@ -150,7 +163,19 @@ export default async function VendorsPage({
               newKind={kindFilter ?? undefined}
               canEditAccount={canEditAccount}
               paymentTermDefault={paymentTermDefault}
-            />
+              contacts={contacts.map((item) => ({ id: item.id ?? "", name: item.name ?? "", phone: item.phone ?? null, email: item.email ?? null }))}
+            >
+              {editingVendor && documents ? <VendorDocuments vendorId={editingVendor.id} documents={documents} /> : null}
+              <AccountHistory
+                items={accountHistory.map((item) => ({
+                  id: item.id ?? "",
+                  changedAt: item.changedAt ?? "—",
+                  changedByName: item.changedByName ?? "—",
+                  beforeLast4: item.beforeLast4 ?? null,
+                  afterLast4: item.afterLast4 ?? null,
+                }))}
+              />
+            </VendorForm>
           </VendorPanel>
         ) : null
       }
@@ -198,6 +223,9 @@ export default async function VendorsPage({
                     <StatusTag status="보관됨" variant="text" />
                   ) : vendor.hidden ? (
                     <StatusTag status="숨김" variant="text" />
+                  ) : vendor.confirmedAt === null ? (
+                    // 07-23 SC-16 · V4: 한 값 `숨김 > 확인 전 > —`.
+                    <StatusTag status="확인 전" variant="text" />
                   ) : "—"}
                 </Fragment>,
                 ...(hasActions

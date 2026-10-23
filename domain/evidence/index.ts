@@ -44,6 +44,15 @@ import {
   projectDocumentWriteOpen,
 } from "@/domain/projects/documents";
 import { denyInvoiceFileWrite, invoiceFileNotFound, invoiceFileOwner, invoiceFileRights, invoiceFileWriteOpen, replaceInvoiceFile, REVENUE_INVOICE_KIND } from "@/domain/revenue/invoice-file";
+import {
+  denyVendorDocumentWrite,
+  replaceVendorDocument,
+  VENDOR_DOCUMENT_KIND,
+  vendorDocumentNotFound,
+  vendorDocumentOwner,
+  vendorDocumentRights,
+  vendorDocumentWriteOpen,
+} from "@/domain/vendors/documents";
 import { CARD_USAGE_ENTITY, cardSlipNotFound, cardSlipOwner, cardSlipRights, cardSlipWriteOpen, denyCardSlipWrite, type CardSlipOwner } from "@/domain/corp-card-usages";
 import { bumpInstanceVersion } from "@/repositories/approvals";
 import { lockEvidenceTypePrivateByValue } from "@/repositories/code-tables";
@@ -205,6 +214,7 @@ type RevisionOwner = NonNullable<Awaited<ReturnType<typeof revisionEvidenceOwner
 type ReserveOwner = NonNullable<Awaited<ReturnType<typeof reserveEvidenceOwner>>>;
 type ProjectDocumentOwner = NonNullable<Awaited<ReturnType<typeof projectDocumentOwner>>>;
 type InvoiceFileOwner = NonNullable<Awaited<ReturnType<typeof invoiceFileOwner>>>;
+type VendorDocumentOwner = NonNullable<Awaited<ReturnType<typeof vendorDocumentOwner>>>;
 
 // 기안자 · 결재 흐름이 없는 주인(rights가 판정한다) — 05 칸은 쓰이지 않는 자리다.
 const NO_DRAFTER_FLOW = {
@@ -286,6 +296,19 @@ const OWNER_RULES: Record<string, OwnerRule> = {
     beforeAdd: (viewer, owner, tx) => replaceInvoiceFile(viewer, owner as InvoiceFileOwner, tx),
     ...NO_DRAFTER_FLOW,
     notFound: invoiceFileNotFound,
+  },
+  // 07-23(V8) 거래처 서류(vendor_document) — 주인 = 서류 행(파일 하나), 종류마다 한 자리(beforeAdd가 같은 종류의 이전 서류 · 파일을 뗀다),
+  // 보기 · 붙이기 = vendors.account 쓰기(AQ-34 · D-739), 거래처 · 서류 보관이면 읽기만.
+  [VENDOR_DOCUMENT_KIND]: {
+    load: (viewer, ownerId) => vendorDocumentOwner(viewer, ownerId),
+    lock: (viewer, ownerId, tx) => vendorDocumentOwner(viewer, ownerId, tx),
+    canSee: async (viewer, owner) => (await vendorDocumentRights(viewer, owner as VendorDocumentOwner)).read,
+    rights: (viewer, owner) => vendorDocumentRights(viewer, owner as VendorDocumentOwner),
+    writeOpen: (owner) => vendorDocumentWriteOpen(owner as VendorDocumentOwner),
+    denyWrite: (viewer, owner) => denyVendorDocumentWrite(viewer, (owner as VendorDocumentOwner).vendorId),
+    beforeAdd: (viewer, owner, tx) => replaceVendorDocument(viewer, owner as VendorDocumentOwner, tx),
+    ...NO_DRAFTER_FLOW,
+    notFound: vendorDocumentNotFound,
   },
 };
 

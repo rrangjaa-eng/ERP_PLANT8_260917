@@ -2,6 +2,8 @@
 
 import { useCallback, useRef } from "react";
 import { PickDialog, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
+import { SidePanel } from "@/ui/side-panel/SidePanel";
+import { VendorForm, type WorkplaceVendor } from "@/app/(app)/admin/vendors/vendor-form";
 import { searchPayeeUsersForPickAction, searchVendorsForPickAction } from "../actions";
 import { mergePayeePickRows } from "./payee-pick-merge";
 
@@ -20,6 +22,7 @@ export function VendorPickDialog({
   bankTransfer,
   onClose,
   onPick,
+  onRegisterNew,
 }: {
   open: boolean;
   mode: "pick" | "change";
@@ -27,6 +30,8 @@ export function VendorPickDialog({
   bankTransfer: boolean;
   onClose: () => void;
   onPick: (payee: PickedPayee) => void | boolean | Promise<void | boolean>;
+  /** 07-23 SC-18 — 검색어가 있으면 목록 끝 3차 `새 거래처 · "{검색어}"`: 고르기 창을 닫고 그 이름으로 등록 패널을 연다. */
+  onRegisterNew?: (name: string) => void;
 }) {
   const known = useRef(new Map<string, PickedPayee>());
 
@@ -70,6 +75,7 @@ export function VendorPickDialog({
       noun="지급처"
       primaryLabel="이 지급처로"
       search={search}
+      searchTail={onRegisterNew ? (query) => ({ label: `새 거래처 · "${query}"`, onSelect: () => onRegisterNew(query) }) : undefined}
       resultLine={(row) => {
         const payee = row ? known.current.get(row.id) : undefined;
         const name = payee?.kind === "vendor" ? payee.vendor.defaultEvidenceName : null;
@@ -80,5 +86,27 @@ export function VendorPickDialog({
         return payee ? onPick(payee) : false;
       }}
     />
+  );
+}
+
+// 07-23 SC-18 · AQ-21 · K20: 지급처 고르기에서 연 거래처 등록 패널 — 07-20 거래처 등록 폼을 그대로 쓰고 저장(지출결의 쓰기 권한 등록) · 충돌 줄(`이 거래처로`)만
+// 바꾼다. 지급 기한 · 기본 증빙 종류 · 담당자 · 사용자 정의 칸은 그리지 않는다(거래처 화면에서 경영관리가 확인할 때). 실패하면 패널이 열린 채 칸 오류,
+// `취소 Esc`는 고르기 창을 다시 열지 않고 연 자리(지급처 칸 단추)로 포커스가 돌아간다.
+export function WorkVendorPanel({
+  name,
+  canEditAccount,
+  onClose,
+  onVendor,
+}: {
+  name: string;
+  // 07-23 R-1: `vendors.account` 쓰기 — 없으면 계좌 세 칸을 그리지 않는다(새 등록의 accountHidden · 서버도 거부).
+  canEditAccount: boolean;
+  onClose: () => void;
+  onVendor: (vendor: WorkplaceVendor, how: "registered" | "picked") => void | Promise<void>;
+}) {
+  return (
+    <SidePanel title="거래처 등록" onClose={onClose} returnFocusTo={() => document.getElementById("vendor-pick")}>
+      <VendorForm evidenceTypes={[]} fieldDefs={[]} newKind="supplier" paymentTermDefault={0} canEditAccount={canEditAccount} workplace={{ name, onVendor }} />
+    </SidePanel>
   );
 }

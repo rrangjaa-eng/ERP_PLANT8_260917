@@ -19,6 +19,8 @@ export type PaymentTargetRow = ExpenseRow & {
   itemName: string | null;
   teamName: string | null;
   vendorName: string | null;
+  // 07-23 N2: 지급처 거래처의 확인 시각(NULL = 확인 전 · 거래처 없으면 NULL).
+  vendorConfirmedAt: Date | null;
   payeeUserName: string | null;
   approvalStatus: string | null;
   paid: boolean;
@@ -38,6 +40,7 @@ async function selectRows(where: SQL | undefined, documentKind: string): Promise
       itemName: quoteLines.itemName,
       teamName: teams.name,
       vendorName: vendors.name,
+      vendorConfirmedAt: vendors.confirmedAt,
       payeeUserName: payeeUsers.name,
       approvalStatus: approvalInstances.status,
       paid: livePayment,
@@ -62,6 +65,7 @@ async function selectRows(where: SQL | undefined, documentKind: string): Promise
     itemName: row.itemName,
     teamName: row.teamName,
     vendorName: row.vendorName,
+    vendorConfirmedAt: row.vendorConfirmedAt,
     payeeUserName: row.payeeUserName,
     approvalStatus: row.approvalStatus,
     paid: Boolean(row.paid),

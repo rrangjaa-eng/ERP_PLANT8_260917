@@ -1028,7 +1028,8 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     await page.keyboard.press("Control+Enter");
     await expect(dialog.getByRole("button", { name: /^공급가액과 같음/ })).toHaveAccessibleDescription(/에 (증빙을 )?바꿈$/);
     await expect(dialog).toBeVisible();
-    await expect(rowOf(page, fx.lines.tracer.itemName).getByText("확인 전", { exact: true })).toBeVisible();
+    // 증빙 칸의 `확인 전` — 07-23 결제 방법 칸 계좌 아래 거래처 `확인 전`(data-vendor-flag)과 가른다.
+    await expect(rowOf(page, fx.lines.tracer.itemName).locator("td:not(:has([data-vendor-flag]))").getByText("확인 전", { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "새로 고침" }).click();
     await expect(files).toHaveCount(2);
     await expect(otherRow.getByRole("checkbox")).toBeChecked();

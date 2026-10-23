@@ -33,7 +33,7 @@ function sha(): string {
 }
 
 async function draftOf(fx: ExpenseFixture): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+  const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서 없음");
   return expenseId;
@@ -359,7 +359,7 @@ describe("거부 — 의도 · 메타데이터 · 상태 · 권한 · 중복", (
       method: "PUT",
     });
 
-    const second = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    const second = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
     await submitReadyDraft(fx.pm, second);
     const secondInstance = await instanceOf(second);
     await withdrawDocument(fx.pm, { instanceId: secondInstance.id, expectedVersion: secondInstance.version });
@@ -380,7 +380,7 @@ describe("거부 — 의도 · 메타데이터 · 상태 · 권한 · 중복", (
   it("다른 PM의 작성 중 문서에 같은 sha256이 있으면 번호 없이 `이미 첨부된 파일 · 다른 파일 고르기`", async () => {
     const fx = await setupExpenseProject();
     const mine = await draftOf(fx);
-    const theirs = (await createExpenseFromLines(fx.otherPm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId ?? "";
+    const theirs = (await createExpenseFromLines(fx.otherPm, { lineIds: [fx.lines.withVendor], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
     const shared = sha();
     await attachEvidence(fx.otherPm, theirs, createMemoryStorage(), { sha256: shared });
 
@@ -395,7 +395,7 @@ describe("거부 — 의도 · 메타데이터 · 상태 · 권한 · 중복", (
     const shared = sha();
     await attachEvidence(fx.pm, submitted, createMemoryStorage(), { sha256: shared });
     await submitExpense(fx.pm, { expenseId: submitted, expectedVersion: await versionOf(submitted) });
-    const draft = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    const draft = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
 
     await expect(
       requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: draft, ...declared({ sha256: shared }) }, { storage: createMemoryStorage(), now: NOW }),
@@ -418,7 +418,7 @@ describe("지운 작성 중 문서의 증빙 (A3 · red-team)", () => {
     await attachEvidence(fx.pm, deleted, createMemoryStorage(), { sha256: shared });
     await deleteExpenseDraft(fx.pm, { expenseId: deleted, expectedVersion: await versionOf(deleted) });
 
-    const next = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    const next = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
     await expect(
       requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: next, ...declared({ sha256: shared }) }, { storage: createMemoryStorage(), now: NOW }),
     ).resolves.toMatchObject({ method: "PUT" });
@@ -437,7 +437,7 @@ describe("지운 작성 중 문서의 증빙 (A3 · red-team)", () => {
     await attachEvidence(fx.pm, deleted, createMemoryStorage(), { sha256: own });
     await deleteExpenseDraft(fx.pm, { expenseId: deleted, expectedVersion: await versionOf(deleted) });
 
-    const next = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    const next = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
     await attachEvidence(fx.pm, next, createMemoryStorage(), { sha256: shared });
 
     await restoreExpenseDraft(fx.pm, { expenseId: deleted });
@@ -453,7 +453,7 @@ describe("지운 작성 중 문서의 증빙 (A3 · red-team)", () => {
     await attachEvidence(fx.pm, deleted, createMemoryStorage(), { sha256: shared });
     await db.update(expenses).set({ deletedAt: new Date(), deletedBy: fx.pm.id }).where(eq(expenses.id, deleted));
 
-    const next = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    const next = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
     await expect(
       requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: next, ...declared({ sha256: shared }) }, { storage: createMemoryStorage(), now: NOW }),
     ).resolves.toMatchObject({ method: "PUT" });

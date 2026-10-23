@@ -105,6 +105,7 @@ test.describe("팀 비용 지출결의 (EXP-08)", () => {
 
     await page.getByLabel("공급가액").fill("440000");
     await page.getByLabel("지급 방식").selectOption("bank_transfer");
+    await page.getByLabel("상세", { exact: true }).fill("팀 회식 상세");
 
     // 임시 저장 = 첫 저장 — 주소가 `/expenses/{uuid}`로 바뀐다(두 번 눌러도 하나).
     const save = page.getByRole("button", { name: /^임시 저장/ });
@@ -162,6 +163,7 @@ test.describe("팀 비용 지출결의 (EXP-08)", () => {
     await pickVendorByKeyboard(page, fx);
     await page.getByLabel("공급가액").fill("440000");
     await page.getByLabel("지급 방식").selectOption("bank_transfer");
+    await page.getByLabel("상세", { exact: true }).fill("팀 회식 상세");
     await page.getByRole("button", { name: /^임시 저장/ }).click();
     await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
     await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
@@ -372,7 +374,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openDraft(page, fx, "tracer");
-    await page.getByLabel("비고", { exact: true }).fill("웨이브9 저장 안 한 메모");
+    await page.getByLabel("상세", { exact: true }).fill("웨이브9 저장 안 한 메모");
     await fillHope(page);
     await page.getByRole("button", { name: "바꾸기", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
@@ -380,7 +382,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await dialog.getByRole("button", { name: /^이 줄로/ }).click();
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.phone.itemName}`);
-    await expect(page.getByLabel("비고", { exact: true })).toHaveValue("웨이브9 저장 안 한 메모");
+    await expect(page.getByLabel("상세", { exact: true })).toHaveValue("웨이브9 저장 안 한 메모");
     await expectAutoPayDate(page, fx);
   });
 
@@ -388,7 +390,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openNew(page);
-    await page.getByLabel("비고", { exact: true }).fill("새 문서 메모");
+    await page.getByLabel("상세", { exact: true }).fill("새 문서 메모");
     await fillHope(page);
     await page.getByRole("button", { name: "견적 줄 고르기" }).click();
     const dialog = page.getByRole("dialog", { name: "견적 줄 고르기" });
@@ -399,7 +401,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await dialog.getByRole("button", { name: /^이 줄로/ }).click();
     await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.hold.itemName}`);
-    await expect(page.getByLabel("비고", { exact: true })).toHaveValue("새 문서 메모");
+    await expect(page.getByLabel("상세", { exact: true })).toHaveValue("새 문서 메모");
     await expectAutoPayDate(page, fx);
   });
 

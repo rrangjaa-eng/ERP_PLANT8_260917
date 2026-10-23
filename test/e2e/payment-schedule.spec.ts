@@ -493,7 +493,7 @@ test.describe("지급 목록 계좌 아래 한 값 `확인 전 > 계좌 바뀜` 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
     await page.goto("/expenses");
     const before = await methodCell(page, fx.lines.hold.itemName);
-    await expect(before.getByText("확인 전", { exact: true })).toHaveCount(1);
+    await expect(before.getByText("거래처 확인 전", { exact: true })).toHaveCount(1);
     await expect(before.getByText("계좌 바뀜", { exact: true })).toHaveCount(0);
 
     await db.update(vendors).set({ confirmedAt: new Date(), confirmedBy: editor.viewer.id }).where(eq(vendors.id, fx.vendorId));
@@ -502,7 +502,7 @@ test.describe("지급 목록 계좌 아래 한 값 `확인 전 > 계좌 바뀜` 
     await page.reload();
     const changed = await methodCell(page, fx.lines.hold.itemName);
     await expect(changed.getByText("계좌 바뀜", { exact: true })).toHaveCount(1);
-    await expect(changed.getByText("확인 전", { exact: true })).toHaveCount(0);
+    await expect(changed.getByText("거래처 확인 전", { exact: true })).toHaveCount(0);
 
     const preview = await previewPayable(payer.viewer, { expenseId: paid.id, payDate: seoulToday() });
     const result = await completePaymentsBatch(payer.viewer, {

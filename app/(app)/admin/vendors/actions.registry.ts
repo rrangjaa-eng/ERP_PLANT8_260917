@@ -49,3 +49,11 @@ registerAction({
   action: "write",
   dtoName: "VendorDto",
 });
+
+// 07-20 V1 · D-736: 거래처 목록 `파일 받기`(CSV — 행을 내보내므로 VendorDto). 내보내기 등록은 domain/vendors/export.ts 모듈 끝.
+registerAction({
+  name: "exportVendorsCsvAction",
+  menu: "admin.vendors",
+  action: "view",
+  dtoName: "VendorDto",
+});

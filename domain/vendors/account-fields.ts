@@ -6,7 +6,7 @@
 
 import { ACCOUNT_PROBLEMS, accountProblemText, bankNameProblem, holderTextProblem } from "@/domain/bank-transfer";
 
-export type AccountFieldErrors = { accountBank?: string; accountHolder?: string };
+export type AccountFieldErrors = { accountBank?: string; accountHolder?: string; accountNumber?: string };
 
 export class AccountFieldsError extends Error {
   readonly fieldErrors: AccountFieldErrors;
@@ -29,14 +29,20 @@ export function present(value: string | null | undefined): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+// 07-20 R8 · B-P2-4: 은행 · 예금주 · 번호 셋을 저장값과 비교(judgeAccountFields와 같은 present 비교) — 바뀌었을 때만 `vendors.account` 판정.
+// 260907 server/src/vendors.ts:1118-1121 bankChanged(세 칸 비교)와 같은 뜻. 07-23 계좌 변경 기록이 같은 함수를 쓴다.
+export function accountFieldsChanged(input: AccountFieldsInput): boolean {
+  const { stored, next } = input;
+  return present(next.bank) !== present(stored.bank) || present(next.holder) !== present(stored.holder) || next.number !== "keep";
+}
+
 export function judgeAccountFields(input: AccountFieldsInput): AccountFieldErrors {
   const { stored, next } = input;
   const bank = present(next.bank);
   const holder = present(next.holder);
   const bankChanged = bank !== present(stored.bank);
   const holderChanged = holder !== present(stored.holder);
-  const numberChanged = next.number !== "keep";
-  if (!bankChanged && !holderChanged && !numberChanged) return {};
+  if (!accountFieldsChanged(input)) return {};
 
   const hasNumber = next.number === "set" ? true : next.number === "clear" ? false : stored.hasNumber;
   const errors: AccountFieldErrors = {};

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, projectDocuments, projects, quoteLines, quoteRevisions, teams } from "@/db/schema";
+import { actionLog, files, projectDocuments, projects, quoteLines, quoteRevisions, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -118,7 +118,22 @@ describe("hasProjectDocument (07-18 Task 3)", () => {
     expect(await hasProjectDocument(s.pm, s.projectId, "purchase_order")).toBe(false);
     await db.insert(projectDocuments).values({ projectId: s.projectId, kind: "purchase_order", createdBy: s.pm.id, removedAt: new Date(), removedBy: s.pm.id });
     expect(await hasProjectDocument(s.pm, s.projectId, "purchase_order")).toBe(false);
-    await db.insert(projectDocuments).values({ projectId: s.projectId, kind: "purchase_order", createdBy: s.pm.id });
+    // 07-22(W3): 파일 없는 서류 행(올리기를 끝내지 않은 시도)은 세지 않는다 — 살아 있는 파일이 붙어야 참.
+    const [doc] = await db.insert(projectDocuments).values({ projectId: s.projectId, kind: "purchase_order", createdBy: s.pm.id }).returning();
+    if (!doc) throw new Error("서류 행을 넣지 못했습니다");
+    expect(await hasProjectDocument(s.pm, s.projectId, "purchase_order")).toBe(false);
+    const fileId = randomUUID();
+    await db.insert(files).values({
+      id: fileId,
+      ownerKind: "project_document",
+      ownerId: doc.id,
+      objectKey: `evidence/${fileId}`,
+      sha256: "0".repeat(64),
+      sizeBytes: 120_000,
+      contentType: "application/pdf",
+      originalName: "발주서.pdf",
+      uploadedBy: s.pm.id,
+    });
     expect(await hasProjectDocument(s.pm, s.projectId, "purchase_order")).toBe(true);
   });
 });

@@ -6,11 +6,14 @@ import { Num } from "@/ui/num/Num";
 import { Table } from "@/ui/table/Table";
 import { Button } from "@/ui/button/Button";
 import { KvList } from "@/ui/kv-list/KvList";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { formatKrw, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { CellIssue, TableColumn } from "@/ui/table/types";
 import type { ContractInfo } from "@/domain/revenue";
 import { otherCellsRejectedText, revenueTableErrorText } from "./revenue-cells";
+import { InvoiceFilePanel } from "./invoice-file-panel";
 import styles from "./project-detail.module.css";
 
 export type EntryDraft = {
@@ -213,6 +216,8 @@ export function RevenueSection({
   onAddPaid,
   canWriteEntries,
   balanceKrw,
+  collectionOverdue = false,
+  invoiceFiles = {},
   saveLocked = false,
   saveButtonId,
   editableWidth = true,
@@ -232,6 +237,10 @@ export function RevenueSection({
   onAddPaid: () => void;
   canWriteEntries: boolean;
   balanceKrw: number | undefined;
+  /** 07-22(N22 · SC-20) — 수금 지연. 입금 항목(revenue.paid_amount)을 볼 때만 서버가 싣는다(잔액과 같은 항목). */
+  collectionOverdue?: boolean;
+  /** 07-22(W7 · SC-20) — 저장된 발행 줄 id → 살아 있는 계산서 파일. 발행 줄을 볼 때만 서버가 채운다. */
+  invoiceFiles?: Record<string, { fileId: string; name: string; sizeBytes: number; createdAt: string }>;
   /** 04-49(DR-3 · 계약 3) — 저장 요청 중. 칸은 값을 보인 채 readOnly, 추가·통화 바꾸기는 무동작이다. */
   saveLocked?: boolean;
   /** /design-review H-1 — 저장 중 비활성 추가 버튼이 aria-describedby로 가리키는 일괄 저장 버튼 id. */
@@ -278,6 +287,9 @@ export function RevenueSection({
   // Copywriting Empty — 읽기로만 받는 사람은 담당을, 1024 미만 경영관리는 사실만, 편집 가능하면 사실 + 추가 버튼.
   const issuedEmpty = canWriteEntries ? "발행한 세금계산서가 없습니다" : "발행한 세금계산서가 없습니다 · 발행은 경영관리";
   const paidEmpty = canWriteEntries ? "입금 줄이 없습니다" : "입금 줄이 없습니다 · 입금은 경영관리";
+
+  // 07-22(W7) — 계산서 옆 패널을 연 발행 줄(저장된 줄만).
+  const [invoiceFor, setInvoiceFor] = useState<EntryDraft | null>(null);
 
   const issuedColumns: TableColumn<EntryDraft>[] = [
     {
@@ -338,6 +350,25 @@ export function RevenueSection({
           <span className={styles.noteText}>{row.note ?? "—"}</span>
         ),
       summary: (row) => row.note,
+    },
+    {
+      // 07-22(W7 · SC-20) — 발행 줄 행동: 파일이 있으면 `계산서 1`, 없으면 편집 폭의 쓰기 권한자에게 `계산서 붙이기`. 저장 전 줄에는 없다.
+      // 폰은 매출 표가 읽기만이라(DR-36) 접힌 줄에 행동을 두지 않는다(p3 — 폰에서 숨는 열).
+      key: "invoice",
+      header: "계산서",
+      headerHidden: true,
+      priority: "p3",
+      pasteRole: "computed",
+      cell: (row) => {
+        if (row.version === undefined) return null;
+        const hasFile = invoiceFiles[row.id] !== undefined;
+        if (!hasFile && !canEditEntries) return null;
+        return (
+          <RowActions noWrap>
+            <RowAction onClick={() => setInvoiceFor(row)}>{hasFile ? "계산서 1" : "계산서 붙이기"}</RowAction>
+          </RowActions>
+        );
+      },
     },
   ];
 
@@ -490,6 +521,8 @@ export function RevenueSection({
                   {paidNote ? <span className={styles.rejectionSummary}>{paidNote}</span> : null}
                   {paidNote && balanceLabel ? " · " : null}
                   {balanceLabel ? <span className={styles.balanceWarning}>{balanceLabel}</span> : null}
+                  {collectionOverdue && (paidNote || balanceLabel) ? " · " : null}
+                  {collectionOverdue ? <StatusTag status="수금 지연" variant="text" /> : null}
                 </td>
               </tr>
             }
@@ -507,6 +540,17 @@ export function RevenueSection({
             </div>
           ) : null}
         </>
+      ) : null}
+      {invoiceFor ? (
+        <InvoiceFilePanel
+          title={!canEditEntries ? "계산서" : invoiceFiles[invoiceFor.id] ? "계산서 교체" : "계산서 붙이기"}
+          readOnly={!canEditEntries}
+          knownFile={invoiceFiles[invoiceFor.id]}
+          entryId={invoiceFor.id}
+          entryDate={invoiceFor.entryDate}
+          amount={invoiceFor.amount}
+          onClose={() => setInvoiceFor(null)}
+        />
       ) : null}
     </DetailScreen.Section>
   );

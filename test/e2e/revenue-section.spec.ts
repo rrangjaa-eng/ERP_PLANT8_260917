@@ -835,3 +835,174 @@ test.describe("매출 입력을 연 채 1024 미만 전환 — 값 유지 (G-04-
     await expect(issuedTable.getByLabel("발행액")).toHaveValue(formatted);
   });
 });
+
+// 07-22(N22 · SC-20) — 상세 매출 면 잔액 줄 옆 `수금 지연`(warning · text). 입금 항목을 볼 때만 HTML에 있다.
+test.describe("매출 면 수금 지연 (07-22)", () => {
+  test("발행 70일 전 · 입금 0 → 잔액 줄 옆 수금 지연 / 입금을 다 채움 → 없음", async ({ page }) => {
+    const today = kstToday(new Date());
+    await grantFinanceRole();
+    const late = await seedRevenueProject({ pmRoleId: "role-ceo", issued: [{ entryDate: addDays(today, -70), amount: krw(1_000_000) }] });
+    await login(page, late.email, late.password);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(late.projectUrl);
+    const footer = revenueTable(page, "입금 줄").locator("tfoot");
+    await expect(footer.getByText("미수 1,000,000", { exact: true })).toBeVisible();
+    const tag = footer.getByText("수금 지연", { exact: true });
+    await expect(tag).toBeVisible();
+    expect(await tag.evaluate((node) => getComputedStyle(node).color)).toBe(await cssColor(page, "--status-warning"));
+
+    const paid = await seedRevenueProject({
+      pmRoleId: "role-ceo",
+      issued: [{ entryDate: addDays(today, -70), amount: krw(1_000_000) }],
+      paid: [{ entryDate: addDays(today, -65), amount: krw(1_100_000) }],
+    });
+    await login(page, paid.email, paid.password);
+    await page.goto(paid.projectUrl);
+    await expect(revenueTable(page, "입금 줄")).toBeVisible();
+    await expect(revenueSection(page).getByText("수금 지연", { exact: true })).toHaveCount(0);
+  });
+
+  test("입금을 못 보는 담당 PM에게는 수금 지연이 HTML에 없다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const late = await seedRevenueProject({ issued: [{ entryDate: addDays(today, -70), amount: krw(1_000_000) }] });
+    await login(page, late.email, late.password);
+    await page.goto(late.projectUrl);
+    await expect(revenueSection(page)).toBeVisible();
+    expect(await page.content()).not.toContain("수금 지연");
+  });
+});
+
+// 07-22(W7 · SC-20) — 발행 줄 계산서: 행동 링크 `계산서 붙이기` → 옆 패널(한 자리) → 파일 → 닫으면 포커스가 링크로 · 줄은 `계산서 1` · 다시 열면 `교체`.
+// 계산서 쓰기 = projects.revenue 쓰기. 파일 DTO 칸은 05 그대로 expense.value — 그 항목까지 켠 이 스펙 전용 계급을 쓴다(다른 스펙의 role-ceo를 건드리지 않는다).
+async function makeInvoiceRole(): Promise<string> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E계산서-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.revenue", action: "write", allowed: true });
+  for (const infoItem of ["project.value", "revenue.issued_amount", "revenue.paid_amount", "expense.value"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  }
+  return role.id;
+}
+
+function invoicePdf(name: string): { name: string; mimeType: string; buffer: Buffer } {
+  return { name, mimeType: "application/pdf", buffer: Buffer.from(`%PDF-1.4\n% ${randomUUID()}\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n`) };
+}
+
+test.describe("발행 줄 계산서 파일 (07-22 · W7)", () => {
+  test("계산서 붙이기 → 옆 패널 → 파일 → 닫으면 포커스가 줄 링크 · 줄은 계산서 1 · 다시 열면 교체", async ({ page }) => {
+    const today = kstToday(new Date());
+    const roleId = await makeInvoiceRole();
+    const seeded = await seedRevenueProject({ pmRoleId: roleId, issued: [{ entryDate: addDays(today, -3), amount: krw(1_000_000) }] });
+    await login(page, seeded.email, seeded.password);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(seeded.projectUrl);
+
+    const table = revenueTable(page, "발행 줄");
+    const attach = table.getByRole("button", { name: "계산서 붙이기", exact: true });
+    await expect(attach).toBeVisible();
+    await attach.click();
+    const panel = page.getByRole("dialog", { name: "계산서 붙이기" });
+    await expect(panel).toBeVisible();
+    const pdf = invoicePdf("세금계산서.pdf");
+    await panel.getByTestId("attachments-input").setInputFiles(pdf);
+    await expect(panel.locator('[data-ui="attachments"] li').filter({ hasText: pdf.name })).toBeVisible({ timeout: 20_000 });
+    const link = table.getByRole("button", { name: "계산서 1", exact: true });
+    await expect(link).toBeVisible({ timeout: 20_000 });
+
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(link).toBeFocused();
+
+    await link.click();
+    const again = page.getByRole("dialog", { name: "계산서 교체" });
+    await expect(again.locator('[data-ui="attachments"] li').filter({ hasText: pdf.name })).toBeVisible();
+    await expect(again.getByRole("button", { name: /^교체/ })).toBeVisible();
+    // 한 자리 — 파일 고르기는 한 장만.
+    expect(await again.getByTestId("attachments-input").evaluate((node) => (node as HTMLInputElement).multiple)).toBe(false);
+  });
+
+  test("(Codex P2) 한 자리 칸에 파일 둘을 끌어 놓아도 첫 파일 하나만 올라간다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const roleId = await makeInvoiceRole();
+    const seeded = await seedRevenueProject({ pmRoleId: roleId, issued: [{ entryDate: addDays(today, -3), amount: krw(1_000_000) }] });
+    await login(page, seeded.email, seeded.password);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(seeded.projectUrl);
+
+    await revenueTable(page, "발행 줄").getByRole("button", { name: "계산서 붙이기", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "계산서 붙이기" });
+    await expect(panel).toBeVisible();
+    const puts: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "PUT") puts.push(request.url());
+    });
+    const first = invoicePdf("첫째-계산서.pdf");
+    const second = invoicePdf("둘째-계산서.pdf");
+    await panel.locator('[data-ui="attachments"]').evaluate(
+      (node, files) => {
+        const dt = new DataTransfer();
+        for (const file of files) dt.items.add(new File([file.body], file.name, { type: file.type }));
+        node.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      },
+      [first, second].map((file) => ({ name: file.name, type: file.mimeType, body: file.buffer.toString("latin1") })),
+    );
+    const items = panel.locator('[data-ui="attachments"] li');
+    await expect(items.filter({ hasText: first.name })).toBeVisible({ timeout: 20_000 });
+    await page.waitForTimeout(1500);
+    await expect(items.filter({ hasText: second.name })).toHaveCount(0);
+    expect(puts).toHaveLength(1);
+  });
+
+  test("(감사 P2 #1) 패널 안 파일 칸의 cancel(고르기 취소)은 패널을 닫지 않는다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const roleId = await makeInvoiceRole();
+    const seeded = await seedRevenueProject({ pmRoleId: roleId, issued: [{ entryDate: addDays(today, -3), amount: krw(1_000_000) }] });
+    await login(page, seeded.email, seeded.password);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(seeded.projectUrl);
+
+    await revenueTable(page, "발행 줄").getByRole("button", { name: "계산서 붙이기", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "계산서 붙이기" });
+    await expect(panel).toBeVisible();
+    await panel.getByTestId("attachments-input").evaluate((node) => node.dispatchEvent(new Event("cancel", { bubbles: true, cancelable: true })));
+    await expect(panel).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+  });
+
+  test("(감사 P2 #4) 입금 · 지출 값을 못 보는 보기만 계급도 계산서 패널에서 파일 이름을 본다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const writerRole = await makeInvoiceRole();
+    const seeded = await seedRevenueProject({ pmRoleId: writerRole, issued: [{ entryDate: addDays(today, -3), amount: krw(1_000_000) }] });
+    await login(page, seeded.email, seeded.password);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(seeded.projectUrl);
+    await revenueTable(page, "발행 줄").getByRole("button", { name: "계산서 붙이기", exact: true }).click();
+    const pdf = invoicePdf("읽기용-계산서.pdf");
+    await page.getByRole("dialog", { name: "계산서 붙이기" }).getByTestId("attachments-input").setInputFiles(pdf);
+    await expect(revenueTable(page, "발행 줄").getByRole("button", { name: "계산서 1", exact: true })).toBeVisible({ timeout: 20_000 });
+    await page.context().clearCookies();
+
+    const reader = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E계산서읽기-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: reader.id, menu: "projects", action: "view", allowed: true });
+    for (const infoItem of ["project.value", "revenue.issued_amount"]) {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: reader.id, infoItem, visible: true });
+    }
+    const readerEmail = `e2e-inv-reader-${randomUUID()}@example.test`;
+    const account = await createAccount(SYSTEM_VIEWER, { email: readerEmail, name: "E2E 계산서 읽기", roleId: reader.id });
+    await login(page, readerEmail, account.tempPassword);
+    await page.goto(seeded.projectUrl);
+    await revenueTable(page, "발행 줄").getByRole("button", { name: "계산서 1", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "계산서" });
+    await expect(panel.locator('[data-ui="attachments"] li').filter({ hasText: pdf.name })).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("projects.revenue 쓰기가 없는 담당 PM에게는 계산서 붙이기가 없다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const seeded = await seedRevenueProject({ issued: [{ entryDate: addDays(today, -3), amount: krw(1_000_000) }] });
+    await login(page, seeded.email, seeded.password);
+    await page.goto(seeded.projectUrl);
+    await expect(revenueSection(page)).toBeVisible();
+    await expect(page.getByRole("button", { name: "계산서 붙이기" })).toHaveCount(0);
+  });
+});

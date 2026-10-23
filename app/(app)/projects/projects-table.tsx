@@ -36,6 +36,13 @@ export function ProjectsTable({
   profitRateThreshold: number;
 }) {
   const nowrap = (text: string) => <span className={styles.nowrap}>{text}</span>;
+  // 07-22(U15 · SC-20) — 상태 칸 둘째 줄은 한 값: 종료일 지남 > 수금 지연 > 없음(첫 줄 상태 낱말은 그대로). 폰은 같은 값을 접힌 줄 기간 뒤에.
+  const secondLine = (row: ProjectListItemWithGroup) =>
+    row.endDatePassed ? (
+      <span className={styles.endDatePassed}>종료일 지남</span>
+    ) : row.collectionOverdue ? (
+      <StatusTag status="수금 지연" variant="text" />
+    ) : null;
   const period = (row: ProjectListItemWithGroup) => formatListPeriod(row.startDate, row.endDate, viewYear);
 
   // 04-18(D-87) — 금액 열은 서버가 그 키를 보냈을 때만 만든다(키 부재는 계급 단위라 행마다 갈리지 않는다).
@@ -149,7 +156,7 @@ export function ProjectsTable({
       cell: (row) => <span className={styles.periodCell}>{period(row)}</span>,
       // 04-17(D-90) — 보기 범위 밖에서 끝나는 행만 2행에 귀속(`2027 귀속`).
       secondaryLine: (row) => (row.attributionLabel ? <span className={styles.attribution}>{row.attributionLabel}</span> : null),
-      // 폰 접힌 줄(S1 폰 열 우선순위) — 기간 뒤 같은 줄 끝에 귀속 · 종료일 지남(상태 칸 2행은 폰에서 숨는다).
+      // 폰 접힌 줄(S1 폰 열 우선순위) — 기간 뒤 같은 줄 끝에 귀속 · 상태 2행 한 값(상태 칸 2행은 폰에서 숨는다).
       summary: (row) => (
         <>
           <span className={styles.periodCell}>{period(row)}</span>
@@ -159,10 +166,10 @@ export function ProjectsTable({
               <span className={styles.attribution}>{row.attributionLabel}</span>
             </>
           ) : null}
-          {row.endDatePassed ? (
+          {secondLine(row) ? (
             <>
               {" · "}
-              <span className={styles.endDatePassed}>종료일 지남</span>
+              {secondLine(row)}
             </>
           ) : null}
         </>
@@ -176,8 +183,8 @@ export function ProjectsTable({
       cell: (row) => (
         <>
           <StatusTag status={PROJECT_STATUS_WORD[row.status as ProjectStatus] ?? "수주중"} variant="text" />
-          {/* D-81 · DR-34 — 수주중 + 종료일 지남의 2행. 태그가 아니라 상태 글자보다 크지 않은 글자다. */}
-          {row.endDatePassed ? <span className={[styles.endDatePassed, styles.statusSecondLine].join(" ")}>종료일 지남</span> : null}
+          {/* D-81 · DR-34 — 2행(종료일 지남 > 수금 지연). 태그가 아니라 상태 글자보다 크지 않은 글자다. */}
+          {secondLine(row) ? <span className={styles.statusSecondLine}>{secondLine(row)}</span> : null}
         </>
       ),
     },

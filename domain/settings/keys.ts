@@ -857,7 +857,6 @@ export const PROJECT_COLLECTION_DUE_DAYS: SettingDef<number> = {
   namespace: "프로젝트",
   unitLabel: "일",
   default: 60,
-  readBy: { phase: "7" },
 };
 
 SETTING_DEFS.push(PROJECT_COST_RATE_PCT, PROJECT_COLLECTION_DUE_DAYS);

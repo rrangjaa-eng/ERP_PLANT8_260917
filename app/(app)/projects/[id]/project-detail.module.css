@@ -732,3 +732,38 @@ td:has(> .rowNumber) {
     display: block;
   }
 }
+
+/* 07-22(W3 · SC-20) — 「서류」 섹션: 종류 칸(라벨 + select) 한 줄 → 첨부 영역. 토큰만. */
+.documents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.documentKind {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0;
+}
+
+.documentKindSelect {
+  width: var(--field-w-select);
+  max-width: 100%;
+}
+
+/* 폰 — 종류 칸도 터치 높이(PanelForm 행동 줄과 같은 꼴: --field-h를 덮는다). */
+@media (max-width: 699.98px) {
+  .documentKind {
+    --field-h: var(--touch-min);
+  }
+}
+
+/* 07-22(W7 · SC-20) — 계산서 옆 패널 본문(결재 시트 본문과 같은 꼴 — 좌우 --panel-pad-x). */
+.invoicePanelBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--s-2) var(--panel-pad-x);
+}

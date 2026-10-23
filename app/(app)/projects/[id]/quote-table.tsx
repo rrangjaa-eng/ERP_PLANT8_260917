@@ -1008,6 +1008,7 @@ export function QuoteLedger({
   lockReason,
   emptyState,
   revenue,
+  invoiceFiles,
   issueRequests,
   canWriteEntries,
   usdDefaultFxRate,
@@ -1078,6 +1079,8 @@ export function QuoteLedger({
   /** 04-30 — 0줄 표의 한 줄과 다음 한 수(서버 quoteTableEmptyState). */
   emptyState: QuoteTableEmptyState;
   revenue: RevenueDto;
+  /** 07-22(W7 · SC-20) — 저장된 발행 줄 id → 살아 있는 계산서 파일(listInvoiceFiles). 발행 줄을 못 보면 빈 객체. */
+  invoiceFiles?: Record<string, { fileId: string; name: string; sizeBytes: number; createdAt: string }>;
   /** 06-18(S16) — 매출 섹션 「발행 요청」 표(서버가 칸 노출 · 권리를 가려 보낸다). */
   issueRequests: IssueRequestsProps;
   canWriteEntries: boolean;
@@ -1105,6 +1108,7 @@ export function QuoteLedger({
     paidIds: (paidEntries ?? []).flatMap((entry) => (entry.id ? [entry.id] : [])),
   };
   const [balanceKrw, setBalanceKrw] = useState<number | undefined>(revenue.balanceKrw);
+  const [collectionOverdue, setCollectionOverdue] = useState<boolean | undefined>(revenue.collectionOverdue);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   // FINDING-012 — 이번 저장 요청의 바뀐 줄 수(만든 + 고친 = dirty 줄, 지운 = 보관할 줄). 성공 글자 `저장됨 N줄 HH:MM`의 N
   // (0이면 `저장됨 HH:MM`). 시도마다 savedAt을 먼저 비우므로 성공 전에는 보이지 않는다.
@@ -1430,6 +1434,7 @@ export function QuoteLedger({
         if (data.revenue.issuedEntries !== undefined) setIssuedEntries(entriesFromDto(data.revenue.issuedEntries));
         if (data.revenue.paidEntries !== undefined) setPaidEntries(entriesFromDto(data.revenue.paidEntries));
         setBalanceKrw(data.revenue.balanceKrw);
+        setCollectionOverdue(data.revenue.collectionOverdue);
       }
       if (data?.issueRequests) setIssueRequestRows(issueRequestDraftsFromDto(data.issueRequests));
       if (data?.project) {
@@ -1613,6 +1618,7 @@ export function QuoteLedger({
     setPaidEntries(entriesFromDto(revenue.paidEntries));
     setIssueRequestRows(issueRequestDraftsFromDto(issueRequests.rows));
     setBalanceKrw(revenue.balanceKrw);
+    setCollectionOverdue(revenue.collectionOverdue);
     setPeriodBaseline({ startDate: period.startDate, endDate: period.endDate });
     setRestoredPeriodBase(null);
     setPeriodDraft(null);
@@ -3269,6 +3275,8 @@ export function QuoteLedger({
         onAddPaid={addPaid}
         canWriteEntries={canWriteEntries}
         balanceKrw={balanceKrw}
+        collectionOverdue={collectionOverdue}
+        invoiceFiles={invoiceFiles}
         saveLocked={saveLocked}
         saveButtonId={saveButtonId}
         editableWidth={editableWidth}

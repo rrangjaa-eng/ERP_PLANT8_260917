@@ -35,6 +35,15 @@ import {
   reserveEvidenceRights,
   reserveEvidenceWriteOpen,
 } from "@/domain/reserves";
+import {
+  denyProjectDocumentWrite,
+  PROJECT_DOCUMENT_KIND,
+  projectDocumentNotFound,
+  projectDocumentOwner,
+  projectDocumentRights,
+  projectDocumentWriteOpen,
+} from "@/domain/projects/documents";
+import { denyInvoiceFileWrite, invoiceFileNotFound, invoiceFileOwner, invoiceFileRights, invoiceFileWriteOpen, replaceInvoiceFile, REVENUE_INVOICE_KIND } from "@/domain/revenue/invoice-file";
 import { CARD_USAGE_ENTITY, cardSlipNotFound, cardSlipOwner, cardSlipRights, cardSlipWriteOpen, denyCardSlipWrite, type CardSlipOwner } from "@/domain/corp-card-usages";
 import { bumpInstanceVersion } from "@/repositories/approvals";
 import { lockEvidenceTypePrivateByValue } from "@/repositories/code-tables";
@@ -142,6 +151,8 @@ type OwnerRule = {
   lockParent?(viewer: Viewer, owner: OwnerState, tx: DbOrTx): Promise<unknown>;
   // 06-11(C4 · B-1) — 결재 통과 문서의 증빙 추가 · 무효가 같은 트랜잭션에서 부른다. 풀린 확인 기록의 status를 돌려준다(없으면 null).
   onApprovedEvidenceChange?(viewer: Viewer, owner: OwnerState, change: { kind: "add" | "void" }, tx: DbOrTx): Promise<EvidenceReviewStatus | null>;
+  // 07-22(W7) — 한 자리 주인(계산서): 잠근 주인의 살아 있는 파일을 새 파일 행을 넣기 직전에 같은 트랜잭션에서 뗀다(교체).
+  beforeAdd?(viewer: Viewer, owner: OwnerState, tx: DbOrTx): Promise<void>;
   attachMenu: "expenses.evidence_attach";
   voidMenu?: "expenses.evidence_void";
   notFound(): UserFacingError;
@@ -192,6 +203,8 @@ async function expenseApprovedEvidenceChange(viewer: Viewer, owner: OwnerState, 
 
 type RevisionOwner = NonNullable<Awaited<ReturnType<typeof revisionEvidenceOwner>>>;
 type ReserveOwner = NonNullable<Awaited<ReturnType<typeof reserveEvidenceOwner>>>;
+type ProjectDocumentOwner = NonNullable<Awaited<ReturnType<typeof projectDocumentOwner>>>;
+type InvoiceFileOwner = NonNullable<Awaited<ReturnType<typeof invoiceFileOwner>>>;
 
 // 기안자 · 결재 흐름이 없는 주인(rights가 판정한다) — 05 칸은 쓰이지 않는 자리다.
 const NO_DRAFTER_FLOW = {
@@ -250,6 +263,29 @@ const OWNER_RULES: Record<string, OwnerRule> = {
     denyWrite: () => denyCardSlipWrite(),
     ...NO_DRAFTER_FLOW,
     notFound: cardSlipNotFound,
+  },
+  // 07-22(W3) 프로젝트 서류(project_document) — 주인 = 서류 행(파일 하나), 권리는 07-18 정보 면 저장 권리(periodEditRights), 읽기는 프로젝트 행 범위.
+  [PROJECT_DOCUMENT_KIND]: {
+    load: (viewer, ownerId) => projectDocumentOwner(viewer, ownerId),
+    lock: (viewer, ownerId, tx) => projectDocumentOwner(viewer, ownerId, tx),
+    canSee: async (viewer, owner) => (await projectDocumentRights(viewer, owner as ProjectDocumentOwner)).read,
+    rights: (viewer, owner) => projectDocumentRights(viewer, owner as ProjectDocumentOwner),
+    writeOpen: (owner) => projectDocumentWriteOpen(owner as ProjectDocumentOwner),
+    denyWrite: (viewer, owner) => denyProjectDocumentWrite(viewer, (owner as ProjectDocumentOwner).projectId),
+    ...NO_DRAFTER_FLOW,
+    notFound: projectDocumentNotFound,
+  },
+  // 07-22(W7) 매출 발행 줄 계산서(revenue_entry) — 한 자리(beforeAdd가 이전 파일을 뗀다), 쓰기 = projects.revenue 쓰기 ∧ 발행 줄 ∧ 보관 아님.
+  [REVENUE_INVOICE_KIND]: {
+    load: (viewer, ownerId) => invoiceFileOwner(viewer, ownerId),
+    lock: (viewer, ownerId, tx) => invoiceFileOwner(viewer, ownerId, tx),
+    canSee: async (viewer, owner) => (await invoiceFileRights(viewer, owner as InvoiceFileOwner)).read,
+    rights: (viewer, owner) => invoiceFileRights(viewer, owner as InvoiceFileOwner),
+    writeOpen: (owner) => invoiceFileWriteOpen(owner as InvoiceFileOwner),
+    denyWrite: (viewer, owner) => denyInvoiceFileWrite(viewer, owner as InvoiceFileOwner),
+    beforeAdd: (viewer, owner, tx) => replaceInvoiceFile(viewer, owner as InvoiceFileOwner, tx),
+    ...NO_DRAFTER_FLOW,
+    notFound: invoiceFileNotFound,
   },
 };
 
@@ -493,6 +529,7 @@ export async function completeEvidenceUpload(
       if (rule.approved(owner) && !approvedBefore) throw new EvidenceUploadRefusedError("restart");
       const completed = await completeIntentIfOpen(viewer, { id: intent.id, createdBy: viewer.id, now }, tx);
       if (!completed) throw new EvidenceUploadRefusedError("restart");
+      await rule.beforeAdd?.(viewer, owner, tx);
       const inserted = await insertFile(
         viewer,
         {

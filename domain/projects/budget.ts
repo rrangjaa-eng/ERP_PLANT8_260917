@@ -20,6 +20,7 @@ import {
   findBudgetBasisFacts,
   hasApprovedRevisionEntry,
   insertBudgetEntry,
+  maxReflectedBasisKrw,
   listBudgetEntriesPage,
   listBudgetRowFacts,
   listProjectIdsWithoutBudget,
@@ -82,8 +83,12 @@ export async function recordBudgetEvent(
 ): Promise<number> {
   const quoteRevisionId = input.reason === "new_approved_revision" ? input.quoteRevisionId : null;
   if (quoteRevisionId !== null && (await hasApprovedRevisionEntry(viewer, projectId, quoteRevisionId, tx))) return 0;
+  // 승인 취소는 승인 기준을 지우지만 예산 줄은 남긴다 — 새 승인 차수는 「지금 승인 기준」이 아니라 이미 예산에 반영된 기준(자동 줄의
+  // 최대 기준 금액)을 넘는 증액만 쌓는다(게이트 P1 · 취소 → 새 차수 · 줄 없던 판 재승인).
+  const prevBasisKrw =
+    input.reason === "new_approved_revision" ? Math.max(input.prevBasisKrw, await maxReflectedBasisKrw(viewer, projectId, tx)) : input.prevBasisKrw;
   const costRatePct = await readCostRatePct(tx);
-  const deltaKrw = budgetDelta({ newBasisKrw: input.newBasisKrw, prevBasisKrw: input.prevBasisKrw, costRatePct });
+  const deltaKrw = budgetDelta({ newBasisKrw: input.newBasisKrw, prevBasisKrw, costRatePct });
   if (deltaKrw === null || costRatePct === null) return 0;
   await insertEntry(
     viewer,

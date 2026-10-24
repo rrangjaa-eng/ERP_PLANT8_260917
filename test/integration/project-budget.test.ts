@@ -398,12 +398,43 @@ describe("같은 견적 판 재승인 → 줄 한 번 (F52)", () => {
     expect(await entriesOf(s.projectId)).toEqual([...ONCE, { reason: "new_approved_revision", base: 6_000_000, rate: "70.0", delta: 700_000, memo: null }]);
   });
 
-  it("같은 판 승인 요청이 동시에 두 번 와도 줄은 하나", async () => {
+  // 게이트 P1 — 취소가 승인 기준을 지워도 새 차수 승인은 이미 예산에 반영된 기준을 넘는 증액만 쌓는다.
+  it("승인 → 취소 → 새 차수(같은 금액) → 승인 뒤 예산 그대로", async () => {
     await setCostRate(70);
     const s = await setupApproval();
     await addExecutionLine(s.revisionId, 5_000_000);
-    await Promise.allSettled([approve(s.pm, s.revisionId), approve(s.pm, s.revisionId)]);
+    await approve(s.pm, s.revisionId);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    const second = await createRevisionFromCurrent(s.pm, { projectId: s.projectId, fromRevisionId: s.revisionId });
+    await approve(s.pm, second.revisionId);
     expect(await entriesOf(s.projectId)).toEqual(ONCE);
+    expect(await budgetOf(s.projectId)).toBe(3_500_000);
+  });
+
+  it("승인 → 취소 → 새 차수(증액) → 승인이면 증액분만", async () => {
+    await setCostRate(70);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 5_000_000);
+    await approve(s.pm, s.revisionId);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    const second = await createRevisionFromCurrent(s.pm, { projectId: s.projectId, fromRevisionId: s.revisionId });
+    await addExecutionLine(second.revisionId, 1_000_000);
+    await approve(s.pm, second.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual([...ONCE, { reason: "new_approved_revision", base: 6_000_000, rate: "70.0", delta: 700_000, memo: null }]);
+    expect(await budgetOf(s.projectId)).toBe(4_200_000);
+  });
+
+  // 게이트 P2-1 — 첫 승인 때 줄이 없던 판(원가율이 비어 있었다)도 처음 원가율 줄로 반영된 기준을 넘지 않으면 재승인에 쌓지 않는다.
+  it("원가율 없이 승인 → 처음 원가율(처음 줄) → 취소 → 재승인 뒤 처음 줄 하나", async () => {
+    await setCostRate(null);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 5_000_000);
+    await approve(s.pm, s.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual([]);
+    await saveCostRateSetting(await makeAdmin(), RATE_DEF, 70);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    await approve(s.pm, s.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual([{ reason: "initial", base: 5_000_000, rate: "70.0", delta: 3_500_000, memo: null }]);
   });
 
   it("DB가 같은 판 승인 반영 줄 두 번째를 막는다", async () => {

@@ -128,8 +128,6 @@ export type ExpenseFormProps = {
   evidenceRecords?: ReactNode;
   /** 06.1-08 붙은 증빙 기록(살아 있는 붙임) 수 — 붙이기 · 떼기 뒤 제출 막힘을 다시 잰다(G-06.1-29). 새 문서는 0. */
   linkedEvidenceCount?: number;
-  /** 07-23 R-1: `vendors.account` 쓰기 — 없으면 지급처 고르기의 거래처 등록 패널에 계좌 세 칸을 그리지 않는다(서버도 거부). */
-  canEditVendorAccount?: boolean;
 };
 
 const DATE_EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
@@ -167,7 +165,7 @@ function FxField({ initial, error, onRaw, below }: { initial: number; error: str
   );
 }
 
-export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords, linkedEvidenceCount = 0, canEditVendorAccount = false }: ExpenseFormProps) {
+export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords, linkedEvidenceCount = 0 }: ExpenseFormProps) {
   const router = useRouter();
   const [evidenceType, setEvidenceType] = useState(data.evidenceType ?? "");
   const [paymentMethod, setPaymentMethod] = useState(data.paymentMethod ?? "");
@@ -1273,7 +1271,7 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
         onPick={pickPayee}
         onRegisterNew={setRegisterName}
       />
-      {registerName !== null ? <WorkVendorPanel name={registerName} canEditAccount={canEditVendorAccount} onClose={() => setRegisterName(null)} onVendor={takeWorkplaceVendor} /> : null}
+      {registerName !== null ? <WorkVendorPanel name={registerName} onClose={() => setRegisterName(null)} onVendor={takeWorkplaceVendor} /> : null}
       {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
     </>
   );

@@ -150,20 +150,22 @@ test.describe("일하는 자리 거래처 바로 등록 (07-23 SC-18)", () => {
     await page.context().close();
   });
 
-  // 07-23 R-1 = /cso C-1: 지출결의 쓰기만 있는 PM — 계좌 세 칸이 아예 없고 등록은 계좌 없이 된다(새 거래처라도 첫 계좌는 계좌 권한자가 넣는다).
-  test("R-1 — 계좌 쓰기 없음 → 등록 패널에 계좌 세 칸 없음 · 저장 → 지급처 칸 · 계좌 비움", async ({ browser, baseURL }) => {
+  // 사용자 결정(10/24 「지금처럼 받기」): 지출결의 쓰기만 있는 PM도 업무 중 등록에서 계좌 세 칸을 넣는다(10/23 R-1 막음을 이 경로에서만 되돌림).
+  test("R-1 — 계좌 쓰기 없음 → 등록 패널에 계좌 세 칸 있음 · 저장 → 지급처 칸 · 계좌 실림", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openDraft(page, fx, "tracer");
-    const name = `계좌없음-${randomUUID().slice(0, 6)}`;
+    const name = `계좌받음-${randomUUID().slice(0, 6)}`;
     const panel = await openRegisterPanel(page, name);
     await expect(panel.getByLabel("이름")).toHaveValue(name);
-    for (const label of ["계좌 은행", "예금주", "계좌번호"]) await expect(panel.getByLabel(label, { exact: true })).toHaveCount(0);
+    await panel.getByLabel("계좌 은행", { exact: true }).fill("국민");
+    await panel.getByLabel("예금주", { exact: true }).fill("주식회사 계좌받음");
+    await panel.getByLabel("계좌번호", { exact: true }).fill("123-456-789012");
     await panel.getByRole("button", { name: /^거래처 등록/ }).click();
     await expect(panel).toHaveCount(0);
     await expect(page.getByTestId("expense-vendor")).toHaveText(name);
     const [row] = await db.select({ bank: vendors.accountBank, holder: vendors.accountHolder, last4: vendors.accountNumberLast4 }).from(vendors).where(eq(vendors.name, name));
-    expect(row).toEqual({ bank: null, holder: null, last4: null });
+    expect(row).toEqual({ bank: "국민", holder: "주식회사 계좌받음", last4: "9012" });
     await page.context().close();
   });
 

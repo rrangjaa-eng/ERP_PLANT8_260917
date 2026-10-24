@@ -142,18 +142,12 @@ describe("일하는 자리 등록 (SC-18 · D-745 · K20)", () => {
     expect(logs.map((log) => [log.actionType, (log.detail as { source?: string } | null)?.source])).toEqual([["document_create", "workplace"]]);
   });
 
-  // 07-23 R-1 = /cso C-1 · 사용자 결정(10/23 15:44): 계좌 권한 없는 편집자는 새 거래처 등록에서도 계좌를 넣지 못한다(createVendor와 같은 규칙).
-  it.each([
-    ["은행", { accountBank: "국민" }],
-    ["예금주", { accountHolder: "주식회사 일자리" }],
-    ["번호", { accountNumber: "123-456-789012" }],
-  ])("지출결의 쓰기만(계좌 쓰기 없음) + 계좌 %s → 거부 · 행 없음", async (_label, account) => {
+  // 사용자 결정(10/24 「지금처럼 받기」): 업무 중 등록은 계좌를 그대로 받는다 — 계좌 쓰기가 없어도 실은 칸이 저장된다(10/23 거부 규칙을 이 경로에서만 되돌림).
+  it("지출결의 쓰기만(계좌 쓰기 없음) + 계좌 세 칸 → 저장 · 계좌 실림", async () => {
     const staff = await makeExpenseWriter({ expenses: true });
-    const name = `계좌거부-${randomUUID()}`;
-    const error = await registerVendorFromWork(staff, { name, ...account }).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(ForbiddenError);
-    expect((error as Error).message).toBe("계좌 수정 권한 없음");
-    expect(await db.select().from(vendors).where(eq(vendors.name, name))).toHaveLength(0);
+    const vendor = await registerVendorFromWork(staff, { name: `계좌받음-${randomUUID()}`, accountBank: "국민", accountHolder: "주식회사 일자리", accountNumber: "123-456-789012" });
+    const row = await vendorRow(vendor.id);
+    expect([row.accountBank, row.accountHolder, row.accountNumberLast4]).toEqual(["국민", "주식회사 일자리", "9012"]);
   });
 
   it("지출결의 쓰기만(계좌 쓰기 없음) + 계좌 칸 없음 → 저장(계좌 비움)", async () => {

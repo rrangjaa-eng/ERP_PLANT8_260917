@@ -768,10 +768,7 @@ const WORK_NOT_PICKABLE_MESSAGE = "고를 수 없는 거래처 · 다른 거래�
 export async function registerVendorFromWork(viewer: Viewer, input: WorkVendorInput, deps?: Partial<VendorWriteDeps>): Promise<VendorDto> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, EXPENSES_MENU, "write"))) throw new ForbiddenError("거래처 등록 권한 없음");
-  // 07-23 R-1(/cso C-1) · 사용자 결정(10/23): createVendor와 같은 규칙 — 계좌 세 칸 중 하나라도 실으면 `vendors.account` 쓰기가 필요하다.
-  // 첫 계좌는 바뀜 알림이 없어, 지출결의 쓰기만으로 새 거래처에 자기 계좌를 넣는 지급 사기 경로가 된다. 판정은 칸 오류보다 먼저.
-  const accountGiven = present(input.accountBank) !== null || present(input.accountHolder) !== null || present(input.accountNumber) !== null;
-  if (accountGiven && !(await canFn(viewer, VENDOR_ACCOUNT_MENU, "write"))) throw new ForbiddenError("계좌 수정 권한 없음");
+  // 사용자 결정(10/24): 업무 중 등록은 계좌를 그대로 받는다(`vendors.account` 쓰기 불필요) — 대신 끌 수 없는 로그로 남긴다.
   const kind = input.kind ?? "supplier";
   if (!servesSide(kind, "supplier")) throw new WorkVendorKindError("갈래 선택");
   const visibleFn = deps?.visible ?? defaultVisible;

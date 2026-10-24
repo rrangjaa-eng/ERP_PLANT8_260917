@@ -1185,6 +1185,29 @@ test.describe("거래처 담당자 · 서류 · 확인 표시 (07-23 SC-17 ⑦�
     }
   });
 
+  // Codex P2(0723): 저장 전 고친 채로 확인을 누르면 version이 올라 폼이 다시 마운트되며 입력이 사라졌다 — 고친 칸이 있으면 확인 버튼이 없다.
+  test("저장 안 한 수정이 있으면 `확인됨으로 표시`가 없고 · 되돌려 놓으면 다시 보인다", async ({ page }) => {
+    const vendor = await freshVendor("E2E확인수정중");
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const panel = panelOf(page);
+      const mark = panel.getByRole("button", { name: "확인됨으로 표시" });
+      await waitForHydration(mark);
+
+      const name = panel.getByLabel("이름");
+      await name.fill(`${vendor.name}-고침`);
+      await expect(mark).toHaveCount(0);
+      await expect(panel.getByText("확인 전", { exact: true })).toBeVisible();
+
+      await name.fill(vendor.name);
+      await expect(mark).toBeVisible();
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+
   // DOM 감사 P2(0723): 확인 표시 요청이 연결에서 끊기면(thrownError) 오류 줄이 없어 눌렀는데 아무 일도 없는 것처럼 보였다.
   test("`확인됨으로 표시` 요청이 끊기면 같은 줄에 `확인 표시 실패 · 다시 시도` · 다시 누르면 줄이 사라지고 `확인됨` / `되돌리기`가 끊기면 `되돌리기 실패 · 다시 시도`", async ({ page }) => {
     const vendor = await freshVendor("E2E확인실패");

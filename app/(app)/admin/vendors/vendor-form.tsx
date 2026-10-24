@@ -179,6 +179,8 @@ export function VendorForm({
   // 07-20 J5: 갈래에 협력사가 있을 때만 지급 기한 칸 — 클라이언트로 바꾸면 칸이 사라지고 값을 비운다.
   const [kind, setKind] = useState<VendorKind>(defaultKind);
   const [termDays, setTermDays] = useState(editing?.paymentTermDays?.toString() ?? "");
+  // Codex P2: 확인 표시는 version을 올려 폼을 다시 마운트한다(page.tsx key) — 저장 안 한 입력이 있으면 확인 버튼을 감춘다(할 수 없는 선택지는 숨김).
+  const [dirty, setDirty] = useState(false);
   const showTermDays = servesSide(kind, "supplier") && workplace === null;
 
   // 두 액션 모두 훅 규칙대로 매 렌더 무조건 호출하고, isEditing으로 어느
@@ -451,8 +453,9 @@ export function VendorForm({
       blockedReason={blocked ? serverReason?.text : undefined}
       reason={reasonNode}
       reasonId="vendor-form-reason"
+      onDirtyChange={setDirty}
     >
-      {editing ? <VendorConfirmLine vendorId={editing.id} confirmed={editing.confirmedAt !== null} canConfirm={canEditAccount} /> : null}
+      {editing ? <VendorConfirmLine vendorId={editing.id} confirmed={editing.confirmedAt !== null} canConfirm={canEditAccount && !dirty} /> : null}
       {versionConflict ? (
         // 07-20 V3: 패널 상단 FormAlert + 3차 `새로 불러오기`(서버 값으로 다시 연다 — page의 VendorForm key가 version을 담아 새로 마운트).
         <div id="vendor-form-alert" ref={alertRef} tabIndex={-1} className={styles.formAlert}>

@@ -34,6 +34,17 @@ export async function insertBudgetEntry(viewer: Viewer, input: BudgetEntryInput,
   return row;
 }
 
+// 게이트 P1 — 이미 예산 줄로 반영된 기준 금액의 최댓값(자동 줄만 — base_amount_krw는 그 사건의 새 기준이고 auto_base_check가 자동 줄에
+// NOT NULL을 보장한다 · 직접 수정 줄은 NULL이라 빠진다). 줄이 없으면 0.
+export async function maxReflectedBasisKrw(viewer: Viewer, projectId: string, tx: DbOrTx): Promise<number> {
+  void viewer;
+  const [row] = await tx
+    .select({ maxKrw: sql<number>`coalesce(max(${projectBudgetEntries.baseAmountKrw}), 0)::bigint`.mapWith(Number) })
+    .from(projectBudgetEntries)
+    .where(and(eq(projectBudgetEntries.projectId, projectId), sql`${projectBudgetEntries.reason} <> 'manual'`));
+  return row?.maxKrw ?? 0;
+}
+
 export async function sumBudgetKrw(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<{ sumKrw: number; count: number }> {
   void viewer;
   const [row] = await tx

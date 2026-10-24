@@ -126,18 +126,24 @@ describe("PO 금액 저장 → 증액 예산 줄 (07-24 Task 1 · B-P1-5 · D-73
     expect(await entriesOf(s.projectId)).toHaveLength(3);
     expect(await budgetOf(s.projectId)).toBe(9_000_000);
 
-    // 다시 늘면 늘어난 만큼만(9백만 → 1천만 = 100만 × 60%).
-    await savePo(s, 10_000_000);
-    expect((await entriesOf(s.projectId)).at(-1)).toMatchObject({ base: 10_000_000, rate: "60.0", delta: 600_000 });
-
-    // 같은 값 다시 저장 → 줄 없음.
-    await savePo(s, 10_000_000);
-    expect(await entriesOf(s.projectId)).toHaveLength(4);
-
     // 원가율 비움 → 줄 없음.
     await setCostRate(null);
     await savePo(s, 20_000_000);
-    expect(await entriesOf(s.projectId)).toHaveLength(4);
+    expect(await entriesOf(s.projectId)).toHaveLength(3);
+  });
+
+  it("F52(10/24): 이미 반영된 최대 기준 이하로는 쌓지 않음 — PO 감액 900만 → 1,000만 재증액이면 줄 없음(예산 그대로)", async () => {
+    await setCostRate(70);
+    const s = await setup();
+    await savePo(s, 13_000_000);
+    await savePo(s, 9_000_000);
+    await savePo(s, 10_000_000);
+    await savePo(s, 10_000_000);
+    expect(await entriesOf(s.projectId)).toEqual([{ reason: "po_amount_change", base: 13_000_000, rate: "70.0", delta: 9_100_000, memo: null }]);
+
+    // 반영된 최대(1,300만)를 넘는 만큼만 쌓는다(1,300만 → 1,500만 = 200만 × 70%).
+    await savePo(s, 15_000_000);
+    expect((await entriesOf(s.projectId)).at(-1)).toMatchObject({ base: 15_000_000, delta: 1_400_000 });
   });
 
   it("PO 금액이 이번 저장에 없으면 예산 줄을 쓰지 않는다", async () => {
@@ -340,6 +346,113 @@ describe("새 승인 차수 → 증액 줄 (07-24 Task 2 · AQ-39 · D-730)", ()
     await approve(s.pm, third.revisionId);
     expect(await entriesOf(s.projectId)).toHaveLength(3);
     expect(await budgetOf(s.projectId)).toBe(7_000_000);
+  });
+});
+
+// F52(사용자 결정 10/24 「한 번만 쌓기」) — 같은 견적 판은 몇 번 재승인돼도 예산에 한 번만 반영된다.
+describe("같은 견적 판 재승인 → 줄 한 번 (F52)", () => {
+  const ONCE = [{ reason: "new_approved_revision", base: 5_000_000, rate: "70.0", delta: 3_500_000, memo: null }];
+
+  it("승인 → 취소 → 같은 판 재승인 뒤 줄 · 예산이 한 번 승인한 것과 같다", async () => {
+    await setCostRate(70);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 5_000_000);
+    await approve(s.pm, s.revisionId);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    await approve(s.pm, s.revisionId);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    await approve(s.pm, s.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual(ONCE);
+    expect(await budgetOf(s.projectId)).toBe(3_500_000);
+  });
+
+  it("1,000만 · 70% 승인 → 취소 → 재승인 뒤 예산 700만 그대로(취소가 승인 기준을 지워도 다시 쌓지 않는다)", async () => {
+    await setCostRate(70);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 10_000_000);
+    await approve(s.pm, s.revisionId);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    await approve(s.pm, s.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual([{ reason: "new_approved_revision", base: 10_000_000, rate: "70.0", delta: 7_000_000, memo: null }]);
+    expect(await budgetOf(s.projectId)).toBe(7_000_000);
+  });
+
+  it("판1 승인 → 판2(증액) 승인 → 판2 취소 → 판2 재승인 뒤 판2 증액 줄은 하나", async () => {
+    await setCostRate(70);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 5_000_000);
+    await approve(s.pm, s.revisionId);
+    const second = await createRevisionFromCurrent(s.pm, { projectId: s.projectId, fromRevisionId: s.revisionId });
+    await addExecutionLine(second.revisionId, 1_000_000);
+    await approve(s.pm, second.revisionId);
+    await setCustomerApproval(s.pm, second.revisionId, null, { now: NOW });
+    await approve(s.pm, second.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual([...ONCE, { reason: "new_approved_revision", base: 6_000_000, rate: "70.0", delta: 700_000, memo: null }]);
+    expect(await budgetOf(s.projectId)).toBe(4_200_000);
+  });
+
+  it("다른 판(새 차수) 승인은 여전히 새 줄을 만든다", async () => {
+    await setCostRate(70);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 5_000_000);
+    await approve(s.pm, s.revisionId);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    await approve(s.pm, s.revisionId);
+    const second = await createRevisionFromCurrent(s.pm, { projectId: s.projectId, fromRevisionId: s.revisionId });
+    await addExecutionLine(second.revisionId, 1_000_000);
+    await approve(s.pm, second.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual([...ONCE, { reason: "new_approved_revision", base: 6_000_000, rate: "70.0", delta: 700_000, memo: null }]);
+  });
+
+  // 게이트 P1 — 취소가 승인 기준을 지워도 새 차수 승인은 이미 예산에 반영된 기준을 넘는 증액만 쌓는다.
+  it("승인 → 취소 → 새 차수(같은 금액) → 승인 뒤 예산 그대로", async () => {
+    await setCostRate(70);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 5_000_000);
+    await approve(s.pm, s.revisionId);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    const second = await createRevisionFromCurrent(s.pm, { projectId: s.projectId, fromRevisionId: s.revisionId });
+    await approve(s.pm, second.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual(ONCE);
+    expect(await budgetOf(s.projectId)).toBe(3_500_000);
+  });
+
+  it("승인 → 취소 → 새 차수(증액) → 승인이면 증액분만", async () => {
+    await setCostRate(70);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 5_000_000);
+    await approve(s.pm, s.revisionId);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    const second = await createRevisionFromCurrent(s.pm, { projectId: s.projectId, fromRevisionId: s.revisionId });
+    await addExecutionLine(second.revisionId, 1_000_000);
+    await approve(s.pm, second.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual([...ONCE, { reason: "new_approved_revision", base: 6_000_000, rate: "70.0", delta: 700_000, memo: null }]);
+    expect(await budgetOf(s.projectId)).toBe(4_200_000);
+  });
+
+  // 게이트 P2-1 — 첫 승인 때 줄이 없던 판(원가율이 비어 있었다)도 처음 원가율 줄로 반영된 기준을 넘지 않으면 재승인에 쌓지 않는다.
+  it("원가율 없이 승인 → 처음 원가율(처음 줄) → 취소 → 재승인 뒤 처음 줄 하나", async () => {
+    await setCostRate(null);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 5_000_000);
+    await approve(s.pm, s.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual([]);
+    await saveCostRateSetting(await makeAdmin(), RATE_DEF, 70);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    await approve(s.pm, s.revisionId);
+    expect(await entriesOf(s.projectId)).toEqual([{ reason: "initial", base: 5_000_000, rate: "70.0", delta: 3_500_000, memo: null }]);
+  });
+
+  // 델타 /review P2 — 취소가 승인 기준을 지워도 PO 금액 저장은 이미 예산에 반영된 기준을 넘는 증액만 쌓는다.
+  it("승인 → 취소 → PO 같은 금액 저장 뒤 줄 하나", async () => {
+    await setCostRate(70);
+    const s = await setupApproval();
+    await addExecutionLine(s.revisionId, 5_000_000);
+    await approve(s.pm, s.revisionId);
+    await setCustomerApproval(s.pm, s.revisionId, null, { now: NOW });
+    await savePo(s, 5_000_000, "in_progress");
+    expect(await entriesOf(s.projectId)).toEqual(ONCE);
+    expect(await budgetOf(s.projectId)).toBe(3_500_000);
   });
 });
 

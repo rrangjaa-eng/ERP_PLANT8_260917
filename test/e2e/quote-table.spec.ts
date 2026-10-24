@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { waitForCardUsageSection } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
@@ -58,7 +58,17 @@ async function loginAndOpenProject(page: Page): Promise<{ projectId: string }> {
   return { projectId: project.id };
 }
 
-async function pasteIntoFocusedCell(page: Page, text: string) {
+// 표의 붙여넣기는 이벤트 대상이 아니라 표가 쥔 활성 셀 좌표(data-grid-focus)에 채운다(ui/table/Table.tsx handleTablePaste).
+// 하이드레이션 중에 준 focus()는 onFocus가 하이드레이션 뒤에야 돌아 그 사이 좌표가 (0,0)에 남고, 앞 동작 뒤 화면이 포커스를 옮겨도
+// 붙여넣기가 다른 칸으로 간다(#293 CI — USD 단가 붙여넣기가 번호 칸으로 · CPU 20배 감속으로 로컬 재현). 붙일 칸이 포커스이고
+// 표의 활성 셀이 된 뒤에만 붙인다.
+async function expectPasteTarget(target: Locator) {
+  await expect(target).toBeFocused();
+  await expect(target).toHaveAttribute("data-grid-focus", "");
+}
+
+async function pasteIntoFocusedCell(page: Page, target: Locator, text: string) {
+  await expectPasteTarget(target);
   await page.evaluate((clipboardText) => {
     const el = document.activeElement;
     const dt = new DataTransfer();
@@ -117,11 +127,11 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     // 항목(2)에 한 칸, 수량(4)부터 오른쪽으로 "수량\t단가" 두 칸 — 활성
     // 셀에서 오른쪽·아래로 채워지는 것을 두 자리에서 각각 확인한다.
     await gridcell(2).focus();
-    await pasteIntoFocusedCell(page, "붙여넣은 항목");
+    await pasteIntoFocusedCell(page, gridcell(2), "붙여넣은 항목");
     await expect(page.getByText("붙여넣은 항목")).toBeVisible();
 
     await gridcell(4).focus();
-    await pasteIntoFocusedCell(page, "7\t50000");
+    await pasteIntoFocusedCell(page, gridcell(4), "7\t50000");
 
     await expect(gridcell(4)).toHaveText("7"); // 수량
     await expect(gridcell(5)).toHaveText("50,000"); // 단가(KRW 서식)
@@ -142,7 +152,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
 
     // 단가에 숫자가 아닌 값을 붙여넣는다 — 오류 셀로 고정되어야 한다.
     await gridcell(5).focus();
-    await pasteIntoFocusedCell(page, "숫자아님");
+    await pasteIntoFocusedCell(page, gridcell(5), "숫자아님");
 
     await expect(gridcell(5)).toHaveAttribute("aria-invalid", "true");
     await expect(page.getByText(/숫자 형식 오류/)).toBeVisible();
@@ -255,10 +265,10 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     const numberPaste = "2\t 1,200,000 \n5\t 35,000 \n1\t₩450,000 ";
 
     await gridcell(0, 2).focus(); // 항목 — 아래로 넘쳐 2줄이 자동으로 생긴다.
-    await pasteIntoFocusedCell(page, itemNamePaste);
+    await pasteIntoFocusedCell(page, gridcell(0, 2), itemNamePaste);
 
     await gridcell(0, 4).focus(); // 수량 → 단가로 오른쪽까지 채운다.
-    await pasteIntoFocusedCell(page, numberPaste);
+    await pasteIntoFocusedCell(page, gridcell(0, 4), numberPaste);
 
     async function assertValues() {
       // 따옴표만 있고 줄바꿈이 없는 칸은 따옴표가 그대로 남는다(지워지지도,
@@ -1253,7 +1263,8 @@ async function footerPieces(page: Page): Promise<{ tone: string; text: string }[
     .evaluateAll((elements) => elements.map((element) => ({ tone: element.getAttribute("data-tone") ?? "", text: (element.textContent ?? "").trim() })));
 }
 
-async function pasteWithFormats(page: Page, formats: Record<string, string>) {
+async function pasteWithFormats(page: Page, target: Locator, formats: Record<string, string>) {
+  await expectPasteTarget(target);
   await page.evaluate((data) => {
     const transfer = new DataTransfer();
     for (const [format, value] of Object.entries(data)) transfer.setData(format, value);
@@ -1279,7 +1290,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
       { subcategory: "stage_construction", itemName: "엑셀 앞줄2", amount: 1000 },
     ]);
     await quoteCell(page, 0, 1).focus();
-    await pasteWithFormats(page, {
+    await pasteWithFormats(page, quoteCell(page, 0, 1), {
       "text/plain": `무대·시공\t엑셀 항목1\t${vendor.name}\t2\t1000\t800\r\n무대·시공\t엑셀 항목2\t${vendor.name}\t3\t2000\t900\r\n`,
     });
 
@@ -1338,7 +1349,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await page.goto(`/projects/${target.id}`);
     await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
     await quoteCell(page, 0, 0).focus();
-    await pasteWithFormats(page, copied);
+    await pasteWithFormats(page, quoteCell(page, 0, 0), copied);
 
     await expect(quoteDataRows(page)).toHaveCount(45);
     await expect(invalidCells(page)).toHaveCount(0);
@@ -1401,7 +1412,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await page.goto(`/projects/${target.id}`);
     await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
     await quoteCell(page, 0, 0).focus();
-    await pasteWithFormats(page, copied);
+    await pasteWithFormats(page, quoteCell(page, 0, 0), copied);
 
     await expect(quoteDataRows(page)).toHaveCount(2);
     await expect(invalidCells(page)).toHaveCount(0);
@@ -1472,7 +1483,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
     await quoteCell(page, 0, 0).focus();
     await expect(quoteCell(page, 0, 0)).toHaveAttribute("data-grid-focus", "");
-    await pasteWithFormats(page, copied);
+    await pasteWithFormats(page, quoteCell(page, 0, 0), copied);
 
     await expect(quoteDataRows(page)).toHaveCount(2);
     await expect(invalidCells(page)).toHaveCount(0);
@@ -1492,9 +1503,9 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
   test("(ISSUE-002) 엑셀 소수 원화 값을 단가 · 실행가 칸에 붙이면 두 칸이 `원화는 소수점 없이` 오류이고 1차는 서버를 부르지 않는다", async ({ page }) => {
     await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "소수원화", amount: 100_000, execution: 50_000 }]);
     await quoteCell(page, 0, 5).focus();
-    await pasteWithFormats(page, { "text/plain": "12.345" });
+    await pasteWithFormats(page, quoteCell(page, 0, 5), { "text/plain": "12.345" });
     await quoteCell(page, 0, 7).focus();
-    await pasteWithFormats(page, { "text/plain": "1,234.5" });
+    await pasteWithFormats(page, quoteCell(page, 0, 7), { "text/plain": "1,234.5" });
 
     await expect(invalidCells(page)).toHaveCount(2);
     await expect(quoteCell(page, 0, 5)).toContainText("원화는 소수점 없이");
@@ -1515,7 +1526,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     const { revisionId } = await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "빈비고", amount: 1000 }]);
     await quoteCell(page, 0, 10).focus();
     await expect(quoteCell(page, 0, 10)).toHaveAttribute("data-grid-focus", "");
-    await pasteWithFormats(page, { "text/plain": "—" });
+    await pasteWithFormats(page, quoteCell(page, 0, 10), { "text/plain": "—" });
 
     await expect(invalidCells(page)).toHaveCount(0);
     await saveAndWait(page);
@@ -1534,7 +1545,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     );
     await expect(quoteCell(page, 19, 2)).toHaveText("줄20");
     await quoteCell(page, 19, 2).focus();
-    await pasteWithFormats(page, { "text/plain": Array.from({ length: 45 }, (_, index) => `붙임${index + 1}`).join("\r\n") + "\r\n" });
+    await pasteWithFormats(page, quoteCell(page, 19, 2), { "text/plain": Array.from({ length: 45 }, (_, index) => `붙임${index + 1}`).join("\r\n") + "\r\n" });
 
     await expect(quoteCell(page, 19, 2)).toHaveText("붙임1");
     await expect(currentPage(page)).toHaveText("1");
@@ -1562,7 +1573,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
       Array.from({ length: 10 }, (_, index) => ({ subcategory: "stage_construction", itemName: `열줄${index + 1}`, amount: 1000 })),
     );
     await quoteCell(page, 0, 2).focus();
-    await pasteWithFormats(page, { "text/plain": Array.from({ length: 45 }, (_, index) => `새항목${index + 1}`).join("\n") });
+    await pasteWithFormats(page, quoteCell(page, 0, 2), { "text/plain": Array.from({ length: 45 }, (_, index) => `새항목${index + 1}`).join("\n") });
 
     await expect(quoteDataRows(page)).toHaveCount(45);
     await expect(pageNav(page)).toHaveCount(0);
@@ -1640,7 +1651,7 @@ test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽
     await pageNav(page).getByRole("button", { name: "3", exact: true }).first().click();
     await expect(quoteCell(page, 1, 2)).toHaveText("세쪽줄62");
     await quoteCell(page, 1, 4).focus();
-    await pasteIntoFocusedCell(page, "abc");
+    await pasteIntoFocusedCell(page, quoteCell(page, 1, 4), "abc");
     await expect(quoteCell(page, 1, 4)).toHaveAttribute("aria-invalid", "true");
     await pageNav(page).getByRole("button", { name: "1", exact: true }).first().click();
     await expect(currentPage(page)).toHaveText("1");
@@ -1703,7 +1714,7 @@ test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽
     await expect(endInput).toBeFocused();
 
     await quoteCell(page, 0, 4).focus();
-    await pasteIntoFocusedCell(page, "abc");
+    await pasteIntoFocusedCell(page, quoteCell(page, 0, 4), "abc");
     await expect(quoteCell(page, 0, 4)).toHaveAttribute("aria-invalid", "true");
     const actions = countServerActions(page);
     await primarySave(page).click();
@@ -1817,9 +1828,9 @@ test.describe("견적 줄 표 — 거부 뒤 오류 수 · 숨은 열 오류 · 
     await expect.poll(() => footerPieces(page)).toEqual([{ tone: "danger", text: "오류 1칸 · 전부 거부" }]);
 
     await quoteCell(page, 1, 4).focus();
-    await pasteIntoFocusedCell(page, "abc");
+    await pasteIntoFocusedCell(page, quoteCell(page, 1, 4), "abc");
     await quoteCell(page, 2, 4).focus();
-    await pasteIntoFocusedCell(page, "abc");
+    await pasteIntoFocusedCell(page, quoteCell(page, 2, 4), "abc");
     await expect(invalidCells(page)).toHaveCount(3);
 
     const actions = countServerActions(page);
@@ -1838,7 +1849,7 @@ test.describe("견적 줄 표 — 거부 뒤 오류 수 · 숨은 열 오류 · 
     // 숨은 칸(display: none)은 접근성 트리에 없다 — 논리 열 순서(번호 0 · 항목 2 · 실행가 7 · 차익 8)로 td를 센다.
     const cells = (rowIndex: number) => quoteDataRows(page).nth(rowIndex).locator("td");
     await cells(1).nth(7).focus();
-    await pasteWithFormats(page, { "text/plain": "800\t900" });
+    await pasteWithFormats(page, cells(1).nth(7), { "text/plain": "800\t900" });
     await expect(cells(1).nth(8)).toHaveAttribute("aria-invalid", "true");
     await expect(cells(1).nth(8)).toBeHidden();
     await expect(invalidCells(page)).toHaveCount(1);
@@ -1856,7 +1867,7 @@ test.describe("견적 줄 표 — 거부 뒤 오류 수 · 숨은 열 오류 · 
     await expect(quoteCell(page, 0, 2)).toHaveText("기존USD");
 
     await quoteCell(page, 0, 5).focus();
-    await pasteWithFormats(page, { "text/plain": "5000" });
+    await pasteWithFormats(page, quoteCell(page, 0, 5), { "text/plain": "5000" });
     await expect(quoteCell(page, 0, 5)).toContainText("5,000");
     await expect.poll(() => footerPieces(page)).toEqual([
       { tone: "muted", text: "붙여넣기 1줄" },
@@ -1876,7 +1887,7 @@ test.describe("견적 줄 표 — 저장됨 N줄(FINDING-012)", () => {
     ]);
     await quoteCell(page, 0, 10).focus();
     await expect(quoteCell(page, 0, 10)).toHaveAttribute("data-grid-focus", "");
-    await pasteWithFormats(page, { "text/plain": "비고바꿈" });
+    await pasteWithFormats(page, quoteCell(page, 0, 10), { "text/plain": "비고바꿈" });
     await quoteCell(page, 1, 2).focus();
     await page.keyboard.press("Delete");
     await page.getByRole("dialog").getByRole("button", { name: "견적 줄 삭제" }).click();
@@ -1925,7 +1936,7 @@ test.describe("견적 줄 표 — 묶음 ④ /qa 포커스", () => {
       await cell.focus();
       await expect(cell).toHaveAttribute("tabindex", "0", { timeout: 1000 });
     }).toPass();
-    await pasteIntoFocusedCell(page, "인력");
+    await pasteIntoFocusedCell(page, cell, "인력");
     const focusCell = quoteTable(page).locator("td[data-grid-focus]");
     await expect(focusCell).toHaveText("인력");
     await expect(focusCell).toBeFocused();

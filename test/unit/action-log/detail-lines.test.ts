@@ -198,8 +198,9 @@ describe("칸 이름 표 대조 (AQ-40)", () => {
 });
 
 describe("changes 없는 기존 기록의 대체 줄 (07-25 Codex P2)", () => {
+  const PAYMENT_CANCEL = { actionType: "payment_cancel", entity: "payment" };
   it("지급 취소: 사유 · 지급일 · 금액이 줄로 나온다(내부 id는 제외)", () => {
-    const lines = detailLines({ paymentId: "6f1f2c1e-0000-4000-8000-000000000001", reason: "계좌 오입력", payDate: "2026-10-01", transferKrw: 1100000, payableKrw: 1000000 });
+    const lines = detailLines({ paymentId: "6f1f2c1e-0000-4000-8000-000000000001", reason: "계좌 오입력", payDate: "2026-10-01", transferKrw: 1100000, payableKrw: 1000000 }, PAYMENT_CANCEL);
     expect(lines).toEqual([
       { label: "사유", before: "없음", after: "계좌 오입력" },
       { label: "지급일", before: "없음", after: "2026-10-01" },
@@ -208,26 +209,50 @@ describe("changes 없는 기존 기록의 대체 줄 (07-25 Codex P2)", () => {
     ]);
   });
 
+  it("지급 처리도 같은 대체 줄을 쓴다", () => {
+    expect(detailLines({ reason: "차액", payDate: "2026-10-01" }, { actionType: "payment_process", entity: "payment" })).toHaveLength(2);
+  });
+
   it("증빙 면제: 사유 한 줄", () => {
-    expect(detailLines({ reason: "소액 영수증 없음" })).toEqual([{ label: "사유", before: "없음", after: "소액 영수증 없음" }]);
+    expect(detailLines({ reason: "소액 영수증 없음" }, { actionType: "evidence_waive", entity: "expense" })).toEqual([{ label: "사유", before: "없음", after: "소액 영수증 없음" }]);
   });
 
   it("거래처 계좌 변경: 끝 4자리 전후 한 줄 + 출처는 한글", () => {
-    expect(detailLines({ beforeLast4: "1234", afterLast4: "5678", source: "admin" })).toEqual([
+    expect(detailLines({ beforeLast4: "1234", afterLast4: "5678", source: "admin" }, { actionType: "vendor_account_change", entity: "vendor" })).toEqual([
       { label: "계좌번호", before: "····1234", after: "····5678" },
       { label: "출처", before: "없음", after: "관리자 화면" },
     ]);
   });
 
-  it("업무 중 거래처 등록: 출처와 계좌 끝 4자리", () => {
-    expect(detailLines({ source: "workplace", beforeLast4: null, afterLast4: "5678" })).toEqual([
+  it("업무 중 거래처 등록(document_create + vendor + source workplace): 출처와 계좌 끝 4자리", () => {
+    expect(detailLines({ source: "workplace", beforeLast4: null, afterLast4: "5678" }, { actionType: "document_create", entity: "vendor" })).toEqual([
       { label: "계좌번호", before: "없음", after: "····5678" },
       { label: "출처", before: "없음", after: "업무 중 등록" },
     ]);
   });
 
+  it("work_vendor_create 종류도 업무 중 거래처 등록으로 본다", () => {
+    expect(detailLines({ source: "workplace" }, { actionType: "work_vendor_create", entity: "vendor" })).toEqual([{ label: "출처", before: "없음", after: "업무 중 등록" }]);
+  });
+
+  it("알려지지 않은 종류의 reason은 줄로 만들지 않는다(내부 코드값 노출 방지)", () => {
+    expect(detailLines({ reason: "excluded" }, { actionType: "cert_review", entity: "cert" })).toBeNull();
+    expect(detailLines({ reason: "manual" }, { actionType: "cert_event", entity: "cert" })).toBeNull();
+    expect(detailLines({ reason: "register_person_rollback" }, { actionType: "person_register", entity: "person" })).toBeNull();
+  });
+
+  it("종류를 모르면(context 없음) 대체 줄이 없다", () => {
+    expect(detailLines({ reason: "excluded" })).toBeNull();
+    expect(detailLines({ reason: "소액 영수증 없음" })).toBeNull();
+  });
+
+  it("document_create라도 vendor · workplace가 아니면 null", () => {
+    expect(detailLines({ source: "workplace" }, { actionType: "document_create", entity: "expense" })).toBeNull();
+    expect(detailLines({ source: "admin" }, { actionType: "document_create", entity: "vendor" })).toBeNull();
+  });
+
   it("알 수 없는 키만 있으면 null · changes가 있으면 changes가 우선", () => {
-    expect(detailLines({ paymentId: "x", foo: 1 })).toBeNull();
-    expect(detailLines({ reason: "무시", changes: { days: [3, 5] } })).toEqual([{ label: "일수", before: "3", after: "5" }]);
+    expect(detailLines({ paymentId: "x", foo: 1 }, PAYMENT_CANCEL)).toBeNull();
+    expect(detailLines({ reason: "무시", changes: { days: [3, 5] } }, PAYMENT_CANCEL)).toEqual([{ label: "일수", before: "3", after: "5" }]);
   });
 });

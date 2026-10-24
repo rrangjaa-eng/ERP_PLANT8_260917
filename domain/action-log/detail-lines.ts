@@ -140,6 +140,17 @@ const FALLBACK_KEYS: Array<[key: string, label: string]> = [
 ];
 const SOURCE_LABELS: Record<string, string> = { admin: "관리자 화면", workplace: "업무 중 등록" };
 
+// 대체 줄은 이 종류에만 쓴다 — 그 밖의 종류는 reason 같은 키가 내부 코드값(excluded · manual 등)이라 줄로 만들면 영문이 그대로 보인다.
+export type DetailKind = { actionType: string | null | undefined; entity?: string | null | undefined };
+const FALLBACK_ACTION_TYPES = new Set(["payment_cancel", "payment_process", "evidence_waive", "vendor_account_change", "work_vendor_create"]);
+
+function hasFallback(kind: DetailKind | undefined, detail: Record<string, unknown>): boolean {
+  if (!kind?.actionType) return false;
+  if (FALLBACK_ACTION_TYPES.has(kind.actionType)) return true;
+  // 업무 중 거래처 등록은 document_create + entity vendor + source workplace로 남는다.
+  return kind.actionType === "document_create" && kind.entity === "vendor" && detail.source === "workplace";
+}
+
 function fallbackLines(detail: Record<string, unknown>): DetailLine[] | null {
   const lines: DetailLine[] = [];
   for (const [key, label] of FALLBACK_KEYS) {
@@ -156,9 +167,9 @@ function fallbackLines(detail: Record<string, unknown>): DetailLine[] | null {
   return lines.length > 0 ? lines : null;
 }
 
-export function detailLines(detail: Record<string, unknown> | null | undefined): DetailLine[] | null {
+export function detailLines(detail: Record<string, unknown> | null | undefined, kind?: DetailKind): DetailLine[] | null {
   if (!detail) return null;
-  if (!isRecord(detail.changes)) return fallbackLines(detail);
+  if (!isRecord(detail.changes)) return hasFallback(kind, detail) ? fallbackLines(detail) : null;
   const lines: DetailLine[] = [];
   for (const [field, pair] of Object.entries(detail.changes).sort(([a], [b]) => compareFields(a, b))) {
     const values: unknown[] = Array.isArray(pair) ? pair : [null, pair];

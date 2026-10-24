@@ -107,7 +107,7 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
       entity,
       documentId: row.documentId ?? null,
       // 상세 열은 노출표에서 상세 항목이 꺼진 계급에는 값이 비어 있다(project()가 이미 걸렀다 — 필드 부재가 아니라 undefined).
-      lines: detailLines(row.detail),
+      lines: detailLines(row.detail, { actionType: row.actionType, entity: row.entity }),
     };
   });
 

@@ -201,12 +201,13 @@ function rowsOf(list: Awaited<ReturnType<typeof listPaymentTargets>>) {
 }
 
 describe("지급 대상 DTO vendorConfirmed · accountChanged (N2 · B-P2-5)", () => {
-  it("확인 전 거래처 → vendorConfirmed false · 확인됨 + 바뀐 계좌 → true · accountChanged true · 직원 지급처 → 해당 없음 · 표지가 있어도 지급 처리", async () => {
+  it("확인 전 거래처 → vendorConfirmed false · 확인됨 + 바뀐 계좌 → true · accountChanged true · 직원 지급처 → 해당 없음 · 계좌 바뀜 표지가 있어도 지급 처리", async () => {
     const manager = await makeVendorManager();
     const payer = await makePayer();
     const fx = await setupExpenseProject();
     const doc = await approvedExpenseWithoutEvidence(fx);
     const staffDoc = await employeePayeeDoc(fx);
+    await db.update(vendors).set({ confirmedAt: null, confirmedBy: null }).where(eq(vendors.id, fx.stageOneId));
 
     let rows = rowsOf(await listPaymentTargets(payer, {}));
     expect(rows.find((row) => row.id === doc.expenseId)).toMatchObject({ vendorConfirmed: false, accountChanged: false });

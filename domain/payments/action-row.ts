@@ -65,6 +65,9 @@ export const EVIDENCE_CONFIRMATION_GATES_PAYMENT = true;
 // 「거부 — 일괄 지급 건별 결과」 · P2 S1 선택 칸 이유(UI-SPEC) — 확인 전 증빙.
 export const EVIDENCE_UNCONFIRMED = "증빙 확인 전 · 증빙 확인";
 
+// 2026-10-24 사용자 결정(G13 일부 변경): 지급처 거래처가 확인 전이면 지급(선택 · 이체 파일 · 지급 완료)을 막는다.
+export const VENDOR_UNCONFIRMED = "거래처 확인 전 · 거래처 확인";
+
 // 확인 전 증빙이 지급을 막는가 — 정책은 EVIDENCE_CONFIRMATION_GATES_PAYMENT 하나(gates는 테스트 주입 자리).
 export function confirmationBlocksPayment(
   input: { hasEvidence: boolean; waived: boolean; confirmation: EvidenceConfirmation | null },

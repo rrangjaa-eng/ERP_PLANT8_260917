@@ -55,6 +55,8 @@ export async function setupExpenseProject(): Promise<ExpenseFixture> {
     normalizedName: `스테이지원-${randomUUID()}`,
     defaultEvidenceType: "tax_invoice",
     ...testVendorAccount(),
+    // 지급처로 쓰는 거래처 — 확인됨(2026-10-24 사용자 결정: 확인 전 거래처는 지급을 막는다).
+    confirmedAt: new Date(),
   });
 
   const project = await createProject(pm, {

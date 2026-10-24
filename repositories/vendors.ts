@@ -106,6 +106,14 @@ export async function findVendorNamesByIds(viewer: Viewer, ids: string[], tx: Db
   return new Map(rows.map((row) => [row.id, row.name]));
 }
 
+// 2026-10-24 사용자 결정(G13 일부 변경): 지급 완료 판정용 확인 여부 — FOR SHARE라 확인 켬 · 끔(NO KEY UPDATE)과 엇갈리지 않는다.
+// 지급 트랜잭션이 끝날 때까지 확인을 되돌리지 못하고, 먼저 되돌렸으면 그 결과를 읽는다. 없는 거래처는 확인 전(false).
+export async function lockVendorConfirmedForShare(viewer: Viewer, id: string, tx: DbOrTx): Promise<boolean> {
+  void viewer;
+  const [row] = await tx.select({ confirmedAt: vendors.confirmedAt }).from(vendors).where(eq(vendors.id, id)).for("share");
+  return row !== undefined && row.confirmedAt !== null;
+}
+
 // 261006 「바뀔 때만 막기」 — 새로 고르거나 바꾼 거래처의 갈래(id → 갈래). 보관 · 숨김도 넣는다(판정은 호출자).
 // FOR SHARE — 호출 트랜잭션이 끝날 때까지 갈래 수정(UPDATE)을 막는다(판정 뒤 저장 전 경합). 저장끼리는 막지 않는다.
 export async function findVendorKindsByIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<Map<string, VendorKind>> {

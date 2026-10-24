@@ -29,6 +29,7 @@ import {
   TRANSFER_FRACTION,
   TRANSFER_NOT_NUMBER,
   TRANSFER_NOT_POSITIVE,
+  VENDOR_UNCONFIRMED,
   type EvidenceGateInput,
   type ExpenseActionBar,
   type PairGateInput,
@@ -60,6 +61,7 @@ import { formatKrw } from "@/lib/format-number";
 import { kstDateOf } from "@/lib/kst-date";
 import { maskTail4 } from "@/lib/mask-tail4";
 import { findVendorAccountsByIds } from "@/repositories/payment-targets";
+import { lockVendorConfirmedForShare } from "@/repositories/vendors";
 import { findUserPayoutAccountsByIds } from "@/repositories/users";
 import { canManagePayoutAccount } from "@/domain/people/account";
 
@@ -522,6 +524,8 @@ export async function completeExpensePayment(
         transferKrw: input.transferKrw,
         diffReason: input.diffReason,
       });
+      // 2026-10-24 사용자 결정(G13 일부 변경): 지급처 거래처가 확인 전이면 막는다 — 문서 잠금 뒤 같은 트랜잭션에서 FOR SHARE로 읽어 확인 되돌리기와 엇갈리지 않는다.
+      if (locked.vendorId && !locked.payeeUserId && !(await lockVendorConfirmedForShare(viewer, locked.vendorId, tx))) throw new GateBlockedError(VENDOR_UNCONFIRMED);
 
       const payment = await insertPayment(
         viewer,

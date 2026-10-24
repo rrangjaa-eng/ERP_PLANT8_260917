@@ -24,6 +24,9 @@ import "@/domain/people";
 import "@/domain/people/account";
 import "@/domain/vendors";
 import "@/domain/vendors/export";
+import "@/domain/vendors/account-changes";
+import "@/domain/vendors/contacts";
+import "@/domain/vendors/documents";
 import "@/domain/projects";
 import "@/domain/projects/references";
 import "@/domain/projects/members";
@@ -82,6 +85,11 @@ import {
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
+import { ForbiddenError as PeopleForbiddenError, resetPersonPassword } from "@/domain/people";
+import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
+import type { DtoSpec } from "@/domain/permissions/project";
+import { ROLE_DEFAULT_PERMISSIONS } from "@/domain/seed/role-defaults";
+import { makeDelegatedRole } from "./admin-cap-fixtures";
 
 // D-38: 이 페이즈의 정본 예외 목록은 이 하나뿐이다(03-04가 이 이름으로
 // 등록한다) — dtoName이 null인 내보내기는 사람 단위 정보 항목이 없는
@@ -929,5 +937,132 @@ describe("예산 칸은 예산 현황 DTO에만 (07-24 SC-20)", () => {
   it("프로젝트 · 견적 · 매출 DTO 명세에 예산 계열 칸이 없다", () => {
     const leaked = screens.flatMap((entry) => entry.fields.filter((field) => BUDGET_KEY.test(field.key)).map((field) => `${entry.name}.${field.key}`));
     expect(leaked).toEqual([]);
+  });
+});
+
+// 07-25(ROADMAP 기준 5 · K31 · T-07-25-02): 07이 더한 액션 · DTO · 비밀 액션을 이름으로 못 박아 검사한다. 위 일반 축(등록된 것 전부)은 「등록을 빠뜨린」 모듈을 못 보므로
+// 07 SUMMARY들의 새 액션 · DTO 목록을 여기 적고, 목록에 있는데 등록이 없거나 튜플이 다르면 빨갛다. 07 뒤 새 액션은 이 표에 한 줄을 더한다.
+const SEVEN_ACTIONS: readonly (readonly [name: string, menu: string, action: "view" | "write", dtoName: string | null])[] = [
+  ["setRuleEnabledAction", "admin.notification-rules", "write", null], // 07-19
+  ["saveNotificationRuleAction", "admin.notification-rules", "write", null], // 07-19
+  ["moveToThisWeekAction", "expenses.payments", "write", null], // 07-16
+  ["revertScheduledPayDatesAction", "expenses.payments", "write", null], // 07-16
+  ["unlockPersonAction", "admin.people", "write", "PersonDto"], // 07-17
+  ["resetPersonPasswordAction", "admin.people", "write", null], // 07-17 DTO 없는 비밀 액션
+  ["exportVendorsCsvAction", "admin.vendors", "view", "VendorDto"], // 07-20 파일 받기(D-736)
+  ["markVendorConfirmedAction", "vendors.account", "write", null], // 07-23
+  ["unmarkVendorConfirmedAction", "vendors.account", "write", null], // 07-23
+  ["requestVendorDocumentUploadAction", "vendors.account", "write", null], // 07-23
+  ["registerVendorFromWorkAction", "expenses", "write", "VendorDto"], // 07-23
+  ["pickExistingVendorFromWorkAction", "expenses", "write", "VendorDto"], // 07-23
+  ["requestProjectDocumentUploadAction", "projects", "write", null], // 07-22
+  ["requestInvoiceFileUploadAction", "projects.revenue", "write", null], // 07-22
+  ["getInvoiceFileAction", "projects", "view", "evidenceFile"], // 07-22
+  ["listBudgetHistoryAction", "projects.budget", "view", "budgetHistory"], // 07-24
+  ["setBudgetManuallyAction", "projects.budget", "write", "budgetHistory"], // 07-24
+];
+
+// 07이 새로 만든 메뉴 · 지급/사람/거래처 관리 메뉴는 07-05 확정 표대로 시드 계급 중 시스템 관리자만 연다.
+const SEVEN_SYSADMIN_ONLY_MENUS = ["admin.notification-rules", "projects.budget", "vendors.account", "expenses.payments", "admin.people", "admin.vendors"];
+
+describe("07 새 액션 — 등록 튜플 · 권한 없는 계급 거부 (07-25 기준 5)", () => {
+  it.each(SEVEN_ACTIONS)("%s 등록 — 메뉴 %s · 동작 %s · DTO %s", (name, menu, action, dtoName) => {
+    expect(ACTION_REGISTRY.find((entry) => entry.name === name)).toEqual({ name, menu, action, dtoName });
+  });
+
+  // 시드 표(ROLE_DEFAULT_PERMISSIONS)로 판정한다 — 이 파일의 앞 describe들이 같은 DB에서 계급 권한을 켜 두므로 DB를 읽으면 순서에 기댄다.
+  it("07 새 액션이 쓰는 시스템 관리자 전용 메뉴는 시드 표의 시스템 관리자 외 계급 줄에 없고, 시스템 관리자는 MENUS 루프로 켜진다", async () => {
+    const guarded = SEVEN_ACTIONS.filter(([, menu]) => SEVEN_SYSADMIN_ONLY_MENUS.includes(menu));
+    expect(guarded.length).toBeGreaterThan(10);
+    const granted = ROLE_DEFAULT_PERMISSIONS.filter((row) => row.allowed && SEVEN_SYSADMIN_ONLY_MENUS.includes(row.menu));
+    expect(granted.map((row) => `${row.roleId}|${row.menu}|${row.action}`)).toEqual([]);
+    for (const menu of SEVEN_SYSADMIN_ONLY_MENUS) expect(MENUS.some((item) => item.key === menu), `${menu}이 MENUS에 없다`).toBe(true);
+    const sysadmin = { id: "leak-scan-07-probe", roleId: SYSADMIN_ROLE_ID };
+    for (const [name, menu, action] of guarded) expect(await can(sysadmin, menu, action), `${name} · 시스템 관리자`).toBe(true);
+  });
+});
+
+describe("07 새 내보내기 — 등록 (07-25 C-P2-9 · D-736)", () => {
+  it("거래처 내려받기(07-20)가 registerExport로 등록돼 있다 — 메뉴 admin.vendors · DTO VendorDto", () => {
+    expect(EXPORT_REGISTRY.find((entry) => entry.name === "vendors.export")).toEqual({ name: "vendors.export", menu: "admin.vendors", dtoName: "VendorDto" });
+  });
+});
+
+describe("07 새 DTO — 정보 항목을 하나씩 끈 viewer에게 그 칸이 없다 (07-25 기준 5)", () => {
+  const SEVEN_DTOS = ["budgetRow", "budgetHistory", "AccountChangeDto", "VendorContactDto", "VendorDocumentFileDto"];
+
+  it("07 새 DTO가 레지스트리에 모두 있다", () => {
+    const names = new Set(DTO_REGISTRY.map((entry) => entry.name));
+    expect(SEVEN_DTOS.filter((name) => !names.has(name))).toEqual([]);
+  });
+
+  it("정보 항목 하나를 끈 계급은 그 항목에 걸린 칸만 잃고 나머지 칸은 받는다", async () => {
+    for (const dtoName of SEVEN_DTOS) {
+      const entry = DTO_REGISTRY.find((item) => item.name === dtoName);
+      if (!entry) throw new Error(`${dtoName} 미등록`);
+      const spec: DtoSpec<Record<string, unknown>, Record<string, unknown>> = {
+        fields: entry.fields.map((field) => ({ key: field.key, from: field.key, infoItem: field.infoItem })),
+      };
+      const row = Object.fromEntries(entry.fields.map((field) => [field.key, `sentinel-${field.key}`]));
+      const usedItems = [...new Set(entry.fields.flatMap((field) => infoItemsOf(field)))];
+      for (const off of usedItems) {
+        const roleId = await makeDelegatedRole({
+          name: "누수07",
+          copyFrom: [],
+          menus: [],
+          infoItems: INFO_ITEMS.filter((item) => item.key !== off).map((item) => item.key),
+        });
+        const result = await project({ id: "leak-scan-07-probe", roleId }, row, spec);
+        for (const field of entry.fields) {
+          const dependsOnOff = infoItemsOf(field).includes(off);
+          expect(field.key in result, `${dtoName}.${field.key} (끈 항목 ${off})`).toBe(!dependsOnOff);
+        }
+      }
+    }
+  });
+});
+
+// 07-17 D-P2-7: DTO 없는 비밀 액션 — 결과 `{ tempPassword }` 하나가 응답으로만 나간다. 면제가 아니라 DTO가 아닌 것이라 DTO_REGISTRY에 이름이 없어야 한다.
+describe("resetPersonPasswordAction — 검토 목록의 DTO 없는 비밀 액션 (07-25 T-07-25-02)", () => {
+  it("메뉴 admin.people 쓰기 · dtoName null이고 DTO_REGISTRY에 그 결과 이름이 없다", () => {
+    expect(ACTION_REGISTRY.find((entry) => entry.name === "resetPersonPasswordAction")).toEqual({
+      name: "resetPersonPasswordAction",
+      menu: "admin.people",
+      action: "write",
+      dtoName: null,
+    });
+    expect(DTO_REGISTRY.some((entry) => /tempPassword|resetPerson/i.test(entry.name))).toBe(false);
+  });
+
+  it("admin.people 쓰기가 없는 viewer는 거부된다", async () => {
+    const outcome = await resetPersonPassword({ id: "leak-scan-07-probe", roleId: DEFAULT_ROLE_ID }, "any-person").then(
+      () => new Error("거부되어야 하는데 성공함"),
+      (caught: unknown) => caught,
+    );
+    expect(outcome).toBeInstanceOf(PeopleForbiddenError);
+    expect((outcome as Error).message).toBe("비밀번호 초기화 권한 없음");
+  });
+
+  it("상한 밖(시스템 관리자) 대상 · 자기 자신은 거부되고, 상한 안 대상은 결과 키가 tempPassword 하나뿐이다", async () => {
+    const delegate = await makePerson("위임 07", await makeDelegatedRole({ copyFrom: [DEFAULT_ROLE_ID] }), null);
+    const admin = await makePerson("관리자 대상 07", SYSADMIN_ROLE_ID, null);
+    const staff = await makePerson("일반 대상 07", DEFAULT_ROLE_ID, null);
+
+    const aboveCeiling = await resetPersonPassword(delegate, admin.id).then(
+      () => new Error("거부되어야 하는데 성공함"),
+      (caught: unknown) => caught,
+    );
+    expect(aboveCeiling).toBeInstanceOf(RoleGrantForbiddenError);
+
+    const self = await resetPersonPassword(delegate, delegate.id).then(
+      () => new Error("거부되어야 하는데 성공함"),
+      (caught: unknown) => caught,
+    );
+    expect(self).toBeInstanceOf(PeopleForbiddenError);
+    expect((self as Error).message).toContain("본인");
+
+    const result = await resetPersonPassword(delegate, staff.id);
+    expect(Object.keys(result)).toEqual(["tempPassword"]);
+    expect(typeof result.tempPassword).toBe("string");
   });
 });

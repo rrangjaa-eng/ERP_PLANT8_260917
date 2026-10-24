@@ -102,7 +102,23 @@ type LocalRow = {
   retry: "complete" | "restart" | null;
 };
 
-type DoneRow = AttachmentFile & { previewUrl: string | null };
+export type DoneRow = AttachmentFile & { previewUrl: string | null };
+
+/** 이번에 올려 마친 파일을 더한다 — 한 자리는 바꿔 끼운다. 쌓아 두면 서버가 옛 파일을 뗀 뒤(새로 고침 값 [새 파일])에도
+ * 옛 파일이 「서버 값에 없는 이번 업로드」로 뒤에 붙어 마지막 하나로 다시 섰다(07-23 vendors 교체 E2E 불안정의 원인). */
+export function withUploaded(done: DoneRow[], file: DoneRow, single: boolean): DoneRow[] {
+  return single ? [file] : [...done, file];
+}
+
+/** 그릴 파일 — 서버 값(지운 것 빼고) 뒤에 아직 서버 값에 없는 이번 업로드. */
+export function visibleFiles(files: AttachmentFile[], done: DoneRow[], removed: readonly string[], single: boolean): DoneRow[] {
+  const all: DoneRow[] = [
+    ...files.filter((file) => !removed.includes(file.id)).map((file) => ({ ...file, previewUrl: null })),
+    ...done.filter((file) => !files.some((existing) => existing.id === file.id) && !removed.includes(file.id)),
+  ];
+  // 한 자리 — 교체 직후 서버 값을 다시 읽기 전에도 마지막 파일 하나만.
+  return single ? all.slice(-1) : all;
+}
 
 const SEOUL_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit" });
 const SEOUL_MINUTE = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -244,7 +260,7 @@ function FileAttachments({
     }
     intents.current.delete(key);
     if (prepared.previewUrl) previews.current.push(prepared.previewUrl);
-    setDone((current) => [...current, { ...completed.file, previewUrl: prepared.previewUrl }]);
+    setDone((current) => withUploaded(current, { ...completed.file, previewUrl: prepared.previewUrl }, single));
     setRows((current) => current.filter((candidate) => candidate.key !== key));
     return true;
   }
@@ -313,12 +329,7 @@ function FileAttachments({
     if (canAdd && event.dataTransfer.files.length > 0) void addFiles(event.dataTransfer.files);
   }
 
-  const all: (AttachmentFile & { previewUrl: string | null })[] = [
-    ...files.filter((file) => !removed.includes(file.id)).map((file) => ({ ...file, previewUrl: null })),
-    ...done.filter((file) => !files.some((existing) => existing.id === file.id) && !removed.includes(file.id)),
-  ];
-  // 한 자리 — 교체 직후 서버 값을 다시 읽기 전에도 마지막 파일 하나만.
-  const listed = single ? all.slice(-1) : all;
+  const listed = visibleFiles(files, done, removed, single);
   const empty = listed.length === 0 && rows.length === 0;
   const deletable = (id: string) => (deletableIds ? deletableIds.includes(id) : mode === "edit");
   const dropProps =

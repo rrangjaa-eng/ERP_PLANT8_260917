@@ -67,6 +67,8 @@ const PHASE7_WORDS: [string, StatusKind][] = [
   ["초과", "danger"],
   ["수금 지연", "warning"],
   ["계산 불가", "muted"],
+  // 07-23 DOM 감사 #3: 지급 목록 지급 방식 칸의 거래처 표지 — 같은 행 증빙 칸 `확인 전`과 가른다.
+  ["거래처 확인 전", "accent"],
 ];
 
 describe("status-map — 낱말 → 색 한 표", () => {

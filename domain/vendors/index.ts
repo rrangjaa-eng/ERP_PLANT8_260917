@@ -1,4 +1,4 @@
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { scopeFor } from "@/domain/permissions/scope-for";
@@ -21,6 +21,7 @@ import {
   updateVendor as repoUpdateVendor,
   updateVendorAccountNumber as repoUpdateVendorAccountNumber,
   setVendorHidden as repoSetVendorHidden,
+  setVendorConfirmed as repoSetVendorConfirmed,
   type VendorRow,
 } from "@/repositories/vendors";
 import { readVendorFieldAccess } from "@/repositories/permissions";
@@ -31,6 +32,8 @@ import { isUniqueViolation } from "@/lib/pg-errors";
 import { AccountFieldsError, accountFieldsChanged, judgeAccountFields, present } from "@/domain/vendors/account-fields";
 import { businessNoDigits, businessNoProblem } from "@/domain/vendors/business-no";
 import { normalizeAccountDigits } from "@/domain/vendors/account-digits";
+import { hadAccount, writeAccountChange } from "@/domain/vendors/account-changes";
+import { judgeContacts, saveVendorContacts, type VendorContactInput } from "@/domain/vendors/contacts";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -157,6 +160,8 @@ export type VendorDto = {
   archivedAt: Date | null;
   paymentTermDays: number | null;
   version: number;
+  // 07-23 V4: NULL = 확인 전(자동 등록 · 일하는 자리 등록) — 목록 상태 열 · 수정 패널 머리 태그.
+  confirmedAt: Date | null;
 };
 
 export const VENDOR_DTO_SPEC: DtoSpec<VendorRow, VendorDto> = {
@@ -174,6 +179,7 @@ export const VENDOR_DTO_SPEC: DtoSpec<VendorRow, VendorDto> = {
     { key: "archivedAt", from: "archivedAt", infoItem: "vendor.value" },
     { key: "paymentTermDays", from: "paymentTermDays", infoItem: "vendor.value" },
     { key: "version", from: "version", infoItem: "vendor.value" },
+    { key: "confirmedAt", from: "confirmedAt", infoItem: "vendor.value" },
   ],
 };
 
@@ -381,6 +387,8 @@ export type VendorInput = {
   paymentTermDays?: number | null;
   /** 07-20(V3) updateVendor 전용 — 패널이 읽은 version. 주면 그 사이 누가 고쳤을 때 VendorVersionConflictError. */
   expectedVersion?: number;
+  /** 07-23(V7) 담당자 목록 전체 — undefined = 안 바꿈 · 배열 = 이 순서 그대로(빠진 줄은 보관). 거래처 저장과 같은 트랜잭션. */
+  contacts?: VendorContactInput[];
 };
 
 // MAST-01 리뷰 M-5 — 계좌번호 갱신 계획을 순수 함수로 뽑는다. undefined(안 바꿈) ·
@@ -481,21 +489,34 @@ export async function createVendor(
   const accountNumberPlan = planAccountNumberUpdate(accountNumber);
   const accountNumberEncrypted = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null;
   const accountNumberLast4 = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null;
+  // 07-23 V7: 담당자 판정도 행 삽입 전 — 거절이면 거래처도 없다.
+  const contacts = input.contacts === undefined ? null : judgeContacts(input.contacts);
 
   let row: VendorRow;
   try {
-    row = await repoInsertVendor(viewer, {
-      name: input.name,
-      normalizedName,
-      businessNo: input.businessNo ?? null,
-      defaultEvidenceType: input.defaultEvidenceType ?? null,
-      accountBank: present(input.accountBank),
-      accountHolder: present(input.accountHolder),
-      accountNumberEncrypted,
-      accountNumberLast4,
-      customFields,
-      kind: input.kind,
-      paymentTermDays,
+    // 07-23: 담당자와 한 트랜잭션(반쯤 저장 0). V4: 관리 화면 등록은 사람이 연 패널이라 곧 확인됨(시스템 주체는 사람 칸이 비어 있다 — users FK).
+    row = await withTransaction(async (tx) => {
+      const inserted = await repoInsertVendor(
+        viewer,
+        {
+          name: input.name,
+          normalizedName,
+          businessNo: input.businessNo ?? null,
+          defaultEvidenceType: input.defaultEvidenceType ?? null,
+          accountBank: present(input.accountBank),
+          accountHolder: present(input.accountHolder),
+          accountNumberEncrypted,
+          accountNumberLast4,
+          customFields,
+          kind: input.kind,
+          paymentTermDays,
+          confirmedAt: new Date(),
+          confirmedBy: viewer.id === SYSTEM_VIEWER.id ? null : viewer.id,
+        },
+        tx,
+      );
+      if (contacts !== null) await saveVendorContacts(viewer, inserted.id, contacts, tx);
+      return inserted;
     });
   } catch (error) {
     // 조회와 삽입 사이 경합으로 유일 색인이 먼저 걸리면 같은 조회로 같은 오류로 바꾼다(domain/custom-fields/admin.ts 선례).
@@ -583,6 +604,9 @@ export async function updateVendor(
   // 건드리지 않는 정의 · 보임 변경과의 순서까지 행 잠금이 정하지는 않는다(같은 tx 한 문 스냅숏).
   // 07-20: 본문 · 계좌번호 쓰기를 한 트랜잭션으로(반쯤 저장 0) — 기대 version 조건이 0행이면 충돌로 되돌린다.
   const submitted = input.customFields;
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  // 07-23 V7: 담당자 판정은 첫 쓰기 전 — 거절이면 본문도 그대로 둔다.
+  const contacts = input.contacts === undefined ? null : judgeContacts(input.contacts);
   try {
     await withTransaction(async (tx) => {
       let payload = updatePayload;
@@ -602,6 +626,8 @@ export async function updateVendor(
       }
       const changed = await repoUpdateVendor(viewer, id, payload, tx, expectedVersion);
       if (changed === 0 && expectedVersion !== undefined) throw new VendorVersionConflictError();
+      // 07-23 V7: 같은 version 조건을 지난 뒤에만 담당자를 맞춘다 — 충돌이면 위에서 되돌아가 담당자도 저장되지 않는다.
+      if (contacts !== null) await saveVendorContacts(viewer, id, contacts, tx);
 
       if (accountNumberPlan.kind === "clear") {
         await repoUpdateVendorAccountNumber(viewer, id, { accountNumberEncrypted: null, accountNumberLast4: null }, tx);
@@ -614,6 +640,20 @@ export async function updateVendor(
         );
       }
       // kind === "keep" → 두 컬럼 모두 건드리지 않는다.
+
+      // 07-23 V9 · AQ-35: 있던 계좌의 세 칸 중 하나라도 바뀌면 같은 트랜잭션에 뒤 4자리 전후 기록 + 행동 로그(끌 수 없음) — 실패하면 저장도 없다.
+      // 처음 넣는 계좌(전 값 없음)는 변경이 아니다(AQ-36 — `확인 전`이 맡는다).
+      // 시스템 주체(시드 · 운영 스크립트)는 사람이 아니라 changed_by(users FK)를 채울 수 없다 — 사람의 저장만 기록한다(행동 로그도 actor NULL로 남는 주체).
+      if (accountChanged && hadAccount(storedAccount) && viewer.id !== SYSTEM_VIEWER.id) {
+        const afterNumberLast4 =
+          accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : accountNumberPlan.kind === "clear" ? null : existing.accountNumberLast4;
+        const last4 = await writeAccountChange(
+          viewer,
+          { vendorId: id, beforeNumberLast4: existing.accountNumberLast4, afterNumberLast4, source: "admin" },
+          tx,
+        );
+        await recordAction(viewer, { actionType: "vendor_account_change", entity: VENDOR_ENTITY, entityId: id, detail: { ...last4, source: "admin" } }, { tx });
+      }
     });
   } catch (error) {
     if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
@@ -624,7 +664,6 @@ export async function updateVendor(
 
   // 결함 3: 수정을 document_create로 남기면 생성 9건처럼 보인다(독립 감사가
   // 실측 — 수정 8건이 document_create 9건으로 나타났다). 수정 전용 종류로 남긴다.
-  const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_update", entity: VENDOR_ENTITY, entityId: id });
 
   const updated = await repoFindVendorById(viewer, id);
@@ -664,6 +703,137 @@ export async function addVendorKind(
 
   const row = await repoFindVendorById(viewer, id);
   return row ? toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY)) : null;
+}
+
+// 07-23 V4 · N4 · AQ-34: 확인 표시 — 자동 등록 · 일하는 자리 등록 거래처(confirmed_at NULL)를 경영관리가 사후에 확인한다. 권한은 계좌 · 서류와 같은
+// `vendors.account` 쓰기(D-739). 이미 그 상태면 바꾸지 않고(연타 한 번) 행동 로그도 없다. 바뀌면 version + 1(07-20 쓰기 꼴) · 행동 로그(끌 수 없음)를 한 트랜잭션에.
+export type VendorConfirmState = { confirmed: boolean; version: number };
+
+async function setVendorConfirmedState(
+  viewer: Viewer,
+  id: string,
+  confirmed: boolean,
+  deps?: Partial<Pick<VendorWriteDeps, "can" | "recordAction">>,
+): Promise<VendorConfirmState> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, VENDOR_ACCOUNT_MENU, "write"))) throw new ForbiddenError("거래처 확인 권한 없음");
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  return withTransaction(async (tx) => {
+    const locked = await repoFindVendorByIdForUpdate(viewer, id, tx);
+    if (!locked || locked.archivedAt !== null) throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
+    const version = await repoSetVendorConfirmed(viewer, id, confirmed, tx);
+    if (version === null) return { confirmed: locked.confirmedAt !== null, version: locked.version };
+    await recordAction(viewer, { actionType: "vendor_confirm", entity: VENDOR_ENTITY, entityId: id, detail: { confirmed } }, { tx });
+    return { confirmed, version };
+  });
+}
+
+export async function markVendorConfirmed(
+  viewer: Viewer,
+  input: { id: string },
+  deps?: Partial<Pick<VendorWriteDeps, "can" | "recordAction">>,
+): Promise<VendorConfirmState> {
+  return setVendorConfirmedState(viewer, input.id, true, deps);
+}
+
+// `되돌리기` — 방금 누른 확인을 되돌린다(확인 창 대신 되돌리기, N4).
+export async function unmarkVendorConfirmed(
+  viewer: Viewer,
+  input: { id: string },
+  deps?: Partial<Pick<VendorWriteDeps, "can" | "recordAction">>,
+): Promise<VendorConfirmState> {
+  return setVendorConfirmedState(viewer, input.id, false, deps);
+}
+
+// 07-23 SC-18 · D-745 · K20: 일하는 자리(지출결의 지급처 고르기) 거래처 바로 등록 · 이미 있는 거래처 고르기.
+export type WorkVendorInput = {
+  name: string;
+  kind?: VendorKind;
+  businessNo?: string | null;
+  accountBank?: string | null;
+  accountHolder?: string | null;
+  accountNumber?: string | null;
+};
+
+export class WorkVendorKindError extends UserFacingError {}
+
+const EXPENSES_MENU = "expenses";
+const WORK_SOURCE = "workplace";
+const WORK_NOT_PICKABLE_MESSAGE = "고를 수 없는 거래처 · 다른 거래처 고르기";
+
+// 권한 = 지출결의 쓰기(G13 「누구나」 — 거래처 화면 권한 없이). 판정은 관리 화면 등록과 같은 함수(사업자 번호 검증합 · 중복 · 계좌 칸 · 07-20 계좌 자릿수 ·
+// 예금주 필수). 갈래는 지급처가 될 수 있는 것만(협력사 · 둘 다 — 기본 협력사 D-745), 지급 기한은 회사 기본(NULL), 사용자 정의 칸 없음.
+// 확인 전(confirmed_at NULL — 경영관리가 거래처 패널에서 사후 확인 V4). 같은 사업자 번호면 DuplicateBusinessNoError(그 거래처 id · 이름 · 숨김 · 보관 —
+// 화면이 숨김 · 보관 아닌 것만 `이 거래처로`로 고르게 한다).
+export async function registerVendorFromWork(viewer: Viewer, input: WorkVendorInput, deps?: Partial<VendorWriteDeps>): Promise<VendorDto> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, EXPENSES_MENU, "write"))) throw new ForbiddenError("거래처 등록 권한 없음");
+  // 07-23 R-1(/cso C-1) · 사용자 결정(10/23): createVendor와 같은 규칙 — 계좌 세 칸 중 하나라도 실으면 `vendors.account` 쓰기가 필요하다.
+  // 첫 계좌는 바뀜 알림이 없어, 지출결의 쓰기만으로 새 거래처에 자기 계좌를 넣는 지급 사기 경로가 된다. 판정은 칸 오류보다 먼저.
+  const accountGiven = present(input.accountBank) !== null || present(input.accountHolder) !== null || present(input.accountNumber) !== null;
+  if (accountGiven && !(await canFn(viewer, VENDOR_ACCOUNT_MENU, "write"))) throw new ForbiddenError("계좌 수정 권한 없음");
+  const kind = input.kind ?? "supplier";
+  if (!servesSide(kind, "supplier")) throw new WorkVendorKindError("갈래 선택");
+  const visibleFn = deps?.visible ?? defaultVisible;
+  assertBusinessNoValid(input.businessNo);
+  await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: kind, visible: visibleFn, can: canFn });
+  const accountNumber = assertAccountInput(
+    { bank: null, holder: null, hasNumber: false },
+    { bank: input.accountBank ?? null, holder: input.accountHolder ?? null, number: input.accountNumber },
+  );
+  const accountNumberPlan = planAccountNumberUpdate(accountNumber);
+
+  let row: VendorRow;
+  try {
+    row = await repoInsertVendor(viewer, {
+      name: input.name,
+      normalizedName: normalizeVendorName(input.name),
+      businessNo: input.businessNo ?? null,
+      defaultEvidenceType: null,
+      accountBank: present(input.accountBank),
+      accountHolder: present(input.accountHolder),
+      accountNumberEncrypted: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null,
+      accountNumberLast4: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null,
+      customFields: {},
+      kind,
+      paymentTermDays: null,
+      confirmedAt: null,
+      confirmedBy: null,
+    });
+  } catch (error) {
+    if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
+      await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: kind, visible: visibleFn, can: canFn });
+    }
+    throw error;
+  }
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await recordAction(viewer, { actionType: "document_create", entity: VENDOR_ENTITY, entityId: row.id, detail: { source: WORK_SOURCE } });
+  return toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY));
+}
+
+// K20 `이 거래처로` — 등록 패널의 중복 줄에서 이미 있는 거래처를 지급처로 고른다. 숨김 · 보관은 고를 수 없다(지급처 고르기 목록과 같은 규칙).
+// 클라이언트 전용이면 D31(06.1 증빙 자동 등록)과 같은 꼴로 둘 다로 올리고 행동 로그(전 · 후 갈래)를 같은 트랜잭션에 남긴다.
+export async function pickExistingVendorFromWork(
+  viewer: Viewer,
+  input: { id: string },
+  deps?: Partial<Pick<VendorWriteDeps, "can" | "recordAction">>,
+): Promise<VendorDto> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, EXPENSES_MENU, "write"))) throw new ForbiddenError("거래처 고르기 권한 없음");
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  const row = await withTransaction(async (tx) => {
+    const locked = await repoFindVendorByIdForUpdate(viewer, input.id, tx);
+    if (!locked || locked.archivedAt !== null || locked.hidden) throw new UserFacingError(WORK_NOT_PICKABLE_MESSAGE);
+    if (vendorKindToAdd(locked.kind, "supplier", false) === null) return locked;
+    await repoUpdateVendor(viewer, locked.id, { kind: "both" }, tx);
+    await recordAction(
+      viewer,
+      { actionType: "document_update", entity: VENDOR_ENTITY, entityId: locked.id, detail: { source: WORK_SOURCE, kind: { from: locked.kind, to: "both" } } },
+      { tx },
+    );
+    return (await repoFindVendorByIdForUpdate(viewer, locked.id, tx)) ?? locked;
+  });
+  return toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY));
 }
 
 // 숨김 플래그 — 보관함(archived)과는 다른 메커니즘이다(03-UI-SPEC.md 비활성화

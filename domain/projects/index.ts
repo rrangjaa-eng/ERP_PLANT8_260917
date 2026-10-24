@@ -69,6 +69,7 @@ import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories
 import { listTeams as repoListTeams } from "@/repositories/teams";
 import { findVendorKindsByIds as repoFindVendorKindsByIds, findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
 import { NOT_CLIENT_VENDOR, servesSide } from "@/domain/vendors/kind";
+import { budgetBasisKrw, recordBudgetEvent } from "@/domain/projects/budget";
 
 export class ForbiddenError extends UserFacingError {}
 // D-47 완료(정산) 뒤 잠김의 domain 가드 자리 — `domain/vendors`의
@@ -693,6 +694,10 @@ export async function createProject(
       tx,
     );
     const firstRevision = await repoInsertQuoteRevision(viewer, { projectId: row.id, seq: 1 }, tx);
+    // 07-24(K2): 등록 PO 금액이 있으면 등록 tx에서 처음 예산 줄(첫 PO 저장을 기다리지 않는다). 원가율이 비었으면 줄 없음.
+    if ((preEstimateColumns?.amountKrw ?? 0) > 0) {
+      await recordBudgetEvent(viewer, row.id, { reason: "initial", prevBasisKrw: 0, newBasisKrw: await budgetBasisKrw(row.id, tx) }, tx);
+    }
     // 04-15(D-70 · B-32) — 출처 현재 차수의 견적 줄 구조를 새 1차로(04-14 복사 한 문장, 계보 없음 · 취소 줄 제외).
     let copied: number | null = null;
     if (copySourceId !== undefined) {

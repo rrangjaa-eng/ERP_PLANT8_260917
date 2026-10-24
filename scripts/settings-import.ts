@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { importSettings, ImportValidationError, type SettingsExport } from "@/domain/settings/export";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { seedInitialBudgets } from "@/domain/projects/budget";
+import { PROJECT_COST_RATE_PCT } from "@/domain/settings/keys";
 import { closeDb } from "@/db/client";
 
 // ADMN-06: 설정 가져오기 운영자 진입점 — 로컬 tsx 전용(로컬/operator-run,
@@ -75,7 +77,10 @@ export async function main(): Promise<void> {
     const payload = readPayload(file);
     const keyCount = Object.keys(payload.settings ?? {}).length;
 
-    await importSettings(SYSTEM_VIEWER, payload);
+    // 07-24(D-747): 원가율이 든 파일만 같은 tx에서 처음 예산 줄을 만든다 — 다른 키만 가져올 때는 예산을 건드리지 않는다.
+    // 예산 줄 작성자는 사람 계정이어야 해서 시스템 행위자로 줄을 써야 하면 가져오기 전체가 되돌아간다(설정 화면 저장으로 대신).
+    const touchesCostRate = Object.hasOwn(payload.settings ?? {}, PROJECT_COST_RATE_PCT.key);
+    await importSettings(SYSTEM_VIEWER, payload, touchesCostRate ? { afterApply: seedInitialBudgets } : undefined);
     console.log(`settings imported: ${keyCount} keys from ${file}`);
   } catch (error) {
     if (error instanceof ImportValidationError) {

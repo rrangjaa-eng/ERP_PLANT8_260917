@@ -243,6 +243,14 @@ describe("TableSkeleton — 불러오는 중 뼈대", () => {
     expect(markup).not.toContain("<tfoot");
   });
 
+  // 07-24 감사 #12: 폰(700 미만)에서 표는 P2 · P3 열을 숨기는데 뼈대는 모든 열을 그려 열 수가 달랐다 — 표와 같은 prio 클래스를 받는다.
+  it("priority를 받으면 머리 칸에 표와 같은 prio 클래스 · 안 받으면 없다", () => {
+    const markup = html(createElement(TableSkeleton, { columns: [{ key: "name", label: "이름", priority: "p1" }, { key: "amount", label: "금액", priority: "p3" }, { key: "memo", label: "메모" }] }));
+    expect(markup).toMatch(/<th [^>]*class="[^"]*_prio-p1_[^"]*"[^>]*>이름<\/th>/);
+    expect(markup).toMatch(/<th [^>]*class="[^"]*_prio-p3_[^"]*"[^>]*>금액<\/th>/);
+    expect(markup).not.toMatch(/<th [^>]*class="[^"]*_prio-[^"]*"[^>]*>메모<\/th>/);
+  });
+
   it("withFooter면 합계 줄 뼈대가 하나 더 있다", () => {
     expect(html(createElement(TableSkeleton, { columns, withFooter: true }))).toContain("<tfoot");
   });

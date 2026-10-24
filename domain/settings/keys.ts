@@ -844,7 +844,6 @@ export const PROJECT_COST_RATE_PCT: SettingDef<number | null> = {
   namespace: "프로젝트",
   unitLabel: "%",
   default: null,
-  readBy: { phase: "7" },
 };
 
 // 07-08(D-735): 수금 예정일 = 발행일 + 이 일수. 고객별 칸은 없다(D-720). 07-22(수금 예정일 계산)가 읽는다.

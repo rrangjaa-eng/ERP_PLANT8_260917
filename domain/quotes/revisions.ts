@@ -15,6 +15,7 @@ import type { QuoteApprovalToggleCtx, QuoteCustomerApprovalCtx, QuoteRevisionCre
 import { denyWrite, type DenyWriteIds } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
 import { ProjectNotFoundError } from "@/domain/projects/status";
+import { budgetBasisKrw, recordBudgetEvent } from "@/domain/projects/budget";
 import { structuralEditability } from "@/domain/quotes/edit-scope";
 import { getCurrentQuoteRevision, linkedDocumentsByLine, listQuoteLines, type QuoteLineDto } from "@/domain/quotes/lines";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -242,7 +243,17 @@ export async function setCustomerApproval(
       customerApprovalBasis: input?.approvalBasis ?? null,
       customerApprovalMemo: memo,
     };
+    // 07-24(AQ-39 · D-730): 승인을 켜는 갈래만 — 기준(PO 없으면 승인 견적 합계)이 늘었으면 같은 tx에 증액 예산 줄. 취소 갈래는 줄 없음.
+    const prevBudgetBasisKrw = input ? await budgetBasisKrw(projectId, tx) : 0;
     await repoSetRevisionApproval(viewer, revisionId, columns, tx);
+    if (input) {
+      await recordBudgetEvent(
+        viewer,
+        projectId,
+        { reason: "new_approved_revision", prevBasisKrw: prevBudgetBasisKrw, newBasisKrw: await budgetBasisKrw(projectId, tx) },
+        tx,
+      );
+    }
     // 승인 DTO(04-24 부제)의 승인일은 저장한 순간에서 되읽은 KST 날짜다.
     const approvedOn = approvedOnOf(columns.customerApprovedAt);
     const seq = revision.seq;

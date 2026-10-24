@@ -1,0 +1,53 @@
+/* 07-24 SC-21 — 프로젝트(번호 · 이름) 칸: 한 줄 말줄임 + title. 격자 minmax(0, max-content)라 칸 최소 폭이 0이다 —
+   긴 이름이 표를 늘리지 않고 남는 폭만큼 말줄임으로 준다(발행 요청 목록 프로젝트 칸과 같은 규칙). */
+.project {
+  display: inline-grid;
+  grid-template-columns: minmax(0, max-content);
+  max-width: 24em;
+  min-width: 0;
+  vertical-align: bottom;
+}
+
+.clip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 폰은 프로젝트 · 남은 예산 · 상태가 한 줄에 선다 — 프로젝트 칸 상한을 줄인다. */
+@media (max-width: 699.98px) {
+  .project {
+    max-width: 9em;
+  }
+}
+
+/* 합계 줄 오른쪽 `계산 불가 N건` 배지 자리(SYSTEM §7-7 PARTIAL — 배지 모양은 StatusTag 클래스 그대로). */
+.partial {
+  margin-left: auto;
+}
+
+@media (max-width: 699.98px) {
+  .partial {
+    margin-left: 0;
+  }
+}
+
+/* 예산 이력 패널 — 사유 칸은 낱말 위 · 직접 수정 메모 아래 aux 한 줄(SYSTEM §2-4 2행 aux와 같은 글자 크기 · 색). */
+.reason {
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.memo {
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+/* 패널 안 3차 줄(`예산 바꾸기` · `더 보기` · `프로젝트 열기`) — 칸 사이 간격만. */
+.panelAction {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+  margin-block: var(--s-3);
+}

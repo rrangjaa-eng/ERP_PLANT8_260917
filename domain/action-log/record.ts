@@ -64,6 +64,8 @@ export const CORE_ACTION_TYPES = [
   "vendor_account_change",
   "vendor_confirm",
   "notification_rule_change",
+  // 07-24 D-729: 예산 직접 수정은 돈 기록이라 끌 수 없다
+  "budget_manual_change",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -112,6 +114,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   vendor_account_change: "거래처 계좌 변경",
   vendor_confirm: "거래처 확인",
   notification_rule_change: "알림 규칙 변경",
+  budget_manual_change: "예산 직접 수정",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -163,6 +166,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "vendor_account_change",
   "vendor_confirm",
   "notification_rule_change",
+  // 07-24 D-729: 예산 직접 수정은 돈 기록이라 끌 수 없다
+  "budget_manual_change",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

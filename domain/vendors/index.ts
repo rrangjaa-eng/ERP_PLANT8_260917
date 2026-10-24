@@ -780,22 +780,39 @@ export async function registerVendorFromWork(viewer: Viewer, input: WorkVendorIn
   );
   const accountNumberPlan = planAccountNumberUpdate(accountNumber);
 
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
   let row: VendorRow;
   try {
-    row = await repoInsertVendor(viewer, {
-      name: input.name,
-      normalizedName: normalizeVendorName(input.name),
-      businessNo: input.businessNo ?? null,
-      defaultEvidenceType: null,
-      accountBank: present(input.accountBank),
-      accountHolder: present(input.accountHolder),
-      accountNumberEncrypted: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null,
-      accountNumberLast4: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null,
-      customFields: {},
-      kind,
-      paymentTermDays: null,
-      confirmedAt: null,
-      confirmedBy: null,
+    // Codex P2: 삽입과 끌 수 없는 기록을 한 트랜잭션으로 — 기록이 실패하면 계좌 든 거래처가 기록 없이 남지 않는다.
+    row = await withTransaction(async (tx) => {
+      const inserted = await repoInsertVendor(
+        viewer,
+        {
+          name: input.name,
+          normalizedName: normalizeVendorName(input.name),
+          businessNo: input.businessNo ?? null,
+          defaultEvidenceType: null,
+          accountBank: present(input.accountBank),
+          accountHolder: present(input.accountHolder),
+          accountNumberEncrypted: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null,
+          accountNumberLast4: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null,
+          customFields: {},
+          kind,
+          paymentTermDays: null,
+          confirmedAt: null,
+          confirmedBy: null,
+        },
+        tx,
+      );
+      // 사용자 결정(10/24): 끌 수 없는 전용 종류 — 계좌가 실렸으면 뒤 4자리를 updateVendor의 vendor_account_change와 같은 꼴로 남긴다.
+      const accountGiven = inserted.accountBank !== null || inserted.accountHolder !== null || inserted.accountNumberLast4 !== null;
+      const last4 = accountGiven ? { beforeLast4: null, afterLast4: last4Digits(inserted.accountNumberLast4) } : {};
+      await recordAction(
+        viewer,
+        { actionType: "work_vendor_create", entity: VENDOR_ENTITY, entityId: inserted.id, detail: { source: WORK_SOURCE, ...last4 } },
+        { tx },
+      );
+      return inserted;
     });
   } catch (error) {
     if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
@@ -803,11 +820,6 @@ export async function registerVendorFromWork(viewer: Viewer, input: WorkVendorIn
     }
     throw error;
   }
-  const recordAction = deps?.recordAction ?? defaultRecordAction;
-  // 사용자 결정(10/24): 끌 수 없는 전용 종류 — 계좌가 실렸으면 뒤 4자리를 updateVendor의 vendor_account_change와 같은 꼴로 남긴다.
-  const accountGiven = row.accountBank !== null || row.accountHolder !== null || row.accountNumberLast4 !== null;
-  const last4 = accountGiven ? { beforeLast4: null, afterLast4: last4Digits(row.accountNumberLast4) } : {};
-  await recordAction(viewer, { actionType: "work_vendor_create", entity: VENDOR_ENTITY, entityId: row.id, detail: { source: WORK_SOURCE, ...last4 } });
   return toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY));
 }
 

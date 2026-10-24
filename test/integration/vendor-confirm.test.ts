@@ -168,6 +168,17 @@ describe("일하는 자리 등록 (SC-18 · D-745 · K20)", () => {
     expect([row.accountBank, row.accountHolder, row.accountNumberLast4]).toEqual([null, null, null]);
   });
 
+  // Codex P2: 삽입과 끌 수 없는 기록은 한 트랜잭션 — 기록이 실패하면 계좌 든 거래처가 기록 없이 남지 않는다.
+  it("work_vendor_create 기록이 실패하면 거래처도 남지 않는다", async () => {
+    const staff = await makeExpenseWriter({ expenses: true });
+    const name = `기록실패-${randomUUID()}`;
+    const failingRecord = () => Promise.reject(new Error("기록 실패"));
+    await expect(
+      registerVendorFromWork(staff, { name, accountBank: "국민", accountHolder: "주식회사 일자리", accountNumber: "123-456-789012" }, { recordAction: failingRecord }),
+    ).rejects.toThrow("기록 실패");
+    expect(await db.select().from(vendors).where(eq(vendors.name, name))).toHaveLength(0);
+  });
+
   it("지출결의 쓰기 없음 → 거부 · 행 없음", async () => {
     const outsider = await makeExpenseWriter({ expenses: false });
     const name = `거부-${randomUUID()}`;

@@ -436,22 +436,6 @@ describe("같은 견적 판 재승인 → 줄 한 번 (F52)", () => {
     await approve(s.pm, s.revisionId);
     expect(await entriesOf(s.projectId)).toEqual([{ reason: "initial", base: 5_000_000, rate: "70.0", delta: 3_500_000, memo: null }]);
   });
-
-  it("DB가 같은 판 승인 반영 줄 두 번째를 막는다", async () => {
-    await setCostRate(70);
-    const s = await setupApproval();
-    const row = {
-      projectId: s.projectId,
-      quoteRevisionId: s.revisionId,
-      reason: "new_approved_revision" as const,
-      baseAmountKrw: 5_000_000,
-      costRatePct: "70.0",
-      deltaKrw: 3_500_000,
-      createdBy: s.pm.id,
-    };
-    await db.insert(projectBudgetEntries).values(row);
-    await expect(db.insert(projectBudgetEntries).values(row)).rejects.toThrow();
-  });
 });
 
 describe("처음 원가율 → 처음 줄 (07-24 Task 2 · D-747 · U3)", () => {

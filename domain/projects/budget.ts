@@ -18,7 +18,6 @@ import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { findProjectInScope, lockProjectForWrite } from "@/repositories/projects";
 import {
   findBudgetBasisFacts,
-  hasApprovedRevisionEntry,
   insertBudgetEntry,
   maxReflectedBasisKrw,
   listBudgetEntriesPage,
@@ -71,18 +70,13 @@ export async function budgetBasisKrw(projectId: string, tx?: DbOrTx): Promise<nu
 }
 
 // 사건 훅 — 부르는 쪽 tx가 프로젝트 행을 이미 잠갔다. budgetDelta가 null이면 아무것도 쓰지 않는다. 쓴 줄 수(0 · 1)를 돌려준다.
-// F52(사용자 결정 10/24 「한 번만 쌓기」): 새 승인 차수는 견적 판 id를 받고, 그 판의 줄이 이미 있으면 쓰지 않는다 — 승인 취소가 승인
-// 기준을 지워 재승인 때 이전 기준이 낮게 잡혀도 같은 판은 다시 쌓지 않는다.
+// F52(사용자 결정 10/24 「한 번만 쌓기」): 승인 → 취소 → 재승인(같은 판이든 새 차수든)은 아래 반영된 기준 최댓값이 막는다.
 export async function recordBudgetEvent(
   viewer: Viewer,
   projectId: string,
-  input:
-    | { reason: "initial" | "po_amount_change"; prevBasisKrw: number; newBasisKrw: number }
-    | { reason: "new_approved_revision"; quoteRevisionId: string; prevBasisKrw: number; newBasisKrw: number },
+  input: { reason: Exclude<BudgetEntryReason, "manual">; prevBasisKrw: number; newBasisKrw: number },
   tx: DbOrTx,
 ): Promise<number> {
-  const quoteRevisionId = input.reason === "new_approved_revision" ? input.quoteRevisionId : null;
-  if (quoteRevisionId !== null && (await hasApprovedRevisionEntry(viewer, projectId, quoteRevisionId, tx))) return 0;
   // 승인 취소는 승인 기준을 지우지만 예산 줄은 남긴다 — 새 승인 차수는 「지금 승인 기준」이 아니라 이미 예산에 반영된 기준(자동 줄의
   // 최대 기준 금액)을 넘는 증액만 쌓는다(게이트 P1 · 취소 → 새 차수 · 줄 없던 판 재승인).
   const prevBasisKrw =
@@ -92,7 +86,7 @@ export async function recordBudgetEvent(
   if (deltaKrw === null || costRatePct === null) return 0;
   await insertEntry(
     viewer,
-    { projectId, reason: input.reason, baseAmountKrw: input.newBasisKrw, costRatePct: costRatePct.toFixed(1), deltaKrw, memo: null, quoteRevisionId },
+    { projectId, reason: input.reason, baseAmountKrw: input.newBasisKrw, costRatePct: costRatePct.toFixed(1), deltaKrw, memo: null },
     tx,
   );
   return 1;

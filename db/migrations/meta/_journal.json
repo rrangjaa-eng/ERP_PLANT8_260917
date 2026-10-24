@@ -330,20 +330,6 @@
       "when": 1792666605660,
       "tag": "0046_phase7_action_log_immutable",
       "breakpoints": true
-    },
-    {
-      "idx": 47,
-      "version": "7",
-      "when": 1792848075330,
-      "tag": "0047_phase7_budget_revision_once",
-      "breakpoints": true
-    },
-    {
-      "idx": 48,
-      "version": "7",
-      "when": 1792848078102,
-      "tag": "0048_phase7_budget_revision_once_validate",
-      "breakpoints": true
     }
   ]
 }

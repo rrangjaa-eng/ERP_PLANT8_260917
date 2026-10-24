@@ -30,6 +30,7 @@ import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
+import { budgetBasisKrw, recordBudgetEvent } from "@/domain/projects/budget";
 import { coversProjectTeam, loadActorTeamScope, StatusChangedError, statusChangedMessage, teamScopeForProject } from "@/domain/projects/status";
 import {
   periodEditRights,
@@ -312,6 +313,8 @@ export async function saveProjectLedger(
       }
 
       // ③' 총 매출 예상가 쓰기 — 기간 쓰기 뒤. moneyToColumns를 지나 저장 규칙(04-40 normalizeMoneyInput)을 따른다.
+      // 07-24(D-730): PO 금액을 실은 저장만 쓰기 전 · 뒤 기준 금액을 같은 tx에서 읽어 증액분 예산 줄을 남긴다(잠근 행 위).
+      const prevBudgetBasisKrw = preEstimate ? await budgetBasisKrw(projectId, tx) : 0;
       if (preEstimate) {
         const columns = moneyToColumns({
           currency: preEstimate.currency,
@@ -329,6 +332,12 @@ export async function saveProjectLedger(
         ) {
           changed.preEstimateChanged = true;
         }
+        await recordBudgetEvent(
+          viewer,
+          projectId,
+          { reason: "po_amount_change", prevBasisKrw: prevBudgetBasisKrw, newBasisKrw: await budgetBasisKrw(projectId, tx) },
+          tx,
+        );
       }
 
       // ③'' PO 번호 쓰기 — 바뀐 값만 기록한다(번호는 금액이 아니라 값을 싣는다).

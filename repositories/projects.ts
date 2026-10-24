@@ -30,7 +30,9 @@ function currentRevisionsSubquery() {
 // 현재 차수의 견적 줄 합계(견적가·실행가) — revision_id당 한 행. 보관된 줄은 빼고
 // 취소 줄은 견적가 0으로 더한다(04-12 · A-04 — 취소 줄의 견적가 열이 이미 0이다).
 // 04-17(엔지 리뷰 C §4 P2) — 현재 차수의 줄만 모아 더한다(모든 차수의 줄을 GROUP BY하지 않는다).
-function lineSumsSubquery() {
+// 07-24(D-733): 예산 현황 사용액이 같은 식을 쓴다(repositories/project-budget-entries.ts) — 실행가 합을 새로 짜지 않는다.
+export function lineSumsSubquery(viewer: Viewer) {
+  void viewer;
   const currentRevisionIds = db
     .selectDistinctOn([quoteRevisions.projectId], { id: quoteRevisions.id })
     .from(quoteRevisions)
@@ -248,7 +250,7 @@ export async function listProjectsPage(
   if (opts.scope.rows === "none") return [];
 
   const currentRevisions = currentRevisionsSubquery();
-  const lineSums = lineSumsSubquery();
+  const lineSums = lineSumsSubquery(viewer);
   const issued = issuedSumsLateral();
   const money = rowMoneyExpressions(lineSums, issued);
   const conditions = projectFilterConditions(viewer, opts.filter, opts.scope);
@@ -312,7 +314,7 @@ export async function aggregateProjects(
   if (opts.scope.rows === "none") return [];
 
   const currentRevisions = currentRevisionsSubquery();
-  const lineSums = lineSumsSubquery();
+  const lineSums = lineSumsSubquery(viewer);
   const issued = issuedSumsLateral();
   const money = rowMoneyExpressions(lineSums, issued);
   const conditions = projectFilterConditions(viewer, opts.filter, opts.scope);
@@ -346,7 +348,7 @@ export type ProjectProfitRow = { profitBasis: ProfitBasis; basisKrw: number; pro
 export async function getProjectProfitRow(viewer: Viewer, scope: RowScope, projectId: string): Promise<ProjectProfitRow | null> {
   if (scope.rows === "none") return null;
   const currentRevisions = currentRevisionsSubquery();
-  const lineSums = lineSumsSubquery();
+  const lineSums = lineSumsSubquery(viewer);
   const issued = issuedSumsLateral();
   const money = rowMoneyExpressions(lineSums, issued);
   const [row] = await db

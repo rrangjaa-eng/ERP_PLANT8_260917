@@ -88,3 +88,6 @@ registerAction({ name: "getEvidenceConfirmViewAction", menu: "expenses.payments"
 // 07-16 이번 주로 · 되돌리기 — 건마다 id · 이전 예정일 · 새 version · 거부 사유 글자만 돌려준다(DTO 없음). 지급 권한자 전용(판정은 07-06 도메인).
 registerAction({ name: "moveToThisWeekAction", menu: "expenses.payments", action: "write", dtoName: null });
 registerAction({ name: "revertScheduledPayDatesAction", menu: "expenses.payments", action: "write", dtoName: null });
+// 07-23 SC-18 · K20: 일하는 자리 거래처 등록 · 이미 있는 거래처 고르기 — 지출결의 쓰기 권한자, 결과 거래처는 VendorDto 투영(vendor.value).
+registerAction({ name: "registerVendorFromWorkAction", menu: "expenses", action: "write", dtoName: "VendorDto" });
+registerAction({ name: "pickExistingVendorFromWorkAction", menu: "expenses", action: "write", dtoName: "VendorDto" });

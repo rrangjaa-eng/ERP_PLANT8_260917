@@ -117,7 +117,7 @@ async function handEdit(line: QuoteLineRow, executionKrw: number): Promise<Quote
 
 // 결재 통과 팀 비용(프로젝트 없음) — 같은 문서를 기타소득(회사 대납)으로 바꾼다.
 async function approvedTeamOtherIncome(fx: ExpenseFixture, supplyKrw: number): Promise<{ expenseId: string }> {
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "강사", normalizedName: `강사-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "강사", normalizedName: `강사-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount(), confirmedAt: new Date() });
   const { expenseId } = await createTeamExpenseDraft(fx.lead, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 강의" } });
   const payment = (await listExpenseFormOptions(fx.lead)).payment[0]?.value ?? null;
   await saveExpenseDraft(fx.lead, {

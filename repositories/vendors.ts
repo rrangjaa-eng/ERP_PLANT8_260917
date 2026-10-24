@@ -106,6 +106,14 @@ export async function findVendorNamesByIds(viewer: Viewer, ids: string[], tx: Db
   return new Map(rows.map((row) => [row.id, row.name]));
 }
 
+// 2026-10-24 사용자 결정(G13 일부 변경): 지급 완료 판정용 확인 여부 — FOR SHARE라 확인 켬 · 끔(NO KEY UPDATE)과 엇갈리지 않는다.
+// 지급 트랜잭션이 끝날 때까지 확인을 되돌리지 못하고, 먼저 되돌렸으면 그 결과를 읽는다. 없는 거래처는 확인 전(false).
+export async function lockVendorConfirmedForShare(viewer: Viewer, id: string, tx: DbOrTx): Promise<boolean> {
+  void viewer;
+  const [row] = await tx.select({ confirmedAt: vendors.confirmedAt }).from(vendors).where(eq(vendors.id, id)).for("share");
+  return row !== undefined && row.confirmedAt !== null;
+}
+
 // 261006 「바뀔 때만 막기」 — 새로 고르거나 바꾼 거래처의 갈래(id → 갈래). 보관 · 숨김도 넣는다(판정은 호출자).
 // FOR SHARE — 호출 트랜잭션이 끝날 때까지 갈래 수정(UPDATE)을 막는다(판정 뒤 저장 전 경합). 저장끼리는 막지 않는다.
 export async function findVendorKindsByIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<Map<string, VendorKind>> {
@@ -178,6 +186,9 @@ export type VendorInsertInput = {
   customFields?: Record<string, unknown>;
   kind?: VendorKind;
   paymentTermDays?: number | null;
+  // 07-23 V4: 확인 표시 — 관리 화면 등록만 채운다. 자동 등록 · 일하는 자리 등록은 주지 않아 NULL(확인 전).
+  confirmedAt?: Date | null;
+  confirmedBy?: string | null;
 };
 
 export async function insertVendor(viewer: Viewer, input: VendorInsertInput, tx: DbOrTx = db): Promise<VendorRow> {
@@ -195,6 +206,8 @@ export async function insertVendor(viewer: Viewer, input: VendorInsertInput, tx:
       customFields: input.customFields ?? {},
       kind: input.kind,
       paymentTermDays: input.paymentTermDays ?? null,
+      confirmedAt: input.confirmedAt ?? null,
+      confirmedBy: input.confirmedBy ?? null,
     })
     .returning();
   if (!row) throw new Error("vendors insert가 행을 반환하지 않았습니다.");
@@ -251,6 +264,17 @@ export async function updateVendorAccountNumber(
       updatedAt: new Date(),
     })
     .where(eq(vendors.id, id));
+}
+
+// 07-23 V4: 확인 표시 켬 · 끔 — 조건부 갱신(이미 그 상태면 0행 · version 그대로)이라 연타 · 경합에도 한 번만 바뀐다. 보관된 거래처는 고치지 않는다.
+// 바뀌었으면 새 version, 아니면 null.
+export async function setVendorConfirmed(viewer: Viewer, id: string, confirmed: boolean, tx: DbOrTx): Promise<number | null> {
+  const rows = await tx
+    .update(vendors)
+    .set(confirmed ? { confirmedAt: new Date(), confirmedBy: viewer.id, ...BUMP_VERSION } : { confirmedAt: null, confirmedBy: null, ...BUMP_VERSION })
+    .where(and(eq(vendors.id, id), isNull(vendors.archivedAt), confirmed ? isNull(vendors.confirmedAt) : isNotNull(vendors.confirmedAt)))
+    .returning({ version: vendors.version });
+  return rows[0]?.version ?? null;
 }
 
 export async function setVendorHidden(viewer: Viewer, id: string, hidden: boolean): Promise<void> {

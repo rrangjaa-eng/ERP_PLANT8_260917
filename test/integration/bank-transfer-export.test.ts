@@ -204,7 +204,7 @@ function take<T>(items: readonly T[], index: number): T {
 
 async function vendorWith(account: Partial<ReturnType<typeof testVendorAccount>> | null): Promise<string> {
   const suffix = randomUUID().slice(0, 6);
-  const row = await insertVendor(SYSTEM_VIEWER, { name: `이체거래처-${suffix}`, normalizedName: `이체거래처-${suffix}`, ...(account ? { ...testVendorAccount(), ...account } : {}) });
+  const row = await insertVendor(SYSTEM_VIEWER, { name: `이체거래처-${suffix}`, normalizedName: `이체거래처-${suffix}`, ...(account ? { ...testVendorAccount(), ...account } : {}), confirmedAt: new Date() });
   return row.id;
 }
 

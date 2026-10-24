@@ -199,7 +199,7 @@ test.describe("팀 비용 지출결의 (EXP-08)", () => {
 });
 
 test.describe("골라내기 (S14) · 지급처", () => {
-  test("Esc는 닫고 트리거로 돌아가며 검색 0건은 `조건에 맞는 지급처가 없습니다 · 검색 지우기`, 조회 실패는 `목록 불러오기 실패 · 다시 시도`", async ({ browser, baseURL }) => {
+  test("Esc는 닫고 트리거로 돌아가며 검색 0건은 `조건에 맞는 지급처가 없습니다 · 새 거래처 · \"{검색어}\"`, 조회 실패는 `목록 불러오기 실패 · 다시 시도`", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openNew(page);
@@ -215,10 +215,14 @@ test.describe("골라내기 (S14) · 지급처", () => {
     // UX-06 — 꺼진 1차는 이유 한 줄을 aria-describedby로 가리킨다(05 /review B1).
     await expect(primary).toHaveAccessibleDescription("고른 지급처 없음");
 
+    // 07-23(SC-18 · U11): 지급처 고르기는 검색 0건 줄의 `검색 지우기` 자리에 3차 `새 거래처 · "{검색어}"`가 선다(PickDialog searchTail).
     await search.fill("없는거래처-zzzz");
-    await expect(dialog.getByText("조건에 맞는 지급처가 없습니다 ·")).toBeVisible();
-    await dialog.getByRole("button", { name: "검색 지우기" }).click();
-    await expect(search).toHaveValue("");
+    const emptyLine = dialog.getByText("조건에 맞는 지급처가 없습니다 ·");
+    await expect(emptyLine).toBeVisible();
+    await expect(emptyLine.getByRole("button", { name: '새 거래처 · "없는거래처-zzzz"' })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "검색 지우기" })).toHaveCount(0);
+    await search.fill("");
+    await expect(dialog.getByRole("button", { name: /^새 거래처 · / })).toHaveCount(0);
     await expect(search).toBeFocused();
 
     await page.keyboard.press("Escape");

@@ -25,7 +25,7 @@ import { findUserNamesByIds } from "@/repositories/users";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { loadPrepaidDueDays, resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
 import { decidePayable, getPaymentView, loadPaymentShared, pairGateCtx, pickPaymentAmount, projectPaymentAccounts, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
-import { approvalGateDecision, EVIDENCE_UNCONFIRMED, resolveExpenseActionRow, type EvidenceGateInput, type ExpenseActionBar } from "@/domain/payments/action-row";
+import { approvalGateDecision, EVIDENCE_UNCONFIRMED, resolveExpenseActionRow, VENDOR_UNCONFIRMED, vendorPayeeOf, type EvidenceGateInput, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { listTeams as listTeamRows } from "@/repositories/teams";
 import { listExpenseIdsInScope } from "@/repositories/expenses";
 import {
@@ -44,6 +44,7 @@ import { canExportBankTransferFile } from "@/domain/payments/transfer-gate";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import { loadPayCalendar, loadPaySchedules } from "@/domain/payments/pay-schedule-load";
 import { payWeekGroupLabel, payWeekIndex, thisWeekPayDate, type PaySchedule } from "@/domain/payments/pay-schedule";
+import { accountChangedSinceLastPayment } from "@/domain/vendors/account-changes";
 
 // 06-15(EXP-09 · UI-SPEC S1): 지급 대상 목록 — 결재 통과 · 지급 전 · 종결 아님 지출결의. 행마다 고를 수 있는지(selectable)와 이유는
 // 06-04 resolveExpenseActionRow(P4 = 고를 수 있음)가 정하고, 그 입력은 문서 화면(getPaymentView)과 같은 게이트 둘(payment.evidence-required ·
@@ -126,6 +127,8 @@ function reasonOf(row: PaymentTargetRow, bar: ExpenseActionBar, payableKrw: numb
   if (bar.row === "P2") return EVIDENCE_UNCONFIRMED;
   if (bar.blockReason) return bar.blockReason;
   if (payableKrw === null) return TAX_UNAVAILABLE;
+  // 2026-10-24 사용자 결정(G13 일부 변경): 지급처 거래처가 확인 전이면 고를 수 없다 — 이체 파일 · 일괄 지급이 이 판정을 다시 읽는다.
+  if (vendorPayeeOf(row) !== null && row.vendorConfirmedAt === null) return VENDOR_UNCONFIRMED;
   return null;
 }
 
@@ -248,8 +251,14 @@ function titleOf(
   return `${[row.projectName, row.itemName].filter(Boolean).join(" · ")}${seq}`;
 }
 
-function toDto(target: ScheduledPaymentTarget, shared: PaymentShared, transferFileAt: ReadonlyMap<string, string>): PaymentTargetRowDto {
+function toDto(
+  target: ScheduledPaymentTarget,
+  shared: PaymentShared,
+  transferFileAt: ReadonlyMap<string, string>,
+  changedVendors: ReadonlySet<string>,
+): PaymentTargetRowDto {
   const { row } = target;
+  const vendorPayee = vendorPayeeOf(row);
   return {
     id: row.id,
     number: row.number,
@@ -273,6 +282,8 @@ function toDto(target: ScheduledPaymentTarget, shared: PaymentShared, transferFi
     paymentPushReason: target.schedule.pushReason,
     paymentScheduleFailed: target.schedule.failed === true,
     paymentCutoffReason: target.cutoffReason,
+    vendorConfirmed: vendorPayee === null || row.vendorConfirmedAt !== null,
+    accountChanged: vendorPayee !== null && changedVendors.has(vendorPayee),
   };
 }
 
@@ -282,10 +293,12 @@ export async function projectPaymentTargets(
   shared: PaymentShared,
   transferFileAt: ReadonlyMap<string, string> = new Map(),
 ): Promise<Partial<PaymentTargetRowDto>[]> {
+  // 07-23 AQ-36: 계좌 바뀜은 쪽의 거래처 지급처 묶음으로 한 번 묻는다(행마다 부르지 않는다).
+  const changedVendors = await accountChangedSinceLastPayment(viewer, targets.flatMap((target) => vendorPayeeOf(target.row) ?? []));
   // 06-20(O-17) — 계좌 칸은 문서 화면과 같은 투영 함수 하나. 지급 방식 코드 · 거래처 id · 직원 지급처 id(06.5 D-6517)는 스펙 밖 키라 projectMany가 버린다.
   const rows = await projectPaymentAccounts(
     viewer,
-    targets.map((target) => ({ ...toDto(target, shared, transferFileAt), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId, payeeUserId: target.row.payeeUserId })),
+    targets.map((target) => ({ ...toDto(target, shared, transferFileAt, changedVendors), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId, payeeUserId: target.row.payeeUserId })),
   );
   return projectMany(viewer, rows, PAYMENT_TARGET_ROW_DTO_SPEC);
 }

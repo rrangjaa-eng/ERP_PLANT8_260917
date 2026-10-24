@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Request } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import { db } from "@/db/client";
@@ -147,7 +147,7 @@ test.describe("지급 대상 · 이체 파일 받기 (06.5-06 Task 1)", () => {
 // 결재를 통과한 문서의 지급처를 계좌 없는 거래처로 바꾼다(06.5-05 V4 제출 게이트 뒤의 옛 데이터 꼴).
 async function withoutAccount(expenseId: string): Promise<void> {
   const suffix = randomUUID().slice(0, 6);
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E계좌없음-${suffix}`, normalizedName: `e2e계좌없음-${suffix}` });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E계좌없음-${suffix}`, normalizedName: `e2e계좌없음-${suffix}`, confirmedAt: new Date() });
   await db.update(expenses).set({ vendorId: vendor.id }).where(eq(expenses.id, expenseId));
 }
 
@@ -277,6 +277,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 필터 줄 정렬 · �
       normalizedName: `e2e계좌형식-${suffix}`,
       ...testVendorAccount(),
       accountNumberEncrypted: encrypt("110-123-45678A"),
+      confirmedAt: new Date(),
     });
     await db.update(expenses).set({ vendorId: vendor.id }).where(eq(expenses.id, broken));
 
@@ -386,7 +387,7 @@ async function payeeVendor(label: string): Promise<{ id: string; name: string }>
   const suffix = randomUUID().slice(0, 6);
   const name = `E2E지급처${label}-${suffix}`;
   // 증빙 종류 기본값이 없으면 제출 게이트가 막는다(픽스처 거래처와 같은 세금계산서).
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), defaultEvidenceType: "tax_invoice", ...testVendorAccount(), confirmedAt: new Date() });
   return { id: vendor.id, name };
 }
 
@@ -540,10 +541,13 @@ test.describe("지급 대상 · 이체 파일 받기 — 지급처 합치기 · 
     await checkAll(page, [fx.lines.tracer.itemName, fx.lines.hold.itemName]);
     // 여는 순간의 서버 액션 중 지급 행 스냅숏(expectedPayableKrw)을 싣는 것은 소계 읽기뿐이다(합 요청은 id · 이체액만) — 그 하나만 끊는다.
     let aborted = false;
-    const failed = page.waitForEvent("requestfailed");
+    const isSubtotalRead = (request: Request) =>
+      request.method() === "POST" && Boolean(request.headers()["next-action"]) && (request.postData() ?? "").includes("expectedPayableKrw");
+    // 끊은 그 요청의 실패만 기다린다 — 조건 없이 기다리면 앞서 끊긴 RSC 미리 받기 · 합 요청 실패에 먼저 풀려 소계 읽기가 끊기기 전에 가로채기가 걷힌다.
+    const failed = page.waitForEvent("requestfailed", isSubtotalRead);
     await page.route("**/*", async (route) => {
       const request = route.request();
-      if (!aborted && request.method() === "POST" && request.headers()["next-action"] && (request.postData() ?? "").includes("expectedPayableKrw")) {
+      if (!aborted && isSubtotalRead(request)) {
         aborted = true;
         await route.abort();
         return;

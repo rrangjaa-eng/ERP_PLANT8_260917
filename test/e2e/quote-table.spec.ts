@@ -1698,6 +1698,9 @@ test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽
     await saveAndWait(page);
     const endInput = page.getByLabel("종료일");
     await expect(endInput).toHaveAttribute("aria-invalid", "true");
+    // 거부 뒤 포커스는 다음 프레임(rAF)에 종료일 칸으로 간다 — 그 전에 견적 칸에 포커스하면 rAF가 포커스를 빼앗아
+    // 붙여넣기가 종료일(input)로 가서 표가 무시한다(#293 CI 실패 · rAF 지연으로 로컬 재현). 포커스가 옮겨 간 뒤에 견적 칸으로 간다.
+    await expect(endInput).toBeFocused();
 
     await quoteCell(page, 0, 4).focus();
     await pasteIntoFocusedCell(page, "abc");

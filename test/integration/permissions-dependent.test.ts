@@ -164,6 +164,20 @@ describe("딸린 칸 저장(R7)", () => {
     expect(await logsFor(roleId)).toHaveLength(1);
   });
 
+  it("다른 관리자가 이미 켠 딸린 칸은 changed에 없어도 resulting에 결과 값으로 실린다(07-21 Codex P2)", async () => {
+    const roleId = await freshRole();
+    // 화면은 보기가 꺼진 줄로 알고 있다 — 그사이 다른 관리자가 보기를 켰다.
+    await setOn(roleId, [{ menu: "admin.people", action: "view" }]);
+
+    const result = await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "admin.people", action: "write", allowed: true }, deps);
+
+    expect(result.changed).toEqual([{ menu: "admin.people", action: "write", allowed: true }]);
+    expect(result.resulting).toEqual([
+      { menu: "admin.people", action: "write", allowed: true },
+      { menu: "admin.people", action: "view", allowed: true },
+    ]);
+  });
+
   it("보기만 있는 메뉴(정의상 쓰기 · 승인 행 없음)의 보기 끔 → 그 칸 하나만", async () => {
     const roleId = await freshRole();
     await setOn(roleId, [{ menu: "admin.system-status", action: "view" }]);

@@ -6,6 +6,9 @@ import { listOccupiedTeams, lockSeatKeys } from "@/repositories/seats";
 import { assertCanGrantRoles, RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
 import { assertSeatsFree, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
 import { findUserById, setUserArchived } from "@/repositories/users";
+import { findRoleForShare } from "@/repositories/roles";
+import { seatedTeamsOf } from "@/repositories/team-memberships";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -29,6 +32,25 @@ function withRestoreTail(error: unknown): unknown {
   return error;
 }
 
+// 07-21 게이트 사용자 결정(2026-10-23 15:44 KST 「막기」): 복원 · 퇴직일 지우기로 활성이 되는 사람의 팀 · 본부 · 계급이 보관됐으면
+// 거부한다 — 보관 막기(소속 사람 남은 팀 · 본부 · 계급은 보관 안 됨, `domain/archive`)의 짝. 호출자가 사람 자리 키를 먼저 잡아
+// 팀 · 본부 보관(같은 키)과 줄 서고, 계급은 행을 FOR SHARE로 다시 읽어 계급 보관(FOR UPDATE 뒤 소속 세기)과 줄 선다.
+// 260907 재개(`server/src/people.ts:1213-1218`)는 직책 보관만 봤다. 거부 이유를 돌려주고 없으면 null.
+export async function archivedSeatReason(
+  viewer: Viewer,
+  input: { userId: string; roleId: string | null; today: string },
+  tx: DbOrTx,
+): Promise<string | null> {
+  const seated = await seatedTeamsOf(viewer, input.userId, input.today, tx);
+  if (seated.some((row) => row.teamArchived)) return "보관된 팀 · 먼저 옮기기";
+  if (seated.some((row) => row.orgUnitArchived)) return "보관된 본부 · 먼저 옮기기";
+  if (input.roleId !== null) {
+    const role = await findRoleForShare(viewer, input.roleId, tx);
+    if (role?.archivedAt) return "보관된 계급 · 먼저 바꾸기";
+  }
+  return null;
+}
+
 export type RestoreUserDeps = {
   can: typeof defaultCan;
   recordAction: typeof defaultRecordAction;
@@ -50,6 +72,11 @@ export async function restoreUser(viewer: Viewer, id: string, deps?: Partial<Res
     const row = await findUserById(viewer, id, tx);
     if (!row) throw new PersonNotRestorableError("없는 사람 · 복원 불가");
     if (row.archivedAt === null) return { restored: false };
+    // 복원 뒤에도 퇴직(퇴직일 지남)이면 소속으로 세지 않으므로 보지 않는다.
+    if (!(row.resignationDate !== null && row.resignationDate < today)) {
+      const reason = await archivedSeatReason(viewer, { userId: id, roleId: row.roleId, today }, tx);
+      if (reason) throw new PersonNotRestorableError(reason + RESTORE_BLOCKED_TAIL);
+    }
     try {
       // R = C — 복원은 계급을 바꾸지 않는다.
       await assertCanGrantRoles(viewer, [row.roleId], tx);

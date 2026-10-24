@@ -15,7 +15,13 @@ import {
 import { isLocked, lockoutConfig, windowStart } from "@/domain/auth/lockout";
 import { archive as defaultArchive } from "@/domain/archive";
 import { revokeAllSessions as defaultRevokeAllSessions } from "@/domain/auth/password";
-import { findRoleById as defaultFindRoleById, findRolesByIds as defaultFindRolesByIds } from "@/repositories/roles";
+import {
+  countActiveMembersByRole,
+  findRoleById as defaultFindRoleById,
+  findRoleForShare,
+  findRolesByIds as defaultFindRolesByIds,
+} from "@/repositories/roles";
+import { activeTeamMembers } from "@/repositories/team-memberships";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
 import { findOrgUnitById as repoFindOrgUnitById } from "@/repositories/org-units";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -28,6 +34,7 @@ import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
 import { assertSeatsFree, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
+import { archivedSeatReason } from "@/domain/people/restore";
 import { assertNotRetiredInTx, isRetiredOn } from "@/domain/people/retired";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
@@ -231,9 +238,11 @@ export type PeoplePage = {
 
 // 07-17 SC-11(U1 · U2 · U6): 사람 목록 한 쪽(50명) — 이름 · 이메일 검색, `locked`면 잠긴 재직자만(퇴직은 isRetiredOn · 보관 제외).
 // T-07-17-03: 검색 · 잠김 거르기 · 잠긴 수는 보는 사람에게 보이는 칸으로만 — 가린 값으로 거르면 그 값이 행 수로 새어 나간다.
+// 07-21(R10 · R17): `roleId` · `teamId` · `orgUnitId`(셋 중 하나 — 화면 zod가 거른다) 소속 필터 — 계급 · 조직 화면 `{N}명` 링크의 목록.
+// 소속 = 보관 거부 · 화면 숫자와 같은 술어(activeTeamMembers · activeUserCondition), 행 수 = N.
 export async function listPeoplePage(
   viewer: Viewer,
-  query: { q?: string; locked?: boolean; page?: number },
+  query: { q?: string; locked?: boolean; page?: number; roleId?: string; teamId?: string; orgUnitId?: string },
   deps?: Partial<PeopleReadDeps>,
 ): Promise<PeoplePage> {
   const scope = await scopeFor(viewer, "user");
@@ -254,11 +263,18 @@ export async function listPeoplePage(
           (row) => row.archivedAt === null && !isRetiredOn(row.resignationDate, today),
         );
   const q = query.q?.trim() ? query.q.trim() : null;
+  const lockedIds = query.locked && showLocked ? lockedPeople.map((row) => row.id) : null;
+  const teamFilter = query.teamId ? { teamIds: [query.teamId] } : query.orgUnitId ? { orgUnitIds: [query.orgUnitId] } : null;
+  const memberIds = teamFilter
+    ? [...new Set((await activeTeamMembers(viewer, { today, ...teamFilter })).map((member) => member.userId))]
+    : null;
+  const ids = lockedIds && memberIds ? memberIds.filter((id) => lockedIds.includes(id)) : (memberIds ?? lockedIds);
   const { rows, total, page } = await repoListUsersPage(viewer, {
     scope,
     includeArchived: scope.includeArchived,
     search: q ? { q, name: visibleKeys.has("name"), email: visibleKeys.has("email") } : null,
-    ids: query.locked && showLocked ? lockedPeople.map((row) => row.id) : null,
+    ids,
+    member: query.roleId || teamFilter ? { asOf: today, roleId: query.roleId ?? null } : null,
     page: query.page ?? 1,
     pageSize: PEOPLE_PAGE_SIZE,
   });
@@ -271,6 +287,19 @@ export async function listPeoplePage(
     pageCount: Math.max(1, Math.ceil(total / PEOPLE_PAGE_SIZE)),
     visibleKeys,
   };
+}
+
+// 07-21(R17 화면): 계급별 소속 활성 사람 수 — 07-15 계급 보관 거부(`countActiveMembersOfRole`) · `?role=` 필터와 같은 조건.
+// 숫자만(정보 항목 아님) — 사람 메뉴 보기가 있어야 한다.
+export async function roleMemberCounts(
+  viewer: Viewer,
+  roleIds: readonly string[],
+  deps?: Partial<PeopleReadDeps & { can: typeof defaultCan }>,
+): Promise<Record<string, number>> {
+  if (!(await (deps?.can ?? defaultCan)(viewer, PEOPLE_MENU, "view"))) {
+    throw new ForbiddenError("사람 보기 권한 없음");
+  }
+  return countActiveMembersByRole(viewer, roleIds, seoulTodayOf(deps));
 }
 
 export async function getPerson(
@@ -351,16 +380,18 @@ export async function registerPerson(
     throw new ValidationError(HIRE_DATE_FORMAT_ERROR);
   }
 
-  // 상한 → 자리(Pitfall 2). 사람이 아직 없어 사람 키 없이 도착 팀 · 본부 키만 잡는다. 보관 본부는 점유 구간 함수처럼 본부 없음.
+  // 상한 → 자리(Pitfall 2). 사람이 아직 없어 사람 키 없이 도착 팀 · 본부 키만 잡는다. 보관 본부는 위에서 거부했다.
   const today = seoulTodayOf(deps);
   const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
   const orgUnit = seat ? await repoFindOrgUnitById(viewer, seat.orgUnitId) : null;
+  // 07-21 Codex P2: 팀은 활성이어도 본부가 보관됐으면 계정을 만들기 전에 거부한다 — 발령(`assignTeam`)의 잠금 뒤 재검사와 같은 문구.
+  if (orgUnit?.archivedAt) throw new ValidationError("보관된 본부 · 먼저 옮기기");
   await withTransaction(async (tx) => {
     await assertCanGrantRoles(viewer, [input.roleId], tx);
     if (!seat) return;
     const occupied: OccupiedTeamRow = {
       teamId: seat.teamId,
-      orgUnitId: orgUnit && !orgUnit.archivedAt ? orgUnit.id : null,
+      orgUnitId: orgUnit?.id ?? null,
       from: seat.effectiveFrom > today ? seat.effectiveFrom : today,
       to: null,
     };
@@ -381,6 +412,22 @@ export async function registerPerson(
     name: input.name,
     roleId: input.roleId,
   });
+
+  // 07-21 게이트(/cso P3-a): 계정 생성(better-auth, 다른 연결)은 위 tx 잠금 밖이다 — 생성 뒤 계급 행을 FOR SHARE로 다시 읽어
+  // 계급 보관(FOR UPDATE 뒤 소속 세기)과 줄 선다. 보관이 먼저 셌으면(이 계정이 아직 안 보였으면) 여기서 보관을 보고 계정을 보상 보관한다.
+  const lockedRole = await withTransaction((tx) => findRoleForShare(viewer, input.roleId, tx));
+  if (!lockedRole || lockedRole.archivedAt) {
+    const archive = deps?.archive ?? defaultArchive;
+    await archive(SYSTEM_VIEWER, "user", userId, {
+      recordAction: async (v, entry, options) =>
+        (deps?.recordAction ?? defaultRecordAction)(
+          v,
+          { ...entry, detail: { reason: "register_person_rollback", requestedBy: viewer.id } },
+          options,
+        ),
+    });
+    throw new ValidationError(`존재하지 않거나 보관된 계급: ${input.roleId}`);
+  }
 
   if (input.teamId && input.effectiveFrom) {
     const assignTeam = deps?.assignTeam ?? defaultAssignTeam;
@@ -486,6 +533,9 @@ export async function changePersonRole(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
     await lockSeatKeys(viewer, { personIds: [userId], admin: true }, tx);
+    // 07-21(F2): 옮길 계급 행을 FOR SHARE로 다시 읽는다 — 계급 보관(FOR UPDATE 뒤 소속 세기)과 줄 서서 보관된 계급으로 옮기지 않는다.
+    const lockedRole = await findRoleForShare(viewer, roleId, tx);
+    if (!lockedRole || lockedRole.archivedAt) throw new ValidationError(`존재하지 않거나 보관된 계급: ${roleId}`);
     await assertNotRetiredInTx(viewer, userId, today, tx);
     const row = await repoFindUserById(viewer, userId, tx);
     if (!row) throw new UserNotFoundError("사람 찾을 수 없음");
@@ -730,6 +780,11 @@ async function setEmploymentDate(
       await assertCanGrantRoles(viewer, [fresh.roleId], tx);
       if (field === "resignation_date") {
         if (value !== null) await assertNotLastAdmin(viewer, { userId, asOf: today }, tx);
+        // 07-21 게이트 사용자 결정(2026-10-23 「막기」): 퇴직자가 이 저장으로 활성이 되면(지우기 · 오늘 이후로 늦추기) 팀 · 본부 · 계급 보관을 본다.
+        if (fresh.archivedAt === null && isRetiredOn(fresh.resignationDate, today) && !isRetiredOn(value, today)) {
+          const reason = await archivedSeatReason(viewer, { userId, roleId: fresh.roleId, today }, tx);
+          if (reason) throw new ValidationError(reason);
+        }
         if (fresh.roleId !== null) {
           // 조건 분기 없이 늘 계산 — newSeats가 늘어난 날짜만 돌려주므로 당기기 · 같은 값은 빈 결과로 잠금 · 쿼리 없이 지나간다.
           const occupied = await listOccupiedTeams(viewer, userId, today, tx);

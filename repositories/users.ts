@@ -54,6 +54,13 @@ export async function listUsers(
     .orderBy(users.name);
 }
 
+// 07-21(R10 · R17): 「활성 사람」 조각 하나 — 보관 안 됨 ∧ 퇴직일 없음 또는 asOf 이후(07-15 countActiveMembersOfRole과 같은 조건).
+// 계급 · 팀 · 본부 소속 수(화면 숫자 · 보관 거부)와 사람 목록 필터가 같은 조각을 쓴다.
+export function activeUserCondition(viewer: Viewer, asOf: string): SQL {
+  void viewer;
+  return and(isNull(users.archivedAt), or(isNull(users.resignationDate), gte(users.resignationDate, asOf))) as SQL;
+}
+
 // 07-17 SC-11 · T-07-17-04: 검색어의 ILIKE 와일드카드(`%` · `_`)와 이스케이프 글자(`\`)는 글자 그대로 — 값은 바인딩 매개변수다.
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
@@ -68,6 +75,8 @@ export async function listUsersPage(
     includeArchived: boolean;
     search: { q: string; name: boolean; email: boolean } | null;
     ids: readonly string[] | null;
+    /** 07-21: 소속 필터 — 그날 활성 사람만(activeUserCondition) · 계급이면 그 계급. 팀 · 본부 소속은 호출자가 ids로 넘긴다. */
+    member?: { asOf: string; roleId: string | null } | null;
     page: number;
     pageSize: number;
   },
@@ -85,6 +94,10 @@ export async function listUsersPage(
     if (match) conditions.push(match);
   }
   if (opts.ids !== null) conditions.push(inArray(users.id, [...opts.ids]));
+  if (opts.member) {
+    conditions.push(activeUserCondition(viewer, opts.member.asOf));
+    if (opts.member.roleId !== null) conditions.push(eq(users.roleId, opts.member.roleId));
+  }
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   const [counted] = await db.select({ count: sql<number>`count(*)::int` }).from(users).where(where);
   const total = counted?.count ?? 0;

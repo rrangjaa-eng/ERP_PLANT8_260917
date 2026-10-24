@@ -28,8 +28,9 @@ import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { lockSeatKeys } from "@/repositories/seats";
 import { setUserArchived } from "@/repositories/users";
 import { countActiveMembersOfRole, findRoleById, lockRoleForUpdate, setRoleArchived } from "@/repositories/roles";
-import { findTeamById, setTeamArchived } from "@/repositories/teams";
+import { findTeamById, listTeamIdsOfOrgUnit, setTeamArchived } from "@/repositories/teams";
 import { setOrgUnitArchived } from "@/repositories/org-units";
+import { activeTeamMembers } from "@/repositories/team-memberships";
 import { assertNoSeatDuplicates, SeatTakenError, seatDuplicateBaseline } from "@/domain/people/seat-rules";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday } from "@/lib/kst-date";
@@ -54,6 +55,14 @@ export const SELF_ARCHIVE_MESSAGE = "본인 보관 불가 · 다른 관리자에
 export class RoleHasMembersError extends UserFacingError {
   constructor(readonly count: number) {
     super(`소속 ${count}명 · 먼저 다른 계급으로 옮기기`);
+  }
+}
+
+// 07-21(R10 · AQ-28): 소속 활성 사람이 남은 팀 · 본부는 보관하지 않는다 — 화면은 count로 같은 줄 이유를 만든다.
+// 260907 `server/src/org.ts:290-302`(사람 남은 팀 · 본부 거부)와 같은 동작 — 그쪽의 「본부에 팀이 남으면 거부」(:298-302)는 하지 않는다(D-P3-10).
+export class OrgHasMembersError extends UserFacingError {
+  constructor(readonly count: number) {
+    super(`소속 ${count}명 · 먼저 옮기기`);
   }
 }
 
@@ -146,9 +155,40 @@ async function archiveRole(viewer: Viewer, id: string, deps?: Partial<ArchiveDep
   });
 }
 
+// 07-21(R10 · T-07-21-02): 팀 · 본부 보관 — 발령(`assignTeam`)이 잡는 팀 · 본부 자리 키를 같은 층 정렬로 잡고(본부는 그 아래 팀 키 전부 +
+// 본부 키 — `restoreSeatedOrg`와 같은 꼴), 잠금 뒤 tx로 소속을 센다(본부는 아래 팀 전부 · 보관 팀 포함). 발령은 잠금 뒤 보관된 팀을
+// 거부하므로 어느 쪽이 먼저 키를 잡아도 「보관된 팀 + 소속 사람」이 남지 않는다. SYSTEM_VIEWER(테스트 훅 · CLI)는 계급 갈래처럼 면제.
+async function archiveSeatedOrg(viewer: Viewer, entity: "team" | "org_unit", id: string, deps?: Partial<ArchiveDeps>): Promise<void> {
+  const entry = findEntry(entity);
+  const row = await entry.findById(viewer, id);
+  if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
+  const today = kstToday((deps?.now ?? (() => new Date()))());
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await withTransaction(async (tx) => {
+    if (entity === "team") {
+      const team = await findTeamById(viewer, id, tx);
+      await lockSeatKeys(viewer, { teamIds: [id], orgUnitIds: team ? [team.orgUnitId] : [] }, tx);
+    } else {
+      // 아래 팀 목록은 잠금 전에 읽는다 — 그사이 새로 생긴 팀으로의 발령도 본부 키에서 줄 선다(발령은 팀의 본부 키를 함께 잡는다).
+      const teamIds = await listTeamIdsOfOrgUnit(viewer, id, tx);
+      await lockSeatKeys(viewer, { teamIds, orgUnitIds: [id] }, tx);
+    }
+    if (viewer.id !== SYSTEM_VIEWER.id) {
+      const members = await activeTeamMembers(viewer, entity === "team" ? { today, teamIds: [id] } : { today, orgUnitIds: [id] }, tx);
+      const count = new Set(members.map((member) => member.userId)).size;
+      if (count > 0) throw new OrgHasMembersError(count);
+    }
+    const archived = entity === "team" ? await setTeamArchived(viewer, id, true, tx) : await setOrgUnitArchived(viewer, id, true, tx);
+    if (!archived) return;
+    await recordAction(viewer, { actionType: "archive", entity, entityId: id }, { tx });
+  });
+}
+
 const DOMAIN_ARCHIVERS: Partial<Record<string, (viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>) => Promise<void>>> = {
   user: archiveUser,
   roles: archiveRole,
+  team: (viewer, id, deps) => archiveSeatedOrg(viewer, "team", id, deps),
+  org_unit: (viewer, id, deps) => archiveSeatedOrg(viewer, "org_unit", id, deps),
 };
 
 // 보관은 대상 행의 보관 시각이 이미 있으면 그 값을 유지한 채 성공으로

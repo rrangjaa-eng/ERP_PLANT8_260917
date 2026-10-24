@@ -43,7 +43,7 @@ async function versionOf(expenseId: string): Promise<number> {
 }
 
 async function draftOf(viewer: Viewer, lineId: string): Promise<string> {
-  const created = await createExpenseFromLines(viewer, { lineIds: [lineId] });
+  const created = await createExpenseFromLines(viewer, { lineIds: [lineId], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error(`작성 중 문서 없음: ${JSON.stringify(created.blocked)}`);
   return expenseId;

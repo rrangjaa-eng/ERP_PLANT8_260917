@@ -181,7 +181,7 @@ describe("지급 주 묶음 · 마감 gate (07-01 Task 2)", () => {
     // 07-16(D-714 · B-P1-1): 작성자 입력에는 지급 예정일 키가 없다 — 실어 보내면 거부되고(strict), 저장 칸에 날짜를 둘 길이 없다.
     const authorDate: Record<string, unknown> = { scheduledPaymentDate: "2026-08-07" };
     await expect(createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: authorDate })).rejects.toThrow();
-    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { note: "행사 운영비" } });
     const expenseId = created.created[0]?.expenseId ?? "";
     const [draft] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
     await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: draft?.version ?? 0, fields: authorDate })).rejects.toThrow();

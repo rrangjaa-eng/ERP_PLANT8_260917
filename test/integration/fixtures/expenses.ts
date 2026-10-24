@@ -13,7 +13,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { changeProjectStatus } from "@/domain/projects/status";
-import { submitExpense } from "@/domain/expenses";
+import { saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { completeEvidenceUpload, requestEvidenceUpload } from "@/domain/evidence";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson, teamIdByName } from "../approvals-fixtures";
@@ -161,10 +161,19 @@ export async function makeEvidenceManager(name = "경영지원", perms: { attach
   return makePerson(name, role.id, null);
 }
 
-// 제출 도우미 — 증빙 한 장을 붙이고(05-04 게이트 ⑧) version을 읽어 submitExpense를 부른다(05-03 · 05-14 테스트는
+// 07-28(J13 · N8): 상세(note)는 제출 필수 — 비어 있으면 한 번 채운다(이미 적힌 값은 그대로).
+export async function ensureDetail(viewer: Viewer, expenseId: string): Promise<void> {
+  const [row] = await db.select({ version: expenses.version, note: expenses.note }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row) throw new Error("지출결의 없음");
+  if (row.note?.trim()) return;
+  await saveExpenseDraft(viewer, { expenseId, expectedVersion: row.version, fields: { note: "행사 운영비" } });
+}
+
+// 제출 도우미 — 증빙 한 장을 붙이고(05-04 게이트 ⑧) 상세를 채우고(07-28) version을 읽어 submitExpense를 부른다(05-03 · 05-14 테스트는
 // 이 도우미로만 제출한다). deps는 그대로 넘긴다(05-14 경합 사례의 afterLock).
 export async function submitReadyDraft(viewer: Viewer, expenseId: string, deps?: Parameters<typeof submitExpense>[2]) {
   await attachEvidence(viewer, expenseId);
+  await ensureDetail(viewer, expenseId);
   const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
   if (!row) throw new Error("지출결의 없음");
   return submitExpense(viewer, { expenseId, expectedVersion: row.version }, deps);

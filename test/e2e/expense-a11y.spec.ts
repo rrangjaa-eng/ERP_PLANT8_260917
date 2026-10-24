@@ -22,7 +22,7 @@ async function expectNoAxeViolations(page: Page): Promise<void> {
 }
 
 async function openDraft(page: Page, fx: ExpenseE2E, key: LineKey): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   await page.goto(`/expenses/${expenseId}`);

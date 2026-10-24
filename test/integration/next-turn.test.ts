@@ -126,7 +126,7 @@ describe("listNextTurnItems — [결재]", () => {
 });
 
 describe("결재 시트 상세 — 증빙 갈래 · 세율 바뀜 (05-05 문자열 행에 덧붙임)", () => {
-  const LABEL_ORDER = ["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "지급 예정일", "지급 방식", "증빙", "비고"];
+  const LABEL_ORDER = ["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "지급 예정일", "지급 방식", "증빙", "상세"];
   const uniqueLabels = (rows: { label: string }[]) => [...new Set(rows.map((row) => row.label))];
 
   it("loadKindDetails와 listMyInbox(withDetails)가 같은 행을 돌려준다 — 증빙 행은 파일 id · 이름 · 크기 · 형식만, 주소 없음", async () => {

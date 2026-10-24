@@ -11,6 +11,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
 import { delayServerActions, expectSheetDocumentLink, loginPage, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E } from "./expense-fixture";
+import { ensureDetail } from "../integration/fixtures/expenses";
 
 // 05-05 Task 1 화면 트레이서(ROADMAP 05 기준 3): 견적 줄 `지출결의 올리기` → 폼(자동 채움) → 사진 한 장(브라우저 축소 · 해시 · 로컬 서명 주소) →
 // `Ctrl+Enter` 제출 → 문서 화면 → 팀장 폰 결재 시트 `승인` → 대표 문서 화면 `승인`. 줄마다 테스트가 따로라 서로 겹치지 않는다.
@@ -36,7 +37,7 @@ function countActionPosts(page: Page): { count: () => number } {
 
 // 도메인 함수로 작성 중 문서를 만들어 폼을 연다(견적 줄 표 클릭은 트레이서가 따로 증명한다).
 async function openDraftForm(page: Page, fx: ExpenseE2E, key: "hold" | "retry"): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   await page.goto(`/expenses/${expenseId}`);
@@ -66,6 +67,10 @@ test.describe("지출결의 올리기 → 제출 → 폰 결재 시트 승인 �
     await expect(pm.getByLabel("증빙 종류")).toHaveValue("tax_invoice");
     await expect(pm.getByLabel("공급가액")).toHaveValue("12,400,000");
     await expect(pm.getByLabel("지급 방식")).toHaveValue("bank_transfer");
+    // 07-28(J13 · N8): 상세는 제출 필수 — 준비로 미리 저장해 두어 제출이 요청 한 건 그대로다(폼이 더럽지 않다).
+    await ensureDetail(fx.pm.viewer, expenseId);
+    await pm.reload();
+    await expect(pm.getByLabel("상세", { exact: true })).toHaveValue("행사 운영비");
 
     // 2) 사진 한 장 — 메타가 `KB · MM-DD` 꼴로 바뀐다.
     await waitForHydration(pm.getByRole("button", { name: /^임시 저장/ }));

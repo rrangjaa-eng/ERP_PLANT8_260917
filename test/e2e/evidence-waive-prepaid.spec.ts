@@ -46,7 +46,7 @@ async function approveAll(fx: ExpenseE2E, expenseId: string): Promise<void> {
 
 // 줄 하나의 작성 중 문서를 만들어 기안자 폼을 연다(증빙은 붙이지 않는다).
 async function openDraftForm(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, key: LineKey): Promise<{ page: Page; expenseId: string }> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   const page = await loginPage(browser, baseURL, fx.pm);
@@ -171,7 +171,7 @@ test.describe("증빙 면제 (06-10)", () => {
   // UI-SPEC S5 「행동 뒤 포커스」 — 지급 뒤(P6)에는 1차가 없어 면제 뒤 포커스가 결과 글자로 간다(2차 `지급 취소`가 아니다 — DOM 감사 D-1).
   test("지급된 선결제 문서(P6) → `증빙 면제` → 포커스는 결과 글자", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
-    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id], fields: { note: "행사 운영비" } });
     const expenseId = created.created[0]?.expenseId;
     if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
     const versionOf = async () => (await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId)))[0]?.version ?? 0;

@@ -82,7 +82,7 @@ async function setupWorld(): Promise<World> {
 }
 
 async function draftOf(world: World): Promise<string> {
-  const created = await createExpenseFromLines(world.otherPm.viewer, { lineIds: [world.lineId] });
+  const created = await createExpenseFromLines(world.otherPm.viewer, { lineIds: [world.lineId], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error(`작성 중 문서를 만들지 못했다: ${JSON.stringify(created.blocked)}`);
   return expenseId;

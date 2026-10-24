@@ -163,7 +163,7 @@ describe("팀 비용 제출 · 번호 T26-0001", () => {
     await saveExpenseDraft(pm, {
       expenseId,
       expectedVersion: 1,
-      fields: { vendorId, evidenceType: "tax_invoice", paymentMethod: options.payment[0]?.value ?? null, supply: { currency: "KRW", amount: 440_000, fxRate: 1 } },
+      fields: { vendorId, evidenceType: "tax_invoice", paymentMethod: options.payment[0]?.value ?? null, supply: { currency: "KRW", amount: 440_000, fxRate: 1 }, note: "팀 운영비" },
     });
     await attachEvidence(pm, expenseId);
     const preview = await previewExpense(pm, { expenseId, fields: {} });

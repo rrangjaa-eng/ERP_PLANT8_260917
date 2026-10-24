@@ -114,7 +114,7 @@ test.describe("증빙 수명 주기 (06-11)", () => {
 // 06.5 D-6520(UI-SPEC V8 개정 4판) — 증빙 확인의 금액은 공급가액 하나: `공급가액과 같음`으로 확정, 지급 전에만 남은 실행가 안에서 고친다,
 // 지급 뒤(P5)에는 `바꾸기` 대신 잠김 줄. 줄 실행가 = 공급가 = 12,400,000(픽스처)이라 남은 실행가는 12,400,000이다.
 async function prepaidPaidWithLateEvidence(fx: ExpenseE2E, payer: Person): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   await saveExpenseDraft(fx.pm.viewer, { expenseId, expectedVersion: await versionOf(expenseId), fields: { prepaid: true, prepaidReason: "행사장 선입금 요구" } });

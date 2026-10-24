@@ -157,7 +157,7 @@ function addDays(date: string, days: number): string {
 
 // 선결제 문서(증빙 없이 제출 — 06-10) → 결재 통과 → 지급일 `payDate`로 지급 완료.
 async function prepaidPaidOn(fx: ExpenseE2E, payDate: string): Promise<void> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서 없음");
   const versionOf = async () => {
@@ -288,7 +288,7 @@ test.describe("견적 줄 상태 (06-13)", () => {
 
   test("서버 거부 = 화면 문구 — 카드 사용 2건 줄의 작성 중 문서 제출 거부 문구가 행 행동 이유와 같은 문자열", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
-    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.retry.id] });
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.retry.id], fields: { note: "행사 운영비" } });
     const draft = created.created[0]?.expenseId;
     if (!draft) throw new Error("작성 중 문서 없음");
     await cardOn(fx.pm, fx.lines.retry.id);

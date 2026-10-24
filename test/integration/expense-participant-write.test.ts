@@ -45,7 +45,7 @@ async function versionOf(expenseId: string): Promise<number> {
 
 // 참여자 자기 팀(기획1팀) P1 줄의 작성 중 문서 — 줄 바꾸기 판정은 새 줄의 프로젝트(P3)로 한다.
 async function teamDraft(w: World): Promise<string> {
-  const created = await createExpenseFromLines(w.member, { lineIds: [w.lines.withVendor] });
+  const created = await createExpenseFromLines(w.member, { lineIds: [w.lines.withVendor], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error(`작성 중 문서를 만들지 못했다: ${JSON.stringify(created.blocked)}`);
   return expenseId;
@@ -54,7 +54,7 @@ async function teamDraft(w: World): Promise<string> {
 describe("참여자 지출결의 쓰기 — 만들기 (06.2-10 D-6214)", () => {
   it("다른 팀 참여자는 그 프로젝트 견적 줄로 작성 중 지출결의를 만든다 — 기안자 참여자 · 프로젝트 P3", async () => {
     const w = await setup();
-    const result = await createExpenseFromLines(w.member, { lineIds: [w.p3.lineId] });
+    const result = await createExpenseFromLines(w.member, { lineIds: [w.p3.lineId], fields: { note: "행사 운영비" } });
     expect(result.blocked).toEqual([]);
     expect(result.created).toHaveLength(1);
     const [row] = await db
@@ -66,8 +66,8 @@ describe("참여자 지출결의 쓰기 — 만들기 (06.2-10 D-6214)", () => {
 
   it("같은 계급 · 같은 팀의 참여자 아닌 사람에게 그 줄은 없는 줄이다(권한 문구가 아니다 — 보임이 먼저)", async () => {
     const w = await setup();
-    const missing = await createExpenseFromLines(w.otherPm, { lineIds: [randomUUID()] });
-    const outside = await createExpenseFromLines(w.otherPm, { lineIds: [w.p3.lineId] });
+    const missing = await createExpenseFromLines(w.otherPm, { lineIds: [randomUUID()], fields: { note: "행사 운영비" } });
+    const outside = await createExpenseFromLines(w.otherPm, { lineIds: [w.p3.lineId], fields: { note: "행사 운영비" } });
     expect(outside.created).toEqual([]);
     expect(outside.blocked).toEqual([{ lineId: w.p3.lineId, reason: missing.blocked[0]?.reason }]);
   });
@@ -104,8 +104,8 @@ describe("참여자 지출결의 쓰기 — 나머지 입구 · 떼기 (06.2-10 
     const expenseId = await teamDraft(w);
     await removeProjectMember(w.otherTeamPm, w.p3.id, w.member.id);
 
-    const missing = await createExpenseFromLines(w.member, { lineIds: [randomUUID()] });
-    const created = await createExpenseFromLines(w.member, { lineIds: [w.p3.lineId] });
+    const missing = await createExpenseFromLines(w.member, { lineIds: [randomUUID()], fields: { note: "행사 운영비" } });
+    const created = await createExpenseFromLines(w.member, { lineIds: [w.p3.lineId], fields: { note: "행사 운영비" } });
     expect(created.created).toEqual([]);
     expect(created.blocked).toEqual([{ lineId: w.p3.lineId, reason: missing.blocked[0]?.reason }]);
     await expect(changeExpenseLine(w.member, { expenseId, lineId: w.p3.lineId, expectedVersion: await versionOf(expenseId) })).rejects.toBeInstanceOf(ExpenseNotFoundError);
@@ -140,7 +140,7 @@ describe("참여자 지출결의 쓰기 — 나머지 입구 · 떼기 (06.2-10 
 // 거부 꼴은 네 입구와 같다: 보이지 않으면 없는 문서(ExpenseNotFoundError), 보이지만 못 쓰면 ForbiddenError. 작성 중 문서 지우기는 그대로 열려 있다.
 describe("참여자 지출결의 쓰기 — 제출 때 다시 판정 (06.2-10 F1 · CSO-PR5-1)", () => {
   async function p3Draft(viewer: Viewer, lineId: string): Promise<string> {
-    const created = await createExpenseFromLines(viewer, { lineIds: [lineId] });
+    const created = await createExpenseFromLines(viewer, { lineIds: [lineId], fields: { note: "행사 운영비" } });
     const expenseId = created.created[0]?.expenseId;
     if (!expenseId) throw new Error(`작성 중 문서를 만들지 못했다: ${JSON.stringify(created.blocked)}`);
     return expenseId;

@@ -61,7 +61,7 @@ async function insertLink(by: Viewer, ownerId: string): Promise<string> {
 
 async function build(spec: Spec): Promise<Doc> {
   const fx = await setupExpenseProject();
-  const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+  const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("지출결의를 만들지 못했다");
   const linkId = spec.link === "none" ? null : await insertLink(payer, expenseId);

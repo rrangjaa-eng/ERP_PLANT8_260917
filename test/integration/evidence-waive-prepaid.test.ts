@@ -34,7 +34,7 @@ async function expenseRow(id: string) {
 }
 
 async function lineDraft(fx: ExpenseFixture, lineId: string = fx.lines.withVendor): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm, { lineIds: [lineId] });
+  const created = await createExpenseFromLines(fx.pm, { lineIds: [lineId], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error(`작성 중 문서 없음: ${JSON.stringify(created.blocked)}`);
   return expenseId;

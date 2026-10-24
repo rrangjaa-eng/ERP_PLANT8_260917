@@ -2324,6 +2324,15 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 
 ---
 
+## 2026-10-23 — 07-21 독립 DOM 감사 수정: 비활성 이유 어조 · 폰 결과 줄 · 폰 칸 면 (0721-dom-audit P2 · P3 #7 · Q4a)
+
+**결정**: ① `RowAction`에 `reasonTone="info"`를 더한다(Button `reasonTone`과 같은 말) — 거부가 아니라 「아직 할 수 없음」인 비활성 이유는 `--text-muted`, 기본은 막힘 `--status-danger` 그대로. 계급 · 조직의 `소속 {N}명 · …` 이유만 info다(UI-SPEC SC-09 · SC-13, SYSTEM.md 외부 수령자 막힘 이유의 손대지 않은 막힘 = muted와 같은 나눔). ② 이유 안 링크는 모든 폭에서 `--text-link`(브라우저 기본 파랑 제거). 계급 표의 소속 이유는 폰(<700)에서 좁은 동작 칸(320에서 글자 폭 약 83)이 세 줄을 만들어, 행 아래 전폭 줄(`StaticTable` `detail`)로 옮긴다(PC는 그 줄을 CSS로 숨기고 행동 옆 이유 그대로, 폰은 행동 옆 이유를 숨김 — `aria-describedby`는 그대로 행동 옆 이유 글자를 가리킨다). 동작 칸 최소 폭을 늘리는 길은 다른 열(이름)을 눌러 행 줄 수를 깨 버려 쓰지 않았다. ③ 폰(<700) 권한표 결과 줄 `.resultLine`은 상단 바 아래 sticky(`top: var(--bar-h)`)라 아래쪽 칸을 켠 뒤에도 `되돌리기`가 화면 안에 선다 — 제출 줄 sticky와 같은 방식, PC는 그대로. ④ 폰 칸을 `.mobileCell`로 감싸 PC `td`와 같은 저장 중 면 `--surface-dirty` · 실패 표시 `--inset-error`를 준다. ⑤ 결과 줄 문구는 `{묶음}: {실제 바뀐 동작}도 켬/끔`(묶음 이름 안 `·`와 구분자가 겹치던 `쓰기·승인도 끔` 제거, 서버 `changed`로 실제 바뀐 동작 이름만).
+**새 값**: 새 색 · 서체 · radius 없음(`--text-link` · `--text-muted` · `--surface-dirty` · `--inset-error` · `--bar-h` 기존 토큰). 새 컴포넌트 · 클래스 이름은 CSS 모듈 안 `.reasonInfo` · `.mobileCell`뿐.
+**이유**: 독립 DOM 감사(0721-dom-audit) P2 #1~#4 · P3 #7 · Q4a. #5(되돌리기 단축키)는 `ui/`에 undo 단축키 선례가 없어 새 패턴을 만들지 않고 유지(main 첫 정지점 — 점검표에 기록).
+**범위**: `ui/row-actions/`, `ui/permission-grid/`, `app/(app)/admin/people/{roles,org}/*-client.tsx`, `app/(app)/admin/people/people.module.css`, `test/e2e/mobile-07-21-dom-fixes.spec.ts`, `docs/design/SYSTEM.md` §7-13(결과 줄 문구 · 폰 sticky) · §7-19(비활성 이유 줄 · `reasonTone`). 처음 커밋엔 「SYSTEM.md 본문 변경 없음」으로 적어 본문 반영이 빠졌다 — 07-21 사후 게이트 `/design-review` D-1(P2) · D-2(P3)로 고쳤다.
+
+---
+
 ## 2026-10-24 — 지급 예정 화면 배지 문구 「거래처 확인 전」 (07-23)
 
 **결정**: 지급 목록(지급 예정 화면) 지급 방식 칸 계좌 아래 거래처 표지는 `거래처 확인 전`이다(옛 `확인 전`). 색은 `--status-accent`(`accent`), `variant="text"` 전용. 한 값 우선순위는 `거래처 확인 전 > 계좌 바뀜` 그대로다.

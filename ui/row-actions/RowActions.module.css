@@ -87,6 +87,35 @@ button.action {
   white-space: nowrap;
 }
 
+/* 거부가 아닌 「아직 할 수 없음」 이유(07-21 UI-SPEC SC-09 · SC-13) — Button .reasonInfo와 같은 색. */
+.reasonInfo {
+  color: var(--text-muted);
+}
+
+/* 이유 안 링크(`소속 {N}명`)는 다른 행동 링크와 같은 링크 색 — 브라우저 기본 파랑이 새지 않게 모든 폭에서. */
+.reason a {
+  color: var(--text-link);
+}
+
+/* 07-21(SC-09 · SC-13): 폰(<700)은 이유가 좁은 행동 칸에서 넘치지 않게 버튼 아래로 줄바꿈하고, 이유 안 `{N}명` 링크도 44×44 누르는 상자다. */
+@media (max-width: 699.98px) {
+  .withReason {
+    flex-wrap: wrap;
+  }
+
+  .reason {
+    white-space: normal;
+  }
+
+  .reason a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44(공유 Button .tertiary와 같은 패턴). PC는 그대로. */
 @media (max-width: 699.98px) {
   .action {

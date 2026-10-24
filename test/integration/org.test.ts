@@ -5,6 +5,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import {
   listOrgUnits,
   listTeams,
+  listAssignableTeams,
   createOrgUnit,
   createTeam,
   renameOrgUnit,
@@ -78,5 +79,26 @@ describe("org (MAST-02, 실제 Postgres) — 본부·팀 CRUD", () => {
   it("사람 메뉴 쓰기 권한이 없는 계급은 본부·팀을 만들 수 없다", async () => {
     const pmViewer = { id: "org-pm-tester", roleId: DEFAULT_ROLE_ID };
     await expect(createOrgUnit(pmViewer, { name: `거부-${randomUUID()}` })).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+// 07-21 Codex 델타 P2 — 사람 등록 · 발령의 팀 선택지: 서버가 거부하는 보관 본부 아래 팀은 목록에서 뺀다(할 수 없는 선택지는 숨김).
+describe("listAssignableTeams — 사람 등록 · 발령 팀 선택지", () => {
+  it("보관된 본부 아래 활성 팀과 보관된 팀은 빠지고, 활성 본부의 활성 팀만 남는다", async () => {
+    const activeOrg = await createOrgUnit(SYSTEM_VIEWER, { name: `본부-${randomUUID()}` });
+    const archivedOrg = await createOrgUnit(SYSTEM_VIEWER, { name: `본부-${randomUUID()}` });
+    const keep = await createTeam(SYSTEM_VIEWER, { orgUnitId: activeOrg.id, name: `팀-${randomUUID()}` });
+    const archivedTeam = await createTeam(SYSTEM_VIEWER, { orgUnitId: activeOrg.id, name: `팀-${randomUUID()}` });
+    const underArchivedOrg = await createTeam(SYSTEM_VIEWER, { orgUnitId: archivedOrg.id, name: `팀-${randomUUID()}` });
+    await archive(SYSTEM_VIEWER, "team", archivedTeam.id);
+    await archive(SYSTEM_VIEWER, "org_unit", archivedOrg.id);
+
+    const options = (await listAssignableTeams(SYSTEM_VIEWER)).map((team) => team.id);
+
+    expect(options).toContain(keep.id);
+    expect(options).not.toContain(archivedTeam.id);
+    expect(options).not.toContain(underArchivedOrg.id);
+    // 일반 팀 목록은 그대로 — 보관 본부 아래 활성 팀도 담긴다(조직 화면 · 소속 필터가 쓴다).
+    expect((await listTeams(SYSTEM_VIEWER)).map((team) => team.id)).toContain(underArchivedOrg.id);
   });
 });

@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { teams } from "@/db/schema";
+import { orgUnits, teams } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
 
@@ -16,9 +16,28 @@ export async function listTeams(viewer: Viewer, opts: { scope: Scope }): Promise
     .orderBy(teams.sortOrder, teams.name);
 }
 
-export async function findTeamById(viewer: Viewer, id: string): Promise<TeamRow | null> {
-  const [row] = await db.select().from(teams).where(eq(teams.id, id)).limit(1);
+// 07-21: 사람 등록 · 발령 선택지 — 활성 팀 중 본부도 활성인 팀만(서버가 보관 팀 · 보관 본부 아래 배치를 거부한다). 보관함 보기 범위와 무관하다.
+export async function listTeamsOfActiveOrgUnits(viewer: Viewer, opts: { scope: Scope }): Promise<TeamRow[]> {
+  if (opts.scope.rows === "none") return [];
+  const rows = await db
+    .select({ team: teams })
+    .from(teams)
+    .innerJoin(orgUnits, eq(orgUnits.id, teams.orgUnitId))
+    .where(and(isNull(orgUnits.archivedAt), isNull(teams.archivedAt)))
+    .orderBy(teams.sortOrder, teams.name);
+  return rows.map((row) => row.team);
+}
+
+export async function findTeamById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<TeamRow | null> {
+  const [row] = await tx.select().from(teams).where(eq(teams.id, id)).limit(1);
   return row ?? null;
+}
+
+// 07-21(R10): 본부 아래 팀 id 전부(보관 팀 포함) — 본부 보관이 팀 자리 키를 잡을 때.
+export async function listTeamIdsOfOrgUnit(viewer: Viewer, orgUnitId: string, tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  const rows = await tx.select({ id: teams.id }).from(teams).where(eq(teams.orgUnitId, orgUnitId));
+  return rows.map((row) => row.id);
 }
 
 // 목록 묶음 조회(이슈 #56) — findTeamById와 같은 의미로 보관 여부로 거르지

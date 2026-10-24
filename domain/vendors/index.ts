@@ -31,7 +31,7 @@ import { servesSide, vendorKindToAdd, vendorKindsFor, VENDOR_KIND_LABELS, type V
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { AccountFieldsError, accountFieldsChanged, judgeAccountFields, present } from "@/domain/vendors/account-fields";
 import { businessNoDigits, businessNoProblem } from "@/domain/vendors/business-no";
-import { normalizeAccountDigits } from "@/domain/vendors/account-digits";
+import { accountNumberLast4 as last4Digits, normalizeAccountDigits } from "@/domain/vendors/account-digits";
 import { hadAccount, writeAccountChange } from "@/domain/vendors/account-changes";
 import { judgeContacts, saveVendorContacts, type VendorContactInput } from "@/domain/vendors/contacts";
 
@@ -768,10 +768,7 @@ const WORK_NOT_PICKABLE_MESSAGE = "고를 수 없는 거래처 · 다른 거래�
 export async function registerVendorFromWork(viewer: Viewer, input: WorkVendorInput, deps?: Partial<VendorWriteDeps>): Promise<VendorDto> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, EXPENSES_MENU, "write"))) throw new ForbiddenError("거래처 등록 권한 없음");
-  // 07-23 R-1(/cso C-1) · 사용자 결정(10/23): createVendor와 같은 규칙 — 계좌 세 칸 중 하나라도 실으면 `vendors.account` 쓰기가 필요하다.
-  // 첫 계좌는 바뀜 알림이 없어, 지출결의 쓰기만으로 새 거래처에 자기 계좌를 넣는 지급 사기 경로가 된다. 판정은 칸 오류보다 먼저.
-  const accountGiven = present(input.accountBank) !== null || present(input.accountHolder) !== null || present(input.accountNumber) !== null;
-  if (accountGiven && !(await canFn(viewer, VENDOR_ACCOUNT_MENU, "write"))) throw new ForbiddenError("계좌 수정 권한 없음");
+  // 사용자 결정(10/24): 업무 중 등록은 계좌를 그대로 받는다(`vendors.account` 쓰기 불필요) — 대신 끌 수 없는 로그로 남긴다.
   const kind = input.kind ?? "supplier";
   if (!servesSide(kind, "supplier")) throw new WorkVendorKindError("갈래 선택");
   const visibleFn = deps?.visible ?? defaultVisible;
@@ -783,22 +780,39 @@ export async function registerVendorFromWork(viewer: Viewer, input: WorkVendorIn
   );
   const accountNumberPlan = planAccountNumberUpdate(accountNumber);
 
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
   let row: VendorRow;
   try {
-    row = await repoInsertVendor(viewer, {
-      name: input.name,
-      normalizedName: normalizeVendorName(input.name),
-      businessNo: input.businessNo ?? null,
-      defaultEvidenceType: null,
-      accountBank: present(input.accountBank),
-      accountHolder: present(input.accountHolder),
-      accountNumberEncrypted: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null,
-      accountNumberLast4: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null,
-      customFields: {},
-      kind,
-      paymentTermDays: null,
-      confirmedAt: null,
-      confirmedBy: null,
+    // Codex P2: 삽입과 끌 수 없는 기록을 한 트랜잭션으로 — 기록이 실패하면 계좌 든 거래처가 기록 없이 남지 않는다.
+    row = await withTransaction(async (tx) => {
+      const inserted = await repoInsertVendor(
+        viewer,
+        {
+          name: input.name,
+          normalizedName: normalizeVendorName(input.name),
+          businessNo: input.businessNo ?? null,
+          defaultEvidenceType: null,
+          accountBank: present(input.accountBank),
+          accountHolder: present(input.accountHolder),
+          accountNumberEncrypted: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null,
+          accountNumberLast4: accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null,
+          customFields: {},
+          kind,
+          paymentTermDays: null,
+          confirmedAt: null,
+          confirmedBy: null,
+        },
+        tx,
+      );
+      // 사용자 결정(10/24): 끌 수 없는 전용 종류 — 계좌가 실렸으면 뒤 4자리를 updateVendor의 vendor_account_change와 같은 꼴로 남긴다.
+      const accountGiven = inserted.accountBank !== null || inserted.accountHolder !== null || inserted.accountNumberLast4 !== null;
+      const last4 = accountGiven ? { beforeLast4: null, afterLast4: last4Digits(inserted.accountNumberLast4) } : {};
+      await recordAction(
+        viewer,
+        { actionType: "work_vendor_create", entity: VENDOR_ENTITY, entityId: inserted.id, detail: { source: WORK_SOURCE, ...last4 } },
+        { tx },
+      );
+      return inserted;
     });
   } catch (error) {
     if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
@@ -806,8 +820,6 @@ export async function registerVendorFromWork(viewer: Viewer, input: WorkVendorIn
     }
     throw error;
   }
-  const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "document_create", entity: VENDOR_ENTITY, entityId: row.id, detail: { source: WORK_SOURCE } });
   return toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY));
 }
 

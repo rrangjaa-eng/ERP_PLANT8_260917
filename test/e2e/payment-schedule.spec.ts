@@ -473,8 +473,13 @@ async function makeVendorAccountEditor(fx: ExpenseE2E): Promise<Person> {
   return makePerson("계좌관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
 }
 
+// 표는 고칠 칸(고를 수 있는 행의 이체액)이 있을 때만 grid다 — 행이 모두 막히면(확인 전 거래처) table(ui/table hasEditableCell).
+function targetsTable(page: Page) {
+  return targetsGrid(page).or(page.getByRole("table", { name: "지급 대상" }));
+}
+
 async function methodCell(page: Page, itemName: string) {
-  const table = page.getByRole("grid", { name: "지급 대상" });
+  const table = targetsTable(page);
   await expect(table).toBeVisible();
   const index = await table.locator("thead th").evaluateAll((cells) => cells.findIndex((cell) => cell.textContent?.trim() === "지급 방식"));
   expect(index).toBeGreaterThanOrEqual(0);
@@ -488,6 +493,7 @@ test.describe("지급 목록 계좌 아래 한 값 `확인 전 > 계좌 바뀜` 
     const fx = await setupExpenseE2E();
     const payer = await makeTeamPayer(fx);
     const editor = await makeVendorAccountEditor(fx);
+    await db.update(vendors).set({ confirmedAt: null, confirmedBy: null }).where(eq(vendors.id, fx.vendorId));
     const issuedOn = addDays(seoulToday(), -3);
     const paid = await approvedDoc(fx, "tracer", payer, { issuedOn });
     await approvedDoc(fx, "hold", payer, { issuedOn });
@@ -515,6 +521,27 @@ test.describe("지급 목록 계좌 아래 한 값 `확인 전 > 계좌 바뀜` 
     await page.reload();
     const after = await methodCell(page, fx.lines.hold.itemName);
     await expect(after.getByText("계좌 바뀜", { exact: true })).toHaveCount(0);
+    await page.context().close();
+  });
+
+  // 2026-10-24 사용자 결정(G13 일부 변경): 확인 전 거래처 건은 고를 수 없다 — 서버 selectable 거짓을 다른 막힌 행과 같은 aria-disabled 선택 칸으로.
+  test("확인 전 거래처 행은 선택 칸 aria-disabled · 배지 `거래처 확인 전` 그대로 · 확인 뒤 고를 수 있다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const editor = await makeVendorAccountEditor(fx);
+    await db.update(vendors).set({ confirmedAt: null, confirmedBy: null }).where(eq(vendors.id, fx.vendorId));
+    await approvedDoc(fx, "hold", payer, { issuedOn: addDays(seoulToday(), -3) });
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const cell = await methodCell(page, fx.lines.hold.itemName);
+    await expect(cell.getByText("거래처 확인 전", { exact: true })).toHaveCount(1);
+    const row = targetsTable(page).locator("tbody tr").filter({ has: page.getByRole("link", { name: fx.lines.hold.itemName, exact: false }) });
+    await expect(row.getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
+
+    await db.update(vendors).set({ confirmedAt: new Date(), confirmedBy: editor.viewer.id }).where(eq(vendors.id, fx.vendorId));
+    await page.reload();
+    await expect(row.getByRole("checkbox")).not.toHaveAttribute("aria-disabled", "true");
     await page.context().close();
   });
 });

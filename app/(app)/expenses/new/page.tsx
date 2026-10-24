@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { seoulToday } from "@/lib/dates";
 import { requireSession } from "@/lib/viewer";
-import { can } from "@/domain/permissions/can";
 import "@/app/(app)/document-kinds";
 import { previewRoute, RouteBlockedError } from "@/domain/approvals";
 import { EXPENSE_DOCUMENT_KIND, getNewExpenseDefaults, listExpenseCurrencies, listExpenseFormOptions } from "@/domain/expenses";
@@ -31,13 +30,7 @@ export default async function NewExpensePage() {
     if (!(error instanceof RouteBlockedError)) throw error;
     routeBlocked = error.message;
   }
-  // 07-23 R-1: 지급처 고르기의 거래처 등록 패널 — 계좌 세 칸은 `vendors.account` 쓰기 보유자만(서버도 거부).
-  const [{ evidence, payment, prepaidDueDays, companyBorne }, currencies, maxMb, canEditVendorAccount] = await Promise.all([
-    listExpenseFormOptions(viewer),
-    listExpenseCurrencies(),
-    getSettingValue(EVIDENCE_MAX_SIZE_MB),
-    can(viewer, "vendors.account", "write"),
-  ]);
+  const [{ evidence, payment, prepaidDueDays, companyBorne }, currencies, maxMb] = await Promise.all([listExpenseFormOptions(viewer), listExpenseCurrencies(), getSettingValue(EVIDENCE_MAX_SIZE_MB)]);
   const options = (items: { value: string; label: string; description: string | null }[]) => items.map((item) => ({ value: item.value, label: item.label, description: item.description }));
   const skipped = route?.steps.filter((step) => step.skipped).map((step) => `${step.label ?? ""} 단계 건너뜀(자기 승인 없음)`) ?? [];
 
@@ -86,7 +79,6 @@ export default async function NewExpensePage() {
           currencies={currencies}
           files={[]}
           maxMb={maxMb}
-          canEditVendorAccount={canEditVendorAccount}
           route={
             route ? (
               <ApprovalRoute

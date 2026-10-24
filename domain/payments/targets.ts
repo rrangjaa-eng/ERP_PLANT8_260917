@@ -25,7 +25,7 @@ import { findUserNamesByIds } from "@/repositories/users";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { loadPrepaidDueDays, resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
 import { decidePayable, getPaymentView, loadPaymentShared, pairGateCtx, pickPaymentAmount, projectPaymentAccounts, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
-import { approvalGateDecision, EVIDENCE_UNCONFIRMED, resolveExpenseActionRow, type EvidenceGateInput, type ExpenseActionBar } from "@/domain/payments/action-row";
+import { approvalGateDecision, EVIDENCE_UNCONFIRMED, resolveExpenseActionRow, VENDOR_UNCONFIRMED, vendorPayeeOf, type EvidenceGateInput, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { listTeams as listTeamRows } from "@/repositories/teams";
 import { listExpenseIdsInScope } from "@/repositories/expenses";
 import {
@@ -127,6 +127,8 @@ function reasonOf(row: PaymentTargetRow, bar: ExpenseActionBar, payableKrw: numb
   if (bar.row === "P2") return EVIDENCE_UNCONFIRMED;
   if (bar.blockReason) return bar.blockReason;
   if (payableKrw === null) return TAX_UNAVAILABLE;
+  // 2026-10-24 사용자 결정(G13 일부 변경): 지급처 거래처가 확인 전이면 고를 수 없다 — 이체 파일 · 일괄 지급이 이 판정을 다시 읽는다.
+  if (vendorPayeeOf(row) !== null && row.vendorConfirmedAt === null) return VENDOR_UNCONFIRMED;
   return null;
 }
 
@@ -247,11 +249,6 @@ function titleOf(
   if (row.projectId === null && row.quoteLineId === null) return [row.teamName, row.content].filter(Boolean).join(" · ");
   const seq = row.installment && row.installmentSeq ? ` ${row.installmentSeq}회차` : "";
   return `${[row.projectName, row.itemName].filter(Boolean).join(" · ")}${seq}`;
-}
-
-// 07-23 N2: 지급처가 거래처인 행(직원 지급처 문서는 줄 거래처가 있어도 그 계좌로 나가지 않는다).
-function vendorPayeeOf(row: Pick<PaymentTargetRow, "vendorId" | "payeeUserId">): string | null {
-  return row.payeeUserId === null ? row.vendorId : null;
 }
 
 function toDto(

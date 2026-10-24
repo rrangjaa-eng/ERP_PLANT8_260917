@@ -64,6 +64,8 @@ export const CORE_ACTION_TYPES = [
   "vendor_account_change",
   "vendor_confirm",
   "notification_rule_change",
+  // 사용자 결정(10/24): 업무 중(지출결의 폼) 거래처 등록 — 계좌를 권한 없이 받으므로 document_create(끌 수 있음) 대신 끌 수 없는 전용 종류로 남긴다.
+  "work_vendor_create",
   // 07-24 D-729: 예산 직접 수정은 돈 기록이라 끌 수 없다
   "budget_manual_change",
 ] as const;
@@ -114,6 +116,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   vendor_account_change: "거래처 계좌 변경",
   vendor_confirm: "거래처 확인",
   notification_rule_change: "알림 규칙 변경",
+  work_vendor_create: "업무 중 거래처 등록",
   budget_manual_change: "예산 직접 수정",
 };
 
@@ -166,6 +169,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "vendor_account_change",
   "vendor_confirm",
   "notification_rule_change",
+  // 사용자 결정(10/24): 업무 중 거래처 등록은 계좌 권한 없이 계좌를 받는 길이라 끌 수 없다
+  "work_vendor_create",
   // 07-24 D-729: 예산 직접 수정은 돈 기록이라 끌 수 없다
   "budget_manual_change",
 ];

@@ -29,6 +29,8 @@ import {
   TRANSFER_FRACTION,
   TRANSFER_NOT_NUMBER,
   TRANSFER_NOT_POSITIVE,
+  VENDOR_UNCONFIRMED,
+  vendorPayeeOf,
   type EvidenceGateInput,
   type ExpenseActionBar,
   type PairGateInput,
@@ -60,6 +62,7 @@ import { formatKrw } from "@/lib/format-number";
 import { kstDateOf } from "@/lib/kst-date";
 import { maskTail4 } from "@/lib/mask-tail4";
 import { findVendorAccountsByIds } from "@/repositories/payment-targets";
+import { findVendorById, lockVendorConfirmedForShare } from "@/repositories/vendors";
 import { findUserPayoutAccountsByIds } from "@/repositories/users";
 import { canManagePayoutAccount } from "@/domain/people/account";
 
@@ -522,6 +525,8 @@ export async function completeExpensePayment(
         transferKrw: input.transferKrw,
         diffReason: input.diffReason,
       });
+      // 2026-10-24 사용자 결정(G13 일부 변경): 지급처 거래처가 확인 전이면 막는다 — 문서 잠금 뒤 같은 트랜잭션에서 FOR SHARE로 읽어 확인 되돌리기와 엇갈리지 않는다.
+      if (locked.vendorId && !locked.payeeUserId && !(await lockVendorConfirmedForShare(viewer, locked.vendorId, tx))) throw new GateBlockedError(VENDOR_UNCONFIRMED);
 
       const payment = await insertPayment(
         viewer,
@@ -1124,6 +1129,12 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
       PAYMENT_VIEW_DTO_SPEC,
     );
   }
+  // 2026-10-24 사용자 결정(G13 일부 변경): 지급처 거래처가 확인 전이면 `지급 완료`를 비활성으로 — 서버 거부(lockVendorConfirmedForShare)와 같은 판정.
+  // 앞선 이유가 있으면 그 이유를 둔다(지급 대상 목록 reasonOf와 같은 순서). 사전 조회 값이라 지급 완료는 잠금 뒤 다시 판정한다.
+  const vendorPayee = vendorPayeeOf(row);
+  const vendorBlocked =
+    actionRow.primary === "pay" && actionRow.blockReason === null && vendorPayee !== null && ((await findVendorById(viewer, vendorPayee))?.confirmedAt ?? null) === null;
+  const bar = vendorBlocked ? { ...actionRow, blockReason: VENDOR_UNCONFIRMED } : actionRow;
   const payable = await payableOf(pre);
   // 서버 계산 한 줄은 지급 전 · 살아 있는 증빙일 때만(지급 뒤 문서에는 없다) — 06.5 D-6520: 공급가액 기준(UI-SPEC V8 「계산 한 줄 (S4)」).
   const evidenceTaxLine = payable && pre.tax && pre.hasLiveEvidence ? evidenceTaxLineOf(payable, pre.tax.taxRule, ruleLabelOf(shared, pre.evidenceType)) : null;
@@ -1132,7 +1143,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
     {
       expenseId: row.id,
       version: row.version,
-      row: actionRow,
+      row: bar,
       payDate: today,
       paidTime: null,
       payableKrw: payable?.payableKrw ?? null,

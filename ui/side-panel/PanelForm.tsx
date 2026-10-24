@@ -59,6 +59,8 @@ export type PanelFormProps = {
   successHref?: string;
   /** dirty 비교 칸 이름 — 없으면 폼 전체(자동으로 채워지는 칸을 뺄 때 넘긴다). */
   dirtyFields?: readonly string[];
+  /** 바뀐 칸이 있는지가 달라질 때(저장 안 된 입력을 날리는 다른 행동을 막을 때). */
+  onDirtyChange?: (dirty: boolean) => void;
   ref?: Ref<PanelFormHandle>;
   children: ReactNode;
 };
@@ -90,6 +92,7 @@ export function PanelForm({
   status,
   successHref,
   dirtyFields,
+  onDirtyChange,
   ref,
   children,
 }: PanelFormProps) {
@@ -103,12 +106,14 @@ export function PanelForm({
   const submitLockRef = useRef(false);
   const submitLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyFieldsRef = useRef(dirtyFields);
+  const onDirtyChangeRef = useRef(onDirtyChange);
   const [ownStatus, setOwnStatus] = useState<string | null>(null);
   const ownReasonId = useId();
   const lineId = reasonId ?? ownReasonId;
 
   useEffect(() => {
     dirtyFieldsRef.current = dirtyFields;
+    onDirtyChangeRef.current = onDirtyChange;
   });
 
   const reportGuard = useCallback(() => {
@@ -121,6 +126,7 @@ export function PanelForm({
       if ((before.get(key) ?? "") !== (now.get(key) ?? "")) dirtyCount += 1;
     }
     panel.setGuard({ dirtyCount, submitting: pendingRef.current });
+    onDirtyChangeRef.current?.(dirtyCount > 0);
   }, [panel]);
 
   // 마운트 때 스냅숏을 잡고 입력 이벤트마다 바뀐 칸 수를 다시 센다(제어 입력 칸도 DOM 값으로 센다).

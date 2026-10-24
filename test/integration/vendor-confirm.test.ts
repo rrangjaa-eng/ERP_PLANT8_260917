@@ -21,6 +21,8 @@ import { EVIDENCE_FORMATS } from "@/domain/evidence-import/registry";
 import { insertRole } from "@/repositories/roles";
 import { insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { setSettingValue } from "@/domain/settings/registry";
+import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 import { makePerson } from "./approvals-fixtures";
 
 // 07-23 Task 2(V4 · N4 · AQ-34): 확인 표시 — 자동 등록은 확인 전, 관리 화면 등록은 확인됨, `확인됨으로 표시` · `되돌리기`는 vendors.account 쓰기만.
@@ -139,21 +141,24 @@ describe("일하는 자리 등록 (SC-18 · D-745 · K20)", () => {
     expect(row.accountHolder).toBe("주식회사 일자리");
     expect(row.accountNumberLast4).toBe("9012");
     const logs = await db.select().from(actionLog).where(and(eq(actionLog.entityId, vendor.id), eq(actionLog.actorId, staff.id)));
-    expect(logs.map((log) => [log.actionType, (log.detail as { source?: string } | null)?.source])).toEqual([["document_create", "workplace"]]);
+    // 사용자 결정(10/24): 끌 수 없는 전용 종류 · 계좌가 실렸으면 뒤 4자리(vendor_account_change와 같은 꼴).
+    expect(logs.map((log) => [log.actionType, log.detail])).toEqual([["work_vendor_create", { source: "workplace", beforeLast4: null, afterLast4: "9012" }]]);
   });
 
-  // 07-23 R-1 = /cso C-1 · 사용자 결정(10/23 15:44): 계좌 권한 없는 편집자는 새 거래처 등록에서도 계좌를 넣지 못한다(createVendor와 같은 규칙).
-  it.each([
-    ["은행", { accountBank: "국민" }],
-    ["예금주", { accountHolder: "주식회사 일자리" }],
-    ["번호", { accountNumber: "123-456-789012" }],
-  ])("지출결의 쓰기만(계좌 쓰기 없음) + 계좌 %s → 거부 · 행 없음", async (_label, account) => {
+  it("설정에서 document_create 로그를 꺼도 업무 중 등록 기록(work_vendor_create)은 남는다 · 계좌 없으면 뒤 4자리 없음", async () => {
+    await setSettingValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES, ACTION_LOG_OPTIONAL_TYPES.default!.filter((type) => type !== "document_create"));
     const staff = await makeExpenseWriter({ expenses: true });
-    const name = `계좌거부-${randomUUID()}`;
-    const error = await registerVendorFromWork(staff, { name, ...account }).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(ForbiddenError);
-    expect((error as Error).message).toBe("계좌 수정 권한 없음");
-    expect(await db.select().from(vendors).where(eq(vendors.name, name))).toHaveLength(0);
+    const vendor = await registerVendorFromWork(staff, { name: `로그끔-${randomUUID()}` });
+    const logs = await db.select().from(actionLog).where(and(eq(actionLog.entityId, vendor.id), eq(actionLog.actorId, staff.id)));
+    expect(logs.map((log) => [log.actionType, log.detail])).toEqual([["work_vendor_create", { source: "workplace" }]]);
+  });
+
+  // 사용자 결정(10/24 「지금처럼 받기」): 업무 중 등록은 계좌를 그대로 받는다 — 계좌 쓰기가 없어도 실은 칸이 저장된다(10/23 거부 규칙을 이 경로에서만 되돌림).
+  it("지출결의 쓰기만(계좌 쓰기 없음) + 계좌 세 칸 → 저장 · 계좌 실림", async () => {
+    const staff = await makeExpenseWriter({ expenses: true });
+    const vendor = await registerVendorFromWork(staff, { name: `계좌받음-${randomUUID()}`, accountBank: "국민", accountHolder: "주식회사 일자리", accountNumber: "123-456-789012" });
+    const row = await vendorRow(vendor.id);
+    expect([row.accountBank, row.accountHolder, row.accountNumberLast4]).toEqual(["국민", "주식회사 일자리", "9012"]);
   });
 
   it("지출결의 쓰기만(계좌 쓰기 없음) + 계좌 칸 없음 → 저장(계좌 비움)", async () => {
@@ -161,6 +166,17 @@ describe("일하는 자리 등록 (SC-18 · D-745 · K20)", () => {
     const vendor = await registerVendorFromWork(staff, { name: `계좌없이-${randomUUID()}`, accountBank: " ", accountHolder: "" });
     const row = await vendorRow(vendor.id);
     expect([row.accountBank, row.accountHolder, row.accountNumberLast4]).toEqual([null, null, null]);
+  });
+
+  // Codex P2: 삽입과 끌 수 없는 기록은 한 트랜잭션 — 기록이 실패하면 계좌 든 거래처가 기록 없이 남지 않는다.
+  it("work_vendor_create 기록이 실패하면 거래처도 남지 않는다", async () => {
+    const staff = await makeExpenseWriter({ expenses: true });
+    const name = `기록실패-${randomUUID()}`;
+    const failingRecord = () => Promise.reject(new Error("기록 실패"));
+    await expect(
+      registerVendorFromWork(staff, { name, accountBank: "국민", accountHolder: "주식회사 일자리", accountNumber: "123-456-789012" }, { recordAction: failingRecord }),
+    ).rejects.toThrow("기록 실패");
+    expect(await db.select().from(vendors).where(eq(vendors.name, name))).toHaveLength(0);
   });
 
   it("지출결의 쓰기 없음 → 거부 · 행 없음", async () => {

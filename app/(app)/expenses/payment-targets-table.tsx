@@ -1092,21 +1092,22 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       // 결재 중 행은 지급 방식 · 예정일이 없다 — 접힌 줄을 세우지 않는다(감사 #6, 상태 · 금액은 주 행 p1 칸).
       summary: (row) => {
         if (row.approving) return null;
-        const text = row.account ? accountSummary(row.account) : (row.paymentMethodName ?? "—");
         const lead = phoneLead(row);
         const flag = vendorFlagOf(row);
+        // 2026-10-24 결정: 거래처 확인 전 행은 폰 접힌 줄에서 계좌를 뺀다(밀림과 겹치면 두 줄로 넘침) — 확인되면 다시 보인다.
+        const text = row.account ? (row.vendorConfirmed === false ? null : accountSummary(row.account)) : (row.paymentMethodName ?? "—");
         return lead || flag ? (
           <>
             {lead ? (
               <>
                 {lead}
-                {" · "}
+                {text !== null ? " · " : null}
               </>
             ) : null}
             {text}
             {flag ? (
               <>
-                {" · "}
+                {lead || text !== null ? " · " : null}
                 <StatusTag status={flag} variant="text" />
               </>
             ) : null}

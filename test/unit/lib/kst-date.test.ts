@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, kstDateOf, kstDateTimeOf, kstDayStart, kstToday, kstYear } from "@/lib/kst-date";
+import { addDays, kstDateOf, kstDateTimeOf, kstDateTimeSecondsOf, kstDayStart, kstToday, kstYear } from "@/lib/kst-date";
 
 // RESEARCH.md Pitfall 7 — 날짜 경계는 서버·DB 시간대와 무관해야 한다. 이
 // 모듈은 현재 시각을 스스로 읽지 않는다(인자로만 받는다) — 04-21의 E2E가
@@ -63,5 +63,22 @@ describe("kstDateTimeOf — `YYYY-MM-DD HH:mm` KST (06.5 V11)", () => {
 
   it("초는 버린다(…T10:50:59Z → 19:50)", () => {
     expect(kstDateTimeOf(new Date("2026-10-13T10:50:59Z"))).toBe("2026-10-13 19:50");
+  });
+});
+
+describe("kstDateTimeSecondsOf — `YYYY-MM-DD HH:mm:ss` KST (07-25 감사 로그: 같은 분 안 순서)", () => {
+  it("UTC 2026-10-22 15:30:07은 KST 2026-10-23 00:30:07이다", () => {
+    expect(kstDateTimeSecondsOf(new Date("2026-10-22T15:30:07Z"))).toBe("2026-10-23 00:30:07");
+  });
+
+  it("새해 경계 2026-12-31T15:00:00Z는 2027-01-01 00:00:00이다(자정이 24가 아니다)", () => {
+    expect(kstDateTimeSecondsOf(new Date("2026-12-31T15:00:00Z"))).toBe("2027-01-01 00:00:00");
+  });
+
+  it("같은 분의 두 순간이 초로 구별된다", () => {
+    const a = kstDateTimeSecondsOf(new Date("2026-10-13T10:50:01Z"));
+    const b = kstDateTimeSecondsOf(new Date("2026-10-13T10:50:59Z"));
+    expect(a).toBe("2026-10-13 19:50:01");
+    expect(b).toBe("2026-10-13 19:50:59");
   });
 });

@@ -6,6 +6,8 @@ import { loginAsSysadmin } from "./row-actions-helpers";
 import { recordAction } from "@/domain/action-log/record";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
+import { createDelegatedAccount } from "./admin-cap-fixtures";
+import { insertKstMidnightRow, KST_MIDNIGHT_LABEL, UTC_DATE_OF_ROW } from "./action-log-kst-fixture";
 
 // ADMN-10·OPS-05: 필터 → 내보내기 → 정리 → 정리가 다시 로그에 남는 end-to-end.
 test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
@@ -309,5 +311,133 @@ test.describe("행동 로그 · 보관함 목록 틀 (04.6-22)", () => {
     } finally {
       await setRoleArchived(SYSTEM_VIEWER, roleId, true);
     }
+  });
+});
+
+// 07-25 K16 · SC-08 — 상세 칸은 바뀐 칸을 사람이 읽는 줄로 보인다(표 칸 앞 3줄 + `외 N칸` 펼침). JSON 원문은 화면에 없다.
+async function recordFourChangeRow(token: string): Promise<void> {
+  await recordAction(SYSTEM_VIEWER, {
+    actionType: "settings_change",
+    entity: "e2e_settings",
+    entityId: token,
+    detail: {
+      scope: "import",
+      changes: {
+        "tax.vat.rate": [0.1, 0.12],
+        "auth.lockout.threshold": [5, 10],
+        accountNumber: ["110123451234", "220987655678"],
+        password: ["x-old-secret", "y-new-secret"],
+      },
+    },
+  });
+}
+
+test.describe("행동 로그 상세 칸 (07-25 K16)", () => {
+  test("칸 넷이 바뀐 행 — 세 줄 + 외 1칸 → 펼치면 넷째 줄 · 포커스 유지 · 민감 값 가림 · 원문 JSON 없음", async ({ page }) => {
+    const token = `e2e-detail-${randomUUID().slice(0, 8)}`;
+    await recordFourChangeRow(token);
+    await loginAsSysadmin(page);
+    await page.goto("/admin/action-log?actionType=settings_change");
+
+    const row = page.locator("tbody tr", { hasText: token }).first();
+    const detail = row.locator('[data-ui="action-log-detail"]');
+    await expect(detail).toBeVisible();
+    await expect(detail.getByRole("listitem")).toHaveCount(3);
+    const more = detail.getByRole("button");
+    await expect(more).toHaveText("외 1칸");
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    for (const line of await detail.getByRole("listitem").allInnerTexts()) expect(line).toMatch(/ · .+ → .+/);
+
+    await more.click();
+    await expect(more).toBeFocused();
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect(detail.getByRole("listitem")).toHaveCount(4);
+
+    const text = await detail.innerText();
+    expect(text).toContain("····1234 → ····5678");
+    expect(text).toContain("부가세율 · 0.1 → 0.12");
+    expect(text).toContain("바뀜 → 바뀜");
+    expect(text).not.toMatch(/\{"|secret|110123451234/);
+
+    const html = await page.content();
+    expect(html).not.toContain("110123451234");
+    expect(html).not.toContain("x-old-secret");
+    expect(html).not.toContain('"changes"');
+    expect(html).not.toContain('\\"changes\\"');
+  });
+
+  test("changes가 없는 행은 상세 칸이 —", async ({ page }) => {
+    const token = `e2e-nodetail-${randomUUID().slice(0, 8)}`;
+    await recordAction(SYSTEM_VIEWER, { actionType: "settings_change", entity: "e2e_settings", entityId: token, detail: { scope: "import" } });
+    await loginAsSysadmin(page);
+    await page.goto("/admin/action-log?actionType=settings_change");
+    const row = page.locator("tbody tr", { hasText: token }).first();
+    await expect(row.locator('[data-ui="action-log-detail"]')).toHaveText("—");
+  });
+
+  // DOM 감사 P2-2: 발생 시각은 KST로 보인다(기간 필터 경계와 같은 시간대). UTC 날짜(10-22)와 KST 날짜(10-23)가 갈리는 행으로 잰다.
+  test("발생 시각은 KST로 보인다 — UTC 2026-10-22 15:30은 2026-10-23 00:30", async ({ page }) => {
+    const token = `e2e-kst-${randomUUID().slice(0, 8)}`;
+    await insertKstMidnightRow(token);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/action-log?documentId=${token}`);
+    const row = page.locator("tbody tr", { hasText: token }).first();
+    await expect(row).toContainText(KST_MIDNIGHT_LABEL);
+    expect(await row.innerText()).not.toContain(UTC_DATE_OF_ROW);
+  });
+
+  // DOM 감사 P3: 아래 줄 순서 — 계좌번호(칸 이름 표 선언 순서가 앞) → 비밀번호 → 표에 없는 키는 사전 순. 앞 3줄이 이 순서다.
+  test("상세 줄 순서가 정해져 있다 — 앞 3줄은 계좌번호 · 비밀번호 · 잠금 횟수, 부가세율은 외 1칸 안", async ({ page }) => {
+    const token = `e2e-order-${randomUUID().slice(0, 8)}`;
+    await insertKstMidnightRow(token);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/action-log?documentId=${token}`);
+    const detail = page.locator("tbody tr", { hasText: token }).first().locator('[data-ui="action-log-detail"]');
+    const lines = await detail.getByRole("listitem").allInnerTexts();
+    expect(lines.map((line) => line.split(" · ")[0])).toEqual(["계좌번호", "비밀번호", "잠금 횟수"]);
+  });
+
+  // DOM 감사 P1: 문서 번호 칸의 blur 제출이 값이 그대로여도 일어나 Tab만으로는 표에 닿지 못했다(포커스가 BODY로 돌아감).
+  test("Tab만으로 필터 줄을 지나 표까지 가고 페이지가 다시 불러지지 않는다", async ({ page }) => {
+    const token = `e2e-tab-${randomUUID().slice(0, 8)}`;
+    await insertKstMidnightRow(token);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/action-log?documentId=${token}`);
+    await expect(page.locator("tbody tr", { hasText: token }).first()).toBeVisible();
+    await page.evaluate(() => document.body.setAttribute("data-tab-marker", "1"));
+
+    let reachedTable = false;
+    for (let step = 0; step < 80 && !reachedTable; step += 1) {
+      await page.keyboard.press("Tab");
+      reachedTable = await page.evaluate(() => Boolean(document.activeElement?.closest("table")));
+    }
+    expect(reachedTable).toBe(true);
+    expect(await page.evaluate(() => document.body.getAttribute("data-tab-marker"))).toBe("1");
+    await expect(page.locator("tbody tr", { hasText: token }).first().getByRole("button", { name: /^외 \d+칸$/ })).toBeFocused();
+  });
+
+  test("문서 번호를 바꾸고 Tab으로 나가거나 Enter를 누르면 그때만 제출한다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/action-log");
+    const input = page.getByLabel("문서 번호");
+    await input.fill("e2e-blur-change");
+    await input.press("Tab");
+    await expect(page).toHaveURL(/documentId=e2e-blur-change/);
+
+    const again = page.getByLabel("문서 번호");
+    await again.fill("e2e-enter-change");
+    await again.press("Enter");
+    await expect(page).toHaveURL(/documentId=e2e-enter-change/);
+  });
+
+  test("R10 — 메뉴 view는 있고 정보 항목 action_log.detail이 꺼진 계급은 404(500 아님)", async ({ page }) => {
+    const account = await createDelegatedAccount({ menus: [{ menu: "admin.action-log", action: "view" }], infoItems: [] });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(account.email);
+    await page.getByLabel("비밀번호").fill(account.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    const response = await page.goto("/admin/action-log");
+    expect(response?.status()).toBe(404);
   });
 });

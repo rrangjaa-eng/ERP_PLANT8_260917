@@ -31,7 +31,7 @@ const [ACTOR_KEY, FROM_KEY, TO_KEY, ACTION_TYPE_KEY, DOCUMENT_KEY, INCLUDE_PRUNE
 
 // 표 위 필터 줄(§6-1) — 네이티브 GET 폼. 값이 바뀌면 즉시 다시 제출해
 // URL 검색 파라미터로 상태를 관리한다(새로 고침·공유 가능). 문서 번호만
-// 타이핑 중 매 글자 제출을 피하려고 blur/Enter에서 제출한다.
+// 타이핑 중 매 글자 제출을 피하려고 값이 바뀐 채 blur할 때와 Enter에서 제출한다.
 export function FilterBar({
   people,
   actionTypes,
@@ -118,7 +118,10 @@ export function FilterBar({
           type="text"
           className={styles.select}
           defaultValue={defaultValues.documentId ?? ""}
-          onBlur={() => formRef.current?.requestSubmit()}
+          onBlur={(event) => {
+            // 값이 바뀌었을 때만 제출한다(프로젝트 필터와 같은 규칙) — 그대로 나가면 Tab이 다음 컨트롤로 간다.
+            if (event.currentTarget.value !== (defaultValues.documentId ?? "")) formRef.current?.requestSubmit();
+          }}
         />
       </div>
 

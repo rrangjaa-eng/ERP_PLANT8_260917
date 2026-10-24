@@ -166,11 +166,13 @@ test.describe("지급 대상 머리글 · 결재 중 하위 그룹 (07-16 Task 2
     const payer = await makeTeamPayer(fx);
     await setVendorTerm(fx, 6);
     const now = Date.now();
-    let base = cal.today;
+    // 기준일은 지난 주부터 찾는다 — 오늘부터 찾으면 주말(토·일)에는 처음 맞는 날이 다다음 주라 두 머리글이 모두 `그 뒤`로 합쳐진다(2026-10-24 CI).
+    // 그래서 두 날이 다음 주 안(payWeekIndex ≤ 1)인 기준일만 고른다.
+    let base = addDays(cal.today, -7);
     for (let step = 0; step < 21; step += 1) {
       const probe = resolvePaySchedule({ baseDate: base, termDays: 6, manualDate: null, approvedAt: null, now: new Date(), lookup: cal.lookup, cfg: cal.cfg });
       const friday = addDays(probe.payDate, 1);
-      if (probe.pushReason === "no-slot" && probe.cutoffAt.getTime() > now + 3_600_000 && isFriday(friday) && isBusinessDay(friday, cal.lookup)) break;
+      if (probe.pushReason === "no-slot" && probe.cutoffAt.getTime() > now + 3_600_000 && isFriday(friday) && isBusinessDay(friday, cal.lookup) && payWeekIndex(friday, cal.today) <= 1) break;
       base = addDays(base, 1);
     }
     const { approvedAt } = await approvedDoc(fx, "worst", payer, { issuedOn: base });

@@ -9,6 +9,7 @@ import { codeItems, projects, reserveEntries } from "@/db/schema";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertTempRole } from "./temp-roles";
+import { setRoleArchived } from "@/repositories/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { recentFxRate } from "@/domain/money/currency";
@@ -22,9 +23,17 @@ import { eq } from "drizzle-orm";
 // 06.2(D-6203 · M8): 대장의 프로젝트 이름 · 선택지는 보는 범위를 탄다 — 회사 전체 원장을 다루는 계급이라 전사 범위로 만든다.
 type Roles = { finance: string; reader: string; hidden: string };
 
+// 테스트마다 계급 셋을 새로 만들고 다음 테스트는 다시 쓰지 않는다 — 테스트가 끝나면 그 셋을 보관한다. 파일 끝까지 두면
+// 이 파일 하나로 활성 계급이 100개 가까이 쌓여, 같은 때 다른 워커에서 도는 권한표 스펙의 격자가 커진다.
+const testRoleIds: string[] = [];
+test.afterEach(async () => {
+  for (const id of testRoleIds.splice(0)) await setRoleArchived(SYSTEM_VIEWER, id, true);
+});
+
 async function createRole(name: string, grants: { menu: string; action: string }[], reserveVisible: boolean, alsoVisible: string[] = []): Promise<string> {
   const id = `role-e2e-rsv-${randomUUID()}`;
   await insertTempRole(SYSTEM_VIEWER, { id, name: `E2E 리저브 ${name} ${id.slice(-8)}`, sortOrder: 99, viewScope: "company" });
+  testRoleIds.push(id);
   for (const grant of grants) await upsertPermission(SYSTEM_VIEWER, { roleId: id, menu: grant.menu, action: grant.action, allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: id, infoItem: "reserve.amount", visible: reserveVisible });
   for (const infoItem of alsoVisible) await upsertVisibility(SYSTEM_VIEWER, { roleId: id, infoItem, visible: true });

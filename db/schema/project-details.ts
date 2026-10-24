@@ -1,7 +1,8 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, bigint, numeric, timestamp, uuid, index, check } from "drizzle-orm/pg-core";
+import { pgTable, text, bigint, numeric, timestamp, uuid, index, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 import { projects } from "./projects";
+import { quoteRevisions } from "./quote-revisions";
 
 // 07 S3(07-11) — 프로젝트 묶음 표 둘. 행 쓰기 · 판정은 화면 플랜(07-22 · 07-24)이 맡는다.
 
@@ -40,6 +41,8 @@ export const projectBudgetEntries = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id),
+    // F52(사용자 결정 10/24 「한 번만 쌓기」): 새 승인 차수 줄이 어느 견적 판에서 왔나. 다른 사유 줄과 이 칸 전의 옛 줄은 NULL.
+    quoteRevisionId: uuid("quote_revision_id").references(() => quoteRevisions.id),
     reason: text("reason").$type<"initial" | "po_amount_change" | "new_approved_revision" | "manual">().notNull(),
     baseAmountKrw: bigint("base_amount_krw", { mode: "number" }),
     costRatePct: numeric("cost_rate_pct", { precision: 4, scale: 1 }),
@@ -52,6 +55,10 @@ export const projectBudgetEntries = pgTable(
   },
   (table) => [
     index("project_budget_entries_project_id_idx").on(table.projectId),
+    // 같은 견적 판은 몇 번 재승인돼도 승인 반영 줄 하나(F52) — 도메인이 먼저 건너뛰고 DB가 마지막으로 막는다.
+    uniqueIndex("project_budget_entries_approved_revision_key")
+      .on(table.projectId, table.quoteRevisionId)
+      .where(sql`${table.quoteRevisionId} IS NOT NULL AND ${table.reason} = 'new_approved_revision'`),
     check("project_budget_entries_reason_check", sql`${table.reason} IN ('initial','po_amount_change','new_approved_revision','manual')`),
     check("project_budget_entries_cost_rate_pct_check", sql`${table.costRatePct} IS NULL OR ${table.costRatePct} BETWEEN 0 AND 100`),
     check("project_budget_entries_manual_memo_check", sql`${table.reason} <> 'manual' OR (${table.memo} IS NOT NULL AND btrim(${table.memo}) <> '')`),

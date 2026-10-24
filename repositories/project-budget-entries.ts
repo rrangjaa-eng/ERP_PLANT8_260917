@@ -23,6 +23,8 @@ export type BudgetEntryInput = {
   costRatePct: string | null;
   deltaKrw: number;
   memo: string | null;
+  // F52 — 새 승인 차수 줄만 그 견적 판 id. 다른 사유 줄은 비운다(NULL).
+  quoteRevisionId?: string | null;
 };
 
 export async function insertBudgetEntry(viewer: Viewer, input: BudgetEntryInput, tx: DbOrTx): Promise<BudgetEntryRow> {
@@ -32,6 +34,23 @@ export async function insertBudgetEntry(viewer: Viewer, input: BudgetEntryInput,
     .returning();
   if (!row) throw new Error("project_budget_entries insert가 행을 반환하지 않았습니다.");
   return row;
+}
+
+// F52 — 이 견적 판의 승인 반영 줄이 이미 있나(부르는 쪽 tx가 프로젝트 행을 잠갔다 · 부분 유일 인덱스가 마지막 방어).
+export async function hasApprovedRevisionEntry(viewer: Viewer, projectId: string, quoteRevisionId: string, tx: DbOrTx): Promise<boolean> {
+  void viewer;
+  const [row] = await tx
+    .select({ id: projectBudgetEntries.id })
+    .from(projectBudgetEntries)
+    .where(
+      and(
+        eq(projectBudgetEntries.projectId, projectId),
+        eq(projectBudgetEntries.quoteRevisionId, quoteRevisionId),
+        eq(projectBudgetEntries.reason, "new_approved_revision"),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
 }
 
 export async function sumBudgetKrw(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<{ sumKrw: number; count: number }> {

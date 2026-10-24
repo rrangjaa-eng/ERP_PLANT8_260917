@@ -250,7 +250,7 @@ export async function setCustomerApproval(
       await recordBudgetEvent(
         viewer,
         projectId,
-        { reason: "new_approved_revision", prevBasisKrw: prevBudgetBasisKrw, newBasisKrw: await budgetBasisKrw(projectId, tx) },
+        { reason: "new_approved_revision", quoteRevisionId: revisionId, prevBasisKrw: prevBudgetBasisKrw, newBasisKrw: await budgetBasisKrw(projectId, tx) },
         tx,
       );
     }

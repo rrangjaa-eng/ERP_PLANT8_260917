@@ -196,3 +196,38 @@ describe("칸 이름 표 대조 (AQ-40)", () => {
     for (const key of found) expect(CHANGE_FIELD_LABELS, key).toHaveProperty(key);
   });
 });
+
+describe("changes 없는 기존 기록의 대체 줄 (07-25 Codex P2)", () => {
+  it("지급 취소: 사유 · 지급일 · 금액이 줄로 나온다(내부 id는 제외)", () => {
+    const lines = detailLines({ paymentId: "6f1f2c1e-0000-4000-8000-000000000001", reason: "계좌 오입력", payDate: "2026-10-01", transferKrw: 1100000, payableKrw: 1000000 });
+    expect(lines).toEqual([
+      { label: "사유", before: "없음", after: "계좌 오입력" },
+      { label: "지급일", before: "없음", after: "2026-10-01" },
+      { label: "이체 금액", before: "없음", after: "1,100,000" },
+      { label: "지급 금액", before: "없음", after: "1,000,000" },
+    ]);
+  });
+
+  it("증빙 면제: 사유 한 줄", () => {
+    expect(detailLines({ reason: "소액 영수증 없음" })).toEqual([{ label: "사유", before: "없음", after: "소액 영수증 없음" }]);
+  });
+
+  it("거래처 계좌 변경: 끝 4자리 전후 한 줄 + 출처는 한글", () => {
+    expect(detailLines({ beforeLast4: "1234", afterLast4: "5678", source: "admin" })).toEqual([
+      { label: "계좌번호", before: "····1234", after: "····5678" },
+      { label: "출처", before: "없음", after: "관리자 화면" },
+    ]);
+  });
+
+  it("업무 중 거래처 등록: 출처와 계좌 끝 4자리", () => {
+    expect(detailLines({ source: "workplace", beforeLast4: null, afterLast4: "5678" })).toEqual([
+      { label: "계좌번호", before: "없음", after: "····5678" },
+      { label: "출처", before: "없음", after: "업무 중 등록" },
+    ]);
+  });
+
+  it("알 수 없는 키만 있으면 null · changes가 있으면 changes가 우선", () => {
+    expect(detailLines({ paymentId: "x", foo: 1 })).toBeNull();
+    expect(detailLines({ reason: "무시", changes: { days: [3, 5] } })).toEqual([{ label: "일수", before: "3", after: "5" }]);
+  });
+});

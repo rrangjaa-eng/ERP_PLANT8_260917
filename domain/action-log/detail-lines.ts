@@ -130,8 +130,35 @@ function compareFields(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+// changes 없이 다른 모양으로 남은 기존 기록(지급 취소 · 증빙 면제 · 거래처 계좌 변경 · 업무 중 거래처 등록)의 대체 줄.
+// 이전 값이 없는 단일 값은 「없음 → 값」으로 같은 DetailLine 모양을 쓴다. 내부 id · 알 수 없는 키는 싣지 않는다.
+const FALLBACK_KEYS: Array<[key: string, label: string]> = [
+  ["reason", "사유"],
+  ["payDate", "지급일"],
+  ["transferKrw", "이체 금액"],
+  ["payableKrw", "지급 금액"],
+];
+const SOURCE_LABELS: Record<string, string> = { admin: "관리자 화면", workplace: "업무 중 등록" };
+
+function fallbackLines(detail: Record<string, unknown>): DetailLine[] | null {
+  const lines: DetailLine[] = [];
+  for (const [key, label] of FALLBACK_KEYS) {
+    if (detail[key] === undefined || detail[key] === null) continue;
+    const after = formatPlain(detail[key]);
+    if (after !== NONE) lines.push({ label, before: NONE, after });
+  }
+  if ("beforeLast4" in detail || "afterLast4" in detail) {
+    const before = maskLast4(detail.beforeLast4);
+    const after = maskLast4(detail.afterLast4);
+    if (before !== NONE || after !== NONE) lines.push({ label: "계좌번호", before, after });
+  }
+  if (typeof detail.source === "string") lines.push({ label: "출처", before: NONE, after: SOURCE_LABELS[detail.source] ?? detail.source });
+  return lines.length > 0 ? lines : null;
+}
+
 export function detailLines(detail: Record<string, unknown> | null | undefined): DetailLine[] | null {
-  if (!detail || !isRecord(detail.changes)) return null;
+  if (!detail) return null;
+  if (!isRecord(detail.changes)) return fallbackLines(detail);
   const lines: DetailLine[] = [];
   for (const [field, pair] of Object.entries(detail.changes).sort(([a], [b]) => compareFields(a, b))) {
     const values: unknown[] = Array.isArray(pair) ? pair : [null, pair];

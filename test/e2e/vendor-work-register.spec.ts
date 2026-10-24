@@ -231,8 +231,17 @@ async function approve(fx: ExpenseE2E, id: string, manager: Person): Promise<voi
   await confirmEvidence(manager.viewer, { expenseId: id, version: doc.version });
 }
 
+// 표는 고칠 칸(고를 수 있는 행의 이체액)이 있을 때만 grid다 — 행이 모두 막히면(확인 전 거래처 · 2026-10-24 결정) table(ui/table hasEditableCell).
+function targetsTable(page: Page) {
+  return page.getByRole("grid", { name: "지급 대상" }).or(page.getByRole("table", { name: "지급 대상" }));
+}
+
+function targetRow(page: Page, itemName: string) {
+  return targetsTable(page).locator("tbody tr").filter({ has: page.getByRole("link", { name: itemName, exact: false }) });
+}
+
 async function methodCell(page: Page, itemName: string) {
-  const table = page.getByRole("grid", { name: "지급 대상" });
+  const table = targetsTable(page);
   await expect(table).toBeVisible();
   const index = await table.locator("thead th").evaluateAll((cells) => cells.findIndex((cell) => cell.textContent?.trim() === "지급 방식"));
   expect(index).toBeGreaterThanOrEqual(0);
@@ -265,6 +274,8 @@ test.describe("N2 — 일하는 자리 등록 거래처의 사후 확인 (07-23)
     const payPage = await loginPage(browser, baseURL, manager, { width: 1280, height: 900 });
     await payPage.goto("/expenses");
     await expect((await methodCell(payPage, fx.lines.worst.itemName)).getByText("거래처 확인 전", { exact: true })).toHaveCount(1);
+    // 2026-10-24 사용자 결정(G13 일부 변경): 확인 전 거래처 건은 고를 수 없다.
+    await expect(targetRow(payPage, fx.lines.worst.itemName).getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
 
     await payPage.goto(`/admin/vendors?editId=${vendor.id}`);
     await payPage.getByRole("button", { name: "확인됨으로 표시" }).click();
@@ -272,6 +283,7 @@ test.describe("N2 — 일하는 자리 등록 거래처의 사후 확인 (07-23)
 
     await payPage.goto("/expenses");
     await expect((await methodCell(payPage, fx.lines.worst.itemName)).getByText("거래처 확인 전", { exact: true })).toHaveCount(0);
+    await expect(targetRow(payPage, fx.lines.worst.itemName).getByRole("checkbox")).not.toHaveAttribute("aria-disabled", "true");
     await payPage.context().close();
   });
 });

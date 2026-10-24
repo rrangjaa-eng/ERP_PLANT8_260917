@@ -1766,7 +1766,7 @@ async function bigLines(fx: ExpenseE2E, count: number): Promise<{ id: string; it
   const today = seoulToday();
   const suffix = randomUUID().slice(0, 6);
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E큰금액클라이언트-${suffix}`, normalizedName: `e2e큰금액클라이언트-${suffix}` });
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `${LONG_VENDOR}-${suffix}`, normalizedName: `${LONG_VENDOR}-${suffix}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `${LONG_VENDOR}-${suffix}`, normalizedName: `${LONG_VENDOR}-${suffix}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount(), confirmedAt: new Date() });
   const project = await createProject(fx.pm.viewer, {
     clientId: client.id,
     teamId: await teamOf(fx),

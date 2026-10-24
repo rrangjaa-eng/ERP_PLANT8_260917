@@ -110,7 +110,7 @@ test.describe("PO 번호 · 고치기 하나 (N1 · D-737)", () => {
     const panel = projectInfo(page);
     await expect(panel.getByText("없음", { exact: true }).first()).toBeVisible();
     await expect(panel.getByRole("button", { name: /고치기/ })).toHaveCount(1);
-    await panel.getByRole("button", { name: "고치기", exact: true }).click();
+    await openProjectInfoEdit(page);
     const poNumber = panel.getByLabel("PO 번호", { exact: true });
     await poNumber.fill("PO-2026-001");
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
@@ -176,7 +176,7 @@ test.describe("PO 번호 · 고치기 하나 (N1 · D-737)", () => {
     await saving;
 
     await panel.getByRole("button", { name: "고치기 취소", exact: true }).click();
-    await panel.getByRole("button", { name: "고치기", exact: true }).click();
+    await openProjectInfoEdit(page);
     const poNumber = panel.getByLabel("PO 번호", { exact: true });
     await poNumber.fill("PO-SECOND");
     await page.waitForTimeout(1_200);
@@ -327,7 +327,7 @@ test.describe("고치기 하나 — 기간 · PO 금액 · PO 번호 한 묶음 
     await expect(panel.getByText("PO 금액", { exact: true })).toBeVisible();
     await expect(panel.getByText("총 매출 예상가")).toHaveCount(0);
 
-    await panel.getByRole("button", { name: "고치기", exact: true }).click();
+    await openProjectInfoEdit(page);
     const amount = panel.getByLabel("PO 금액", { exact: true });
     await amount.fill("-1");
     const rejected = waitForSaveAction(page);

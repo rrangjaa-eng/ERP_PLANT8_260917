@@ -2331,3 +2331,13 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정자**: 사용자 결정 카드 2026-10-24. 구현은 bfb134dd(`ui/status-tag/status-map.ts` · `app/(app)/expenses/payment-targets-table.tsx`) · 61f80868(E2E 낱말).
 **버린 대안**: `확인 전` 그대로(증빙 `확인 전`과 섞임).
 **범위**: `docs/design/SYSTEM.md` §7-5. 새 색 · 서체 · radius 0.
+
+---
+
+## 2026-10-24 사용자 결정: 거래처 확인 전 건은 지급 막음 (G13 일부 변경 · 07-23)
+
+**결정**: 지급처 거래처가 「확인 전」(`vendors.confirmed_at` NULL)인 지출결의는 서버에서 지급을 막는다 — 지급 대상 목록의 선택(`selectable` 거짓 · 이유 `거래처 확인 전 · 거래처 확인`), 이체 파일(그 건만 막힌 건으로 빼고 나머지는 담음), 지급 완료 단건 · 일괄(일괄은 그 건만 건별 결과로 막힘). 직원 지급처 · 거래처 없음은 해당 없음. 지급 완료는 문서 잠금 뒤 같은 트랜잭션에서 거래처 행을 FOR SHARE로 읽어 확인 되돌리기와 엇갈리지 않는다. 배지 `거래처 확인 전`은 그대로이고, 선택 칸은 다른 막힌 행과 같은 `aria-disabled`다. `계좌 바뀜`은 표시만 한다(G13 그대로).
+**이유**: 업무 중 거래처 등록(R-1 막음 제거)으로 지출결의 쓰기만 있는 사람이 새 거래처에 자기 계좌를 넣을 수 있게 되어, 「확인 전 거래처는 경영관리가 확인해야 지급에 쓰인다」를 지키는 통제가 배지(사람 눈)뿐이었다(0723 델타 검토 P1-1).
+**결정자**: 사용자 결정 카드 2026-10-24 23:16 KST. 앞선 G13(사후 확인 · 지급은 막지 않음) 중 「확인 전」 부분을 바꾼다.
+**버린 대안**: 표시만 두기(G13 그대로 — 남의 계좌로 이체 파일이 나간다) · 일괄 경로에서 확인 전 건이 섞이면 전체 거부(다른 막힘 사유 · 계좌 없음과 다른 규칙).
+**범위**: `domain/payments/targets.ts` reasonOf · `domain/payments/index.ts` completeExpensePayment · `repositories/vendors.ts` lockVendorConfirmedForShare · `domain/payments/action-row.ts` VENDOR_UNCONFIRMED. 화면 파일 변경 0 · 새 색 · 서체 · radius 0.

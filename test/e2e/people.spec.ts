@@ -508,13 +508,14 @@ test.describe("조직 화면 팀장 · 책임자 중복 (06.4 D-6405 · D-6413)"
     await expect(tag).toBeVisible();
     await expect(actions.locator(":scope > *").first()).toHaveText("팀장 2명");
     expect(await tag.evaluate((element) => getComputedStyle(element).color)).toBe(await tokenColor(page, "--status-warning"));
-    const links = actions.getByRole("link");
+    // 07-21(SC-13): 사람이 남은 팀의 `삭제` 이유 줄 `{N}명`(사람 목록 필터 링크 `?team=`)은 보유자 링크가 아니다.
+    const links = actions.locator('a[href^="/admin/people/"]:visible');
     await expect(links).toHaveCount(2);
     for (const [index, id] of world.holderIds.entries()) await expect(links.nth(index)).toHaveAttribute("href", `/admin/people/${id}`);
 
     const single = orgRow(page, world.singleTeamName);
     await expect(single.getByText(/^팀장 \d+명$/)).toHaveCount(0);
-    await expect(single.getByRole("link")).toHaveCount(0);
+    await expect(single.locator('a[href^="/admin/people/"]:visible')).toHaveCount(0);
 
     await links.first().click();
     await expect(page).toHaveURL(new RegExp(`/admin/people/${world.holderIds[0]}$`));
@@ -524,7 +525,7 @@ test.describe("조직 화면 팀장 · 책임자 중복 (06.4 D-6405 · D-6413)"
     await page.goto("/admin/people/org");
     const after = orgRow(page, world.teamName);
     await expect(after.getByText(/^팀장 \d+명$/)).toHaveCount(0);
-    await expect(after.getByRole("link")).toHaveCount(0);
+    await expect(after.locator('a[href^="/admin/people/"]:visible')).toHaveCount(0);
   });
 });
 

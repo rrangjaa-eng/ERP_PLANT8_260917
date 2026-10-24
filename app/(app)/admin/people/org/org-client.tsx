@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import {
@@ -12,11 +13,13 @@ import {
 } from "../actions";
 import { TextField } from "@/ui/input/TextField";
 import { Form } from "@/ui/form/Form";
+import { Select } from "@/ui/select/Select";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
-import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
+import { ArchiveRejectedError, DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import type { SeatDuplicatesDto } from "@/domain/people/seat-rules";
+import type { OrgMemberCounts } from "@/domain/org";
 import styles from "../people.module.css";
 
 export const NEW_TEAM_BASE_HREF = "/admin/people/org?new=team";
@@ -57,6 +60,49 @@ function RenameInput({
   );
 }
 
+// 07-21(R10 · SC-13 · K14): 사람이 남은 팀 · 본부의 `삭제`는 비활성 + 같은 줄 이유(`{N}명`은 사람 목록 필터 링크) — 창을 열지 않는다.
+// 0명이면 기존 두 단계 `삭제`(성공 결과는 그 줄이 빠지거나 `보관됨` — 토스트 없음 · N4). 경합 거부는 서버 문구가 실패 줄에 실린다.
+function OrgArchiveAction({
+  name,
+  memberCount,
+  membersHref,
+  onArchive,
+}: {
+  name: string;
+  memberCount: number;
+  membersHref: string;
+  onArchive: () => Promise<{ serverError?: string } | undefined>;
+}) {
+  if (memberCount > 0) {
+    return (
+      <RowAction
+        danger
+        disabled
+        reasonTone="info"
+        disabledReason={
+          <>
+            {"소속 "}
+            <Link href={membersHref}>{`${memberCount}명`}</Link>
+            {" · 먼저 옮기기"}
+          </>
+        }
+        onClick={() => {}}
+      >
+        삭제
+      </RowAction>
+    );
+  }
+  return (
+    <DeleteToArchive
+      name={name}
+      onArchive={async () => {
+        const result = await onArchive();
+        if (result?.serverError) throw new ArchiveRejectedError(result.serverError);
+      }}
+    />
+  );
+}
+
 // SYSTEM §7-19 폰 줄 안 「더보기」(DECISIONS 2026-10-13): 중복 줄은 폰(<700)에서 태그 + 「더보기」 한 줄로 접고, 펼치면 행동 전부.
 // PC · 태블릿은 지금처럼 태그 뒤에 행동이 바로 있다.
 function DuplicateRowActions({ name, tag, children }: { name: string; tag: ReactNode; children: ReactNode }) {
@@ -85,20 +131,21 @@ function TeamRow({
   team,
   canArchive,
   duplicates,
+  memberCount,
 }: {
   team: TeamView;
   canArchive: boolean;
   duplicates?: SeatDuplicatesDto;
+  memberCount: number;
 }) {
   const { execute, result } = useAction(renameTeamAction);
   const holders = duplicates?.teams[team.id];
   const archive = canArchive ? (
-    <DeleteToArchive
+    <OrgArchiveAction
       name={team.name}
-      onArchive={async () => {
-        const archiveResult = await archiveTeamAction({ id: team.id });
-        if (archiveResult?.serverError) throw new Error(archiveResult.serverError);
-      }}
+      memberCount={memberCount}
+      membersHref={`/admin/people?team=${team.id}`}
+      onArchive={() => archiveTeamAction({ id: team.id })}
     />
   ) : null;
   return (
@@ -134,12 +181,14 @@ function OrgUnitRow({
   canArchive,
   canWrite,
   duplicates,
+  memberCounts,
 }: {
   orgUnit: OrgUnitView;
   teams: TeamView[];
   canArchive: boolean;
   canWrite: boolean;
   duplicates?: SeatDuplicatesDto;
+  memberCounts: OrgMemberCounts;
 }) {
   const { execute, result } = useAction(renameOrgUnitAction);
   const holders = duplicates?.orgUnits[orgUnit.id];
@@ -147,12 +196,11 @@ function OrgUnitRow({
     <>
       {canWrite ? <RowAction href={`${NEW_TEAM_BASE_HREF}&orgUnitId=${orgUnit.id}`}>팀 추가</RowAction> : null}
       {canArchive ? (
-        <DeleteToArchive
+        <OrgArchiveAction
           name={orgUnit.name}
-          onArchive={async () => {
-            const archiveResult = await archiveOrgUnitAction({ id: orgUnit.id });
-            if (archiveResult?.serverError) throw new Error(archiveResult.serverError);
-          }}
+          memberCount={memberCounts.orgUnits[orgUnit.id] ?? 0}
+          membersHref={`/admin/people?org=${orgUnit.id}`}
+          onArchive={() => archiveOrgUnitAction({ id: orgUnit.id })}
         />
       ) : null}
     </>
@@ -187,7 +235,13 @@ function OrgUnitRow({
         {teams
           .filter((team) => team.orgUnitId === orgUnit.id)
           .map((team) => (
-            <TeamRow key={team.id} team={team} canArchive={canArchive} duplicates={duplicates} />
+            <TeamRow
+              key={team.id}
+              team={team}
+              canArchive={canArchive}
+              duplicates={duplicates}
+              memberCount={memberCounts.teams[team.id] ?? 0}
+            />
           ))}
       </ul>
     </li>
@@ -202,12 +256,14 @@ export function OrgList({
   canArchive,
   canWrite,
   duplicates,
+  memberCounts,
 }: {
   orgUnits: OrgUnitView[];
   teams: TeamView[];
   canArchive: boolean;
   canWrite: boolean;
   duplicates?: SeatDuplicatesDto;
+  memberCounts: OrgMemberCounts;
 }) {
   return (
     <ul className={`single-column ${styles.orgList}`}>
@@ -219,6 +275,7 @@ export function OrgList({
           canArchive={canArchive}
           canWrite={canWrite}
           duplicates={duplicates}
+          memberCounts={memberCounts}
         />
       ))}
     </ul>
@@ -288,27 +345,19 @@ export function TeamForm({ orgUnits, defaultOrgUnitId }: { orgUnits: OrgUnitView
       pending={isExecuting}
       reason={orgUnitError ?? result.serverError ?? null}
     >
-      <div className={styles.panelSelect}>
-        <label htmlFor="team-org-unit-id">본부</label>
-        <select
-          className={orgUnitError ? `${styles.select} ${styles.selectInvalid}` : styles.select}
-          id="team-org-unit-id"
-          name="orgUnitId"
-          required
-          defaultValue={defaultOrgUnitId}
-          aria-invalid={orgUnitError ? true : undefined}
-          aria-describedby={orgUnitError ? "team-org-unit-id-error" : undefined}
-        >
-          <option value="" disabled>
-            본부 선택
-          </option>
-          {orgUnits.map((org) => (
-            <option key={org.id} value={org.id}>
-              {org.name}
-            </option>
-          ))}
-        </select>
-        {orgUnitError ? <Form.Error id="team-org-unit-id-error">{orgUnitError}</Form.Error> : null}
+      {/* 07-21(N10 · SC-15): 본부 고르기는 공용 `Select` — 오류 id 규칙(`${id}-error`)이 이전 `Form.Error` id와 같다. */}
+      <div className={styles.panelField}>
+        <Form.Field id="team-org-unit-id" label="본부">
+          <Select
+            id="team-org-unit-id"
+            name="orgUnitId"
+            required
+            hideEmptyOption
+            defaultValue={defaultOrgUnitId}
+            options={[{ value: "", label: "본부 선택" }, ...orgUnits.map((org) => ({ value: org.id, label: org.name }))]}
+            error={orgUnitError}
+          />
+        </Form.Field>
       </div>
       <TextField
         id="team-name"

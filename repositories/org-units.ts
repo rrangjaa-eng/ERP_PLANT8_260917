@@ -16,8 +16,8 @@ export async function listOrgUnits(viewer: Viewer, opts: { scope: Scope }): Prom
     .orderBy(orgUnits.sortOrder, orgUnits.name);
 }
 
-export async function findOrgUnitById(viewer: Viewer, id: string): Promise<OrgUnitRow | null> {
-  const [row] = await db.select().from(orgUnits).where(eq(orgUnits.id, id)).limit(1);
+export async function findOrgUnitById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<OrgUnitRow | null> {
+  const [row] = await tx.select().from(orgUnits).where(eq(orgUnits.id, id)).limit(1);
   return row ?? null;
 }
 

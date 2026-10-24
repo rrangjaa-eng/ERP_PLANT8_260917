@@ -5,7 +5,7 @@ import { getPerson, isRetiredOn } from "@/domain/people";
 import { RETIRED_EDIT_MESSAGE, retirementYearOf } from "@/domain/people/retired";
 import { assignableRoleIds, listAssignableRoles } from "@/domain/permissions/roles";
 import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
-import { listOrgUnits, listTeams } from "@/domain/org";
+import { listAssignableTeams, listOrgUnits } from "@/domain/org";
 import { KvList } from "@/ui/kv-list/KvList";
 import { Form } from "@/ui/form/Form";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -67,7 +67,7 @@ export default async function PersonDetailPage({
     getPerson(session.viewer, id, { withLock: true }),
     listAssignableRoles(session.viewer),
     listOrgUnits(session.viewer),
-    listTeams(session.viewer),
+    listAssignableTeams(session.viewer),
   ]);
   if (!detail) notFound();
 

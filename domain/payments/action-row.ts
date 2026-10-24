@@ -68,6 +68,11 @@ export const EVIDENCE_UNCONFIRMED = "증빙 확인 전 · 증빙 확인";
 // 2026-10-24 사용자 결정(G13 일부 변경): 지급처 거래처가 확인 전이면 지급(선택 · 이체 파일 · 지급 완료)을 막는다.
 export const VENDOR_UNCONFIRMED = "거래처 확인 전 · 거래처 확인";
 
+// 07-23 N2: 지급처가 거래처인가(직원 지급처 문서는 줄 거래처가 있어도 그 계좌로 나가지 않는다) — 지급 대상 목록 · 상세 지급 막대가 같은 판정을 읽는다.
+export function vendorPayeeOf(row: { vendorId: string | null; payeeUserId: string | null }): string | null {
+  return row.payeeUserId === null ? row.vendorId : null;
+}
+
 // 확인 전 증빙이 지급을 막는가 — 정책은 EVIDENCE_CONFIRMATION_GATES_PAYMENT 하나(gates는 테스트 주입 자리).
 export function confirmationBlocksPayment(
   input: { hasEvidence: boolean; waived: boolean; confirmation: EvidenceConfirmation | null },

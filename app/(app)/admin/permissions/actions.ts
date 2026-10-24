@@ -26,6 +26,15 @@ export const setPermissionCellAction = authedActionClient
       allowed: z.boolean(),
     }),
   )
-  .action(async ({ parsedInput, ctx }) => {
-    await setPermissionCell(ctx.viewer, parsedInput);
-  });
+  // 07-21(F8 · R7 화면): 07-15 도메인이 정한 실제로 바뀐 칸(요청 칸 + 딸린 칸)과 그 칸들의 저장 뒤 값을 돌려준다 — 그리드는
+  // `resulting`으로 확정하고(Codex P2) 결과 줄 · 되돌리기는 `changed`만 센다.
+  .action(
+    async ({
+      parsedInput,
+      ctx,
+    }): Promise<{ changed: { menu: string; action: string; allowed: boolean }[]; resulting: { menu: string; action: string; allowed: boolean }[] }> => {
+      const { changed, resulting } = await setPermissionCell(ctx.viewer, parsedInput);
+      const plain = (cells: typeof changed) => cells.map(({ menu, action, allowed }) => ({ menu, action, allowed }));
+      return { changed: plain(changed), resulting: plain(resulting) };
+    },
+  );

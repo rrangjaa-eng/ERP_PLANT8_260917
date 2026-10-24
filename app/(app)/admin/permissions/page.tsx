@@ -17,12 +17,14 @@ export default async function PermissionsPage() {
   let rows: { id: string; label: string }[] = [];
   let columns: { id: string; label: string; group?: string }[] = [];
   let values: Record<string, boolean> = {};
+  let requires: Record<string, string[]> | undefined;
 
   try {
     const grid = await readPermissionGrid(session.viewer);
     rows = grid.roles;
     columns = grid.columns;
     values = grid.values;
+    requires = grid.requires;
   } catch (error) {
     if (error instanceof ForbiddenError) notFound();
     errorMessage = "권한표 불러오기 실패 · 다시 시도";
@@ -40,6 +42,7 @@ export default async function PermissionsPage() {
         values={values}
         errorMessage={errorMessage}
         toggleAction={setPermissionCellAction}
+        requires={requires}
       />
     </ListScreen>
   );

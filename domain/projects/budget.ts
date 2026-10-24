@@ -19,6 +19,7 @@ import { findProjectInScope, lockProjectForWrite } from "@/repositories/projects
 import {
   findBudgetBasisFacts,
   insertBudgetEntry,
+  maxReflectedBasisKrw,
   listBudgetEntriesPage,
   listBudgetRowFacts,
   listProjectIdsWithoutBudget,
@@ -69,14 +70,20 @@ export async function budgetBasisKrw(projectId: string, tx?: DbOrTx): Promise<nu
 }
 
 // 사건 훅 — 부르는 쪽 tx가 프로젝트 행을 이미 잠갔다. budgetDelta가 null이면 아무것도 쓰지 않는다. 쓴 줄 수(0 · 1)를 돌려준다.
+// F52(사용자 결정 10/24 「한 번만 쌓기」): 모든 자동 사건(새 승인 차수 · PO 금액 변경)은 아래 반영된 기준 최댓값을 넘는 증액만 쌓는다 —
+// 승인 → 취소 → 재승인(같은 판이든 새 차수든) · 취소 뒤 PO 저장 · PO 감액 뒤 재증액이 다시 쌓이지 않는다. 처음(initial)은 줄이 없을 때만
+// 불려 최댓값이 0이라 그대로다.
 export async function recordBudgetEvent(
   viewer: Viewer,
   projectId: string,
   input: { reason: Exclude<BudgetEntryReason, "manual">; prevBasisKrw: number; newBasisKrw: number },
   tx: DbOrTx,
 ): Promise<number> {
+  // 승인 취소 · PO 감액은 기준을 낮추지만 예산 줄은 남긴다 — 「지금 기준」이 아니라 이미 예산에 반영된 기준(자동 줄의 최대 기준 금액)을
+  // 넘는 증액만 쌓는다(게이트 P1 · 줄 없던 판 재승인 · 델타 P2 취소 뒤 PO 저장).
+  const prevBasisKrw = Math.max(input.prevBasisKrw, await maxReflectedBasisKrw(viewer, projectId, tx));
   const costRatePct = await readCostRatePct(tx);
-  const deltaKrw = budgetDelta({ newBasisKrw: input.newBasisKrw, prevBasisKrw: input.prevBasisKrw, costRatePct });
+  const deltaKrw = budgetDelta({ newBasisKrw: input.newBasisKrw, prevBasisKrw, costRatePct });
   if (deltaKrw === null || costRatePct === null) return 0;
   await insertEntry(
     viewer,

@@ -371,7 +371,7 @@ describe("막힘 · 재판정 · 스냅숏 (06-15 Task 2)", () => {
   it("짝 막힘 — 계좌이체 · 카드 전표가 짝 목록 밖이면 목록 selectable false + 이유, 조작 요청으로 보내도 같은 문구로 거부", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
-    const cardVendor = await insertVendor(SYSTEM_VIEWER, { name: "카드가맹", normalizedName: `카드가맹-${randomUUID()}`, defaultEvidenceType: "card_receipt", ...testVendorAccount() });
+    const cardVendor = await insertVendor(SYSTEM_VIEWER, { name: "카드가맹", normalizedName: `카드가맹-${randomUUID()}`, defaultEvidenceType: "card_receipt", ...testVendorAccount(), confirmedAt: new Date() });
     const [doc] = await approvedMany(fx, await extraLines(fx, 1, cardVendor.id), false);
     if (!doc) throw new Error("문서 없음");
     const [row] = await db.select({ method: expenses.paymentMethod, evidenceType: expenses.evidenceType }).from(expenses).where(eq(expenses.id, doc.expenseId));
@@ -919,7 +919,7 @@ describe("계좌 투영 (06-20 Task 2)", () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
     // 06.5 D-6507: 계좌 없는 계좌이체는 제출에서 막히므로 결재 통과 뒤 계좌가 지워진 거래처로 만든다(지급 단계 「없음」 갈래는 그대로 남는다).
-    const bare = await insertVendor(SYSTEM_VIEWER, { name: "계좌없는곳", normalizedName: `계좌없는곳-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
+    const bare = await insertVendor(SYSTEM_VIEWER, { name: "계좌없는곳", normalizedName: `계좌없는곳-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount(), confirmedAt: new Date() });
     const [doc] = await approvedMany(fx, await extraLines(fx, 1, bare.id), false);
     if (!doc) throw new Error("문서 필요");
     await db.update(vendors).set({ accountBank: null, accountHolder: null, accountNumberEncrypted: null, accountNumberLast4: null }).where(eq(vendors.id, bare.id));

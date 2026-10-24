@@ -83,7 +83,7 @@ async function lineDoc(drafter: Viewer, approvers: readonly Viewer[], lineId: st
 }
 
 async function teamCostDoc(drafter: Viewer, approvers: readonly Viewer[]): Promise<string> {
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount(), confirmedAt: new Date() });
   const { expenseId } = await createTeamExpenseDraft(drafter, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: seoulToday(), content: "팀 회식" } });
   const payment = (await listExpenseFormOptions(drafter)).payment[0]?.value ?? null;
   await saveExpenseDraft(drafter, {

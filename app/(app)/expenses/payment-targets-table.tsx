@@ -209,6 +209,24 @@ export function PaymentAccountValue({ account }: { account: PaymentAccount }) {
   );
 }
 
+// 07-23 SC-01 · N2 · V9: 결제 방법 열 계좌 아래 한 값 `거래처 확인 전 > 계좌 바뀜` — 지급처 거래처가 확인 전이면 `거래처 확인 전`, 확인됐고 계좌가 바뀐 뒤 첫 지급 전이면 `계좌 바뀜`.
+// 증빙 칸 `확인 전`과 한 행에 서므로 거래처 쪽은 `거래처`를 붙인다(DOM 감사 #3 — 폰 접힌 줄에는 열 머리가 없다).
+// 둘 다 표시만 — 지급 선택 · 처리 판정은 손대지 않는다(G13 사후 확인). 키가 없으면(vendor.value 숨김) 그리지 않는다.
+function vendorFlagOf(row: Pick<PaymentTargetScreenRow, "vendorConfirmed" | "accountChanged">): "거래처 확인 전" | "계좌 바뀜" | null {
+  if (row.vendorConfirmed === false) return "거래처 확인 전";
+  return row.accountChanged === true ? "계좌 바뀜" : null;
+}
+
+// 계좌 아래 줄 — 새 클래스 없이 블록 한 줄(계좌 값 아래에 선다).
+function VendorFlag({ row }: { row: Pick<PaymentTargetScreenRow, "vendorConfirmed" | "accountChanged"> }) {
+  const flag = vendorFlagOf(row);
+  return flag ? (
+    <div data-vendor-flag="">
+      <StatusTag status={flag} variant="text" />
+    </div>
+  ) : null;
+}
+
 // 폰 접힌 줄 · 좁은 폭 요약 — 1행만(번호 보기 없음, 폰은 행이 문서 화면 링크).
 function accountSummary(account: PaymentAccount): string {
   return account.status === "none" ? "계좌 없음 · 계좌 등록은 관리자" : [account.bank, account.masked].filter(Boolean).join(" ");
@@ -1065,17 +1083,34 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       key: "method",
       header: PAYMENT_TARGET_COLUMN_LABELS.method,
       priority: "p2",
-      cell: (row) => (row.account ? <PaymentAccountValue account={row.account} /> : <span className={styles.nowrap}>{row.paymentMethodName ?? "—"}</span>),
+      cell: (row) => (
+        <>
+          {row.account ? <PaymentAccountValue account={row.account} /> : <span className={styles.nowrap}>{row.paymentMethodName ?? "—"}</span>}
+          <VendorFlag row={row} />
+        </>
+      ),
       // 결재 중 행은 지급 방식 · 예정일이 없다 — 접힌 줄을 세우지 않는다(감사 #6, 상태 · 금액은 주 행 p1 칸).
       summary: (row) => {
         if (row.approving) return null;
-        const text = row.account ? accountSummary(row.account) : (row.paymentMethodName ?? "—");
         const lead = phoneLead(row);
-        return lead ? (
+        const flag = vendorFlagOf(row);
+        // 2026-10-24 결정: 거래처 확인 전 행은 폰 접힌 줄에서 계좌를 뺀다(밀림과 겹치면 두 줄로 넘침) — 확인되면 다시 보인다.
+        const text = row.account ? (row.vendorConfirmed === false ? null : accountSummary(row.account)) : (row.paymentMethodName ?? "—");
+        return lead || flag ? (
           <>
-            {lead}
-            {" · "}
+            {lead ? (
+              <>
+                {lead}
+                {text !== null ? " · " : null}
+              </>
+            ) : null}
             {text}
+            {flag ? (
+              <>
+                {lead || text !== null ? " · " : null}
+                <StatusTag status={flag} variant="text" />
+              </>
+            ) : null}
           </>
         ) : (
           text

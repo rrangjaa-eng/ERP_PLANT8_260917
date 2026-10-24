@@ -2350,3 +2350,9 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정자**: 사용자 결정 카드 2026-10-24 23:16 KST. 앞선 G13(사후 확인 · 지급은 막지 않음) 중 「확인 전」 부분을 바꾼다.
 **버린 대안**: 표시만 두기(G13 그대로 — 남의 계좌로 이체 파일이 나간다) · 일괄 경로에서 확인 전 건이 섞이면 전체 거부(다른 막힘 사유 · 계좌 없음과 다른 규칙).
 **범위**: `domain/payments/targets.ts` reasonOf · `domain/payments/index.ts` completeExpensePayment · `repositories/vendors.ts` lockVendorConfirmedForShare · `domain/payments/action-row.ts` VENDOR_UNCONFIRMED. 화면 파일 변경 0 · 새 색 · 서체 · radius 0.
+
+## 2026-10-24 사용자 결정: 확인 전 거래처 행은 폰 접힌 줄에서 계좌 빼기 (07-23)
+**결정**: 지급 대상 목록 폰(접힌 줄)에서 지급처 거래처가 「거래처 확인 전」인 행은 접힌 줄에서 계좌를 그리지 않는다(밀림 · 배지 · 예정일은 그대로, 배지 글자 「거래처 확인 전」 그대로). 거래처가 확인되면 계좌가 다시 보인다. 데스크톱 표의 계좌 칸은 그대로.
+**이유**: 「마감 지나 밀림 · 신한은행 ****-**-6789 · 거래처 확인 전 · 10-30」이 375 · 320에서 두 줄로 넘쳐 행이 세 줄이 됨(SYSTEM §7-3 행 두 줄 이내, 0723-dom-375.md).
+**결정자**: 사용자 결정 카드 2026-10-24.
+**범위**: `app/(app)/expenses/payment-targets-table.tsx` method 칸 summary · E2E `mobile-payment-pushed.spec.ts`. 새 색 · 서체 · radius 0.

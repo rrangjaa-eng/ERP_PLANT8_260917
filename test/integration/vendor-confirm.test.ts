@@ -21,6 +21,8 @@ import { EVIDENCE_FORMATS } from "@/domain/evidence-import/registry";
 import { insertRole } from "@/repositories/roles";
 import { insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { setSettingValue } from "@/domain/settings/registry";
+import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 import { makePerson } from "./approvals-fixtures";
 
 // 07-23 Task 2(V4 · N4 · AQ-34): 확인 표시 — 자동 등록은 확인 전, 관리 화면 등록은 확인됨, `확인됨으로 표시` · `되돌리기`는 vendors.account 쓰기만.
@@ -139,7 +141,16 @@ describe("일하는 자리 등록 (SC-18 · D-745 · K20)", () => {
     expect(row.accountHolder).toBe("주식회사 일자리");
     expect(row.accountNumberLast4).toBe("9012");
     const logs = await db.select().from(actionLog).where(and(eq(actionLog.entityId, vendor.id), eq(actionLog.actorId, staff.id)));
-    expect(logs.map((log) => [log.actionType, (log.detail as { source?: string } | null)?.source])).toEqual([["document_create", "workplace"]]);
+    // 사용자 결정(10/24): 끌 수 없는 전용 종류 · 계좌가 실렸으면 뒤 4자리(vendor_account_change와 같은 꼴).
+    expect(logs.map((log) => [log.actionType, log.detail])).toEqual([["work_vendor_create", { source: "workplace", beforeLast4: null, afterLast4: "9012" }]]);
+  });
+
+  it("설정에서 document_create 로그를 꺼도 업무 중 등록 기록(work_vendor_create)은 남는다 · 계좌 없으면 뒤 4자리 없음", async () => {
+    await setSettingValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES, ACTION_LOG_OPTIONAL_TYPES.default!.filter((type) => type !== "document_create"));
+    const staff = await makeExpenseWriter({ expenses: true });
+    const vendor = await registerVendorFromWork(staff, { name: `로그끔-${randomUUID()}` });
+    const logs = await db.select().from(actionLog).where(and(eq(actionLog.entityId, vendor.id), eq(actionLog.actorId, staff.id)));
+    expect(logs.map((log) => [log.actionType, log.detail])).toEqual([["work_vendor_create", { source: "workplace" }]]);
   });
 
   // 사용자 결정(10/24 「지금처럼 받기」): 업무 중 등록은 계좌를 그대로 받는다 — 계좌 쓰기가 없어도 실은 칸이 저장된다(10/23 거부 규칙을 이 경로에서만 되돌림).

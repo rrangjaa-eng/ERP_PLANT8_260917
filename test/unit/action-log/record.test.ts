@@ -240,3 +240,16 @@ describe("07 새 행동 유형 (07-04 P8)", () => {
     expect(ACTION_LOG_OPTIONAL_TYPES.schema.parse(["settings_change", "login"])).toEqual(["login"]);
   });
 });
+
+// 사용자 결정(10/24 「새 종류(끌 수 없음)」): 업무 중 거래처 등록은 계좌를 권한 없이 받으므로 document_create(끌 수 있음)가 아니라 전용 종류로 남긴다.
+describe("work_vendor_create (사용자 결정 10/24)", () => {
+  it("세 배열에 함께 있고 라벨은 「업무 중 거래처 등록」이다", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("work_vendor_create");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("work_vendor_create");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).work_vendor_create).toBe("업무 중 거래처 등록");
+  });
+
+  it("선택 로그 설정의 선택지에 없다(끌 수 없다)", () => {
+    expect(ACTION_LOG_OPTIONAL_TYPES.default as readonly string[]).not.toContain("work_vendor_create");
+  });
+});

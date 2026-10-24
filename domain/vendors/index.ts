@@ -31,7 +31,7 @@ import { servesSide, vendorKindToAdd, vendorKindsFor, VENDOR_KIND_LABELS, type V
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { AccountFieldsError, accountFieldsChanged, judgeAccountFields, present } from "@/domain/vendors/account-fields";
 import { businessNoDigits, businessNoProblem } from "@/domain/vendors/business-no";
-import { normalizeAccountDigits } from "@/domain/vendors/account-digits";
+import { accountNumberLast4 as last4Digits, normalizeAccountDigits } from "@/domain/vendors/account-digits";
 import { hadAccount, writeAccountChange } from "@/domain/vendors/account-changes";
 import { judgeContacts, saveVendorContacts, type VendorContactInput } from "@/domain/vendors/contacts";
 
@@ -804,7 +804,10 @@ export async function registerVendorFromWork(viewer: Viewer, input: WorkVendorIn
     throw error;
   }
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "document_create", entity: VENDOR_ENTITY, entityId: row.id, detail: { source: WORK_SOURCE } });
+  // 사용자 결정(10/24): 끌 수 없는 전용 종류 — 계좌가 실렸으면 뒤 4자리를 updateVendor의 vendor_account_change와 같은 꼴로 남긴다.
+  const accountGiven = row.accountBank !== null || row.accountHolder !== null || row.accountNumberLast4 !== null;
+  const last4 = accountGiven ? { beforeLast4: null, afterLast4: last4Digits(row.accountNumberLast4) } : {};
+  await recordAction(viewer, { actionType: "work_vendor_create", entity: VENDOR_ENTITY, entityId: row.id, detail: { source: WORK_SOURCE, ...last4 } });
   return toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY));
 }
 

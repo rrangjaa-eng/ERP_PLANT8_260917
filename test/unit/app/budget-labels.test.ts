@@ -11,4 +11,10 @@ describe("예산 현황 문구 (10/24 카드)", () => {
     expect(panel).toContain('FORMULA_LABEL = "현재 예산"');
     expect(panel).not.toContain("PO 금액 × 원가율");
   });
+
+  it("PO 금액 0은 「PO 없음」 대신 Num의 빈 값 「—」로 그린다", () => {
+    const table = readFileSync(resolve(DIR, "budget-table.tsx"), "utf8");
+    expect(table).not.toContain("PO 없음");
+    expect(table).toContain("row.poAmountKrw === 0 ? null : row.poAmountKrw");
+  });
 });

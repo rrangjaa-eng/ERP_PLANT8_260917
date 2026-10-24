@@ -401,10 +401,10 @@ test.describe("예산 현황 — 감사 지적 (07-24 DOM 감사)", () => {
       const user = await budgetUser(team.teamId);
       const { page, context } = await openAs(browser, user, "/projects/budget", width);
 
-      // #7: PO 0 행의 PO 금액 칸은 `PO 없음`(PO 열은 700 이상에서만 보인다).
+      // #7: PO 0 행의 PO 금액 칸은 `—`(PO 열은 700 이상에서만 보인다).
       if (width >= 700) {
         const poCells = budgetTable(page).locator("tbody tr", { hasText: noPo }).locator("td");
-        await expect(poCells.filter({ hasText: /^PO 없음$/ })).toHaveCount(1);
+        await expect(poCells.filter({ hasText: /^—$/ })).toHaveCount(1);
       }
 
       await openHistoryAt(page, name, width);

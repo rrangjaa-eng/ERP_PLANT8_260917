@@ -6,7 +6,7 @@ import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
@@ -112,7 +112,7 @@ test.describe("보기 · 빈 상태 · 폭", () => {
     const today = seoulToday();
     const org = await setupLeaveOrg(today);
     const writer = await makePerson("빈목록", DEFAULT_ROLE_ID, org.teamId, `${today.slice(0, 4)}-01-01`);
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `지출 보기만-${randomUUID().slice(0, 6)}`, workScope: "team" });
+    const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `지출 보기만-${randomUUID().slice(0, 6)}`, workScope: "team" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
     const reader = await makePerson("보기만", role.id, org.teamId, `${today.slice(0, 4)}-01-01`);
 

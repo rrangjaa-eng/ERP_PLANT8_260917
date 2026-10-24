@@ -7,7 +7,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { addDays, kstToday } from "@/lib/kst-date";
@@ -17,7 +17,7 @@ import { addDays, kstToday } from "@/lib/kst-date";
 const LIST_TABLE = "main table:not([aria-hidden='true'])";
 
 async function makeManager(): Promise<{ email: string; password: string }> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E폰수금-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E폰수금-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of ["project.value", "quote.amount", "revenue.issued_amount", "revenue.paid_amount"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });

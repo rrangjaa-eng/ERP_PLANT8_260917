@@ -11,7 +11,7 @@ import { saveProjectLedger } from "@/domain/projects/ledger";
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { PROJECT_COST_RATE_PCT } from "@/domain/settings/keys";
 import { insertVendor } from "@/repositories/vendors";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -53,7 +53,7 @@ test("폰 375 — P1 세 열 · 행 탭 → 이력 시트(예산 바꾸기) · �
   await saveProjectLedger({ id: lead.userId, roleId: TEAM_LEAD_ROLE_ID }, created.id, { seenStatus: "bidding", preEstimate: { currency: "KRW", amount: 10_000_000, fxRate: 1, fxRateTouched: false } });
   await db.update(projects).set({ status: "in_progress" }).where(eq(projects.id, created.id));
 
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E폰경영관리-${randomUUID().slice(0, 8)}`, viewScope: "team" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E폰경영관리-${randomUUID().slice(0, 8)}`, viewScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.budget", action, allowed: true });
   for (const infoItem of ["budget.amount", "quote.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });

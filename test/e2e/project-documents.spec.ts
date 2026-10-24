@@ -11,7 +11,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { customerApprovalColumns } from "@/domain/quotes/revisions";
 import { insertVendor } from "@/repositories/vendors";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { hasProjectDocument } from "@/repositories/project-documents";
 import { addDays, kstToday } from "@/lib/kst-date";
@@ -120,7 +120,7 @@ test("확인 창에서 취소하면 서류가 남는다", async ({ page }) => {
 test("보기만 하는 계급에게는 붙이기 · 지우기가 없다", async ({ page }) => {
   const { pm, teamId } = await makePm();
   const project = await makeProject(teamId, pm.userId);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E서류읽기-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E서류읽기-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: true });
@@ -165,7 +165,7 @@ test("(감사 P2 #2 · #3) 키보드: 처음 올리면 포커스가 새 목록 �
 test("견적 금액을 못 보는 계급에게는 서류 섹션이 없다", async ({ page }) => {
   const { pm, teamId } = await makePm();
   const project = await makeProject(teamId, pm.userId);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E서류금액없음-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E서류금액없음-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of ["project.value", "vendor.value", "team.value", "person.value"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });

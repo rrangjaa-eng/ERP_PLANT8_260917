@@ -12,7 +12,7 @@ import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { db } from "@/db/client";
 import { projects, quoteLines, revenueEntries, teams } from "@/db/schema";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { saveRevenue } from "@/domain/revenue";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { and, eq, isNull, sum } from "drizzle-orm";
@@ -408,7 +408,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     // 전용 전사 범위 계급에 프로젝트 보기·쓰기와 project.value만 주고 quote.amount는 주지 않는다 — 공유 시드 계급(role-ceo)의
     // quote.amount를 끄면 같은 샤드 뒤 스펙(settlement-approval 대표의 견적가 합)이 깨진다.
     const roleId = `role-${randomUUID()}`;
-    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+    await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "view", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "write", allowed: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "project.value", visible: true });
@@ -1743,7 +1743,7 @@ test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽
 
   test("(R2) 발행 줄 금액만 범위 밖으로 1차 저장 → 견적 표 합계 행 한 줄 `전부 거부 · 다른 칸 오류 1칸` · 발행 표 `오류 1칸 · 전부 거부` · 포커스는 그 발행 금액 · 고쳐 저장하면 `저장됨`만", async ({ page }) => {
     const roleId = `role-${randomUUID()}`;
-    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
+    await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
     for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
       await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
     }

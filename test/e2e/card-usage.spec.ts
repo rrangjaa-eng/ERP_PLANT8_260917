@@ -13,7 +13,7 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
@@ -481,7 +481,7 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
   test("[PR #180 Codex P2] `quote.amount` 없는 카드 소지자도 견적 줄을 고를 수 있다 — 남은 실행가 줄 없이 그 줄이 채워진다 · `?new=1&line=` 진입도 같다", async ({ browser, baseURL }) => {
     const holder = await makeCardHolder();
     const target = await seedProjectLine(holder);
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E금액숨김카드-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E금액숨김카드-${randomUUID().slice(0, 8)}`, workScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     for (const infoItem of ["project.value", "card_usage.value", "card_usage.amount", "team.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });
@@ -751,7 +751,7 @@ test.describe("프로젝트 상세 「법인카드 사용」 (06-07 S15)", () =>
     const holder = await makeCardHolder();
     const target = await seedProjectLine(holder);
     await seedLineUsage(holder.person.viewer, holder.cardIds[0] ?? "", target.lineId, 300_000);
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });

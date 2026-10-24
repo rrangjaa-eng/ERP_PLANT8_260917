@@ -8,7 +8,7 @@ import { db } from "@/db/client";
 import { codeItems, projects, reserveEntries } from "@/db/schema";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { recentFxRate } from "@/domain/money/currency";
@@ -24,7 +24,7 @@ type Roles = { finance: string; reader: string; hidden: string };
 
 async function createRole(name: string, grants: { menu: string; action: string }[], reserveVisible: boolean, alsoVisible: string[] = []): Promise<string> {
   const id = `role-e2e-rsv-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id, name: `E2E 리저브 ${name} ${id.slice(-8)}`, sortOrder: 99, viewScope: "company" });
+  await insertTempRole(SYSTEM_VIEWER, { id, name: `E2E 리저브 ${name} ${id.slice(-8)}`, sortOrder: 99, viewScope: "company" });
   for (const grant of grants) await upsertPermission(SYSTEM_VIEWER, { roleId: id, menu: grant.menu, action: grant.action, allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: id, infoItem: "reserve.amount", visible: reserveVisible });
   for (const infoItem of alsoVisible) await upsertVisibility(SYSTEM_VIEWER, { roleId: id, infoItem, visible: true });

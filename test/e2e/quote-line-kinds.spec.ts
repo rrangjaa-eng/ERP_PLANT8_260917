@@ -12,7 +12,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertVendor } from "@/repositories/vendors";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { addDays, kstToday } from "@/lib/kst-date";
 
@@ -41,7 +41,7 @@ async function makeAccount(roleId: string, teamId: string, name = "E2E 줄 종�
 
 // 경영관리 — `projects` 보기 · `projects.adjustment` 쓰기만(`projects` 쓰기 없음). withProjectsWrite면 `projects` 쓰기도 준다(두 권한 보유자).
 async function makeAdjuster(teamId: string, withProjectsWrite = false): Promise<Account> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   if (withProjectsWrite) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.adjustment", action: "write", allowed: true });

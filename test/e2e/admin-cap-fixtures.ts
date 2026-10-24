@@ -6,6 +6,7 @@ import { listRoles, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, type RoleViewScope
 import type { PermissionAction } from "@/domain/permissions/menus";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { makeDelegatedRole, makeSeated } from "../integration/admin-cap-fixtures";
+import { trackTempRole } from "./temp-roles";
 
 // 06.4-04: 관리자 상한 화면 E2E 공용(스펙 아님). 위임 계급 · 중복 보유자는 통합 픽스처와 같은 함수로 만든다 —
 // 중복 팀장은 리포지토리 발령(makeSeated)만 만들 수 있다(도메인 가드가 막는다).
@@ -34,6 +35,7 @@ export async function createDelegatedAccount(
     viewScope: input.viewScope,
     workScope: input.workScope,
   });
+  trackTempRole(roleId);
   const email = `e2e-${randomUUID()}@example.test`;
   const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: `E2E위임-${shortId()}`, roleId });
   return { email, password: tempPassword, userId, roleId };

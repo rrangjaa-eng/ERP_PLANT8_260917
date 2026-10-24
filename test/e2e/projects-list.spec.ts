@@ -16,7 +16,7 @@ import { addDays, kstToday, kstYear } from "@/lib/kst-date";
 import { changeProjectStatus } from "@/domain/projects/status";
 import { saveRevenue } from "@/domain/revenue";
 import { createAccount } from "@/domain/auth/accounts";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { listCodeItems, updateCodeItemLabel } from "@/repositories/code-tables";
 import { PROJECT_PROFIT_RATE_THRESHOLD } from "@/domain/settings/keys";
@@ -104,7 +104,7 @@ async function addQuoteLine(projectId: string, quote: number, execution = 0) {
 
 // 04-18 — 경영관리(시드 계급에 없다): 전사 범위 새 계급에 목록 보기 + 견적 · 발행 금액 노출을 준다(시드 계급을 바꾸지 않는다).
 async function makeManager(extraInfoItems: string[] = []): Promise<{ email: string; password: string }> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of ["project.value", "quote.amount", "revenue.issued_amount", ...extraInfoItems]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -600,7 +600,7 @@ test.describe("프로젝트 목록 — 조회 조건 (04-48)", () => {
     const marker = `E2E숨긴정렬-${randomUUID().slice(0, 8)}`;
     const pm = await setupPm();
     await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `${marker}-행` });
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E견적끔-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+    const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E견적끔-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });

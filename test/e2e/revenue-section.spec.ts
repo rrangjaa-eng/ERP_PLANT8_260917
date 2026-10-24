@@ -12,7 +12,7 @@ import { addDays, kstToday } from "@/lib/kst-date";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { saveRevenue, type MoneyInputDto } from "@/domain/revenue";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { chooseApprovalBasis, openApprovalSheet, submitApproval } from "./project-info-helpers";
@@ -547,7 +547,7 @@ test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 
   test("(R2) 견적 줄 칸 하나만 거부된 저장 → 발행·입금 표 합계 행이 각각 `전부 거부 · 다른 칸 오류 1칸`(--status-danger) · 고쳐 저장하면 모두 사라진다", async ({ page }) => {
     // 담당 PM이 견적도 고치고 발행·입금도 보는 계급 — role-pm 권한을 복사하고 매출 쓰기·모든 정보 노출을 더한다.
     const roleId = `role-${randomUUID()}`;
-    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
+    await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
     for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
       await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
     }
@@ -613,7 +613,7 @@ test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 
 test.describe("매출 표 합계 행 — 다른 표 충돌 줄 수 (결정 7)", () => {
   test("견적 줄 한 줄이 동료 저장과 충돌 → 발행·입금 표 합계 행이 각각 `전부 거부 · 다른 표 충돌 1줄`", async ({ page }) => {
     const roleId = `role-${randomUUID()}`;
-    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
+    await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
     for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
       await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
     }
@@ -666,7 +666,7 @@ test.describe("매출 금액 입력 오류 → 그 셀 고정 오류 · 표별 �
   test("새 발행 줄 금액 3,000,000,000 저장 → 그 셀 오류 · 발행 표 `오류 1칸 · 전부 거부` · 견적·입금 표 `전부 거부 · 다른 칸 오류 1칸` · DB 무변경 · 고쳐 저장하면 모두 사라진다", async ({ page }) => {
     // 04-16 R2와 같은 계급 — 견적 표·발행·입금 표를 모두 보고 매출을 쓰는 담당 PM(role-pm 복사 + 매출 쓰기 · 모든 정보 노출).
     const roleId = `role-${randomUUID()}`;
-    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
+    await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
     for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
       await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
     }
@@ -875,7 +875,7 @@ test.describe("매출 면 수금 지연 (07-22)", () => {
 // 07-22(W7 · SC-20) — 발행 줄 계산서: 행동 링크 `계산서 붙이기` → 옆 패널(한 자리) → 파일 → 닫으면 포커스가 링크로 · 줄은 `계산서 1` · 다시 열면 `교체`.
 // 계산서 쓰기 = projects.revenue 쓰기. 파일 DTO 칸은 05 그대로 expense.value — 그 항목까지 켠 이 스펙 전용 계급을 쓴다(다른 스펙의 role-ceo를 건드리지 않는다).
 async function makeInvoiceRole(): Promise<string> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E계산서-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E계산서-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.revenue", action: "write", allowed: true });
   for (const infoItem of ["project.value", "revenue.issued_amount", "revenue.paid_amount", "expense.value"]) {
@@ -983,7 +983,7 @@ test.describe("발행 줄 계산서 파일 (07-22 · W7)", () => {
     await expect(revenueTable(page, "발행 줄").getByRole("button", { name: "계산서 1", exact: true })).toBeVisible({ timeout: 20_000 });
     await page.context().clearCookies();
 
-    const reader = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E계산서읽기-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+    const reader = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E계산서읽기-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: reader.id, menu: "projects", action: "view", allowed: true });
     for (const infoItem of ["project.value", "revenue.issued_amount"]) {
       await upsertVisibility(SYSTEM_VIEWER, { roleId: reader.id, infoItem, visible: true });

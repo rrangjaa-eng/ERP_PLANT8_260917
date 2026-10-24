@@ -12,7 +12,7 @@ import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { PROJECT_COST_RATE_PCT } from "@/domain/settings/keys";
 import { insertVendor } from "@/repositories/vendors";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -54,7 +54,7 @@ async function makeTeam(): Promise<Team> {
 // 팀 범위 경영관리 계정 — write가 거짓이면 보기만(「예산 바꾸기」 없음 — 배포 직후 쓰기 칸이 꺼진 상태와 같다).
 // settings가 참이면 시스템 설정 보기 · 쓰기도(원가율 잠김 줄의 3차 · 첫 저장 결과 줄 시험). budget이 거짓이면 예산 현황 메뉴 없이 설정만.
 async function budgetUser(teamId: string, opts: { write?: boolean; settings?: boolean; budget?: boolean } = {}) {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, viewScope: "team" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, viewScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   if (opts.budget !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.budget", action: "view", allowed: true });
   if (opts.budget !== false && opts.write !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.budget", action: "write", allowed: true });

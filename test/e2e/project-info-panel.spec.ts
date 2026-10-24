@@ -7,7 +7,7 @@ import { and, asc, isNull } from "drizzle-orm";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis as readApprovalBasis } from "@/repositories/quote-revisions";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -383,7 +383,7 @@ type SeedLine = { itemName: string; unitPrice: number; execution: number; lineKi
 
 // 담당 PM 계급 — 프로젝트 보기 · 쓰기(+ 선택: 지출결의 쓰기 · 손익 보기 · 금액 노출). 회사 범위라 팀 걱정이 없다.
 async function makePm(teamId: string, options: { expenses?: boolean; pnl?: boolean; amount?: boolean; issued?: boolean }): Promise<Account & { roleId: string }> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E정보PM-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E정보PM-${randomUUID().slice(0, 8)}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
   if (options.expenses) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "write", allowed: true });

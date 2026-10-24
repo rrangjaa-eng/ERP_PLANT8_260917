@@ -24,7 +24,7 @@ import styles from "./budget.module.css";
 // 3차 `예산 바꾸기`(쓰기 판정이 참일 때만)를 누르면 같은 패널 안에 `예산` · `사유` 칸과 행동 줄(2차 `취소 Esc` · 1차 `예산 저장`)이 나타난다.
 // Esc 첫 번은 편집만 닫고(preventDefault — SidePanel이 닫지 않는다) 다음 Esc가 패널을 닫는다. 결과는 현재 값과 이력 맨 위 줄(토스트 없음).
 
-const FORMULA_LABEL = "PO 금액 × 원가율";
+const FORMULA_LABEL = "현재 예산";
 // 읽기 실패 한 줄(SYSTEM §8 규칙 3 명사형) — 다시 시도는 옆 버튼이 말한다(감사 #11).
 const LOAD_FAILED = "예산 이력 불러오기 실패";
 const SAVE_FAILED = "저장 실패 · 다시 시도";

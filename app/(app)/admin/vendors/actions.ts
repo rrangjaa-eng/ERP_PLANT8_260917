@@ -10,12 +10,16 @@ import {
   setVendorHidden,
   revealAccountNumber,
   addVendorKind,
+  markVendorConfirmed,
+  unmarkVendorConfirmed,
   DuplicateBusinessNoError,
   InvalidBusinessNoError,
   PaymentTermDaysError,
   VendorVersionConflictError,
 } from "@/domain/vendors";
 import { exportVendorsCsv } from "@/domain/vendors/export";
+import { VendorContactsError } from "@/domain/vendors/contacts";
+import { requestVendorDocumentUpload } from "@/domain/vendors/document-upload";
 import { CustomFieldsInvalidError } from "@/domain/custom-fields/preserve";
 import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { archive } from "@/domain/archive";
@@ -25,6 +29,17 @@ import "./actions.registry";
 // MAST-01: domain/vendors만 부른다. 등록은 ./actions.registry로 분리(03-03
 // 선례 — 누수 스캔이 server-only 의존 체인인 이 파일을 직접 import할 수 없다).
 const customFieldsSchema = z.record(z.string(), z.unknown()).optional();
+// 07-23 V7: 담당자 줄 — 상한(5) · 이름 · 이메일 판정은 domain(VendorContactsError → 담당자 칸 오류). id는 이미 있는 줄만.
+const contactsSchema = z
+  .array(
+    z.object({
+      id: z.string().uuid().optional(),
+      name: z.string().max(100),
+      phone: z.string().max(50).nullable().optional(),
+      email: z.string().max(200).nullable().optional(),
+    }),
+  )
+  .optional();
 
 // 04.5-05: 스키마는 모듈 안 비공개 상수 — "use server" 파일은 async 함수 밖을 내보낼 수 없다.
 const createVendorSchema = z.object({
@@ -39,6 +54,7 @@ const createVendorSchema = z.object({
   // 07-20 J5: 지급 기한(일) — null = 회사 기본. 범위 · 갈래 판정은 domain(PaymentTermDaysError).
   paymentTermDays: z.number().nullable().optional(),
   customFields: customFieldsSchema,
+  contacts: contactsSchema,
 });
 
 const updateVendorSchema = z.object({
@@ -58,6 +74,7 @@ const updateVendorSchema = z.object({
   accountNumber: z.string().nullable().optional(),
   paymentTermDays: z.number().nullable().optional(),
   customFields: customFieldsSchema,
+  contacts: contactsSchema,
 });
 
 // 04.5-05: 커스텀 칸 오류는 폼 전체 serverError가 아니라 칸별 validationErrors.customFields.{key}._errors로 돌려준다
@@ -111,6 +128,7 @@ export const createVendorAction = authedActionClient
       }
       if (error instanceof AccountFieldsError) returnValidationErrors(createVendorSchema, accountFieldErrors(error));
       if (error instanceof PaymentTermDaysError) returnValidationErrors(createVendorSchema, paymentTermDaysErrors(error));
+      if (error instanceof VendorContactsError) returnValidationErrors(createVendorSchema, { contacts: { _errors: [error.message] } });
       throw error;
     }
   });
@@ -131,6 +149,7 @@ export const updateVendorAction = authedActionClient
       }
       if (error instanceof AccountFieldsError) returnValidationErrors(updateVendorSchema, accountFieldErrors(error));
       if (error instanceof PaymentTermDaysError) returnValidationErrors(updateVendorSchema, paymentTermDaysErrors(error));
+      if (error instanceof VendorContactsError) returnValidationErrors(updateVendorSchema, { contacts: { _errors: [error.message] } });
       // 07-20 V3: 패널 상단 FormAlert + `새로 불러오기`를 그리도록 데이터로 돌려준다(입력은 덮어쓰지 않았다).
       if (error instanceof VendorVersionConflictError) return { versionConflict: error.message };
       throw error;
@@ -173,3 +192,38 @@ export const archiveVendorAction = authedActionClient
 export const exportVendorsCsvAction = authedActionClient
   .schema(z.object({ includeHidden: z.boolean(), kind: z.enum(["client", "supplier"]).nullable(), q: z.string() }))
   .action(async ({ parsedInput, ctx }) => exportVendorsCsv(ctx.viewer, parsedInput));
+
+// 07-23 V4 · N4: 확인 표시 켬 · 끔 — 즉시 저장 컨트롤(UI-SPEC 공통 10). 권한(vendors.account 쓰기) · 상태 판정은 domain.
+export const markVendorConfirmedAction = authedActionClient
+  .schema(z.object({ id: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    const state = await markVendorConfirmed(ctx.viewer, parsedInput);
+    revalidatePath("/admin/vendors");
+    return state;
+  });
+
+export const unmarkVendorConfirmedAction = authedActionClient
+  .schema(z.object({ id: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    const state = await unmarkVendorConfirmed(ctx.viewer, parsedInput);
+    revalidatePath("/admin/vendors");
+    return state;
+  });
+
+// 07-23 V8 · SC-17 ⑨: 거래처 서류 붙이기 시작 — 종류 · 선언만 받는다. 권리(vendors.account 쓰기) · 서류 행은 domain이 정한다.
+// 마침 · 보기는 05 증빙 액션(completeEvidenceUploadAction · createEvidenceViewUrlAction) 그대로 — 교체는 주인 표 beforeAdd가 마침 트랜잭션에서.
+export const requestVendorDocumentUploadAction = authedActionClient
+  .schema(
+    z.object({
+      vendorId: z.string().uuid(),
+      kind: z.enum(["registration", "bankbook"]),
+      size: z.number().int().min(0),
+      contentType: z.string().min(1).max(100),
+      sha256: z.string().max(64),
+      name: z.string().min(1).max(255),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const intent = await requestVendorDocumentUpload(ctx.viewer, parsedInput);
+    return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });

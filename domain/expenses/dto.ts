@@ -335,6 +335,11 @@ export type PaymentTargetRowDto = {
   paymentScheduleFailed: boolean;
   // gate `payment.cutoff` 판정 이유(그 주 소속 — 통과면 null). 지급 처리 동작은 막지 않는다(D-703 · J7).
   paymentCutoffReason: string | null;
+  // 07-23 N2 · B-P2-5: 지급처 거래처가 확인됐나(직원 지급처 · 거래처 없음이면 참 — 해당 없음) · 계좌가 바뀐 뒤 그 거래처로 아직 지급하지 않았나(AQ-36).
+  // 화면은 계좌 아래 한 값 `확인 전 > 계좌 바뀜`. 확인 전은 지급을 막는다(2026-10-24 사용자 결정 · G13 일부 변경 — selectable 거짓 · 이체 파일 · 지급 완료 거부),
+  // 계좌 바뀜은 표시만 한다(G13 사후 확인 그대로).
+  vendorConfirmed: boolean;
+  accountChanged: boolean;
 };
 
 export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTargetRowDto> = {
@@ -362,6 +367,8 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "paymentPushReason", from: "paymentPushReason", infoItem: "expense.value" },
     { key: "paymentScheduleFailed", from: "paymentScheduleFailed", infoItem: "expense.value" },
     { key: "paymentCutoffReason", from: "paymentCutoffReason", infoItem: "expense.value" },
+    { key: "vendorConfirmed", from: "vendorConfirmed", infoItem: "vendor.value" },
+    { key: "accountChanged", from: "accountChanged", infoItem: "vendor.value" },
   ],
 };
 

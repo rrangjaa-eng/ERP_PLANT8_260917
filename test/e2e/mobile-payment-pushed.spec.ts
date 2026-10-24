@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projects } from "@/db/schema";
+import { projects, vendors } from "@/db/schema";
 import { payWeekIndex, resolvePaySchedule } from "@/domain/payments/pay-schedule";
 import { loginPage } from "./leave-org";
 import { setupExpenseE2E, archiveTempRoles } from "./expense-fixture";
@@ -94,4 +94,49 @@ test("폰 375 · 320 — 결재 중 행은 제목 한 줄 말줄임 · 빈 접�
     expect(shape.overflow, `${width} 가로 넘침`).toBeLessThanOrEqual(0);
     await page.context().close();
   }
+});
+
+// 2026-10-24 사용자 결정: 지급처 거래처가 「거래처 확인 전」인 행은 폰 접힌 줄에서 계좌를 뺀다(배지 글자는 그대로) — 확인 전 + 밀림이
+// 375 · 320에서 두 줄로 넘쳐 행이 세 줄이 되던 것(SYSTEM §7-3 행 두 줄). 거래처가 확인되면 계좌가 다시 보인다.
+test("폰 375 · 320 — 확인 전 거래처 + 밀림 행은 접힌 줄에 계좌 없이 한 줄 · 확인되면 계좌 복귀", async ({ browser, baseURL }) => {
+  const cal = await payCalendar();
+  const fx = await setupExpenseE2E();
+  const payer = await makeTeamPayer(fx);
+  await pushedDoc(fx, "tracer", payer, cal);
+  const itemName = fx.lines.tracer.itemName;
+  await db.update(vendors).set({ confirmedAt: null, confirmedBy: null }).where(eq(vendors.id, fx.vendorId));
+
+  const collapsedOf = async (width: number, expectAccount: boolean) => {
+    const page = await loginPage(browser, baseURL, payer, { width, height: 812 });
+    await page.goto("/expenses");
+    const table = targetsGrid(page).or(page.getByRole("table", { name: "지급 대상" }));
+    await expect(table).toBeVisible();
+    const rowGroup = table.locator("tbody").filter({ has: page.getByRole("link", { name: itemName }) });
+    await expect(rowGroup).toHaveCount(1);
+    const shape = await rowGroup.evaluate((tbody) => {
+      const visible = [...tbody.querySelectorAll(":scope > tr")].filter((tr) => tr instanceof HTMLElement && tr.offsetParent !== null);
+      const collapsed = visible.at(-1)?.querySelector("td") as HTMLElement | undefined;
+      const style = collapsed ? getComputedStyle(collapsed) : null;
+      const textHeight = collapsed && style ? collapsed.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) : 0;
+      return {
+        rows: visible.length,
+        text: (collapsed?.textContent ?? "").trim(),
+        lines: style ? Math.round(textHeight / parseFloat(style.lineHeight)) : 0,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    });
+    expect(shape.text, `${width} 접힌 줄 밀림`).toContain("마감 지나 밀림");
+    expect(shape.text.includes("****"), `${width} 접힌 줄 계좌 ${expectAccount ? "있음" : "없음"}`).toBe(expectAccount);
+    if (!expectAccount) {
+      expect(shape.text, `${width} 접힌 줄 배지`).toContain("거래처 확인 전");
+      expect(shape.rows, `${width} 행 줄 수`).toBe(2);
+      expect(shape.lines, `${width} 접힌 줄 줄 수`).toBe(1);
+    }
+    expect(shape.overflow, `${width} 가로 넘침`).toBeLessThanOrEqual(0);
+    await page.context().close();
+  };
+
+  for (const width of [375, 320]) await collapsedOf(width, false);
+  await db.update(vendors).set({ confirmedAt: new Date() }).where(eq(vendors.id, fx.vendorId));
+  for (const width of [375, 320]) await collapsedOf(width, true);
 });

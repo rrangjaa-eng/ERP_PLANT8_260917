@@ -2330,3 +2330,29 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **새 값**: 새 색 · 서체 · radius 없음(`--text-link` · `--text-muted` · `--surface-dirty` · `--inset-error` · `--bar-h` 기존 토큰). 새 컴포넌트 · 클래스 이름은 CSS 모듈 안 `.reasonInfo` · `.mobileCell`뿐.
 **이유**: 독립 DOM 감사(0721-dom-audit) P2 #1~#4 · P3 #7 · Q4a. #5(되돌리기 단축키)는 `ui/`에 undo 단축키 선례가 없어 새 패턴을 만들지 않고 유지(main 첫 정지점 — 점검표에 기록).
 **범위**: `ui/row-actions/`, `ui/permission-grid/`, `app/(app)/admin/people/{roles,org}/*-client.tsx`, `app/(app)/admin/people/people.module.css`, `test/e2e/mobile-07-21-dom-fixes.spec.ts`, `docs/design/SYSTEM.md` §7-13(결과 줄 문구 · 폰 sticky) · §7-19(비활성 이유 줄 · `reasonTone`). 처음 커밋엔 「SYSTEM.md 본문 변경 없음」으로 적어 본문 반영이 빠졌다 — 07-21 사후 게이트 `/design-review` D-1(P2) · D-2(P3)로 고쳤다.
+
+---
+
+## 2026-10-24 — 지급 예정 화면 배지 문구 「거래처 확인 전」 (07-23)
+
+**결정**: 지급 목록(지급 예정 화면) 지급 방식 칸 계좌 아래 거래처 표지는 `거래처 확인 전`이다(옛 `확인 전`). 색은 `--status-accent`(`accent`), `variant="text"` 전용. 한 값 우선순위는 `거래처 확인 전 > 계좌 바뀜` 그대로다.
+**이유**: 같은 행 증빙 칸의 `확인 전`(증빙 확인 — 06 SP-2)과 낱말이 같아 폰 접힌 줄(열 머리 없음)에서 무엇이 확인 전인지 갈리지 않았다(07-23 DOM 감사 #3).
+**결정자**: 사용자 결정 카드 2026-10-24. 구현은 bfb134dd(`ui/status-tag/status-map.ts` · `app/(app)/expenses/payment-targets-table.tsx`) · 61f80868(E2E 낱말).
+**버린 대안**: `확인 전` 그대로(증빙 `확인 전`과 섞임).
+**범위**: `docs/design/SYSTEM.md` §7-5. 새 색 · 서체 · radius 0.
+
+---
+
+## 2026-10-24 사용자 결정: 거래처 확인 전 건은 지급 막음 (G13 일부 변경 · 07-23)
+
+**결정**: 지급처 거래처가 「확인 전」(`vendors.confirmed_at` NULL)인 지출결의는 서버에서 지급을 막는다 — 지급 대상 목록의 선택(`selectable` 거짓 · 이유 `거래처 확인 전 · 거래처 확인`), 이체 파일(그 건만 막힌 건으로 빼고 나머지는 담음), 지급 완료 단건 · 일괄(일괄은 그 건만 건별 결과로 막힘). 직원 지급처 · 거래처 없음은 해당 없음. 지급 완료는 문서 잠금 뒤 같은 트랜잭션에서 거래처 행을 FOR SHARE로 읽어 확인 되돌리기와 엇갈리지 않는다. 배지 `거래처 확인 전`은 그대로이고, 선택 칸은 다른 막힌 행과 같은 `aria-disabled`다. `계좌 바뀜`은 표시만 한다(G13 그대로).
+**이유**: 업무 중 거래처 등록(R-1 막음 제거)으로 지출결의 쓰기만 있는 사람이 새 거래처에 자기 계좌를 넣을 수 있게 되어, 「확인 전 거래처는 경영관리가 확인해야 지급에 쓰인다」를 지키는 통제가 배지(사람 눈)뿐이었다(0723 델타 검토 P1-1).
+**결정자**: 사용자 결정 카드 2026-10-24 23:16 KST. 앞선 G13(사후 확인 · 지급은 막지 않음) 중 「확인 전」 부분을 바꾼다.
+**버린 대안**: 표시만 두기(G13 그대로 — 남의 계좌로 이체 파일이 나간다) · 일괄 경로에서 확인 전 건이 섞이면 전체 거부(다른 막힘 사유 · 계좌 없음과 다른 규칙).
+**범위**: `domain/payments/targets.ts` reasonOf · `domain/payments/index.ts` completeExpensePayment · `repositories/vendors.ts` lockVendorConfirmedForShare · `domain/payments/action-row.ts` VENDOR_UNCONFIRMED. 화면 파일 변경 0 · 새 색 · 서체 · radius 0.
+
+## 2026-10-24 사용자 결정: 확인 전 거래처 행은 폰 접힌 줄에서 계좌 빼기 (07-23)
+**결정**: 지급 대상 목록 폰(접힌 줄)에서 지급처 거래처가 「거래처 확인 전」인 행은 접힌 줄에서 계좌를 그리지 않는다(밀림 · 배지 · 예정일은 그대로, 배지 글자 「거래처 확인 전」 그대로). 거래처가 확인되면 계좌가 다시 보인다. 데스크톱 표의 계좌 칸은 그대로.
+**이유**: 「마감 지나 밀림 · 신한은행 ****-**-6789 · 거래처 확인 전 · 10-30」이 375 · 320에서 두 줄로 넘쳐 행이 세 줄이 됨(SYSTEM §7-3 행 두 줄 이내, 0723-dom-375.md).
+**결정자**: 사용자 결정 카드 2026-10-24.
+**범위**: `app/(app)/expenses/payment-targets-table.tsx` method 칸 summary · E2E `mobile-payment-pushed.spec.ts`. 새 색 · 서체 · radius 0.

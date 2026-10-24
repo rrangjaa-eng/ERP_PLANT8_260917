@@ -26,7 +26,9 @@ import {
   saveExpenseDraftAction,
   submitExpenseAction,
 } from "../actions";
-import { VendorPickDialog, type PickedPayee } from "./pick-vendor";
+import { Toast } from "@/ui/toast/Toast";
+import type { WorkplaceVendor } from "@/app/(app)/admin/vendors/vendor-form";
+import { VendorPickDialog, WorkVendorPanel, type PickedPayee } from "./pick-vendor";
 import { LinePickDialog } from "./pick-line";
 import { EvidenceAttachments } from "./evidence-attachments";
 import { NEW_DOC_BLOCK, submitBlockReason, type ServerBlock } from "./submit-block";
@@ -197,6 +199,10 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
     { kind: "vendor"; id: string; name: string; defaultEvidenceName: string | null } | { kind: "user"; id: string; name: string; teamName: string | null } | null
   >(null);
   const [pickOpen, setPickOpen] = useState<"vendor" | "line" | null>(null);
+  // 07-23 SC-18: 고르기 0건 → 거래처 등록 패널(이름 = 검색어) · 칸 옆 `확인 전`(그 거래처가 아직 경영관리 확인 전) · 등록 토스트.
+  const [registerName, setRegisterName] = useState<string | null>(null);
+  const [unconfirmedVendorId, setUnconfirmedVendorId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const amountInput = useCommaInput(currency === "KRW" ? "krw" : "foreign", data.amount === null ? "" : String(data.amount));
 
@@ -763,6 +769,15 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
     setFailure(null);
   }
 
+  // 07-23 SC-18 · K20: 등록 패널이 정한 거래처를 지급처로 — 고르기와 같은 길(pickPayee). 기본 증빙 이름은 이 폼의 증빙 선택지에서.
+  // 지급처 바꾸기가 실패하면 칸은 그대로라 `확인 전`도 서지 않는다(칸의 거래처가 그 거래처일 때만). 등록 자체는 끝났으니 토스트는 그대로.
+  async function takeWorkplaceVendor(vendor: WorkplaceVendor, how: "registered" | "picked") {
+    const defaultEvidenceName = vendor.defaultEvidenceType ? (evidenceOptions.find((option) => option.value === vendor.defaultEvidenceType)?.label ?? null) : null;
+    await pickPayee({ kind: "vendor", vendor: { id: vendor.id, name: vendor.name, defaultEvidenceType: vendor.defaultEvidenceType, defaultEvidenceName } });
+    setUnconfirmedVendorId(vendor.confirmed ? null : vendor.id);
+    if (how === "registered") setToast(`거래처 등록 · ${vendor.name} (확인 전)`);
+  }
+
   // 견적 줄 고르기 · 바꾸기 — 새 문서는 그 줄의 작성 중 문서를 만들거나 열고(적어 둔 비고 · 희망 지급일 · 사유 · 지급 방식은 같이 저장하고 팀 비용 칸은 버린다),
   // 저장된 문서는 서버가 줄 값으로 다시 채운다.
   // 그 줄에 내 다른 작성 중 문서가 있으면 그 문서로 이동한다. 줄이 바뀌면 칸 값이 통째로 새 값이라 페이지가 폼을 새로 그린다(router.refresh · key).
@@ -984,6 +999,7 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
             <span className={styles.fill}>
               <span data-testid="expense-vendor">{payeeName ?? "—"}</span>
               {payeeSub ? <span className={styles.sub}>{payeeSub}</span> : null}
+              {picked?.kind === "vendor" && picked.id === unconfirmedVendorId ? <StatusTag status="확인 전" variant="text" /> : null}
             </span>
             {/* 06.5 결정 맥락 16: 팀 비용 · 프로젝트 비용 모두 지급처를 고른다. 값이 있으면 보이는 글자 `바꾸기`에 접근 이름 `지급처 바꾸기`(R-2 —
                 프로젝트 비용 폼의 견적 줄 `바꾸기`와 이름이 겹치지 않게). */}
@@ -1253,7 +1269,10 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
         bankTransfer={paymentMethod === BANK_TRANSFER_PAYMENT_METHOD}
         onClose={() => setPickOpen(null)}
         onPick={pickPayee}
+        onRegisterNew={setRegisterName}
       />
+      {registerName !== null ? <WorkVendorPanel name={registerName} onClose={() => setRegisterName(null)} onVendor={takeWorkplaceVendor} /> : null}
+      {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
     </>
   );
 }

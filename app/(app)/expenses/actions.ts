@@ -45,6 +45,10 @@ import { RESERVE_EVIDENCE_KIND } from "@/domain/reserves";
 import { QUOTE_LINE_MAX_PER_REVISION_DEFAULT } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { log } from "@/lib/log";
+import { returnValidationErrors } from "next-safe-action";
+import { DuplicateBusinessNoError, InvalidBusinessNoError, WorkVendorKindError, pickExistingVendorFromWork, registerVendorFromWork } from "@/domain/vendors";
+import { AccountFieldsError } from "@/domain/vendors/account-fields";
+import { VENDOR_KINDS } from "@/domain/vendors/kind";
 import "./actions.registry";
 
 // 05-05: 지출결의 액션. 전부 `authedActionClient` + zod, 도메인 함수 하나씩만 부른다. 입력 zod에 세액 · 지급 총액 · 원화 칸은 없다 —
@@ -438,4 +442,75 @@ export const revertScheduledPayDatesAction = authedActionClient
     const result = await revertScheduledPayDates(ctx.viewer, parsedInput);
     revalidatePath("/expenses");
     return result;
+  });
+
+// 07-23 SC-18 · D-745 · K20: 지급처 고르기 0건 → 거래처 바로 등록(권한 = 지출결의 쓰기 · 판정은 domain). 화면이 07-20 거래처 등록 패널을 그대로 쓰므로
+// 칸 모양은 관리 화면 등록과 같고, 일하는 자리에서 받지 않는 칸(지급 기한 · 사용자 정의 칸 · 담당자 · 기본 증빙 종류)은 비어 있어야 한다.
+const workVendorSchema = z.object({
+  name: z.string().min(1, "이름 필요 · 이름 입력").max(200),
+  kind: z.enum(VENDOR_KINDS, { error: "갈래 선택" }),
+  businessNo: z.string().max(20).optional(),
+  defaultEvidenceType: z.string().max(0).optional(),
+  accountBank: z.string().max(100).optional(),
+  accountHolder: z.string().max(100).optional(),
+  accountNumber: z.string().max(40).optional(),
+  paymentTermDays: z
+    .number()
+    .nullable()
+    .optional()
+    .refine((value) => value === null || value === undefined, "지급 기한은 거래처 화면에서"),
+  customFields: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .refine((value) => value === undefined || Object.keys(value).length === 0, "사용자 정의 칸은 거래처 화면에서"),
+  contacts: z
+    .array(z.object({ id: z.string().uuid().optional(), name: z.string().max(100), phone: z.string().max(50).nullable().optional(), email: z.string().max(200).nullable().optional() }))
+    .max(0, "담당자는 거래처 화면에서")
+    .optional(),
+});
+
+function workAccountErrors(error: AccountFieldsError): Record<string, { _errors: string[] }> {
+  return Object.fromEntries(Object.entries(error.fieldErrors).map(([key, message]) => [key, { _errors: [message] }]));
+}
+
+// 같은 사업자 번호 — 07-20 등록과 같은 데이터 통로에 「지급처로 고를 수 있음」(숨김 · 보관 아님) 표지를 더한다(K20 `이 거래처로`).
+function workBusinessNoConflict(error: DuplicateBusinessNoError) {
+  const existing = error.existing;
+  return {
+    businessNoConflict: {
+      id: existing?.id ?? "",
+      name: existing?.name ?? null,
+      archived: existing?.archived ?? false,
+      hidden: existing?.hidden ?? false,
+      addSide: null,
+      message: error.message,
+      selectable: existing !== null && !existing.archived && !existing.hidden,
+    },
+  };
+}
+
+export const registerVendorFromWorkAction = authedActionClient.schema(workVendorSchema).action(async ({ parsedInput, ctx }) => {
+  const { name, kind, businessNo, accountBank, accountHolder, accountNumber } = parsedInput;
+  try {
+    const vendor = await registerVendorFromWork(ctx.viewer, { name, kind, businessNo, accountBank, accountHolder, accountNumber });
+    revalidatePath("/admin/vendors");
+    return { vendor };
+  } catch (error) {
+    if (error instanceof DuplicateBusinessNoError) return workBusinessNoConflict(error);
+    if (error instanceof InvalidBusinessNoError) {
+      return { businessNoConflict: { id: "", name: null, archived: false, hidden: false, addSide: null, message: error.message, selectable: false } };
+    }
+    if (error instanceof AccountFieldsError) returnValidationErrors(workVendorSchema, workAccountErrors(error));
+    if (error instanceof WorkVendorKindError) returnValidationErrors(workVendorSchema, { kind: { _errors: [error.message] } });
+    throw error;
+  }
+});
+
+// K20 `이 거래처로` — 이미 있는 거래처를 지급처로 고른다(클라이언트 전용은 둘 다로 올림 · 숨김 · 보관 거부 — domain).
+export const pickExistingVendorFromWorkAction = authedActionClient
+  .schema(z.object({ id: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    const vendor = await pickExistingVendorFromWork(ctx.viewer, parsedInput);
+    revalidatePath("/admin/vendors");
+    return { vendor };
   });

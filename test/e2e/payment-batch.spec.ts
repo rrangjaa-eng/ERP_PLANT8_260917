@@ -1028,7 +1028,8 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     await page.keyboard.press("Control+Enter");
     await expect(dialog.getByRole("button", { name: /^공급가액과 같음/ })).toHaveAccessibleDescription(/에 (증빙을 )?바꿈$/);
     await expect(dialog).toBeVisible();
-    await expect(rowOf(page, fx.lines.tracer.itemName).getByText("확인 전", { exact: true })).toBeVisible();
+    // 증빙 칸의 `확인 전` — 07-23 결제 방법 칸 계좌 아래 거래처 `확인 전`(data-vendor-flag)과 가른다.
+    await expect(rowOf(page, fx.lines.tracer.itemName).locator("td:not(:has([data-vendor-flag]))").getByText("확인 전", { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "새로 고침" }).click();
     await expect(files).toHaveCount(2);
     await expect(otherRow.getByRole("checkbox")).toBeChecked();
@@ -1765,7 +1766,7 @@ async function bigLines(fx: ExpenseE2E, count: number): Promise<{ id: string; it
   const today = seoulToday();
   const suffix = randomUUID().slice(0, 6);
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E큰금액클라이언트-${suffix}`, normalizedName: `e2e큰금액클라이언트-${suffix}` });
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `${LONG_VENDOR}-${suffix}`, normalizedName: `${LONG_VENDOR}-${suffix}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `${LONG_VENDOR}-${suffix}`, normalizedName: `${LONG_VENDOR}-${suffix}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount(), confirmedAt: new Date() });
   const project = await createProject(fx.pm.viewer, {
     clientId: client.id,
     teamId: await teamOf(fx),

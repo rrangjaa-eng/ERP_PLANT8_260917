@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickEmptyText, pickFootLine, pickManyCapReached, pickManyPrimaryLabel, pickOutcomeOf, pickRejectionClears, pickTruncatedText } from "@/ui/pick-dialog/PickDialog";
+import { pickEmptyText, pickFootLine, pickManyCapReached, pickManyPrimaryLabel, pickOutcomeOf, pickRejectionClears, pickSearchTail, pickTruncatedText } from "@/ui/pick-dialog/PickDialog";
 
 // 05 /review B2: 골라내기 빈 목록 문구의 조사 — 받침 없는 `거래처`는 `가`, 받침 있는 `줄`은 `이`.
 describe("pickEmptyText", () => {
@@ -128,5 +128,20 @@ describe("pickRejectionClears — 단일 거부를 걷는 때 (06.1 SP-6106 ⑷)
     expect(pickRejectionClears("d5", row("d3", false))).toBe(false);
     expect(pickRejectionClears("d5", row("d5", true))).toBe(false);
     expect(pickRejectionClears("d5", null)).toBe(false);
+  });
+});
+
+// 07-23 SC-18 · U11 — 검색어가 있을 때의 끝 항목(`새 거래처 · "{검색어}"`): 검색어가 있는 한 늘 서고(결과 0건이면 빈 문구 뒤), 비우면 없다. prop을 안 주면 05 그대로.
+describe("pickSearchTail — 검색어 끝 항목 (07-23 SC-18)", () => {
+  const tail = (query: string) => ({ label: `새 거래처 · "${query}"`, onSelect: () => undefined });
+
+  it("검색어가 있으면 다듬은 검색어로 라벨을 만든다", () => {
+    expect(pickSearchTail("  하늘상사 ", tail)?.label).toBe('새 거래처 · "하늘상사"');
+  });
+
+  it("검색어가 비었거나 공백뿐이면 · prop이 없으면 없다", () => {
+    expect(pickSearchTail("", tail)).toBeNull();
+    expect(pickSearchTail("   ", tail)).toBeNull();
+    expect(pickSearchTail("하늘", undefined)).toBeNull();
   });
 });

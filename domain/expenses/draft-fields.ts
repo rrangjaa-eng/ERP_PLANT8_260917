@@ -28,7 +28,7 @@ export const expenseDraftFieldsSchema = z
     // 쌍 · 과거 판정은 refine이 아니라 requestedPaymentErrors(아래 — `.pick()`이 깨지지 않게). 사유는 앞뒤 공백을 뗀다(DB CHECK는 NULL 짝만 본다).
     requestedPaymentDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR).nullable(),
     requestedPaymentReason: z.string().trim().max(EXPENSE_TEXT_MAX, `희망 사유 ${EXPENSE_TEXT_MAX}자 넘음 · 줄여 적기`).nullable(),
-    note: z.string().max(EXPENSE_TEXT_MAX, `비고 ${EXPENSE_TEXT_MAX}자 넘음 · 줄여 적기`).nullable(),
+    note: z.string().max(EXPENSE_TEXT_MAX, `상세 ${EXPENSE_TEXT_MAX}자 넘음 · 줄여 적기`).nullable(),
     installment: z.boolean(),
     teamExpenseKind: z.enum(TEAM_EXPENSE_KINDS).nullable(),
     usageDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR),

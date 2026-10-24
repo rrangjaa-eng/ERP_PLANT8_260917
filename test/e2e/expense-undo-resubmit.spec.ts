@@ -17,7 +17,7 @@ const UPLOAD_WAIT = 20_000;
 const META = /^\d+KB · \d{2}-\d{2}$/;
 
 async function submitFromForm(page: Page, fx: ExpenseE2E, key: LineKey): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   await page.goto(`/expenses/${expenseId}`);
@@ -89,7 +89,7 @@ test.describe("작성 중 삭제 · 문서 화면 회수 · 본인 승인 (Task 
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await page.clock.install();
-    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id], fields: { note: "행사 운영비" } });
     const expenseId = created.created[0]?.expenseId ?? "";
     await page.goto(`/expenses/${expenseId}`);
     const remove = page.getByRole("button", { name: "지출결의 삭제" });
@@ -153,7 +153,7 @@ test.describe("작성 중 삭제 · 문서 화면 회수 · 본인 승인 (Task 
     await saveExpenseDraft(fx.lead.viewer, {
       expenseId,
       expectedVersion: version,
-      fields: { vendorId: vendor.id, evidenceType: "tax_invoice", paymentMethod: payment, supply: { currency: "KRW", amount: 440_000, fxRate: 1 } },
+      fields: { note: "행사 운영비", vendorId: vendor.id, evidenceType: "tax_invoice", paymentMethod: payment, supply: { currency: "KRW", amount: 440_000, fxRate: 1 } },
     });
     const page = await loginPage(browser, baseURL, fx.lead);
     await page.goto(`/expenses/${expenseId}`);

@@ -28,7 +28,7 @@ test("작성자 PM: 임시 지출결의 → 증빙 고르기 1 → 검색 칸 �
   const manager = await createIntakeManager();
   const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
   await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
 
@@ -69,7 +69,7 @@ test("(G-06.1-29) 증빙 고르기로 붙인 직후 — 새로 고침 없이 제
   const manager = await createIntakeManager();
   const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
   await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
 
@@ -83,7 +83,7 @@ test("(G-06.1-29) 증빙 고르기로 붙인 직후 — 새로 고침 없이 제
   expect(describedBy).not.toBe("");
   await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(/^증빙 없음 · /);
 
-  const memo = page.getByLabel("비고");
+  const memo = page.getByLabel("상세", { exact: true });
   await memo.fill("저장 안 한 비고");
   await trigger.click();
   const picker = page.getByRole("dialog", { name: "증빙 고르기" });
@@ -112,7 +112,7 @@ test("(G-06.1-29 저장 겹침) 고르기 직후 저장이 진행 중이어도 �
   const manager = await createIntakeManager();
   const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
   await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
 
@@ -123,7 +123,7 @@ test("(G-06.1-29 저장 겹침) 고르기 직후 저장이 진행 중이어도 �
   const submit = page.getByRole("button", { name: /^지출결의 제출/ });
   await expect(submit).toHaveAttribute("aria-disabled", "true");
 
-  const memo = page.getByLabel("비고");
+  const memo = page.getByLabel("상세", { exact: true });
   await memo.fill("저장 겹침 비고");
   // 읽기 행이 서는 같은 갱신 안에서 저장을 누르고(미리보기 타이머 250ms보다 먼저) 저장 요청은 붙잡아 저장 중(busy)을 유지한다.
   // Next 서버 액션은 한 줄로 서므로 고르기를 끝낸 뒤에 저장이 나가야 한다.
@@ -161,7 +161,7 @@ test("(G-06.1-29 대칭) 붙은 채 연 문서에서 마지막 기록을 떼면 
   const manager = await createIntakeManager();
   const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
   await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
 
@@ -205,7 +205,7 @@ test("(G-06.1-29 미리보기 실패) 마지막 기록을 뗀 뒤 미리보기�
   const manager = await createIntakeManager();
   const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
   await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
 
@@ -346,7 +346,7 @@ const LOCKED_COMPLETED = "완료 프로젝트 · 증빙은 경영관리";
 
 // 결재 중(번호 있음) 문서 — 05 파일 한 장을 붙여 제출한다(도메인 경로). 화면 업로드를 거치지 않아 빠르다.
 async function inReviewDocument(fx: ExpenseE2E): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   await attachEvidence(fx.pm.viewer, expenseId);
@@ -453,7 +453,7 @@ test("작성자 자기 떼기 — 고른 증빙 읽기 행 `떼기` → 사유 �
   const manager = await createIntakeManager();
   const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
   await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
 
@@ -489,7 +489,7 @@ test("PR-C D-2 작성자 자기 떼기 2건 — 첫 떼기 뒤 포커스는 남�
   test.setTimeout(180_000);
   const fx = await setupExpenseE2E();
   const manager = await createIntakeManager();
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   for (const name of ["앞뗄곳", "뒤뗄곳"]) {

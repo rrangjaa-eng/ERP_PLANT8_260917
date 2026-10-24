@@ -79,7 +79,7 @@ async function settle(projectId: string): Promise<void> {
 }
 
 async function rejectedExpense(fx: ExpenseFixture, lineId: string): Promise<string> {
-  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
   const sent = await submitReadyDraft(fx.pm, expenseId);
   if (sent.kind !== "submitted") throw new Error("제출 안 됨");
   await rejectDocument(fx.lead, { instanceId: sent.instanceId, expectedVersion: sent.version, reason: "금액 확인" });
@@ -248,7 +248,7 @@ async function makePayer(): Promise<Viewer> {
 
 // 분할 회차 하나를 결재 통과(증빙 있음)까지 — 같은 줄의 다음 회차가 남는다.
 async function approvedInstallment(fx: ExpenseFixture, lineId: string, amountKrw: number): Promise<string> {
-  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
   await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId), fields: { installment: true, supply: { currency: "KRW", amount: amountKrw, fxRate: 1 } } });
   const sent = await submitReadyDraft(fx.pm, expenseId);
   if (sent.kind !== "submitted") throw new Error("제출 안 됨");
@@ -384,7 +384,7 @@ describe("완료 전 점검 — 세 그룹(D-611 · C10 · D-612 · D-613)", () 
     const id = (itemName: string) => before.lineIds.get(itemName) ?? "";
     const prior: ExpenseFixture = { ...fx, revisionId: before.revisionId, lines: { withVendor: id("무대 제작"), noVendor: id("현장 진행 인력"), split: id("영상 제작(분할)") } };
     await linkCardUsage(fx.pm, prior.lines.withVendor); // L — 카드 사용
-    const inReview = (await createExpenseFromLines(fx.pm, { lineIds: [prior.lines.split] })).created[0]?.expenseId ?? ""; // M — 결재 중 지출결의
+    const inReview = (await createExpenseFromLines(fx.pm, { lineIds: [prior.lines.split], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? ""; // M — 결재 중 지출결의
     expect(await submitReadyDraft(fx.pm, inReview)).toMatchObject({ kind: "submitted" });
     await linkCardUsage(fx.pm, prior.lines.noVendor);
     await issueRevenue(fx.projectId);
@@ -413,7 +413,7 @@ async function makeNarrowDrafter(): Promise<Viewer> {
 }
 
 async function rejectedBy(fx: ExpenseFixture, drafter: Viewer, lineId: string): Promise<{ expenseId: string; number: string }> {
-  const expenseId = (await createExpenseFromLines(drafter, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  const expenseId = (await createExpenseFromLines(drafter, { lineIds: [lineId], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
   const sent = await submitReadyDraft(drafter, expenseId);
   if (sent.kind !== "submitted") throw new Error("제출 안 됨");
   await rejectDocument(fx.lead, { instanceId: sent.instanceId, expectedVersion: sent.version, reason: "금액 확인" });
@@ -487,7 +487,7 @@ describe("완료 전 점검 — R-6 범위 · 금액 노출(Task 3)", () => {
   // 그 문서 id는 범위 밖 사람 · 프로젝트 쓰기 권한이 없는 사람의 DTO(→ RSC 페이로드)에 실리지 않는다(listLineDoors와 같이 문을 숨긴다).
   async function withdrawnLineProject() {
     const fx = await setupExpenseProject();
-    const expenseId = (await createExpenseFromLines(fx.otherPm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId ?? "";
+    const expenseId = (await createExpenseFromLines(fx.otherPm, { lineIds: [fx.lines.withVendor], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
     const sent = await submitReadyDraft(fx.otherPm, expenseId);
     if (sent.kind !== "submitted") throw new Error("제출 안 됨");
     await withdrawDocument(fx.otherPm, { instanceId: sent.instanceId, expectedVersion: sent.version });
@@ -562,7 +562,7 @@ async function setAllowOpenExpenses(value: boolean): Promise<void> {
 }
 
 async function inReviewExpense(fx: ExpenseFixture, lineId: string): Promise<string> {
-  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
   expect(await submitReadyDraft(fx.pm, expenseId)).toMatchObject({ kind: "submitted" });
   return expenseId;
 }
@@ -970,7 +970,7 @@ describe("완료 전 점검 — 정산 결재 문서 요약(getSettlementPreSett
 
 // 결재 통과 뒤 살아 있는 증빙을 전부 무효 처리한 문서 — 기안자가 달라도 되게 viewer를 받는다(fixtures/payments는 고치지 않는다).
 async function approvedWithoutEvidenceBy(fx: ExpenseFixture, drafter: Viewer, lineId: string): Promise<{ expenseId: string; number: string }> {
-  const expenseId = (await createExpenseFromLines(drafter, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  const expenseId = (await createExpenseFromLines(drafter, { lineIds: [lineId], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
   const sent = await submitReadyDraft(drafter, expenseId);
   if (sent.kind !== "submitted") throw new Error("제출 안 됨");
   const first = await approveDocument(fx.lead, { instanceId: sent.instanceId, expectedVersion: sent.version });
@@ -983,7 +983,7 @@ async function approvedWithoutEvidenceBy(fx: ExpenseFixture, drafter: Viewer, li
 
 // 선결제(증빙 없이 제출) 결재 통과 문서.
 async function approvedPrepaid(fx: ExpenseFixture, lineId: string): Promise<{ expenseId: string; number: string }> {
-  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
   await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId), fields: { prepaid: true, prepaidReason: "행사장 선입금 요구" } });
   const sent = await submitExpense(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId) });
   if (sent.kind !== "submitted") throw new Error("제출 안 됨");
@@ -1031,7 +1031,7 @@ describe("G-06-E — 결재 통과 · 증빙 대기(카드 ② 「경고만」)"
   // 결재 중에는 증빙을 무효 처리할 수 없다(voidEvidence — 승인 뒤에만) — 결재 중 · 증빙 0 문서는 선결제로 제출한 것이다.
   it("결재 중 · 증빙 없음(선결제 제출)은 미결 지출결의에 남고 막힘 1(가정 A-1 — 결재 중 · 반려만 막음)", async () => {
     const fx = await setupExpenseProject();
-    const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId ?? "";
+    const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { note: "행사 운영비" } })).created[0]?.expenseId ?? "";
     await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId), fields: { prepaid: true, prepaidReason: "행사장 선입금 요구" } });
     expect(await submitExpense(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId) })).toMatchObject({ kind: "submitted" });
     await approvedExpenseWithEvidence(fx, fx.lines.split);

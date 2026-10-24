@@ -71,7 +71,7 @@ export function buildExpenseDetailRows(projected: Partial<ExpenseDetailDto>): Do
   rows.push(
     ...compact([textRow("지급 예정일", projected.scheduledPaymentDate), textRow("지급 방식", projected.paymentMethodName)]),
     ...(evidenceRow ? [evidenceRow] : []),
-    ...compact([textRow("비고", projected.note)]),
+    ...compact([textRow("상세", projected.note)]),
   );
   return {
     title: expenseDetailTitle(projected),

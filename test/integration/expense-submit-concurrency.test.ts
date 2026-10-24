@@ -29,7 +29,7 @@ async function counterValue(projectNumber: string): Promise<number | null> {
 }
 
 async function draftFor(fx: ExpenseFixture, viewer: ExpenseFixture["pm"], lineId: string): Promise<string> {
-  const created = await createExpenseFromLines(viewer, { lineIds: [lineId] });
+  const created = await createExpenseFromLines(viewer, { lineIds: [lineId], fields: { note: "행사 운영비" } });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error(`작성 중 문서 없음: ${JSON.stringify(created.blocked)} (${fx.projectNumber})`);
   return expenseId;

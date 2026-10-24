@@ -28,6 +28,7 @@ import "@/domain/projects";
 import "@/domain/projects/references";
 import "@/domain/projects/members";
 import "@/domain/projects/documents";
+import "@/domain/projects/budget";
 import "@/domain/quotes/lines";
 import "@/domain/quotes/revisions";
 import "@/domain/revenue";
@@ -48,6 +49,7 @@ import "@/app/(app)/admin/visibility/actions.registry";
 import "@/app/(app)/admin/holidays/actions.registry";
 import "@/app/(app)/admin/notification-rules/actions.registry";
 import "@/app/(app)/projects/actions.registry";
+import "@/app/(app)/projects/budget/actions.registry";
 import "@/app/(app)/pnl/reserves/actions.registry";
 import "@/domain/certs/events";
 import "@/app/(app)/certs/events/actions.registry";
@@ -909,5 +911,23 @@ describe("`*Dto` 타입 ↔ DTO 레지스트리 대조 — 미매핑 0 (07-03 ·
     walk(resolve(process.cwd(), "domain"));
     walk(resolve(process.cwd(), "app"));
     expect(DTO_REGISTRY.length).toBeGreaterThanOrEqual(callSites);
+  });
+});
+
+// 07-24(SC-20 · T-07-24-02): 예산 · 사용액 · 남은 예산은 예산 현황 DTO(budgetRow)에만 — 프로젝트 · 견적 · 매출 DTO 명세에 그 계열 칸이 없다.
+describe("예산 칸은 예산 현황 DTO에만 (07-24 SC-20)", () => {
+  // usedOn(카드 사용일) 같은 날짜 칸은 예산 계열이 아니다 — 금액 칸 이름만 본다.
+  const BUDGET_KEY = /^(budget|usage|remaining|used(Krw|Amount))/i;
+  const screens = DTO_REGISTRY.filter((entry) => /^(project|quote|revenue)/i.test(entry.name));
+
+  it("검출기가 살아 있다 — 프로젝트 · 견적 · 매출 DTO를 찾았고 예산 현황 DTO에는 그 칸이 있다", () => {
+    expect(screens.map((entry) => entry.name)).toEqual(expect.arrayContaining(["ProjectDto", "ProjectListItemDto", "QuoteLineDto", "RevenueDto"]));
+    const budgetRow = DTO_REGISTRY.find((entry) => entry.name === "budgetRow");
+    expect(budgetRow?.fields.filter((field) => BUDGET_KEY.test(field.key)).map((field) => field.key)).toEqual(["budgetKrw", "usedKrw", "remainingKrw"]);
+  });
+
+  it("프로젝트 · 견적 · 매출 DTO 명세에 예산 계열 칸이 없다", () => {
+    const leaked = screens.flatMap((entry) => entry.fields.filter((field) => BUDGET_KEY.test(field.key)).map((field) => `${entry.name}.${field.key}`));
+    expect(leaked).toEqual([]);
   });
 });

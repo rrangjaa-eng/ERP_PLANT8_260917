@@ -240,3 +240,12 @@ describe("07 새 행동 유형 (07-04 P8)", () => {
     expect(ACTION_LOG_OPTIONAL_TYPES.schema.parse(["settings_change", "login"])).toEqual(["login"]);
   });
 });
+
+// 07-24(D-729): 예산 직접 수정은 돈 기록이라 세 목록에 함께 있고 끌 수 없다.
+describe("예산 직접 수정 행동 유형 (07-24 D-729)", () => {
+  it("budget_manual_change가 세 배열에 함께 있고 라벨이 「예산 직접 수정」이다", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("budget_manual_change");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("budget_manual_change");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).budget_manual_change).toBe("예산 직접 수정");
+  });
+});

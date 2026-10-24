@@ -173,6 +173,8 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/payment-targets.ts", fn: "selectRows", reason: "지급 대상 — 도메인 visibleRows(rowScope all 단축 · 아니면 listExpenseIdsInScope — scopeCondition 한 질의)가 거른다(06.2-08 검토 I-1)" },
   { file: "repositories/payment-targets.ts", fn: "listPaidPaymentRows", reason: "지급 완료 — 도메인 listPaidPayments: 지급 권한자 · 지출결의 전사 범위만 통과하고 모두 전부(06.5 카드 ③ · D1), 그 밖은 paidViewAllowed가 거부" },
   { file: "repositories/payment-targets.ts", fn: "listPaidMonthRows", reason: "지급 완료 — 도메인 listPaidPayments: 지급 권한자 · 지출결의 전사 범위만 통과하고 모두 전부(06.5 카드 ③ · D1), 그 밖은 paidViewAllowed가 거부" },
+  { file: "repositories/project-budget-entries.ts", fn: "findBudgetBasisFacts", reason: "예산 기준 금액 재료(07-24 D-730 · AQ-39) — 도메인 budgetBasisKrw만 부른다: 쓰기 tx 안 범위 판정 · 잠금 뒤(등록 · PO 금액 저장 · 고객 승인 · 처음 원가율) 또는 rowScopeCondition으로 거른 예산 현황 행(listBudgetRowFacts) 뒤, 돌려주는 PO 금액 · 승인 합계는 예산 줄 계산에만 쓴다" },
+  { file: "repositories/project-budget-entries.ts", fn: "listProjectIdsWithoutBudget", reason: "처음 원가율 예산 줄(07-24 D-747) — 원가율은 전사 설정이라 대상도 전사(보는 사람 범위로 거르면 범위 밖 프로젝트가 예산 없이 남는다), 호출자 seedInitialBudgets는 admin.settings 쓰기 판정 뒤 저장 tx · 가져오기 명령에서만 돌고 id만 돌려준다(화면에는 만든 줄 수뿐)" },
   { file: "repositories/projects.ts", fn: "findProjectById", reason: "원시 프리미티브 — 도메인 호출 자리는 ⓒ 처분표가 고정한다" },
   { file: "repositories/projects.ts", fn: "findProjectByNumber", reason: "도메인 · 화면 호출자 없음 — 부르면 ⓒ 프리미티브 목록에 이름을 더한다" },
   { file: "repositories/projects.ts", fn: "lockProjectForWrite", reason: "트랜잭션 안 잠금 — 호출자가 트랜잭션 전 범위 판정(findProjectInScope · precheckLink · 지출결의 게이트, 04-32)" },

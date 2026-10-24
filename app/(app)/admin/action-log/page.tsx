@@ -1,14 +1,15 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
-import { queryActionLog, parseActionLogDateBoundary, type ActionLogFilter } from "@/domain/action-log";
+import { queryActionLog, parseActionLogDateBoundary, ForbiddenError, type ActionLogFilter } from "@/domain/action-log";
+import { detailLines } from "@/domain/action-log/detail-lines";
 import { CORE_ACTION_TYPES, ACTION_TYPE_LABELS, type CoreActionType } from "@/domain/action-log/record";
 import { isPrunableActionType } from "@/domain/action-log/prune-scope";
 import { listPeople } from "@/domain/people";
+import { kstDateTimeSecondsOf } from "@/lib/kst-date";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import { Num } from "@/ui/num/Num";
-import { StaticTable, type StaticTableColumn } from "@/ui/table/StaticTable";
+import { ActionLogTable, type ActionLogRowView } from "./action-log-table";
 import { FilterBar, ExportButton, PruneControl, type ActionLogFilterValues } from "./filter-bar";
 import styles from "./action-log.module.css";
 
@@ -63,7 +64,14 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
 
   const hasFilter = Boolean(actorId || actionType || documentId || from || to);
 
-  const rows = await queryActionLog(session.viewer, filter);
+  // R10: 메뉴 view는 있어도 정보 항목 `action_log.detail`이 꺼진 계급은 도메인이 ForbiddenError를 던진다 — 500이 아니라 이 화면의 권한 없음 관례(404)로 보인다.
+  let rows: Awaited<ReturnType<typeof queryActionLog>>;
+  try {
+    rows = await queryActionLog(session.viewer, filter);
+  } catch (error) {
+    if (error instanceof ForbiddenError) notFound();
+    throw error;
+  }
 
   const pruneCount = rows.filter((row) => !row.prunedAt && isPrunableActionType(row.actionType)).length;
 
@@ -81,39 +89,25 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
     label: ACTION_TYPE_LABELS[type],
   }));
 
-  const columns: StaticTableColumn[] = [
-    { key: "occurredAt", header: "발생 시각", priority: "p1", nowrapHeader: true },
-    { key: "actor", header: "행위자", priority: "p2", nowrapHeader: true },
-    { key: "actorRole", header: "행위자 계급", priority: "p2", nowrapHeader: true },
-    { key: "actionType", header: "행동 종류", priority: "p1", nowrapHeader: true },
-    { key: "entity", header: "대상", priority: "p2", nowrapHeader: true },
-    { key: "document", header: "문서", priority: "p2", nowrapHeader: true },
-    { key: "detail", header: "상세", priority: "p2", nowrapHeader: true },
-  ];
-
-  // R1 — 서버 페이지는 클라이언트 표에 함수 prop을 넘기지 않는다. 칸은 서버에서 미리 렌더한 노드만 넘긴다.
-  const tableRows = rows.map((row) => {
+  // R1 — 서버 페이지는 클라이언트 표에 함수 prop을 넘기지 않는다. 줄 함수 결과(글자)만 넘긴다.
+  const tableRows: ActionLogRowView[] = rows.map((row) => {
     // 대상은 이름으로 보인다 — entityName은 도메인이 읽기 시점에 푼 값이고,
     // 풀 수 없으면(삭제된 대상·노출표에서 막힌 계급) entityId로 안전하게
     // 내려앉는다. 원시 UUID를 사람에게 그대로 보이지 않는다.
     const entity = row.entity
       ? `${row.entity}${row.entityName ? ` ${row.entityName}` : row.entityId ? ` ${row.entityId}` : ""}`
       : null;
-    // 상세 열은 노출표에서 상세 항목이 꺼진 계급에는 값이 비어
-    // 있다(project()가 이미 걸렀다 — 필드 부재가 아니라 undefined).
-    const detail = row.detail && Object.keys(row.detail).length > 0 ? JSON.stringify(row.detail) : null;
     return {
       key: String(row.seq),
-      // §7-3 폰 전략 — P1(발생 시각·행동 종류)만 열로 남고 나머지는 `StaticTable`이 행 아래 접힌 줄 하나로 넣는다.
-      cells: [
-        <Num key="occurredAt" value={row.occurredAt ? new Date(row.occurredAt).toISOString().slice(0, 19).replace("T", " ") : null} />,
-        row.actorName ?? "—",
-        row.actorRoleName ?? "—",
-        row.actionTypeLabel ?? row.actionType ?? "—",
-        entity ?? "—",
-        row.documentId ?? "—",
-        detail ? <span key="detail" className={styles.detail}>{detail}</span> : "—",
-      ],
+      // 발생 시각은 KST(기간 필터 경계와 같은 시간대, 모든 시간은 한국 시간) — 서버가 글자로 만들고 화면은 자르지 않는다.
+      occurredAt: row.occurredAt ? kstDateTimeSecondsOf(new Date(row.occurredAt)) : null,
+      actionType: row.actionTypeLabel ?? row.actionType ?? "—",
+      actorName: row.actorName ?? null,
+      actorRoleName: row.actorRoleName ?? null,
+      entity,
+      documentId: row.documentId ?? null,
+      // 상세 열은 노출표에서 상세 항목이 꺼진 계급에는 값이 비어 있다(project()가 이미 걸렀다 — 필드 부재가 아니라 undefined).
+      lines: detailLines(row.detail, { actionType: row.actionType, entity: row.entity }),
     };
   });
 
@@ -144,7 +138,7 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
           />
         )
       ) : (
-        <StaticTable caption="행동 로그" columns={columns} rows={tableRows} />
+        <ActionLogTable rows={tableRows} />
       )}
     </ListScreen>
   );

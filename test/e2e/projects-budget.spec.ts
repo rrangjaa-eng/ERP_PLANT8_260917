@@ -220,7 +220,7 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     const { page, context } = await openAs(browser, user, "/projects/budget");
     await openHistory(page, name);
     const panel = historyPanel(page);
-    await expect(panel.getByText("PO 금액 × 원가율", { exact: true })).toBeVisible();
+    await expect(panel.getByText("현재 예산", { exact: true })).toBeVisible();
     await expect(panel).toContainText("7,700,000");
     await expect(panel.locator('[data-ui="primary-button"]')).toHaveCount(0);
     await expect(panel.getByRole("button", { name: "예산 바꾸기" })).toHaveCount(0);
@@ -401,10 +401,10 @@ test.describe("예산 현황 — 감사 지적 (07-24 DOM 감사)", () => {
       const user = await budgetUser(team.teamId);
       const { page, context } = await openAs(browser, user, "/projects/budget", width);
 
-      // #7: PO 0 행의 PO 금액 칸은 `PO 없음`(PO 열은 700 이상에서만 보인다).
+      // #7: PO 0 행의 PO 금액 칸은 `—`(PO 열은 700 이상에서만 보인다).
       if (width >= 700) {
         const poCells = budgetTable(page).locator("tbody tr", { hasText: noPo }).locator("td");
-        await expect(poCells.filter({ hasText: /^PO 없음$/ })).toHaveCount(1);
+        await expect(poCells.filter({ hasText: /^—$/ })).toHaveCount(1);
       }
 
       await openHistoryAt(page, name, width);

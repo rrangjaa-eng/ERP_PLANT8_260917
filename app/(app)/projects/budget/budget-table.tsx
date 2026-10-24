@@ -47,9 +47,9 @@ function columns(showAmount: boolean, showPo: boolean, openHistory: ((row: Budge
           { key: "used", header: "사용액", priority: "p2" as const, align: "right" as const, cell: (row: BudgetRowDto) => <Num value={row.usedKrw ?? null} /> },
         ]
       : []),
-    // PO 금액 0은 PO 없음(07-24 플랜 결정 — 기준이 승인 견적으로 내려간다) — `0` 대신 그 뜻을 그린다(감사 #7).
+    // PO 금액 0은 PO 미등록(07-24 플랜 결정 — 기준이 승인 견적으로 내려간다) — `0` 대신 빈 값 `—`(Num null · 10/24 카드).
     ...(showPo
-      ? [{ key: "po", header: "PO 금액", priority: "p3" as const, align: "right" as const, cell: (row: BudgetRowDto) => (row.poAmountKrw === 0 ? "PO 없음" : <Num value={row.poAmountKrw ?? null} />) }]
+      ? [{ key: "po", header: "PO 금액", priority: "p3" as const, align: "right" as const, cell: (row: BudgetRowDto) => <Num value={row.poAmountKrw === 0 ? null : row.poAmountKrw ?? null} /> }]
       : []),
     // 행동 링크(PC) — 폰은 숨고(P3) 행 탭이 같은 패널(시트)을 연다.
     ...(openHistory

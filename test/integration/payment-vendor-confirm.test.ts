@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { expenses, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { markVendorConfirmed, unmarkVendorConfirmed } from "@/domain/vendors";
-import { completeExpensePayment, previewPayable } from "@/domain/payments";
+import { completeExpensePayment, getPaymentView, previewPayable } from "@/domain/payments";
 import { completePaymentsBatch } from "@/domain/payments/batch";
 import { exportBankTransferFile } from "@/domain/payments/bank-transfer";
 import { listPaymentTargets } from "@/domain/payments/targets";
@@ -140,5 +140,27 @@ describe("확인 전 거래처 지급 막음 (2026-10-24 사용자 결정 · G13
     const result = await completePaymentsBatch(payer, { payDate: seoulToday(), rows: [await snapshotOf(payer, doc)] });
     expect(result.processed).toBe(0);
     expect(result.blocked).toMatchObject([{ expenseId: doc.expenseId, reason: VENDOR_UNCONFIRMED, selectable: false, selectableReason: VENDOR_UNCONFIRMED }]);
+  }, 60_000);
+
+  it("상세 지급 막대 — 확인 전 거래처면 blockReason이 VENDOR_UNCONFIRMED · 확인 뒤 null", async () => {
+    const manager = await makeVendorManager();
+    const payer = await makePayer();
+    const { fx, doc } = await unconfirmedDoc();
+
+    let view = await getPaymentView(payer, doc.expenseId);
+    expect(view?.row).toMatchObject({ primary: "pay", blockReason: VENDOR_UNCONFIRMED });
+
+    await markVendorConfirmed(manager, { id: fx.stageOneId });
+    view = await getPaymentView(payer, doc.expenseId);
+    expect(view?.row).toMatchObject({ primary: "pay", blockReason: null });
+  }, 60_000);
+
+  it("상세 지급 막대 — 직원 지급(payeeUserId)이면 거래처 확인 여부와 무관하게 막지 않는다", async () => {
+    const payer = await makePayer();
+    const { doc } = await unconfirmedDoc();
+    await db.update(expenses).set({ vendorId: null, payeeUserId: payer.id }).where(eq(expenses.id, doc.expenseId));
+
+    const view = await getPaymentView(payer, doc.expenseId);
+    expect(view?.row).toMatchObject({ primary: "pay", blockReason: null });
   }, 60_000);
 });

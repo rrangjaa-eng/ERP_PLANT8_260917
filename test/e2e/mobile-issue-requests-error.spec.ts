@@ -11,7 +11,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { insertVendor } from "@/repositories/vendors";
 
@@ -21,7 +21,7 @@ import { insertVendor } from "@/repositories/vendors";
 test.describe("폰 375 발행 요청 목록 오류 경계 (06-21 S17)", () => {
   test("잘못된 부가세 기준일 설정 → `발행 요청 목록 불러오지 못함` · `다시 시도` → 값 되돌림 → 다시 시도 → 목록이 돌아온다", async ({ page }) => {
     const today = kstToday(new Date());
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E발행목록오류-${randomUUID()}`, viewScope: "own" });
+    const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E발행목록오류-${randomUUID()}`, viewScope: "own" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.revenue", action: "view", allowed: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });

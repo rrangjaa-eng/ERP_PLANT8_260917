@@ -10,7 +10,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { setRecordVisibilityFixture } from "@/test/integration/fixtures/evidence";
@@ -86,7 +86,7 @@ async function managerRole(): Promise<string> {
 // intake 쓰기 · evidence 보기 · 증빙 내용만 보임(금액 노출 행 없음 = 거짓).
 async function noAmountRole(): Promise<string> {
   const roleId = `role-e2e-evidence-noamt-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 증빙 금액없음 ${roleId.slice(-8)}`, sortOrder: 99, viewScope: "company" });
+  await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 증빙 금액없음 ${roleId.slice(-8)}`, sortOrder: 99, viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "evidence.intake", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "evidence", action: "view", allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "evidence.value", visible: true });

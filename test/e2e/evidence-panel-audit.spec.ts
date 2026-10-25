@@ -10,7 +10,7 @@ import { approveDocument, getApprovalView, rejectDocument } from "@/domain/appro
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { createIntakeManager, insertLinkFixture, insertRecordFixture } from "@/test/integration/fixtures/evidence";
 import { setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { loginPage } from "./leave-org";
@@ -182,7 +182,7 @@ test.beforeAll(async ({ browser }, testInfo) => {
   if (!m.roleId) throw new Error("계급 없음");
   // ② 금액 못 보는 등록 계급 — evidence.intake 쓰기 · evidence 보기 · evidence.value만(evidence.amount 없음).
   const noAmountRole = `role-e2e-audit07-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id: noAmountRole, name: `E2E 감사 금액없음 ${noAmountRole.slice(-8)}`, sortOrder: 99, viewScope: "company" });
+  await insertTempRole(SYSTEM_VIEWER, { id: noAmountRole, name: `E2E 감사 금액없음 ${noAmountRole.slice(-8)}`, sortOrder: 99, viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: noAmountRole, menu: "evidence.intake", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: noAmountRole, menu: "evidence", action: "view", allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: noAmountRole, infoItem: "evidence.value", visible: true });

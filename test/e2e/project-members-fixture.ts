@@ -5,7 +5,7 @@ import { setResignationDate } from "@/domain/people";
 import { createProject } from "@/domain/projects";
 import { addProjectMembers, listMemberCandidates } from "@/domain/projects/members";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { setUserArchived } from "@/repositories/users";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
@@ -68,7 +68,7 @@ export async function setupMembersE2E(): Promise<MembersE2E> {
   ];
 
   const noViewRoleId = `role-e2e-no-projects-${tag}`;
-  await insertRole(SYSTEM_VIEWER, { id: noViewRoleId, name: `E2E프로젝트메뉴없음-${tag}`, workScope: "team", viewScope: "team" });
+  await insertTempRole(SYSTEM_VIEWER, { id: noViewRoleId, name: `E2E프로젝트메뉴없음-${tag}`, workScope: "team", viewScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: noViewRoleId, menu: "projects", action: "view", allowed: false });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: noViewRoleId, infoItem: "project.value", visible: true });
   const c4 = await makePerson(`후보${tag}C4`, noViewRoleId, otherTeam.id, effectiveFrom);

@@ -11,7 +11,7 @@ import { createRevisionFromCurrent, customerApprovalColumns } from "@/domain/quo
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createMemoryStorage } from "../integration/fakes/memory-storage";
 import { createAccount } from "@/domain/auth/accounts";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import type { Viewer } from "@/domain/viewer";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
@@ -299,7 +299,7 @@ type ReserveSeed = { date: string; direction: "deposit" | "withdrawal"; amount: 
 
 async function financeRole(): Promise<string> {
   const id = `role-e2e-aev-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id, name: `E2E 리저브 증빙 ${id.slice(-8)}`, sortOrder: 99, viewScope: "company" });
+  await insertTempRole(SYSTEM_VIEWER, { id, name: `E2E 리저브 증빙 ${id.slice(-8)}`, sortOrder: 99, viewScope: "company" });
   for (const grant of [
     { menu: "pnl", action: "view" },
     { menu: "pnl", action: "write" },

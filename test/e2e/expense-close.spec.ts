@@ -9,7 +9,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, submitLineExpense, type ExpenseE2E, type LineKey } from "./expense-fixture";
@@ -31,7 +31,7 @@ const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "projec
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기(06-27 「C9-종결키」 — 종결 권한). 결재선 밖 전용 본부 · 팀.
 async function makePayerE2E(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E종결-${suffix}`, workScope: "company", viewScope: "company" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E종결-${suffix}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -193,7 +193,7 @@ test.describe("반려 · 회수 지출결의 종결 (S23)", () => {
     const suffix = randomUUID().slice(0, 8);
     const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E종결권한본부-${suffix}` });
     const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E종결권한팀-${suffix}` });
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E종결쓰기회수-${suffix}`, workScope: "company" });
+    const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E종결쓰기회수-${suffix}`, workScope: "company" });
     for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action, allowed: true });
     for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
     const email = `e2e-close-nowrite-${randomUUID()}@example.test`;

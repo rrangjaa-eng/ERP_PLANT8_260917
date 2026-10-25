@@ -14,6 +14,7 @@ import { findTeamById } from "@/repositories/teams";
 import { normalizeVendorName } from "@/domain/vendors";
 import { testVendorAccount } from "../integration/fixtures/expenses";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
+import { archiveFinishedTempRoles, trackTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
@@ -152,8 +153,11 @@ export async function addPayeeCandidates(prefix: string, count: number): Promise
 const tempRoleIds: string[] = [];
 
 export async function insertTempRole(input: Parameters<typeof insertRole>[1]): ReturnType<typeof insertRole> {
+  await archiveFinishedTempRoles();
   const role = await insertRole(SYSTEM_VIEWER, input);
   tempRoleIds.push(role.id);
+  // archiveTempRoles를 afterAll에 걸지 않은 스펙도 있다 — 워커 단위 정리(temp-roles.ts)에도 올린다.
+  trackTempRole(role.id);
   return role;
 }
 

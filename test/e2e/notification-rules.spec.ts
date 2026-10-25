@@ -5,7 +5,7 @@ import { notificationRules, roles } from "@/db/schema";
 import { CONDITION_KINDS } from "@/domain/notify/condition-kinds";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { createFixtureUser } from "./fixtures";
 
 // 07-19 SC-05 알림 규칙 화면(N1 · N2 · N4 · U6 · D-744). 규칙 표는 전역 한 벌이라 이 스펙은 직렬로 돌고 자기가 만진 규칙 행을 끝에 지운다.
@@ -181,7 +181,7 @@ test("행동 링크 수정 → 패널에서 일수 · 받는 계급 추가 · �
 test("보관된 받는 계급은 패널에 흐린 줄로 보이고 체크된 채 저장해도 유지 · 체크를 풀면 빠진다(사용자 결정 2026-10-23)", async ({ page }) => {
   const roleId = `role-e2e-${Date.now()}`;
   const roleName = `보관됨-${Date.now().toString(36)}`;
-  await insertRole(SYSTEM_VIEWER, { id: roleId, name: roleName });
+  await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: roleName });
   await db.update(roles).set({ archivedAt: new Date() }).where(eq(roles.id, roleId));
   await db.insert(notificationRules).values({ kind: "project-end-no-expense", extraRoleIds: [roleId], version: 1 });
   try {

@@ -7,6 +7,7 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { kstToday } from "@/lib/kst-date";
 import { createFixtureUser } from "./fixtures";
 import { makeDelegatedRole } from "../integration/admin-cap-fixtures";
+import { trackTempRole } from "./temp-roles";
 
 // F24 독립 DOM 감사(/mnt/project-files/07-review/f24-dom-audit.md) P1 · P3: 소속 발령 이력의 쓰기(「새 이력 추가」 · 예정 줄
 // 「취소」)는 쓸 수 있는 목록에서만 그린다 — 퇴직자 · 보기만 계정에게는 둘 다 없다. 낡은 화면에서 취소가 서버에 거부되면
@@ -56,6 +57,7 @@ test.describe("소속 발령 이력 쓰기 잠금(F24 감사 P1 · P3)", () => {
   test("보기만 계정 — 재직자 상세에도 「취소」 · 「새 이력 추가」가 없다", async ({ page }) => {
     // PM 칸 · 보임 복사 + admin.people 보기만(쓰기 없음).
     const roleId = await makeDelegatedRole({ name: "E2E사람보기만", menus: [{ menu: "admin.people", action: "view" }] });
+    trackTempRole(roleId);
     await login(page, await createFixtureUser({ roleId }));
     const { userId, effectiveFrom } = await targetWithFutureAssignment();
     await page.goto(`/admin/people/${userId}`);

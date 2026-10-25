@@ -6,7 +6,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertVendor, updateVendor, updateVendorAccountNumber } from "@/repositories/vendors";
 import { delayServerActions, loginPage, waitForHydration, type Person } from "./leave-org";
@@ -475,7 +475,7 @@ test.describe("쓰기 권한이 빠진 기안자의 작성 중 문서 (05 /revie
     const suffix = randomUUID().slice(0, 8);
     const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E권한본부-${suffix}` });
     const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E권한팀-${suffix}` });
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E쓰기회수-${suffix}`, workScope: "company" });
+    const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E쓰기회수-${suffix}`, workScope: "company" });
     for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action, allowed: true });
     for (const infoItem of ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"]) {
       await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });

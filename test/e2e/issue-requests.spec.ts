@@ -10,7 +10,7 @@ import { projects, revenueIssueRequests } from "@/db/schema";
 import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { saveProjectLedger } from "@/domain/projects/ledger";
@@ -378,7 +378,7 @@ test.describe("발행 요청 취소 (06-21 Task 1 — O-12 · r4 F-F3)", () => {
 // 쓰기에만 서는 3차 · 도착 포커스는 grantWrite 뒤 제 프로젝트 번호가 든 접근 이름 · 고유 값으로 겨눈다.
 async function setupBoard(opts: { write: boolean }) {
   const today = kstToday(new Date());
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E발행요청목록-${randomUUID()}`, viewScope: "own" });
+  const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E발행요청목록-${randomUUID()}`, viewScope: "own" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.revenue", action: "view", allowed: true });
   if (opts.write) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.revenue", action: "write", allowed: true });

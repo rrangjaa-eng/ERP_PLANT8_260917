@@ -9,7 +9,7 @@ import { registerEvidenceFile } from "@/domain/evidence-import";
 import { assignTeam } from "@/domain/org";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "../temp-roles";
 import type { FixtureRow } from "@/test/fixtures/evidence-import/build";
 
 // 06.1-05 — 증빙 목록 E2E 도우미. 계급은 스펙이 만든 임시 계급이다(시드 계급의 권한을 바꾸지 않는다 — 리저브 대장 스펙 꼴).
@@ -25,7 +25,7 @@ export type IntakeRoleOptions = {
 /** `evidence.intake` 쓰기 · `evidence` 보기 · 정보 항목 둘(증빙 내용 · 금액)을 가진 임시 계급. */
 export async function createIntakeRole(options: IntakeRoleOptions = {}): Promise<string> {
   const roleId = `role-e2e-evidence-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 증빙 등록 ${roleId.slice(-8)}`, sortOrder: 99, viewScope: options.viewScope ?? "company" });
+  await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 증빙 등록 ${roleId.slice(-8)}`, sortOrder: 99, viewScope: options.viewScope ?? "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "evidence.intake", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "evidence", action: "view", allowed: true });
   if (options.expenses) await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "expenses", action: "view", allowed: true });

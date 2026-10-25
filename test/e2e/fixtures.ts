@@ -13,7 +13,8 @@ import { archive } from "@/domain/archive";
 import { createFieldDefinition, updateFieldDefinition } from "@/domain/custom-fields/admin";
 import { customFieldInfoItem } from "@/domain/custom-fields/targets";
 import { findFieldDefinitionById } from "@/repositories/field-definitions";
-import { findRoleById, insertRole } from "@/repositories/roles";
+import { archiveFinishedTempRoles, insertTempRole } from "./temp-roles";
+import { findRoleById } from "@/repositories/roles";
 import { insertVisibilityIfAbsent, listVisibility } from "@/repositories/permissions";
 
 // 실행마다 고유한 사업자번호(「xxx-xx-xxxxx」) — 같은 사업자번호 거래처는 둘 못 만들고 E2E DB는 스펙끼리 공유한다.
@@ -40,6 +41,8 @@ export async function createFixtureUser(options: {
   withTeam?: boolean;
   teamId?: string;
 }): Promise<{ email: string; password: string; teamId: string | null }> {
+  // 거의 모든 스펙이 여기서 시작한다 — 이 워커가 끝낸 앞 스펙 파일의 임시 계급을 보관한다(temp-roles.ts).
+  await archiveFinishedTempRoles();
   const email = `e2e-${randomUUID()}@example.test`;
   const name = options.roleId === SYSADMIN_ROLE_ID ? "E2E Admin" : "E2E Employee";
   const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, {
@@ -78,7 +81,7 @@ export async function createE2EVendorEditor(
 ): Promise<{ email: string; password: string; roleId: string; roleName: string }> {
   const roleId = `role-e2e-vcf-${randomUUID()}`;
   const roleName = `E2E 거래처 ${roleId.slice(-8)}`;
-  await insertRole(SYSTEM_VIEWER, { id: roleId, name: roleName, sortOrder: 99 });
+  await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: roleName, sortOrder: 99 });
   await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "admin.vendors", action: "view", allowed: true });
   await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "admin.vendors", action: "write", allowed: true });
   await insertVisibilityIfAbsent(SYSTEM_VIEWER, {

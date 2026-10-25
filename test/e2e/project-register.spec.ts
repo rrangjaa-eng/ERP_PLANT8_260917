@@ -4,7 +4,7 @@ import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
 import { createProject } from "@/domain/projects";
@@ -472,7 +472,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
 test.describe("프로젝트 등록 폼 — 담당 PM · 팀 기본값 (결정 2)", () => {
   // 기획 PM 권한·노출을 그대로 복사하고 업무 범위만 회사로 둔 등록자 — 본인 소속 팀 하나를 가진다.
   async function loginCompanyScopeCreator(page: Page): Promise<{ userId: string; teamId: string }> {
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E 회사 범위-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+    const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E 회사 범위-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
     for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
       await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: row.menu, action: row.action, allowed: row.allowed });
     }

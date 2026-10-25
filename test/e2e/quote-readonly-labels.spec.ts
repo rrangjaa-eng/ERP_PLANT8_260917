@@ -7,7 +7,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { insertVendor } from "@/repositories/vendors";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findUserByEmail } from "@/repositories/users";
 import { insertCodeItem, setCodeItemActive, setCodeItemArchived } from "@/repositories/code-tables";
@@ -18,7 +18,7 @@ import { insertCodeItem, setCodeItemActive, setCodeItemArchived } from "@/reposi
 // 계급은 대표 권한·노출을 복사하고 프로젝트 쓰기·조정만 끈 임시 계급이다 — role-ceo는 다른 스펙이 쓰기를 켜 두어 순서에 따라 재현이 사라진다.
 test("보기만 하는 계급도 견적 원장에서 소분류·거래처를 이름으로 본다", async ({ page }) => {
   const roleId = `role-e2e-readonly-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 보기만 ${roleId.slice(-12)}`, sortOrder: 99, workScope: "company", viewScope: "company" });
+  await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 보기만 ${roleId.slice(-12)}`, sortOrder: 99, workScope: "company", viewScope: "company" });
   for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: "role-ceo" })) {
     await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
   }
@@ -66,7 +66,7 @@ test("비활성 견적 분류를 쓰던 줄도 편집 · 보기 전용 계정 �
   // 정렬 900 — 정렬 0이면 잠깐 켜진 동안 다른 스펙의 「첫 활성 소분류」 고르기(quote-revisions 등)에 잡혀, 곧 끈 뒤 그쪽 저장이 거부된다.
   const item = await insertCodeItem(SYSTEM_VIEWER, { tableKey: "quote_subcategory", value: `e2e_off_${suffix}`, label: `끈분류-${suffix}`, sortOrder: 900 });
   const viewerRoleId = `role-e2e-readonly-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id: viewerRoleId, name: `E2E 보기만 ${viewerRoleId.slice(-12)}`, sortOrder: 99, workScope: "company", viewScope: "company" });
+  await insertTempRole(SYSTEM_VIEWER, { id: viewerRoleId, name: `E2E 보기만 ${viewerRoleId.slice(-12)}`, sortOrder: 99, workScope: "company", viewScope: "company" });
   for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: "role-ceo" })) {
     await upsertPermission(SYSTEM_VIEWER, { roleId: viewerRoleId, menu: row.menu, action: row.action, allowed: row.allowed });
   }

@@ -1353,6 +1353,8 @@ export function QuoteLedger({
   // 연타)은 isExecuting이 아직 거짓인 렌더에서 처리되므로 동기 래치로 막는다.
   // 성공·실패·navigation 오류(redirect/notFound) 모두에서 부르는 onSettled에서 내린다.
   const savingRef = useRef(false);
+  // 07-18 F56 — 마지막 저장을 보낸 뒤 정보 면(기간 · PO 금액 · PO 번호)을 고쳤나. 성공 처리가 묶음을 닫을지 가른다.
+  const infoEditedSinceSendRef = useRef(false);
   // 04-28 — 저장 요청에 실어 보낸 줄(clientKey) 순서 스냅숏. 봉투의 rowIndex가 이 순서다.
   const sentLineKeysRef = useRef<string[]>([]);
 
@@ -1446,7 +1448,8 @@ export function QuoteLedger({
         setSeenStatus(saved.status as ProjectStatus); // projects.status 열은 text — 값은 PROJECT_STATUSES 중 하나다.
         if (saved.preEstimate) setPreEstimateBase(saved.preEstimate);
         if (saved.poNumber !== undefined) setPoNumberBase(saved.poNumber ?? "");
-        if (infoEditing) closeInfoEditAfterSave();
+        // 잠금이 풀린 커밋과 이 콜백(수동 효과) 사이에 친 값은 보낸 값이 아니다 — 묶음을 닫으면 그 입력이 사라진다(F56).
+        if (infoEditing && !infoEditedSinceSendRef.current) closeInfoEditAfterSave();
         // 상태가 바뀌었으면(정산 → 진행 등) 서버가 계산하는 태그·권리·canSave를 다시 받는다.
         if (saved.status !== status) router.refresh();
       }
@@ -1491,6 +1494,7 @@ export function QuoteLedger({
 
   function changePreEstimate(next: PreEstimateDraft) {
     cancelInfoCloseTimer();
+    infoEditedSinceSendRef.current = true;
     persistPendingRef.current = true;
     setPreEstimateErrors([]);
     setPreEstimateDraft(next);
@@ -1503,6 +1507,7 @@ export function QuoteLedger({
 
   function changePeriod(next: PeriodDraft) {
     cancelInfoCloseTimer();
+    infoEditedSinceSendRef.current = true;
     persistPendingRef.current = true;
     setPeriodErrors([]);
     setPeriodDraft(next);
@@ -1531,6 +1536,7 @@ export function QuoteLedger({
 
   function changePoNumber(next: string) {
     cancelInfoCloseTimer();
+    infoEditedSinceSendRef.current = true;
     persistPendingRef.current = true;
     setPoNumberDraft(next);
   }
@@ -1939,6 +1945,7 @@ export function QuoteLedger({
     // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않고 첫 오류로 간다(04-47 DR-5).
     if (goToFirstIssue()) return;
     savingRef.current = true;
+    infoEditedSinceSendRef.current = false;
     // /review R-2 — 저장을 시작하면 되돌리기를 거둔다. 저장 중·저장 뒤에 옛 편집이 덮이지 않게.
     setDiscardedEdits(null);
 

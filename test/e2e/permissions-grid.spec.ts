@@ -470,8 +470,10 @@ test.describe("권한표 딸린 칸(07-21 R7 · K4 · K24 · U5 · U6)", () => {
     return page.getByRole("checkbox", { name: `${role.name} · ${group} · ${action}`, exact: true });
   }
 
+  // 되돌리기가 도는 동안 버튼 이름은 「되돌리기 처리 중」(RowAction pending)이다 — 이름을 정확히 맞추면 그동안 결과 줄이 0개로 잡혀
+  // `toHaveCount(0)`이 원복 단계가 다 끝나기 전에 통과하고, 뒤이은 새로 고침이 남은 단계 요청을 끊는다(#293 CI K4b · F57 K4c).
   function resultLine(page: Page): Locator {
-    return page.getByRole("status").filter({ has: page.getByRole("button", { name: "되돌리기", exact: true }) });
+    return page.getByRole("status").filter({ has: page.getByRole("button", { name: /^되돌리기/ }) });
   }
 
   // 서버 액션 POST를 붙잡아 저장 중 상태를 잰다 — release 전까지 응답이 오지 않는다.

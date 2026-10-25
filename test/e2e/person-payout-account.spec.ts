@@ -5,7 +5,7 @@ import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { registerPerson, setResignationDate } from "@/domain/people";
 import { updatePersonPayoutAccount } from "@/domain/people/account";
 import { setPermissionCell } from "@/domain/permissions/matrix";
-import { insertRole } from "@/repositories/roles";
+import { insertTempRole } from "./temp-roles";
 import { insertVisibilityIfAbsent } from "@/repositories/permissions";
 import { kstToday } from "@/lib/kst-date";
 import { createFixtureUser } from "./fixtures";
@@ -109,7 +109,7 @@ test.describe("사람 상세 지급 계좌(06.5 D-6505)", () => {
 
     // 「admin.people 보기만」 계급 — 지급 처리 쓰기가 없어 게이트가 거짓이다.
     const roleId = `role-e2e-payout-${randomUUID()}`;
-    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 사람보기 ${roleId.slice(-8)}`, sortOrder: 99 });
+    await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 사람보기 ${roleId.slice(-8)}`, sortOrder: 99 });
     await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "admin.people", action: "view", allowed: true });
     await insertVisibilityIfAbsent(SYSTEM_VIEWER, { roleId, infoItem: "person.value", visible: true });
     const viewerPage = await (await browser.newContext({ baseURL })).newPage();
@@ -130,7 +130,7 @@ test.describe("사람 상세 지급 계좌(06.5 D-6505)", () => {
   // `계좌 바꾸기`를 그리지 않고 주소로 열어도 패널이 없다. 상한 안(같은 계급) 대상에는 그대로 있다. 서버 거부는 통합 people-account가 본다.
   test("상한 밖 대상(시스템 관리자)에는 `계좌 바꾸기` · 패널이 없고, 상한 안 대상에는 있다", async ({ page }) => {
     const roleId = `role-e2e-payout-staff-${randomUUID()}`;
-    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 지급담당 ${roleId.slice(-8)}`, sortOrder: 99 });
+    await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 지급담당 ${roleId.slice(-8)}`, sortOrder: 99 });
     await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "expenses.payments", action: "write", allowed: true });
     await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "admin.people", action: "view", allowed: true });
     await insertVisibilityIfAbsent(SYSTEM_VIEWER, { roleId, infoItem: "person.value", visible: true });

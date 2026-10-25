@@ -163,6 +163,47 @@ test.describe("PO 번호 · 고치기 하나 (N1 · D-737)", () => {
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
   });
 
+  test("저장 잠금이 풀린 직후(성공 처리 전) 친 PO 번호도 묶음과 함께 닫히지 않고 남는다", async ({ page }) => {
+    // CI(바쁜 러너)에서 :147이 깨진 순서를 고정한다: 응답이 와서 readOnly가 풀린 커밋과 next-safe-action의 onSuccess(수동 효과)
+    // 사이에 입력이 끼면, 그 입력이 닫기 타이머보다 먼저 와 600ms 뒤 묶음과 함께 사라졌다. readOnly가 풀리는 순간(마이크로태스크)에 친다.
+    await page.addInitScript(() => {
+      const observer = new MutationObserver((records) => {
+        const flags = window as unknown as { __typeOnUnlock?: string };
+        const value = flags.__typeOnUnlock;
+        if (value === undefined) return;
+        for (const record of records) {
+          const input = record.target as HTMLInputElement;
+          if (input.id !== "po-number" || input.readOnly || record.oldValue === null) continue;
+          flags.__typeOnUnlock = undefined;
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          return;
+        }
+      });
+      document.addEventListener("DOMContentLoaded", () => {
+        observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["readonly"], attributeOldValue: true });
+      });
+    });
+    const { lead, project } = await setup();
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await openProjectInfoEdit(page);
+
+    const poNumber = projectInfo(page).getByLabel("PO 번호", { exact: true });
+    await poNumber.fill("PO-FIRST");
+    await page.evaluate(() => {
+      (window as unknown as { __typeOnUnlock?: string }).__typeOnUnlock = "PO-SECOND";
+    });
+    const saving = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await saving;
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __typeOnUnlock?: string }).__typeOnUnlock)).toBeUndefined();
+
+    await page.waitForTimeout(1_200);
+    await expect(poNumber).toHaveValue("PO-SECOND");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+  });
+
   test("저장 직후 틴트 안에 `고치기 취소` 뒤 다시 열고 고치면 낡은 닫기가 새 묶음을 닫지 않는다", async ({ page }) => {
     const { lead, project } = await setup();
     await login(page, lead);

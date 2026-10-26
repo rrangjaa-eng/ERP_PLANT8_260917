@@ -75,6 +75,14 @@
   }
 }
 
+/* 1280~1439 — 왼쪽 레일(--rail-w)로 본문이 176 좁아져 검색 칸이 280이면 이체 파일 받기 · 결과 글자 · 1차(· 증빙 링크)가 다음 줄로 밀린다.
+   한 줄(SP-65-2)을 위해 이 폭에서만 칸을 select 폭으로 줄인다. */
+@media (min-width: 1280px) and (max-width: 1439.98px) {
+  .searchLabel {
+    width: var(--field-w-select);
+  }
+}
+
 /* 합계 줄 — 제목 aux · muted, 금액 body 700(UI-SPEC Typography · projects 합계 줄 선례). */
 .totals {
   display: flex;

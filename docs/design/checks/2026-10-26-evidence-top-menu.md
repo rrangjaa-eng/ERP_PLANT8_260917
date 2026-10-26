@@ -1,5 +1,5 @@
 # 증빙 메뉴 3번째 + 왼쪽 레일 셸 — 점검표
-화면: ui/shell/, app/(app)/layout.tsx, ui/toast/, ui/detail-screen/, ui/permission-grid/, docs/design/tokens.css
+화면: app/(app)/expenses/, ui/shell/, app/(app)/layout.tsx, ui/toast/, ui/detail-screen/, ui/permission-grid/, docs/design/tokens.css
 기준: BRIEF.md · frontend.md 화면 사용성 원칙 · CHECKLIST.md §1 · SYSTEM.md §6-0 · §6-1 「하위 목록」
 
 지금 화면(main cacb2b0): 증빙 일괄 등록(/expenses/evidence)은 지출결의 목록 필터 묶음 끝 3차 링크 `증빙 N`으로만 들어간다((list)/page.tsx:100-102). 위쪽 메뉴·더보기 시트 어디에도 없다(ui/shell/role-menu.ts:50-56). 사용자 지적 2026-10-26 13:00 KST 「메뉴에 없어서 불편」.
@@ -20,6 +20,7 @@
 - [x] §1의 결정을 하나도 어기지 않았다(웜톤 · 견적 엑셀식 · 옆 패널 · 스킨 A …) — 근거: 웜톤 없음(--bar-bg 딥그린 그대로), 옆 패널·견적표 동작 안 건드림, 스킨 A 딥그린 면 유지
 
 ## 시스템
+- [x] 1280 지출결의 필터 줄이 레일로 좁아져도 한 줄이다(검색 → select → 이체 파일 받기 → 결과 → 지급 완료 · 증빙 N 유지) — 근거: 본문 1064에서 검색 칸 280이 줄을 42~66 넘겨 이체 파일 받기가 다음 줄로 갔다(DOM 실측 — 검색 196-476 · 이체 파일 받기 t137 vs 상태 t65), expenses.module.css의 1280~1439 한정 규칙으로 검색 칸을 기존 토큰 --field-w-select 200으로 줄여 expense-search-payment:65 · payment-transfer-file:268 통과, 새 값 0건
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: 새 토큰은 크기 --rail-w·--shell-top뿐, 레일 CSS 하드코딩 색·서체·radius 0건(DOM 감사 f)
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 320·375 가로 넘침 0, 터치 대상 44 미만 0, 셸 수치 main과 같음(DOM 감사 a·d)
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: /mnt/project-files/evidence-menu/captures/ (320·375·768·1280·1440 적용전·후 61장)

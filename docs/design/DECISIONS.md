@@ -2371,3 +2371,4 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **바뀐 규칙**: SYSTEM.md §6-0 도식 · 상단 바 문장 · 사용자 진입점 (a) · 태블릿 700–1279, §6-1 「사이드바 없음」(화면 안 사이드바 없음으로 한정).
 **버린 대안**: 위쪽 바 + 레일 병행 · 레일 접기 단추 · 260907처럼 묶음 머리글.
 **범위**: `ui/shell/`(TopBar · SideRail · RailSheet · Shell) · `ui/toast/` · `ui/detail-screen/` · `ui/permission-grid/` · `docs/design/tokens.css` · 셸 E2E 스펙. 본문 가용 폭이 ≥1280에서 176 줄어든다 — 표 열 숨김 기준의 본문 폭 이동은 후속.
+**추가(같은 날, CI e2e 실측)**: 1280–1439에서 본문이 1064라 지출결의 지급 대상 필터 줄(SP-65-2 한 줄)이 넘쳤다 — 필터 줄이 1280–1439에서 한 줄을 넘으면 검색 칸을 `--field-w-select` 200으로 줄인다(1440 이상 · 768 · 폰 그대로). 첫 적용 `app/(app)/expenses/expenses.module.css`.

@@ -1343,9 +1343,11 @@ export function QuoteLedger({
           지출결의 올리기
         </Button>
         {door.cardHref ? (
-          <Link href={door.cardHref} className={buttonLinkClassName("tertiary")}>
-            카드 사용 등록
-          </Link>
+          <span onClickCapture={guardDocumentLink}>
+            <Link href={door.cardHref} className={buttonLinkClassName("tertiary")}>
+              카드 사용 등록
+            </Link>
+          </span>
         ) : null}
       </div>
     );
@@ -2435,11 +2437,13 @@ export function QuoteLedger({
                       </RowAction>
                     </RowActions>
                     {door.cardHref ? (
-                      <RowActions noWrap>
-                        <RowAction tabIndex={-1} describedBy={itemCellId} href={door.cardHref}>
-                          카드 사용 등록
-                        </RowAction>
-                      </RowActions>
+                      <span onClickCapture={guardDocumentLink}>
+                        <RowActions noWrap>
+                          <RowAction tabIndex={-1} describedBy={itemCellId} href={door.cardHref}>
+                            카드 사용 등록
+                          </RowAction>
+                        </RowActions>
+                      </span>
                     ) : null}
                   </span>
                 );

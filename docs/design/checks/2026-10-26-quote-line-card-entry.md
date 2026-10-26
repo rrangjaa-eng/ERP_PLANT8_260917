@@ -20,3 +20,4 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: CSS 변경 0, 기존 `RowAction`
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 표 행동 열은 폰에서 접히고 행 시트(세로 쌓기)에 같은 링크가 선다(E2E card-proxy 375: 시트 링크 href · scrollWidth ≤ innerWidth). 320 실측은 못 함
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 사진 대신 E2E DOM 실측(`test/e2e/card-proxy.spec.ts` 「견적 줄에서 바로 카드 사용 등록」: 링크 존재 · href · 375 가로 넘침 없음)
+- [x] 저장 안 한 편집이 있을 때 카드 사용 등록 링크도 이웃 문서 링크처럼 이동을 막는다 — 근거: 표 셀·폰 시트 링크를 `guardDocumentLink`(onClickCapture)로 감쌈, CSS 변경 0, E2E card-proxy 「저장 안 한 편집이 있으면 `카드 사용 등록` 링크는 이동하지 않고…」 통과

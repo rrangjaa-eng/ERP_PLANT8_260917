@@ -608,6 +608,30 @@ test.describe("견적 줄에서 바로 카드 사용 등록", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.context().close();
   });
+  test("저장 안 한 편집이 있으면 `카드 사용 등록` 링크는 이동하지 않고 `저장 안 한 편집 1칸 · 먼저 일괄 저장`", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `국민-${randomUUID().slice(0, 6)}`, numberLast4: "5514", label: `E2E가드-${randomUUID().slice(0, 8)}`, kind: "personal", holderUserId: fx.pm.viewer.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 800 });
+    await page.goto(`/projects/${fx.projectId}`);
+    const row = page.getByRole("row").filter({ hasText: fx.lines.tracer.itemName });
+    const link = row.getByRole("link", { name: "카드 사용 등록" });
+    await waitForHydration(row.getByRole("button", { name: "지출결의 올리기" }));
+
+    const note = row.getByRole("gridcell").nth(10);
+    await expect(async () => {
+      await note.focus();
+      await page.keyboard.press("Enter");
+      await expect(note.locator("input")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.type("메모");
+    await page.keyboard.press("Enter");
+
+    await link.click();
+    await expect(page.getByRole("grid", { name: "견적 줄" }).getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/projects/${fx.projectId}$`));
+    await page.context().close();
+  });
   test("[DOM 감사 c] 1024 · 768 — `카드 사용 등록`이 행동 열을 넓히지 않는다: 두 행동이 세로로 서고 시작 전 줄은 2줄 이하", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `국민-${randomUUID().slice(0, 6)}`, numberLast4: "5513", label: `E2E열폭-${randomUUID().slice(0, 8)}`, kind: "personal", holderUserId: fx.pm.viewer.id });

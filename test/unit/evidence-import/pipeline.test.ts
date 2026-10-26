@@ -7,6 +7,7 @@ import { sniff } from "@/domain/evidence-import/workbook";
 import { readWorkbookRows, zipEntryStats } from "@/lib/xlsx-server";
 import { cardLotte } from "@/domain/evidence-import/formats/card-lotte";
 import {
+  BC_HEADER_28,
   bcFixture,
   encryptedFixture,
   forgedZipFixture,
@@ -259,6 +260,25 @@ describe("데이터 서술자 xlsx(C-86)", () => {
     const fromXls = ok(parseWorkbook(lotteFixture(LOTTE_ROWS)));
     expect(fromStreamed.format).toBe("card-lotte");
     expect(fromStreamed.lines.map((line) => line.dedupeKey)).toEqual(fromXls.lines.map((line) => line.dedupeKey));
+  });
+
+  it("비씨 28칸(거래금액(외화) 없음) .xls → ok · card-bc · 국내 줄 needsCheck null", () => {
+    const result = ok(parseWorkbook(bcFixture([{}], { header: BC_HEADER_28 })));
+    expect(result.format).toBe("card-bc");
+    expect(result.lines[0]?.needsCheck).toBeNull();
+  });
+
+  it("비씨 28칸 국내외사용구분 해외 → 해외 확인", () => {
+    const result = ok(parseWorkbook(bcFixture([{ 국내외사용구분: "해외" }], { header: BC_HEADER_28 })));
+    expect(result.lines[0]?.needsCheck).toBe("해외 이용 · 원화 금액 확인");
+  });
+
+  it("비씨 28칸 xlsx를 스트리밍 꼴로 → .xls 판과 같은 줄", () => {
+    const rows = [{}, { 승인번호: "11111111", "거래금액(원화)": "5,500", 부가세: "0" }];
+    const streamed = ok(parseWorkbook(streamedZipFixture(bcFixture(rows, { header: BC_HEADER_28, as: "xlsx" }))));
+    const fromXls = ok(parseWorkbook(bcFixture(rows, { header: BC_HEADER_28 })));
+    expect(streamed.format).toBe("card-bc");
+    expect(streamed.lines.map((line) => line.dedupeKey)).toEqual(fromXls.lines.map((line) => line.dedupeKey));
   });
 });
 

@@ -47,3 +47,4 @@ review 2026-10-16T05:19Z session=0e0eb4e2-f6d0-5610-be1a-3aa1adc3845b (PR #237 �
 review 2026-10-26T04:45Z session=c2173f97-666f-5ea7-a631-9105bade6fc6
 design-review 2026-10-26T05:01Z session=c2173f97-666f-5ea7-a631-9105bade6fc6 (PR #296 /design-review — Codex gpt-6.1-sol 후보 8 모두 main과 같음, DOM 실측 결함 1(1024·768 행 3줄) bc66f00 고침, 보고서 /mnt/project-files/296-review/design-review.md)
 qa 2026-10-26T05:46Z session=c2173f97-666f-5ea7-a631-9105bade6fc6 (PR #296 /qa — E2E 175/175 재실행 통과, 결함 Issue1(1024~1279 새 줄 표시 숨음) d1e6bff 고침, 건강 97(잠정), 보고서 /mnt/project-files/296-review/qa/qa-report.md)
+review 2026-10-26T03:59Z session=8b9c1da2-79ce-58bb-adb2-a339c4db214f

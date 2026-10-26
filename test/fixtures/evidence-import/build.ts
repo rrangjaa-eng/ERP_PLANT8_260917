@@ -1,4 +1,4 @@
-import { deflateRawSync } from "node:zlib";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 import * as XLSX from "xlsx";
 import * as cpexcel from "xlsx/dist/cpexcel.full.mjs";
 
@@ -155,7 +155,7 @@ export function zipBombFixture(): Uint8Array {
   return bytes;
 }
 
-type ZipEntry = { local: Uint8Array; name: Uint8Array; localExtra: Uint8Array; data: Uint8Array; central: Uint8Array; centralExtra: Uint8Array; comment: Uint8Array };
+type ZipEntry = { local: Uint8Array; name: Uint8Array; localExtra: Uint8Array; data: Uint8Array; central: Uint8Array; centralExtra: Uint8Array; comment: Uint8Array; descriptor?: Uint8Array };
 
 function zipEntriesOf(bytes: Uint8Array): ZipEntry[] {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -201,9 +201,10 @@ function zipOf(entries: readonly ZipEntry[]): Uint8Array {
     cv.setUint16(30, entry.centralExtra.length, true);
     cv.setUint16(32, entry.comment.length, true);
     cv.setUint32(42, offset, true);
-    parts.push(local, entry.name, entry.localExtra, entry.data);
+    const descriptor = entry.descriptor ?? new Uint8Array(0);
+    parts.push(local, entry.name, entry.localExtra, entry.data, descriptor);
     centrals.push(central, entry.name, entry.centralExtra, entry.comment);
-    offset += local.length + entry.name.length + entry.localExtra.length + entry.data.length;
+    offset += local.length + entry.name.length + entry.localExtra.length + entry.data.length + descriptor.length;
   }
   const dirSize = centrals.reduce((sum, part) => sum + part.length, 0);
   const eocd = new Uint8Array(22);
@@ -234,7 +235,48 @@ function zip64Extra(uncompressed: number, compressed: number): Uint8Array {
   return extra;
 }
 
-export type ZipForgery = "local-size" | "data-descriptor" | "zip64-local" | "zip64-central" | "zero-size-deflate" | "method" | "understated-deflate";
+// 데이터 서술자 꼴 서술자(서명 + crc · packed · size 각 4바이트 LE, 16바이트).
+function descriptorOf(crc: number, packed: number, size: number): Uint8Array {
+  const out = new Uint8Array(16);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, 0x08074b50, true);
+  view.setUint32(4, crc, true);
+  view.setUint32(8, packed, true);
+  view.setUint32(12, size, true);
+  return out;
+}
+
+// 실물 비씨 xlsx 꼴(Java/.NET 스트리밍 zip) — 모든 항목 flag 0x0808 · 로컬 crc/packed/size 0 · 데이터 뒤 서술자 · 중앙 값은 올바름(C-86).
+export function streamedZipFixture(xlsx: Uint8Array): Uint8Array {
+  const entries = zipEntriesOf(xlsx);
+  for (const entry of entries) {
+    const local = new DataView(entry.local.buffer);
+    const central = new DataView(entry.central.buffer);
+    if (central.getUint16(10, true) !== 8) throw new Error("deflate 항목만 스트리밍 꼴로 바꾼다");
+    entry.descriptor = descriptorOf(central.getUint32(16, true), central.getUint32(20, true), central.getUint32(24, true));
+    local.setUint16(6, local.getUint16(6, true) | 0x0808, true);
+    central.setUint16(8, central.getUint16(8, true) | 0x0808, true);
+    local.setUint32(14, 0, true);
+    local.setUint32(18, 0, true);
+    local.setUint32(22, 0, true);
+  }
+  return zipOf(entries);
+}
+
+// 정상: bit 3을 로컬 · 중앙 둘 다 세우고 로컬 크기를 0이 아닌 중앙 값 그대로 둔다(서술자 있음) — 가드가 받아야 한다.
+export function descriptorNonzeroLocalZipFixture(): Uint8Array {
+  const entries = zipEntriesOf(lotteFixture([{}], { as: "xlsx" }));
+  const first = entries[0];
+  if (!first) throw new Error("항목 없음");
+  const local = new DataView(first.local.buffer);
+  const central = new DataView(first.central.buffer);
+  local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
+  central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
+  first.descriptor = descriptorOf(central.getUint32(16, true), central.getUint32(20, true), central.getUint32(24, true));
+  return zipOf(entries);
+}
+
+export type ZipForgery = "local-size" | "descriptor-local-size" | "descriptor-stored" | "descriptor-understated" | "descriptor-local-only" | "descriptor-central-only" | "zip64-local" | "zip64-central" | "zero-size-deflate" | "method" | "understated-deflate";
 
 // 중앙 디렉터리는 작아 보이는데 SheetJS가 로컬 헤더 · ZIP64 칸 · 데이터 서술자로 크게 푸는 꼴(독립 검토 P1-1).
 // 정상 롯데 xlsx(deflate)의 첫 항목 하나만 위조한다 — 파일은 작게 둔다.
@@ -245,10 +287,37 @@ export function forgedZipFixture(forgery: ZipForgery): Uint8Array {
   const local = new DataView(first.local.buffer);
   const central = new DataView(first.central.buffer);
   if (forgery === "local-size") local.setUint32(22, local.getUint32(22, true) + 5_000_000, true);
-  if (forgery === "data-descriptor") {
+  // 데이터 서술자 위조 3종 — 서술자를 받아들이는 새 규칙에서도 거절돼야 하는 위험한 변형(C-86).
+  if (forgery === "descriptor-local-size") {
+    local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
+    central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
+    local.setUint32(22, central.getUint32(24, true) + 5_000_000, true);
+  }
+  if (forgery === "descriptor-stored") {
+    first.data = new Uint8Array(inflateRawSync(first.data));
+    local.setUint16(8, 0, true);
+    central.setUint16(10, 0, true);
+    local.setUint32(18, first.data.length, true);
+    central.setUint32(20, first.data.length, true);
+    local.setUint32(22, first.data.length, true);
+    central.setUint32(24, first.data.length, true);
     local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
     central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
   }
+  if (forgery === "descriptor-understated") {
+    first.data = new Uint8Array(deflateRawSync(new Uint8Array(5_000_000)));
+    local.setUint32(14, 0, true);
+    local.setUint32(18, 0, true);
+    local.setUint32(22, 0, true);
+    central.setUint32(20, first.data.length, true);
+    central.setUint32(24, 1000, true);
+    local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
+    central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
+    first.descriptor = descriptorOf(central.getUint32(16, true), first.data.length, 1000);
+  }
+  // bit 3 불일치 — 로컬 머리만, 또는 중앙만 데이터 서술자 표지를 세운 꼴(둘이 같아야 받는다).
+  if (forgery === "descriptor-local-only") local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
+  if (forgery === "descriptor-central-only") central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
   if (forgery === "zip64-local") first.localExtra = zip64Extra(5_000_000, first.data.length);
   if (forgery === "zip64-central") first.centralExtra = zip64Extra(5_000_000, first.data.length);
   if (forgery === "method") {
@@ -273,6 +342,34 @@ export function forgedZipFixture(forgery: ZipForgery): Uint8Array {
     central.setUint32(24, 1000, true);
   }
   return zipOf(entries);
+}
+
+// 끝 레코드 둘 — 진짜(작은 중앙 디렉터리)의 주석 안, 끝에서 21바이트 앞에 가짜 끝 레코드(풀린 크기를 부풀린 중앙 디렉터리 가리킴)를 심는다.
+// SheetJS는 파일 끝에서 4바이트 앞부터 위로 훑어 처음 만난 PK\x05\x06을 쓰므로 가짜를 읽는다(독립 검토).
+export function twoEocdZipFixture(): Uint8Array {
+  const base = lotteFixture([{}], { as: "xlsx" });
+  const view = new DataView(base.buffer, base.byteOffset, base.byteLength);
+  const end = base.length - 22;
+  const dirOffset = view.getUint32(end + 16, true);
+  const dirSize = view.getUint32(end + 12, true);
+  const fakeDir = base.slice(dirOffset, dirOffset + dirSize);
+  const fv = new DataView(fakeDir.buffer);
+  for (let at = 0; at < fakeDir.length; at += 46 + fv.getUint16(at + 28, true) + fv.getUint16(at + 30, true) + fv.getUint16(at + 32, true)) {
+    fv.setUint32(at + 24, 25_000_000, true);
+  }
+  const fakeEocd = new Uint8Array(21);
+  const ev = new DataView(fakeEocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, view.getUint16(end + 10, true), true);
+  ev.setUint16(10, view.getUint16(end + 10, true), true);
+  ev.setUint32(12, fakeDir.length, true);
+  ev.setUint32(16, end + 22, true);
+  const out = new Uint8Array(base.length + fakeDir.length + fakeEocd.length);
+  out.set(base, 0);
+  new DataView(out.buffer).setUint16(end + 20, fakeDir.length + fakeEocd.length, true);
+  out.set(fakeDir, base.length);
+  out.set(fakeEocd, base.length + fakeDir.length);
+  return out;
 }
 
 export const SHINHAN_HEADER = [
@@ -311,6 +408,68 @@ export function shinhanFixture(rows: readonly FixtureRow[], opts: FixtureOptions
   return writeBook([{ name: "Sheet0", rows: [[...header], ...rowsOf(header, SHINHAN_DEFAULTS, rows)] }], opts.as);
 }
 
+export const SHINHAN_ACCOUNTING_HEADER = [
+  "카드번호",
+  "결제계좌번호",
+  "결제은행",
+  "카드소유자명",
+  "사용구분",
+  "승인번호",
+  "승인일자",
+  "승인시간",
+  "매출종류",
+  "승인금액(원화)",
+  "승인금액(외화)",
+  "공급가액(원화)",
+  "부가세",
+  "봉사료",
+  "할부기간",
+  "외화거래일환율",
+  "외화거래국가코드",
+  "외화거래국가명",
+  "가맹점사업자번호",
+  "가맹점명",
+  "가맹점업종명",
+  "가맹점우편번호",
+  "가맹점주소1",
+  "가맹점주소2",
+  "가맹점전화번호",
+] as const;
+
+const SHINHAN_ACCOUNTING_DEFAULTS: Record<string, FixtureCell> = {
+  카드번호: "5531-52**-****-1278",
+  결제계좌번호: "111-222222-33-444",
+  결제은행: "은행가",
+  카드소유자명: "가명",
+  사용구분: "국내",
+  승인번호: "09847552",
+  승인일자: "2026.05.28",
+  승인시간: "18:43:28",
+  매출종류: "일시불",
+  "승인금액(원화)": 113400,
+  "승인금액(외화)": 0,
+  "공급가액(원화)": 103091,
+  부가세: 10309,
+  봉사료: 0,
+  할부기간: "",
+  외화거래일환율: 0,
+  외화거래국가코드: "-",
+  외화거래국가명: "",
+  가맹점사업자번호: FAKE_BUSINESS_NO,
+  가맹점명: "가맹점나",
+  가맹점업종명: "업종가",
+  가맹점우편번호: "00000",
+  가맹점주소1: "주소가",
+  가맹점주소2: "",
+  가맹점전화번호: "000-0000-0000",
+};
+
+// 신한 법인이용내역 회계양식(C-86) — 머리줄 1(시트 하나, 25칸), 승인일자 `YYYY.MM.DD` · 승인시간 `HH:MM:SS` 글자, 금액 칸은 숫자 셀.
+export function shinhanAccountingFixture(rows: readonly FixtureRow[], opts: FixtureOptions & { header?: readonly string[] } = {}): Uint8Array {
+  const header = opts.header ?? SHINHAN_ACCOUNTING_HEADER;
+  return writeBook([{ name: "Sheet0", rows: [[...header], ...rowsOf(header, SHINHAN_ACCOUNTING_DEFAULTS, rows)] }], opts.as);
+}
+
 export const BC_HEADER = [
   "수신정보구분코드",
   "카드번호",
@@ -338,6 +497,38 @@ export const BC_HEADER = [
   "외화거래국가코드",
   "외화거래국가명",
   "외화거래도시명",
+  "가맹점사업자번호",
+  "가맹점명",
+  "가맹점업종",
+  "가맹점우편번호",
+  "가맹점주소1",
+  "가맹점주소2",
+  "가맹점전화번호",
+  "회계코드",
+  "회계코드명",
+  "본부명",
+  "부서명",
+] as const;
+
+// 비씨 새 양식 28칸(C-86 실물) — 거래금액(외화) · 외화 칸 없음, 매입일자 · 회계 칸 있음.
+export const BC_HEADER_28 = [
+  "수신정보구분코드",
+  "카드번호",
+  "카드종류",
+  "결제계좌번호",
+  "결제계좌은행명",
+  "지정자한글명",
+  "국내외사용구분",
+  "승인번호",
+  "승인일자",
+  "매출종류",
+  "금액SIGN코드",
+  "거래금액(원화)",
+  "부가세",
+  "봉사료",
+  "할부기간",
+  "매입일자",
+  "매입금액(원화)",
   "가맹점사업자번호",
   "가맹점명",
   "가맹점업종",

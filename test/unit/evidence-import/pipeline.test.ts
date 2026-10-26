@@ -17,6 +17,7 @@ import {
   LOTTE_HEADER,
   lotteFixture,
   manyEntriesZipFixture,
+  shinhanAccountingFixture,
   shinhanFixture,
   streamedZipFixture,
   writeBook,
@@ -274,7 +275,7 @@ describe("데이터 서술자 xlsx(C-86)", () => {
   });
 
   it("비씨 28칸 xlsx를 스트리밍 꼴로 → .xls 판과 같은 줄", () => {
-    const rows = [{}, { 승인번호: "11111111", "거래금액(원화)": "5,500", 부가세: "0" }];
+    const rows: FixtureRow[] = [{}, { 승인번호: "11111111", "거래금액(원화)": "5,500", 부가세: "0" }];
     const streamed = ok(parseWorkbook(streamedZipFixture(bcFixture(rows, { header: BC_HEADER_28, as: "xlsx" }))));
     const fromXls = ok(parseWorkbook(bcFixture(rows, { header: BC_HEADER_28 })));
     expect(streamed.format).toBe("card-bc");
@@ -361,6 +362,7 @@ describe("홈택스 매입 현금영수증 — xlsx · csv(E39 · 06.1-11)", () 
 describe.each([
   ["card-lotte", () => lotteFixture([{}])],
   ["card-shinhan", () => shinhanFixture([{}])],
+  ["card-shinhan-accounting", () => shinhanAccountingFixture([{}])],
   ["card-bc", () => bcFixture([{}])],
   ["hometax-tax-invoice", () => hometaxTaxInvoiceFixture([{}])],
   ["hometax-invoice", () => hometaxInvoiceFixture([{}])],

@@ -364,6 +364,68 @@ export function shinhanFixture(rows: readonly FixtureRow[], opts: FixtureOptions
   return writeBook([{ name: "Sheet0", rows: [[...header], ...rowsOf(header, SHINHAN_DEFAULTS, rows)] }], opts.as);
 }
 
+export const SHINHAN_ACCOUNTING_HEADER = [
+  "카드번호",
+  "결제계좌번호",
+  "결제은행",
+  "카드소유자명",
+  "사용구분",
+  "승인번호",
+  "승인일자",
+  "승인시간",
+  "매출종류",
+  "승인금액(원화)",
+  "승인금액(외화)",
+  "공급가액(원화)",
+  "부가세",
+  "봉사료",
+  "할부기간",
+  "외화거래일환율",
+  "외화거래국가코드",
+  "외화거래국가명",
+  "가맹점사업자번호",
+  "가맹점명",
+  "가맹점업종명",
+  "가맹점우편번호",
+  "가맹점주소1",
+  "가맹점주소2",
+  "가맹점전화번호",
+] as const;
+
+const SHINHAN_ACCOUNTING_DEFAULTS: Record<string, FixtureCell> = {
+  카드번호: "5531-52**-****-1278",
+  결제계좌번호: "111-222222-33-444",
+  결제은행: "은행가",
+  카드소유자명: "가명",
+  사용구분: "국내",
+  승인번호: "09847552",
+  승인일자: "2026.05.28",
+  승인시간: "18:43:28",
+  매출종류: "일시불",
+  "승인금액(원화)": 113400,
+  "승인금액(외화)": 0,
+  "공급가액(원화)": 103091,
+  부가세: 10309,
+  봉사료: 0,
+  할부기간: "",
+  외화거래일환율: 0,
+  외화거래국가코드: "-",
+  외화거래국가명: "",
+  가맹점사업자번호: FAKE_BUSINESS_NO,
+  가맹점명: "가맹점나",
+  가맹점업종명: "업종가",
+  가맹점우편번호: "00000",
+  가맹점주소1: "주소가",
+  가맹점주소2: "",
+  가맹점전화번호: "000-0000-0000",
+};
+
+// 신한 법인이용내역 회계양식(C-86) — 머리줄 1(시트 하나, 25칸), 승인일자 `YYYY.MM.DD` · 승인시간 `HH:MM:SS` 글자, 금액 칸은 숫자 셀.
+export function shinhanAccountingFixture(rows: readonly FixtureRow[], opts: FixtureOptions & { header?: readonly string[] } = {}): Uint8Array {
+  const header = opts.header ?? SHINHAN_ACCOUNTING_HEADER;
+  return writeBook([{ name: "Sheet0", rows: [[...header], ...rowsOf(header, SHINHAN_ACCOUNTING_DEFAULTS, rows)] }], opts.as);
+}
+
 export const BC_HEADER = [
   "수신정보구분코드",
   "카드번호",

@@ -17,6 +17,7 @@ import {
   lotteFixture,
   manyEntriesZipFixture,
   shinhanFixture,
+  streamedZipFixture,
   writeBook,
   zipBombFixture,
   type FixtureRow,
@@ -220,7 +221,7 @@ describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는�
   });
 
   // 독립 검토 P1-1 — SheetJS는 로컬 헤더 · ZIP64 칸으로 풀 크기를 정하고 중앙 디렉터리와의 차이는 다 푼 뒤에 본다.
-  for (const forgery of ["local-size", "data-descriptor", "zip64-local", "zip64-central", "zero-size-deflate", "method", "understated-deflate"] as const) {
+  for (const forgery of ["local-size", "descriptor-local-size", "descriptor-stored", "descriptor-understated", "zip64-local", "zip64-central", "zero-size-deflate", "method", "understated-deflate"] as const) {
     it(`위조 zip(${forgery}) → zipEntryStats null · 거절 · SheetJS 읽기 호출 0`, () => {
       const bytes = forgedZipFixture(forgery);
       expect(bytes.length).toBeLessThan(EVIDENCE_IMPORT_MAX_BYTES);
@@ -242,6 +243,22 @@ describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는�
     expect(stats?.entries).toBeLessThan(200);
     expect(stats?.uncompressedBytes).toBeGreaterThan(1000);
     expect(zipEntryStats(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+});
+
+// C-86 — 실물 비씨 xlsx는 Java/.NET 스트리밍 zip(데이터 서술자 · 로컬 크기 0)이다. 방어(/cso B1)는 중앙 디렉터리 값으로 그대로.
+describe("데이터 서술자 xlsx(C-86)", () => {
+  const LIMITS = { maxEntries: 200, maxUnzippedBytes: 20_000_000 };
+
+  it("스트리밍 꼴 롯데 xlsx → zipEntryStats가 원본과 같고 .xls와 같은 줄 · 같은 열쇠", () => {
+    const plain = lotteFixture(LOTTE_ROWS, { as: "xlsx" });
+    const streamed = streamedZipFixture(plain);
+    expect(zipEntryStats(streamed)).toEqual(zipEntryStats(plain));
+    expect(() => readWorkbookRows(streamed, { zipLimits: LIMITS })).not.toThrow();
+    const fromStreamed = ok(parseWorkbook(streamed));
+    const fromXls = ok(parseWorkbook(lotteFixture(LOTTE_ROWS)));
+    expect(fromStreamed.format).toBe("card-lotte");
+    expect(fromStreamed.lines.map((line) => line.dedupeKey)).toEqual(fromXls.lines.map((line) => line.dedupeKey));
   });
 });
 

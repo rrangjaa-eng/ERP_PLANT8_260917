@@ -1,4 +1,4 @@
-import { deflateRawSync } from "node:zlib";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 import * as XLSX from "xlsx";
 import * as cpexcel from "xlsx/dist/cpexcel.full.mjs";
 
@@ -155,7 +155,7 @@ export function zipBombFixture(): Uint8Array {
   return bytes;
 }
 
-type ZipEntry = { local: Uint8Array; name: Uint8Array; localExtra: Uint8Array; data: Uint8Array; central: Uint8Array; centralExtra: Uint8Array; comment: Uint8Array };
+type ZipEntry = { local: Uint8Array; name: Uint8Array; localExtra: Uint8Array; data: Uint8Array; central: Uint8Array; centralExtra: Uint8Array; comment: Uint8Array; descriptor?: Uint8Array };
 
 function zipEntriesOf(bytes: Uint8Array): ZipEntry[] {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -201,9 +201,10 @@ function zipOf(entries: readonly ZipEntry[]): Uint8Array {
     cv.setUint16(30, entry.centralExtra.length, true);
     cv.setUint16(32, entry.comment.length, true);
     cv.setUint32(42, offset, true);
-    parts.push(local, entry.name, entry.localExtra, entry.data);
+    const descriptor = entry.descriptor ?? new Uint8Array(0);
+    parts.push(local, entry.name, entry.localExtra, entry.data, descriptor);
     centrals.push(central, entry.name, entry.centralExtra, entry.comment);
-    offset += local.length + entry.name.length + entry.localExtra.length + entry.data.length;
+    offset += local.length + entry.name.length + entry.localExtra.length + entry.data.length + descriptor.length;
   }
   const dirSize = centrals.reduce((sum, part) => sum + part.length, 0);
   const eocd = new Uint8Array(22);
@@ -234,7 +235,35 @@ function zip64Extra(uncompressed: number, compressed: number): Uint8Array {
   return extra;
 }
 
-export type ZipForgery = "local-size" | "data-descriptor" | "zip64-local" | "zip64-central" | "zero-size-deflate" | "method" | "understated-deflate";
+// 데이터 서술자 꼴 서술자(서명 + crc · packed · size 각 4바이트 LE, 16바이트).
+function descriptorOf(crc: number, packed: number, size: number): Uint8Array {
+  const out = new Uint8Array(16);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, 0x08074b50, true);
+  view.setUint32(4, crc, true);
+  view.setUint32(8, packed, true);
+  view.setUint32(12, size, true);
+  return out;
+}
+
+// 실물 비씨 xlsx 꼴(Java/.NET 스트리밍 zip) — 모든 항목 flag 0x0808 · 로컬 crc/packed/size 0 · 데이터 뒤 서술자 · 중앙 값은 올바름(C-86).
+export function streamedZipFixture(xlsx: Uint8Array): Uint8Array {
+  const entries = zipEntriesOf(xlsx);
+  for (const entry of entries) {
+    const local = new DataView(entry.local.buffer);
+    const central = new DataView(entry.central.buffer);
+    if (central.getUint16(10, true) !== 8) throw new Error("deflate 항목만 스트리밍 꼴로 바꾼다");
+    entry.descriptor = descriptorOf(central.getUint32(16, true), central.getUint32(20, true), central.getUint32(24, true));
+    local.setUint16(6, local.getUint16(6, true) | 0x0808, true);
+    central.setUint16(8, central.getUint16(8, true) | 0x0808, true);
+    local.setUint32(14, 0, true);
+    local.setUint32(18, 0, true);
+    local.setUint32(22, 0, true);
+  }
+  return zipOf(entries);
+}
+
+export type ZipForgery = "local-size" | "descriptor-local-size" | "descriptor-stored" | "descriptor-understated" | "zip64-local" | "zip64-central" | "zero-size-deflate" | "method" | "understated-deflate";
 
 // 중앙 디렉터리는 작아 보이는데 SheetJS가 로컬 헤더 · ZIP64 칸 · 데이터 서술자로 크게 푸는 꼴(독립 검토 P1-1).
 // 정상 롯데 xlsx(deflate)의 첫 항목 하나만 위조한다 — 파일은 작게 둔다.
@@ -245,9 +274,33 @@ export function forgedZipFixture(forgery: ZipForgery): Uint8Array {
   const local = new DataView(first.local.buffer);
   const central = new DataView(first.central.buffer);
   if (forgery === "local-size") local.setUint32(22, local.getUint32(22, true) + 5_000_000, true);
-  if (forgery === "data-descriptor") {
+  // 데이터 서술자 위조 3종 — 서술자를 받아들이는 새 규칙에서도 거절돼야 하는 위험한 변형(C-86).
+  if (forgery === "descriptor-local-size") {
     local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
     central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
+    local.setUint32(22, central.getUint32(24, true) + 5_000_000, true);
+  }
+  if (forgery === "descriptor-stored") {
+    first.data = new Uint8Array(inflateRawSync(first.data));
+    local.setUint16(8, 0, true);
+    central.setUint16(10, 0, true);
+    local.setUint32(18, first.data.length, true);
+    central.setUint32(20, first.data.length, true);
+    local.setUint32(22, first.data.length, true);
+    central.setUint32(24, first.data.length, true);
+    local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
+    central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
+  }
+  if (forgery === "descriptor-understated") {
+    first.data = new Uint8Array(deflateRawSync(new Uint8Array(5_000_000)));
+    local.setUint32(14, 0, true);
+    local.setUint32(18, 0, true);
+    local.setUint32(22, 0, true);
+    central.setUint32(20, first.data.length, true);
+    central.setUint32(24, 1000, true);
+    local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
+    central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
+    first.descriptor = descriptorOf(central.getUint32(16, true), first.data.length, 1000);
   }
   if (forgery === "zip64-local") first.localExtra = zip64Extra(5_000_000, first.data.length);
   if (forgery === "zip64-central") first.centralExtra = zip64Extra(5_000_000, first.data.length);
@@ -338,6 +391,38 @@ export const BC_HEADER = [
   "외화거래국가코드",
   "외화거래국가명",
   "외화거래도시명",
+  "가맹점사업자번호",
+  "가맹점명",
+  "가맹점업종",
+  "가맹점우편번호",
+  "가맹점주소1",
+  "가맹점주소2",
+  "가맹점전화번호",
+  "회계코드",
+  "회계코드명",
+  "본부명",
+  "부서명",
+] as const;
+
+// 비씨 새 양식 28칸(C-86 실물) — 거래금액(외화) · 외화 칸 없음, 매입일자 · 회계 칸 있음.
+export const BC_HEADER_28 = [
+  "수신정보구분코드",
+  "카드번호",
+  "카드종류",
+  "결제계좌번호",
+  "결제계좌은행명",
+  "지정자한글명",
+  "국내외사용구분",
+  "승인번호",
+  "승인일자",
+  "매출종류",
+  "금액SIGN코드",
+  "거래금액(원화)",
+  "부가세",
+  "봉사료",
+  "할부기간",
+  "매입일자",
+  "매입금액(원화)",
   "가맹점사업자번호",
   "가맹점명",
   "가맹점업종",

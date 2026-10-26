@@ -133,7 +133,8 @@ export function cfbStreamNames(bytes: Uint8Array): string[] | null {
 
 // zip 중앙 디렉터리 통계(SheetJS 없이 바이트만) — 항목 수 · 풀린 크기 합. 끝 레코드를 못 찾거나 ZIP64 표지면 null.
 // SheetJS는 로컬 헤더(와 ZIP64 칸)의 크기로 풀고 중앙 디렉터리와의 차이는 다 푼 뒤에 본다 — 그래서 항목마다 로컬 헤더를
-// 따라가 크기 · 방식이 같은지, 데이터 서술자(bit 3) · ZIP64 칸 · 풀린 크기 0인 deflate가 없는지 먼저 본다(독립 검토 P1-1).
+// 따라가 크기 · 방식이 같은지, ZIP64 칸 · 풀린 크기 0인 deflate가 없는지 먼저 본다(독립 검토 P1-1). 데이터 서술자(bit 3)는 deflate만 받고
+// 로컬 크기는 0 또는 중앙과 같아야 한다 — 상한은 중앙 값 + inflatesToDeclared가 보장한다(SheetJS는 스트림 끝까지 풀고 서술자는 비교만 — C-86).
 function hasZip64Extra(view: DataView, from: number, length: number): boolean | null {
   let at = from;
   const end = from + length;
@@ -182,15 +183,19 @@ export function zipEntryStats(bytes: Uint8Array): { entries: number; uncompresse
     const nameLen = view.getUint16(at + 28, true);
     const extraLen = view.getUint16(at + 30, true);
     const localAt = view.getUint32(at + 42, true);
-    if (size === 0xffffffff || packed === 0xffffffff || (flags & 0x0008) !== 0) return null;
+    const descriptor = (flags & 0x0008) !== 0;
+    if (size === 0xffffffff || packed === 0xffffffff) return null;
     if (method !== 0 && method !== 8) return null;
+    if (descriptor && method !== 8) return null;
     if ((method === 0 && packed !== size) || (method === 8 && size === 0 && packed > 2)) return null;
     if (at + 46 + nameLen + extraLen > end || hasZip64Extra(view, at + 46 + nameLen, extraLen) !== false) return null;
     if (localAt + 30 > dirOffset || view.getUint32(localAt, true) !== LOC) return null;
     const localNameLen = view.getUint16(localAt + 26, true);
     const localExtraLen = view.getUint16(localAt + 28, true);
-    if ((view.getUint16(localAt + 6, true) & 0x0008) !== 0 || view.getUint16(localAt + 8, true) !== method) return null;
-    if (view.getUint32(localAt + 18, true) !== packed || view.getUint32(localAt + 22, true) !== size) return null;
+    if (((view.getUint16(localAt + 6, true) & 0x0008) !== 0) !== descriptor || view.getUint16(localAt + 8, true) !== method) return null;
+    const localPacked = view.getUint32(localAt + 18, true);
+    const localSize = view.getUint32(localAt + 22, true);
+    if (descriptor ? (localPacked !== 0 && localPacked !== packed) || (localSize !== 0 && localSize !== size) : localPacked !== packed || localSize !== size) return null;
     if (localAt + 30 + localNameLen + localExtraLen + packed > dirOffset) return null;
     if (hasZip64Extra(view, localAt + 30 + localNameLen, localExtraLen) !== false) return null;
     // 크기 칸이 서로 맞아도 deflate 스트림이 선언보다 크게 풀리면 SheetJS가 스트림 끝까지 푸느라 CPU를 붙잡는다(/cso B1).

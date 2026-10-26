@@ -34,13 +34,15 @@ const LINE_FIELD_KEYS = ["subcategory", "itemName", "vendor", "quantity", "unitP
 export function lineCellDirty(line: LineCellValues, columnKey: string): boolean {
   if (!line.dirty) return false;
   const base = line.baseline;
-  // 번호 칸 — 고친 칸이 없는 줄(새 줄 · 복제 · 이동만)은 칸 대신 번호 칸에 삼각형. 칸 표시는 칸별 규칙 그대로.
-  if (columnKey === "sort") {
-    return line.isNew === true || line.moved === true || !LINE_FIELD_KEYS.some((key) => lineCellDirty(line, key));
-  }
   switch (columnKey) {
     case "subcategory":
-      return line.subcategory !== base.subcategory;
+      // 소분류 칸 — 1024 이상 편집 폭에서 늘 보이는 첫 데이터 칸이라 고친 칸이 없는 줄(새 줄 · 복제 · 이동만)의 줄 단위 표시도 여기에 얹는다.
+      return (
+        line.subcategory !== base.subcategory ||
+        line.isNew === true ||
+        line.moved === true ||
+        !LINE_FIELD_KEYS.some((key) => key !== "subcategory" && lineCellDirty(line, key))
+      );
     case "itemName":
       return line.itemName !== base.itemName;
     case "vendor":

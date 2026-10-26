@@ -51,19 +51,28 @@ describe("lineCellDirty", () => {
     expect(lineCellDirty(line({ dirty: true, quantity: 1 }), "quantity")).toBe(false);
   });
 
-  // 고친 칸이 없는 저장 안 한 줄(Ctrl+Enter 새 줄 · Ctrl+D 복제 · Alt+↑↓ 이동만)은 번호 칸에만 삼각형.
-  it("새 줄 · 이동만 한 줄은 번호 칸(sort)에 삼각형, 칸은 그대로", () => {
-    expect(lineCellDirty(line({ isNew: true }), "sort")).toBe(true);
-    expect(lineCellDirty(line({ moved: true }), "sort")).toBe(true);
+  // 고친 칸이 없는 저장 안 한 줄(Ctrl+Enter 새 줄 · Ctrl+D 복제 · Alt+↑↓ 이동만)은 1024에서도 보이는 소분류 칸에 삼각형.
+  it("새 줄 · 이동만 한 줄은 소분류 칸에 삼각형, 다른 칸은 그대로", () => {
+    expect(lineCellDirty(line({ isNew: true }), "subcategory")).toBe(true);
+    expect(lineCellDirty(line({ moved: true }), "subcategory")).toBe(true);
     expect(lineCellDirty(line({ isNew: true }), "itemName")).toBe(false);
   });
 
-  it("복제 줄처럼 새 줄에 고친 칸이 있어도 번호 칸 삼각형", () => {
-    expect(lineCellDirty(line({ isNew: true, itemName: "무대" }), "sort")).toBe(true);
+  it("복제 줄처럼 새 줄에 고친 칸이 있어도 소분류 칸 삼각형", () => {
+    expect(lineCellDirty(line({ isNew: true, itemName: "무대" }), "subcategory")).toBe(true);
   });
 
-  it("고친 칸이 있는 저장된 줄은 번호 칸 삼각형 없음 · dirty 아니면 없음", () => {
-    expect(lineCellDirty(line({ itemName: "무대" }), "sort")).toBe(false);
-    expect(lineCellDirty(line({ dirty: false, isNew: true }), "sort")).toBe(false);
+  it("고친 칸이 있는 저장된 줄은 소분류가 같으면 삼각형 없음 · dirty 아니면 없음", () => {
+    expect(lineCellDirty(line({ itemName: "무대" }), "subcategory")).toBe(false);
+    expect(lineCellDirty(line({ dirty: false, isNew: true }), "subcategory")).toBe(false);
+  });
+
+  it("소분류를 고친 저장된 줄은 소분류 칸 삼각형", () => {
+    expect(lineCellDirty(line({ subcategory: "다른분류" }), "subcategory")).toBe(true);
+  });
+
+  it("번호 칸(sort)에는 줄 단위 표시가 없다", () => {
+    expect(lineCellDirty(line({ isNew: true }), "sort")).toBe(false);
+    expect(lineCellDirty(line({ moved: true }), "sort")).toBe(false);
   });
 });

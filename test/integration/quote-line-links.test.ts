@@ -548,6 +548,15 @@ describe("행 행동 조합 (S14 · rowActionBlock — 06-18 소비 계약)", ()
     expect(doors.cells[fx.lines.withVendor]?.cardHref).toBeUndefined();
   });
 
+  it("[검토] 내 번호 없는 지출결의 초안이 있는 줄에는 `카드 사용 등록` 진입을 싣지 않는다(등록하면 초안을 제출할 수 없다)", async () => {
+    const fx = await setupExpenseProject();
+    await cardOn(fx, fx.lines.split); // 쓸 수 있는 카드가 있는 사람(다른 줄에 등록)
+    const draft = await draftOf(fx.pm, fx.lines.withVendor);
+    const doors = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(doors.cells[fx.lines.withVendor]).toMatchObject({ state: "open", expenseId: draft });
+    expect(doors.cells[fx.lines.withVendor]?.cardHref).toBeUndefined();
+  });
+
   it("[검토 I-2] 온라인구매 줄 막힘 이유 = 카드 사용 등록 서버 거부 문구 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`", async () => {
     const fx = await setupExpenseProject();
     const draft = await draftOf(fx.pm, fx.lines.withVendor);

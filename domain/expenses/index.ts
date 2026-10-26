@@ -1839,7 +1839,7 @@ export type LineDoorCell = {
   purchaseHref?: string;
   // 06-13(S14) — 행 행동 막힘 이유(서버 게이트 거부와 같은 문자열) · 다음 한 수(`rowActionBlock`).
   blocked?: RowActionBlock;
-  // 시작 전 열린 줄(막힘 없음)에서 지출결의 옆에 서는 `카드 사용 등록` 진입. 쓸 카드가 없거나 지출결의가 이미 연결된 줄에는 없다.
+  // 시작 전 열린 줄(막힘 없음)에서 지출결의 옆에 서는 `카드 사용 등록` 진입. 쓸 카드가 없거나 지출결의가 이미 연결된 줄, 내 번호 없는 지출결의 초안이 있는 줄(등록하면 초안을 제출할 수 없다)에는 없다.
   cardHref?: string;
 };
 
@@ -1928,7 +1928,7 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
     });
     const shown = blocked?.next && !(await cardRegistrable()) ? { reason: blocked.reason } : blocked;
     const cardEntry =
-      door.state === "open" && branch !== "purchase" && !blocked && cardDualLinkDecision({ side: "card", links: lineLinks }).allowed && (await cardRegistrable());
+      door.state === "open" && branch !== "purchase" && !blocked && !draft && cardDualLinkDecision({ side: "card", links: lineLinks }).allowed && (await cardRegistrable());
     cells[line.id] = {
       state: door.state,
       branch,

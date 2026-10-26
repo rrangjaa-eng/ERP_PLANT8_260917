@@ -46,3 +46,4 @@ qa 2026-10-14T02:00Z session=0592c76f-6b2e-5528-b811-98e2202c45bd (PR #214 묶�
 review 2026-10-16T05:19Z session=0e0eb4e2-f6d0-5610-be1a-3aa1adc3845b (PR #237 시험 고침 e669757·0b52710 /review — 뒤 4자리 오판 정규식 고침, 지적 1 자동 고침(대표 화면 평문 검사), 남은 결함 0, Codex 없음(R3), 훅 미기록이라 손 기록(10/16 16:14 KST 사용자 카드 「손 기록」), 보고서 /mnt/project-files/06-review/g5/237-review.md)
 plan-design-review 2026-10-26T04:17Z session=b670f151-961d-5247-a874-8344e4a7ab4a
 design-review 2026-10-26T05:04Z session=b670f151-961d-5247-a874-8344e4a7ab4a
+review 2026-10-26T05:24Z session=b670f151-961d-5247-a874-8344e4a7ab4a

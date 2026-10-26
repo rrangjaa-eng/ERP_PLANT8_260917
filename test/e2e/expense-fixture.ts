@@ -222,3 +222,11 @@ export async function submitLineExpense(browser: Browser, baseURL: string | unde
   await page.context().close();
   return expenseId;
 }
+
+// 필터 줄 폭 회귀 — 공용 DB엔 앞선 스펙이 만든 긴 팀 이름이 쌓여 있고, 네이티브 팀 select는 가장 긴 옵션만큼 넓어진다(CI e2e 실측).
+// 로컬 빈 DB에서도 같은 조건이 되도록 긴 이름의 팀 둘을 미리 만든다.
+export async function seedLongTeamNames(): Promise<void> {
+  const suffix = randomUUID().slice(0, 8);
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E긴이름본부-${suffix}` });
+  for (const index of [1, 2]) await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E필터폭검증용으로아주길게붙인팀이름${index}-${suffix}` });
+}

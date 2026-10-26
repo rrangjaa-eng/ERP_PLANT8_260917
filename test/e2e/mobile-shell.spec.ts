@@ -155,7 +155,7 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
       await Promise.all(MENUS.map(async (menu) => ((await can({ id: randomUUID(), roleId: DEFAULT_ROLE_ID }, menu.key, "view")) ? menu.key : null)))
     ).filter((key): key is string => key !== null);
     expect(allowedMenus).toContain("leave");
-    const { accountGroup } = roleMenu({ roleId: DEFAULT_ROLE_ID, allowedMenus });
+    const { accountGroup } = roleMenu({ roleId: DEFAULT_ROLE_ID, allowedMenus, canIntakeEvidence: false });
     // "계정" 그룹 헤더(role="presentation") 다음에 오는 형제 <li>들이 계정 그룹 항목이다.
     const accountItems = sheet.locator('li[role="presentation"] ~ li');
     const texts = await accountItems.allTextContents();

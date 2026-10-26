@@ -66,5 +66,5 @@
 
 /* 포커스 · 해시 자리인 제목(id 있음)은 스크롤해 오면 고정 상단 바 아래에 선다(06-19 검토 D-5). */
 .sectionTitle[id] {
-  scroll-margin-top: calc(var(--bar-h) + var(--s-4));
+  scroll-margin-top: calc(var(--shell-top) + var(--s-4));
 }

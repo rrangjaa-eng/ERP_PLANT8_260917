@@ -266,7 +266,7 @@
 @media (max-width: 699.98px) {
   .resultLine:not(:empty) {
     position: sticky;
-    top: var(--bar-h);
+    top: var(--shell-top);
     z-index: var(--z-sticky);
     padding: var(--s-2) 0;
     margin-bottom: var(--s-2);

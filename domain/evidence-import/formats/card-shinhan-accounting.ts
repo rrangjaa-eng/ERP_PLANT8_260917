@@ -22,6 +22,7 @@ export const cardShinhanAccounting: FormatRule = {
   createsVendor: false,
   issuerAliases: ["신한"],
   keyKind: "card",
+  keyPrefix: "card-shinhan",
   detect: (sheets) => findCardHeader(sheets, isHeader),
   read(rows, ctx) {
     const header = rows[ctx.headerRow] ?? [];

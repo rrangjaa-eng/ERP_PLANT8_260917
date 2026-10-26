@@ -384,3 +384,21 @@ describe.each([
     expect(matched).toEqual([key]);
   });
 });
+
+// 같은 신한 거래를 옛 12칸과 회계양식으로 올려도 같은 열쇠 — 서식 키가 달라 이중 등록되면 돈 기록이 둘이 된다.
+describe("신한 두 양식의 열쇠 이름공간", () => {
+  it("같은 거래(옛 12칸 · 회계양식) → 같은 dedupeKey · 같은 baseKey", () => {
+    const old = ok(parseWorkbook(shinhanFixture([{}])));
+    const accounting = ok(parseWorkbook(shinhanAccountingFixture([{}])));
+    expect(old.format).toBe("card-shinhan");
+    expect(accounting.format).toBe("card-shinhan-accounting");
+    expect(accounting.lines[0]?.dedupeKey).toBe(old.lines[0]?.dedupeKey);
+    expect(accounting.lines[0]?.baseKey).toBe(old.lines[0]?.baseKey);
+    expect(old.lines[0]?.dedupeKey.startsWith("card-shinhan|")).toBe(true);
+  });
+
+  it("다른 서식의 열쇠 접두어는 그대로", () => {
+    expect(ok(parseWorkbook(lotteFixture([{}]))).lines[0]?.dedupeKey.startsWith("card-lotte|")).toBe(true);
+    expect(ok(parseWorkbook(bcFixture([{}]))).lines[0]?.dedupeKey.startsWith("card-bc|")).toBe(true);
+  });
+});

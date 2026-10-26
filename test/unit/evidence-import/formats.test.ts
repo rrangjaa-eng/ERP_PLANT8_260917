@@ -854,7 +854,7 @@ describe("신한 회계양식(C-86)", () => {
       cardLast4: "1278",
       needsCheck: null,
     });
-    expect(result.lines[0]?.dedupeKey).toBe("card-shinhan-accounting|1278|09847552|2026-05-28|113400");
+    expect(result.lines[0]?.dedupeKey).toBe("card-shinhan|1278|09847552|2026-05-28|113400");
   });
 
   it("승인시간 빈칸 → usedAt null · 승인번호 빈칸 → approvalNo null(오류 아님)", () => {

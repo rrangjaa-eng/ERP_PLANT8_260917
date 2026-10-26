@@ -115,7 +115,7 @@ export function parseWorkbook(bytes: Uint8Array, options: ParseOptions = {}): Pa
   }
 
   // 열쇠를 먼저 매긴다 — 남은 줄의 `#n`이 취소 줄이 이 파일에 들어왔는지에 따라 바뀌지 않는다(앞 파일과 같은 열쇠).
-  const { lines, pairs } = splitOffsetPairs(dedupeKeys(rule.key, rule.keyKind, read.lines));
+  const { lines, pairs } = splitOffsetPairs(dedupeKeys(rule.keyPrefix ?? rule.key, rule.keyKind, read.lines));
   const pairLines = pairs.flatMap((pair) => [pair.original, pair.cancel]);
   const rateDates = [...new Set([...lines, ...pairLines].filter((line) => line.vatKrw === null && line.supplyKrw === null).map((line) => line.issuedOn))].sort();
   return { ok: true, format: rule.key, lines, rateDates, offsetPairs: pairs.length, offsetLines: pairs };

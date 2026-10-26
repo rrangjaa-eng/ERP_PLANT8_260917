@@ -491,6 +491,13 @@ test.describe("프로젝트 목록 — 머리글 정렬 (04-18)", () => {
     await expect(page).toHaveURL(/dir=desc/);
     await expect(header).toHaveAttribute("aria-sort", "descending");
     await expect(firstRowLink).toHaveText(`${marker}-큰수익`);
+
+    // 세 번째 클릭 = 정렬 초기화: sort·dir가 주소에서 빠지고(필터는 유지) 기본 정렬(기간 오름차순)로 돌아온다.
+    await header.getByRole("link", { name: "수익금" }).click();
+    await expect(page).not.toHaveURL(/[?&](sort|dir)=/);
+    expect(page.url()).toContain(`q=${encodeURIComponent(marker)}`);
+    await expect(page.locator(`${LIST_TABLE} thead th`, { hasText: "기간" })).toHaveAttribute("aria-sort", "ascending");
+    await expect(page.locator(`${LIST_TABLE} thead th[aria-sort]`)).toHaveCount(1);
   });
 });
 

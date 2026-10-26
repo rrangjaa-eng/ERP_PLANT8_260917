@@ -1,4 +1,5 @@
-/* SYSTEM.md §6-0 공통 셸 · 상단 바(PC·폰 --bar-h 48 · 아래 선 없음). 실물: docs/design/system/preview.html .bar 블록.
+/* SYSTEM.md §6-0 공통 셸 · <1280 상단 바(--bar-h 48 · 아래 선 없음) / ≥1280 왼쪽 레일(--rail-w). 한 header가 폭에 따라 모양을 바꾼다.
+   실물: docs/design/system/preview.html .bar 블록.
    색·서체·radius는 역할 토큰 참조만 쓴다. 흰색 반전 워드마크는 바 위 글자색 --bar-fg 한 이름이다. */
 
 .bar {
@@ -50,62 +51,19 @@
   outline-offset: var(--focus-offset);
 }
 
-.nav {
-  display: flex;
-  gap: var(--s-4);
+/* 레일 전용 조각(검색 행 · 주 메뉴 · 관리) — 1280 미만에서는 가림 레일(RailSheet)이 대신한다. */
+.railOnly,
+.railNav {
+  display: none;
 }
 
-.navLink {
-  display: flex;
-  align-items: center;
-  align-self: stretch;
-  /* 현재 메뉴 밑줄 자리 — 평소엔 투명이라 글자 위치가 현재 표시로 움직이지 않는다. */
-  border-bottom: var(--underline-w-hover) solid transparent;
-  color: var(--bar-muted);
-  text-decoration: none;
-  transition: color var(--dur-hover) var(--ease-out);
-}
-
-/* §5 hover 120ms(/design-review FINDING-002) — 현재 메뉴와 같은 --bar-fg로 밝힌다. */
-.navLink:hover {
-  color: var(--bar-fg);
-}
-
-.navLink[aria-current="page"] {
-  color: var(--bar-fg);
-  font-weight: var(--fw-bold);
-  border-bottom-color: var(--bar-leaf);
-}
-
-/* 전역 :focus-visible(--focus)은 딥그린 상단 바(--bar-bg) 위에서 보이지 않는다 —
-   바 위 포커스 예외(--focus-on-bar, 04.2)로 덮는다. 바 밖 사용자 메뉴 항목은 --focus 그대로. */
-.navLink:focus-visible {
-  outline: var(--focus-w) solid var(--focus-on-bar);
-  outline-offset: var(--focus-offset);
-}
-
-.right {
+/* 사용자 영역(바 오른쪽 / 레일 바닥) — 바 높이를 채운다(FINDING-003). */
+.bottom {
   margin-left: auto;
-  /* 안쪽 사용자 트리거가 바 높이를 채우도록 이 칸도 바 높이를 채운다(FINDING-003). */
   align-self: stretch;
   display: flex;
   align-items: center;
-  gap: var(--s-4);
   color: var(--bar-muted);
-}
-
-.kbdWrap {
-  display: flex;
-}
-
-/* SYSTEM §2 태그 글자(--text-tag 11 · 600) · 모서리 표(상태 배지 · kbd = --radius-tag 4) — 웨이브 6 DOM 감사 P4. */
-.kbd {
-  border: var(--line-w) solid var(--bar-muted);
-  border-radius: var(--radius-tag);
-  color: var(--bar-fg);
-  padding: 0 var(--s-1);
-  font-size: var(--text-tag);
-  font-weight: var(--fw-medium);
 }
 
 .userWrap {
@@ -127,7 +85,7 @@
   color: var(--bar-fg);
   font-size: var(--text-aux);
   cursor: pointer;
-  /* 메뉴 링크(.navLink)와 같이 바 높이를 채운다 — 히트 영역이 글자 줄이 아니라 바 높이
+  /* 바 높이를 채운다 — 히트 영역이 글자 줄이 아니라 바 높이
      (/design-review FINDING-003, §10 PC 컨트롤 32 하한). */
   align-self: stretch;
   padding: 0;
@@ -220,11 +178,6 @@
 }
 
 @media (max-width: 699.98px) {
-  .nav,
-  .kbdWrap {
-    display: none;
-  }
-
   /* §3·§10 폰 44×44 터치 목표(F-05, 260922-o2b) — 트리거가 padding:0이라
      글자 줄 높이로 찌그러지지 않게 최소 크기를 건다. */
   .userTrigger {
@@ -251,4 +204,66 @@
 /* WR-06 — 사용자 메뉴 안 로그아웃 실패 문구 자리. 색·서체는 FormAlert가 갖는다. */
 .userMenuAlert {
   padding: 0 var(--s-3);
+}
+
+/* ≥1280 왼쪽 레일 — 위에서 아래로 워드마크 · 검색 · 주 메뉴(여기만 세로 스크롤) · 바닥 고정(관리 · 사용자). */
+@media (min-width: 1280px) {
+  .bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    width: var(--rail-w);
+    height: 100vh;
+    padding: 0;
+    align-self: start;
+  }
+
+  .markLink {
+    flex: none;
+    align-self: stretch;
+    min-height: var(--bar-h);
+    padding: 0 var(--s-4);
+  }
+
+  .railOnly {
+    display: block;
+    flex-shrink: 0;
+  }
+
+  .railNav {
+    display: block;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .bottom {
+    flex-direction: column;
+    align-items: stretch;
+    align-self: stretch;
+    flex-shrink: 0;
+    margin-left: 0;
+  }
+
+  .userWrap {
+    display: block;
+  }
+
+  .userTrigger {
+    width: 100%;
+    min-height: var(--touch-min);
+    padding: 0 var(--s-4);
+    justify-content: space-between;
+    font-size: var(--text-body);
+    font-weight: var(--fw-medium);
+  }
+
+  /* 위로 여는 메뉴 — 바닥에 붙어 있어 아래로는 열 자리가 없다. 폭은 레일 폭 이상. */
+  .userMenu {
+    top: auto;
+    bottom: 100%;
+    left: 0;
+    right: auto;
+    min-width: var(--rail-w);
+  }
 }

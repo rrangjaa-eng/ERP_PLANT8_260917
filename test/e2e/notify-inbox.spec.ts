@@ -155,7 +155,7 @@ test.describe("PC 사용자 메뉴 — 「알림함 N」 (04.2-09 Task 1 · S1-b
     await expect(page).toHaveURL(/\/notifications$/);
   });
 
-  test("관리자 — 사용자 메뉴 순서가 「관리」 다음 「알림함 1」이다", async ({ page }) => {
+  test("관리자 — 「관리」는 레일에 있고 사용자 메뉴 첫 항목은 「알림함 1」이다", async ({ page }) => {
     const admin = await createAdmin();
     const kind = createTestConditionKind([
       testCandidate({ recipientId: admin.userId, entityId: randomUUID(), referenceDate: "2026-01-01" }),
@@ -171,8 +171,8 @@ test.describe("PC 사용자 메뉴 — 「알림함 N」 (04.2-09 Task 1 · S1-b
     const trigger = page.locator('header button[aria-haspopup="menu"]');
     await trigger.click();
     const items = page.getByRole("menuitem");
-    await expect(items.nth(0)).toHaveText("관리");
-    await expect(items.nth(1)).toHaveText("알림함 1");
+    await expect(items.nth(0)).toHaveText("알림함 1");
+    await expect(page.getByRole("banner").getByRole("link", { name: "관리", exact: true })).toBeVisible();
   });
 });
 

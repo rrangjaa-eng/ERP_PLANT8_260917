@@ -103,6 +103,8 @@
   --bar-muted: var(--g-300);   /* on bar 7.0 */
   --bar-leaf:  var(--g-400);   /* 로고 잎 · on bar 6.6 */
   --bar-h:     48px;
+  --rail-w:    176px;   /* 왼쪽 레일 폭(≥1280, SYSTEM §6-0) */
+  --shell-top: var(--bar-h);   /* 본문 위쪽 고정 요소가 비켜야 할 높이 — 위쪽 바가 없는 ≥1280은 0 */
   --focus-on-bar: var(--g-100);   /* 포커스 링이 상단 바 위(어두운 면)에 놓일 때의 색 — 바 위 포커스 예외(SYSTEM §6-0) · on bar-bg 11.3 */
 
   /* 형태 */
@@ -231,6 +233,13 @@
   --icon-sm:     16px;
   --icon-lg:     20px;
   --icon-stroke: 1.75;
+}
+
+/* 레일 폭(≥1280): 위쪽 바가 없다 */
+@media (min-width: 1280px) {
+  :root {
+    --shell-top: 0px;
+  }
 }
 
 /* 폰: 본문 1단계 위, 여백·행 높이·컨트롤 조정 */

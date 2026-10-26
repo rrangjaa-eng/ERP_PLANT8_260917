@@ -48,7 +48,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   const gatedMenus = await withCertMenusGated(allowedMenus);
 
-  const menu = roleMenu({ roleId: viewer.roleId ?? "", allowedMenus: gatedMenus });
+  const canIntakeEvidence = await can(viewer, "evidence.intake", "write");
+  const menu = roleMenu({ roleId: viewer.roleId ?? "", allowedMenus: gatedMenus, canIntakeEvidence });
 
   // D-4219: 첫 값은 레이아웃의 서버 조회 하나뿐이다 — 실패해도 셸 자체는 정상
   // 렌더된다(S1-badge/error, 배지만 없다). 이후 경로 변경마다 다시 받는 일은

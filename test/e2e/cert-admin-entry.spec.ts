@@ -25,10 +25,7 @@ test.describe("확인증 관리 진입(04.3-09)", () => {
     const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
     await login(page, pm);
 
-    await page.getByRole("button", { name: "E2E Employee" }).click();
-    const menu = page.getByRole("menu");
-    await expect(menu).toBeVisible();
-    await menu.getByRole("menuitem", { name: "관리", exact: true }).click();
+    await page.getByRole("banner").getByRole("link", { name: "관리", exact: true }).click();
     await expect(page).toHaveURL(/\/admin$/);
 
     await expect(page.getByRole("heading", { level: 2 })).toHaveText(["확인증"]);
@@ -47,10 +44,7 @@ test.describe("확인증 관리 진입(04.3-09)", () => {
 
     await withCertFeatureOff(async () => {
       await login(page, pm);
-      await page.getByRole("button", { name: "E2E Employee" }).click();
-      const menu = page.getByRole("menu");
-      await expect(menu).toBeVisible();
-      await expect(menu.getByRole("menuitem", { name: "관리", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("banner").getByRole("link", { name: "관리", exact: true })).toHaveCount(0);
       const response = await page.goto("/admin");
       expect(response?.status()).toBe(404);
 

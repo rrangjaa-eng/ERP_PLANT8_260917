@@ -231,9 +231,9 @@ test.describe("연차 목록 /leave (04.1-06 Task 1 · S1 · S10)", () => {
     });
   });
 
-  test("PC 사용자 메뉴 순서(Codex MEDIUM): 관리자는 관리 · 알림함 · 내 정보 · 연차 · 로그아웃", async ({ browser, baseURL }) => {
+  test("PC 사용자 메뉴 순서(Codex MEDIUM): 관리자도 알림함 · 내 정보 · 연차 · 로그아웃(관리는 레일)", async ({ browser, baseURL }) => {
     const page = await login(browser, baseURL, await createFixtureUser({ roleId: SYSADMIN_ROLE_ID }));
-    expect(await userMenuItems(page, "E2E Admin")).toEqual(["관리", "알림함", "내 정보", "연차", "로그아웃"]);
+    expect(await userMenuItems(page, "E2E Admin")).toEqual(["알림함", "내 정보", "연차", "로그아웃"]);
     await page.context().close();
   });
 

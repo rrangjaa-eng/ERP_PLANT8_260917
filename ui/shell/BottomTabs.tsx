@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import type { AccountEntry, BottomTab, MenuLink } from "./role-menu";
 import { MoreSheet } from "./MoreSheet";
-import { isCurrentPath } from "./current-path";
+import { currentHref } from "./current-path";
 import styles from "./BottomTabs.module.css";
 
 // SYSTEM.md §6-0 폰 하단 탭 + 「더보기」 시트 트리거. 표시 여부(폰만 보임)는
@@ -40,6 +40,7 @@ export function BottomTabs({
   const tabHrefs = new Set(
     bottomTabs.filter((tab): tab is Extract<BottomTab, { kind: "link" }> => tab.kind === "link").map((tab) => tab.href),
   );
+  const currentTabHref = currentHref(pathname, [...tabHrefs]);
   // §7-8 「더보기」 시트 구성 — 하단 탭에 없는 1차 메뉴. 새 데이터 원천이 아니라
   // role-menu.ts가 이미 준 두 목록(topBarMenu·bottomTabs)의 차집합일 뿐이다.
   const moreMenu = topBarMenu.filter((item) => !tabHrefs.has(item.href));
@@ -55,7 +56,7 @@ export function BottomTabs({
                 key={tab.href}
                 href={tab.href}
                 className={styles.tab}
-                aria-current={isCurrentPath(pathname, tab.href) ? "page" : undefined}
+                aria-current={tab.href === currentTabHref ? "page" : undefined}
               >
                 {label}
               </a>

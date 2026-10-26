@@ -254,9 +254,23 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
   });
 });
 
-test.describe("§6-0 상단 바 — 스킨 A (04.6-08)", () => {
-  test("바 높이가 --bar-h이고 아래 선이 없고 면이 --bar-bg다", async ({ page }) => {
+test.describe("§6-0 왼쪽 레일 — 스킨 A (04.6-08 · 2026-10-26 레일)", () => {
+  test("1280: 레일 폭이 --rail-w이고 뷰포트 높이이며 면이 --bar-bg다(위쪽 바 없음)", async ({ page }) => {
     await loginAs(page, DEFAULT_ROLE_ID);
+    await page.goto("/projects");
+
+    const bar = page.getByRole("banner");
+    await expect(bar).toHaveCSS("width", await tokenValue(page, "--rail-w"));
+    await expect(bar).toHaveCSS("height", `${page.viewportSize()!.height}px`);
+    await expect(bar).toHaveCSS("background-color", await tokenAsColor(page, "--bar-bg"));
+    const main = await page.locator("main").boundingBox();
+    expect(main!.x).toBeGreaterThanOrEqual(176);
+    expect(main!.y).toBeLessThan(1);
+  });
+
+  test("1000: 바 높이가 --bar-h이고 아래 선이 없고 면이 --bar-bg다", async ({ page }) => {
+    await loginAs(page, DEFAULT_ROLE_ID);
+    await page.setViewportSize({ width: 1000, height: 800 });
     await page.goto("/projects");
 
     const bar = page.getByRole("banner");
@@ -283,7 +297,7 @@ test.describe("§6-0 상단 바 — 스킨 A (04.6-08)", () => {
   });
 });
 
-test.describe("§6-0 상단 바 Ctrl+K kbd (웨이브 6 DOM 감사 P4)", () => {
+test.describe("§6-0 레일 검색 행 Ctrl+K kbd (웨이브 6 DOM 감사 P4)", () => {
   test("Ctrl+K kbd는 --text-tag 600이고 radius가 --radius-tag다(SYSTEM §2 태그 글자 · 모서리 표)", async ({ page }) => {
     await loginAs(page, DEFAULT_ROLE_ID);
     await page.goto("/projects");
@@ -306,9 +320,9 @@ test.describe("§6-0 현재 메뉴(WR-01)", () => {
     await expect(current).toHaveText("프로젝트");
     await expect(current).toHaveCSS("font-weight", "700");
     await expect(current).toHaveCSS("color", await tokenAsColor(page, "--bar-fg"));
-    // 현재 표시 = 아래 2px(--underline-w-hover) --bar-leaf 밑줄(04.6-08 — inset 그림자 대신 투명 자리를 채운다).
-    await expect(current).toHaveCSS("border-bottom-width", await tokenValue(page, "--underline-w-hover"));
-    await expect(current).toHaveCSS("border-bottom-color", await tokenAsColor(page, "--bar-leaf"));
+    // 현재 표시 = 왼쪽 2px(--underline-w-hover) --bar-leaf 막대(투명 자리를 채운다).
+    await expect(current).toHaveCSS("border-left-width", await tokenValue(page, "--underline-w-hover"));
+    await expect(current).toHaveCSS("border-left-color", await tokenAsColor(page, "--bar-leaf"));
   });
 
   test("/account에서는 주 메뉴 현재 링크가 없다", async ({ page }) => {

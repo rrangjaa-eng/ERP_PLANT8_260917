@@ -21,18 +21,14 @@ async function loginAsSysadmin(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/account$/);
 }
 
-test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관리자 화면에 닿는다 (「관리」 한 줄로 접기)", () => {
-  test("사용자 메뉴의 「관리」를 눌러 /admin에 닿고, 거기서 「코드표」를 눌러 /admin/code-tables에 닿는다", async ({
+test.describe("PC 레일 「관리」 → /admin 인덱스로 클릭만으로 관리자 화면에 닿는다 (「관리」 한 줄로 접기)", () => {
+  test("레일의 「관리」를 눌러 /admin에 닿고, 거기서 「코드표」를 눌러 /admin/code-tables에 닿는다", async ({
     page,
   }) => {
     await loginAsSysadmin(page);
 
-    await page.getByRole("button", { name: "E2E Admin" }).click();
-    const menu = page.getByRole("menu");
-    await expect(menu).toBeVisible();
-
-    // 주소를 직접 입력하지 않고 메뉴 항목을 눌러서만 이동한다.
-    await menu.getByRole("menuitem", { name: "관리" }).click();
+    // 주소를 직접 입력하지 않고 레일 항목을 눌러서만 이동한다(2026-10-26 — 「관리」는 레일 바닥).
+    await page.getByRole("banner").getByRole("link", { name: "관리", exact: true }).click();
     await expect(page).toHaveURL(/\/admin$/);
 
     await page.getByRole("link", { name: "코드표" }).click();
@@ -45,7 +41,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     await expect(page.getByRole("navigation", { name: "코드표 선택" })).toBeVisible();
   });
 
-  test("PC 사용자 메뉴에는 「관리」 항목만 보이고, 관리자 화면 개별 라벨 12개는 메뉴 안에 하나도 없다", async ({
+  test("PC 레일에는 「관리」 한 줄만 보이고, 관리자 화면 개별 라벨 12개는 레일·사용자 메뉴 안에 하나도 없다", async ({
     page,
   }) => {
     await loginAsSysadmin(page);
@@ -54,7 +50,9 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
 
-    await expect(menu.getByRole("menuitem", { name: "관리", exact: true })).toBeVisible();
+    const banner = page.getByRole("banner");
+    await expect(banner.getByRole("link", { name: "관리", exact: true })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "관리", exact: true })).toHaveCount(0);
 
     const individualLabels = [
       "시스템 상태",
@@ -73,6 +71,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     ];
     for (const label of individualLabels) {
       await expect(menu.getByRole("menuitem", { name: label, exact: true })).toHaveCount(0);
+      await expect(banner.getByRole("link", { name: label, exact: true })).toHaveCount(0);
     }
 
     // admin.settings는 사용자 자신의 「설정」(/settings)과 구분되는 라벨이라
@@ -117,7 +116,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
   // 실행되지 않았다(role-menu.test.ts의 adminIndexGroups 단위 테스트는 이 화면
   // 자체를 렌더하지 않는다). 관리자 메뉴가 0개인 계급(기획 PM, seed에서 admin.*
   // view 권한을 전혀 받지 않는다)으로 실제 화면을 눌러 확인한다.
-  test("관리자 메뉴가 0개인 계급(기획 PM)은 사용자 메뉴에 「관리」가 없고 /admin은 404다", async ({
+  test("관리자 메뉴가 0개인 계급(기획 PM)은 레일에 「관리」가 없고 /admin은 404다", async ({
     page,
   }) => {
     const employee = await createFixtureUser({ roleId: "role-pm" });
@@ -132,6 +131,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: "관리", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("banner").getByRole("link", { name: "관리", exact: true })).toHaveCount(0);
 
     const response = await page.goto("/admin");
     expect(response?.status()).toBe(404);

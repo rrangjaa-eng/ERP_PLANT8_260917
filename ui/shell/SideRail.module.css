@@ -1,0 +1,54 @@
+/* SYSTEM.md §6-0 왼쪽 레일 공통 조각(고정 레일 · 가림 레일). 면은 레일을 담는 쪽(--bar-bg)이 갖는다.
+   색·서체는 역할 토큰 참조만 쓴다. */
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  min-height: var(--touch-min);
+  padding: 0 var(--s-4);
+  color: var(--bar-muted);
+  font-size: var(--text-body);
+}
+
+/* SYSTEM §2 태그 글자(--text-tag 11 · 600) · kbd = --radius-tag 4. */
+.kbd {
+  border: var(--line-w) solid var(--bar-muted);
+  border-radius: var(--radius-tag);
+  color: var(--bar-fg);
+  padding: 0 var(--s-1);
+  font-size: var(--text-tag);
+  font-weight: var(--fw-medium);
+}
+
+/* 현재 메뉴 막대 자리 — 평소엔 투명이라 글자 위치가 현재 표시로 움직이지 않는다. */
+.link {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding: 0 var(--s-4);
+  border-left: var(--underline-w-hover) solid transparent;
+  background: none;
+  color: var(--bar-muted);
+  font-size: var(--text-body);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  transition: color var(--dur-hover) var(--ease-out);
+}
+
+.link:hover {
+  color: var(--bar-fg);
+}
+
+.link[aria-current="page"] {
+  color: var(--bar-fg);
+  font-weight: var(--fw-bold);
+  border-left-color: var(--bar-leaf);
+}
+
+/* 딥그린 면 위 포커스 예외(--focus-on-bar). */
+.link:focus-visible {
+  outline: var(--focus-w) solid var(--focus-on-bar);
+  outline-offset: calc(-1 * var(--focus-w));
+}

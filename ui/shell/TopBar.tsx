@@ -4,14 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NOTIFICATIONS_HREF, type AccountEntry, type MenuLink } from "./role-menu";
-import { isCurrentPath } from "./current-path";
+import { currentHref } from "./current-path";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { Num } from "@/ui/num/Num";
 import { useLogout } from "@/ui/logout/use-logout";
 import { useUnreadCount, unreadCountLabel, notificationsMenuLabel } from "./unread-count";
+import { RAIL_MEDIA, RailAdminLink, RailNav, RailSearchRow } from "./SideRail";
+import { RailSheet } from "./RailSheet";
 import styles from "./TopBar.module.css";
 
-// SYSTEM.md §6-0 공통 셸 · PC 상단 바. 앱 유일의 딥그린 면 + 1차 메뉴 + 사용자 진입점.
+// SYSTEM.md §6-0 공통 셸 · 앱 유일의 딥그린 면 + 1차 메뉴 + 사용자 진입점. 폭에 따라 한 header가 모양을 바꾼다 —
+// ≥1280은 왼쪽 레일(워드마크 · 검색 · 주 메뉴 · 바닥에 관리 · 사용자), 700–1279는 48px 바(≡ · 워드마크 · 사용자 메뉴,
+// ≡가 가림 레일을 연다), <700은 바(하단 탭이 메뉴). 사용자 메뉴 · 워드마크는 DOM 하나를 CSS가 옮긴다.
 //
 // 체크포인트 항목 G① 확정(2026-09-19): 사용자 이름이 "열리는 메뉴" 형태다 — Tab만으로
 // 도달해 열고, Esc로 닫히며, 닫히면 트리거로 포커스가 돌아온다. 이 상호작용 때문에
@@ -24,6 +28,8 @@ import styles from "./TopBar.module.css";
 // WR-01(02-REVIEW.md, 02-04-SUMMARY.md L201-L212 후속): 02-04는 레이아웃이 현재
 // pathname을 얻을 방법이 없어 배선을 미뤘다 — 이 파일이 이미 클라이언트 컴포넌트라
 // usePathname()을 여기서 직접 읽으면 그 제약과 무관하게 배선할 수 있다(02-08 Task 3).
+const PHONE_MEDIA = "(max-width: 699.98px)";
+
 export type TopBarProps = {
   topBarMenu: MenuLink[];
   adminMenu: MenuLink[];
@@ -54,7 +60,11 @@ function menuItemLabel(entry: AccountEntry | MenuLink, unreadCount: number | nul
 
 export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBarProps) {
   const [open, setOpen] = useState(false);
+  // <700 폰 바는 지금 그대로 — 사용자 메뉴 맨 위에 「관리」가 있다. 700 이상은 「관리」가 레일(고정·가림)에 있다.
+  // 메뉴는 열 때만 그려지므로 열 때 폭을 읽어도 서버 렌더와 어긋나지 않는다.
+  const [phoneWidth, setPhoneWidth] = useState(false);
   const pathname = usePathname();
+  const currentMenuHref = currentHref(pathname, topBarMenu.map((item) => item.href));
   // S1-a(04.2-07): 안 읽은 알림 배지 — 0이면 렌더하지 않는다(unreadCountLabel).
   const { count: unreadCount } = useUnreadCount();
   const badgeLabel = unreadCountLabel(unreadCount);
@@ -63,7 +73,7 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
   const firstItemRef = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
 
   const pcMenuItems: Array<{ key: string; entry: AccountEntry | MenuLink; kind: "link" | "action" }> = [
-    ...adminMenu.map((entry) => ({ key: entry.href, entry, kind: "link" as const })),
+    ...(phoneWidth ? adminMenu : []).map((entry) => ({ key: entry.href, entry, kind: "link" as const })),
     ...accountGroup
       .filter((entry) => !isSettingsEntry(entry))
       .map((entry) => ({ key: entry.label, entry, kind: entry.kind })),
@@ -74,6 +84,16 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
       firstItemRef.current?.focus();
     }
   }, [open]);
+
+  // 1280 미만으로 줄면 레일 사용자 메뉴를 닫는다(바 모양으로 바뀌며 자리가 달라진다).
+  useEffect(() => {
+    const query = window.matchMedia(RAIL_MEDIA);
+    function onChange(event: MediaQueryListEvent) {
+      if (!event.matches) setOpen(false);
+    }
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
 
   function close() {
     setOpen(false);
@@ -133,6 +153,7 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
   // 별도 처리 없이 빈 자리가 생기지 않는다(D-22).
   return (
     <header className={styles.bar}>
+      <RailSheet topBarMenu={topBarMenu} adminMenu={adminMenu} current={currentMenuHref} />
       {/* §6-0 PC에 「내 차례」로 돌아갈 길이 없던 문제(/design-review FINDING-001).
           사용자 결정 2026-09-24: 워드마크 = 홈 링크(웹 관례). 키보드도 같은
           길이어야 한다(§11 「마우스 없이」) — tabIndex={-1} 우회 금지. 기존
@@ -146,22 +167,14 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
           PL<i className={styles.leaf}>A</i>NT8
         </span>
       </Link>
-      <nav aria-label="주 메뉴" className={styles.nav}>
-        {topBarMenu.map((item) => (
-          <a
-            key={item.href}
-            href={item.href}
-            className={styles.navLink}
-            aria-current={isCurrentPath(pathname, item.href) ? "page" : undefined}
-          >
-            {item.label}
-          </a>
-        ))}
-      </nav>
-      <div className={styles.right}>
-        <span className={styles.kbdWrap}>
-          <kbd className={styles.kbd}>Ctrl+K</kbd>
-        </span>
+      <div className={styles.railOnly}>
+        <RailSearchRow />
+      </div>
+      <RailNav items={topBarMenu} current={currentMenuHref} className={styles.railNav} />
+      <div className={styles.bottom}>
+        <div className={styles.railOnly}>
+          <RailAdminLink items={adminMenu} />
+        </div>
         <div className={styles.userWrap} ref={wrapRef} onKeyDown={handleKeyDown} onBlur={handleBlur}>
           <button
             type="button"
@@ -169,7 +182,10 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
             className={styles.userTrigger}
             aria-haspopup="menu"
             aria-expanded={open}
-            onClick={() => setOpen((value) => !value)}
+            onClick={() => {
+              setPhoneWidth(window.matchMedia(PHONE_MEDIA).matches);
+              setOpen((value) => !value);
+            }}
           >
             <span className={styles.userTriggerName}>{userName}</span>
             {badgeLabel ? (

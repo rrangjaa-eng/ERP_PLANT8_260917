@@ -1,6 +1,6 @@
 /* SYSTEM.md §6-0 공통 셸. 본문 최대 폭 1280(--container-max), 좌측 정렬(auto 마진
-   없음), 패딩 PC 20 · 폰 14(--pad-page). 태블릿 700–1023은 이 PC 셸을 그대로 쓴다 —
-   별도 레이아웃이 없다. 색·서체·radius는 역할 토큰 참조만 쓴다. */
+   없음), 패딩 PC 20 · 폰 14(--pad-page). ≥1280은 왼쪽 레일 + 본문 두 열,
+   그보다 좁으면 한 열(바 + 본문). 색·서체·radius는 역할 토큰 참조만 쓴다. */
 
 .shell {
   display: flex;
@@ -35,6 +35,26 @@
   width: 100%;
   max-width: var(--container-max);
   padding: var(--pad-page);
+}
+
+/* ≥1280: 레일(header)이 1열, 본문이 2열 — 자동 배치(스킵 링크는 absolute, 하단 탭은 display:none이라 칸이 없다).
+   본문 가용 폭 = 뷰포트 − --rail-w. */
+@media (min-width: 1280px) {
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .main {
+    min-width: 0;
+  }
+}
+
+@media print {
+  .shell {
+    display: block;
+  }
 }
 
 .main:focus-visible {

@@ -1,0 +1,67 @@
+/* SYSTEM.md §6-0 700–1279 가림 레일. 면은 고정 레일과 같은 딥그린(--bar-bg). 네이티브 <dialog>가
+   ::backdrop · 포커스 트랩을 제공한다. 폰(<700)과 ≥1280에서는 ≡가 없다. */
+
+.trigger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-width: var(--touch-min);
+  margin-left: calc(-1 * var(--s-2));
+  padding: 0 var(--s-2);
+  border: 0;
+  background: none;
+  color: var(--bar-fg);
+  font-size: var(--text-subtitle);
+  cursor: pointer;
+}
+
+.trigger:hover {
+  color: var(--bar-muted);
+}
+
+.trigger:focus-visible {
+  outline: var(--focus-w) solid var(--focus-on-bar);
+  outline-offset: calc(-1 * var(--focus-w));
+}
+
+@media (min-width: 700px) and (max-width: 1279.98px) {
+  .trigger {
+    display: inline-flex;
+  }
+}
+
+.sheet {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inset-inline-end: auto;
+  width: var(--rail-w);
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--bar-bg);
+  color: var(--bar-fg);
+}
+
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet::backdrop {
+  background: var(--scrim-panel);
+}
+
+.nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.bottom {
+  flex-shrink: 0;
+}

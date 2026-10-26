@@ -41,13 +41,18 @@ export function RailNav({ items, current, onNavigate, className }: RailNavProps)
   );
 }
 
-type RailAdminLinkProps = { items: MenuLink[]; onNavigate?: () => void };
+type RailAdminLinkProps = { items: MenuLink[]; current?: string | null; onNavigate?: () => void };
 
-export function RailAdminLink({ items, onNavigate }: RailAdminLinkProps) {
+export function RailAdminLink({ items, current, onNavigate }: RailAdminLinkProps) {
   const item = items[0];
   if (!item) return null;
   return (
-    <a href={item.href} className={styles.link} onClick={onNavigate}>
+    <a
+      href={item.href}
+      className={styles.link}
+      aria-current={item.href === current ? "page" : undefined}
+      onClick={onNavigate}
+    >
       {item.label}
     </a>
   );

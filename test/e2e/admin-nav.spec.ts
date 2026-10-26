@@ -160,6 +160,16 @@ test.describe("레일 「증빙」은 증빙 등록 권한자에게만 한 줄 �
   });
 });
 
+test("관리 아래 화면에서는 레일 「관리」 하나만 현재 위치다", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await loginAsSysadmin(page);
+  await page.goto("/admin/permissions");
+
+  const current = page.getByRole("banner").locator('[aria-current="page"]');
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveText("관리");
+});
+
 // 04.6-21 — 관리 인덱스·권한표·노출표가 목록 틀(`ListScreen`)이고 목록 부제 설명문이 없다.
 test("관리 인덱스·권한표·노출표는 틀 제목 하나이고 부제 설명문이 없다", async ({ page }) => {
   await loginAsSysadmin(page);

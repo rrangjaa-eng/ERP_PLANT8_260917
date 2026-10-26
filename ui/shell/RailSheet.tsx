@@ -73,7 +73,7 @@ export function RailSheet({ topBarMenu, adminMenu, current }: RailSheetProps) {
             <RailSearchRow />
             <RailNav items={topBarMenu} current={current} onNavigate={close} className={styles.nav} />
             <div className={styles.bottom}>
-              <RailAdminLink items={adminMenu} onNavigate={close} />
+              <RailAdminLink items={adminMenu} current={current} onNavigate={close} />
             </div>
           </>
         ) : null}

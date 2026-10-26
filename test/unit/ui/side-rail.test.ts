@@ -43,6 +43,16 @@ describe("RailAdminLink — 관리", () => {
     );
     expect(renderToStaticMarkup(createElement(RailAdminLink, { items: [] }))).toBe("");
   });
+
+  it("관리 아래 화면에 있으면 aria-current=page, 아니면 없다", () => {
+    const items = [{ label: "관리", href: "/admin" }];
+    expect(renderToStaticMarkup(createElement(RailAdminLink, { items, current: "/admin" }))).toContain(
+      'aria-current="page"',
+    );
+    expect(renderToStaticMarkup(createElement(RailAdminLink, { items, current: "/projects" }))).not.toContain(
+      "aria-current",
+    );
+  });
 });
 
 describe("RailSearchRow", () => {

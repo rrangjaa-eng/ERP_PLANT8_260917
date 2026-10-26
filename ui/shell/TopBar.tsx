@@ -64,7 +64,7 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
   // 메뉴는 열 때만 그려지므로 열 때 폭을 읽어도 서버 렌더와 어긋나지 않는다.
   const [phoneWidth, setPhoneWidth] = useState(false);
   const pathname = usePathname();
-  const currentMenuHref = currentHref(pathname, topBarMenu.map((item) => item.href));
+  const currentMenuHref = currentHref(pathname, [...topBarMenu, ...adminMenu].map((item) => item.href));
   // S1-a(04.2-07): 안 읽은 알림 배지 — 0이면 렌더하지 않는다(unreadCountLabel).
   const { count: unreadCount } = useUnreadCount();
   const badgeLabel = unreadCountLabel(unreadCount);
@@ -182,7 +182,7 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
       <RailNav items={topBarMenu} current={currentMenuHref} className={styles.railNav} />
       <div className={styles.bottom}>
         <div className={styles.railOnly}>
-          <RailAdminLink items={adminMenu} />
+          <RailAdminLink items={adminMenu} current={currentMenuHref} />
         </div>
         <div className={styles.userWrap} ref={wrapRef} onKeyDown={handleKeyDown} onBlur={handleBlur}>
           <button

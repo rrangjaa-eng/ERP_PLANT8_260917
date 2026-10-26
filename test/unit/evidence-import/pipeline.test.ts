@@ -20,6 +20,7 @@ import {
   shinhanAccountingFixture,
   shinhanFixture,
   streamedZipFixture,
+  twoEocdZipFixture,
   writeBook,
   zipBombFixture,
   type FixtureRow,
@@ -233,6 +234,15 @@ describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는�
       expect(read).not.toHaveBeenCalled();
     });
   }
+
+  // SheetJS는 끝에서 4바이트 앞부터 처음 만난 끝 레코드를 읽는다(xlsx.js parse_zip) — 주석 안 가짜 끝 레코드로 가드를 우회하지 못한다.
+  it("끝 레코드가 둘인 zip(주석 안 가짜) → zipEntryStats null · 거절 · SheetJS 읽기 호출 0", () => {
+    const bytes = twoEocdZipFixture();
+    expect(zipEntryStats(bytes)).toBeNull();
+    const read = vi.fn(readWorkbookRows);
+    expect(parseWorkbook(bytes, { deps: { readWorkbookRows: read } })).toMatchObject({ ok: false, kind: "not-excel" });
+    expect(read).not.toHaveBeenCalled();
+  });
 
   it("readWorkbookRows도 로컬 헤더 크기가 다른 zip은 SheetJS에 넘기지 않고 던진다", () => {
     expect(() => readWorkbookRows(forgedZipFixture("local-size"), { zipLimits: { maxEntries: 200, maxUnzippedBytes: 20_000_000 } })).toThrow("zip-limits");

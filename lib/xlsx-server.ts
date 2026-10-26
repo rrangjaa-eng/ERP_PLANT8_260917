@@ -158,15 +158,16 @@ export function zipEntryStats(bytes: Uint8Array): { entries: number; uncompresse
   const EOCD = 0x06054b50;
   const CEN = 0x02014b50;
   const LOC = 0x04034b50;
+  // SheetJS parse_zip(xlsx.js)은 끝에서 4바이트 앞부터 위로 훑어 처음 만난 PK\x05\x06을 쓴다 — 같은 자리에서 시작해 첫 서명을 고른다.
+  // 고른 레코드가 파일 끝에 딱 맞지 않거나(주석 길이 불일치) 창 안에 서명이 하나 더 있으면 가짜 끝 레코드로 보고 거절한다.
   const lowest = Math.max(0, bytes.length - 22 - 0xffff);
   let end = -1;
-  for (let at = bytes.length - 22; at >= lowest; at--) {
-    if (view.getUint32(at, true) === EOCD) {
-      end = at;
-      break;
-    }
+  for (let at = bytes.length - 4; at >= lowest; at--) {
+    if (view.getUint32(at, true) !== EOCD) continue;
+    if (end >= 0) return null;
+    end = at;
   }
-  if (end < 0) return null;
+  if (end < 0 || end + 22 > bytes.length || end + 22 + view.getUint16(end + 20, true) !== bytes.length) return null;
   const entries = view.getUint16(end + 10, true);
   const dirSize = view.getUint32(end + 12, true);
   const dirOffset = view.getUint32(end + 16, true);

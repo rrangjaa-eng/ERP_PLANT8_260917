@@ -328,6 +328,34 @@ export function forgedZipFixture(forgery: ZipForgery): Uint8Array {
   return zipOf(entries);
 }
 
+// 끝 레코드 둘 — 진짜(작은 중앙 디렉터리)의 주석 안, 끝에서 21바이트 앞에 가짜 끝 레코드(풀린 크기를 부풀린 중앙 디렉터리 가리킴)를 심는다.
+// SheetJS는 파일 끝에서 4바이트 앞부터 위로 훑어 처음 만난 PK\x05\x06을 쓰므로 가짜를 읽는다(독립 검토).
+export function twoEocdZipFixture(): Uint8Array {
+  const base = lotteFixture([{}], { as: "xlsx" });
+  const view = new DataView(base.buffer, base.byteOffset, base.byteLength);
+  const end = base.length - 22;
+  const dirOffset = view.getUint32(end + 16, true);
+  const dirSize = view.getUint32(end + 12, true);
+  const fakeDir = base.slice(dirOffset, dirOffset + dirSize);
+  const fv = new DataView(fakeDir.buffer);
+  for (let at = 0; at < fakeDir.length; at += 46 + fv.getUint16(at + 28, true) + fv.getUint16(at + 30, true) + fv.getUint16(at + 32, true)) {
+    fv.setUint32(at + 24, 25_000_000, true);
+  }
+  const fakeEocd = new Uint8Array(21);
+  const ev = new DataView(fakeEocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, view.getUint16(end + 10, true), true);
+  ev.setUint16(10, view.getUint16(end + 10, true), true);
+  ev.setUint32(12, fakeDir.length, true);
+  ev.setUint32(16, end + 22, true);
+  const out = new Uint8Array(base.length + fakeDir.length + fakeEocd.length);
+  out.set(base, 0);
+  new DataView(out.buffer).setUint16(end + 20, fakeDir.length + fakeEocd.length, true);
+  out.set(fakeDir, base.length);
+  out.set(fakeEocd, base.length + fakeDir.length);
+  return out;
+}
+
 export const SHINHAN_HEADER = [
   "이용일시",
   "접수일",

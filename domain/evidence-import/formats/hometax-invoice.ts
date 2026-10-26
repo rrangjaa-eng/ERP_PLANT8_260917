@@ -11,9 +11,10 @@ import type { DetectResult, FormatReadResult, FormatRule, LineError, ParsedLine,
 const SHEET_NAME = "세금계산서";
 const TOTALS_ROW = 2;
 const TOTAL_LABEL = "총 공급가액";
-const APPROVAL_NO = /^\d{8}-\d{8}-\d{8}$/;
+// 국세청 승인번호 끝 8자리는 소문자 영숫자가 섞인다(C-86 실물).
+const APPROVAL_NO = /^\d{8}-\d{8}-[0-9a-z]{8}$/;
 // 수정 계산서의 분류 낱말은 견본 구조에 적혀 있지 않다 — 음수 줄 비고 괄호 안의 26자 승인번호만 원 승인번호로 꺼낸다(PA-INV-ORIG).
-const ORIGINAL_APPROVAL_NO = /당초\s*승인번호\s*\((\d{8}-\d{8}-\d{8})\)/;
+const ORIGINAL_APPROVAL_NO = /당초\s*승인번호\s*\((\d{8}-\d{8}-[0-9a-z]{8})\)/;
 
 // 0행 `사업자 등록번호` 다음 칸 — 내려받은 사람의 회사. 숫자 10자리가 아니면 null(E18 — 세금계산서 서식과 같은 규칙).
 function companyNoOf(rows: Rows): string | null {

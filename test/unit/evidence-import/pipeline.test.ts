@@ -7,7 +7,9 @@ import { sniff } from "@/domain/evidence-import/workbook";
 import { readWorkbookRows, zipEntryStats } from "@/lib/xlsx-server";
 import { cardLotte } from "@/domain/evidence-import/formats/card-lotte";
 import {
+  BC_HEADER_28,
   bcFixture,
+  descriptorNonzeroLocalZipFixture,
   encryptedFixture,
   forgedZipFixture,
   hometaxCashReceiptFixture,
@@ -16,7 +18,10 @@ import {
   LOTTE_HEADER,
   lotteFixture,
   manyEntriesZipFixture,
+  shinhanAccountingFixture,
   shinhanFixture,
+  streamedZipFixture,
+  twoEocdZipFixture,
   writeBook,
   zipBombFixture,
   type FixtureRow,
@@ -220,7 +225,7 @@ describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는�
   });
 
   // 독립 검토 P1-1 — SheetJS는 로컬 헤더 · ZIP64 칸으로 풀 크기를 정하고 중앙 디렉터리와의 차이는 다 푼 뒤에 본다.
-  for (const forgery of ["local-size", "data-descriptor", "zip64-local", "zip64-central", "zero-size-deflate", "method", "understated-deflate"] as const) {
+  for (const forgery of ["local-size", "descriptor-local-size", "descriptor-stored", "descriptor-understated", "descriptor-local-only", "descriptor-central-only", "zip64-local", "zip64-central", "zero-size-deflate", "method", "understated-deflate"] as const) {
     it(`위조 zip(${forgery}) → zipEntryStats null · 거절 · SheetJS 읽기 호출 0`, () => {
       const bytes = forgedZipFixture(forgery);
       expect(bytes.length).toBeLessThan(EVIDENCE_IMPORT_MAX_BYTES);
@@ -230,6 +235,21 @@ describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는�
       expect(read).not.toHaveBeenCalled();
     });
   }
+
+  it("bit 3 + 로컬 크기가 0이 아닌 중앙 값과 같음 → zipEntryStats는 원본과 같은 통계", () => {
+    const stats = zipEntryStats(descriptorNonzeroLocalZipFixture());
+    expect(stats).not.toBeNull();
+    expect(stats).toEqual(zipEntryStats(lotteFixture([{}], { as: "xlsx" })));
+  });
+
+  // SheetJS는 끝에서 4바이트 앞부터 처음 만난 끝 레코드를 읽는다(xlsx.js parse_zip) — 주석 안 가짜 끝 레코드로 가드를 우회하지 못한다.
+  it("끝 레코드가 둘인 zip(주석 안 가짜) → zipEntryStats null · 거절 · SheetJS 읽기 호출 0", () => {
+    const bytes = twoEocdZipFixture();
+    expect(zipEntryStats(bytes)).toBeNull();
+    const read = vi.fn(readWorkbookRows);
+    expect(parseWorkbook(bytes, { deps: { readWorkbookRows: read } })).toMatchObject({ ok: false, kind: "not-excel" });
+    expect(read).not.toHaveBeenCalled();
+  });
 
   it("readWorkbookRows도 로컬 헤더 크기가 다른 zip은 SheetJS에 넘기지 않고 던진다", () => {
     expect(() => readWorkbookRows(forgedZipFixture("local-size"), { zipLimits: { maxEntries: 200, maxUnzippedBytes: 20_000_000 } })).toThrow("zip-limits");
@@ -242,6 +262,41 @@ describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는�
     expect(stats?.entries).toBeLessThan(200);
     expect(stats?.uncompressedBytes).toBeGreaterThan(1000);
     expect(zipEntryStats(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+});
+
+// C-86 — 실물 비씨 xlsx는 Java/.NET 스트리밍 zip(데이터 서술자 · 로컬 크기 0)이다. 방어(/cso B1)는 중앙 디렉터리 값으로 그대로.
+describe("데이터 서술자 xlsx(C-86)", () => {
+  const LIMITS = { maxEntries: 200, maxUnzippedBytes: 20_000_000 };
+
+  it("스트리밍 꼴 롯데 xlsx → zipEntryStats가 원본과 같고 .xls와 같은 줄 · 같은 열쇠", () => {
+    const plain = lotteFixture(LOTTE_ROWS, { as: "xlsx" });
+    const streamed = streamedZipFixture(plain);
+    expect(zipEntryStats(streamed)).toEqual(zipEntryStats(plain));
+    expect(() => readWorkbookRows(streamed, { zipLimits: LIMITS })).not.toThrow();
+    const fromStreamed = ok(parseWorkbook(streamed));
+    const fromXls = ok(parseWorkbook(lotteFixture(LOTTE_ROWS)));
+    expect(fromStreamed.format).toBe("card-lotte");
+    expect(fromStreamed.lines.map((line) => line.dedupeKey)).toEqual(fromXls.lines.map((line) => line.dedupeKey));
+  });
+
+  it("비씨 28칸(거래금액(외화) 없음) .xls → ok · card-bc · 국내 줄 needsCheck null", () => {
+    const result = ok(parseWorkbook(bcFixture([{}], { header: BC_HEADER_28 })));
+    expect(result.format).toBe("card-bc");
+    expect(result.lines[0]?.needsCheck).toBeNull();
+  });
+
+  it("비씨 28칸 국내외사용구분 해외 → 해외 확인", () => {
+    const result = ok(parseWorkbook(bcFixture([{ 국내외사용구분: "해외" }], { header: BC_HEADER_28 })));
+    expect(result.lines[0]?.needsCheck).toBe("해외 이용 · 원화 금액 확인");
+  });
+
+  it("비씨 28칸 xlsx를 스트리밍 꼴로 → .xls 판과 같은 줄", () => {
+    const rows: FixtureRow[] = [{}, { 승인번호: "11111111", "거래금액(원화)": "5,500", 부가세: "0" }];
+    const streamed = ok(parseWorkbook(streamedZipFixture(bcFixture(rows, { header: BC_HEADER_28, as: "xlsx" }))));
+    const fromXls = ok(parseWorkbook(bcFixture(rows, { header: BC_HEADER_28 })));
+    expect(streamed.format).toBe("card-bc");
+    expect(streamed.lines.map((line) => line.dedupeKey)).toEqual(fromXls.lines.map((line) => line.dedupeKey));
   });
 });
 
@@ -324,6 +379,7 @@ describe("홈택스 매입 현금영수증 — xlsx · csv(E39 · 06.1-11)", () 
 describe.each([
   ["card-lotte", () => lotteFixture([{}])],
   ["card-shinhan", () => shinhanFixture([{}])],
+  ["card-shinhan-accounting", () => shinhanAccountingFixture([{}])],
   ["card-bc", () => bcFixture([{}])],
   ["hometax-tax-invoice", () => hometaxTaxInvoiceFixture([{}])],
   ["hometax-invoice", () => hometaxInvoiceFixture([{}])],
@@ -333,5 +389,23 @@ describe.each([
     const book = readWorkbookRows(build(), { sheetRows: DETECT_ROWS });
     const matched = EVIDENCE_FORMATS.filter((rule) => rule.detect(book.sheets, "cfb").match).map((rule) => rule.key);
     expect(matched).toEqual([key]);
+  });
+});
+
+// 같은 신한 거래를 옛 12칸과 회계양식으로 올려도 같은 열쇠 — 서식 키가 달라 이중 등록되면 돈 기록이 둘이 된다.
+describe("신한 두 양식의 열쇠 이름공간", () => {
+  it("같은 거래(옛 12칸 · 회계양식) → 같은 dedupeKey · 같은 baseKey", () => {
+    const old = ok(parseWorkbook(shinhanFixture([{}])));
+    const accounting = ok(parseWorkbook(shinhanAccountingFixture([{}])));
+    expect(old.format).toBe("card-shinhan");
+    expect(accounting.format).toBe("card-shinhan-accounting");
+    expect(accounting.lines[0]?.dedupeKey).toBe(old.lines[0]?.dedupeKey);
+    expect(accounting.lines[0]?.baseKey).toBe(old.lines[0]?.baseKey);
+    expect(old.lines[0]?.dedupeKey.startsWith("card-shinhan|")).toBe(true);
+  });
+
+  it("다른 서식의 열쇠 접두어는 그대로", () => {
+    expect(ok(parseWorkbook(lotteFixture([{}]))).lines[0]?.dedupeKey.startsWith("card-lotte|")).toBe(true);
+    expect(ok(parseWorkbook(bcFixture([{}]))).lines[0]?.dedupeKey.startsWith("card-bc|")).toBe(true);
   });
 });

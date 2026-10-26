@@ -12,7 +12,7 @@ const DIR = process.env.EVIDENCE_SAMPLES_DIR;
 
 function sampleOf(prefix: string): string | undefined {
   if (!DIR) return undefined;
-  const name = readdirSync(DIR).find((file) => file.startsWith(prefix) && file.endsWith(".xls"));
+  const name = readdirSync(DIR).find((file) => file.startsWith(prefix) && (file.endsWith(".xls") || file.endsWith(".xlsx")));
   return name === undefined ? undefined : path.join(DIR, name);
 }
 
@@ -28,29 +28,35 @@ function parsedSample(prefix: string, key: string) {
 }
 
 describe.skipIf(!DIR)("실물 견본 — 건수만", () => {
-  it("신한 168 · 빈 승인번호 4 · 음수 1", () => {
-    const result = parsedSample("card-shinhan", "card-shinhan");
-    expect(result.lines.length + 2 * result.offsetPairs).toBe(168);
+  // 시각 없음 원자료 8줄 중 2줄은 취소 줄(상쇄 쌍으로 빠진다) — 읽힌 줄에는 6줄이 남는다.
+  it("신한 회계양식 162 · 빈 승인번호 4 · 음수 2 · 해외 2 · 시각 없음 6", () => {
+    const result = parsedSample("card-shinhan", "card-shinhan-accounting");
+    expect(result.lines.length + 2 * result.offsetPairs).toBe(162);
     expect(result.lines.filter((line) => line.approvalNo === null).length).toBe(4);
-    expect(result.lines.filter((line) => line.totalKrw < 0).length + result.offsetPairs).toBe(1);
+    expect(result.lines.filter((line) => line.totalKrw < 0).length + result.offsetPairs).toBe(2);
+    expect(result.lines.filter((line) => line.needsCheck !== null).length).toBe(2);
+    expect(result.lines.filter((line) => line.usedAt === null).length).toBe(6);
   });
 
-  it("비씨 8 · 00000000 1", () => {
+  it("비씨 9 · 부가세 0 6 · 해외 0 · 빈 승인번호 0", () => {
     const result = parsedSample("card-bc", "card-bc");
-    expect(result.lines.length + 2 * result.offsetPairs).toBe(8);
-    expect(result.lines.filter((line) => line.approvalNo === null).length).toBe(1);
+    expect(result.lines.length + 2 * result.offsetPairs).toBe(9);
+    expect(result.lines.filter((line) => line.vatKrw === 0).length).toBe(6);
+    expect(result.lines.filter((line) => line.needsCheck !== null).length).toBe(0);
+    expect(result.lines.filter((line) => line.approvalNo === null).length).toBe(0);
   });
 
-  it("롯데 85 · 음수 1", () => {
+  it("롯데 115 · 음수 7", () => {
     const result = parsedSample("card-lotte", "card-lotte");
-    expect(result.lines.length + 2 * result.offsetPairs).toBe(85);
-    expect(result.lines.filter((line) => line.totalKrw < 0).length + result.offsetPairs).toBe(1);
+    expect(result.lines.length + 2 * result.offsetPairs).toBe(115);
+    expect(result.lines.filter((line) => line.totalKrw < 0).length + result.offsetPairs).toBe(7);
   });
 
-  it("홈택스 매입 세금계산서 25 · 승인번호 26자", () => {
+  it("홈택스 매입 세금계산서 254 · 승인번호 26자 · 열쇠 중복 0", () => {
     const result = parsedSample("hometax-tax-invoice-purchase", "hometax-tax-invoice");
-    expect(result.lines.length).toBe(25);
+    expect(result.lines.length).toBe(254);
     expect(result.lines.every((line) => line.approvalNo?.length === 26)).toBe(true);
+    expect(new Set(result.lines.map((line) => line.dedupeKey)).size).toBe(result.lines.length);
   });
 
   // 06.1-11: 견본 매입 현금영수증 목록은 승인 1줄이다(samples/hometax-cash-receipt-purchase.md).

@@ -45,3 +45,5 @@ design-review 2026-10-14T01:36Z session=0592c76f-6b2e-5528-b811-98e2202c45bd (PR
 qa 2026-10-14T02:00Z session=0592c76f-6b2e-5528-b811-98e2202c45bd (PR #214 묶음 /qa 812da08 — CI=true 흐름 desktop 188·mobile 13 통과, 데이터 채운 DOM 실측 16상태×4폭 결함 0, 건강 99(잠정), 보고서 /mnt/project-files/06-review/pr-e/qa/qa-report.md)
 review 2026-10-16T05:19Z session=0e0eb4e2-f6d0-5610-be1a-3aa1adc3845b (PR #237 시험 고침 e669757·0b52710 /review — 뒤 4자리 오판 정규식 고침, 지적 1 자동 고침(대표 화면 평문 검사), 남은 결함 0, Codex 없음(R3), 훅 미기록이라 손 기록(10/16 16:14 KST 사용자 카드 「손 기록」), 보고서 /mnt/project-files/06-review/g5/237-review.md)
 review 2026-10-26T04:45Z session=c2173f97-666f-5ea7-a631-9105bade6fc6
+design-review 2026-10-26T05:01Z session=c2173f97-666f-5ea7-a631-9105bade6fc6 (PR #296 /design-review — Codex gpt-6.1-sol 후보 8 모두 main과 같음, DOM 실측 결함 1(1024·768 행 3줄) bc66f00 고침, 보고서 /mnt/project-files/296-review/design-review.md)
+qa 2026-10-26T05:46Z session=c2173f97-666f-5ea7-a631-9105bade6fc6 (PR #296 /qa — E2E 175/175 재실행 통과, 결함 Issue1(1024~1279 새 줄 표시 숨음) d1e6bff 고침, 건강 97(잠정), 보고서 /mnt/project-files/296-review/qa/qa-report.md)

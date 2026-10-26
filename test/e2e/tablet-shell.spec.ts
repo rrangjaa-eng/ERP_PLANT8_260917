@@ -85,4 +85,43 @@ test.describe("태블릿 700–1279 뷰포트는 48px 바 + 가림 레일 셸이
     await expect(tabs.locator("a, button")).toHaveCount(4);
     await expect(page.getByRole("navigation", { name: "주 메뉴" })).toBeHidden();
   });
+
+  test("가림 레일이 닫힌 채 1200에서 포커스를 두고 1440으로 넓혀도 포커스가 그대로다", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto("/");
+
+    const home = page.getByRole("link", { name: "PLANT8 내 차례" });
+    await home.focus();
+    await expect(home).toBeFocused();
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.getByRole("banner")).toHaveCSS("width", "176px");
+    await expect(home).toBeFocused();
+  });
+
+  test("가림 레일이 열린 채 900에서 650으로 줄이면 닫히고 포커스가 본문으로 간다", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "메뉴" }).click();
+    await expect(page.getByRole("dialog", { name: "메뉴" })).toBeVisible();
+
+    await page.setViewportSize({ width: 650, height: 900 });
+    await expect(page.getByRole("dialog", { name: "메뉴" })).toBeHidden();
+    await expect(page.locator("#main-content")).toBeFocused();
+  });
+
+  test("650에서 연 사용자 메뉴는 700 이상으로 넓히면 닫힌다", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.setViewportSize({ width: 650, height: 900 });
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "E2E Employee" }).click();
+    await expect(page.getByRole("menu")).toBeVisible();
+
+    await page.setViewportSize({ width: 900, height: 900 });
+    await expect(page.getByRole("menu")).toHaveCount(0);
+  });
 });

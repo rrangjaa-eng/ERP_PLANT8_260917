@@ -86,13 +86,22 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
   }, [open]);
 
   // 1280 미만으로 줄면 레일 사용자 메뉴를 닫는다(바 모양으로 바뀌며 자리가 달라진다).
+  // 700 경계를 어느 쪽으로 넘어도 닫는다(「관리」 항목이 열 때의 폭에 묶여 있어서다).
   useEffect(() => {
-    const query = window.matchMedia(RAIL_MEDIA);
-    function onChange(event: MediaQueryListEvent) {
+    const rail = window.matchMedia(RAIL_MEDIA);
+    const phone = window.matchMedia(PHONE_MEDIA);
+    function onRailChange(event: MediaQueryListEvent) {
       if (!event.matches) setOpen(false);
     }
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
+    function onPhoneChange() {
+      setOpen(false);
+    }
+    rail.addEventListener("change", onRailChange);
+    phone.addEventListener("change", onPhoneChange);
+    return () => {
+      rail.removeEventListener("change", onRailChange);
+      phone.removeEventListener("change", onPhoneChange);
+    };
   }, []);
 
   function close() {

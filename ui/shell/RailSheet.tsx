@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { MenuLink } from "./role-menu";
-import { RAIL_MEDIA, RailAdminLink, RailNav, RailSearchRow } from "./SideRail";
+import { RailAdminLink, RailNav, RailSearchRow } from "./SideRail";
 import styles from "./RailSheet.module.css";
 
 // SYSTEM.md §6-0 700–1279 가림 레일. 바 왼쪽 ≡가 여는 네이티브 <dialog>.showModal()(MoreSheet.tsx와 같은 패턴 —
 // 포커스 트랩 · ::backdrop · Esc는 브라우저가 한다). 내용은 열 때만 마운트해 nav 「주 메뉴」가 한 벌만 남는다.
-// 사용자 행은 없다(바 오른쪽 사용자 메뉴가 진입점). 1280 이상으로 넓어지면 고정 레일이 대신하므로 닫는다.
+// 사용자 행은 없다(바 오른쪽 사용자 메뉴가 진입점). 1280 이상으로 넓어지면 고정 레일이 대신하고 700 미만으로 줄면 ≡가 사라지므로 열려 있으면 닫는다.
+const SHEET_MEDIA = "(min-width: 700px) and (max-width: 1279.98px)";
+
 export type RailSheetProps = {
   topBarMenu: MenuLink[];
   adminMenu: MenuLink[];
@@ -25,10 +27,10 @@ export function RailSheet({ topBarMenu, adminMenu, current }: RailSheetProps) {
   }, [open]);
 
   useEffect(() => {
-    const query = window.matchMedia(RAIL_MEDIA);
+    const query = window.matchMedia(SHEET_MEDIA);
     function onChange(event: MediaQueryListEvent) {
-      if (!event.matches) return;
-      dialogRef.current?.close();
+      if (event.matches || !dialogRef.current?.open) return;
+      dialogRef.current.close();
       document.getElementById("main-content")?.focus();
     }
     query.addEventListener("change", onChange);

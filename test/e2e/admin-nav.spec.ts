@@ -138,6 +138,28 @@ test.describe("PC 레일 「관리」 → /admin 인덱스로 클릭만으로 �
   });
 });
 
+// 증빙 등록 권한(evidence.intake 쓰기)이 레일 1차 메뉴 「증빙」을 가른다 — 시스템 관리자는 시드에서 받고 기획 PM은 못 받는다.
+test.describe("레일 「증빙」은 증빙 등록 권한자에게만 한 줄 보인다", () => {
+  test("증빙 등록 권한자(시스템 관리자)는 1280에서 「증빙」 링크 하나를 본다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAsSysadmin(page);
+
+    await expect(page.getByRole("banner").getByRole("link", { name: "증빙", exact: true })).toHaveCount(1);
+  });
+
+  test("증빙 등록 권한이 없는 계급(기획 PM)은 1280에서 「증빙」 링크가 없다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const employee = await createFixtureUser({ roleId: "role-pm" });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(employee.email);
+    await page.getByLabel("비밀번호").fill(employee.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await expect(page.getByRole("banner").getByRole("link", { name: "증빙", exact: true })).toHaveCount(0);
+  });
+});
+
 // 04.6-21 — 관리 인덱스·권한표·노출표가 목록 틀(`ListScreen`)이고 목록 부제 설명문이 없다.
 test("관리 인덱스·권한표·노출표는 틀 제목 하나이고 부제 설명문이 없다", async ({ page }) => {
   await loginAsSysadmin(page);

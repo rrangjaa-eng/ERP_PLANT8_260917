@@ -12,7 +12,7 @@ const DIR = process.env.EVIDENCE_SAMPLES_DIR;
 
 function sampleOf(prefix: string): string | undefined {
   if (!DIR) return undefined;
-  const name = readdirSync(DIR).find((file) => file.startsWith(prefix) && file.endsWith(".xls"));
+  const name = readdirSync(DIR).find((file) => file.startsWith(prefix) && (file.endsWith(".xls") || file.endsWith(".xlsx")));
   return name === undefined ? undefined : path.join(DIR, name);
 }
 
@@ -35,10 +35,12 @@ describe.skipIf(!DIR)("실물 견본 — 건수만", () => {
     expect(result.lines.filter((line) => line.totalKrw < 0).length + result.offsetPairs).toBe(1);
   });
 
-  it("비씨 8 · 00000000 1", () => {
+  it("비씨 9 · 부가세 0 6 · 해외 0 · 빈 승인번호 0", () => {
     const result = parsedSample("card-bc", "card-bc");
-    expect(result.lines.length + 2 * result.offsetPairs).toBe(8);
-    expect(result.lines.filter((line) => line.approvalNo === null).length).toBe(1);
+    expect(result.lines.length + 2 * result.offsetPairs).toBe(9);
+    expect(result.lines.filter((line) => line.vatKrw === 0).length).toBe(6);
+    expect(result.lines.filter((line) => line.needsCheck !== null).length).toBe(0);
+    expect(result.lines.filter((line) => line.approvalNo === null).length).toBe(0);
   });
 
   it("롯데 85 · 음수 1", () => {

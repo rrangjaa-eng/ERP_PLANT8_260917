@@ -856,7 +856,7 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await expect(lineCell(page, "폭 첫 줄", COL.execution)).toHaveText("654,000");
   });
 
-  test("(l3) 1000 — 1280에서 고친 셀을 1000에서 복원하면 읽기 표에 dirty 인셋, 1차 1로 저장된다(R1)", async ({ page }) => {
+  test("(l3) 1000 — 1280에서 고친 셀을 1000에서 복원하면 읽기 표에 저장 전 삼각형, 1차 1로 저장된다(R1)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
     await typeInto(page, cell(page, 0, COL.execution), "실행가", "611000");
@@ -868,7 +868,7 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await page.getByRole("button", { name: "복원", exact: true }).click();
     const restored = lineCell(page, "폭 첫 줄", COL.execution);
     await expect(restored).toHaveText("611,000");
-    await expect(restored).toHaveCSS("box-shadow", /inset/);
+    await expect(restored).toHaveCSS("background-image", /linear-gradient/);
     await expect(page.getByRole("grid", { name: "견적 줄" })).toHaveCount(0);
     await expect(primarySave(page)).toContainText("일괄 저장 1");
 

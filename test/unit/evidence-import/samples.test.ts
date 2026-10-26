@@ -43,16 +43,17 @@ describe.skipIf(!DIR)("실물 견본 — 건수만", () => {
     expect(result.lines.filter((line) => line.approvalNo === null).length).toBe(0);
   });
 
-  it("롯데 85 · 음수 1", () => {
+  it("롯데 115 · 음수 7", () => {
     const result = parsedSample("card-lotte", "card-lotte");
-    expect(result.lines.length + 2 * result.offsetPairs).toBe(85);
-    expect(result.lines.filter((line) => line.totalKrw < 0).length + result.offsetPairs).toBe(1);
+    expect(result.lines.length + 2 * result.offsetPairs).toBe(115);
+    expect(result.lines.filter((line) => line.totalKrw < 0).length + result.offsetPairs).toBe(7);
   });
 
-  it("홈택스 매입 세금계산서 25 · 승인번호 26자", () => {
+  it("홈택스 매입 세금계산서 254 · 승인번호 26자 · 열쇠 중복 0", () => {
     const result = parsedSample("hometax-tax-invoice-purchase", "hometax-tax-invoice");
-    expect(result.lines.length).toBe(25);
+    expect(result.lines.length).toBe(254);
     expect(result.lines.every((line) => line.approvalNo?.length === 26)).toBe(true);
+    expect(new Set(result.lines.map((line) => line.dedupeKey)).size).toBe(result.lines.length);
   });
 
   // 06.1-11: 견본 매입 현금영수증 목록은 승인 1줄이다(samples/hometax-cash-receipt-purchase.md).

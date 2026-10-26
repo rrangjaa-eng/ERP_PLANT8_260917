@@ -496,6 +496,21 @@ describe("홈택스 매입 세금계산서", () => {
   it("승인번호가 26자 꼴이 아니면 승인번호 읽지 못함", () => {
     expect(parseWorkbook(hometaxTaxInvoiceFixture([{ 승인번호: "12345678" }]))).toMatchObject({ ok: false, lines: ["7줄 · 승인번호 읽지 못함"] });
   });
+
+  it("세 번째 묶음이 소문자 영숫자 8자(C-86) → 승인번호 26자 그대로 · 열쇠", () => {
+    const result = ok(parseWorkbook(hometaxTaxInvoiceFixture([{ 승인번호: "20260615-10260615-ab12cd34" }])));
+    expect(result.lines[0]?.approvalNo).toBe("20260615-10260615-ab12cd34");
+    expect(result.lines[0]?.approvalNo).toHaveLength(26);
+    expect(result.lines[0]?.dedupeKey).toBe("hometax-tax-invoice|20260615-10260615-ab12cd34");
+  });
+
+  it("세 번째 묶음이 대문자 영숫자 → 승인번호 읽지 못함(소문자만 관측)", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{ 승인번호: "20260615-10260615-AB12CD34" }]))).toMatchObject({ ok: false, lines: ["7줄 · 승인번호 읽지 못함"] });
+  });
+
+  it("두 번째 묶음에 글자 → 승인번호 읽지 못함", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{ 승인번호: "20260615-1026061a-ab12cd34" }]))).toMatchObject({ ok: false, lines: ["7줄 · 승인번호 읽지 못함"] });
+  });
 });
 
 describe("홈택스 매입 현금영수증(06.1-11)", () => {
@@ -739,6 +754,19 @@ describe("홈택스 매입 계산서(면세 · 06.1-11)", () => {
       [50000, 50000, 0],
       [-10000, -10000, 0],
     ]);
+  });
+
+  it("세 번째 묶음 소문자 영숫자(C-86) → ok · 음수 줄 비고 당초 승인번호도 26자로 읽는다", () => {
+    const result = ok(
+      parseWorkbook(
+        hometaxInvoiceFixture([
+          { 승인번호: "20260615-10260615-ab12cd34" },
+          { 승인번호: "20260616-10260616-zz99aa11", 공급가액: -10000, 비고: "당초 승인번호 (20260101-11111111-zz99aa11)" },
+        ]),
+      ),
+    );
+    expect(result.lines[0]?.approvalNo).toBe("20260615-10260615-ab12cd34");
+    expect(result.lines[1]?.originalApprovalNo).toBe("20260101-11111111-zz99aa11");
   });
 
   it("음수 줄이라도 비고에 당초 승인번호가 없으면 원 승인번호 null(오류 아님)", () => {

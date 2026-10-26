@@ -13,7 +13,7 @@ import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { archiveTempRoles, insertTempRole, setupExpenseE2E, type ExpenseE2E, type LineKey } from "./expense-fixture";
+import { archiveTempRoles, insertTempRole, seedLongTeamNames, setupExpenseE2E, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 06.5-08 Task 2(D-6508 · UI-SPEC V1 · OI-11 · DM-3): 지급 대상 · 지급 완료 보기의 검색 칸 — 필터 줄 맨 앞(검색 → select → 이체 파일), 검색하면 고른 행 · 이체액 편집을 비운다,
 // 0건이면 `필터 지우기`가 q · 팀 · 증빙을 지운다, 지급 완료 보기는 q가 팀 · 월 select를 바꿔도 남는다. 문서는 도메인 함수로 만든다(payment-transfer-file.spec.ts 꼴).
@@ -63,6 +63,7 @@ function rowOf(page: Page, itemName: string) {
 
 test.describe("지급 대상 검색 (06.5 D-6508 · OI-11)", () => {
   test("검색하면 고른 행 · 이체액 편집이 비고 1차는 건수가 없고, 검색어를 지우면 이체액이 서버 값이다 · 필터 줄은 검색 → select → 이체 파일 순서", async ({ browser, baseURL }) => {
+    await seedLongTeamNames();
     const fx = await setupExpenseE2E();
     const payer = await makePayer(fx);
     const tracer = await approvedTarget(fx, "tracer", payer);
@@ -133,6 +134,49 @@ test.describe("지급 대상 검색 (06.5 D-6508 · OI-11)", () => {
     await clear.click();
     await expect(page).toHaveURL((url) => !url.searchParams.has("q") && !url.searchParams.has("evidence") && !url.searchParams.has("team"));
     await expect(rowOf(page, fx.lines.tracer.itemName)).toHaveCount(1);
+    await page.context().close();
+  });
+
+  // 증빙 등록 권한이 더해지면 필터 줄 끝에 `증빙` 링크가 선다 — 팀 이름이 길어도(공용 DB) 1280 한 줄. 행을 고르면 결과 글자가 바뀌므로 둘 다 잰다.
+  test("1280 — 증빙 링크가 있는 지급 권한자도 필터 칸 · 이체 파일 · 결과 글자 · 1차 · 증빙이 한 줄(고른 행 없음 · 있음)", async ({ browser, baseURL }) => {
+    await seedLongTeamNames();
+    const fx = await setupExpenseE2E();
+    const payer = await makePayer(fx);
+    const roleId = payer.viewer.roleId;
+    if (!roleId) throw new Error("지급 권한자 계급 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "evidence.intake", action: "write", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "evidence", action: "view", allowed: true });
+    for (const infoItem of ["evidence.value", "evidence.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem, visible: true });
+    await approvedTarget(fx, "tracer", payer);
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const tracerRow = rowOf(page, fx.lines.tracer.itemName);
+    await waitForHydration(tracerRow.getByRole("checkbox"));
+    const oneLine = async () => {
+      const rects = await page.evaluate(() => {
+        const rect = (element: Element | null) => {
+          const r = element?.getBoundingClientRect();
+          return r ? { top: r.top, bottom: r.bottom, height: r.height } : null;
+        };
+        const buttons = Array.from(document.querySelectorAll("button"));
+        const evidenceLink = Array.from(document.querySelectorAll('form[aria-label="지출결의 보기"] a')).find((node) => /^증빙( \d+)?$/.test(node.textContent?.trim() ?? "")) ?? null;
+        return {
+          select: rect(document.querySelector("#expense-filter-team")),
+          transfer: rect(buttons.find((node) => node.textContent?.trim() === "이체 파일 받기") ?? null),
+          primary: rect(buttons.find((node) => /^지급 완료/.test(node.textContent?.trim() ?? "")) ?? null),
+          link: rect(evidenceLink),
+        };
+      });
+      const { select, transfer, primary, link } = rects;
+      if (!select || !transfer || !primary || !link) throw new Error(`필터 줄 요소 없음 ${JSON.stringify(rects)}`);
+      console.log(`MEASURE ${JSON.stringify(rects)}`);
+      for (const other of [transfer, primary, link]) expect(Math.abs((other.top + other.bottom) / 2 - (select.top + select.bottom) / 2)).toBeLessThanOrEqual(select.height / 2);
+    };
+    await oneLine();
+    await tracerRow.getByRole("checkbox").check();
+    await expect(page.getByRole("button", { name: /^지급 완료 1/ })).toBeVisible();
+    await oneLine();
     await page.context().close();
   });
 });

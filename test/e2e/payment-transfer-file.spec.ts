@@ -19,7 +19,7 @@ import { approvalBasis } from "@/repositories/quote-revisions";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { submitReadyDraft, testVendorAccount } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { setupExpenseE2E, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
+import { seedLongTeamNames, setupExpenseE2E, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
 
 // 06.5-06(D-6504 · UI-SPEC V5): 지급 대상의 2차 `이체 파일 받기` — 고른 계좌이체 건을 신한 대량이체 xlsx로 내려받는다.
 // 지급 권한자 계급은 payment-batch.spec.ts의 팀 업무 범위 꼴에 버튼 게이트 항목(거래처 계좌 해제)을 더한다. 문서는 도메인 함수로 만든다.
@@ -266,6 +266,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 막힌 건 · 담김 �
 // 막힌 행 안 Tab은 그 행 칸들을 다 지난 뒤 아래 줄 끝 링크로 간다(시각 차례). 잰 값은 MEASURE 줄로 남긴다.
 test.describe("지급 대상 · 이체 파일 받기 — 필터 줄 정렬 · 행 아래 줄 (06.5-06 DOM 감사)", () => {
   test("1280 — 2차 · 결과 글자는 필터 칸 줄 · 가장 긴 막힘 줄과 담김 줄은 한 줄 · 막힌 행 Tab은 행 칸 다음 끝 링크", async ({ browser, baseURL }) => {
+    await seedLongTeamNames();
     const fx = await setupExpenseE2E();
     const plain = await makeTransferPayer(fx);
     await approvedTarget(fx, "tracer", plain);

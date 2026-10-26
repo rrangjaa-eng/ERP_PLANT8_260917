@@ -1204,11 +1204,45 @@ Plans:
 **Goal:** 06~06.6이 넘긴 후속과 07 검증에서 나온 결함을 끝낸다 — 공용 표 폰 2줄(P-A), 포커스·키보드(P-C), 증빙·지급 안내(P-D), 증빙·카드 대사 후속(P-E), 목록·입력·성능(P-F), 하네스·문서·사람 확인(P-J), 묶음 밖(PX), 07 검증 새 항목(07-review/verify/SUMMARY.md 1~13), 사용자 10/22·10/26 결정 C-90~C-93. 입력 /mnt/project-files/07-prep/carryover.md · 07-vs-07.1.md ② · 07.1-prep/status-*.md. 진행 중 #296(공용 표 편집 표시)·#298(왼쪽 레일)과 같은 파일을 건드리는 플랜은 그 PR 머지 뒤(07.1-prep/open-pr-overlap.md). 새 기능 PU1~23은 07.2(사용자 결정 2026-10-26 16:28 KST)
 **Requirements**: TBD
 **Depends on:** Phase 7
-**Plans:** 0 plans
+**Plans:** 0/19 plans executed
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 07.1 to break down)
+- [ ] 07.1-01-PLAN.md
+- [ ] 07.1-02-PLAN.md
+- [ ] 07.1-03-PLAN.md
+- [ ] 07.1-04-PLAN.md
+- [ ] 07.1-06-PLAN.md
+- [ ] 07.1-08-PLAN.md
+- [ ] 07.1-09-PLAN.md
+- [ ] 07.1-10-PLAN.md
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 07.1-05-PLAN.md
+- [ ] 07.1-07-PLAN.md
+- [ ] 07.1-11-PLAN.md
+- [ ] 07.1-12-PLAN.md
+- [ ] 07.1-13-PLAN.md
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 07.1-14-PLAN.md
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 07.1-15-PLAN.md
+- [ ] 07.1-16-PLAN.md
+- [ ] 07.1-17-PLAN.md
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 07.1-18-PLAN.md
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 07.1-19-PLAN.md
 
 ### Phase 8: 전환
 

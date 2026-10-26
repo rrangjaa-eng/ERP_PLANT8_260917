@@ -75,6 +75,18 @@
   }
 }
 
+/* 1280~1439 — 왼쪽 레일(--rail-w)로 본문이 176 좁아져 검색 칸이 280이면 이체 파일 받기 · 결과 글자 · 1차(· 증빙 링크)가 다음 줄로 밀린다.
+   한 줄(SP-65-2)을 위해 이 폭에서만 검색 칸을 줄인다. 네이티브 select는 가장 긴 옵션(팀 이름)만큼 넓어지므로(CI 공용 DB의 긴 팀 이름) 같은 줄에서 select 폭에도 상한을 둔다 — 데이터 길이와 무관하게 한 줄. */
+@media (min-width: 1280px) and (max-width: 1439.98px) {
+  .searchLabel {
+    width: calc(var(--field-w-select) - var(--s-8));
+  }
+
+  .select {
+    max-width: calc(var(--field-w-select) - var(--s-4));
+  }
+}
+
 /* 합계 줄 — 제목 aux · muted, 금액 body 700(UI-SPEC Typography · projects 합계 줄 선례). */
 .totals {
   display: flex;

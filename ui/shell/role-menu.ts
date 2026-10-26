@@ -12,6 +12,8 @@
 export type RoleMenuViewer = {
   roleId: string;
   allowedMenus: readonly string[];
+  /** 증빙 등록(`evidence.intake` 쓰기) 권한 — layout이 can()으로 계산해 넘긴다. true면 1차 메뉴 3번째(지출결의 다음)에 「증빙」이 끼인다. */
+  canIntakeEvidence: boolean;
 };
 
 export type MenuLink = {
@@ -26,7 +28,7 @@ export type AccountEntry =
 export type BottomTab = { label: string } & ({ kind: "link"; href: string } | { kind: "more" });
 
 export type RoleMenu = {
-  /** SYSTEM.md §6-0 1차 메뉴 5개 — 대응 화면 유무와 무관하게 역할과 상관없이 항상 다섯 전부(D-22). */
+  /** SYSTEM.md §6-0 1차 메뉴 — 다섯은 대응 화면 유무와 무관하게 역할과 상관없이 항상 전부(D-22), 증빙 등록 권한자에게만 3번째 「증빙」. */
   topBarMenu: MenuLink[];
   /** SYSTEM.md §6-0 (a) PC 사용자 메뉴 · §7-8 「더보기」 시트의 「관리」 한 줄 —
    * 권한표에서 view 권한이 있는 admin.* 메뉴가 하나라도 있으면 `[{ label: "관리",
@@ -54,6 +56,10 @@ const TOP_BAR_MENU: readonly MenuLink[] = [
   { label: "결재", href: "/approvals" },
   { label: "손익", href: "/pnl" },
 ];
+
+// 증빙 등록 권한자(`evidence.intake` 쓰기, 화면 게이트 expenses/evidence/layout.tsx와 같은 판정)에게만 3번째(지출결의 다음)에 끼는 1차 메뉴.
+const EVIDENCE_MENU: MenuLink = { label: "증빙", href: "/expenses/evidence" };
+const EVIDENCE_MENU_INDEX = 2;
 
 // D-17 → 「관리」 한 줄로 접기(2026-09-22, quick/260922-i3k, 사용자 결정 옵션 B):
 // 관리자 화면 12종(§6-8 시스템 상태 + Phase 3의 나머지 10개 + 04.3의 확인증 행사) 전부 — 개별 이름은
@@ -162,7 +168,7 @@ function buildAdminMenu(viewer: RoleMenuViewer): MenuLink[] {
  * 무관하다(순수 함수). 항목이 0개인 그룹은 결과 배열에 나타나지 않는다 — 서버가
  * 거른 목록을 그대로 렌더할 app/(app)/admin/page.tsx가 빈 그룹 머리글을 찍지
  * 않아도 되게 한다. */
-export function adminIndexGroups(viewer: RoleMenuViewer): AdminMenuGroup[] {
+export function adminIndexGroups(viewer: Pick<RoleMenuViewer, "roleId" | "allowedMenus">): AdminMenuGroup[] {
   const allowed = ADMIN_MENUS.filter((menu) => viewer.allowedMenus.includes(menu.key));
   const groupOrder = [
     ADMIN_GROUP_MASTER,
@@ -245,7 +251,9 @@ function buildBottomTabs(viewer: RoleMenuViewer): BottomTab[] {
  */
 export function roleMenu(viewer: RoleMenuViewer): RoleMenu {
   return {
-    topBarMenu: [...TOP_BAR_MENU],
+    topBarMenu: viewer.canIntakeEvidence
+      ? [...TOP_BAR_MENU.slice(0, EVIDENCE_MENU_INDEX), EVIDENCE_MENU, ...TOP_BAR_MENU.slice(EVIDENCE_MENU_INDEX)]
+      : [...TOP_BAR_MENU],
     adminMenu: buildAdminMenu(viewer),
     accountGroup: buildAccountGroup(viewer),
     bottomTabs: buildBottomTabs(viewer),

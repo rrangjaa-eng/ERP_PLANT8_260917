@@ -106,21 +106,32 @@ const SEED_ROLE_NAMES: ReadonlyArray<[roleId: string, name: string]> = [
 const SYSADMIN_ROLE_ID = "role-sysadmin";
 const DEFAULT_ROLE_ID = "role-pm";
 
-const ADMIN: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.system-status", "leave"] };
-const EMPLOYEE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["leave"] };
+const ADMIN: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.system-status", "leave"], canIntakeEvidence: false };
+const EMPLOYEE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["leave"], canIntakeEvidence: false };
 // 04.1-06(A1): 권한표에서 연차 view를 끈 계급 — 계정 그룹에 「연차」가 없다.
-const EMPLOYEE_WITHOUT_LEAVE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: [] };
+const EMPLOYEE_WITHOUT_LEAVE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: [], canIntakeEvidence: false };
 
 describe("roleMenu — 상단 바 1차 메뉴 (D-22)", () => {
-  it("시스템 관리자 입력이면 1차 메뉴 5개가 전부 들어 있다", () => {
+  it("증빙 등록 권한이 없으면 시스템 관리자 입력이어도 1차 메뉴 5개다", () => {
     expect(roleMenu(ADMIN).topBarMenu).toHaveLength(5);
   });
 
-  it("기획 PM 입력이면 1차 메뉴 5개가 전부 들어 있다 — 대응 화면 유무와 무관하다", () => {
+  it("증빙 등록 권한이 없는 기획 PM 입력이면 1차 메뉴 5개가 전부 들어 있다 — 대응 화면 유무와 무관하다", () => {
     expect(roleMenu(EMPLOYEE).topBarMenu).toHaveLength(5);
   });
 
-  it("두 계급의 상단 바 메뉴 결과가 같다(허용 메뉴와 무관하다, D-22)", () => {
+  it("canIntakeEvidence가 true면 1차 메뉴가 6개이고 3번째가 「증빙」(/expenses/evidence)이다", () => {
+    const menu = roleMenu({ ...EMPLOYEE, canIntakeEvidence: true }).topBarMenu;
+    expect(menu.map((item) => item.label)).toEqual(["프로젝트", "지출결의", "증빙", "법인카드", "결재", "손익"]);
+    expect(menu[2]).toEqual({ label: "증빙", href: "/expenses/evidence" });
+    expect(menu.filter((item) => item.label !== "증빙")).toEqual(roleMenu(EMPLOYEE).topBarMenu);
+  });
+
+  it("canIntakeEvidence가 false면 「증빙」이 없다", () => {
+    expect(roleMenu(EMPLOYEE).topBarMenu.map((item) => item.label)).not.toContain("증빙");
+  });
+
+  it("증빙 등록 권한이 같은 두 계급의 상단 바 메뉴 결과가 같다(허용 메뉴와 무관하다, D-22)", () => {
     expect(roleMenu(EMPLOYEE).topBarMenu).toEqual(roleMenu(ADMIN).topBarMenu);
   });
 });
@@ -181,34 +192,34 @@ describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접�
   });
 
   it("계급 이름이 아니라 allowedMenus만 본다 — 시스템 관리자라도 허용 목록이 비면 진입점이 없다", () => {
-    const sysadminWithoutPermission: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [] };
+    const sysadminWithoutPermission: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [], canIntakeEvidence: false };
     expect(roleMenu(sysadminWithoutPermission).adminMenu).toEqual([]);
   });
 
   it.each(ADMIN_MENU_KEYS)("%s 하나만 허용돼도 관리자 메뉴는 여전히 「관리」 한 줄이다", (key) => {
-    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [key] };
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [key], canIntakeEvidence: false };
     expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
   it("allowedMenus에 admin.* 키 13개가 전부 있어도 관리자 메뉴는 여전히 「관리」 한 줄이다(개별 화면 이름은 adminIndexGroups가 담당)", () => {
-    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS };
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS, canIntakeEvidence: false };
     expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
   it("certs.events 하나만 허용돼도(기획 PM) 관리자 메뉴는 「관리」 한 줄이다", () => {
-    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["projects", "certs.events"] };
+    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["projects", "certs.events"], canIntakeEvidence: false };
     expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
-  it("1차 메뉴는 certs.events를 허용해도 다섯 그대로다(D-22)", () => {
-    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["certs.events"] };
+  it("1차 메뉴는 certs.events를 허용해도 다섯 그대로다(증빙 등록 권한이 없을 때, D-22)", () => {
+    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["certs.events"], canIntakeEvidence: false };
     expect(roleMenu(viewer).topBarMenu).toHaveLength(5);
     expect(roleMenu(viewer).bottomTabs).toHaveLength(4);
   });
 
   it("허용된 관리자 메뉴는 매번 같은 순서로 나온다(allowedMenus의 순서와 무관, 순수 함수)", () => {
-    const forward: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS] };
-    const reversed: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS].reverse() };
+    const forward: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS], canIntakeEvidence: false };
+    const reversed: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS].reverse(), canIntakeEvidence: false };
     expect(roleMenu(forward).adminMenu).toEqual(roleMenu(reversed).adminMenu);
   });
 });
@@ -226,6 +237,7 @@ describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 
     const viewer: RoleMenuViewer = {
       roleId: SYSADMIN_ROLE_ID,
       allowedMenus: [...ADMIN_MENU_KEYS, ...CERT_ADMIN_MENU_KEYS],
+      canIntakeEvidence: false,
     };
     const groups = adminIndexGroups(viewer);
     expect(groups.map((group) => group.label)).toEqual(["마스터", "설정·권한", "운영 기록", "확인증"]);
@@ -236,7 +248,7 @@ describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 
   });
 
   it("기획 PM(projects · certs.events)이면 「확인증」 그룹 하나만 돌아오고 항목은 「확인증 행사」(/certs/events)다", () => {
-    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["projects", "certs.events"] };
+    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["projects", "certs.events"], canIntakeEvidence: false };
     expect(adminIndexGroups(viewer)).toEqual([
       { label: "확인증", items: [{ label: "확인증 행사", href: "/certs/events" }] },
     ]);
@@ -248,7 +260,7 @@ describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 
   });
 
   it("빈 allowedMenus면 []다", () => {
-    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [] };
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [], canIntakeEvidence: false };
     expect(adminIndexGroups(viewer)).toEqual([]);
   });
 
@@ -315,7 +327,7 @@ describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 
   });
 
   it("admin.settings(관리자용 설정 화면)는 사용자 자신의 「설정」(/settings)과 라벨·경로가 다르다", () => {
-    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.settings"] };
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.settings"], canIntakeEvidence: false };
     const entry = adminIndexGroups(viewer)[0]?.items[0];
     expect(entry?.href).toBe("/admin/settings");
     expect(entry?.href).not.toBe("/settings");
@@ -325,20 +337,20 @@ describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 
 
 describe("roleMenu — 폰 하단 탭 (SYSTEM.md §6-0 표, 계급 5종)", () => {
   it.each(SEED_ROLE_NAMES)("%s(%s) 탭이 정확히 4개이고 4번째는 「더보기」다", (roleId) => {
-    const tabs = roleMenu({ roleId, allowedMenus: [] }).bottomTabs;
+    const tabs = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence: false }).bottomTabs;
     expect(tabs).toHaveLength(4);
     expect(tabs[3]).toEqual({ kind: "more", label: "더보기" });
   });
 
   it.each(SEED_ROLE_NAMES)("%s(%s) 탭 라벨이 SYSTEM.md 표의 그 행과 원소 단위로 같다", (roleId, name) => {
     const expected = expectedBottomTabRow(SYSTEM, name);
-    const actual = roleMenu({ roleId, allowedMenus: [] }).bottomTabs.map((tab) => tab.label);
+    const actual = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence: false }).bottomTabs.map((tab) => tab.label);
     expect(actual).toEqual(expected);
   });
 
   it("모르는 계급 식별자는 기본 계급(기획 PM) 탭으로 떨어지고 탭 수가 여전히 4다", () => {
-    const unknown = roleMenu({ roleId: "role-does-not-exist", allowedMenus: [] }).bottomTabs;
-    const fallback = roleMenu({ roleId: DEFAULT_ROLE_ID, allowedMenus: [] }).bottomTabs;
+    const unknown = roleMenu({ roleId: "role-does-not-exist", allowedMenus: [], canIntakeEvidence: false }).bottomTabs;
+    const fallback = roleMenu({ roleId: DEFAULT_ROLE_ID, allowedMenus: [], canIntakeEvidence: false }).bottomTabs;
     expect(unknown).toHaveLength(4);
     expect(unknown).toEqual(fallback);
   });
@@ -410,7 +422,7 @@ describe("roleMenu — 계정 그룹 (SYSTEM.md 목록과 원소 단위로 같�
     expect(actualLabels).toEqual(expectedLabels.filter((label) => label !== "연차"));
   });
 
-  it("leave 유무와 무관하게 1차 메뉴 · 폰 하단 탭은 같다(D-22 다섯 고정 · 탭 넷)", () => {
+  it("leave 유무와 무관하게 1차 메뉴 · 폰 하단 탭은 같다(D-22 · 탭 넷)", () => {
     expect(roleMenu(EMPLOYEE).topBarMenu).toEqual(roleMenu(EMPLOYEE_WITHOUT_LEAVE).topBarMenu);
     expect(roleMenu(EMPLOYEE).bottomTabs).toEqual(roleMenu(EMPLOYEE_WITHOUT_LEAVE).bottomTabs);
   });
@@ -434,7 +446,7 @@ describe("roleMenu — 순수 함수 (부작용 없음, §6-0 셸 절이 이 계
   });
 
   it("SYSTEM.md §6-0 절이 실제로 이 계약들의 근거 문장을 담고 있다(전제 확인)", () => {
-    expect(SHELL_SECTION).toContain("PC 상단 바 우측 사용자 진입점");
+    expect(SHELL_SECTION).toContain("PC 레일 아래(태블릿은 바 우측) 사용자 진입점");
     expect(SHELL_SECTION).toContain("시스템 상태");
     expect(SHELL_SECTION).toContain("「관리」");
   });

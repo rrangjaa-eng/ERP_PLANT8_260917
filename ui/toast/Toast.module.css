@@ -53,6 +53,14 @@
   text-decoration-thickness: var(--underline-w-hover);
 }
 
+/* ≥1280: 왼쪽 레일 오른쪽에서 시작한다(§6-0). */
+@media (min-width: 1280px) {
+  .toast {
+    left: calc(var(--rail-w) + var(--pad-page));
+    max-width: calc(100vw - var(--rail-w) - 2 * var(--pad-page));
+  }
+}
+
 /* 폰: 하단 탭 위(§7-6). 고정 행동 줄이 있으면 그 줄 위(--toast-lift = 줄 윗변에서 화면 아래까지 실측, Toast.tsx — 웨이브 11 D3). */
 @media (max-width: 699.98px) {
   .toast {

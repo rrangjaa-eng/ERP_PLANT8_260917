@@ -2422,22 +2422,26 @@ export function QuoteLedger({
               }
               if (door.state === "open" && !lineDoors.tableGateReason) {
                 return (
-                  <RowActions noWrap={!door.cardHref}>
-                    <RowAction
-                      tabIndex={-1}
-                      describedBy={itemCellId}
-                      pending={doorPendingLine === lineId}
-                      busy={doorPendingLine !== null && doorPendingLine !== lineId}
-                      onClick={() => requestLineExpense(row)}
-                    >
-                      지출결의 올리기
-                    </RowAction>
-                    {door.cardHref ? (
-                      <RowAction tabIndex={-1} describedBy={itemCellId} href={door.cardHref}>
-                        카드 사용 등록
+                  <span className={styles.stackedDoor}>
+                    <RowActions noWrap>
+                      <RowAction
+                        tabIndex={-1}
+                        describedBy={itemCellId}
+                        pending={doorPendingLine === lineId}
+                        busy={doorPendingLine !== null && doorPendingLine !== lineId}
+                        onClick={() => requestLineExpense(row)}
+                      >
+                        지출결의 올리기
                       </RowAction>
+                    </RowActions>
+                    {door.cardHref ? (
+                      <RowActions noWrap>
+                        <RowAction tabIndex={-1} describedBy={itemCellId} href={door.cardHref}>
+                          카드 사용 등록
+                        </RowAction>
+                      </RowActions>
                     ) : null}
-                  </RowActions>
+                  </span>
                 );
               }
               if (door.state === "closed" && door.latestId) {

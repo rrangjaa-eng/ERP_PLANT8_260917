@@ -608,4 +608,43 @@ test.describe("견적 줄에서 바로 카드 사용 등록", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.context().close();
   });
+  test("[DOM 감사 c] 1024 · 768 — `카드 사용 등록`이 행동 열을 넓히지 않는다: 두 행동이 세로로 서고 시작 전 줄은 2줄 이하", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `국민-${randomUUID().slice(0, 6)}`, numberLast4: "5513", label: `E2E열폭-${randomUUID().slice(0, 8)}`, kind: "personal", holderUserId: fx.pm.viewer.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1024, height: 800 });
+    await page.goto(`/projects/${fx.projectId}`);
+    const row = page.getByRole("row").filter({ hasText: fx.lines.tracer.itemName });
+    const link = row.getByRole("link", { name: "카드 사용 등록" });
+    const button = row.getByRole("button", { name: "지출결의 올리기" });
+    await expect(link).toBeVisible();
+    for (const width of [1024, 768]) {
+      await page.setViewportSize({ width, height: 800 });
+      const linkBox = await link.boundingBox();
+      const buttonBox = await button.boundingBox();
+      const cellBox = await link.locator("xpath=ancestor::td[1]").boundingBox();
+      // 행 높이는 "다른 칸의 글이 길어서"는 허용하고 "행동 칸이 키워서"는 막는다: 한계 = max(2줄, 행동 칸을 뺀 칸 내용 높이) + 위아래 padding.
+      const rowMetrics = await link.locator("xpath=ancestor::tr[1]").evaluate((el) => {
+        const cells = [...el.querySelectorAll("td")];
+        const style = getComputedStyle(cells[0]!);
+        const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.5;
+        const contentHeight = (cell: Element) => {
+          const range = document.createRange();
+          range.selectNodeContents(cell);
+          return range.getBoundingClientRect().height;
+        };
+        const others = Math.max(...cells.slice(0, -1).map(contentHeight));
+        return {
+          height: el.getBoundingClientRect().height,
+          limit: Math.max(lineHeight * 2, others) + Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom) + 2,
+        };
+      });
+      if (!linkBox || !buttonBox || !cellBox) throw new Error("상자 없음");
+      // 세로로 쌓인다: 링크는 버튼 아래, 열 폭은 두 행동의 합이 아니라 더 넓은 하나
+      expect(linkBox.y, `${width}px 링크가 버튼 아래`).toBeGreaterThan(buttonBox.y + buttonBox.height - 2);
+      expect(cellBox.width, `${width}px 행동 열 폭`).toBeLessThan(Math.max(linkBox.width, buttonBox.width) + 48);
+      expect(rowMetrics.height, `${width}px 시작 전 줄 높이`).toBeLessThanOrEqual(rowMetrics.limit);
+    }
+    await page.context().close();
+  });
 });

@@ -655,7 +655,8 @@ test.describe("견적 줄에서 바로 카드 사용 등록", () => {
         const contentHeight = (cell: Element) => {
           const range = document.createRange();
           range.selectNodeContents(cell);
-          return range.getBoundingClientRect().height;
+          // Range는 글자 상자 높이라 여러 줄 칸을 줄 상자보다 낮게 잰다 — 줄 수로 올려 줄 상자 높이로 비교한다.
+          return Math.ceil(range.getBoundingClientRect().height / lineHeight) * lineHeight;
         };
         const others = Math.max(...cells.slice(0, -1).map(contentHeight));
         return {

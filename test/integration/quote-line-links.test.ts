@@ -5,7 +5,7 @@ import { db, pool } from "@/db/client";
 import { corpCards, corpCardUsages, expenses, files, purchaseRequests, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
-import { closeExpense, createExpenseFromLines, ExpenseConflictError, ExpenseFieldError, getExpense, listLineDoors, rowActionBlock, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { cardEntryHref, closeExpense, createExpenseFromLines, ExpenseConflictError, ExpenseFieldError, getExpense, listLineDoors, rowActionBlock, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { findLineLinks } from "@/repositories/quote-line-links";
 import { listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
 import { saveProjectLedger } from "@/domain/projects/ledger";
@@ -524,6 +524,9 @@ describe("행 행동 조합 (S14 · rowActionBlock — 06-18 소비 계약)", ()
     });
     expect(before.cells[fx.lines.withVendor]).toMatchObject({ state: "open", branch: "expense" });
     expect(before.cells[fx.lines.withVendor]?.blocked).toBeUndefined();
+    // 시작 전 열린 줄은 지출결의 옆에 `카드 사용 등록` 진입(같은 주소 함수)을 싣고, 막힌 줄은 막힘의 다음 한 수가 대신한다.
+    expect(before.cells[fx.lines.withVendor]?.cardHref).toBe(cardEntryHref(fx.lines.withVendor));
+    expect(before.cells[fx.lines.split]?.cardHref).toBeUndefined();
     const rejected = await caught(submitReadyDraft(fx.pm, await draftOf(fx.pm, fx.lines.split)));
     expect((rejected as Error).message).toBe(before.cells[fx.lines.split]?.blocked?.reason);
 
@@ -531,6 +534,7 @@ describe("행 행동 조합 (S14 · rowActionBlock — 06-18 소비 계약)", ()
     const after = await listLineDoors(fx.pm, { projectId: fx.projectId });
     expect(after.cells[fx.lines.withVendor]).toMatchObject({ branch: "purchase", purchaseHref: `/cards/purchases?new=1&line=${fx.lines.withVendor}` });
     expect(after.cells[fx.lines.withVendor]?.blocked).toBeUndefined();
+    expect(after.cells[fx.lines.withVendor]?.cardHref).toBeUndefined();
     expect(after.cells[fx.lines.noVendor]).toMatchObject({ state: "no_vendor", branch: "expense" });
   });
 
@@ -541,6 +545,16 @@ describe("행 행동 조합 (S14 · rowActionBlock — 06-18 소비 계약)", ()
     await db.update(corpCards).set({ active: false }).where(eq(corpCards.holderUserId, fx.pm.id));
     const doors = await listLineDoors(fx.pm, { projectId: fx.projectId });
     expect(doors.cells[fx.lines.split]?.blocked).toEqual({ reason: "카드 사용 2건 연결됨 · 지출결의는 다른 줄" });
+    expect(doors.cells[fx.lines.withVendor]?.cardHref).toBeUndefined();
+  });
+
+  it("[검토] 내 번호 없는 지출결의 초안이 있는 줄에는 `카드 사용 등록` 진입을 싣지 않는다(등록하면 초안을 제출할 수 없다)", async () => {
+    const fx = await setupExpenseProject();
+    await cardOn(fx, fx.lines.split); // 쓸 수 있는 카드가 있는 사람(다른 줄에 등록)
+    const draft = await draftOf(fx.pm, fx.lines.withVendor);
+    const doors = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(doors.cells[fx.lines.withVendor]).toMatchObject({ state: "open", expenseId: draft });
+    expect(doors.cells[fx.lines.withVendor]?.cardHref).toBeUndefined();
   });
 
   it("[검토 I-2] 온라인구매 줄 막힘 이유 = 카드 사용 등록 서버 거부 문구 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`", async () => {

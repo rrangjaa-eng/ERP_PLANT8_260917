@@ -1747,12 +1747,15 @@ test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽
     await openProjectWithSavedLines(page, fortyFiveLines());
     await pageNav(page).getByRole("button", { name: "2", exact: true }).first().click();
     await editNumberCell(page, 2, 7, "5555");
-    await expect(quoteCell(page, 2, 7)).toHaveCSS("box-shadow", /inset/);
+    await expect(quoteCell(page, 2, 7)).toHaveCSS("background-image", /linear-gradient/);
+    // 저장 안 한 칸 표시는 고친 칸의 모서리 삼각형뿐 — 같은 줄의 다른 칸은 표시가 없다.
+    await expect(quoteCell(page, 2, 6)).toHaveCSS("background-image", "none");
+    await expect(quoteCell(page, 2, 7)).toHaveCSS("box-shadow", "none");
     await pageNav(page).getByRole("button", { name: "1", exact: true }).first().click();
     await expect(currentPage(page)).toHaveText("1");
     await pageNav(page).getByRole("button", { name: "2", exact: true }).first().click();
     await expect(quoteCell(page, 2, 7)).toHaveText("5,555");
-    await expect(quoteCell(page, 2, 7)).toHaveCSS("box-shadow", /inset/);
+    await expect(quoteCell(page, 2, 7)).toHaveCSS("background-image", /linear-gradient/);
   });
 
   test("(R2) 발행 줄 금액만 범위 밖으로 1차 저장 → 견적 표 합계 행 한 줄 `전부 거부 · 다른 칸 오류 1칸` · 발행 표 `오류 1칸 · 전부 거부` · 포커스는 그 발행 금액 · 고쳐 저장하면 `저장됨`만", async ({ page }) => {

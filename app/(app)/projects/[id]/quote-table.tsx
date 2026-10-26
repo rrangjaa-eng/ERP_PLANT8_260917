@@ -65,7 +65,7 @@ import {
 } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { SettlementButton, type SettlementHeaderProps } from "./settlement-button";
-import { unsavedEditsReason } from "./unsaved-edits";
+import { lineCellDirty, unsavedEditsReason } from "./unsaved-edits";
 import { CUSTOMER_APPROVAL_TRIGGER_ID, CustomerApprovalItems, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import type { ProjectProfitSummary } from "@/domain/projects/profit-summary";
 import { PreSettleLedgerContext } from "./pre-settle-check";
@@ -1342,6 +1342,13 @@ export function QuoteLedger({
         <Button variant="tertiary" pending={doorPendingLine === lineId} onClick={() => void openLineExpense(lineId, door, () => setSheetRowKey(null))}>
           지출결의 올리기
         </Button>
+        {door.cardHref ? (
+          <span onClickCapture={guardDocumentLink}>
+            <Link href={door.cardHref} className={buttonLinkClassName("tertiary")}>
+              카드 사용 등록
+            </Link>
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -2417,17 +2424,28 @@ export function QuoteLedger({
               }
               if (door.state === "open" && !lineDoors.tableGateReason) {
                 return (
-                  <RowActions noWrap>
-                    <RowAction
-                      tabIndex={-1}
-                      describedBy={itemCellId}
-                      pending={doorPendingLine === lineId}
-                      busy={doorPendingLine !== null && doorPendingLine !== lineId}
-                      onClick={() => requestLineExpense(row)}
-                    >
-                      지출결의 올리기
-                    </RowAction>
-                  </RowActions>
+                  <span className={styles.stackedDoor}>
+                    <RowActions noWrap>
+                      <RowAction
+                        tabIndex={-1}
+                        describedBy={itemCellId}
+                        pending={doorPendingLine === lineId}
+                        busy={doorPendingLine !== null && doorPendingLine !== lineId}
+                        onClick={() => requestLineExpense(row)}
+                      >
+                        지출결의 올리기
+                      </RowAction>
+                    </RowActions>
+                    {door.cardHref ? (
+                      <span onClickCapture={guardDocumentLink}>
+                        <RowActions noWrap>
+                          <RowAction tabIndex={-1} describedBy={itemCellId} href={door.cardHref}>
+                            카드 사용 등록
+                          </RowAction>
+                        </RowActions>
+                      </span>
+                    ) : null}
+                  </span>
                 );
               }
               if (door.state === "closed" && door.latestId) {
@@ -3139,7 +3157,7 @@ export function QuoteLedger({
         onPasteAtCell={editableWidth ? handlePasteAtCell : undefined}
         firstIssueSignal={issueTarget?.table === "quote" ? issueTarget.signal : undefined}
         cellIssue={cellIssueFor}
-        cellDirty={(row) => row.dirty}
+        cellDirty={lineCellDirty}
         onRowTap={(row) => setSheetRowKey(row.clientKey)}
         rowLabel={(row) => row.itemName || "(항목명 없음)"}
         // 04-47(DR-16) — 합계 행 오른쪽 한 줄: 상한·거부 요약(danger) · 붙여넣기 묶음 · 저장 성공(혼자). 표가 조립해 넘겨준다.

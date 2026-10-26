@@ -4,6 +4,7 @@ import { splitCardTotal } from "@/domain/corp-card-usages/amounts";
 import { businessNoDigitsOf, cardLast4Of, cellDate, cellKrw, isBlankRow } from "@/domain/evidence-import/cells";
 import { EVIDENCE_FORMATS, finalizeAmounts, parseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
 import { EVIDENCE_FORMAT_TYPES } from "@/domain/evidence-import/types";
+import { readWorkbookRows } from "@/lib/xlsx-server";
 import type { TaxRates } from "@/domain/money/tax";
 import {
   bcFixture,
@@ -186,6 +187,13 @@ describe("신한 서식", () => {
     { 승인번호: "55667788", 이용일시: "2026.05.21 10:00:00", 이용금액: -5000 },
     { 승인번호: "99887766", 이용카드: "5531-52**-****-****" },
   ];
+
+  it("옛 12칸 픽스처는 회계양식이 아니라 card-shinhan으로 판별된다", () => {
+    const book = readWorkbookRows(shinhanFixture([{}]), { sheetRows: 6 });
+    const matched = EVIDENCE_FORMATS.filter((rule) => rule.detect(book.sheets, "cfb").match).map((rule) => rule.key);
+    expect(matched).toEqual(["card-shinhan"]);
+    expect(ok(parseWorkbook(shinhanFixture([{}]))).format).toBe("card-shinhan");
+  });
 
   it("상쇄 쌍을 뺀 데이터 줄 · 끝 4자리 · 빈 승인번호 null · 세액 · 공급가 null · rateDates", () => {
     const result = ok(parseWorkbook(shinhanFixture(SHINHAN_ROWS)));

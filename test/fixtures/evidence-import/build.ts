@@ -263,7 +263,20 @@ export function streamedZipFixture(xlsx: Uint8Array): Uint8Array {
   return zipOf(entries);
 }
 
-export type ZipForgery = "local-size" | "descriptor-local-size" | "descriptor-stored" | "descriptor-understated" | "zip64-local" | "zip64-central" | "zero-size-deflate" | "method" | "understated-deflate";
+// 정상: bit 3을 로컬 · 중앙 둘 다 세우고 로컬 크기를 0이 아닌 중앙 값 그대로 둔다(서술자 있음) — 가드가 받아야 한다.
+export function descriptorNonzeroLocalZipFixture(): Uint8Array {
+  const entries = zipEntriesOf(lotteFixture([{}], { as: "xlsx" }));
+  const first = entries[0];
+  if (!first) throw new Error("항목 없음");
+  const local = new DataView(first.local.buffer);
+  const central = new DataView(first.central.buffer);
+  local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
+  central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
+  first.descriptor = descriptorOf(central.getUint32(16, true), central.getUint32(20, true), central.getUint32(24, true));
+  return zipOf(entries);
+}
+
+export type ZipForgery = "local-size" | "descriptor-local-size" | "descriptor-stored" | "descriptor-understated" | "descriptor-local-only" | "descriptor-central-only" | "zip64-local" | "zip64-central" | "zero-size-deflate" | "method" | "understated-deflate";
 
 // 중앙 디렉터리는 작아 보이는데 SheetJS가 로컬 헤더 · ZIP64 칸 · 데이터 서술자로 크게 푸는 꼴(독립 검토 P1-1).
 // 정상 롯데 xlsx(deflate)의 첫 항목 하나만 위조한다 — 파일은 작게 둔다.
@@ -302,6 +315,9 @@ export function forgedZipFixture(forgery: ZipForgery): Uint8Array {
     central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
     first.descriptor = descriptorOf(central.getUint32(16, true), first.data.length, 1000);
   }
+  // bit 3 불일치 — 로컬 머리만, 또는 중앙만 데이터 서술자 표지를 세운 꼴(둘이 같아야 받는다).
+  if (forgery === "descriptor-local-only") local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
+  if (forgery === "descriptor-central-only") central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
   if (forgery === "zip64-local") first.localExtra = zip64Extra(5_000_000, first.data.length);
   if (forgery === "zip64-central") first.centralExtra = zip64Extra(5_000_000, first.data.length);
   if (forgery === "method") {

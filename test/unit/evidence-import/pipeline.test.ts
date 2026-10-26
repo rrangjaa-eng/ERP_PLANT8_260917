@@ -9,6 +9,7 @@ import { cardLotte } from "@/domain/evidence-import/formats/card-lotte";
 import {
   BC_HEADER_28,
   bcFixture,
+  descriptorNonzeroLocalZipFixture,
   encryptedFixture,
   forgedZipFixture,
   hometaxCashReceiptFixture,
@@ -224,7 +225,7 @@ describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는�
   });
 
   // 독립 검토 P1-1 — SheetJS는 로컬 헤더 · ZIP64 칸으로 풀 크기를 정하고 중앙 디렉터리와의 차이는 다 푼 뒤에 본다.
-  for (const forgery of ["local-size", "descriptor-local-size", "descriptor-stored", "descriptor-understated", "zip64-local", "zip64-central", "zero-size-deflate", "method", "understated-deflate"] as const) {
+  for (const forgery of ["local-size", "descriptor-local-size", "descriptor-stored", "descriptor-understated", "descriptor-local-only", "descriptor-central-only", "zip64-local", "zip64-central", "zero-size-deflate", "method", "understated-deflate"] as const) {
     it(`위조 zip(${forgery}) → zipEntryStats null · 거절 · SheetJS 읽기 호출 0`, () => {
       const bytes = forgedZipFixture(forgery);
       expect(bytes.length).toBeLessThan(EVIDENCE_IMPORT_MAX_BYTES);
@@ -234,6 +235,12 @@ describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는�
       expect(read).not.toHaveBeenCalled();
     });
   }
+
+  it("bit 3 + 로컬 크기가 0이 아닌 중앙 값과 같음 → zipEntryStats는 원본과 같은 통계", () => {
+    const stats = zipEntryStats(descriptorNonzeroLocalZipFixture());
+    expect(stats).not.toBeNull();
+    expect(stats).toEqual(zipEntryStats(lotteFixture([{}], { as: "xlsx" })));
+  });
 
   // SheetJS는 끝에서 4바이트 앞부터 처음 만난 끝 레코드를 읽는다(xlsx.js parse_zip) — 주석 안 가짜 끝 레코드로 가드를 우회하지 못한다.
   it("끝 레코드가 둘인 zip(주석 안 가짜) → zipEntryStats null · 거절 · SheetJS 읽기 호출 0", () => {

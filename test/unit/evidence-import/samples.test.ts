@@ -28,11 +28,14 @@ function parsedSample(prefix: string, key: string) {
 }
 
 describe.skipIf(!DIR)("실물 견본 — 건수만", () => {
-  it("신한 168 · 빈 승인번호 4 · 음수 1", () => {
-    const result = parsedSample("card-shinhan", "card-shinhan");
-    expect(result.lines.length + 2 * result.offsetPairs).toBe(168);
+  // 시각 없음 원자료 8줄 중 2줄은 취소 줄(상쇄 쌍으로 빠진다) — 읽힌 줄에는 6줄이 남는다.
+  it("신한 회계양식 162 · 빈 승인번호 4 · 음수 2 · 해외 2 · 시각 없음 6", () => {
+    const result = parsedSample("card-shinhan", "card-shinhan-accounting");
+    expect(result.lines.length + 2 * result.offsetPairs).toBe(162);
     expect(result.lines.filter((line) => line.approvalNo === null).length).toBe(4);
-    expect(result.lines.filter((line) => line.totalKrw < 0).length + result.offsetPairs).toBe(1);
+    expect(result.lines.filter((line) => line.totalKrw < 0).length + result.offsetPairs).toBe(2);
+    expect(result.lines.filter((line) => line.needsCheck !== null).length).toBe(2);
+    expect(result.lines.filter((line) => line.usedAt === null).length).toBe(6);
   });
 
   it("비씨 9 · 부가세 0 6 · 해외 0 · 빈 승인번호 0", () => {

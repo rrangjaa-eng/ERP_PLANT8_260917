@@ -235,6 +235,13 @@
   gap: var(--s-2);
 }
 
+/* 표 행동 칸의 두 행동(지출결의 올리기 · 카드 사용 등록)을 위아래로 — 열 폭은 더 넓은 하나, 행 높이는 두 줄(줄 간격 0). */
+.stackedDoor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 .restoreAction {
   border: 0;
   background: none;

@@ -587,17 +587,8 @@ test.describe("발행 요청 — 06-21 DOM 감사 반영", () => {
     const dirty = requestTable(page).locator("td[class*='dirtyCell']");
     await expect(dirty).toHaveCount(1);
     await expect(dirty).toContainText("취소");
-    expect(await dirty.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
-      await page.evaluate(() => {
-        const probe = document.createElement("span");
-        probe.style.backgroundColor = "var(--surface-dirty)";
-        document.body.append(probe);
-        const color = getComputedStyle(probe).backgroundColor;
-        probe.remove();
-        return color;
-      }),
-    );
-
+    // 저장 대기 표시는 면이 아니라 모서리 삼각형(--mark-dirty)이다(2026-10-26).
+    await expect(dirty).toHaveCSS("background-image", /linear-gradient/);
     await page.getByRole("button", { name: /일괄 저장/ }).click();
     await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
     await expect(dirty).toHaveCount(0);

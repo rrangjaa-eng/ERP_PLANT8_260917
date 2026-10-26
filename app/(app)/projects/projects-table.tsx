@@ -10,6 +10,7 @@ import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
 import { Num } from "@/ui/num/Num";
 import { PROJECT_COLUMN_LABELS } from "./list-columns";
 import { formatListPeriod, isProfitRateBelowThreshold, type ListColumnStep } from "@/domain/projects/list-view";
+import { sortHeaderHref } from "./sort-cycle";
 import styles from "./projects.module.css";
 
 // SYSTEM.md §6-1 · 04-UI-SPEC S1 — 목록 표. `ui/table`을 **읽기 형태**로
@@ -100,13 +101,10 @@ export function ProjectsTable({
   ];
   const moneyColumns = amountColumns.filter((column) => rows.some((row) => column.key in row));
 
-  // 04-18(§6-1) — 머리글 정렬 링크. 같은 열이면 방향을 뒤집고 다른 열이면 오름차순, page를 싣지 않아 1쪽이다.
+  // 04-18(§6-1) — 머리글 정렬 링크. 다른 열은 오름차순 → 내림차순 → 초기화(sortHeaderHref), page를 싣지 않아 1쪽이다.
   const sortHeader = (key: ProjectSortKey): TableColumn<ProjectListItemWithGroup>["sort"] => {
     const direction = sort.key === key ? sort.direction : null;
-    const next = new URLSearchParams(filterQuery);
-    next.set("sort", key);
-    if (direction === "asc") next.set("dir", "desc");
-    return { href: `/projects?${next.toString()}`, direction };
+    return { href: sortHeaderHref(filterQuery, key, sort), direction };
   };
   const SORT_KEY_OF_COLUMN: Record<string, ProjectSortKey> = {
     number: "number",

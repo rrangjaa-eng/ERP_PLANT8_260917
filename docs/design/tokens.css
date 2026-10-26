@@ -123,6 +123,7 @@
   --inset-tab:      inset 0 -2px 0 var(--accent);            /* 현재 탭 밑줄 */
   --inset-error:    inset 2px 0 0 var(--status-danger);      /* 오류 셀 좌측 */
   --inset-dirty:    inset 0 0 0 1px var(--g-600);            /* 저장 대기 셀 */
+  --mark-dirty:     linear-gradient(135deg, var(--g-600) 6px, transparent 6px);  /* 저장 안 한 칸 왼쪽 위 모서리 삼각형 */
 
   /* 크기 */
   --row-h:          44px;     /* 표 행(PC·폰) */
@@ -281,6 +282,7 @@
     --surface-muted:    #FFFFFF;
     --surface-selected: #FFFFFF;
     --surface-dirty:    #FFFFFF;
+    --mark-dirty:       none;
     /* 글자 */
     --text-strong:    var(--print-ink);
     --text-muted:     var(--print-ink);

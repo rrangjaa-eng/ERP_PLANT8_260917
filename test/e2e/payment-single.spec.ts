@@ -587,7 +587,7 @@ test.describe("06-04 검토 · DOM 감사 수정", () => {
     const payer = await makePaymentManagerE2E();
     const today = seoulToday();
     const rateFrom = addDays(today, 30);
-    const future = addDays(today, 40);
+    const future = await businessDayFrom(addDays(today, 40));
     await seedCodeItem(SYSTEM_VIEWER, {
       tableKey: "evidence_type",
       value: "e2e_vat_scheduled",

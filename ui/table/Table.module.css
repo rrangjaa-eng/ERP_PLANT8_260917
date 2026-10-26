@@ -336,8 +336,15 @@ th.groupHeader {
    600ms 틴트. prefers-reduced-motion에서는 틴트 애니메이션을 끈다
    (그대로 색만 없앤다 — 값 자체 표시는 그대로 유지). */
 .dirtyCell {
-  box-shadow: var(--inset-dirty);
-  background: var(--surface-dirty);
+  background-image: var(--mark-dirty);
+}
+
+/* hover · 포커스 칸의 background 축약이 삼각형을 지우지 않게 한다(명시도가 더 높다). */
+.editableCell.dirtyCell:hover,
+.editableCell.dirtyCell:focus-visible,
+.cell.dirtyCell:focus-visible,
+.table:not(.editable) tbody tr:hover > .cell.dirtyCell {
+  background-image: var(--mark-dirty);
 }
 
 .savedTint {

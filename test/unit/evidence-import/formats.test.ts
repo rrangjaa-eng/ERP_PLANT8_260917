@@ -4,6 +4,7 @@ import { splitCardTotal } from "@/domain/corp-card-usages/amounts";
 import { businessNoDigitsOf, cardLast4Of, cellDate, cellKrw, isBlankRow } from "@/domain/evidence-import/cells";
 import { EVIDENCE_FORMATS, finalizeAmounts, parseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
 import { EVIDENCE_FORMAT_TYPES } from "@/domain/evidence-import/types";
+import { readWorkbookRows } from "@/lib/xlsx-server";
 import type { TaxRates } from "@/domain/money/tax";
 import {
   bcFixture,
@@ -14,7 +15,9 @@ import {
   hometaxTaxInvoiceFixture,
   lotteFixture,
   SHINHAN_HEADER,
+  shinhanAccountingFixture,
   shinhanFixture,
+  SHINHAN_ACCOUNTING_HEADER,
   type FixtureRow,
 } from "@/test/fixtures/evidence-import/build";
 
@@ -184,6 +187,13 @@ describe("신한 서식", () => {
     { 승인번호: "55667788", 이용일시: "2026.05.21 10:00:00", 이용금액: -5000 },
     { 승인번호: "99887766", 이용카드: "5531-52**-****-****" },
   ];
+
+  it("옛 12칸 픽스처는 회계양식이 아니라 card-shinhan으로 판별된다", () => {
+    const book = readWorkbookRows(shinhanFixture([{}]), { sheetRows: 6 });
+    const matched = EVIDENCE_FORMATS.filter((rule) => rule.detect(book.sheets, "cfb").match).map((rule) => rule.key);
+    expect(matched).toEqual(["card-shinhan"]);
+    expect(ok(parseWorkbook(shinhanFixture([{}]))).format).toBe("card-shinhan");
+  });
 
   it("상쇄 쌍을 뺀 데이터 줄 · 끝 4자리 · 빈 승인번호 null · 세액 · 공급가 null · rateDates", () => {
     const result = ok(parseWorkbook(shinhanFixture(SHINHAN_ROWS)));
@@ -496,6 +506,21 @@ describe("홈택스 매입 세금계산서", () => {
   it("승인번호가 26자 꼴이 아니면 승인번호 읽지 못함", () => {
     expect(parseWorkbook(hometaxTaxInvoiceFixture([{ 승인번호: "12345678" }]))).toMatchObject({ ok: false, lines: ["7줄 · 승인번호 읽지 못함"] });
   });
+
+  it("세 번째 묶음이 소문자 영숫자 8자(C-86) → 승인번호 26자 그대로 · 열쇠", () => {
+    const result = ok(parseWorkbook(hometaxTaxInvoiceFixture([{ 승인번호: "20260615-10260615-ab12cd34" }])));
+    expect(result.lines[0]?.approvalNo).toBe("20260615-10260615-ab12cd34");
+    expect(result.lines[0]?.approvalNo).toHaveLength(26);
+    expect(result.lines[0]?.dedupeKey).toBe("hometax-tax-invoice|20260615-10260615-ab12cd34");
+  });
+
+  it("세 번째 묶음이 대문자 영숫자 → 승인번호 읽지 못함(소문자만 관측)", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{ 승인번호: "20260615-10260615-AB12CD34" }]))).toMatchObject({ ok: false, lines: ["7줄 · 승인번호 읽지 못함"] });
+  });
+
+  it("두 번째 묶음에 글자 → 승인번호 읽지 못함", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{ 승인번호: "20260615-1026061a-ab12cd34" }]))).toMatchObject({ ok: false, lines: ["7줄 · 승인번호 읽지 못함"] });
+  });
 });
 
 describe("홈택스 매입 현금영수증(06.1-11)", () => {
@@ -741,6 +766,19 @@ describe("홈택스 매입 계산서(면세 · 06.1-11)", () => {
     ]);
   });
 
+  it("세 번째 묶음 소문자 영숫자(C-86) → ok · 음수 줄 비고 당초 승인번호도 26자로 읽는다", () => {
+    const result = ok(
+      parseWorkbook(
+        hometaxInvoiceFixture([
+          { 승인번호: "20260615-10260615-ab12cd34" },
+          { 승인번호: "20260616-10260616-zz99aa11", 공급가액: -10000, 비고: "당초 승인번호 (20260101-11111111-zz99aa11)" },
+        ]),
+      ),
+    );
+    expect(result.lines[0]?.approvalNo).toBe("20260615-10260615-ab12cd34");
+    expect(result.lines[1]?.originalApprovalNo).toBe("20260101-11111111-zz99aa11");
+  });
+
   it("음수 줄이라도 비고에 당초 승인번호가 없으면 원 승인번호 null(오류 아님)", () => {
     expect(ok(parseWorkbook(hometaxInvoiceFixture([{ 공급가액: -10000 }]))).lines).toMatchObject([{ totalKrw: -10000, originalApprovalNo: null }]);
   });
@@ -806,12 +844,72 @@ describe("홈택스 매입 계산서(면세 · 06.1-11)", () => {
   });
 });
 
+describe("신한 회계양식(C-86)", () => {
+  const OVERSEAS = "해외 이용 · 원화 금액 확인";
+
+  it("기본 줄 → 서식 키 · 날짜 · 시각 · 합계 · 세액 · 공급가 null · 사업자번호 · 끝 4자리 · 열쇠 스냅숏", () => {
+    const result = ok(parseWorkbook(shinhanAccountingFixture([{}])));
+    expect(result.format).toBe("card-shinhan-accounting");
+    expect(result.lines[0]).toMatchObject({
+      evidenceType: "card_receipt",
+      approvalNo: "09847552",
+      issuedOn: "2026-05-28",
+      usedAt: "18:43:28",
+      totalKrw: 113400,
+      vatKrw: 10309,
+      supplyKrw: null,
+      businessNoDigits: "1234567891",
+      cardLast4: "1278",
+      needsCheck: null,
+    });
+    expect(result.lines[0]?.dedupeKey).toBe("card-shinhan|1278|09847552|2026-05-28|113400");
+  });
+
+  it("승인시간 빈칸 → usedAt null · 승인번호 빈칸 → approvalNo null(오류 아님)", () => {
+    const result = ok(parseWorkbook(shinhanAccountingFixture([{ 승인시간: "", 승인번호: "" }])));
+    expect(result.lines[0]).toMatchObject({ usedAt: null, approvalNo: null });
+  });
+
+  it("사용구분 해외 · 국내인데 승인금액(외화) ≠ 0 → 해외 확인 · 외화거래국가코드 -는 판정에 안 쓴다", () => {
+    expect(ok(parseWorkbook(shinhanAccountingFixture([{ 사용구분: "해외" }]))).lines[0]?.needsCheck).toBe(OVERSEAS);
+    expect(ok(parseWorkbook(shinhanAccountingFixture([{ "승인금액(외화)": 12.5 }]))).lines[0]?.needsCheck).toBe(OVERSEAS);
+    expect(ok(parseWorkbook(shinhanAccountingFixture([{ 외화거래국가코드: "-" }]))).lines[0]?.needsCheck).toBeNull();
+  });
+
+  it("부가세 0 → 면세 그대로 · finalizeAmounts 뒤 공급가 = 합계", () => {
+    const result = ok(parseWorkbook(shinhanAccountingFixture([{ 부가세: 0 }])));
+    expect(result.lines[0]?.vatKrw).toBe(0);
+    expect(finalizeAmounts(result.lines, new Map(), new Map()).map((line) => [line.totalKrw, line.supplyKrw, line.vatKrw])).toEqual([[113400, 113400, 0]]);
+  });
+
+  it("공급가액(원화) 칸은 읽지 않는다 — 파일 값과 달라도 공급가 = 합계 − 부가세", () => {
+    const result = ok(parseWorkbook(shinhanAccountingFixture([{ "공급가액(원화)": 1 }])));
+    expect(finalizeAmounts(result.lines, new Map(), new Map()).map((line) => line.supplyKrw)).toEqual([103091]);
+  });
+
+  it("합계 양수 + 부가세 음수 → 부가세 맞지 않음 · 취소(합계 음수 · 부가세 0)는 오류 아님", () => {
+    expect(parseWorkbook(shinhanAccountingFixture([{ 부가세: -10 }]))).toMatchObject({ ok: false, lines: ["2줄 · 부가세 맞지 않음"] });
+    expect(ok(parseWorkbook(shinhanAccountingFixture([{ "승인금액(원화)": -5000, 부가세: 0 }]))).lines[0]).toMatchObject({ totalKrw: -5000, vatKrw: 0 });
+  });
+
+  it("승인일자 글자가 날짜 아님 → 승인일 읽지 못함 · 승인금액(원화) 글자 → 금액 읽지 못함", () => {
+    expect(parseWorkbook(shinhanAccountingFixture([{ 승인일자: "2026.13.40" }]))).toMatchObject({ ok: false, lines: ["2줄 · 승인일 읽지 못함"] });
+    expect(parseWorkbook(shinhanAccountingFixture([{ "승인금액(원화)": "가나다" }]))).toMatchObject({ ok: false, lines: ["2줄 · 금액 읽지 못함"] });
+  });
+
+  it("머리글 25칸 중 감지 칸이 빠지면 모르는 서식", () => {
+    const header = SHINHAN_ACCOUNTING_HEADER.filter((name) => name !== "외화거래국가코드");
+    expect(parseWorkbook(shinhanAccountingFixture([{}], { header }))).toMatchObject({ ok: false, kind: "unknown-format" });
+  });
+});
+
 describe("등록 배열 · 서식 → 증빙 종류 표(C-F15)", () => {
-  it("등록 서식은 정확히 여섯이고 표와 1:1", () => {
+  it("등록 서식은 정확히 일곱이고 표와 1:1", () => {
     expect(EVIDENCE_FORMATS.map((rule) => rule.key).sort()).toEqual([
       "card-bc",
       "card-lotte",
       "card-shinhan",
+      "card-shinhan-accounting",
       "hometax-cash-receipt",
       "hometax-invoice",
       "hometax-tax-invoice",

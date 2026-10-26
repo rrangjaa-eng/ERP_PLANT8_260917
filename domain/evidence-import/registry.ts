@@ -5,6 +5,7 @@ import { DETECT_ROWS, detectFormat } from "@/domain/evidence-import/detect";
 import { cardBc } from "@/domain/evidence-import/formats/card-bc";
 import { cardLotte } from "@/domain/evidence-import/formats/card-lotte";
 import { cardShinhan } from "@/domain/evidence-import/formats/card-shinhan";
+import { cardShinhanAccounting } from "@/domain/evidence-import/formats/card-shinhan-accounting";
 import { hometaxCashReceipt } from "@/domain/evidence-import/formats/hometax-cash-receipt";
 import { hometaxInvoice } from "@/domain/evidence-import/formats/hometax-invoice";
 import { hometaxTaxInvoice } from "@/domain/evidence-import/formats/hometax-tax-invoice";
@@ -24,7 +25,7 @@ export { EVIDENCE_IMPORT_MAX_BYTES, EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/ev
 
 // 06.1-02: 증빙 가져오기 진입점. 서식 하나 = 규칙 파일 하나 + 이 배열 한 줄(D-6103). 계산서 · 현금영수증은 06.1-11.
 // 판별 낱말이 서로 겹치지 않아 차례는 결과를 바꾸지 않는다(서식 교차 표 단위 테스트가 고정한다).
-export const EVIDENCE_FORMATS: readonly FormatRule[] = [cardLotte, cardShinhan, cardBc, hometaxTaxInvoice, hometaxInvoice, hometaxCashReceipt];
+export const EVIDENCE_FORMATS: readonly FormatRule[] = [cardLotte, cardShinhan, cardShinhanAccounting, cardBc, hometaxTaxInvoice, hometaxInvoice, hometaxCashReceipt];
 
 export type ParseResult = ParseSuccess | Refusal;
 
@@ -114,7 +115,7 @@ export function parseWorkbook(bytes: Uint8Array, options: ParseOptions = {}): Pa
   }
 
   // 열쇠를 먼저 매긴다 — 남은 줄의 `#n`이 취소 줄이 이 파일에 들어왔는지에 따라 바뀌지 않는다(앞 파일과 같은 열쇠).
-  const { lines, pairs } = splitOffsetPairs(dedupeKeys(rule.key, rule.keyKind, read.lines));
+  const { lines, pairs } = splitOffsetPairs(dedupeKeys(rule.keyPrefix ?? rule.key, rule.keyKind, read.lines));
   const pairLines = pairs.flatMap((pair) => [pair.original, pair.cancel]);
   const rateDates = [...new Set([...lines, ...pairLines].filter((line) => line.vatKrw === null && line.supplyKrw === null).map((line) => line.issuedOn))].sort();
   return { ok: true, format: rule.key, lines, rateDates, offsetPairs: pairs.length, offsetLines: pairs };

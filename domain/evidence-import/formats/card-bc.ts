@@ -4,13 +4,13 @@ import { columnIndex, findCardHeader, rowHasAll } from "@/domain/evidence-import
 import { diffKrw, sumKrw } from "@/domain/money";
 import type { FormatRule, LineError, ParsedLine } from "@/domain/evidence-import/types";
 
-// 06.1-02: 비씨카드 이용내역 — 머리줄 1(`Sheet1`, 37칸). 모든 칸이 고정폭 공백 패딩 문자열이다(old-samples 2).
+// 06.1-02: 비씨카드 이용내역 — 머리줄 1(`Sheet1`, 37칸 · C-86 새 양식 28칸은 거래금액(외화) 칸이 없어 국내외사용구분만으로 해외를 가린다). 모든 칸이 고정폭 공백 패딩 문자열이다(old-samples 2).
 // 카드 번호 · 결제 계좌번호는 평문으로 온다 — 끝 4자리만 남기고 계좌번호 · 외화 금액 칸은 읽지 않는다.
 
 const CANCEL_CHECK = "취소 표시 줄 · 원거래 확인";
 const OVERSEAS_CHECK = "해외 이용 · 원화 금액 확인";
 const DETECT_ANY = ["수신정보구분코드", "금액SIGN코드"] as const;
-const COLUMNS = ["카드번호", "국내외사용구분", "승인번호", "승인일자", "금액SIGN코드", "거래금액(원화)", "부가세", "거래금액(외화)", "가맹점사업자번호", "가맹점명"] as const;
+const COLUMNS = ["카드번호", "국내외사용구분", "승인번호", "승인일자", "금액SIGN코드", "거래금액(원화)", "부가세", "가맹점사업자번호", "가맹점명"] as const;
 
 function isHeader(row: readonly unknown[]): boolean {
   return DETECT_ANY.some((name) => columnIndex(row, name) >= 0) && rowHasAll(row, COLUMNS);
@@ -33,6 +33,7 @@ export const cardBc: FormatRule = {
   read(rows, ctx) {
     const header = rows[ctx.headerRow] ?? [];
     const col = Object.fromEntries(COLUMNS.map((name) => [name, columnIndex(header, name)])) as Record<(typeof COLUMNS)[number], number>;
+    const foreignCol = columnIndex(header, "거래금액(외화)");
     const lines: ParsedLine[] = [];
     const errors: LineError[] = [];
     let summaryKrw: number | null = null;
@@ -70,7 +71,7 @@ export const cardBc: FormatRule = {
         errors.push({ lineNo, reason: vatError });
         continue;
       }
-      const overseas = cellText(row[col.국내외사용구분]) !== "국내" || !isZeroOrBlank(row[col["거래금액(외화)"]]);
+      const overseas = cellText(row[col.국내외사용구분]) !== "국내" || (foreignCol >= 0 && !isZeroOrBlank(row[foreignCol]));
       const merchant = cellText(row[col.가맹점명]);
       lines.push({
         lineNo,

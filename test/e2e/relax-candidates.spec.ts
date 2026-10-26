@@ -137,19 +137,18 @@ test.describe("완화 후보 5 · 7 · 8 (PC 1280)", () => {
     expect(seconds(duration)).toBeLessThan(0.001);
   });
 
-  test("후보 7 — 저장 대기 칸 배경은 --surface-dirty(--n-60 중립, 07 개정 11) 계산 색이다", async ({ page }) => {
+  test("후보 7 — 저장 대기 칸은 선·면 없이 모서리 삼각형(--g-600) 하나만 그린다", async ({ page }) => {
     const edit = page.locator('[data-gallery="table-edit"]');
     await expect(edit.locator("td").first()).toBeVisible();
-    const probe = await edit.evaluate((root) => {
-      const cells = Array.from(root.querySelectorAll("td"));
-      const shadowed = cells.filter((cell) => getComputedStyle(cell).boxShadow !== "none" && getComputedStyle(cell).boxShadow.includes("inset"));
-      return shadowed.map((cell) => ({ bg: getComputedStyle(cell).backgroundColor, shadow: getComputedStyle(cell).boxShadow }));
-    });
-    const dirtyShadow = await resolved(page, "box-shadow", "var(--inset-dirty)");
-    const dirtyCells = probe.filter((entry) => entry.shadow === dirtyShadow);
-    expect(dirtyCells).toHaveLength(1);
-    expect(dirtyCells[0]!.bg).toBe(await resolved(page, "background-color", "var(--surface-dirty)"));
-    expect(dirtyCells[0]!.bg).toBe(await resolved(page, "background-color", "var(--n-60)"));
+    const probe = await edit.evaluate((root) =>
+      Array.from(root.querySelectorAll("td"))
+        .filter((cell) => getComputedStyle(cell).backgroundImage.includes("linear-gradient"))
+        .map((cell) => ({ image: getComputedStyle(cell).backgroundImage, shadow: getComputedStyle(cell).boxShadow })),
+    );
+    expect(probe).toHaveLength(1);
+    expect(probe[0]!.shadow).toBe("none");
+    const g600 = await resolved(page, "background-color", "var(--g-600)");
+    expect(probe[0]!.image).toContain(g600);
   });
 
   test("후보 7 — 편집 가능 칸 포커스 링이 모서리(--radius-control)를 따른다", async ({ page }) => {

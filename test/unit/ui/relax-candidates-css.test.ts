@@ -17,6 +17,7 @@ const toast = css("ui/toast/Toast.module.css");
 const topBar = css("ui/shell/TopBar.module.css");
 const dialog = css("ui/confirm-dialog/ConfirmDialog.module.css");
 const table = css("ui/table/Table.module.css");
+const tokensCss = css("docs/design/tokens.css");
 
 describe("후보 5 — 떠 있는 요소 그림자(토스트 · 사용자 메뉴)", () => {
   it("토스트는 --shadow-pop + 1px --border-surface 선이다", () => {
@@ -65,10 +66,12 @@ describe("후보 7 — 편집 칸 포커스 링은 모서리를 따르고 저장
     expect(rule(table, ".cell:focus-visible")).toMatch(/border-radius:\s*var\(--radius-control\);/);
   });
 
-  it("저장 대기 칸은 인셋 선 위에 --surface-dirty 면이 있다", () => {
+  it("저장 대기 칸은 선·면 없이 왼쪽 위 모서리 6px 삼각형(--g-600)만 있다", () => {
     const body = rule(table, ".dirtyCell");
-    expect(body).toMatch(/box-shadow:\s*var\(--inset-dirty\);/);
-    expect(body).toMatch(/background:\s*var\(--surface-dirty\);/);
+    expect(body).not.toMatch(/box-shadow/);
+    expect(body).not.toMatch(/background:/);
+    expect(body).toMatch(/background-image:\s*var\(--mark-dirty\);/);
+    expect(tokensCss).toMatch(/--mark-dirty:\s*linear-gradient\(135deg,\s*var\(--g-600\)\s*6px,\s*transparent\s*6px\);/);
   });
 
   it.each([

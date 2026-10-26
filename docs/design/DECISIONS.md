@@ -2283,7 +2283,7 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정**: 표의 고른 행 면(`ui/table/Table.module.css` `.selectedRow` = `--surface-selected`) 안에서는 `--status-success`를 `--status-accent`로, `--text-faint`를 `--text-muted`로 다시 가리킨다(CSS 변수 재지정, 하위 요소가 상속). `/expenses` 지급 대상 표의 「확인됨」(`StatusTag` success, 11px/600)이 개정 11로 면이 n-100이 된 뒤 4.31:1(AA 4.5 미만)로 실측됐다. 대체 글자는 g-700 7.31 · n-700 5.34(오류 · 충돌 칸 면 위 7.61 · 5.56). 금지 쌍 표(§1-4)는 그대로 두고 규칙을 덧붙였다.
 **이유**: 면 값 개정 11이 만든 금지 쌍이 화면에서 실제로 렌더됐다. 화면 하나의 예외나 `StatusTag` 호출부 수정 대신, 면을 정하는 표 CSS 한 곳이 같은 뜻의 더 진한 기존 역할을 가리키게 해 모든 표 화면(고른 행이 있는 07 화면 전부)에 퍼진다. 상태 뜻(초록)은 `--status-accent`가 같은 초록 계열이라 유지된다.
 **버린 대안**: `--surface-selected` 값을 더 옅게(개정 11 사용자 확정 값 변경) · 새 진한 초록 토큰(새 토큰 금지) · `expenses` 화면 CSS만 고치기(화면 하나만 예외 금지) · 고른 행에서 상태 글자 색을 없애기(상태는 색 · 배지로, 사용성 원칙).
-**범위**: `ui/table/Table.module.css`, `docs/design/SYSTEM.md` §1-4 · §7-3, `test/unit/design/tokens.test.ts`. 새 색 · 서체 · radius 0.
+**범위**: 증빙 「공개」 열 제안(proposals) 칸도 같은 규칙(논리 그대로, 모양만 바뀜). `ui/table/Table.module.css`, `docs/design/SYSTEM.md` §1-4 · §7-3, `test/unit/design/tokens.test.ts`. 새 색 · 서체 · radius 0.
 **보강(07-12 게이트 `/review`)**: 같은 면인 범위 선택 칸(`.selectedCell`, `Shift`+방향키)에서도 지급 대상 표 「확인됨」이 `#0E7A66` on `#E4EAE7` 4.31로 DOM 실측돼, `.selectedCell`에도 같은 두 재지정을 건다.
 
 ## 2026-10-23 — 07 SYSTEM 개정 4 — §6-10 알림 규칙 (07-19)
@@ -2356,3 +2356,12 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **이유**: 「마감 지나 밀림 · 신한은행 ****-**-6789 · 거래처 확인 전 · 10-30」이 375 · 320에서 두 줄로 넘쳐 행이 세 줄이 됨(SYSTEM §7-3 행 두 줄 이내, 0723-dom-375.md).
 **결정자**: 사용자 결정 카드 2026-10-24.
 **범위**: `app/(app)/expenses/payment-targets-table.tsx` method 칸 summary · E2E `mobile-payment-pushed.spec.ts`. 새 색 · 서체 · radius 0.
+
+---
+
+## 2026-10-26 사용자 결정: 저장 안 한 칸 표시 — 모서리 삼각형
+**결정**: 표(`ui/table` `cellDirty`)의 저장 대기 칸은 왼쪽 위 모서리 6px 삼각형(`--g-600`) 하나로 표시한다. 외곽선(`--inset-dirty`)과 면(`--surface-dirty`)은 쓰지 않는다. 견적 줄은 줄 전체가 아니라 저장된 값(새 줄은 만들 때 기본값)과 다른 칸만 표시한다. `cellDirty`를 쓰는 모든 표(견적 줄 · 증빙 · 적립 · 요청 등)에 같이 적용된다. UQ-4 후보 7의 저장 대기 외곽선을 대체한다.
+**이유**: 사용자 지적 2026-10-26 「초록색 테두리로 입력 사항을 표시하는 거 불편」 — 저장 안 한 줄의 모든 칸에 초록 상자가 둘러져 거슬렸다.
+**결정자**: 사용자 결정 2026-10-26 (선택 카드) — 안 A(모서리 삼각형 · 고친 칸만).
+**버린 대안**: 안 B · 안 C(시안 `quote-dirty-mark/`), 지금의 외곽선 + 면.
+**범위**: 증빙 「공개」 열 제안(proposals) 칸도 같은 규칙(논리 그대로, 모양만 바뀜). `ui/table/Table.module.css` `.dirtyCell` · `docs/design/tokens.css` `--mark-dirty`(인쇄는 none) · `app/(app)/projects/[id]/unsaved-edits.ts` `lineCellDirty` · SYSTEM.md §7 표 편집. 새 색 · 서체 · radius 0 (`--inset-dirty`·`--surface-dirty` 토큰은 권한 표 · 프로젝트 상세가 계속 쓴다).

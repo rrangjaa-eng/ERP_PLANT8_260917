@@ -65,7 +65,7 @@ import {
 } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { SettlementButton, type SettlementHeaderProps } from "./settlement-button";
-import { unsavedEditsReason } from "./unsaved-edits";
+import { lineCellDirty, unsavedEditsReason } from "./unsaved-edits";
 import { CUSTOMER_APPROVAL_TRIGGER_ID, CustomerApprovalItems, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import type { ProjectProfitSummary } from "@/domain/projects/profit-summary";
 import { PreSettleLedgerContext } from "./pre-settle-check";
@@ -3139,7 +3139,7 @@ export function QuoteLedger({
         onPasteAtCell={editableWidth ? handlePasteAtCell : undefined}
         firstIssueSignal={issueTarget?.table === "quote" ? issueTarget.signal : undefined}
         cellIssue={cellIssueFor}
-        cellDirty={(row) => row.dirty}
+        cellDirty={lineCellDirty}
         onRowTap={(row) => setSheetRowKey(row.clientKey)}
         rowLabel={(row) => row.itemName || "(항목명 없음)"}
         // 04-47(DR-16) — 합계 행 오른쪽 한 줄: 상한·거부 요약(danger) · 붙여넣기 묶음 · 저장 성공(혼자). 표가 조립해 넘겨준다.

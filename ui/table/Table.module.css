@@ -336,8 +336,7 @@ th.groupHeader {
    600ms 틴트. prefers-reduced-motion에서는 틴트 애니메이션을 끈다
    (그대로 색만 없앤다 — 값 자체 표시는 그대로 유지). */
 .dirtyCell {
-  box-shadow: var(--inset-dirty);
-  background: var(--surface-dirty);
+  background-image: var(--mark-dirty);
 }
 
 .savedTint {

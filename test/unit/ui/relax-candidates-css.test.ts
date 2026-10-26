@@ -74,6 +74,10 @@ describe("후보 7 — 편집 칸 포커스 링은 모서리를 따르고 저장
     expect(tokensCss).toMatch(/--mark-dirty:\s*linear-gradient\(135deg,\s*var\(--g-600\)\s*6px,\s*transparent\s*6px\);/);
   });
 
+  it("저장 대기 칸 삼각형은 hover · 포커스 면(background 축약)에 지워지지 않는다", () => {
+    expect(rule(table, ".editableCell.dirtyCell:hover,\n.editableCell.dirtyCell:focus-visible,\n.cell.dirtyCell:focus-visible,\n.table:not(.editable) tbody tr:hover > .cell.dirtyCell")).toMatch(/background-image:\s*var\(--mark-dirty\);/);
+  });
+
   it.each([
     "app/(app)/projects/[id]/project-detail.module.css",
     "app/(app)/pnl/reserves/reserves.module.css",

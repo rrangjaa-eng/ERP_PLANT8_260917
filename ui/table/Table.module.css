@@ -339,6 +339,14 @@ th.groupHeader {
   background-image: var(--mark-dirty);
 }
 
+/* hover · 포커스 칸의 background 축약이 삼각형을 지우지 않게 한다(명시도가 더 높다). */
+.editableCell.dirtyCell:hover,
+.editableCell.dirtyCell:focus-visible,
+.cell.dirtyCell:focus-visible,
+.table:not(.editable) tbody tr:hover > .cell.dirtyCell {
+  background-image: var(--mark-dirty);
+}
+
 .savedTint {
   animation: savedTintFlash 600ms ease-out;
 }

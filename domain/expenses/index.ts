@@ -1839,7 +1839,13 @@ export type LineDoorCell = {
   purchaseHref?: string;
   // 06-13(S14) — 행 행동 막힘 이유(서버 게이트 거부와 같은 문자열) · 다음 한 수(`rowActionBlock`).
   blocked?: RowActionBlock;
+  // 시작 전 열린 줄(막힘 없음)에서 지출결의 옆에 서는 `카드 사용 등록` 진입. 쓸 카드가 없거나 지출결의가 이미 연결된 줄에는 없다.
+  cardHref?: string;
 };
+
+export function cardEntryHref(lineId: string): string {
+  return `/cards?new=1&line=${lineId}`;
+}
 
 export type RowActionBlock = { reason: string; next?: { label: "카드 사용 등록"; href: string } };
 
@@ -1864,7 +1870,7 @@ export function rowActionBlock(input: {
     return lock.allowed ? null : { reason: lock.reason };
   }
   const dual = cardDualLinkDecision({ side: "expense", links: input.links });
-  return dual.allowed ? null : { reason: dual.reason, next: { label: "카드 사용 등록", href: `/cards?new=1&line=${input.lineId}` } };
+  return dual.allowed ? null : { reason: dual.reason, next: { label: "카드 사용 등록", href: cardEntryHref(input.lineId) } };
 }
 export type LineDoors = { showColumn: boolean; tableGateReason: string | null; cells: Record<string, LineDoorCell> };
 
@@ -1911,15 +1917,18 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
     const docs = numbered.get(line.id) ?? [];
     const door = doorFor(line, docs);
     const draft = drafts.find((doc) => doc.quoteLineId === line.id);
+    const lineLinks = links.get(line.id) ?? { expenses: [], cardUsages: [], purchaseRequests: [] };
     const branch = resolveLineDoor({ vendorName: line.vendorId ? (vendorNames.get(line.vendorId) ?? null) : null }, onlineVendorName);
     const blocked = rowActionBlock({
       lineId: line.id,
       branch,
       door: door.state,
-      links: links.get(line.id) ?? { expenses: [], cardUsages: [], purchaseRequests: [] },
+      links: lineLinks,
       paid: docs.map((doc) => ({ number: doc.number ?? "", installment: doc.installment, paid: docFacts.get(doc.id)?.paid ?? false })),
     });
     const shown = blocked?.next && !(await cardRegistrable()) ? { reason: blocked.reason } : blocked;
+    const cardEntry =
+      door.state === "open" && branch !== "purchase" && !blocked && cardDualLinkDecision({ side: "card", links: lineLinks }).allowed && (await cardRegistrable());
     cells[line.id] = {
       state: door.state,
       branch,
@@ -1927,6 +1936,7 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
       ...(door.state === "open" && draft ? { expenseId: draft.id } : {}),
       ...(door.latest ? { latestId: door.latest.id } : {}),
       ...(shown ? { blocked: shown } : {}),
+      ...(cardEntry ? { cardHref: cardEntryHref(line.id) } : {}),
     };
   }
   return { showColumn: true, tableGateReason: facts.tableGateReason, cells };

@@ -1342,6 +1342,11 @@ export function QuoteLedger({
         <Button variant="tertiary" pending={doorPendingLine === lineId} onClick={() => void openLineExpense(lineId, door, () => setSheetRowKey(null))}>
           지출결의 올리기
         </Button>
+        {door.cardHref ? (
+          <Link href={door.cardHref} className={buttonLinkClassName("tertiary")}>
+            카드 사용 등록
+          </Link>
+        ) : null}
       </div>
     );
   }
@@ -2417,7 +2422,7 @@ export function QuoteLedger({
               }
               if (door.state === "open" && !lineDoors.tableGateReason) {
                 return (
-                  <RowActions noWrap>
+                  <RowActions noWrap={!door.cardHref}>
                     <RowAction
                       tabIndex={-1}
                       describedBy={itemCellId}
@@ -2427,6 +2432,11 @@ export function QuoteLedger({
                     >
                       지출결의 올리기
                     </RowAction>
+                    {door.cardHref ? (
+                      <RowAction tabIndex={-1} describedBy={itemCellId} href={door.cardHref}>
+                        카드 사용 등록
+                      </RowAction>
+                    ) : null}
                   </RowActions>
                 );
               }

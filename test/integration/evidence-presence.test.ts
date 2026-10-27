@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { db, type DbOrTx } from "@/db/client";
+import { db, pool, type DbOrTx } from "@/db/client";
 import {
   actionLog,
   approvalInstances,
@@ -9,6 +9,7 @@ import {
   evidenceRecordLinks,
   evidenceRecords,
   expenseEvidenceReviews,
+  expensePayments,
   expenses,
   files,
   projects,
@@ -22,7 +23,7 @@ import { createExpenseFromLines, saveExpenseDraft, submitExpense, type SubmitExp
 import { autoConfirmOnAttach, confirmEvidence, waiveEvidence } from "@/domain/evidence-reviews";
 import { expenseCostBasis } from "@/domain/evidence-reviews/cost-basis";
 import { evidenceSourcesOf, hasEvidence } from "@/domain/evidence/has-evidence";
-import { completeExpensePayment, getPaymentView, previewPayable } from "@/domain/payments";
+import { completeExpensePayment, getPaymentView, PaymentConflictError, previewPayable } from "@/domain/payments";
 import { listPaidPayments, listPaymentTargets } from "@/domain/payments/targets";
 import { getPreSettleCheck } from "@/domain/pre-settle-check";
 import { createOrgUnit, createTeam } from "@/domain/org";
@@ -41,6 +42,8 @@ import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDr
 import { makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
 import { makePerson } from "./approvals-fixtures";
 import { createMemoryStorage } from "./fakes/memory-storage";
+import { readKeys } from "@/domain/evidence-records/attach";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06.1-12(EVID-08 · EVID-09 · D-6104 · D-6105 · RP-4): 「증빙 있음」 = 살아 있는 05 파일 OR 살아 있는 증빙 기록 붙임(detached_at IS NULL).
 // 판정은 domain/evidence/has-evidence.ts 한 곳 — 제출 ⑧ · 증빙 확인 · 지급 게이트가 같은 답을 낸다. 붙임 행은 이 파일 안 지역 도우미로 넣는다
@@ -829,5 +832,138 @@ describe("제출 짝 단계 — 지급 방식 × 문서 증빙 종류 · 붙은 
     } finally {
       await setPairs([]);
     }
+  });
+});
+
+// 07.1-03 PE15(C-81 P3-6) — 자동 확인 돈 경계. ⓐ 붙이기(autoConfirmOnAttach) × 지급 완료 동시 실행 ⓑ 첫 단계 전(submitted) 저장 · 권한은 부르는 쪽 ⓒ 외화 문서.
+describe("PE15 자동 확인 돈 경계 (07.1-03)", () => {
+  async function livePaymentCount(expenseId: string): Promise<number> {
+    const rows = await db
+      .select({ id: expensePayments.id })
+      .from(expensePayments)
+      .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+    return rows.length;
+  }
+
+  // 불변식 — 살아 있는 지급이 있으면 확인 기록 confirmed · 확인 기록 없이 지급 0.
+  async function expectPaymentInvariant(expenseId: string): Promise<void> {
+    const live = await livePaymentCount(expenseId);
+    const review = await reviewOf(expenseId);
+    if (live > 0) expect(review?.status).toBe("confirmed");
+    if (review === null) expect(live).toBe(0);
+  }
+
+  // 픽스처(E-P2-13): 증빙 필수 on · 미완료 프로젝트 · 승인 문서 · 처음 증빙 0 · 붙일 기록은 공급가가 문서와 같은 원화 기록 1건 · 지급 권한자가 붙인다.
+  async function approvedWithoutEvidence() {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const { expenseId, linkIds } = await approvedDoc(fx, payer, [REGISTRAR_FULL]);
+    const expectedPayableKrw = await payableOf(payer, expenseId);
+    await detachLinkRow(linkIds[0] ?? "", payer);
+    await setEvidenceRequired(true);
+    return { payer, expenseId, expectedPayableKrw, version: await versionOf(expenseId) };
+  }
+
+  it("PE15 ⓐ 지급이 먼저 잠그면 — 지급 `증빙 없음 · 기안자 박서연` 거부 · 붙이기 stored(confirmed) · 지급 0", async () => {
+    const { payer, expenseId, expectedPayableKrw, version } = await approvedWithoutEvidence();
+    const paymentLocked = deferred();
+    const releasePayment = deferred();
+    const pay = caught(
+      completeExpensePayment(payer, { expenseId, expectedPayableKrw, version }, { afterLock: async () => { paymentLocked.resolve(); await releasePayment.promise; } }),
+    );
+    await paymentLocked.promise;
+    const attach = attachAndAutoConfirm(payer, { expenseId, links: [REGISTRAR_FULL], canConfirm: true });
+    await waitForLockWaiter(pool);
+    releasePayment.resolve();
+    const [payError, attached] = await Promise.all([pay, attach]);
+    expect(payError).toBeInstanceOf(GateBlockedError);
+    expect((payError as Error).message).toBe("증빙 없음 · 기안자 박서연");
+    expect(attached.outcome).toBe("stored");
+    expect((await reviewOf(expenseId))?.status).toBe("confirmed");
+    expect(await livePaymentCount(expenseId)).toBe(0);
+    await expectPaymentInvariant(expenseId);
+  });
+
+  it("PE15 ⓐ 붙이기가 먼저 잠그면 — 붙이기 stored(문서 version + 1) · 지급 PaymentConflictError · 지급 0", async () => {
+    const { payer, expenseId, expectedPayableKrw, version } = await approvedWithoutEvidence();
+    const attachedInTx = deferred();
+    const releaseAttach = deferred();
+    const attach = withTransaction(async (tx) => {
+      await insertRecordAndLink(payer, { ownerId: expenseId, attachMode: "registrar", supplyKrw: DOC_SUPPLY }, tx);
+      const outcome = await autoConfirmOnAttach(payer, { expenseId, canConfirm: true }, tx);
+      attachedInTx.resolve();
+      await releaseAttach.promise;
+      return outcome;
+    });
+    await attachedInTx.promise;
+    const pay = caught(completeExpensePayment(payer, { expenseId, expectedPayableKrw, version }));
+    await waitForLockWaiter(pool);
+    releaseAttach.resolve();
+    const [outcome, payError] = await Promise.all([attach, pay]);
+    expect(outcome).toBe("stored");
+    expect(payError).toBeInstanceOf(PaymentConflictError);
+    expect(await versionOf(expenseId)).toBe(version + 1);
+    expect((await reviewOf(expenseId))?.status).toBe("confirmed");
+    expect(await livePaymentCount(expenseId)).toBe(0);
+    await expectPaymentInvariant(expenseId);
+  });
+
+  it("PE15 ⓐ 장벽 없이 동시에 — 결과는 허용 둘 중 하나 · 불변식(살아 있는 지급 ⇒ confirmed)", async () => {
+    const { payer, expenseId, expectedPayableKrw, version } = await approvedWithoutEvidence();
+    const [payError, attached] = await Promise.all([
+      caught(completeExpensePayment(payer, { expenseId, expectedPayableKrw, version })),
+      attachAndAutoConfirm(payer, { expenseId, links: [REGISTRAR_FULL], canConfirm: true }),
+    ]);
+    expect(attached.outcome).toBe("stored");
+    const conflict = payError instanceof PaymentConflictError;
+    const refused = payError instanceof GateBlockedError && /^증빙 없음 · /.test((payError as Error).message);
+    expect(conflict || refused, String(payError)).toBe(true);
+    expect(await livePaymentCount(expenseId)).toBe(0);
+    await expectPaymentInvariant(expenseId);
+  });
+
+  it("PE15 ⓑ 첫 단계 전(submitted) — 지급 권한자가 붙이면 stored, 지급 권한 없는 사람이 붙이면 skipped(canConfirm은 부르는 쪽 readKeys)", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const manager = await makeEvidenceManager();
+    const [payerKeys, managerKeys] = await Promise.all([readKeys(payer), readKeys(manager)]);
+    expect(payerKeys.canConfirm).toBe(true);
+    expect(managerKeys.canConfirm).toBe(false);
+
+    const byPayer = await inReviewDoc(fx, payer, [REGISTRAR_FULL]);
+    const [instance] = await db.select({ status: approvalInstances.status }).from(approvalInstances).where(eq(approvalInstances.documentId, byPayer.expenseId));
+    expect(instance?.status).toBe("submitted");
+    expect((await attachAndAutoConfirm(payer, { expenseId: byPayer.expenseId, links: [], canConfirm: payerKeys.canConfirm })).outcome).toBe("stored");
+    expect((await reviewOf(byPayer.expenseId))?.status).toBe("confirmed");
+
+    const byManager = await inReviewDoc(fx, manager, [REGISTRAR_FULL], fx.lines.split);
+    expect((await attachAndAutoConfirm(manager, { expenseId: byManager.expenseId, links: [], canConfirm: managerKeys.canConfirm })).outcome).toBe("skipped");
+    expect(await reviewOf(byManager.expenseId)).toBeNull();
+  });
+
+  it("PE15 ⓒ 외화 문서 — 붙은 원화 기록 합 ≠ 원화 환산 공급가면 skipped · 증빙 상태 확인 전, 같으면 stored", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const usd = { currency: "USD", amount: 7_000, fxRate: 1_350 } as const;
+    const usdKrw = 9_450_000;
+
+    async function foreignApproved(recordSupplyKrw: number, lineId: string): Promise<string> {
+      const expenseId = await newDraft(fx, lineId);
+      await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId), fields: { supply: usd } });
+      expect((await moneyColumnsOf(expenseId)).supplyAmountKrw).toBe(usdKrw);
+      await insertRecordAndLink(payer, { ownerId: expenseId, attachMode: "registrar", supplyKrw: recordSupplyKrw });
+      await approveAll(fx, await submitWithoutFile(fx.pm, expenseId));
+      return expenseId;
+    }
+
+    // 기록 공급가를 문서 통화 숫자(7,000)로 — 원화 환산(9,450,000)과 다르다.
+    const mismatched = await foreignApproved(usd.amount, fx.lines.withVendor);
+    expect((await attachAndAutoConfirm(payer, { expenseId: mismatched, links: [], canConfirm: true })).outcome).toBe("skipped");
+    expect(await reviewOf(mismatched)).toBeNull();
+    expect((await getPaymentView(payer, mismatched))?.evidenceStatus).toBe("확인 전");
+
+    const matched = await foreignApproved(usdKrw, fx.lines.split);
+    expect((await attachAndAutoConfirm(payer, { expenseId: matched, links: [], canConfirm: true })).outcome).toBe("stored");
+    expect((await getPaymentView(payer, matched))?.evidenceStatus).toBe("확인됨");
   });
 });

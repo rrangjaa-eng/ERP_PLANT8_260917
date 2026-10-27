@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { auth } from "@/lib/auth";
 import { db } from "@/db/client";
-import { users } from "@/db/schema";
+import { sessions, users } from "@/db/schema";
 import { log } from "@/lib/log";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
@@ -162,5 +162,102 @@ describe("퇴직자의 기존 세션 (D-743 · A-P1-2)", () => {
     request.headers = new Headers({ cookie });
     const session = await getSession();
     expect(session?.user.email).toBe(p.email);
+  });
+});
+
+// 07.1-10 D-7121 · S11 · D-E6 · E-P2-29: better-auth 자체 엔드포인트(HTTP)는 lib/viewer.ts를 지나지 않는다 — 허용 목록
+// (로그인 · 로그아웃 · 비밀번호 재설정) 밖이면 훅이 거부하고 그 사람 세션을 전부 지운다. 첫 거부가 세션을 지우므로
+// 경로마다 새 사람을 만든다.
+// ok: 재직자에게 better-auth가 돌려주는 상태 — update-session은 세션 추가 필드가 없어 빈 본문이 400 「No fields to update」다.
+type Call = { label: string; method: "GET" | "POST"; path: string; ok?: number; body?: (p: { email: string; tempPassword: string }) => unknown };
+const GATED: Call[] = [
+  { label: "change-password", method: "POST", path: "/change-password", body: (p) => ({ currentPassword: p.tempPassword, newPassword: "changed-pass-1234" }) },
+  { label: "update-user", method: "POST", path: "/update-user", body: () => ({ name: "바꾼 이름" }) },
+  { label: "list-sessions", method: "GET", path: "/list-sessions" },
+  { label: "verify-password", method: "POST", path: "/verify-password", body: (p) => ({ password: p.tempPassword }) },
+  { label: "update-session", method: "POST", path: "/update-session", ok: 400, body: () => ({}) },
+];
+
+function call(c: Call, cookie: string, p: { email: string; tempPassword: string }, ip: string): Promise<Response> {
+  const headers: Record<string, string> = { cookie, "x-client-ip": ip, origin: BASE_URL };
+  if (c.method === "POST") headers["content-type"] = "application/json";
+  return auth.handler(
+    new Request(`${BASE_URL}/api/auth${c.path}`, {
+      method: c.method,
+      headers,
+      ...(c.method === "POST" ? { body: JSON.stringify(c.body?.(p) ?? {}) } : {}),
+    }),
+  );
+}
+
+async function sessionRows(email: string): Promise<number> {
+  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+  return (await db.select({ id: sessions.id }).from(sessions).where(eq(sessions.userId, user!.id))).length;
+}
+
+async function withSession(prefix: string, ip: string): Promise<{ email: string; tempPassword: string; cookie: string }> {
+  const p = await person(prefix, null);
+  const cookie = await sessionCookie(p.email, p.tempPassword, ip);
+  return { ...p, cookie };
+}
+
+describe("퇴직 · 보관된 사람의 세션 — better-auth HTTP 엔드포인트 (D-7121 · E-P2-29)", () => {
+  it.each(GATED.map((c) => [c.label, c] as const))("퇴직일 어제 → %s 401 · 세션 행 0", async (_label, c) => {
+    const p = await withSession(`retiree-http-${c.label}`, "198.51.100.161");
+    await db.update(users).set({ resignationDate: kstDay(-1) }).where(eq(users.email, p.email));
+
+    const res = await call(c, p.cookie, p, "198.51.100.161");
+    expect(res.status).toBe(401);
+    expect(await sessionRows(p.email)).toBe(0);
+  });
+
+  it.each(GATED.map((c) => [c.label, c] as const))("보관됨 → %s 401 · 세션 행 0", async (_label, c) => {
+    const p = await withSession(`archived-http-${c.label}`, "198.51.100.162");
+    await db.update(users).set({ archivedAt: new Date() }).where(eq(users.email, p.email));
+
+    const res = await call(c, p.cookie, p, "198.51.100.162");
+    expect(res.status).toBe(401);
+    expect(await sessionRows(p.email)).toBe(0);
+  });
+
+  it.each(GATED.map((c) => [c.label, c] as const))("퇴직일 내일 → %s 거부 아님 · 세션 행 그대로", async (_label, c) => {
+    const p = await withSession(`retiree-tomorrow-${c.label}`, "198.51.100.163");
+    await db.update(users).set({ resignationDate: kstDay(1) }).where(eq(users.email, p.email));
+
+    const res = await call(c, p.cookie, p, "198.51.100.163");
+    expect(res.status, await res.clone().text()).toBe(c.ok ?? 200);
+    expect(await sessionRows(p.email)).toBe(1);
+  });
+
+  it("허용 목록: 퇴직자 쿠키로 /sign-out → better-auth 기본 처리(200) · 그 세션 행 없어짐", async () => {
+    const p = await withSession("retiree-signout", "198.51.100.164");
+    await db.update(users).set({ resignationDate: kstDay(-1) }).where(eq(users.email, p.email));
+
+    const res = await call({ label: "sign-out", method: "POST", path: "/sign-out" }, p.cookie, p, "198.51.100.164");
+    expect(res.status).toBe(200);
+    expect(await sessionRows(p.email)).toBe(0);
+  });
+
+  it("허용 목록: 퇴직자 쿠키로 /request-password-reset → 재직자 쿠키와 같은 상태 · 본문(퇴직 여부가 드러나지 않음)", async () => {
+    const retiree = await withSession("retiree-reset", "198.51.100.165");
+    await db.update(users).set({ resignationDate: kstDay(-1) }).where(eq(users.email, retiree.email));
+    const active = await withSession("active-reset", "198.51.100.165");
+    const reset: Call = { label: "request-password-reset", method: "POST", path: "/request-password-reset", body: (p) => ({ email: p.email }) };
+
+    const retired = await call(reset, retiree.cookie, retiree, "198.51.100.165");
+    const control = await call(reset, active.cookie, active, "198.51.100.165");
+    expect(retired.status).not.toBe(401);
+    expect(retired.status).toBe(control.status);
+    expect(await retired.json()).toEqual(await control.json());
+    expect(await sessionRows(retiree.email)).toBe(1);
+  });
+
+  it("앱 경로(E-P1-09): 보관된 세션 → lib/viewer getSession()이 던지지 않고 null · 세션 행 그대로", async () => {
+    const p = await withSession("archived-viewer", "198.51.100.166");
+    await db.update(users).set({ archivedAt: new Date() }).where(eq(users.email, p.email));
+
+    request.headers = new Headers({ cookie: p.cookie });
+    await expect(getSession()).resolves.toBeNull();
+    expect(await sessionRows(p.email)).toBe(1);
   });
 });

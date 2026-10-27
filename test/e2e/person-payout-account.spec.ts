@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { createAccount } from "@/domain/auth/accounts";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { registerPerson, setResignationDate } from "@/domain/people";
 import { updatePersonPayoutAccount } from "@/domain/people/account";
@@ -137,7 +138,7 @@ test.describe("사람 상세 지급 계좌(06.5 D-6505)", () => {
     await login(page, await createFixtureUser({ roleId }));
 
     const account = { accountBank: "신한", accountHolder: "김직원", accountNumber: "110-123-456789" };
-    const { userId: adminId } = await registerPerson(SYSTEM_VIEWER, {
+    const { userId: adminId } = await createAccount(SYSTEM_VIEWER, {
       name: `상한밖${randomUUID().slice(0, 5)}`,
       email: `e2e-payout-admin-${randomUUID()}@example.test`,
       roleId: SYSADMIN_ROLE_ID,

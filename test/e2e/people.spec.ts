@@ -7,7 +7,8 @@ import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { createOrgUnit } from "@/domain/org";
-import { archivePerson, changePersonRole } from "@/domain/people";
+import { archivePerson } from "@/domain/people";
+import { updateUserRole } from "@/repositories/users";
 import { seoulToday } from "@/lib/dates";
 import { addDays } from "@/lib/kst-date";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -722,7 +723,7 @@ test.describe("삭제 · 퇴직일 칸 상태와 삭제 사유 (06.4 D-6417 · D
     await gotoPeopleRow(page, target.email);
     const row = personRow(page, target.email);
     await expect(row.getByRole("button", { name: "삭제" })).toHaveCount(1);
-    await changePersonRole(SYSTEM_VIEWER, target.userId, SYSADMIN_ROLE_ID);
+    await updateUserRole(SYSTEM_VIEWER, target.userId, SYSADMIN_ROLE_ID);
 
     await row.getByRole("button", { name: "삭제" }).click();
     await row.getByRole("button", { name: "삭제" }).click();
@@ -738,7 +739,7 @@ test.describe("삭제 · 퇴직일 칸 상태와 삭제 사유 (06.4 D-6417 · D
     await page.goto(`/admin/people/${target.userId}`);
     const field = page.locator("#resignationDate");
     await expect(field).toHaveValue("");
-    await changePersonRole(SYSTEM_VIEWER, target.userId, SYSADMIN_ROLE_ID);
+    await updateUserRole(SYSTEM_VIEWER, target.userId, SYSADMIN_ROLE_ID);
 
     await field.fill(addDays(seoulToday(), 30));
     await field.blur();

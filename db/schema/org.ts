@@ -5,8 +5,9 @@ import { orgUnits } from "./org-units";
 export { orgUnits };
 
 // MAST-02: 조직 3표 — 본부(orgUnits) ⊂ 팀(teams), 팀 소속 발령 이력
-// (teamMemberships). 본부·팀은 마스터 표라 03-01이 정한 경계대로 보관함 컬럼 +
-// customFields를 둔다. 발령 이력은 append-only 감사 이력이라 그 경계 밖이다 —
+// (teamMemberships). 본부 표 정의는 org-units.ts에 있고 여기서 다시 내보낸다(07.1-07 —
+// auth.ts의 users.division_id가 본부를 참조해 순환 import를 피한다). 본부·팀은 마스터 표라
+// 03-01이 정한 경계대로 보관함 컬럼 + customFields를 둔다. 발령 이력은 append-only 감사 이력이라 그 경계 밖이다 —
 // 보관함·customFields 컬럼을 두지 않는다.
 export const teams = pgTable(
   "teams",

@@ -741,7 +741,11 @@ function sanitizeDraft(draft: StepValues, fields: SettingsFieldViewModel[]): Ste
   );
 }
 
-export function SettingsFormClient({ sections, viewerId }: { sections: SettingsSection[]; viewerId: string }) {
+function groupHref(namespace: string): string {
+  return `?group=${encodeURIComponent(namespace)}`;
+}
+
+export function SettingsFormClient({ sections, currentGroup, viewerId }: { sections: SettingsSection[]; currentGroup: string; viewerId: string }) {
   const router = useRouter();
   const scope = viewerDirtyScope(viewerId, "settings");
   // 지난번 보관본 — 연 때 한 번 읽는다(아래 stash가 지금도 맞는 것만 남긴다).
@@ -807,6 +811,17 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
   });
   const [discarded, setDiscarded] = useState<Record<string, StepDraft> | null>(null);
 
+  // 묶음을 옮기면 그 묶음의 단계가 사라지며 초안도 지워진다(뒤로 · 앞으로도 같다) — 입력 버리기로 떠난 때가 아니면 보관본으로 넘겨
+  // 돌아오면 복원 줄로 되살리고, 되살린 초안은 비워 돌아와 단계가 다시 생길 때 옛 초안이 되살아나지 않게 한다.
+  const [seenGroup, setSeenGroup] = useState(currentGroup);
+  const [discarding, setDiscarding] = useState(false);
+  if (seenGroup !== currentGroup) {
+    setSeenGroup(currentGroup);
+    setDiscarding(false);
+    if (!discarding && Object.keys(drafts).length > 0) setStored((current) => ({ ...current, ...drafts }));
+    setRestored((current) => (Object.keys(current.drafts).length === 0 ? current : { ...current, drafts: {} }));
+  }
+
   function restore(entries: Record<string, StepDraft>) {
     const keys = Object.keys(entries);
     if (keys.length === 0) return;
@@ -843,14 +858,46 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
   // `입력 버리기` — 이번에 고친 단계만 버린다. 아직 복원하지 않은 보관본은 남긴다.
   function leave() {
     if (!leaveHref) return;
+    setDiscarding(true);
     writeStoredDrafts(scope, withoutKeys(stash, drafts));
     router.push(leaveHref);
   }
 
+  // 묶음 select의 이동도 링크와 같은 입력 버리기 확인을 거친다 — select는 앱 안 링크 가드(클릭 캡처)가 못 잡는다.
+  function selectGroup(href: string) {
+    if (dirtySteps.length > 0) setLeaveHref(href);
+    else router.push(href, { scroll: false });
+  }
+
   return (
     <div>
+      <nav aria-label="설정 묶음" className={styles.groupNav}>
+        {sections.map((section) => (
+          <Link
+            key={section.namespace}
+            href={groupHref(section.namespace)}
+            scroll={false}
+            prefetch={false}
+            className={styles.groupLink}
+            aria-current={section.namespace === currentGroup ? "page" : undefined}
+          >
+            {section.namespace}
+          </Link>
+        ))}
+      </nav>
+      <div className={styles.groupSelect}>
+        <Form.Field id="settings-group" label="묶음" width="select">
+          <Select
+            id="settings-group"
+            value={currentGroup}
+            hideEmptyOption
+            options={sections.map((section) => ({ value: section.namespace, label: section.namespace }))}
+            onChange={(event) => selectGroup(groupHref(event.target.value))}
+          />
+        </Form.Field>
+      </div>
       <ExportButton />
-      {sections.map((section) => {
+      {sections.filter((section) => section.namespace === currentGroup).map((section) => {
         const sectionRestorable = restorableIn(section);
         const restorableSteps = Object.values(sectionRestorable).map((entry) => entry.stepIndex);
         return (

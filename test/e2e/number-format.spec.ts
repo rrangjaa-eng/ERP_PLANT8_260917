@@ -168,7 +168,7 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     await page.getByRole("button", { name: "로그인" }).click();
     await expect(page).toHaveURL(/\/account$/);
 
-    await page.goto("/admin/settings");
+    await page.goto(`/admin/settings?group=${encodeURIComponent("환율")}`);
     const fxInput = page.getByLabel("USD 최근 환율");
     await fxInput.click();
     await page.keyboard.press("Control+a");
@@ -190,7 +190,7 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     await page.getByRole("button", { name: "로그인" }).click();
     await expect(page).toHaveURL(/\/account$/);
 
-    await page.goto("/admin/settings");
+    await page.goto(`/admin/settings?group=${encodeURIComponent("환율")}`);
     const fxInput = page.getByLabel("USD 최근 환율");
     const original = await fxInput.inputValue();
     await fxInput.click();

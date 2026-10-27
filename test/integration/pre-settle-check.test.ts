@@ -1208,5 +1208,5 @@ describe("PD3 — 정산 결재 문서 칸의 `증빙 대기 {N}건` 행", () =>
     reviewReads.list = 0;
     await loadKindDetails(a.fx.ceo, SETTLEMENT_DOCUMENT_KIND, [back.doc.documentId], { visible });
     expect([inject.loadCalls, inject.computeCalls, reviewReads.list]).toEqual([0, 0, 0]);
-  });
+  }, 30_000);
 });

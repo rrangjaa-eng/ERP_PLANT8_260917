@@ -25,6 +25,7 @@ export const ROLE_DEFAULT_PERMISSIONS: readonly RoleDefaultPermission[] = [
   // 04-20: 대표는 정산 → 완료(projects.complete 쓰기)까지.
   { roleId: CEO_ROLE_ID, menu: "projects.complete", action: "write", allowed: true },
   // D-722 ①(대표 admin.action-log 보기)은 ⑧(대표 action_log.detail)과 함께 켠다 — ⑧ 끔 동안 보류(사용자 결정 2026-10-22).
+  // D-7119 추적: ⑧을 켜는 플랜이 이 줄과 시험 「대표 action-log 보기는 ⑧(…)과 함께 켠다 — D-7119 보류」를 함께 바꾼다.
   // 06.2(D-6210): ROADMAP 06.2 성공 기준 5(담당 PM · 팀장이 붙인다) + D-6210(관리 권리가 전사인 계급도 키가 있어야 붙인다).
   // 260907은 기획팀장만이었다(`O: docs/06_업무/02_프로젝트.md:401`).
   ...[CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID].map((roleId) => ({
@@ -35,6 +36,16 @@ export const ROLE_DEFAULT_PERMISSIONS: readonly RoleDefaultPermission[] = [
   })),
   // 06.1(D-6113): 증빙 보기 — 기획 PM · 팀장만(본부 책임자 · 대표는 넣지 않는다). 등록(evidence.intake)은 어느 시드 계급에도 켜지 않는다.
   ...[DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID].map((roleId) => ({ roleId, menu: "evidence", action: "view" as const, allowed: true })),
+  // 07.1(D-7107): 연차 · 지출결의 시드 루프(`domain/seed/approvals-leave.ts` · `expenses.ts`)에 있던 권한 17행을 같은 값으로 옮겼다.
+  // 04.1-02 연차 view · write — 시드 계급 넷(시스템 관리자는 MENUS 루프). 05-03 지출결의 view · write — 작성 계급 넷.
+  // 05-08(사용자 결정 2026-09-26 #5) 팀 지출결의 보기 — 팀장.
+  ...[CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID].flatMap((roleId) => [
+    { roleId, menu: "leave", action: "view" as const, allowed: true },
+    { roleId, menu: "leave", action: "write" as const, allowed: true },
+    { roleId, menu: "expenses", action: "view" as const, allowed: true },
+    { roleId, menu: "expenses", action: "write" as const, allowed: true },
+  ]),
+  { roleId: TEAM_LEAD_ROLE_ID, menu: "expenses.team", action: "view", allowed: true },
 ];
 
 // mode "upsertIfUnedited": 관리자가 손대지 않은(updated_by 없음) 행이면 재시드가 값을 갱신한다. 표지가 없으면 insert-if-absent.

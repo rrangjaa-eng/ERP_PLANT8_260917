@@ -1,4 +1,4 @@
-import { createAuthMiddleware, APIError } from "better-auth/api";
+import { createAuthMiddleware, APIError, getSession } from "better-auth/api";
 import { log } from "@/lib/log";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -42,8 +42,71 @@ function getBodyPassword(body: unknown): string {
   return "";
 }
 
+// 07.1-10 D-7121: 퇴사일이 오늘(KST)보다 앞이거나 보관됐으면 참 — 로그인 갈래와 세션 갈래가 같은 규칙을 쓴다.
+export function retiredOrArchived(
+  user: { archivedAt?: Date | null; resignationDate?: string | null },
+  today: string,
+): boolean {
+  return Boolean(user.archivedAt) || Boolean(user.resignationDate && user.resignationDate < today);
+}
+
+// D-E6(사용자 결정 2026-10-27): 퇴사 · 보관된 사람의 남은 쿠키로도 열어 두는 better-auth 경로 — 로그인 · 로그아웃 ·
+// 비밀번호 재설정만. 1.7.5 실물 경로 틀(ctx.path는 엔드포인트 경로 틀 그대로다). 이 밖은 전부 판정한다(거부 기본).
+export const RETIRED_SESSION_ALLOWED_PATHS: ReadonlySet<string> = new Set([
+  "/sign-in/email",
+  "/sign-in/social",
+  "/callback/:id",
+  "/sign-out",
+  "/request-password-reset",
+  "/reset-password",
+  "/reset-password/:token",
+]);
+
 export const before = createAuthMiddleware(async (ctx) => {
-  if (ctx.path !== "/sign-in/email") return;
+  if (ctx.path !== "/sign-in/email") {
+    // 07.1-10 D-7121: better-auth 자체 엔드포인트는 lib/viewer.ts의 판정을 지나지 않아, 퇴사 · 보관된 사람의 쿠키로
+    // 만료일까지 비밀번호 변경 · 세션 목록 읽기가 됐다. HTTP 요청만 판정한다 — 서버 내부 auth.api 호출(ctx.request 없음)은
+    // 앱 경로라 lib/viewer.ts가 null로 로그인 이동시킨다(E-P1-09). 세션은 getSessionFromCtx로 읽는다 — 엔드포인트를
+    // 함수로 직접 불러 훅을 다시 타지 않는다(E-P2-30). 읽은 값은 ctx.context에 캐시되므로 되돌린다 — 그대로 두면
+    // 엔드포인트의 sessionMiddleware가 갱신 없이 읽은 세션을 재사용해 재직자의 세션 연장이 빠진다.
+    if (!ctx.request || RETIRED_SESSION_ALLOWED_PATHS.has(ctx.path)) return;
+    const cached = ctx.context.session;
+    // PR #307 P2: getSessionFromCtx와 같은 호출이되 그 .catch(() => null)이 없다 — 읽기 오류를 「세션 없음」과 가른다.
+    // 쿠키가 없거나 서명이 틀리면 DB에 닿기 전에 null이라 비로그인 요청은 여기서 던지지 않는다. 쿠키가 있는데 읽기가
+    // 실패하면 판정을 못 한 채 통과시키지 않고 401(fail-closed) — 엔드포인트의 다시 읽기가 성공하면 퇴사자 응답이 나간다.
+    let read;
+    try {
+      read = await getSession()({
+        ...ctx,
+        method: "GET",
+        asResponse: false,
+        headers: ctx.headers ?? ctx.request.headers,
+        returnHeaders: true,
+        returnStatus: false,
+        query: { disableRefresh: true },
+      });
+    } catch (e) {
+      log.error("auth.retired_session_read_failed", { path: ctx.path, name: e instanceof Error ? e.name : typeof e });
+      throw APIError.from("UNAUTHORIZED", { message: "Unauthorized", code: "UNAUTHORIZED" });
+    } finally {
+      ctx.context.session = cached;
+    }
+    // getSessionFromCtx처럼 낡은 쿠키 지우기 등 읽기가 남긴 Set-Cookie를 응답에 넘긴다.
+    read.headers.forEach((value, key) => {
+      if (key.toLowerCase() === "set-cookie") ctx.responseHeaders?.append(key, value);
+    });
+    const session = read.response;
+    if (!session || !retiredOrArchived(session.user as { archivedAt?: Date | null; resignationDate?: string | null }, toKstDate(new Date()))) {
+      return;
+    }
+    try {
+      await ctx.context.internalAdapter.deleteUserSessions(session.user.id);
+    } catch (e) {
+      log.error("auth.retired_session_delete_failed", { userId: session.user.id, name: e instanceof Error ? e.name : typeof e });
+    }
+    // better-auth sessionMiddleware 거부와 같은 모양 — 퇴직 여부를 문구로 드러내지 않는다(SC-14). 삭제가 실패해도 거부(fail-closed).
+    throw APIError.from("UNAUTHORIZED", { message: "Unauthorized", code: "UNAUTHORIZED" });
+  }
 
   // fail-closed: proxy.ts를 지나지 않은 로그인 요청(x-client-ip 없음)은 IP null로
   // 공용 rateLimit 버킷에 조용히 흘러가는 대신 500으로 멈춘다(better-auth Eng OV-2).
@@ -63,7 +126,7 @@ export const before = createAuthMiddleware(async (ctx) => {
   // 미리 기록 → 더미 해시 → 다시 세기가 재직자의 before → 핸들러 → after와 같은 순서라, 잠기는 횟수 · 상태 · 문구로도
   // 계정 상태가 드러나지 않는다.
   const user = await findUserByEmail(SYSTEM_VIEWER, email);
-  const resigned = Boolean(user?.resignationDate && user.resignationDate < toKstDate(new Date()));
+  const blocked = user ? retiredOrArchived(user, toKstDate(new Date())) : false;
 
   // 07-09 FA-1(/cso F1): 잠금 확인과 실패 행 미리 기록이 이메일 잠금 아래 한 트랜잭션 — 동시 시도도 임계를 넘어 검사되지 않는다.
   const ip = ctx.headers?.get(CLIENT_IP_HEADER) ?? null;
@@ -72,7 +135,7 @@ export const before = createAuthMiddleware(async (ctx) => {
     throw new APIError("FORBIDDEN", { message: lockedMessage(windowMinutes) });
   }
 
-  if (user?.archivedAt || resigned) {
+  if (blocked) {
     await ctx.context.password.hash(getBodyPassword(ctx.body));
     const settled = await settleLoginFailure(email);
     if (settled.locked) throw new APIError("FORBIDDEN", { message: lockedMessage(settled.windowMinutes) });

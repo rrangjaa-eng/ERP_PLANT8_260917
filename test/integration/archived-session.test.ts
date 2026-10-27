@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { auth } from "@/lib/auth";
+import { db } from "@/db/client";
+import { sessions } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -51,5 +54,60 @@ describe("보관된 사람의 기존 세션 (M-2)", () => {
       archivedAt,
       "better-auth가 사용자 행을 다시 읽지 않으면 여기가 null로 남고 getSession의 판정이 무력해진다",
     ).not.toBeNull();
+  });
+});
+
+const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3000";
+
+async function signedIn(prefix: string): Promise<{ email: string; userId: string; cookie: string }> {
+  const email = `${prefix}-${randomUUID()}@example.test`;
+  const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "세션 갈래", roleId: SYSADMIN_ROLE_ID });
+  const signIn = await auth.api.signInEmail({
+    body: { email, password: tempPassword },
+    headers: new Headers({ [CLIENT_IP_HEADER]: "127.0.0.1" }),
+    asResponse: true,
+  });
+  const cookie = signIn.headers.get("set-cookie")?.split(";")[0] ?? "";
+  expect(cookie, "로그인이 세션 쿠키를 돌려줘야 한다").not.toBe("");
+  const row = await findUserByEmail(SYSTEM_VIEWER, email);
+  return { email, userId: row!.id, cookie };
+}
+
+async function sessionRows(userId: string): Promise<number> {
+  return (await db.select({ id: sessions.id }).from(sessions).where(eq(sessions.userId, userId))).length;
+}
+
+function httpGetSession(cookie: string): Promise<Response> {
+  return auth.handler(new Request(`${BASE_URL}/api/auth/get-session`, { headers: { cookie, "x-client-ip": "198.51.100.201" } }));
+}
+
+// D-7121 · D-E6: better-auth 자체 엔드포인트(HTTP)는 lib/viewer.ts를 지나지 않는다 — 훅이 거부하고 세션을 지운다.
+// E-P1-09: 서버 내부 auth.api 호출(ctx.request 없음)은 판정하지 않는다 — 앱 화면은 lib/viewer.ts가 null로 로그인 이동.
+describe("보관된 사람의 기존 세션 — better-auth HTTP 엔드포인트 (D-7121)", () => {
+  it("보관 뒤 같은 쿠키로 HTTP /get-session → 401 · 그 사람 세션 행 0", async () => {
+    const p = await signedIn("archived-http");
+    expect(await sessionRows(p.userId)).toBe(1);
+    await archive(SYSTEM_VIEWER, "user", p.userId);
+
+    const res = await httpGetSession(p.cookie);
+    expect(res.status).toBe(401);
+    expect(await sessionRows(p.userId)).toBe(0);
+  });
+
+  it("보관 뒤 같은 쿠키의 서버 내부 auth.api.getSession → 던지지 않고 archivedAt이 실려 오며 세션 행 그대로", async () => {
+    const p = await signedIn("archived-internal");
+    await archive(SYSTEM_VIEWER, "user", p.userId);
+
+    const after = await auth.api.getSession({ headers: new Headers({ cookie: p.cookie }) });
+    expect((after?.user as unknown as { archivedAt?: unknown } | undefined)?.archivedAt ?? null).not.toBeNull();
+    expect(await sessionRows(p.userId)).toBe(1);
+  });
+
+  it("재직자 HTTP /get-session → 200 · 세션 그대로", async () => {
+    const p = await signedIn("active-http");
+    const res = await httpGetSession(p.cookie);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { user?: { email?: string } } | null)?.user?.email).toBe(p.email);
+    expect(await sessionRows(p.userId)).toBe(1);
   });
 });

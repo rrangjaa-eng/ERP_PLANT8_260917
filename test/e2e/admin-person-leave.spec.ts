@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { createAccount } from "@/domain/auth/accounts";
 import { createRole, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { setPermissionCell, setVisibilityCell } from "@/domain/permissions/matrix";
 import { listPeople, registerPerson, setHireDate, setResignationDate } from "@/domain/people";
@@ -434,7 +435,7 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
   test("권한(CX-R2 · CXF-C-F06): 보기만이면 읽기 전용 기록 · 노출 없으면 사유가 응답에 없음 · 권한 없으면 404", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const target = await makeTarget("권한");
-      const author = await registerPerson(SYSTEM_VIEWER, { name: "조정입력", email: `e2e-author-${randomUUID()}@example.test`, roleId: SYSADMIN_ROLE_ID });
+      const author = await createAccount(SYSTEM_VIEWER, { name: "조정입력", email: `e2e-author-${randomUUID()}@example.test`, roleId: SYSADMIN_ROLE_ID });
       await addLeaveAdjustment(
         { id: author.userId, roleId: SYSADMIN_ROLE_ID },
         { userId: target.id, bucket: "annual", fiscalYear: yearOf(today), amountDays: -1, reason: "무단 결근" },

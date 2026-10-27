@@ -9,6 +9,7 @@ import {
   moneyToColumns,
   MoneyInputError,
   round,
+  roundingUnitOf,
   grossFromTotal,
   type Money,
   type Currency,
@@ -96,7 +97,7 @@ async function computeGrossFromPayment(
 ): Promise<{ grossKrw: number; recomputeDeltaKrw: number }> {
   const getValue = deps?.getSettingValue ?? defaultGetSettingValue;
   const vatRate = await getValue(TAX_VAT_RATE, { asOf: entryDate });
-  const unit = (await getValue(TAX_ROUNDING_VAT_UNIT, { asOf: entryDate })) as 1 | 10;
+  const unit = roundingUnitOf(await getValue(TAX_ROUNDING_VAT_UNIT, { asOf: entryDate }));
   const grossKrw = grossFromTotal(totalKrw, vatRate, unit, "round");
   const recomputedVat = round(grossKrw * vatRate, unit, "round");
   const recomputedTotal = grossKrw + recomputedVat;

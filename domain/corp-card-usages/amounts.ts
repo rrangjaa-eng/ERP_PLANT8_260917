@@ -1,4 +1,4 @@
-import { diffKrw, grossFromTotal, remainingForInstallments, round, sumKrw, toKrw, type Money, type MoneyInput, type RoundingUnit } from "@/domain/money";
+import { diffKrw, grossFromTotal, remainingForInstallments, round, sumKrw, toKrw, type Money, type MoneyInput } from "@/domain/money";
 import type { TaxRates } from "@/domain/money/tax";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 
@@ -19,7 +19,7 @@ export type CardSplit = {
 export function splitCardTotal(total: CardTotal, rates: TaxRates): CardSplit {
   const totalKrw = toKrw(total.money);
   if (total.rule.ruleKind !== "vat_surcharge") return { totalKrw, supplyKrw: totalKrw, vatKrw: 0, residualKrw: 0 };
-  const unit = rates.vatUnit as RoundingUnit;
+  const unit = rates.vatUnit;
   const method = total.rule.roundingMethod ?? "round";
   const supplyKrw = grossFromTotal(totalKrw, rates.vatRate, unit, method);
   const recomputedVatKrw = round(supplyKrw * rates.vatRate, unit, method);

@@ -17,6 +17,8 @@ vi.mock("@/domain/permissions/can", () => ({ can: () => Promise.resolve(true) })
 vi.mock("@/repositories/roles", () => ({ findRoleById: defaults.findRoleById }));
 vi.mock("@/repositories/team-memberships", () => ({ findMembershipAtDate: () => Promise.resolve(null) }));
 vi.mock("@/repositories/teams", () => ({ findTeamById: () => Promise.resolve(null) }));
+vi.mock("@/repositories/users", () => ({ findUserDivision: () => Promise.resolve(null) }));
+vi.mock("@/repositories/org-units", () => ({ findOrgUnitById: () => Promise.resolve(null) }));
 
 const viewer: Viewer = { id: "u1", roleId: "role-pm" };
 
@@ -287,8 +289,11 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
 
   const TEAM_ID = "00000000-0000-4000-8000-0000000000t1";
   const ORG_ID = "00000000-0000-4000-8000-0000000000o1";
+  const DIVISION_ID = "00000000-0000-4000-8000-0000000000d1";
+  const ARCHIVED_DIVISION_ID = "00000000-0000-4000-8000-0000000000d2";
   // 발령은 effectiveFrom 이후 날짜에만 잡힌다(리포지토리의 「발령일 ≤ 날짜」 규칙을 흉내 낸다).
-  function published(opts: { allowed?: string[]; teamFrom?: string | null; today?: string }) {
+  // divisionId는 사람의 본부 칸(07.1-07 D-7127) — ARCHIVED_DIVISION_ID는 보관된 본부다.
+  function published(opts: { allowed?: string[]; teamFrom?: string | null; today?: string; divisionId?: string | null }) {
     const teamFrom = opts.teamFrom === undefined ? "2026-01-01" : opts.teamFrom;
     return {
       ...grants(opts.allowed ?? ["evidence:view"]),
@@ -296,6 +301,10 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
         Promise.resolve(teamFrom !== null && date >= teamFrom ? { teamId: TEAM_ID } : null),
       ),
       findTeamById: vi.fn((_v: Viewer, id: string) => Promise.resolve(id === TEAM_ID ? { orgUnitId: ORG_ID } : null)),
+      findUserDivision: vi.fn((_v: Viewer, id: string) => Promise.resolve(id === viewer.id ? { divisionId: opts.divisionId ?? null } : null)),
+      findOrgUnitById: vi.fn((_v: Viewer, id: string) =>
+        Promise.resolve(id === DIVISION_ID ? { archivedAt: null } : id === ARCHIVED_DIVISION_ID ? { archivedAt: new Date("2026-09-01T00:00:00Z") } : null),
+      ),
       today: () => opts.today ?? "2026-10-16",
     };
   }
@@ -306,8 +315,49 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
     expect(deps.findMembershipAtDate).toHaveBeenCalledWith(viewer, "u1", "2026-10-16");
   });
 
-  it("발령 이력이 없으면 teamId · orgUnitId가 둘 다 null인 published다(임의 팀 없음)", async () => {
+  it("발령 이력이 없고 본부 칸도 비었으면 teamId · orgUnitId가 둘 다 null인 published다(임의 팀 없음)", async () => {
     expect(await evidenceScopeFor(viewer, published({ teamFrom: null }))).toEqual({ rows: "published", teamId: null, orgUnitId: null });
+  });
+
+  // 07.1-07(D-7122): 팀 없이 본부에만 속한 사람은 사람의 본부 칸으로 본부 공개를 본다.
+  it("발령 팀이 없고 본부 칸이 보관 안 된 본부면 그 본부로 published다", async () => {
+    const deps = published({ teamFrom: null, divisionId: DIVISION_ID });
+    expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "published", teamId: null, orgUnitId: DIVISION_ID });
+    expect(deps.findUserDivision).toHaveBeenCalledWith(viewer, "u1");
+  });
+
+  it("발령 팀이 없고 본부 칸이 보관된 본부면 orgUnitId가 null이다", async () => {
+    expect(await evidenceScopeFor(viewer, published({ teamFrom: null, divisionId: ARCHIVED_DIVISION_ID }))).toEqual({
+      rows: "published",
+      teamId: null,
+      orgUnitId: null,
+    });
+  });
+
+  it("발령 팀이 없고 본부 칸이 없는 본부를 가리키면 orgUnitId가 null이다", async () => {
+    expect(await evidenceScopeFor(viewer, published({ teamFrom: null, divisionId: "00000000-0000-4000-8000-0000000000d9" }))).toEqual({
+      rows: "published",
+      teamId: null,
+      orgUnitId: null,
+    });
+  });
+
+  // D-E2 경계: 칸 비우기는 07.1-14(assignTeam)의 몫 — 이 함수는 오늘 팀이 없으면 칸을 그대로 읽는다. 발령에는 끝나는 날이 없어(team_memberships)
+  // 오늘 팀이 없는 경우는 「발령 없음」과 「미래 발령만」뿐이다(PR #303 검토 P3-1).
+  it("미래 발령만 있고 오늘 팀이 없으면 본부 칸을 읽는다", async () => {
+    expect(await evidenceScopeFor(viewer, published({ teamFrom: "2026-10-20", divisionId: DIVISION_ID }))).toEqual({
+      rows: "published",
+      teamId: null,
+      orgUnitId: DIVISION_ID,
+    });
+  });
+
+  // 불변식(assumption-delta): 팀이 있는 사람은 본부 칸과 무관하게 팀의 본부다.
+  it("오늘 발령 팀이 있으면 본부 칸을 보지 않고 팀의 본부로 published다", async () => {
+    const deps = published({ divisionId: DIVISION_ID });
+    expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "published", teamId: TEAM_ID, orgUnitId: ORG_ID });
+    expect(deps.findUserDivision).not.toHaveBeenCalled();
+    expect(deps.findOrgUnitById).not.toHaveBeenCalled();
   });
 
   it("오늘보다 뒤 발령만 있으면 teamId가 null이다", async () => {
@@ -323,5 +373,12 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
     expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "all" });
     expect(deps.findMembershipAtDate).not.toHaveBeenCalled();
     expect(deps.findTeamById).not.toHaveBeenCalled();
+    expect(deps.findUserDivision).not.toHaveBeenCalled();
+  });
+
+  it("evidence 보기가 없으면 none이고 본부 칸을 읽지 않는다", async () => {
+    const deps = published({ allowed: [], teamFrom: null, divisionId: DIVISION_ID });
+    expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "none" });
+    expect(deps.findUserDivision).not.toHaveBeenCalled();
   });
 });

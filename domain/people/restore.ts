@@ -4,7 +4,7 @@ import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { listOccupiedTeams, lockSeatKeys } from "@/repositories/seats";
 import { assertCanGrantRoles, RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
-import { assertSeatsFree, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
+import { assertSeatsFree, COMPANY_SEAT_ROLE_IDS, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
 import { findUserById, setUserArchived } from "@/repositories/users";
 import { findRoleForShare } from "@/repositories/roles";
 import { seatedTeamsOf } from "@/repositories/team-memberships";
@@ -68,7 +68,8 @@ export async function restoreUser(viewer: Viewer, id: string, deps?: Partial<Res
   const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   return withTransaction(async (tx) => {
-    await lockSeatKeys(viewer, { personIds: [id] }, tx);
+    // 07.1(D-7128): 계급은 잠금 뒤 재조회에서야 알므로 회사 키 둘을 첫 잠금에서 함께.
+    await lockSeatKeys(viewer, { personIds: [id], companyRoleIds: COMPANY_SEAT_ROLE_IDS }, tx);
     const row = await findUserById(viewer, id, tx);
     if (!row) throw new PersonNotRestorableError("없는 사람 · 복원 불가");
     if (row.archivedAt === null) return { restored: false };
@@ -87,7 +88,7 @@ export async function restoreUser(viewer: Viewer, id: string, deps?: Partial<Res
           roleBefore: row.roleId,
           roleAfter: row.roleId,
           employedBefore: null,
-          employedAfter: { archivedAt: null, resignationDate: row.resignationDate },
+          employedAfter: { archivedAt: null, resignationDate: row.resignationDate, hireDate: row.hireDate },
           occupiedBefore: [],
           occupiedAfter: occupied,
         });

@@ -18,6 +18,7 @@ import {
   type PaymentTargetRowDto,
 } from "@/domain/expenses/dto";
 import { evidenceSourcesOf, ownersWithEvidence } from "@/domain/evidence/has-evidence";
+import { expenseDrafterAddsEvidence } from "@/domain/evidence/drafter-rule";
 import { listEvidence } from "@/domain/evidence";
 import { EVIDENCE_FORMAT_TYPES } from "@/domain/evidence-import/types";
 import { formatKstTime } from "@/domain/holidays/business-day";
@@ -154,6 +155,8 @@ async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], c
       waived: row.review?.status === "waived",
       confirmation: row.review?.status === "confirmed" ? { reviewedAt: row.review.reviewedAt } : null,
       drafterName: row.drafterName,
+      // 07.1-03 D-7101 — 단건 지급과 같은 규칙 함수(목록에 오는 문서는 승인 상태).
+      drafterCanAdd: expenseDrafterAddsEvidence({ closed: row.closedAt !== null, number: row.number, status: "approved", projectCompleted: row.projectStatus === "completed" }),
     };
     const evidence = await gate(row, "payment.evidence-required", evidenceCtx);
     const pair = await gate(row, "payment.method-evidence-mismatch", pairGateCtx(row, ctx.shared));

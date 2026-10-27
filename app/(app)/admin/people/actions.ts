@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
-import { registerPerson, changePersonRole, archivePerson, unlockPerson } from "@/domain/people";
+import { registerPerson, changePersonRole, archivePerson, handOverSysadmin, unlockPerson } from "@/domain/people";
 import { assignTeam, cancelFutureAssignment, createOrgUnit, renameOrgUnit, createTeam, renameTeam } from "@/domain/org";
 import { createRole, renameRole, setRoleWorkScope, setRoleViewScope, ROLE_VIEW_SCOPES, ROLE_WORK_SCOPES } from "@/domain/permissions/roles";
 import { archive } from "@/domain/archive";
@@ -41,6 +41,16 @@ export const changePersonRoleAction = authedActionClient
   .schema(z.object({ userId: z.string().min(1), roleId: z.string().min(1) }))
   .action(async ({ parsedInput, ctx }) => {
     await changePersonRole(ctx.viewer, parsedInput.userId, parsedInput.roleId);
+    revalidatePath("/admin/people");
+    revalidatePath("/admin/people/org");
+    revalidatePath(`/admin/people/${parsedInput.userId}`);
+  });
+
+// 07.1 D-2: 시스템 관리자 넘기기 — 판정(행위자가 시스템 관리자인가 · 대상 · 자리 · 마지막 관리자)은 domain `handOverSysadmin`이 한 tx에서 한다.
+export const handOverSysadminAction = authedActionClient
+  .schema(z.object({ userId: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await handOverSysadmin(ctx.viewer, parsedInput.userId);
     revalidatePath("/admin/people");
     revalidatePath("/admin/people/org");
     revalidatePath(`/admin/people/${parsedInput.userId}`);

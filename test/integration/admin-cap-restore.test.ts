@@ -6,7 +6,7 @@ import { registerPerson } from "@/domain/people";
 import { createCodeItem } from "@/domain/code-tables";
 import { queryActionLog } from "@/repositories/action-log";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
 import { archive, ForbiddenError as ArchiveForbiddenError, listArchive, restore } from "@/domain/archive";
 import { PersonNotRestorableError, PersonRestoreForbiddenError } from "@/domain/people/restore";
@@ -401,3 +401,22 @@ describe("종류별 복원 게이트 — 보관함 쓰기만 있는 위임자 (0
     expect(await countLogs("restore", "code_items", codeItem.id)).toBe(1);
   });
 });
+
+// 07.1(D-7108 · D-7128): 보관된 대표를 되살리면 회사 자리를 다시 본다 — 그새 다른 재직 대표가 있으면 거부(꼬리 ` · 복원 불가`).
+describe("회사 자리 복원(07.1 D-7108)", () => {
+  it("보관된 대표 R을 복원할 때 재직 대표 K가 있으면 거부 · 문구에 K 이름, K를 보관하면 복원", async () => {
+    const admin = await makeAdmin("관리자");
+    const r = await makeSeated(uniqueName("대표R"), CEO_ROLE_ID, null);
+    await archive(SYSTEM_VIEWER, "user", r.id, deps);
+    const k = await makeSeated(uniqueName("대표K"), CEO_ROLE_ID, null);
+
+    const error = await refusal(restore(admin, "user", r.id, deps), SeatTakenError);
+    expect(error.message).toBe(`대표 있음 · ${await nameOf(k.id)}` + TAIL);
+    expect(await archivedAtOf(r.id)).not.toBeNull();
+
+    await archive(SYSTEM_VIEWER, "user", k.id, deps);
+    expect(await restore(admin, "user", r.id, deps)).toEqual({ restored: true });
+    expect(await archivedAtOf(r.id)).toBeNull();
+  });
+});
+

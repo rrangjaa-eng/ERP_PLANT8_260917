@@ -302,6 +302,7 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     await expect(budgetTable(page)).toHaveCount(0);
     await page.getByRole("link", { name: "시스템 설정에서 입력" }).click();
     await expect(page).toHaveURL(/\/admin\/settings/);
+    await expect(page.locator('[id="setting-project.cost_rate_pct"]')).toBeVisible();
 
     await setCostRate(0);
     await page.goto("/projects/budget");
@@ -327,7 +328,7 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     const isServerAction = (response: { request: () => { method: () => string; headers: () => Record<string, string> } }) =>
       response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined;
 
-    const { page, context } = await openAs(browser, user, "/admin/settings");
+    const { page, context } = await openAs(browser, user, `/admin/settings?group=${encodeURIComponent("프로젝트")}`);
     const projectSection = page.locator("section").filter({ has: page.getByRole("heading", { name: "프로젝트", exact: true }) });
     const field = projectSection.getByLabel(PROJECT_COST_RATE_PCT.label, { exact: true });
     await field.fill("12.5");
@@ -351,7 +352,7 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
 
     await setCostRate(null);
     const settingsOnly = await budgetUser(team.teamId, { settings: true, budget: false });
-    const second = await openAs(browser, settingsOnly, "/admin/settings");
+    const second = await openAs(browser, settingsOnly, `/admin/settings?group=${encodeURIComponent("프로젝트")}`);
     const secondSection = second.page.locator("section").filter({ has: second.page.getByRole("heading", { name: "프로젝트", exact: true }) });
     const secondField = secondSection.getByLabel(PROJECT_COST_RATE_PCT.label, { exact: true });
     await secondField.fill("12.5");

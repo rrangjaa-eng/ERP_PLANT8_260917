@@ -65,7 +65,7 @@ test.describe("확인증 관리 진입(04.3-09)", () => {
   test("설정: 수령자 문의 전화에 형식이 틀린 값을 적으면 오류 줄이 서고 저장된 값은 그대로다", async ({ page }) => {
     const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
     await login(page, admin);
-    await page.goto("/admin/settings");
+    await page.goto(`/admin/settings?group=${encodeURIComponent("확인증")}`);
 
     await expect(page.getByRole("heading", { name: "확인증", exact: true })).toBeVisible();
     const phone = page.getByLabel("수령자 문의 전화");

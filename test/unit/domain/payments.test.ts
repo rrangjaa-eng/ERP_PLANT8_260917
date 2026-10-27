@@ -278,6 +278,7 @@ function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
     evidenceType: row.evidenceType,
     hasLiveEvidence,
     drafterName: "박서연",
+    projectCompleted: false,
     amount: pickPaymentAmount({ supplyAmountKrw: row.supplyAmountKrw }),
     tax: { taxRule, dates, recipientCount: row.recipientCount, rates: { ...RATES, asOf: dates.basisDate } },
   };
@@ -285,7 +286,7 @@ function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
 
 // 06-06 검토 S-3 — evidenceGate 필수. 06-04 꼴(면제 · 확인 기록 없음) 증빙 게이트 입력.
 function gateOf(shared: PaymentShared, hasEvidence: boolean, locked: LockedExpense): EvidenceGateInput {
-  return { evidenceRequired: shared.evidenceRequired, hasEvidence, prepaid: locked.prepaid, waived: false, confirmation: null, drafterName: "박서연" };
+  return { evidenceRequired: shared.evidenceRequired, hasEvidence, prepaid: locked.prepaid, waived: false, confirmation: null, drafterName: "박서연", drafterCanAdd: true };
 }
 
 function judge(over: { pre?: PaymentInputs; locked?: LockedExpense; approvalState?: string; lockedHasEvidence?: boolean; expectedPayableKrw: number; shared?: PaymentShared }) {
@@ -427,7 +428,7 @@ describe("judgeLockedPayment — 지급 방식 없음 (06-03 검토 P3-2)", () =
 });
 
 // 06-04 Task 2 — 증빙 필수 게이트(EVID-02 · D-603) · 짝 게이트(Q4) · 「지출결의 상태 → 1차」 P1 · P3 · 3차 자리 `waive`.
-const EVIDENCE_CTX = { evidenceRequired: true, hasEvidence: false, prepaid: false, waived: false, confirmation: null, drafterName: "박서연" };
+const EVIDENCE_CTX = { evidenceRequired: true, hasEvidence: false, prepaid: false, waived: false, confirmation: null, drafterName: "박서연", drafterCanAdd: true };
 
 describe("evidenceGateDecision (D-603)", () => {
   it("필수 on · 증빙 없음 · 선결제 아님 · 면제 아님 → `증빙 없음 · 기안자 {이름}`", () => {

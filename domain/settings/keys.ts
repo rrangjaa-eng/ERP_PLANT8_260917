@@ -168,7 +168,8 @@ export const TAX_BASIS_DATE_VAT: SettingDef<TaxBasisDate> = {
 export const TAX_ROUNDING_VAT_UNIT: SettingDef<number> = {
   key: "tax.rounding.vat_unit",
   kind: "simple",
-  schema: z.coerce.number().int().min(1),
+  // 07.1-03 PX3(Q8) — 계산(RoundingUnit)이 받는 1 · 10만. pipe · union이면 설정 화면 칸이 문자열 칸이 된다(E-P2-10).
+  schema: z.coerce.number().int().refine((v) => v === 1 || v === 10, { message: "1 또는 10 · 다시 입력" }),
   label: "부가세 절사 단위(원)",
   hint: "이 단위 미만은 절사합니다.",
   namespace: "절사",
@@ -178,7 +179,8 @@ export const TAX_ROUNDING_VAT_UNIT: SettingDef<number> = {
 export const TAX_ROUNDING_WITHHOLDING_UNIT: SettingDef<number> = {
   key: "tax.rounding.withholding_unit",
   kind: "simple",
-  schema: z.coerce.number().int().min(1),
+  // 07.1-03 PX3(Q8) — 계산(RoundingUnit)이 받는 1 · 10만. pipe · union이면 설정 화면 칸이 문자열 칸이 된다(E-P2-10).
+  schema: z.coerce.number().int().refine((v) => v === 1 || v === 10, { message: "1 또는 10 · 다시 입력" }),
   label: "원천징수 절사 단위(원)",
   hint: "이 단위 미만은 절사합니다.",
   namespace: "절사",

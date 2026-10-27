@@ -16,6 +16,7 @@ import { validateRejectReason } from "@/domain/approvals";
 import { buildEvidenceVoidedMessage } from "@/domain/approvals/conflict-message";
 import { canSeeExpense, EXPENSE_ALREADY_CLOSED, EXPENSE_DOCUMENT_KIND, ExpenseCloseRefusedError, ExpenseConflictError, ExpenseNotFoundError } from "@/domain/expenses";
 import { EVIDENCE_FILE_DTO_SPEC, type EvidenceFileDto } from "@/domain/evidence/dto";
+import { EXPENSE_IN_REVIEW_STATUSES, expenseDrafterAddsEvidence, expenseDrafterRemoves } from "@/domain/evidence/drafter-rule";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
 import { fileVisibilityFor, PRIVATE_EVIDENCE_SHEET_NOTICE, privateEvidenceLine, privateEvidenceTypeOf, privateFileVisible, type FileVisibility } from "@/domain/evidence/private-files";
 import { checkEvidenceUpload, duplicateScopeKinds, EVIDENCE_DUPLICATE_HIDDEN, EVIDENCE_UPLOAD_FAILED, signatureMatches, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
@@ -167,9 +168,6 @@ type OwnerRule = {
   notFound(): UserFacingError;
 };
 
-const EXPENSE_RETURNED_STATUSES = new Set(["rejected", "withdrawn"]);
-const EXPENSE_IN_REVIEW_STATUSES = new Set(["submitted", "in_review"]);
-
 async function expenseState(viewer: Viewer, ownerId: string, tx?: DbOrTx): Promise<OwnerState | null> {
   const row = tx ? await lockExpenseForUpdate(viewer, ownerId, tx) : await findExpenseById(viewer, ownerId);
   if (!row) return null;
@@ -189,9 +187,6 @@ async function expenseState(viewer: Viewer, ownerId: string, tx?: DbOrTx): Promi
     evidenceType: row.evidenceType,
   };
 }
-
-const expenseDrafterRemoves = (owner: OwnerState) =>
-  !owner.closed && ((owner.number === null && owner.status === null) || (owner.status !== null && EXPENSE_RETURNED_STATUSES.has(owner.status)));
 
 // 승인 문서 — 확인 기록 해제 + 문서 version. 결재 중 `add` — 06.1 자동 확인만 푼다(파일이 더해지면 조건 「파일 0」이 깨진다, 06.1-12 N-1).
 // 작성 중 · 결재 중 · 반려 · 회수는 문서 version을 올리지 않는다(X-1 — 결재 중 인스턴스 version은 업로드 tx가 올린다). 승인 문서의 확인 기록 줄은 있을 때만 지우고,
@@ -230,7 +225,7 @@ const OWNER_RULES: Record<string, OwnerRule> = {
     load: (viewer, ownerId) => expenseState(viewer, ownerId),
     lock: (viewer, ownerId, tx) => expenseState(viewer, ownerId, tx),
     canSee: (viewer, owner) => canSeeExpense(viewer, owner),
-    drafterAdds: (owner) => expenseDrafterRemoves(owner) || (owner.status === "approved" && !owner.projectCompleted),
+    drafterAdds: expenseDrafterAddsEvidence,
     drafterRemoves: expenseDrafterRemoves,
     inReview: (owner) => owner.status !== null && EXPENSE_IN_REVIEW_STATUSES.has(owner.status),
     approved: (owner) => owner.status === "approved",

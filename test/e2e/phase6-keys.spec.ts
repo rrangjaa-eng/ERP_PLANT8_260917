@@ -20,14 +20,18 @@ async function resetKeys() {
   await db.delete(settingsSimple).where(inArray(settingsSimple.key, KEYS));
 }
 
-async function loginAndOpenSettings(page: Page) {
+function settingsGroupUrl(group: string): string {
+  return `/admin/settings?group=${encodeURIComponent(group)}`;
+}
+
+async function loginAndOpenSettings(page: Page, group = "지급") {
   const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
   await page.goto("/login");
   await page.getByLabel("이메일").fill(admin.email);
   await page.getByLabel("비밀번호").fill(admin.password);
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/account$/);
-  await page.goto("/admin/settings");
+  await page.goto(settingsGroupUrl(group));
 }
 
 function cell(page: Page, method: string, evidence: string) {
@@ -41,7 +45,7 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
   test.afterEach(resetKeys);
 
   test("S20 empty — 증빙 필수 켬 · 선결제 증빙 기한 14 일 · 온라인구매 협력사 빈 값(또는 고정 이름) · 증빙 크기 한도 10 · 짝 격자 모든 칸 해제", async ({ page }) => {
-    await loginAndOpenSettings(page);
+    await loginAndOpenSettings(page, "증빙");
 
     await expect(page.getByRole("heading", { name: "증빙", exact: true })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "증빙 필수", exact: true })).toBeChecked();
@@ -56,8 +60,10 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
     await expect(page.getByLabel("선결제 증빙 기한")).toHaveAccessibleDescription(/일$/);
 
     // 기본값은 빈 값 — 다른 스펙이 고정 이름을 켜 뒀다면 그 이름(그 밖의 값은 아니다).
+    await page.goto(settingsGroupUrl("구매 요청"));
     await expect(page.getByLabel("온라인구매 협력사")).toHaveValue(new RegExp(`^(${E2E_ONLINE_VENDOR_NAME})?$`));
 
+    await page.goto(settingsGroupUrl("지급"));
     const grid = page.getByRole("table", { name: GRID_NAME });
     await expect(grid).toBeVisible();
     for (const method of ["계좌이체", "법인카드", "현금"]) {
@@ -68,7 +74,7 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
   });
 
   test("선결제 증빙 기한을 21로 저장하면 다시 열어도 21이다", async ({ page }) => {
-    await loginAndOpenSettings(page);
+    await loginAndOpenSettings(page, "증빙");
     const input = page.getByLabel("선결제 증빙 기한");
     await input.fill("21");
     await input.blur();
@@ -249,6 +255,7 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
     expect(gridX).toBeDefined();
     expect(await x(page.locator(`[id="setting-${PAYMENT_METHOD_EVIDENCE_PAIRS.key}-hint"]`))).toBe(gridX);
 
+    await page.goto(settingsGroupUrl("증빙"));
     const inputX = await x(page.getByLabel("선결제 증빙 기한"));
     expect(inputX).toBeDefined();
     expect(await x(page.locator(`[id="setting-${EVIDENCE_PREPAID_DUE_DAYS.key}-hint"]`))).toBe(inputX);

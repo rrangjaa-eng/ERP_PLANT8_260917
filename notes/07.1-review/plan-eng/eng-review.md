@@ -1,0 +1,284 @@
+# 07.1 /plan-eng-review — 통합 보고서
+
+- 대상: main `b9acdd8` · `.planning/phases/07.1-carryover-followup/` 플랜 19개(07.1-01 ~ 07.1-19)
+- 스킬: gstack `/plan-eng-review` (07.1 계획 게이트)
+- 검토자: Opus 4명
+  - 그룹 A: 01 · 04 · 07 · 09 · 14 (`notes-A.md`)
+  - 그룹 B: 03 · 11 · 12 · 13 · 16 (`notes-B.md`)
+  - 그룹 C: 05 · 06 · 08 · 10 · 17 + 웨이브(실행 순서) (`notes-C.md`)
+  - 그룹 D: 02 · 15 · 18 · 19 (`notes-D.md`)
+- 외부 목소리: 없음. gstack `codex_reviews=disabled`이고, 규칙상 eng 검토에는 Codex를 쓰지 않는다(CLAUDE.md:83 · :126 — Codex는 디자인 검토에서만 쓴다).
+- P1 독립 확인: 통합 단계에서 P1 13건을 저장소(main b9acdd8)에서 직접 열어 다시 봤다. 결과는 2절 「독립 확인」 열에 있다(확인됨 11 · 부분 2 · 틀림 0).
+- 근거 원문(인용 줄 · 커버리지 도표 · 실패 모드 표)은 각 노트 파일에 있다. 경로는 모두 `notes/07.1-review/plan-eng/`.
+
+---
+
+## 1. 합계
+
+| 플랜 | P1 | P2 | P3 | 노트 |
+|---|---|---|---|---|
+| 07.1-01 | 2 | 4 | 4 | A |
+| 07.1-02 | 0 | 4 | 4 | D |
+| 07.1-03 | 0 | 6 | 1 | B |
+| 07.1-04 | 2 | 3 | 4 | A |
+| 07.1-05 | 1 | 3 | 3 | C |
+| 07.1-06 | 1 | 2 | 1 | C |
+| 07.1-07 | 1 | 3 | 2 | A |
+| 07.1-08 | 0 | 1 | 1 | C |
+| 07.1-09 | 1 | 2 | 2 | A |
+| 07.1-10 | 1 | 2 | 0 | C |
+| 07.1-11 | 0 | 4 | 1 | B |
+| 07.1-12 | 1 | 3 | 2 | B |
+| 07.1-13 | 0 | 3 | 1 | B |
+| 07.1-14 | 0 | 3 | 3 | A |
+| 07.1-15 | 0 | 0 | 2 | D |
+| 07.1-16 | 1 | 1 | 2 | B |
+| 07.1-17 | 0 | 1 | 3 | C |
+| 07.1-18 | 2 | 4 | 2 | D |
+| 07.1-19 | 0 | 4 | 2 | D |
+| 실행 순서(전체) | 0 | 0 | 2 | C |
+| **합계** | **13** | **53** | **42** | **108건** |
+
+결정 필요 7건(D-E1 ~ D-E7)과 사실 정정 1건(C-1)은 5절에 있다. critical gap은 15건이다(7절).
+
+---
+
+## 2. P1 표
+
+| 번호 | 플랜:줄 | 한 줄 설명 | 고칠 내용 | 독립 확인 |
+|---|---|---|---|---|
+| E-P1-01 | 07.1-01:374 | ⑥은 「`scopeWhere` published 갈래가 `stateWhere`와 같은 조각 함수를 부른다」고 한다. 그런데 `scopeWhere`는 `cardFormats`를 받지 않는다. 시그니처를 바꾸면 풀 호출부(`evidence-pool.ts`)까지 바뀌는데, 그 파일이 files_modified에 없다. | `scopeWhere(scope, cardFormats)` · `evidenceScopeCondition(viewer, scope, cardFormats)`로 넓힌다. files에 `repositories/evidence-pool.ts` · `domain/evidence-records/pool.ts`를 더하고, verify에 풀 회귀 시험(`evidence-pool.test.ts`)을 넣는다. 07.1-09와의 순서를 정한다. | **확인됨**: `repositories/evidence-records.ts:166` `function scopeWhere(scope: EvidenceScope): SQL` 대 `:213` `function stateWhere(state, cardFormats: readonly string[])`이고, `cardUnknown`(:216)에 cardFormats가 꼭 필요하다. 호출부는 `evidence-pool.ts:110,129`. 01 files_modified(:7-26)에 풀 파일이 없다. |
+| E-P1-02 | 07.1-01:359 · :364 | RED 사례 「팀 공개 줄에 확인 필요를 세우면 빠진다」는 지금도 이미 통과한다(거짓 RED). 실제로 새로 더하는 조건(카드 미등록 · 합계 < 0)에는 시험이 없다. | 시험을 바꾼다: 팀 공개 줄을 (a) 카드 서식 + `corp_card_id` null, (b) `total_krw < 0`으로 만들어 팀 목록 · 풀에서 빠지는지 본다. 확인 필요 사례는 「회귀(이미 녹색)」로 표시한다. | **확인됨**: `evidence-records.ts:180` published 갈래가 이미 `… and ${evidenceRecords.needsCheck} is null and not ${privateToOwnerType}`를 갖고 있다. 카드 미등록 · 음수 조건은 없다. |
+| E-P1-03 | 07.1-04:129-133 | `patchChangesValues`가 `usedOn`을 보지 않는다. 그래서 「승인번호 같음 · 날짜만 다름」(D-7104의 대표 사례)이면 덮기 · 로그 · 금액 보임 검사 갈래를 통째로 건너뛰고 `used_on`이 그대로 남는다. | ②에 「`patchChangesValues`에 `patch.usedOn !== null`을 더한다」를 적는다. 단위 · 통합 사례 「합계 같음 · 날짜만 다름 → used_on 덮음 + changes.usedOn」을 더한다. | **확인됨**: `domain/evidence-records/attach.ts:305` `return patch !== null && (patch.total !== null \|\| patch.card !== null);` · `:351` `if (patchChangesValues(patch) && basis)`. 플랜 04에는 `patchChangesValues`가 한 번도 나오지 않는다(grep 0). |
+| E-P1-04 | 07.1-04:133 | 덮기 바탕(세율)을 옛 사용일로만 읽는다. 그래서 새 사용일로 분할하면 `덮기 세율 없음` 예외가 나고 500이 된다. | ④에 `loadCardOverwriteBasis(viewer, [usage.usedOn, record.issuedOn])`(새 날짜 포함)를 적는다. 통합 사례 「분할 + 날짜 다름」을 이 갈래에 지나게 한다. | **확인됨**: `attach.ts:334` `basis: await loadCardOverwriteBasis(viewer, [usage.usedOn])`. `domain/corp-card-usages/index.ts:1729` `if (!rates) throw new Error(\`덮기 세율 없음 — ${input.usedOn}\`)`. 플랜 ④는 `patch.usedOn?.after`로 분할한다고만 하고 바탕은 그대로다. |
+| E-P1-05 | 07.1-05:147 | 행동 로그 내보내기 단추에 「`PruneControl`이 받는 건수 재사용」을 쓰라고 한다. 이 수는 정리 가능 건수라 서버 상한 판정 집합보다 작다. 그래서 화면은 활성인데 서버는 거부한다. 픽스처가 정리 가능 종류뿐이면 시험도 거짓 통과한다. | :147을 「`rows.length`(page.tsx `queryActionLog` 결과)를 넘긴다」로 바꾼다. E2E 픽스처에 끌 수 없는 종류를 섞는다. | **부분**: 인용은 맞다(`app/(app)/admin/action-log/page.tsx:76` `const pruneCount = rows.filter((row) => !row.prunedAt && isPrunableActionType(row.actionType)).length;`). 다만 같은 플랜 :145가 이미 「화면 건수는 `domain/action-log/index.ts`가 이미 내는 결과 건수를 쓴다」고 맞게 적었다. 그래서 단일 지시가 틀린 것이 아니라 두 줄이 서로 모순되는 것이다. 고칠 필요는 그대로다. |
+| E-P1-06 | 07.1-06:135 · :125 | `registerPerson`은 자리 판정 tx와 계정 생성이 갈라져 있고, 팀 없는 대표는 `if (!seat) return`에서 판정을 건너뛴다. 그래서 동시에 「대표 새로 만들기」 두 건이 모두 성공한다. 동시성 시험은 `changePersonRole`만 다룬다. | ④에 다음을 적는다. (a) 회사 자리 판정을 `if (!seat) return` 앞에 둔다. (b) `createAccount` 뒤 tx에서 회사 키 잠금 → 재조회 → 보상 보관 + `SeatTakenError`. :125의 동시성 사례를 `registerPerson`×2와 `registerPerson`×`changePersonRole`로 명시한다. | **확인됨**: `domain/people/index.ts:390-391` `await withTransaction(async (tx) => { … if (!seat) return;` 다음 :409 `createAccount`가 tx 밖에 있다(:415 주석 「위 tx 잠금 밖」). `registerPerson`(:350~)에는 `lockSeatKeys` 호출이 없다(호출은 :535 · :597 · :653 · :773뿐). |
+| E-P1-07 | 07.1-07:22 · :89 · :196 | 「P(증빙 보기 · 팀 없음)의 `countTodoEvidence`가 목록과 같은 범위」는 만들 수 없는 시험이다. 함수가 intake 쓰기가 없으면 null을 돌려주기 때문이다. depends_on 07.1-01의 근거(:22 · :89)도 사실이 아니다. | :196을 「P의 증빙 고르기 풀 건수(`countEvidencePool` 작성자 모드)」로 바꾼다. 그다음 depends_on 07.1-01을 남길지 다시 판단한다. C-1 정정(5절)과 함께 고친다. | **확인됨**: `domain/evidence-records/index.ts:473` `if (!(await can(viewer, "evidence.intake", "write"))) return null;`. 07.1-01(:357 · :370)도 intake 첫 줄을 남기고 범위만 바꾼다. 07 :195의 P는 「증빙 보기」만 갖는다. |
+| E-P1-08 | 07.1-09:7-22 · :158 · :176 | 팀 · 월 · 내 것 거르개는 저장소 질의를 고쳐야 한다. 그런데 `repositories/expenses.ts`가 files_modified에 없다. 지금 저장소 입력에는 조건을 넘길 자리가 `search`뿐이다. | files · Task 2 files에 `repositories/expenses.ts`를 더한다. 세 조건을 공용 where에 넣어 합계 · 쪽 · 승인 정렬이 같은 조건을 쓰게 한다. | **확인됨**: `domain/expenses/list.ts:203-216`이 `summarizeExpenseList` · `listExpensePage` · `approvedOrderOf`를 부른다. `repositories/expenses.ts:759` input = `{ scope; ranks; documentKind; search? }`, `:605` `ExpenseSearch = { query; fields }`. 09 files_modified(:7-22)에 저장소 파일이 없다. |
+| E-P1-09 | 07.1-10:33 · :96 · :98 | 새 before 갈래(`/get-session` 등)가 앱 경로 `auth.api.getSession`에도 걸린다. 그러면 보관 · 퇴사자의 화면 요청이 로그인 이동이 아니라 APIError(오류 화면)가 된다. 기존 `archived-session.test.ts:48` 단언과도 모순된다. | :98에 「`ctx.request`가 있는(HTTP `/api/auth/*`) 요청만 판정하고, 서버 내부 `auth.api` 호출은 건드리지 않는다」를 적는다. 앱 경로 회귀 시험을 둔다: `getSession()`이 null을 돌려주고 던지지 않으며, :48 단언이 유지되는지. | **확인됨**: `lib/viewer.ts:33` `const session = await auth.api.getSession({ headers: await headers() });`. `node_modules/better-auth/dist/api/dispatch.mjs:177` 「The HTTP router and `auth.api.*` reach it through toAuthEndpoints」 · :209-210 `runBeforeHooks(...)`. `test/integration/archived-session.test.ts:48` 같은 쿠키로 `auth.api.getSession`을 부르고 `archivedAt`이 `not.toBeNull()`인지 본다. |
+| E-P1-10 | 07.1-12:46 · :163 · :170 | PF7: 비공개 파일을 sha256 중복 판정에서 빼면, 같은 영수증(개인카드 전표)을 다른 사람이 다시 올려도 막히지 않는다. 이중 청구 방지 장치가 풀린다. 지금 거부 문구는 번호를 내지 않으므로 누설되는 정보는 「같은 바이트가 있다」뿐이다. | 결정 D-E3. 추천안(지금처럼 막기)을 따르면 Task 2 ③을 지우고 PF7을 「이미 번호 숨김 · 받아들임」으로 닫는다(회귀 시험만 둔다). | **확인됨**(사실관계): `domain/evidence/upload-checks.ts:9` `EVIDENCE_DUPLICATE_HIDDEN = "이미 첨부된 파일 · 다른 파일 고르기"` · :71에서 번호 없이 거부한다. 비공개 종류는 `domain/seed/index.ts:145-149` `personal_card_receipt` 「개인카드 전표」 `privateToOwner: true`. P1로 둘지는 제품 결정이다. |
+| E-P1-11 | 07.1-16:42 · :148-158 | 「세금 스냅숏까지 같은 기준일」을 약속하지만 배선은 지급 · 목록 · DTO/미리보기뿐이다. 제출 경로의 `computeExpenseTax`(스냅숏)는 수동 날짜로 계산한다. 그래서 세율 경계를 넘으면 지급 총액이 결재 금액과 달라지고 상세에 거짓 「세율 바뀜」이 뜬다. | 가장 이른 발행일 묶음 읽기를 문서 행에 날짜를 얹는 도우미 자리(`withEffectiveDate` 옆)에 넣는다. 그러면 `computeExpenseTax` 호출 넷(:486 · :1169 · :1645 · :1777)과 지급이 같은 입력을 받는다. 시험을 더한다: 「기록 둘(10-05 · 10-12) 붙은 작성 중 문서 제출 → 스냅숏 basisDate 10-05 · 지급 payable = 스냅숏 · 세율 바뀜 없음」. | **확인됨**: `domain/expenses/index.ts:1169`(`submitExpense` :1155 안) `const tax = await computeExpenseTax(viewer, withEffectiveDate(row, …))`. `withEffectiveDate`(:336)는 `scheduledPaymentDate`만 얹는다. 플랜 16에는 `computeExpenseTax` · `:1169`가 한 번도 나오지 않는다(:124는 `pickTaxDates` 입력만 더한다). |
+| E-P1-12 | 07.1-18:129 · :147 | 트레이서 E2E 대상 셋 중 `/expenses` · 결재함은 행 시트 표가 아니다(행 링크 표). 또 화면 CSS로 이미 제목 한 줄 말줄임을 한다. 그래서 「시트 표 선택자」 공용 규칙을 재는 화면은 `/expenses/evidence` 하나뿐이다. | :129 대상을 시트 표(`/expenses/evidence` · `/pnl/reserves` · `/cards/purchases` · 견적 표)로 바꾼다. `/expenses` · 결재함은 「회귀만」으로 분리한다. D-E7과 함께 다룬다. | **부분**: 핵심은 확인됐다. `onRowTap` 사용 파일 9개에 expenses-table · inbox-table이 없다(grep). `app/(app)/expenses/expenses.module.css:183-197` `.titleCell` 말줄임, `approvals/inbox-table.module.css:113-118` `.rowTap, .rowLink` 말줄임. 「공용 규칙 없이도 그 두 화면 단언이 통과한다」(제목 외 다른 칸도 한 줄)는 실측하지 않았다. |
+| E-P1-13 | 07.1-18:49 · :147 | option-a의 `.cellSecondary` 숨김이 시트 표인 `/cards` `결제 합계` 열의 외화 · 공급가 줄을 숨긴다. 그러면 기존 `mobile-card-usage-320.spec.ts:53-57`이 깨지는데, 18 verify에 그 스펙이 없다. 같은 꼴의 `secondaryLine` 열이 시트 표 다섯에 더 있다. | (1) verify에 `mobile-card-usage-320` · `mobile-quote-doors` · `mobile-projects-budget` · `mobile-purchase-requests-finish` · `mobile-320-no-overflow`를 더한다. (2) 계획 단계에서 시트 표 다섯의 `secondaryLine` 정보가 행 시트에 있는지 표로 확인하고, 없으면 `secondaryText`를 단다(화면 .tsx를 files에 더함). | **확인됨**: `app/(app)/cards/card-usage-list.tsx:149-154` `header: "결제 합계", priority: "p1", … secondaryLine: totalSecondLine`(`card-usage-list.tsx`는 `onRowTap` 사용). 스펙 :53-57 `["USD 900.00", "@1,474.89", "공급가 1,327,401"]`마다 `getClientRects().length`가 `toBe(1)`이다. 18 플랜에는 `mobile-card-usage-320`이 한 번도 나오지 않는다(grep 0). |
+
+독립 확인 요약: **확인됨 11 · 부분 2(E-P1-05, E-P1-12) · 틀림 0**. 부분 2건도 고칠 내용은 유효하다. 05는 플랜 안 두 줄의 모순이고, 12는 한 갈래를 실측하지 않았다.
+
+---
+
+## 3. P2 목록
+
+### 07.1-01
+- **E-P2-01** 01:309: `ageDays` null 판정을 `attachedKind !== null`로 하면 붙은 줄에도 경과일이 생긴다(`sourceOf`가 늘 null을 넣는다). → 판정 재료를 `row.attached`(`liveLinkExists`)로 바꾸고 `sourceOf` 안에서 계산한다.
+- **E-P2-02** 01:356 · :360: 「intake 쓰기만 있는 계급」이면 범위가 `none`이라 줄이 0이 된다. → 시험 계급을 「evidence 보기 + intake 쓰기, cards.proxy 없음」으로 못박는다.
+- **E-P2-03** 01:361 · :368: 「연결 문서를 볼 수 없는 확인 필요 줄」을 만드는 데이터 경로가 없다. → 픽스처를 「번호 없는 구매 요청에 붙은 확인 필요 줄」로 정한다.
+- **E-P2-04** 01:427: 결재함 상세가 정산 문서마다 완료 전 점검 전체(질의 8개 이상 + 줄마다 `projectAmounts`)를 돌린다. → 입력은 한 번 읽고 SETTLING만 `Promise.all`로 돌린다. 질의 수 상한을 적는다.
+
+### 07.1-02
+- **E-P2-05** 02:164: `focusFirstInvalid("rule-form")`를 제출 처리기에서 동기로 부르면 `aria-invalid`가 아직 없어 포커스가 가지 않는다. → `useEffect([daysError])` 꼴(카드 폼 :74-77)로 바꾸고, 없는 인용(`getElementById("days")`)을 지운다.
+- **E-P2-06** 02:164: 서버가 돌려준 범위 오류 갈래(`serverError?.startsWith("일수 범위")`)가 빠졌다. → 「daysError(클라이언트 · 서버)면 이유 = 요약 문장」을 명시하거나, 서버 갈래에 도달하지 않는다는 근거를 적는다.
+- **E-P2-07** 02:168: PC7 원인(성공 경로 `setPending(false)` 없음)에 재현 근거가 없다. 행 key 재마운트 때문에 경합 시점에만 생길 수 있다. → 「RED가 main에서 실패하는지 먼저 본다. 실패하지 않으면 systematic-debugging으로 재현 조건을 찾는다」를 적는다.
+- **E-P2-08** 02:128: `vendor-form` 포커스 변경이 지출결의 안의 `pick-vendor`에도 걸리는데 회귀 시험이 없다. → 그 화면을 여는 기존 스펙을 verify에 더한다. 요약 「고치기」와 자동 포커스가 같은 칸인지 한 줄 적는다.
+
+### 07.1-03
+- **E-P2-09** 03:62 · :131: evidence-reviews → `@/domain/evidence`로 가는 새 정적 import가 런타임 순환을 만든다(evidence → expenses → evidence-reviews). → `expenseDrafterAddsEvidence` 등을 잎 모듈(`domain/evidence/drafter-rule.ts`)로 옮긴다.
+- **E-P2-10** 03:220: `z.coerce.number().pipe(z.union(...))`를 쓰면 설정 화면의 칸 종류가 number에서 string으로 바뀐다(registry `unwrapPipe`). → `.int().refine(v===1||v===10)`로 바꾸고, `vatUnitOf`를 money로 옮겨 좁힌다. registry kind 시험을 둔다.
+- **E-P2-11** 03:7-25: typecheck를 깨는 파일 셋(`formats.test.ts:273` · `amounts.ts:26` · `payments.test.ts:264-283`)이 files에 없다. → files에 더하고 처리 방식을 적는다.
+- **E-P2-12** 03:207 · :222: C-78 P3-2의 대상 함수가 틀렸다(`cards.ts:42`는 A-10 표시이고, 상쇄는 `key.ts:37-41 splitOffsetPairs`이며 이미 null을 거른다). → 대상을 `key.ts`로 바꾸고 코드 변경 0 · 회귀 시험만 둔다.
+- **E-P2-13** 03:169: PE15 ⓐ의 기대 결과 집합이 실제와 다르다(붙이기가 먼저면 `PaymentConflictError`, 지급이 먼저면 `증빙 없음`). → 픽스처를 정하고 불변식 단언으로 바꾼다.
+- **E-P2-14** 03:211 · :227: PA10 지급 세금 줄 단위 시험을 둘 곳이 없다(`evidenceTaxLineOf`가 export되지 않음). → `getPaymentView().evidenceTaxLine` 통합 단언으로 하거나 export + 단위 시험 파일을 더한다.
+
+### 07.1-04
+- **E-P2-15** 04:43 · :166 · :174: 가져오기 대사는 사용일이 같아야 매칭되므로 usedOn 덮기가 구조상 늘 null이다. 그래서 그 시험은 저절로 통과한다. → 가져오기 몫을 「changes 로그 모양만」으로 다시 쓰고, 시험은 「1단계 합계 다름」으로 바꾼다.
+- **E-P2-16** 04:176: 카드 사용 떼기 갈래에 tx 안 잠금 · 재판정이 없다. → tx 안에서 `lockCardUsageForUpdate` → archivedAt · 권리 재판정 → `lockEvidenceRecordState` → `detachLink` 순서로 하고, 경합 시험을 둔다.
+- **E-P2-17** 04:133: 덮기 막힘 판정 입력에 날짜가 없어, 완료 · 고정 건의 날짜만 바꾸는 덮기가 막히지 않는다. → D-E1 추천안대로 막힘 판정에 날짜 변경을 넣는다.
+
+### 07.1-05
+- **E-P2-18** 05:145 · :261: 행동 로그 상한은 「읽기 전 count」가 아니다(전부 읽고 투영한 뒤 길이를 잰다). 그래서 위협 표의 완화 문구가 거짓이다. → 저장소 `LIMIT+1`로 고치거나 위협 표를 「직렬화 전 거부」로 정정한다.
+- **E-P2-19** 05:143: 증빙 「읽기 전 count」를 `export.ts`에서 할 재료(scope)가 없다. → `listAllEvidenceRecords`에 `{ limit }` 옵션을 더하고, files에 `domain/evidence-records/index.ts`를 더한다.
+- **E-P2-20** 05:138: E2E 5,001행 픽스처가 공유 DB에 남는다(행동 로그는 DELETE 금지 트리거). → `pruned_at`을 채우고 `includePruned` + 고유 documentId로 연다. 증빙은 고유 batch로 만들고 afterAll에서 정리한다.
+
+### 07.1-06
+- **E-P2-21** 06:131 · :133: 회사 키 잠금 위치가 `lockSeatKeys` 구조와 맞지 않는다(사람 갈래에서 새 칸이 버려지고, assertSeatsFree가 조기 반환한다). → 첫 `lockSeatKeys`에서만 회사 키를 잡고, 회사 판정은 조기 반환 앞에 둔다. 단위 시험으로 키 순서를 기록한다.
+- **E-P2-22** 06:42 대 :120: 「퇴사한 대표」의 범위가 두 줄에서 다르다. → D-E5 추천안(팀장과 같은 기간 규칙)으로 두 줄을 통일한다.
+
+### 07.1-07
+- **E-P2-23** 07:40 · :195-198: 범위 시험이 `listEvidenceRecords`만 보고, 실제 사용자 표면(작성자 풀)은 보지 않는다. → `listEvidencePool`(author) 사례를 더하고 truth :40을 「증빙 고르기에서 본다」로 바꾼다(C-1).
+- **E-P2-24** 07:195: 「전사 공개 보임」에 해당하는 공개 값이 없다(team · division · private만 있음). → 그 사례를 지운다.
+- **E-P2-25** 07:105: 「옛 본부가 칸에 남아도 무해」는 팀 발령이 끝나면 깨진다(옛 본부 증빙이 다시 보인다). → D-E2 추천안(07.1-14 쓰기 길에서 비우기)에 맞춰 받아들인 빚 문구를 고친다.
+
+### 07.1-08
+- **E-P2-26** 08:13 · :61: 「문서만 — 게이트 없음」은 CLAUDE.md §4와 다르다(`.claude/` 아래 .md는 「문서만」에서 빠진다). → `/review`로 바꾸거나, PR에서 생략 승인을 요청한다.
+
+### 07.1-09
+- **E-P2-27** 09:166 · :176: 「그 팀 문서」의 정의가 없다. → 팀 거름은 `docTeamId`(행 범위와 같은 칸, `repositories/expenses.ts:561`)로 한다고 적는다.
+- **E-P2-28** 09:42 · :132-133: 풀 건수 함수는 `doc` · `q`를 받지 않는다. → `countPoolForScope`에 `docEvidenceType`을 더한다. 검색어가 있을 때 N의 정의를 한 줄 적는다.
+
+### 07.1-10
+- **E-P2-29** 10:30: 네 경로 허용 목록 밖의 세션 엔드포인트(`/verify-password` · `/update-session` · `/list-accounts` …)가 그대로 열린다. → D-E6 추천안(허용 목록 밖은 전부 거부)과 그 시험을 둔다.
+- **E-P2-30** 10:98: 훅 안에서 「쿠키로 세션 읽기」 방법이 비어 있다(before 시점에는 `ctx.context.session`이 없고, `auth.api.getSession`을 부르면 재귀한다). → `getSessionFromCtx`(plain) 또는 `internalAdapter.findSession`을 못박는다. 재귀가 없음을 단위 시험으로 본다.
+
+### 07.1-11
+- **E-P2-31** 11:110-114 · :119: PC1 · PC3 E2E는 지금 코드에서 RED가 나지 않는다(저장 성공 뒤 수정 모드로 이동한다). → 도달 가능한 재현을 먼저 확인하고, 안 되면 「이미 맞음 · 회귀만」으로 닫는다. 새 순수 함수는 만들지 않는다.
+- **E-P2-32** 11:146 · :159: `(보관)` 표시에 필요한 카드 보관 칸이 행 select에 없고 저장소 파일도 빠졌다. 감사 로그 `cardLabel`에도 영향이 간다. → files에 `repositories/corp-card-usages.ts`를 더한다. 로그 호출에는 보관 인자를 넘기지 않는다.
+- **E-P2-33** 11:154 · :159: W12 보관 카드 필터 옵션은 순서만 바꾸는 일이 아니라 새 질의다. → `cardChoicesFor` + 「범위 안 사용이 있는 보관 카드」 질의, 그리고 「사용 없음 → 옵션 0」 시험을 둔다.
+- **E-P2-34** 11:41 · :184 · :190: 「무른 검사 → 단단한 검사」는 판정을 바꾸지 않는다(soft 실패도 시험 실패다). → 최근 CI · `CI=true`의 pass 값을 먼저 확인하고, 이미 pass면 「이미 맞음」으로 닫는다.
+
+### 07.1-12
+- **E-P2-35** 12:127: 재시도할 수 있는 범위는 가져오기 tx 전체뿐이다(「표시 단계만」은 불가능). → 기존 `write().catch` 재시도를 `isCancelFlagRace`까지 넓힌다. 훅은 1회성으로 하고, batch · 기록이 한 벌인지 단언한다.
+- **E-P2-36** 12:133: 지급 취소 tx에서 「승인 뒤 풀기 훅」을 쓰면 version이 두 번 올라 `ExpenseNotFoundError`가 난다. → `evidenceSourcesOf` 판정 뒤 `deleteReviewByExpense` + `recordAction`만 하고, version은 한 번만 올린다.
+- **E-P2-37** 12:7-22 · :168: tx 이동에 필요한 `repositories/corp-cards.ts`(`setCorpCardActive` · `setCorpCardArchived`에 tx 인자가 없음)가 빠졌다. → files에 더한다. 카드 복원을 범용 경로에서 떼어 tx 안에서 setArchived → relink → recordAction 순서로 한다.
+
+### 07.1-13
+- **E-P2-38** 13:11 · :168-169: 사전 견적 쓰기 · 로그는 `domain/projects/ledger.ts`에 있다(`index.ts`가 아님). 그래서 Task 3이 멈춘다. → files를 `ledger.ts`로 바꾸고 기존 `changed` detail에 `changes.preEstimate`를 더한다.
+- **E-P2-39** 13:145: 매출 줄 저장은 조건 UPDATE라 이전 줄을 읽지 않는다. → 루프 전에 tx로 한 번 묶어 읽는다(필요하면 `repositories/revenue-entries.ts`를 files에 더한다).
+- **E-P2-40** 13:133 · :145: 줄 전후 키 모양이 정해지지 않았다(항목명 키는 겹치고, 객체 값은 「바뀜」으로 보인다). → `line{순번}.{칸}` 키 + detailLines 라벨 갈래, 또는 `lineChanges` 배열로 정한다. sortOrder · version 등은 비교에서 뺀다.
+
+### 07.1-14
+- **E-P2-41** 14:48 · :113 · :116: `changes.divisionId`에 uuid를 넣으면 상세가 `변경됨 → 변경됨`으로 보이고 라벨도 원문 키가 된다. `detail-lines.ts`가 files에 없다. → 로그를 `changes.division: [이름 전, 이름 후]` + 라벨 `본부`로 하고, 그 파일과 단위 시험을 files에 더한다.
+- **E-P2-42** 14:130: 「사람 잠금 키」를 이름으로 적지 않았다. → `lockSeatKeys({ personIds: [userId] })` → tx 안 오늘 발령 재조회를 적어, 팀 발령과 같은 잠금을 쓰게 한다.
+- **E-P2-43** 14 · 07:105: 팀을 발령해도 본부 칸을 지우지 않는다. → D-E2 추천안대로 07.1-14 쓰기 길에서 팀이 생기면 칸을 null로 비운다.
+
+### 07.1-16
+- **E-P2-44** 16:43 · :114: 승인 문서에서 마지막 증빙을 떼면 EVID-04가 수동 증빙일을 지운다. 그래서 「수동 값은 DB에 그대로」 단언이 실패한다. → D-E4 추천안대로 「수동 값 유지는 작성 중 · 반려만」으로 behavior · must_have를 고친다.
+
+### 07.1-17
+- **E-P2-45** 17:218 · :220: 홈에서 레이아웃 건수와 홈 목록이 Phase 6 계산을 두 번 돈다. → memo를 두 층으로 두거나(기본 목록 1회 + 상세 덧붙이기), PF1을 홈 밖으로 좁힌다. 「홈에서 Phase 6이 한 번」 단위 시험을 둔다.
+
+### 07.1-18
+- **E-P2-46** 18:147: `secondaryText`만 있는 행(P2 값 없음)은 접힌 줄이 그려지지 않는다(`p2Values.length > 0` 조건). → 조건을 「P2 값 또는 secondaryText」로 바꾼다.
+- **E-P2-47** 18:147: 셀이 ReactNode라 「`title` = 전체 글자」를 새 prop 없이 낼 수 없다. → `copyText`가 있는 열만 title을 달거나 말줄임에서 빼는 규칙을 정한다. 접힌 줄 칸에도 title을 단다.
+- **E-P2-48** 18:147: 공용 한 줄 말줄임의 구현 꼴이 빠졌다(자동 표 배치에서는 칸이 늘어난다). → 기존 `width: 0; min-width: max(100%, 5em)` 꼴을 공용으로 옮기고, 숫자 칸은 제외한다.
+- **E-P2-49** 18:225: 전역 `label:has(> input[type=checkbox])` 44 규칙은 display 변경을 요구하고 배치에 파급된다. → display 처리와 「닿는 자리 목록」을 점검표에 남긴다. verify에 `mobile-shell` 등을 더한다.
+
+### 07.1-19
+- **E-P2-50** 19:133: 공용 `Section`(DetailScreen.tsx)은 서버 호환 파일이다. effect를 넣으면 50개 화면이 클라이언트화된다. → `headingId`가 있을 때만 쓰는 작은 클라이언트 조각 파일을 새로 만들고 files에 더한다.
+- **E-P2-51** 19:133: `#evidence` 도착 대상이 Section 제목이 아니다(안쪽 div id). 폼 쪽에서는 두 번째 구현이 생긴다. → 문서 쪽은 `headingId="evidence"` + div id 삭제, 폼 쪽은 같은 조각을 쓰도록 확정한다.
+- **E-P2-52** 19:172: 폰 합계 행을 따로 그리면 `{notice}`가 두 번 마운트된다. → 한 행 안에서 칸만 나누고 notice는 한 번만 렌더한다. `quote-table.spec` 바닥 알림 단언을 회귀 시험으로 둔다.
+- **E-P2-53** 19:170: `등록`을 P2로 내리면 `secondaryLine`(대리 · 구매 등록자 · 날짜)이 폰에서 사라진다. → 행 시트에 그 정보가 있는지 확인하고, 없으면 `summary`로 합친다. 대리 등록 픽스처로 단언한다.
+
+---
+
+## 4. P3 (플랜별 압축 — 원문은 노트 파일)
+
+- **07.1-01** (notes-A): 코드 조각 타입 오류(`evidenceScopeFor(viewer)` · `seoulToday()`) · `rows:"none"`이면 0 대신 null(빈 링크 방지) · PF2 spy로 `findReviewByExpense` 호출 0도 단언 · `isAgeWarn`에 `days` 기본값 7.
+- **07.1-02** (notes-D): PickDialog 인수 grep이 지금도 통과함(폰 블록으로 재기) · card-form 인용 설명 정정(서버 오류 effect 둘) · 50줄 픽스처 결정성(고유 접미사) · `.taxRuleSection` 폰 갈래 실측.
+- **07.1-03** (notes-B): 지급 완료 tx는 잠근 프로젝트 행의 status로 `projectCompleted`를 짓는다.
+- **07.1-04** (notes-A): Task 2 시험 파일 frontmatter 누락 · PE9 범위 함수 이름(`cardSlipOwner` + `cardSlipRights().read`) · PE4 ⓓ는 이미 맞음(회귀만) · detail-lines 라벨 · NONE 글자 확인.
+- **07.1-05** (notes-C): 접두 refine의 읽기 영향(`readInvalidAsDefault`) · read_first 줄 번호(`companyNoOf` :20 · `isHeaderRow` :26) · aria-describedby grep이 지금도 통과함 + 0건/상한 우선순위.
+- **07.1-06** (notes-C): `role-defaults.test.ts`를 verify에 더한다 · 연차는 시스템 관리자를 뺀 4계급.
+- **07.1-07** (notes-A): `repositories/org.ts`는 없음 → `org-units.ts findOrgUnitById` · auth.ts ↔ org.ts import 순환을 drizzle-kit에서 확인.
+- **07.1-08** (notes-C): `plant8-rule-guard.test.sh`는 frontend.md를 읽지 않음 → done 문구를 「훅 파일 불변」으로.
+- **07.1-09** (notes-A): 07.1-01과 풀 파일 겹침(순서를 정한다) · 팀 옵션을 RowScope 모양별로 적는다.
+- **07.1-11** (notes-B): verify를 `--project=desktop-evidence --no-deps`와 mobile-375 두 줄로 나눈다.
+- **07.1-12** (notes-B): key_link 대상은 `card-relink.ts` · 다시 잇기와 가져오기 직렬화(`lockEvidenceCardImport`)는 기록만.
+- **07.1-13** (notes-B): 큰 저장의 detail 크기 상한(예: 50줄 + `외 N줄`).
+- **07.1-14** (notes-A): `repositories/org.ts`는 없음 → `org-units.ts listOrgUnits` · F5 자동 저장 보존 E2E 한 줄 · 「범위 반영」 사례 위치를 하나로.
+- **07.1-15** (notes-D): SP-71 구현 몫은 18·19라 그 전 묶음 /design-review 판정에서 뺀다는 줄을 SUMMARY에 · DECISIONS grep을 머리줄 기준으로.
+- **07.1-16** (notes-B): 단위 시험 경로는 `test/unit/domain/expenses/tax.test.ts`를 확장 · 사전 조회~잠금 사이는 version 검사로 안전함을 SUMMARY에.
+- **07.1-17** (notes-C): 구매 묶음은 기존 `listPurchaseRequestEstimates`를 우선 · 전표 대기에 보관 카드 사용 사례 · 폰 `.why` 말줄임은 결재 · 막힘 줄도 실측.
+- **07.1-18** (notes-D): 태스크 끝마다 `CI=true … --project=mobile-375 --no-deps` 한 번 · 판독기에서 접힌 줄 aria-label이 내용을 덮음(점검표 한 줄).
+- **07.1-19** (notes-D): Ctrl+E 힌트는 「행동이 있는 첫 행」(지금 동작) · 포커스 행은 `focusin` + `td[data-grid-focus]` · 해시는 effect + `hashchange` · `toBeFocused()` 폴링.
+- **실행 순서** (notes-C): 사용자 머지(07)가 임계 경로 위에 있다(07 PR을 웨이브 2 첫 순서로) · 16·17의 웨이브 4 배치 근거가 사라졌다(당겨도 됨, 참고).
+
+---
+
+## 5. 결정 (7건 — 사용자 카드 답 2026-10-27 10:39~10:40 KST, 모두 추천안 채택 · 정본 decisions.md)
+
+| 번호 | 플랜 | 질문 | 추천안(기본) | 관련 지적 |
+|---|---|---|---|---|
+| D-E1 | 07.1-04 | 승인번호가 같을 때 날짜를 얼마나 떨어져 있어도 덮을까 | ±31일 밖은 막힌 행(`날짜 다름 · {n}일`)으로 둔다. 완료 · 고정 건의 날짜 변경도 막힘 판정에 넣는다. | E-P1-03 · E-P1-04 · E-P2-17 |
+| D-E2 | 07.1-07 / 07.1-14 | 팀 발령 시 사람의 본부 칸 | 비운다(null). 07.1-14 쓰기 길에서 한다. | E-P2-25 · E-P2-43 |
+| D-E3 | 07.1-12 | PF7 비공개 파일 중복 판정 | 지금처럼 막는다(번호 숨김). PF7을 닫는다. | E-P1-10 |
+| D-E4 | 07.1-16 | EVID-04 대 U-4 | 지금처럼 지운다(EVID-04 유지). 수동 값 유지는 작성 중 · 반려 문서만. | E-P2-44 |
+| D-E5 | 07.1-06 | 대표 교체 미리 등록 | 팀장과 같은 기간 규칙(퇴사일까지 자리 차지, 겹치지 않으면 후임 저장). | E-P2-22 |
+| D-E6 | 07.1-10 | 퇴사 · 보관 세션 차단 범위 | 허용 목록 밖 전부 거부. 로그인 · 로그아웃 · 비밀번호 재설정만 예외. | E-P2-29 · E-P1-09 |
+| D-E7 | 07.1-18 | 행 링크 표(시트 없음)도 한 줄 말줄임 대상인가 | 포함한다(행 시트 + 행 링크 표). | E-P1-12 |
+
+**사실 정정(카드 아님) C-1 (07.1-07):** D-7122를 보고할 때 「팀 없는 본부 사람이 증빙을 보는 곳은 증빙 고르기(풀)」로 바로잡는다. `/expenses/evidence`는 `evidence.intake` 쓰기가 있어야 열리기 때문이다(`app/(app)/expenses/evidence/page.tsx:33`). truth · 보고 · 시험을 「증빙 고르기에서 본다」로 고쳐 재계획에 반영한다(E-P1-07 · E-P2-23과 함께).
+
+---
+
+## 6. 실행 순서 점검 결과 (notes-C 끝부분 요약)
+
+- **files_modified 겹침:** 다른 플랜과 겹치는 파일은 23개다. 전부 웨이브가 다르고, 뒤 플랜이 앞 플랜을 depends_on(직접 또는 전이)으로 품는다. 같은 웨이브 안의 겹침은 0이다. 웨이브 구성: 1 = 01·02·03·04·06·08·10 / 2 = 05·07·11·12·13 / 3 = 14 / 4 = 15·16·17 / 5 = 18 / 6 = 19.
+- **위험 경로 분리:** 훅 정규식에 걸리는 파일은 07(db/schema · migrations · domain/permissions) · 08(.claude/) · 10(domain/auth)뿐이다. 셋 다 `merge_owner: user`이고 단독 PR이다. 세션 머지 플랜 중 위험 경로 파일은 0이다. 돈 경로 03 · 12 · 13은 gates에 `/cso`가 있다.
+- **결론:** depends_on · 웨이브 · 겹침은 실행 순서상 맞다.
+- **참고(P3):** 07(사용자 머지)이 임계 경로 07 → 14 → 15 → 18 → 19 위에 있다. 07 PR을 웨이브 2 첫 순서로 열고 STATE에 「사용자 머지 대기」를 표시한다. 16 · 17은 #296 · #298이 머지됐으므로 당길 수 있다.
+- **재계획이 순서에 주는 영향(이 보고서의 추가 점검):**
+  - E-P1-01을 반영하면 07.1-01이 `repositories/evidence-pool.ts` · `domain/evidence-records/pool.ts`를 고친다. 그런데 07.1-09(같은 웨이브 1)도 같은 두 파일을 고친다. 그래서 「같은 웨이브 겹침 0」이 깨진다. 09를 01 뒤(depends_on 07.1-01, 웨이브 2)로 옮기거나, 01이 풀 호출부만 고치도록 범위를 나눈다.
+  - E-P1-07을 반영하면 07 → 01 depends_on의 근거가 줄어든다. published 조건(C-80 #3)에 기대지 않으면 07을 웨이브 1로 당길 수 있고, 그만큼 임계 경로가 짧아진다. 단 파일 겹침 0은 지켜야 한다.
+  - E-P2-19를 반영하면 05가 `domain/evidence-records/index.ts`(01 몫)를 고친다. 05는 이미 01에 depends_on이 있으므로 순서 문제는 없다.
+
+---
+
+## 7. critical gap (실패 모드 표 중 「시험 없음 + 오류 처리 없음 + 조용함」)
+
+기준: 시험 칸이 없음 · 아니오, 오류 처리 칸이 없음 · — · 미지정, 사용자 칸에 「조용함」이 있는 행. 시험이 「부분」 · 「계획됨」 · 「실패할 것」인 행은 뺐다.
+
+| # | 플랜 | 경로 | 실패 | 관련 지적 |
+|---|---|---|---|---|
+| CG-01 | 07.1-01 | scopeWhere published + 풀 | 시그니처 변경 누락 → 풀이 옛 조건으로 남음 | E-P1-01 |
+| CG-02 | 07.1-04 | 날짜만 다른 붙임 | 덮기 · 로그 0 → 돈 칸 틀림 | E-P1-03 |
+| CG-03 | 07.1-04 | 카드 사용 떼기 경합 | 보관된 카드 사용에서 떼어짐 | E-P2-16 |
+| CG-04 | 07.1-07 | 팀 발령 끝남 → 옛 본부 칸 | 옛 본부 증빙 보임(누수) | E-P2-25 · D-E2 |
+| CG-05 | 07.1-14 | 본부 저장 대 팀 발령 동시 | 팀 + 본부 칸 공존 | E-P2-42 |
+| CG-06 | 07.1-11 | 보관 카드 필터 | 보관 카드 옵션이 안 보임 | E-P2-33 |
+| CG-07 | 07.1-12 | 카드 켜기 다시 잇기 대 가져오기 | 「카드 미등록」으로 남음 | 07.1-12 P3(직렬화) |
+| CG-08 | 07.1-12 | 비공개 중복 거름 | 같은 영수증 이중 청구 | E-P1-10 · D-E3 |
+| CG-09 | 07.1-13 | 견적 줄 전후 키 겹침 | 같은 항목명 줄 변경이 덮임(감사 누락) | E-P2-40 |
+| CG-10 | 07.1-06 | 대표 새로 만들기 동시 | 대표 둘 생성(결재선 엉킴) | E-P1-06 |
+| CG-11 | 07.1-06 | 팀 없는 대표 만들기 | 회사 자리 판정 건너뜀 | E-P1-06 |
+| CG-12 | 07.1-10 | 퇴사자 `/verify-password` 등 | 남은 쿠키로 통과 | E-P2-29 · D-E6 |
+| CG-13 | 07.1-10 | 훅 안 세션 조회 | 재귀 또는 빈 세션(조용함 또는 500) | E-P2-30 |
+| CG-14 | 07.1-15 | SYSTEM 선행(SP-71) | 16·17 /design-review가 아직 구현 안 된 규칙으로 판정 | 07.1-15 P3 |
+| CG-15 | 07.1-19 | `등록` 열 P2 강등 | 대리 등록자 · 날짜가 폰에서 사라짐 | E-P2-53 |
+
+**critical gap 15건.**
+
+---
+
+## 8. 재계획 지시 (재계획 세션용)
+
+- 결정 카드(D-E1~E7)는 모두 **추천안으로 답이 왔다**(decisions.md). 그대로 반영한다.
+- C-1은 사실 정정이라 바로 반영한다.
+- 근거 인용은 각 노트 파일의 해당 절에 있다.
+- 반영 뒤 `/plan-eng-review` 재검토는 최대 1회다(CLAUDE.md §4).
+
+| 플랜 | 반영할 지적 |
+|---|---|
+| 07.1-01 | E-P1-01 · E-P1-02 · E-P2-01~04 · P3 4건(notes-A 07.1-01) · 07.1-09와 풀 파일 순서 결정(6절) |
+| 07.1-02 | E-P2-05~08 · P3 4건(notes-D 07.1-02) |
+| 07.1-03 | E-P2-09~14 · P3 1건 |
+| 07.1-04 | E-P1-03 · E-P1-04 · E-P2-15~17 · P3 4건 · D-E1(추천안) |
+| 07.1-05 | E-P1-05 · E-P2-18~20 · P3 3건 |
+| 07.1-06 | E-P1-06 · E-P2-21 · E-P2-22 · P3 1건 · D-E5(추천안) |
+| 07.1-07 | E-P1-07 · E-P2-23~25 · P3 2건 · C-1 정정 · D-E2(추천안 — 쓰기는 07.1-14) · depends_on 07.1-01 재판단(6절) |
+| 07.1-08 | E-P2-26 · P3 1건 |
+| 07.1-09 | E-P1-08 · E-P2-27 · E-P2-28 · P3 2건 · 07.1-01 뒤로 순서 조정 검토(6절) |
+| 07.1-10 | E-P1-09 · E-P2-29 · E-P2-30 · D-E6(추천안) |
+| 07.1-11 | E-P2-31~34 · P3 1건 |
+| 07.1-12 | E-P1-10(D-E3 추천안: Task 2 ③ 삭제 · PF7 닫음 · 회귀만) · E-P2-35~37 · P3 2건 |
+| 07.1-13 | E-P2-38~40 · P3 1건 |
+| 07.1-14 | E-P2-41~43 · P3 3건 · D-E2(추천안: 팀 발령 시 칸 비우기를 이 플랜 쓰기 길에) |
+| 07.1-15 | P3 2건 |
+| 07.1-16 | E-P1-11 · E-P2-44 · P3 2건 · D-E4(추천안) |
+| 07.1-17 | E-P2-45 · P3 3건 |
+| 07.1-18 | E-P1-12 · E-P1-13 · E-P2-46~49 · P3 2건 · D-E7(추천안: 행 링크 표 포함) |
+| 07.1-19 | E-P2-50~53 · P3 2건 |
+| 전체 순서 | 실행 순서 P3 2건 · 6절의 재계획 영향 3줄 |
+
+---
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 108 issues, 15 critical gaps |
+| Outside Review | codex (disabled) | Independent 2nd opinion | 0 | disabled | — |
+| Design Review | `/plan-design-review` | UI/UX gaps | (이전) | CLEAR(Codex 최종 통과, notes/07.1-review/plan-design/final-check.md) | — |
+
+- **OUTSIDE COVERAGE:** codex · plan-review · disabled(codex_reviews=disabled, 규칙상 eng 검토 Codex 금지)
+- **VERDICT:** ENG NOT CLEARED — P1 반영 재계획 뒤 재검토(최대 1회) 필요. eng review required
+- **결정:** D-E1~E7 모두 사용자 답(추천안, decisions.md) — 재계획에 반영할 일로 넘김
+
+NO UNRESOLVED DECISIONS

@@ -539,20 +539,54 @@ describe("회사 자리 — 대표 · 시스템 관리자 한 명(07.1 D-7108 ·
     expect((await findUserById(SYSTEM_VIEWER, l.id))?.resignationDate).toBe("2026-09-01");
   });
 
-  it("미리 등록된 후임 S의 입사일을 현 대표 퇴사일 이전으로 당기면 거부, 늦추면 통과(D-E5)", async () => {
+  it("데이터에 이미 있는 후임 S의 입사일을 현 대표 재직 중(오늘)으로 당기면 자리 거부(D-E5)", async () => {
     const admin = await makeAdmin("관리자");
     const k = await makeSeated(uniqueName("대표K"), CEO_ROLE_ID, null);
     await updateUserResignationDate(SYSTEM_VIEWER, k.id, "2026-09-21");
-    // D-1 뒤로 입사일이 미래인 대표는 등록으로 못 만든다 — 리포지토리로 미리 둔다(데이터에 이미 있는 후임).
+    // D-1 뒤로 입사일이 미래인 대표는 등록 · 변경으로 못 만든다 — 리포지토리로 미리 둔다(데이터에 이미 있는 후임).
     const { id: s } = await makeSeated(uniqueName("후임S"), CEO_ROLE_ID, null);
     await updateUserHireDate(SYSTEM_VIEWER, s, "2026-09-22");
 
-    const error = await refusal(setHireDate(admin, s, "2026-09-20", deps), SeatTakenError);
+    const error = await refusal(setHireDate(admin, s, "2026-09-18", deps), SeatTakenError);
 
     expect(error.message).toBe(`대표 있음 · ${await nameOf(k.id)}`);
     expect((await findUserById(SYSTEM_VIEWER, s))?.hireDate).toBe("2026-09-22");
-    await setHireDate(admin, s, "2026-10-01", deps);
-    expect((await findUserById(SYSTEM_VIEWER, s))?.hireDate).toBe("2026-10-01");
+  });
+
+  // 07.1 D-1(2026-10-27 사용자 결정): 등록 말고 남은 두 길 — 입사일을 오늘 뒤로 옮기기 · 입사일이 오늘 뒤인 사람을 회사 자리로 바꾸기.
+  it("대표 · 시스템 관리자의 입사일을 내일로 옮기면 거부 · 입사일 그대로, 오늘로는 통과(D-1)", async () => {
+    const admin = await makeAdmin("관리자");
+    const k = await makeSeated(uniqueName("대표K"), CEO_ROLE_ID, null);
+    const l = await makeSeated(uniqueName("관리자L"), SYSADMIN_ROLE_ID, null);
+    await updateUserHireDate(SYSTEM_VIEWER, k.id, "2026-01-01");
+
+    const ceo = await refusal(setHireDate(admin, k.id, "2026-09-19", deps), ValidationError);
+    const sysadmin = await refusal(setHireDate(admin, l.id, "2026-09-19", deps), ValidationError);
+
+    expect(ceo.message).toBe("대표 · 입사일부터 등록");
+    expect(sysadmin.message).toBe("시스템 관리자 · 입사일부터 등록");
+    expect((await findUserById(SYSTEM_VIEWER, k.id))?.hireDate).toBe("2026-01-01");
+    expect((await findUserById(SYSTEM_VIEWER, l.id))?.hireDate).toBeNull();
+    await setHireDate(admin, k.id, "2026-09-18", deps);
+    expect((await findUserById(SYSTEM_VIEWER, k.id))?.hireDate).toBe("2026-09-18");
+  });
+
+  it("입사일이 내일인 PM을 대표 · 시스템 관리자로 바꾸면 거부 · 계급 · 로그 그대로, 오늘 입사면 통과(D-1)", async () => {
+    const admin = await makeAdmin("관리자");
+    const x = await makeSeated(uniqueName("PM X"), DEFAULT_ROLE_ID, null);
+    await updateUserHireDate(SYSTEM_VIEWER, x.id, "2026-09-19");
+    const logsBefore = await countLogs("permission_change", "user", x.id);
+
+    const ceo = await refusal(changePersonRole(admin, x.id, CEO_ROLE_ID, deps), ValidationError);
+    const sysadmin = await refusal(changePersonRole(admin, x.id, SYSADMIN_ROLE_ID, deps), ValidationError);
+
+    expect(ceo.message).toBe("대표 · 입사일부터 등록");
+    expect(sysadmin.message).toBe("시스템 관리자 · 입사일부터 등록");
+    expect(await roleOf(x.id)).toBe(DEFAULT_ROLE_ID);
+    expect(await countLogs("permission_change", "user", x.id)).toBe(logsBefore);
+    await updateUserHireDate(SYSTEM_VIEWER, x.id, "2026-09-18");
+    await changePersonRole(admin, x.id, CEO_ROLE_ID, deps);
+    expect(await roleOf(x.id)).toBe(CEO_ROLE_ID);
   });
 
   it("시스템 관리자도 같다 — 등록 · 계급 바꾸기 · 퇴사일 지우기가 `시스템 관리자 있음 · 이름`으로 거부", async () => {

@@ -32,7 +32,9 @@ export function seatTakenMessage(kind: keyof typeof SEAT_TAKEN, name: string | n
 }
 
 // 07.1(D-7108 · D-7128): 회사에 한 명인 계급 — 결재선 · 승인 권한이 「대표 한 명」을 전제한다. 자리 id = 계급 id.
-// D-E5(2026-10-27 사용자 카드): 팀장과 같은 기간 규칙 — 자리 구간 = [입사일, 퇴사일], 겹치지 않는 후임은 미리 저장된다.
+// D-E5(2026-10-27 사용자 카드): 팀장과 같은 기간 규칙 — 자리 구간 = [입사일, 퇴사일].
+// D-1(2026-10-27 사용자 결정)이 미리 저장을 거둬들였다: 입사일이 오늘 뒤인 후임은 등록 · 입사일 변경 · 계급 변경 모두 거부
+// (`domain/people` assertHiredForCompanySeat). 구간 판정은 데이터에 이미 있는 미래 입사일 보유자 몫으로 남는다.
 export const COMPANY_SEAT_ROLE_IDS: readonly string[] = [CEO_ROLE_ID, SYSADMIN_ROLE_ID];
 
 export type SeatSpan = { id: string; from: string; to: string | null };

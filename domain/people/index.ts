@@ -327,6 +327,13 @@ export type RegisterPersonInput = {
   hireDate?: string;
 };
 
+// 07.1 D-1(2026-10-27 사용자 결정): 입사일 전에 후임이 대표 · 시스템 관리자 권한을 쥐지 않게 — 회사 자리 계급인데 입사일이
+// 오늘(서울) 뒤면 거부한다. 등록 · 입사일 변경 · 계급 변경 세 길이 같은 판정 · 같은 문구.
+function assertHiredForCompanySeat(roleId: string | null, hireDate: string | null, today: string): void {
+  if (roleId === null || !COMPANY_SEAT_ROLE_IDS.includes(roleId) || hireDate === null || hireDate <= today) return;
+  throw new ValidationError(`${roleId === CEO_ROLE_ID ? "대표" : "시스템 관리자"} · 입사일부터 등록`);
+}
+
 export type RegisterPersonDeps = {
   can: typeof defaultCan;
   createAccount: typeof defaultCreateAccount;
@@ -401,10 +408,7 @@ export async function registerPerson(
   });
   // 07.1(D-7128 · E-P1-06): 회사 자리 계급이면 회사 키 → 팀 없는 대표도 판정을 지난다(회사 판정은 팀 · 본부 판정 앞).
   const isCompanySeat = COMPANY_SEAT_ROLE_IDS.includes(input.roleId);
-  // 07.1 D-1(2026-10-27 사용자 결정): 입사일 전에 후임이 대표 · 시스템 관리자 권한을 쥐지 않게 — 입사일이 오늘(서울) 뒤면 등록 거부.
-  if (isCompanySeat && input.hireDate !== undefined && input.hireDate > today) {
-    throw new ValidationError(`${input.roleId === CEO_ROLE_ID ? "대표" : "시스템 관리자"} · 입사일부터 등록`);
-  }
+  assertHiredForCompanySeat(input.roleId, input.hireDate ?? null, today);
   await withTransaction(async (tx) => {
     await assertCanGrantRoles(viewer, [input.roleId], tx);
     if (isCompanySeat) await lockSeatKeys(viewer, { companyRoleIds: [input.roleId] }, tx);
@@ -580,6 +584,8 @@ export async function changePersonRole(
     const row = await repoFindUserById(viewer, userId, tx);
     if (!row) throw new UserNotFoundError("사람 찾을 수 없음");
     await assertCanGrantRoles(viewer, [roleId, row.roleId], tx);
+    // 같은 계급 저장은 새 권한을 쥐지 않는다 — 이미 있는 데이터(입사일 미래인 보유자)를 막지 않는다.
+    if (roleId !== row.roleId) assertHiredForCompanySeat(roleId, row.hireDate, today);
     await assertNotLastAdmin(viewer, { userId, asOf: today, nextRoleId: roleId }, tx);
     const occupied = await listOccupiedTeams(viewer, userId, today, tx);
     const seats = newSeats({
@@ -840,6 +846,7 @@ async function setEmploymentDate(
           await assertSeatsFree(viewer, { userId, roleId: fresh.roleId, seats, today, showNames }, tx);
         }
       } else if (fresh.roleId !== null && COMPANY_SEAT_ROLE_IDS.includes(fresh.roleId)) {
+        assertHiredForCompanySeat(fresh.roleId, value, today);
         // 팀 · 본부 구간은 입사일과 무관 — 회사 구간만 늘어날 수 있다.
         const seats = newSeats({
           roleBefore: fresh.roleId,

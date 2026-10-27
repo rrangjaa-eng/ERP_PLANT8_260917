@@ -3,7 +3,7 @@ import { db, type DbOrTx } from "@/db/client";
 import { orgUnits, teamMemberships, teams, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
-// 06.4(D-6408): 사람 · 관리자 · 팀 · 본부 자리 쓰기를 줄 세운다. 층 순서(사람 → 관리자 → 팀 → 본부)와 같은 층 정렬을
+// 06.4(D-6408): 사람 · 관리자 · 팀 · 본부 자리 쓰기를 줄 세운다. 층 순서(사람 → 관리자 → 회사(07.1) → 팀 → 본부)와 같은 층 정렬을
 // 이 함수가 강제해 교착이 없다. 점유 팀을 읽어야 팀 키가 정해지는 쓰기는 사람 · 관리자 층을 먼저 잡고, 점유를 tx로 읽은 뒤
 // 팀 · 본부 층을 두 번째 호출로 잡는다. 트랜잭션 끝에 풀린다(5초 lock_timeout — `lib/db-transaction.ts`).
 
@@ -12,6 +12,8 @@ export const ADMIN_SEAT_LOCK_KEY = "seat:admin:last";
 export type SeatLockInput = {
   personIds?: readonly string[];
   admin?: boolean;
+  // 07.1(D-7128): 회사에 한 명인 계급(대표 · 시스템 관리자) — 키는 계급마다 하나.
+  companyRoleIds?: readonly string[];
   teamIds?: readonly string[];
   orgUnitIds?: readonly string[];
 };
@@ -25,6 +27,7 @@ export function seatLockOrder(viewer: Viewer, input: SeatLockInput): string[] {
   return [
     ...layer("seat:person:", input.personIds),
     ...(input.admin ? [ADMIN_SEAT_LOCK_KEY] : []),
+    ...layer("seat:company:", input.companyRoleIds),
     ...layer("seat:team:", input.teamIds),
     ...layer("seat:division:", input.orgUnitIds),
   ];
@@ -46,7 +49,8 @@ export async function lockSeatKeys(viewer: Viewer, input: SeatLockInput, tx: DbO
     await lockKeys(seatLockOrder(viewer, input), tx);
     return;
   }
-  await lockKeys(seatLockOrder(viewer, { personIds, admin: input.admin }), tx);
+  // 07.1(E-P2-21): 회사 키는 팀 · 본부 키(아래 두 번째 호출)보다 앞이라 첫 호출에서 잡는다.
+  await lockKeys(seatLockOrder(viewer, { personIds, admin: input.admin, companyRoleIds: input.companyRoleIds }), tx);
   const memberTeamIds = tx
     .select({ teamId: teamMemberships.teamId })
     .from(teamMemberships)
@@ -151,6 +155,35 @@ export async function listSeatHolders(
           teamIds.length > 0 ? inArray(occ.teamId, [...teamIds]) : undefined,
           orgUnitIds.length > 0 ? inArray(occ.orgUnitId, [...orgUnitIds]) : undefined,
         ),
+        input.excludeUserId === undefined ? undefined : ne(users.id, input.excludeUserId),
+      ),
+    );
+}
+
+export type CompanySeatHolderRow = { userId: string; name: string; from: string; to: string | null };
+
+// 07.1(D-7108 · D-7128 · D-E5): 회사에 한 명인 계급의 보유자 구간 = [max(입사일, 오늘), 퇴직일] — 팀장 자리와 같은 기간 규칙.
+// 보관 · 지난 퇴직일은 자리 없음. greatest는 NULL(입사일 없음)을 건너뛰어 오늘이 된다(listSeatHolders의 퇴직일 자르기와 같은 꼴).
+// 260907은 부분 유니크 인덱스였다(`O: db/schema/030_constraints_indexes.sql:1145` — 퇴사일을 적는 순간 자리가 빔). 정렬은 호출자가 JS로.
+export async function listCompanySeatHolders(
+  viewer: Viewer,
+  input: { roleId: string; today: string; excludeUserId?: string },
+  tx: DbOrTx,
+): Promise<CompanySeatHolderRow[]> {
+  void viewer;
+  return tx
+    .select({
+      userId: users.id,
+      name: users.name,
+      from: sql<string>`greatest(${users.hireDate}, ${input.today}::date)::text`,
+      to: users.resignationDate,
+    })
+    .from(users)
+    .where(
+      and(
+        eq(users.roleId, input.roleId),
+        isNull(users.archivedAt),
+        or(isNull(users.resignationDate), gte(users.resignationDate, input.today)),
         input.excludeUserId === undefined ? undefined : ne(users.id, input.excludeUserId),
       ),
     );

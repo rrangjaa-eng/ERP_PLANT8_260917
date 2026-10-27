@@ -42,9 +42,9 @@ describe("lockSeatKeys — 사람 갈래 첫 호출의 회사 키", () => {
     const keys: unknown[] = [];
     const empty = Promise.resolve([]);
     const tx = {
-      execute: async (query: SQL) => {
+      execute: (query: SQL) => {
         keys.push(...dialect.sqlToQuery(query).params);
-        return { rows: [] };
+        return Promise.resolve({ rows: [] });
       },
       select: () => ({ from: () => ({ where: () => empty }) }),
     } as unknown as DbOrTx;

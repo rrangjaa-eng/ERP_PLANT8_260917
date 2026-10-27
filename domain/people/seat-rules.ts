@@ -1,10 +1,17 @@
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
-import { listSeatDuplicateHolders, listSeatHolders, lockSeatKeys, type OccupiedTeamRow, type SeatDuplicateHolderRow } from "@/repositories/seats";
+import {
+  listCompanySeatHolders,
+  listSeatDuplicateHolders,
+  listSeatHolders,
+  lockSeatKeys,
+  type OccupiedTeamRow,
+  type SeatDuplicateHolderRow,
+} from "@/repositories/seats";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { registerDto } from "@/domain/permissions/dto-registry";
-import { DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { addDays, kstToday } from "@/lib/kst-date";
 
@@ -18,13 +25,19 @@ export class SeatTakenError extends UserFacingError {}
 // 문구 표(D3 · 06.4-02-PLAN 정본): 이름을 못 보면 이름 자리에 담당.
 const SEAT_FALLBACK_OWNER = "시스템 관리자";
 
-export function seatTakenMessage(kind: "team" | "division", name: string | null): string {
-  return `${kind === "team" ? "팀장 있음" : "본부 책임자 있음"} · ${name ?? SEAT_FALLBACK_OWNER}`;
+const SEAT_TAKEN = { team: "팀장 있음", division: "본부 책임자 있음", ceo: "대표 있음", sysadmin: "시스템 관리자 있음" } as const;
+
+export function seatTakenMessage(kind: keyof typeof SEAT_TAKEN, name: string | null): string {
+  return `${SEAT_TAKEN[kind]} · ${name ?? SEAT_FALLBACK_OWNER}`;
 }
 
+// 07.1(D-7108 · D-7128): 회사에 한 명인 계급 — 결재선 · 승인 권한이 「대표 한 명」을 전제한다. 자리 id = 계급 id.
+// D-E5(2026-10-27 사용자 카드): 팀장과 같은 기간 규칙 — 자리 구간 = [입사일, 퇴사일], 겹치지 않는 후임은 미리 저장된다.
+export const COMPANY_SEAT_ROLE_IDS: readonly string[] = [CEO_ROLE_ID, SYSADMIN_ROLE_ID];
+
 export type SeatSpan = { id: string; from: string; to: string | null };
-export type SeatDelta = { teams: SeatSpan[]; orgUnits: SeatSpan[] };
-export type Employment = { archivedAt: Date | null; resignationDate: string | null };
+export type SeatDelta = { teams: SeatSpan[]; orgUnits: SeatSpan[]; company: SeatSpan[] };
+export type Employment = { archivedAt: Date | null; resignationDate: string | null; hireDate: string | null };
 
 type Span = { from: string; to: string | null };
 
@@ -86,6 +99,15 @@ function seatSpans(
   return { kind, byId };
 }
 
+// 입사일이 없으면 열린 시작 — 'YYYY-MM-DD' 글자 비교에서 가장 이른 값.
+const OPEN_START = "0000-01-01";
+
+function companySpan(roleId: string | null, employed: Employment | null): Span | null {
+  if (roleId === null || !COMPANY_SEAT_ROLE_IDS.includes(roleId) || employed === null || employed.archivedAt !== null) return null;
+  const span = { from: employed.hireDate ?? OPEN_START, to: employed.resignationDate };
+  return endsBefore(span.to, span.from) ? null : span;
+}
+
 // D-6415: 새 자리 = 늘어난 날짜만 — 퇴직일 늦추기 · 지우기 · 비재직 → 재직(03)도 같은 계산.
 export function newSeats(input: {
   roleBefore: string | null;
@@ -103,16 +125,34 @@ export function newSeats(input: {
     for (const span of merge(merge(spans).flatMap((span) => subtract(span, cuts)))) added.push({ id, ...span });
   }
   added.sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : x.from < y.from ? -1 : x.from > y.from ? 1 : 0));
-  return after.kind === "division" ? { teams: [], orgUnits: added } : { teams: added, orgUnits: [] };
+  const roleAfter = input.roleAfter;
+  const companyAfter = companySpan(roleAfter, input.employedAfter);
+  const companyBefore = input.roleBefore === roleAfter ? companySpan(input.roleBefore, input.employedBefore) : null;
+  const company =
+    roleAfter === null || companyAfter === null
+      ? []
+      : subtract(companyAfter, companyBefore === null ? [] : [companyBefore]).map((span) => ({ id: roleAfter, ...span }));
+  return after.kind === "division" ? { teams: [], orgUnits: added, company } : { teams: added, orgUnits: [], company };
 }
 
 // 호출자가 같은 tx에서 사람(· 관리자) 키를 먼저 잡고 점유를 읽었다 — 여기서 팀 · 본부 층을 잡고 보유자를 다시 읽는다.
+// 07.1(E-P2-21): 회사 키는 호출자의 첫 lockSeatKeys가 이미 잡았다(팀 · 본부 키 뒤에 잡으면 층 순서가 뒤집힌다) — 여기서는 재조회만.
 export async function assertSeatsFree(
   viewer: Viewer,
   input: { userId?: string; roleId: string; seats: SeatDelta; today: string; showNames: boolean },
   tx: DbOrTx,
 ): Promise<void> {
-  const { teams, orgUnits } = input.seats;
+  const { teams, orgUnits, company } = input.seats;
+  const companyRoleId = company[0]?.id;
+  if (companyRoleId !== undefined) {
+    const holders = await listCompanySeatHolders(viewer, { roleId: companyRoleId, today: input.today, excludeUserId: input.userId }, tx);
+    const holder = holders
+      .filter((row) => company.some((seat) => spansOverlap(seat, row)))
+      .sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0))[0];
+    if (holder) {
+      throw new SeatTakenError(seatTakenMessage(companyRoleId === CEO_ROLE_ID ? "ceo" : "sysadmin", input.showNames ? holder.name : null));
+    }
+  }
   if (teams.length === 0 && orgUnits.length === 0) return;
   const teamIds = [...new Set(teams.map((seat) => seat.id))];
   const orgUnitIds = [...new Set(orgUnits.map((seat) => seat.id))];

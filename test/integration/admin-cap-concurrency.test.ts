@@ -495,14 +495,14 @@ describe("회사 자리 경합(07.1 D-7128 · E-P1-06)", () => {
     expect(await rollbackLogs(loserId)).toBe(1);
   });
 
-  it("ⓑ 대표 등록의 계정 생성 사이에 다른 사람을 대표로 바꾸면 등록이 지고 새 계정은 보관 · 대표는 바꾼 사람 하나", async () => {
+  it("ⓑ 대표 등록의 사전 판정과 계정 생성 사이에 다른 사람을 대표로 바꾸면 등록이 지고 새 계정은 보관 · 대표는 바꾼 사람 하나", async () => {
     const admin = await makeAdmin("관리자");
     const x = await makeSeated(uniqueName("PM X"), DEFAULT_ROLE_ID, null);
     let createdId = "";
     const interlope: typeof createAccount = async (viewer, input) => {
+      await changePersonRole(admin, x.id, CEO_ROLE_ID, deps);
       const result = await createAccount(viewer, input);
       createdId = result.userId;
-      await changePersonRole(admin, x.id, CEO_ROLE_ID, deps);
       return result;
     };
 
@@ -518,16 +518,23 @@ describe("회사 자리 경합(07.1 D-7128 · E-P1-06)", () => {
     expect(await rollbackLogs(createdId)).toBe(1);
   });
 
-  it("ⓒ 회사 키를 쥔 동안 두 PM을 대표로 바꾸면 그 키에서 둘 다 기다리고, 풀면 하나만 · 패자는 대표 있음", async () => {
+  // 계급 변경은 사람 → 관리자 → 회사 순이라, 회사 키를 쥐면 앞 저장은 회사 키에서 · 뒤 저장은 앞 저장이 쥔 관리자 키에서 기다린다.
+  it("ⓒ 회사 키를 쥔 동안 두 PM을 대표로 바꾸면 둘 다 기다리고(회사 키 1 · 관리자 키 1), 풀면 하나만 · 패자는 대표 있음", async () => {
     const admin = await makeAdmin("관리자");
     const a = await makeSeated(uniqueName("PM A"), DEFAULT_ROLE_ID, null);
     const b = await makeSeated(uniqueName("PM B"), DEFAULT_ROLE_ID, null);
+    const holder = await holdKey(ceoKey);
 
-    const { waiting, results } = await heldRace(ceoKey, () =>
-      Promise.allSettled([changePersonRole(admin, a.id, CEO_ROLE_ID, deps), changePersonRole(admin, b.id, CEO_ROLE_ID, deps)]),
-    );
+    const both = Promise.allSettled([changePersonRole(admin, a.id, CEO_ROLE_ID, deps), changePersonRole(admin, b.id, CEO_ROLE_ID, deps)]);
+    let waiting = [0, 0];
+    for (let tries = 0; tries < 60 && waiting.join() !== "1,1"; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      waiting = [await waitingOnKey(ceoKey), await waitingOnKey(ADMIN_SEAT_LOCK_KEY)];
+    }
+    await holder.release();
+    const results = await both;
 
-    expect(waiting).toBe(2);
+    expect(waiting).toEqual([1, 1]);
     expect(loserOf(results)).toBeInstanceOf(SeatTakenError);
     const roles = [(await findUserById(SYSTEM_VIEWER, a.id))?.roleId, (await findUserById(SYSTEM_VIEWER, b.id))?.roleId];
     expect(roles.filter((roleId) => roleId === CEO_ROLE_ID)).toHaveLength(1);

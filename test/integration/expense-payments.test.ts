@@ -26,10 +26,11 @@ import {
   FuturePayDateError,
 } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
+import { approveDocument } from "@/domain/approvals";
 import { AMOUNT_HIDDEN, TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
-import { ACTION_LOG_OPTIONAL_TYPES, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, getExpense, saveExpenseDraft } from "@/domain/expenses";
+import { ACTION_LOG_OPTIONAL_TYPES, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_ROUNDING_MIN_WITHHOLDING, TAX_VAT_RATE } from "@/domain/settings/keys";
 import { addHistorizedValue } from "@/domain/settings/registry";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertSimpleValue } from "@/repositories/settings";
@@ -899,5 +900,61 @@ describe("지급 금액 = 공급가 · 지급 처리 기록 못 끄기 (06.5-07 
       .from(actionLog)
       .where(and(eq(actionLog.entityId, doc.expenseId), eq(actionLog.actionType, "payment_process")));
     expect(logs).toHaveLength(1);
+  });
+});
+
+// 07.1-03 PA10(C-49 · W7 · E-P2-14) — 지급 화면 증빙 확인부(S4) 세금 줄이 원천징수 · 회사 대납 0이면 폼과 같은 사실 `… 0 · 면제 기준 이하 · …`.
+describe("지급 세금 줄 면제 표시 (07.1-03 PA10)", () => {
+  // 증빙 한 장 붙여 결재 통과한 문서 — 증빙 종류 · 공급가 · 받는 인원을 작성 중에 저장한 뒤 제출한다.
+  async function approvedWith(fields: { evidenceType: string; supplyKrw: number; recipientCount?: number }): Promise<{ fx: Awaited<ReturnType<typeof setupExpenseProject>>; expenseId: string }> {
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId;
+    if (!expenseId) throw new Error("지출결의 없음");
+    await saveExpenseDraft(fx.pm, {
+      expenseId,
+      expectedVersion: 1,
+      fields: { evidenceType: fields.evidenceType, supply: { currency: "KRW", amount: fields.supplyKrw, fxRate: 1 }, ...(fields.recipientCount ? { recipientCount: fields.recipientCount } : {}) },
+    });
+    const submitted = await submitReadyDraft(fx.pm, expenseId);
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+    const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+    const final = await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
+    if (final.status !== "approved") throw new Error(`결재 통과 안 됨: ${final.status}`);
+    return { fx, expenseId };
+  }
+
+  async function paymentTaxLine(payer: Viewer, expenseId: string) {
+    const parts = (await getPaymentView(payer, expenseId))?.evidenceTaxLine ?? [];
+    return { parts, text: parts.map((part) => part.text).join("") };
+  }
+
+  it("원천징수 0(최소 징수액 미만) → `원천징수 0 · 면제 기준 이하 · 실지급액 {N} · 사업소득 규칙` · 폼 세금 줄과 같은 글자", async () => {
+    await upsertSimpleValue(SYSTEM_VIEWER, TAX_ROUNDING_MIN_WITHHOLDING.key, 1_000, null);
+    const payer = await makePayer();
+    const { fx, expenseId } = await approvedWith({ evidenceType: "business_income", supplyKrw: 10_000 });
+    const line = await paymentTaxLine(payer, expenseId);
+    expect(line.text).toBe("원천징수 0 · 면제 기준 이하 · 실지급액 10,000 · 사업소득 규칙");
+    expect(line.parts.find((part) => part.text === "0")?.emphasis).toBe(true);
+    expect(line.parts.find((part) => part.text === "면제 기준 이하")?.emphasis).toBe(false);
+    expect((await getExpense(fx.pm, { expenseId }))?.taxLine?.text).toBe(line.text);
+  });
+
+  it("회사 대납 0(한 사람 몫 면제 기준 이하) → `회사 대납 세금 0 · 면제 기준 이하 · 지급 총액 {N} · 기타소득 규칙` · 폼 세금 줄과 같은 글자", async () => {
+    const payer = await makePayer();
+    const { fx, expenseId } = await approvedWith({ evidenceType: "other_income", supplyKrw: 150_000, recipientCount: 5 });
+    const line = await paymentTaxLine(payer, expenseId);
+    expect(line.text).toBe("회사 대납 세금 0 · 면제 기준 이하 · 지급 총액 150,000 · 기타소득 규칙");
+    expect(line.parts.find((part) => part.text === "0")?.emphasis).toBe(true);
+    expect(line.parts.find((part) => part.text === "면제 기준 이하")?.emphasis).toBe(false);
+    expect((await getExpense(fx.pm, { expenseId }))?.taxLine?.text).toBe(line.text);
+  });
+
+  it("세금이 0이 아니면 지금 글자 그대로(세율 글자 없음 · 면제 조각 없음)", async () => {
+    const payer = await makePayer();
+    const withholding = await approvedWith({ evidenceType: "business_income", supplyKrw: 100_000 });
+    expect((await paymentTaxLine(payer, withholding.expenseId)).text).toBe("원천징수 3,300 · 실지급액 96,700 · 사업소득 규칙");
+    const borne = await approvedWith({ evidenceType: "other_income", supplyKrw: 150_000, recipientCount: 1 });
+    expect((await paymentTaxLine(payer, borne.expenseId)).text).toBe("회사 대납 세금 42,300 · 지급 총액 150,000 · 기타소득 규칙");
   });
 });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  describeSettingField,
   getSettingValue,
   getSimpleSettingValues,
   setSettingValue,
@@ -14,7 +15,7 @@ import {
   FutureValueNotFoundError,
   type SettingDef,
 } from "@/domain/settings/registry";
-import { PAYMENT_TERM_DAYS, SETTING_DEFS } from "@/domain/settings/keys";
+import { PAYMENT_TERM_DAYS, SETTING_DEFS, TAX_ROUNDING_VAT_UNIT, TAX_ROUNDING_WITHHOLDING_UNIT } from "@/domain/settings/keys";
 import type { Viewer } from "@/domain/viewer";
 import { log } from "@/lib/log";
 
@@ -426,4 +427,19 @@ describe("SETTING_DEFS", () => {
     for (const ok of [15, "15", 0, 100]) expect(def.schema.safeParse(ok).success, String(ok)).toBe(true);
     for (const bad of [-1, 101, 15.5]) expect(def.schema.safeParse(bad).success, String(bad)).toBe(false);
   });
+});
+
+// 07.1-03 PX3(C-78 02 P3-4 · Q8) — 절사 단위는 계산이 받는 1 · 10만 저장된다. 설정 화면 칸은 숫자 칸 그대로(E-P2-10).
+describe("절사 단위 설정 두 키 — 1 · 10만", () => {
+  for (const def of [TAX_ROUNDING_VAT_UNIT, TAX_ROUNDING_WITHHOLDING_UNIT]) {
+    it(`${def.key} — 1 · 10(문자열 포함) 받음 · 5 · 100 · 0 거부 · 숫자 칸`, () => {
+      for (const ok of [1, 10, "1", "10"]) expect(def.schema.safeParse(ok).success, String(ok)).toBe(true);
+      for (const bad of [5, 100, 0]) {
+        const parsed = def.schema.safeParse(bad);
+        expect(parsed.success, String(bad)).toBe(false);
+        expect(parsed.error?.issues[0]?.message, String(bad)).toBe("1 또는 10 · 다시 입력");
+      }
+      expect(describeSettingField(def).kind).toBe("number");
+    });
+  }
 });

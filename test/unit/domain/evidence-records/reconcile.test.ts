@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileWinsPatch, overwriteBlockReason, planReconcile, relaxedCandidatesOf, type ReconcileCandidate, type ReconcileLine, type RelaxedCandidateInput } from "@/domain/evidence-records/reconcile";
+import { fileWinsPatch, overwriteBlockReason, planReconcile, relaxedCandidatesOf, USED_ON_GAP_MAX_DAYS, usedOnGapReason, type ReconcileCandidate, type ReconcileLine, type RelaxedCandidateInput } from "@/domain/evidence-records/reconcile";
 
 // 06.1-09(EVID-10 · E28 · PA-1TO1 · PA-STEP1 · D-6111 · 카드 R3 · P2-C4): 카드 대사 계획 — 순수 함수(DB 없음).
 // 1단계 = 같은 카드사 · 같은 승인번호 · 같은 사용일(카드 무관) · 카드 명세 안 붙음 · 합계 음수 아님, 2단계 = 같은 카드 · 사용일 · 합계 · 증빙 없음.
@@ -118,7 +118,7 @@ describe("fileWinsPatch — 파일이 카드 사용 합계 · 카드를 정한�
   const stored = { totalKrw: 204_100, corpCardId: CARD_A, cardLast4: "2222" };
 
   it("합계 · 카드가 같으면 승인번호만", () => {
-    expect(fileWinsPatch(stored, { totalKrw: 204_100, corpCardId: CARD_A, cardLast4: "2222", approvalNo: "44403241" })).toEqual({ approvalNo: "44403241", total: null, card: null });
+    expect(fileWinsPatch(stored, { totalKrw: 204_100, corpCardId: CARD_A, cardLast4: "2222", approvalNo: "44403241" })).toEqual({ approvalNo: "44403241", total: null, card: null, usedOn: null });
   });
 
   it("합계 다름 → 새 합계 + 전 · 후", () => {
@@ -131,11 +131,51 @@ describe("fileWinsPatch — 파일이 카드 사용 합계 · 카드를 정한�
       after: { id: CARD_B, last4: "5678" },
     });
   });
+
+  // 07.1-04 D-7104 · PE3: 승인번호 같음 붙임은 사용일도 명세 날짜로 덮는다 — 두 쪽 사용일을 다 받았고 다를 때만.
+  it("(D-7104) 사용일 다름 → usedOn 전 · 후 + 합계 전 · 후", () => {
+    const patch = fileWinsPatch({ ...stored, totalKrw: 50_000, usedOn: "2026-10-01" }, { totalKrw: 52_000, corpCardId: CARD_A, cardLast4: "2222", approvalNo: "A1", usedOn: "2026-10-03" });
+    expect(patch.usedOn).toEqual({ before: "2026-10-01", after: "2026-10-03" });
+    expect(patch.total).toEqual({ before: 50_000, after: 52_000 });
+  });
+
+  it("(D-7104) 사용일이 같거나 어느 한쪽이 사용일을 넘기지 않으면 usedOn null(작성자 갈래 호출부 그대로)", () => {
+    expect(fileWinsPatch({ ...stored, usedOn: "2026-10-01" }, { totalKrw: 204_100, corpCardId: CARD_A, cardLast4: "2222", approvalNo: "A1", usedOn: "2026-10-01" }).usedOn).toBeNull();
+    expect(fileWinsPatch(stored, { totalKrw: 204_100, corpCardId: CARD_A, cardLast4: "2222", approvalNo: "A1", usedOn: "2026-10-03" }).usedOn).toBeNull();
+    expect(fileWinsPatch({ ...stored, usedOn: "2026-10-01" }, { totalKrw: 204_100, corpCardId: CARD_A, cardLast4: "2222", approvalNo: "A1" }).usedOn).toBeNull();
+  });
+
+  it("(PE2) 승인번호가 이미 있는 카드 사용에 다른 승인번호 줄 → approvalNo 덮기 대상 아님 · 비었으면 줄 승인번호 · 넘기지 않으면 지금 뜻", () => {
+    const line = { totalKrw: 204_100, corpCardId: CARD_A, cardLast4: "2222", approvalNo: "B2" };
+    expect(fileWinsPatch({ ...stored, approvalNo: "A1" }, line).approvalNo).toBeNull();
+    expect(fileWinsPatch({ ...stored, approvalNo: null }, line).approvalNo).toBe("B2");
+    expect(fileWinsPatch(stored, line).approvalNo).toBe("B2");
+  });
+});
+
+describe("usedOnGapReason — 사용일 차 31일 한도(07.1-04 D-E1)", () => {
+  const patchOf = (before: string, after: string) => ({ approvalNo: null, total: null, card: null, usedOn: { before, after } });
+
+  it("한도는 31일", () => {
+    expect(USED_ON_GAP_MAX_DAYS).toBe(31);
+  });
+
+  it("31일까지는 null · 32일이면 `날짜 다름 · 32일` · 해 넘김은 달력 일 수 차 · 거꾸로도 같다", () => {
+    expect(usedOnGapReason(patchOf("2026-10-01", "2026-11-01"))).toBeNull();
+    expect(usedOnGapReason(patchOf("2026-10-01", "2026-11-02"))).toBe("날짜 다름 · 32일");
+    expect(usedOnGapReason(patchOf("2026-12-20", "2027-01-25"))).toBe("날짜 다름 · 36일");
+    expect(usedOnGapReason(patchOf("2026-11-02", "2026-10-01"))).toBe("날짜 다름 · 32일");
+  });
+
+  it("사용일이 안 바뀌면 null", () => {
+    expect(usedOnGapReason({ approvalNo: null, total: { before: 1, after: 2 }, card: null, usedOn: null })).toBeNull();
+  });
 });
 
 describe("overwriteBlockReason — 덮기 막힘 글자(카드 R3 · P2-C4)", () => {
-  const totalPatch = { approvalNo: "1", total: { before: 204_100, after: 1_238_000 }, card: null };
-  const cardPatch = { approvalNo: "1", total: null, card: { before: { id: CARD_A, last4: "1234" }, after: { id: CARD_B, last4: "5678" } } };
+  const totalPatch = { approvalNo: "1", total: { before: 204_100, after: 1_238_000 }, card: null, usedOn: null };
+  const cardPatch = { approvalNo: "1", total: null, card: { before: { id: CARD_A, last4: "1234" }, after: { id: CARD_B, last4: "5678" } }, usedOn: null };
+  const datePatch = { approvalNo: "1", total: null, card: null, usedOn: { before: "2026-10-01", after: "2026-10-03" } };
 
   it("합계 바뀜 + cap → `합계 {a} → {b} · 실행가 초과`", () => {
     expect(overwriteBlockReason(totalPatch, "cap")).toBe("합계 204,100 → 1,238,000 · 실행가 초과");
@@ -154,7 +194,18 @@ describe("overwriteBlockReason — 덮기 막힘 글자(카드 R3 · P2-C4)", ()
   });
 
   it("승인번호만인 패치 → null", () => {
-    expect(overwriteBlockReason({ approvalNo: "1", total: null, card: null }, "cap")).toBeNull();
+    expect(overwriteBlockReason({ approvalNo: "1", total: null, card: null, usedOn: null }, "cap")).toBeNull();
+  });
+
+  // 07.1-04 E-P2-17: 날짜만 바뀌는 덮기도 완료 · 고정 막힘 사유를 낸다(null 사유로 떨어지지 않는다).
+  it("(E-P2-17) 날짜만 바뀜 + completed → `사용일 {MM-DD} → {MM-DD} · 완료 프로젝트` · fixed → `… · 연결 고정`", () => {
+    expect(overwriteBlockReason(datePatch, "completed")).toBe("사용일 10-01 → 10-03 · 완료 프로젝트");
+    expect(overwriteBlockReason(datePatch, "fixed")).toBe("사용일 10-01 → 10-03 · 연결 고정");
+  });
+
+  it("(E-P2-17) 합계도 바뀌면 합계 조각이 먼저 · holder는 카드 조각이 먼저", () => {
+    expect(overwriteBlockReason({ ...datePatch, total: { before: 50_000, after: 52_000 } }, "completed")).toBe("합계 50,000 → 52,000 · 완료 프로젝트");
+    expect(overwriteBlockReason({ ...datePatch, card: cardPatch.card }, "holder")).toBe("카드 1234 → 5678 · 보유자 다름");
   });
 });
 
@@ -194,6 +245,32 @@ describe("relaxedCandidatesOf — 3단계 사람 고르기 후보(PA-RELAX · DB
       ["y", "카드 다름 · 9999"],
       ["z", "합계 200,000 → 204,100 · 실행가 초과"],
     ]);
+  });
+
+  // 07.1-04 D-E1: 승인번호가 같아도 사용일 차가 31일을 넘으면 막힌 후보(후보에서 사라지지 않는다).
+  it("(D-E1) 승인번호 같음 · 날짜 차 31일 → 고를 수 있음 · 32일 → `날짜 다름 · 32일` 막힌 행(맨 뒤) · 사용일 덮기 patch", () => {
+    const result = relaxedCandidatesOf(relaxLine, [
+      cand({ id: "far", approvalNo: "44403241", usedOn: "2026-03-29" }),
+      cand({ id: "near", approvalNo: "44403241", usedOn: "2026-03-30" }),
+    ]);
+    expect(result.map((item) => [item.id, item.blockedReason])).toEqual([
+      ["near", null],
+      ["far", "날짜 다름 · 32일"],
+    ]);
+    expect(result[0]?.patch.usedOn).toEqual({ before: "2026-03-30", after: "2026-04-30" });
+    expect(result[0]?.patch.approvalNo).toBeNull();
+  });
+
+  it("(D-E1) 막힘 차례 — 증빙 있음 → 카드 다름 → 날짜 다름 → 덮기 막힘", () => {
+    const far = { approvalNo: "44403241", usedOn: "2026-03-01" };
+    const [attached] = relaxedCandidatesOf(relaxLine, [cand({ ...far, cardStatementAttached: true })]);
+    expect(attached?.blockedReason).toBe("증빙 있음 · K-26-0001");
+    const [otherIssuer] = relaxedCandidatesOf(relaxLine, [cand({ ...far, sameIssuer: false, cardLast4: "9999" })]);
+    expect(otherIssuer?.blockedReason).toBe("카드 다름 · 9999");
+    const [gap] = relaxedCandidatesOf(relaxLine, [cand({ ...far, overwriteBlock: "completed" })]);
+    expect(gap?.blockedReason).toBe("날짜 다름 · 60일");
+    const [completed] = relaxedCandidatesOf(relaxLine, [cand({ approvalNo: "44403241", usedOn: "2026-04-28", overwriteBlock: "completed" })]);
+    expect(completed?.blockedReason).toBe("사용일 04-28 → 04-30 · 완료 프로젝트");
   });
 
   it("(N-6) 영수증 · 05 전표 파일만 있는 카드 사용(카드 명세 아님)은 고를 수 있다 — 덮을 값 없는 막힘 종류는 막지 않는다", () => {

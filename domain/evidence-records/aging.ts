@@ -11,11 +11,11 @@ export const ORPHAN_EVIDENCE_RULE = {
   daysRange: { min: 1, max: 60 },
 } as const;
 
-// 등록 KST 날짜와 오늘의 날짜 차. 오늘 등록 = 0.
+// 등록 KST 날짜와 오늘의 날짜 차. 오늘 등록 = 0. 시계 차이로 등록일이 오늘보다 뒤여도 음수로 보이지 않는다(#312 /review P3).
 export function evidenceAgeDays(createdAt: Date, today: string): number {
   const created = new Date(`${kstDateOf(createdAt)}T00:00:00Z`).getTime();
   const now = new Date(`${today}T00:00:00Z`).getTime();
-  return Math.round((now - created) / MS_PER_DAY);
+  return Math.max(0, Math.round((now - created) / MS_PER_DAY));
 }
 
 // 등록 KST 날짜가 오늘 − days 이하인 것의 상한(미포함) — `createdAt < 이 값` ⇔ `evidenceAgeDays >= days`.

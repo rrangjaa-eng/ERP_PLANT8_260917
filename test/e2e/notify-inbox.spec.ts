@@ -648,7 +648,11 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
 
     await retry.click();
     await expect(page.getByRole("button", { name: "다시 시도" })).toBeDisabled();
-    await page.unroute("**/*");
+    // unroute는 돌고 있는 핸들러를 기다리지 않는다 — 300ms를 자는 중에 걷으면
+    // Playwright가 그 요청을 먼저 이어 보내고, 깬 핸들러의 route.continue()가
+    // "Route is already handled!"로 터진다(CI에서 이후 단계가 느릴 때만 드러남).
+    // behavior: "wait"는 핸들러가 끝난 뒤에 걷는다.
+    await page.unrouteAll({ behavior: "wait" });
 
     // 성공: 51번째 행이 붙고, 같은 커서라 중복이 없으며, 버튼이 사라지고
     // 포커스가 새로 붙은 51번째 행으로 간다. 그 행도 이번 열기가 읽음

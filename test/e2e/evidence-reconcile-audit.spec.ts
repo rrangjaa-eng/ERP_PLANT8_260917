@@ -242,7 +242,8 @@ test("S2 행 행동 배타 · 전부 막힘 이유 글자 · `대리 등록` hre
   const lonely2 = await line(manager.viewer, last4, { total: lonely2T, date: "2026.03.16", merchant: "대리가맹점나" });
   const candP = approval();
   await usage(holder.viewer, last4, { total: 10_000, approvalNo: candP });
-  const candidate = await line(manager.viewer, last4, { total: total(), approvalNo: candP, date: "2026.03.18" });
+  // D-E1: 승인번호가 같아도 사용일(04-30)과 줄 날짜가 31일 넘게 떨어지면 막힌 행(`날짜 다름 · N일`)이다 — 고를 수 있는 후보는 31일 안.
+  const candidate = await line(manager.viewer, last4, { total: total(), approvalNo: candP, date: "2026.04.18" });
   const heldP = approval();
   const held = await usage(holder.viewer, last4, { total: 11_000, approvalNo: heldP });
   const statement = await line(manager.viewer, last4, { total: total(), date: "2026.03.02" });
@@ -413,7 +414,8 @@ test("S4 카드 사용 후보 — 값 바뀜 2행 · 막힌 행 aria-disabled + 
   await insertLinkFixture({ recordId: statement, ownerKind: "corp_card_usage", ownerId: u3.id, attachedBy: manager.viewer.id });
   const cap = await quoteLine(holder.viewer, 150_000);
   const u4 = await usage(holder.viewer, cardA, { total: 100_000, approvalNo: P, usedOn: "2026-04-20", lineId: cap.lineId });
-  const u5 = await usage(holder.viewer, cardBc, { total: 120_000, approvalNo: P, usedOn: "2026-04-22" });
+  // PR #305 F2: 다른 카드의 같은 승인번호는 후보가 아니다 — 다른 카드사 카드 사용은 같은 사용일 ∧ 같은 합계 갈래로만 후보가 되고 `카드 다름` 막힌 행이다.
+  const u5 = await usage(holder.viewer, cardBc, { total: T, usedOn: "2026-04-10" });
   const done = await quoteLine(holder.viewer, 3_000_000);
   const u6 = await usage(holder.viewer, cardA, { total: 90_000, approvalNo: P, usedOn: "2026-04-21", lineId: done.lineId });
   await db.update(projects).set({ status: "completed" }).where(eq(projects.id, done.projectId));

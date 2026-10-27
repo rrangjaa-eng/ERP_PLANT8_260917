@@ -1750,30 +1750,49 @@ export async function cardUsageOverwriteBlocks(
   // 트랜잭션 밖(S4 후보 판정 — 06-03)이면 비운다 — 리포지토리가 풀로 읽는다.
   tx?: DbOrTx,
 ): Promise<Map<string, CardOverwriteBlock>> {
-  const blocks = new Map<string, CardOverwriteBlock>();
+  return (await cardUsageOverwriteBlocksByGroup(viewer, [patches], basis, tx))[0] ?? new Map();
+}
+
+/**
+ * 07.1-04 PE6: 묶음(증빙 줄 하나의 후보들)마다 따로 판정하되 재료(카드 사용 · 카드 · 견적 줄) 읽기는 한 번 — 쪽 단위 후보 판정이 줄마다 질의하지 않게.
+ * 실행가 누적(앞서 통과한 덮기의 새 공급가)은 묶음 안에서만 센다 — 줄마다 하나를 고르므로 다른 줄의 덮기와 합치지 않는다.
+ */
+export async function cardUsageOverwriteBlocksByGroup(
+  viewer: Viewer,
+  groups: readonly (readonly CardOverwritePatch[])[],
+  basis: CardOverwriteBasis,
+  tx?: DbOrTx,
+): Promise<Map<string, CardOverwriteBlock>[]> {
+  const result = groups.map(() => new Map<string, CardOverwriteBlock>());
   // 07.1-04 E-P2-17: 날짜만 바뀌는 덮기도 고정 연결 · 완료 프로젝트 판정을 받는다.
-  const changed = patches.filter((patch) => patch.totalKrw !== null || patch.corpCardId !== null || patch.usedOn !== null);
-  if (changed.length === 0) return blocks;
+  const changedGroups = groups.map((patches) => patches.filter((patch) => patch.totalKrw !== null || patch.corpCardId !== null || patch.usedOn !== null));
+  const changed = changedGroups.flat();
+  if (changed.length === 0) return result;
   const facts = await findCardUsageOverwriteFacts(
     viewer,
-    { usageIds: changed.map((patch) => patch.usageId), cardIds: [...new Set(changed.flatMap((patch) => (patch.corpCardId ? [patch.corpCardId] : [])))] },
+    { usageIds: [...new Set(changed.map((patch) => patch.usageId))], cardIds: [...new Set(changed.flatMap((patch) => (patch.corpCardId ? [patch.corpCardId] : [])))] },
     tx,
   );
   const usageOf = new Map(facts.usages.map((row) => [row.id, row]));
   const cardOf = new Map(facts.cards.map((row) => [row.id, row]));
-  const capChecks: { patch: CardOverwritePatch & { totalKrw: number }; fact: (typeof facts.usages)[number] & { quoteLineId: string } }[] = [];
-  for (const patch of changed) {
-    const fact = usageOf.get(patch.usageId);
-    if (!fact) continue;
-    const newCard = patch.corpCardId ? cardOf.get(patch.corpCardId) : undefined;
-    if (newCard && holderDiffers({ kind: fact.cardKind, holderUserId: fact.cardHolderUserId, teamId: fact.cardTeamId }, newCard)) blocks.set(patch.usageId, "holder");
-    else if (fact.registeredVia === "purchase" || fact.lineKind === "out_of_quote") blocks.set(patch.usageId, "fixed");
-    else if (fact.projectStatus === "completed") blocks.set(patch.usageId, "completed");
-    else if (patch.totalKrw !== null && fact.quoteLineId !== null) capChecks.push({ patch: { ...patch, totalKrw: patch.totalKrw }, fact: { ...fact, quoteLineId: fact.quoteLineId } });
-  }
-  if (capChecks.length === 0) return blocks;
+  type CapCheck = { patch: CardOverwritePatch & { totalKrw: number }; fact: (typeof facts.usages)[number] & { quoteLineId: string } };
+  const capGroups: CapCheck[][] = changedGroups.map((patches, index) => {
+    const blocks = result[index] ?? new Map<string, CardOverwriteBlock>();
+    const capChecks: CapCheck[] = [];
+    for (const patch of patches) {
+      const fact = usageOf.get(patch.usageId);
+      if (!fact) continue;
+      const newCard = patch.corpCardId ? cardOf.get(patch.corpCardId) : undefined;
+      if (newCard && holderDiffers({ kind: fact.cardKind, holderUserId: fact.cardHolderUserId, teamId: fact.cardTeamId }, newCard)) blocks.set(patch.usageId, "holder");
+      else if (fact.registeredVia === "purchase" || fact.lineKind === "out_of_quote") blocks.set(patch.usageId, "fixed");
+      else if (fact.projectStatus === "completed") blocks.set(patch.usageId, "completed");
+      else if (patch.totalKrw !== null && fact.quoteLineId !== null) capChecks.push({ patch: { ...patch, totalKrw: patch.totalKrw }, fact: { ...fact, quoteLineId: fact.quoteLineId } });
+    }
+    return capChecks;
+  });
+  const lineIds = [...new Set(capGroups.flat().map((check) => check.fact.quoteLineId))];
+  if (lineIds.length === 0) return result;
 
-  const lineIds = [...new Set(capChecks.map((check) => check.fact.quoteLineId))];
   const links = await findLineLinks(viewer, lineIds, tx);
   const vendorTypes = await listLineVendorEvidenceTypes(viewer, lineIds, tx);
   const roomBasis: LineRoomBasis = {
@@ -1781,21 +1800,25 @@ export async function cardUsageOverwriteBlocks(
     rules: Object.fromEntries(lineIds.map((lineId) => [lineId, basis.lineRules.get(vendorTypes.get(lineId) ?? "") ?? basis.lineDefaultRule])),
     defaultRule: basis.lineDefaultRule,
   };
-  const raised = new Map<string, number>();
-  for (const { patch, fact } of [...capChecks].sort((a, b) => a.patch.usageId.localeCompare(b.patch.usageId))) {
-    const lineLinks = links.get(fact.quoteLineId);
-    // 현재 줄이 없으면(빠진 줄 · 보관된 현재 줄) 실행가를 잴 수 없다 — 덮지 않는다.
-    if (!lineLinks?.currentExecution) {
-      blocks.set(patch.usageId, "cap");
-      continue;
+  capGroups.forEach((capChecks, index) => {
+    const blocks = result[index];
+    if (!blocks) return;
+    const raised = new Map<string, number>();
+    for (const { patch, fact } of [...capChecks].sort((a, b) => a.patch.usageId.localeCompare(b.patch.usageId))) {
+      const lineLinks = links.get(fact.quoteLineId);
+      // 현재 줄이 없으면(빠진 줄 · 보관된 현재 줄) 실행가를 잴 수 없다 — 덮지 않는다.
+      if (!lineLinks?.currentExecution) {
+        blocks.set(patch.usageId, "cap");
+        continue;
+      }
+      const adjusted = new Map(links);
+      adjusted.set(fact.quoteLineId, { ...lineLinks, cardUsages: lineLinks.cardUsages.map((usage) => ({ ...usage, supplyKrw: raised.get(usage.id) ?? usage.supplyKrw })) });
+      const room = lineRoom({ links: adjusted, basis: roomBasis, lineId: fact.quoteLineId, exclude: { usageId: patch.usageId } });
+      const supplyKrw = cardOverwriteSplit(basis, { evidenceTypeCode: fact.evidenceTypeCode, usedOn: patch.usedOn ?? fact.usedOn, totalKrw: patch.totalKrw }).supplyKrw;
+      const cap = cardExecutionCap({ execution: lineLinks.currentExecution, otherSupplies: room.otherSupplies, supply: { currency: "KRW", amount: supplyKrw, fxRate: 1 }, source: "reconciliation" });
+      if (cap.exceeds) blocks.set(patch.usageId, "cap");
+      else raised.set(patch.usageId, supplyKrw);
     }
-    const adjusted = new Map(links);
-    adjusted.set(fact.quoteLineId, { ...lineLinks, cardUsages: lineLinks.cardUsages.map((usage) => ({ ...usage, supplyKrw: raised.get(usage.id) ?? usage.supplyKrw })) });
-    const room = lineRoom({ links: adjusted, basis: roomBasis, lineId: fact.quoteLineId, exclude: { usageId: patch.usageId } });
-    const supplyKrw = cardOverwriteSplit(basis, { evidenceTypeCode: fact.evidenceTypeCode, usedOn: patch.usedOn ?? fact.usedOn, totalKrw: patch.totalKrw }).supplyKrw;
-    const cap = cardExecutionCap({ execution: lineLinks.currentExecution, otherSupplies: room.otherSupplies, supply: { currency: "KRW", amount: supplyKrw, fxRate: 1 }, source: "reconciliation" });
-    if (cap.exceeds) blocks.set(patch.usageId, "cap");
-    else raised.set(patch.usageId, supplyKrw);
-  }
-  return blocks;
+  });
+  return result;
 }

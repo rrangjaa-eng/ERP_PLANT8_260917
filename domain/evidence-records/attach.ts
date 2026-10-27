@@ -8,6 +8,7 @@ import {
   cardSlipOwner,
   cardSlipRights,
   cardUsageOverwriteBlocks,
+  cardUsageOverwriteBlocksByGroup,
   cardUsageReadScope,
   createCardUsage,
   denyCardSlipWrite,
@@ -1192,7 +1193,7 @@ async function attachAuthorToCardUsage(viewer: Viewer, ids: readonly string[], u
 }
 
 // ── 06.1-09 완화 후보 판정(S4 후보 · S2 행 행동 — PA-RELAX · DB-9 · N-6 · 카드 R3 · P2-C4) ─────────────────────
-// 트랜잭션 밖(06-03): 후보 질의 한 번 → 카드 명세 붙음 한 번 → 덮기 기준(설정 · 세율) 한 번 → 줄마다 06 cardUsageOverwriteBlocks → 순수 판정.
+// 트랜잭션 밖(06-03): 후보 질의 한 번 → 카드 명세 붙음 한 번 → 덮기 기준(설정 · 세율) 한 번 → 06 덮기 막힘(줄마다 판정 · 재료 읽기는 쪽에 한 번 — 07.1-04 PE6) → 순수 판정.
 export type CardLineRow = Pick<EvidenceRecordListRow, "id" | "format" | "corpCardId" | "cardLast4" | "approvalNo" | "issuedOn" | "totalKrw">;
 export type JudgedCardCandidate = { row: RelaxedCandidateRow; judged: RelaxedCandidate };
 
@@ -1212,20 +1213,24 @@ export async function judgeCardCandidates(viewer: Viewer, records: readonly Card
   const statements = await cardStatementOwners(viewer, rows.map((row) => row.id));
   // E-P1-04: 실행가 판정이 새 사용일(줄 날짜) 세율을 찾는다 — 후보 날짜 + 줄 날짜.
   const basis = rows.length > 0 ? await loadCardOverwriteBasis(viewer, [...new Set([...rows.map((row) => row.usedOn), ...lines.map(({ line }) => line.usedOn)])]) : null;
-  for (const { record, line } of lines) {
+  const perLine = lines.map(({ record, line }) => {
     const hits = rows.filter((row) => isRelaxedHit(line, { approvalNo: row.approvalNo, usedOn: row.usedOn, totalKrw: row.totalAmountKrw }));
     const patches = hits.map((row) => ({
       row,
       patch: fileWinsPatch({ totalKrw: row.totalAmountKrw, corpCardId: row.corpCardId, cardLast4: row.cardLast4, usedOn: row.usedOn, approvalNo: row.approvalNo }, { ...line, totalKrw: line.totalKrw }),
     }));
-    const blocks =
-      basis && patches.length > 0
-        ? await cardUsageOverwriteBlocks(
-            viewer,
-            patches.map(({ row, patch }) => ({ usageId: row.id, totalKrw: patch.total?.after ?? null, corpCardId: patch.card?.after.id ?? null, usedOn: patch.usedOn?.after ?? null })),
-            basis,
-          )
-        : new Map<string, CardOverwriteBlock>();
+    return { record, line, hits, patches };
+  });
+  // 07.1-04 PE6: 덮기 막힘은 쪽(줄 전부)에 한 번 — 줄마다 따로 판정하되 재료 읽기는 묶는다.
+  const blockGroups = basis
+    ? await cardUsageOverwriteBlocksByGroup(
+        viewer,
+        perLine.map(({ patches }) => patches.map(({ row, patch }) => ({ usageId: row.id, totalKrw: patch.total?.after ?? null, corpCardId: patch.card?.after.id ?? null, usedOn: patch.usedOn?.after ?? null }))),
+        basis,
+      )
+    : [];
+  for (const [index, { record, line, hits }] of perLine.entries()) {
+    const blocks = blockGroups[index] ?? new Map<string, CardOverwriteBlock>();
     const judged = relaxedCandidatesOf(
       line,
       hits.map((row) => ({

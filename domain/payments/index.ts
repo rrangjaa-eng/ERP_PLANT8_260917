@@ -7,7 +7,7 @@ import { recordAction } from "@/domain/action-log/record";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { applyTaxRule, loadTaxRates as defaultLoadTaxRates, taxRatesReader, type TaxRates } from "@/domain/money/tax";
-import { diffKrw, grossFromTotal, moneyFromRow, remainingForInstallments, type Money, type RoundingUnit } from "@/domain/money";
+import { diffKrw, grossFromTotal, moneyFromRow, remainingForInstallments, type Money } from "@/domain/money";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_REQUIRED, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_BASIS_DATE_VAT, TAX_BASIS_DATE_WITHHOLDING, type TaxBasisDate } from "@/domain/settings/keys";
@@ -186,7 +186,7 @@ export async function decidePayable(input: PayableInput, rates: TaxRates): Promi
     { getSettingValue: taxRatesReader(rates) },
   );
   const transferKrw = input.transferKrw ?? amounts.payableKrw;
-  const grossSupplyKrw = input.taxRule.ruleKind === "vat_surcharge" ? grossFromTotal(transferKrw, rates.vatRate, rates.vatUnit as RoundingUnit, "round") : null;
+  const grossSupplyKrw = input.taxRule.ruleKind === "vat_surcharge" ? grossFromTotal(transferKrw, rates.vatRate, rates.vatUnit, "round") : null;
   return { ...amounts, transferKrw, diffKrw: diffKrw(transferKrw, amounts.payableKrw), grossSupplyKrw };
 }
 
@@ -879,10 +879,13 @@ function evidenceTaxLineOf(payable: PayableDecision, taxRule: TaxRule, ruleLabel
     { text: `${label} `, emphasis: false },
     { text: formatKrw(value), emphasis: true },
   ];
+  // 07.1-03 PA10 — 세금 0은 폼 세금 줄(domain/expenses/tax.ts taxLineText)과 같은 사실 `… 0 · 면제 기준 이하`.
+  const taxSegments = (label: string, value: number): TaxLinePart[][] =>
+    value === 0 ? [segment(label, 0), [{ text: "면제 기준 이하", emphasis: false }]] : [segment(label, value)];
   const segments: TaxLinePart[][] = [];
   if (taxRule.ruleKind === "vat_surcharge") segments.push(segment("부가세", payable.vatKrw), segment("지급 총액", payable.payableKrw));
-  else if (taxRule.ruleKind === "withholding") segments.push(segment("원천징수", payable.withholdingKrw), segment("실지급액", payable.payableKrw));
-  else if (taxRule.ruleKind === "company_borne") segments.push(segment("회사 대납 세금", payable.companyBorneKrw), segment("지급 총액", payable.payableKrw));
+  else if (taxRule.ruleKind === "withholding") segments.push(...taxSegments("원천징수", payable.withholdingKrw), segment("실지급액", payable.payableKrw));
+  else if (taxRule.ruleKind === "company_borne") segments.push(...taxSegments("회사 대납 세금", payable.companyBorneKrw), segment("지급 총액", payable.payableKrw));
   else segments.push(segment("지급 총액", payable.payableKrw));
   segments.push([{ text: ruleLabel, emphasis: false }]);
   return segments.flatMap((part, index) => (index === 0 ? part : [{ text: " · ", emphasis: false }, ...part]));

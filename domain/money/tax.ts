@@ -3,7 +3,7 @@
 // taxRuleSchema다 — 여기서 새로 정의하지 않는다. 이 파일은 domain/money의
 // 일부라 `plant8/money-boundary` 경계 안이다.
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
-import { round, type RoundingUnit } from "@/domain/money";
+import { round, roundingUnitOf, type RoundingUnit } from "@/domain/money";
 import {
   getSettingValue as defaultGetSettingValue,
   type SettingDef,
@@ -81,7 +81,7 @@ export async function applyTaxRule(
 
   if (rule.ruleKind === "vat_surcharge") {
     const vatRate = await readSetting(getValue, TAX_VAT_RATE, opts.evidenceDate);
-    const unit = (await readSetting(getValue, TAX_ROUNDING_VAT_UNIT, opts.evidenceDate)) as RoundingUnit;
+    const unit = roundingUnitOf(await readSetting(getValue, TAX_ROUNDING_VAT_UNIT, opts.evidenceDate));
     const vatKrw = round(supplyKrw * vatRate, unit, roundingMethod);
     return { vatKrw, withholdingKrw: 0, companyBorneKrw: 0, payableKrw: supplyKrw + vatKrw };
   }
@@ -89,7 +89,7 @@ export async function applyTaxRule(
   // 06.5 D-6501: 받는 사람이 세금을 내는 현금 기타소득이 없어 원천징수는 사업소득 3.3% 하나다 — 기타소득은 company_borne.
   if (rule.ruleKind === "withholding") {
     const rate = await readSetting(getValue, TAX_WITHHOLDING_BUSINESS_INCOME_RATE, opts.paymentDate);
-    const unit = (await readSetting(getValue, TAX_ROUNDING_WITHHOLDING_UNIT, opts.paymentDate)) as RoundingUnit;
+    const unit = roundingUnitOf(await readSetting(getValue, TAX_ROUNDING_WITHHOLDING_UNIT, opts.paymentDate));
     const minWithholding = await readSetting(getValue, TAX_ROUNDING_MIN_WITHHOLDING, opts.paymentDate);
 
     let withholdingKrw = round(supplyKrw * rate, unit, roundingMethod);
@@ -107,7 +107,7 @@ export async function applyTaxRule(
   // 면제 잣대는 계산 방식(flat · gross_up)과 무관.
   const thresholdKrw = await readSetting(getValue, TAX_COMPANY_BORNE_EXEMPT_THRESHOLD, opts.paymentDate);
   const method = await readSetting(getValue, TAX_COMPANY_BORNE_METHOD, opts.paymentDate);
-  const unit = (await readSetting(getValue, TAX_ROUNDING_WITHHOLDING_UNIT, opts.paymentDate)) as RoundingUnit;
+  const unit = roundingUnitOf(await readSetting(getValue, TAX_ROUNDING_WITHHOLDING_UNIT, opts.paymentDate));
 
   // 06.5 D-6521(사용자 카드 10/15 11:37 KST): 세액은 사람별로 셈해 더한다 — 한 사람 몫마다 면제 판정 · 역산 · 절사 뒤 합(옛은 받는 분이
   // 서명한 확인증 한 장마다 셈하고 절사했다 O: server/src/confirmations.ts:1204 · withholding.ts:336). 나누어떨어지지 않으면 나머지 원을 앞사람부터 1원씩
@@ -142,9 +142,9 @@ export function companyBorneExempt(input: { supplyKrw: number; rate: number; thr
 export type TaxRates = {
   asOf: string;
   vatRate: number;
-  vatUnit: number;
+  vatUnit: RoundingUnit;
   withholdingBusinessRate: number;
-  withholdingUnit: number;
+  withholdingUnit: RoundingUnit;
   minWithholding: number;
   companyBorneRate: number;
   companyBorneMethod: TaxCompanyBorneMethod;
@@ -158,9 +158,9 @@ export async function loadTaxRates(asOf: string, deps?: Partial<TaxRuleDeps>): P
   const getValue = deps?.getSettingValue ?? defaultGetSettingValue;
   const at = { asOf: seoulDateToUtcDate(asOf) };
   const vatRate = await getValue(TAX_VAT_RATE, at);
-  const vatUnit = await getValue(TAX_ROUNDING_VAT_UNIT, at);
+  const vatUnit = roundingUnitOf(await getValue(TAX_ROUNDING_VAT_UNIT, at));
   const withholdingBusinessRate = await getValue(TAX_WITHHOLDING_BUSINESS_INCOME_RATE, at);
-  const withholdingUnit = await getValue(TAX_ROUNDING_WITHHOLDING_UNIT, at);
+  const withholdingUnit = roundingUnitOf(await getValue(TAX_ROUNDING_WITHHOLDING_UNIT, at));
   const minWithholding = await getValue(TAX_ROUNDING_MIN_WITHHOLDING, at);
   const companyBorneRate = await getValue(TAX_COMPANY_BORNE_RATE, at);
   const companyBorneMethod = await getValue(TAX_COMPANY_BORNE_METHOD, at);

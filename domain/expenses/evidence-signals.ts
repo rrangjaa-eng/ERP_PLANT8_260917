@@ -43,7 +43,7 @@ export async function listExpenseEvidenceSignals(viewer: Viewer, input: { ids: r
       const has = withEvidence.has(status.id);
       // P3 — 확인 게이트(gates)는 끈다: 증빙이 있으면 기안자 몫이 아니다(`확인 전`은 넣지 않는다).
       missingUnpaid =
-        !paid && !evidenceGateDecision({ evidenceRequired, hasEvidence: has, prepaid: status.prepaid, waived: status.waived, confirmation: null, drafterName: "" }, false).allowed;
+        !paid && !evidenceGateDecision({ evidenceRequired, hasEvidence: has, prepaid: status.prepaid, waived: status.waived, confirmation: null, drafterName: "", drafterCanAdd: true }, false).allowed;
       if (prepaidCandidate) {
         dueDays ??= await getSettingValue(EVIDENCE_PREPAID_DUE_DAYS);
         prepaidOverdueDays = prepaidDueInfo({ prepaid: true, hasEvidence: has, waived: false, paidOn: status.payDate, dueDays, today: input.today })?.overdueDays ?? null;

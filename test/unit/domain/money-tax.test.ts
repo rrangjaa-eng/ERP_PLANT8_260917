@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { applyTaxRule, companyBorneExempt, loadTaxRates, taxRatesReader } from "@/domain/money/tax";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { RETIRED_SETTING_KEYS } from "@/domain/settings/keys";
+import { roundingUnitOf } from "@/domain/money";
 
 // 04-02 Task 1 ② — 세금 규칙 네 종류 × 절사 단위·방식 조합, 최소 징수액
 // 경계. 설정 조회는 deps 주입으로 고정값을 넣어 DB 없이 돈다
@@ -423,5 +424,36 @@ describe("회사 대납 면제 — 한 사람 몫 세전 5만원 이하(06.5 D-6
     expect(companyBorneExempt({ supplyKrw: 9_000_000_000_000, rate: 0.22, thresholdKrw: 11_538_461_538_462, recipientCount: 1 })).toBe(true);
     expect(companyBorneExempt({ supplyKrw: 9_000_000_000_000, rate: 0.22, thresholdKrw: 11_538_461_538_461, recipientCount: 1 })).toBe(false);
     expect(companyBorneExempt({ supplyKrw: 9_000_000_000_000, rate: 0.22, thresholdKrw: 50_000, recipientCount: 1 })).toBe(false);
+  });
+});
+
+// 07.1-03 PX3(E-P2-10 · E-P2-11) — 설정 값(number)을 절사 단위로 좁히는 한 곳. 단언 대신 판정 · 밖이면 던진다.
+describe("roundingUnitOf · loadTaxRates 절사 단위 경계", () => {
+  it("1 · 10은 그 값, 5 · 100 · 0은 던진다(`끝처리 단위`)", () => {
+    expect(roundingUnitOf(1)).toBe(1);
+    expect(roundingUnitOf(10)).toBe(10);
+    for (const bad of [5, 100, 0]) expect(() => roundingUnitOf(bad), String(bad)).toThrow("끝처리 단위");
+  });
+
+  it("loadTaxRates — 부가세 · 원천징수 절사 단위가 1 · 10 밖이면 던진다", async () => {
+    for (const key of ["tax.rounding.vat_unit", "tax.rounding.withholding_unit"]) {
+      const getSettingValue = fakeGetSettingValue({ [key]: 100 });
+      await expect(loadTaxRates("2026-09-22", { getSettingValue: getSettingValue as never }), key).rejects.toThrow("끝처리 단위");
+    }
+  });
+
+  it("applyTaxRule — 설정 절사 단위가 1 · 10 밖이면 던진다(부가세 · 원천징수 · 회사 대납)", async () => {
+    const cases: [TaxRule, string][] = [
+      [VAT_RULE, "tax.rounding.vat_unit"],
+      [WITHHOLDING_RULE, "tax.rounding.withholding_unit"],
+      [COMPANY_BORNE_RULE, "tax.rounding.withholding_unit"],
+    ];
+    for (const [rule, key] of cases) {
+      const getSettingValue = fakeGetSettingValue({ [key]: 100 });
+      await expect(
+        applyTaxRule(1_000_000, rule, { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE }, { getSettingValue: getSettingValue as never }),
+        `${rule.ruleKind} ${key}`,
+      ).rejects.toThrow("끝처리 단위");
+    }
   });
 });

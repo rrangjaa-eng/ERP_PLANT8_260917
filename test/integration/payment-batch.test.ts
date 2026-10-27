@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines, users, vendors } from "@/db/schema";
+import { expenseEvidenceReviews, expensePayments, expenses, files, projects, quoteLines, users, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -492,6 +492,19 @@ describe("검토 반영 (06-15 독립 검토)", () => {
     expect(row).toMatchObject({ id: doc.expenseId, selectable: false });
     expect(row?.reason).toMatch(/^증빙 없음 · 기안자 /);
     expect(rowsOf(await listPaymentTargets(payer, { evidence: "missing" })).map((candidate) => candidate.id)).toEqual([doc.expenseId]);
+  });
+
+  // 07.1-03 D-7101 — 목록(일괄) 길도 단건 지급과 같은 글자: 완료 프로젝트 문서는 기안자가 붙일 수 없다.
+  it("S-1b 목록 증빙 게이트 — 완료(completed) 프로젝트의 증빙 0 문서는 selectable false · 이유 `증빙 없음 · 경영관리 등록`", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    await setEvidenceRequired(true);
+    // 테스트 준비 전용 — 프로젝트를 완료 상태로(프로덕션 경로 아님).
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.projectId));
+
+    const [row] = rowsOf(await listPaymentTargets(payer, {}));
+    expect(row).toMatchObject({ id: doc.expenseId, selectable: false, reason: "증빙 없음 · 경영관리 등록" });
   });
 
   it("S-2 세율 없음 — 세금 규칙을 찾을 수 없는 증빙 종류의 행은 selectable false · 이유 TAX_UNAVAILABLE · payableKrw null", async () => {

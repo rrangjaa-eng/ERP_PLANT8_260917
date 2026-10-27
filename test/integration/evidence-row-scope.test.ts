@@ -26,6 +26,7 @@ import { can } from "@/domain/permissions/can";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission } from "@/repositories/permissions";
+import { findUserById } from "@/repositories/users";
 
 // 06.1-05 Task 2 — 증빙 행 범위 실측(EVID-07 · RP-5). 단언 대상 viewer는 시드 계급 role-pm(오늘 · 미래 발령)과 등록 계급뿐이다 —
 // 시스템 관리자 자격으로 재지 않는다(실제 사용자와 같은 자격으로 낮춰서). SYSTEM_VIEWER는 아래 준비(fixture) 줄에만 쓴다.
@@ -162,5 +163,13 @@ describe("증빙 범위 = 메뉴 판정(07-15 R18)", () => {
     expect(await can(both, "evidence", "view")).toBe(true);
     expect((await evidenceScopeFor(viewOnly)).rows).toBe("published");
     expect(await can(viewOnly, "evidence", "view")).toBe(true);
+  });
+});
+
+// 07.1-07(D-7127): 사람의 본부 칸 — 비어도 되는 칸이고 새 사람은 비어 있다(쓰기 길은 07.1-14).
+describe("사람의 본부 칸(07.1-07 D-7127)", () => {
+  it("새 사람의 divisionId는 null이고 저장소 읽기가 그 칸을 싣는다", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: `division-${randomUUID()}@example.test`, name: "본부칸" });
+    expect(await findUserById(SYSTEM_VIEWER, userId)).toHaveProperty("divisionId", null);
   });
 });

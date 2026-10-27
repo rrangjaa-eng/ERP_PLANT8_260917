@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
 import { actionLog, codeItems, corpCardUsages, evidenceRecordLinks, evidenceRecords, projects, purchaseRequests } from "@/db/schema";
-import { cardOverwriteSplit, cardSlipNotFound, cardUsageFormDefaults, cardUsageFormOptions, loadCardOverwriteBasis } from "@/domain/corp-card-usages";
+import { cardOverwriteSplit, cardSlipNotFound, cardUsageFormDefaults, cardUsageFormOptions, cardUsageReadScope, loadCardOverwriteBasis } from "@/domain/corp-card-usages";
 import { createCorpCard } from "@/domain/corp-cards";
-import { attachEvidenceAsAuthor, attachEvidenceRecord, cardUsagePrefillFromEvidence, createCardUsageFromEvidence, listAttachCandidates } from "@/domain/evidence-records/attach";
+import { attachEvidenceAsAuthor, attachEvidenceRecord, cardUsagePrefillFromEvidence, createCardUsageFromEvidence, judgeCardCandidates, listAttachCandidates } from "@/domain/evidence-records/attach";
 import { listEvidenceRecordsByIds } from "@/domain/evidence-records";
 import { evidencePickerMode, listEvidencePool } from "@/domain/evidence-records/pool";
 import { createProject } from "@/domain/projects";
@@ -14,6 +14,9 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { detachLiveLinksForOwner } from "@/repositories/evidence-record-links";
+import { findCardUsageOverwriteFacts } from "@/repositories/corp-card-usages";
+import { findRecordForScope } from "@/repositories/evidence-records";
+import { evidenceScopeFor } from "@/domain/permissions/scope-for";
 import { insertVendor } from "@/repositories/vendors";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
@@ -21,6 +24,12 @@ import { makePerson, teamIdByName } from "./approvals-fixtures";
 import { createCardUsageFixture, createInReviewExpenseFixture, createIntakeManager, insertLinkFixture, insertRecordFixture, registerFixtureFile, setRecordVisibilityFixture } from "./fixtures/evidence";
 import { setupExpenseProject } from "./fixtures/expenses";
 import { deferred, waitForLockWaiter } from "./lock-race";
+
+// 07.1-04 PE6: 덮기 막힘 재료 읽기 횟수를 센다 — 동작은 원래 함수 그대로(감싸기만).
+vi.mock("@/repositories/corp-card-usages", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/repositories/corp-card-usages")>();
+  return { ...actual, findCardUsageOverwriteFacts: vi.fn(actual.findCardUsageOverwriteFacts) };
+});
 
 // 06.1-09 Task 2(경영관리 길 · D-6111 · 카드 R3 · P2-C4 · N-6 · N-8): 경영관리가 카드 줄을 카드 사용에 직접 붙인다.
 // 붙임 → 파일 값 덮기 → 끌 수 없는 기록이 한 트랜잭션. 막힌 경우는 잠금 뒤 재판정 글자로 거부하고 붙임 · 덮기 0.
@@ -560,6 +569,41 @@ describe("S8 대리 등록(06.1-09 Task 3)", () => {
     expect(await usagesOn(fx.cardA.id)).toEqual([]);
   });
 
+  // 07.1-04 PE4 ⓐ(이미 맞음 — 회귀): 두 탭이 다른 키로 같은 증빙에서 카드 사용을 동시에 만들면 하나만 서고 붙임도 하나.
+  it("(PE4 ⓐ) 다른 키 동시 저장 — 카드 사용 1행 · 붙임 1행 · 진 쪽은 거부(원시 DB 오류 0)", async () => {
+    const fx = await proxyFx();
+    const line = await lonelyLine(fx);
+    const held = deferred();
+    const reached = deferred();
+    const first = createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: randomUUID() }, {
+      afterCreate: async () => {
+        reached.resolve();
+        await held.promise;
+      },
+    }).then(
+      (usage) => ({ ok: true as const, id: usage.id }),
+      (error: unknown) => ({ ok: false as const, message: error instanceof Error ? error.message : String(error) }),
+    );
+    await reached.promise;
+    // 둘째는 첫째 트랜잭션이 쥔 행(카드 사용 번호 차례)에서 기다린다 — 기다리는 것을 본 뒤 첫째를 놓는다.
+    const second = createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: randomUUID() }).then(
+      (usage) => ({ ok: true as const, id: usage.id }),
+      (error: unknown) => ({ ok: false as const, message: error instanceof Error ? error.message : String(error) }),
+    );
+    await waitForLockWaiter(pool);
+    held.resolve();
+    const results = await Promise.all([first, second]);
+    const winners = results.filter((result) => result.ok);
+    expect(winners).toHaveLength(1);
+    const loser = results.find((result) => !result.ok);
+    expect(loser && !loser.ok ? loser.message : "").toBe("카드 사용 있음 · 붙이기로");
+    const usages = await usagesOn(fx.cardA.id);
+    expect(usages).toHaveLength(1);
+    const winner = winners[0];
+    expect(winner?.ok ? winner.id : null).toBe(usages[0]?.id);
+    expect(await liveLinks(usages[0]?.id ?? "")).toEqual([{ recordId: line.id, attachMode: "registrar" }]);
+  });
+
   it("(P2-C3) 같은 키 동시 저장 — 둘째는 첫째 커밋까지 기다린 뒤 같은 카드 사용 id · 카드 사용 1행 · 붙임 1행 · 원시 DB 오류 0", async () => {
     const fx = await proxyFx();
     const line = await lonelyLine(fx);
@@ -786,5 +830,42 @@ describe("카드 사용 사용일 덮기 · 전후 로그(07.1-04 D-7104)", () =
     expect(await liveLinks(usage.id)).toEqual([]);
     expect(await usageRow(usage.id)).toMatchObject({ usedOn: USED_ON, totalAmountKrw: 200_000 });
     expect(await amountLogs(usage.id)).toHaveLength(0);
+  });
+});
+
+// 07.1-04 PE6 · T-07.1-04-07: 쪽(여러 카드 줄)의 덮기 막힘 판정은 재료 읽기 한 번 — 줄마다 판정 결과는 줄 하나씩 볼 때와 같다.
+// PE4 ⓒ(이미 맞음 — 회귀): 후보 금액은 카드 사용 저장 값이다(증빙 값이 아니다).
+describe("쪽 단위 덮기 막힘 판정(07.1-04 PE6)", () => {
+  it("값이 다른 후보를 가진 카드 줄 셋 → findCardUsageOverwriteFacts 한 번 · 실행가 초과 줄만 막힘 · 후보 금액 = 카드 사용 값", async () => {
+    const fx = await setup();
+    const { lineId } = await lineOf(fx.pm, 300_000);
+    const u1 = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const u2 = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000, lineId });
+    const u3 = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 100_000 });
+    const r1 = await cardRecord(fx, fx.cardA.last4, "213,457", "19,405");
+    const r2 = await cardRecord(fx, fx.cardA.last4, "1,238,013", "112,546");
+    const r3 = await cardRecord(fx, fx.cardA.last4, "110,013", "10,001");
+    await pairByApproval(u1.id, [r1]);
+    await pairByApproval(u2.id, [r2]);
+    await pairByApproval(u3.id, [r3]);
+    const scope = await evidenceScopeFor(fx.manager);
+    const rows = [];
+    for (const id of [r1, r2, r3]) {
+      const row = await findRecordForScope(fx.manager, scope, id);
+      if (!row) throw new Error("기록 없음");
+      rows.push(row);
+    }
+
+    vi.mocked(findCardUsageOverwriteFacts).mockClear();
+    const judged = await judgeCardCandidates(fx.manager, rows, await cardUsageReadScope(fx.manager));
+    expect(vi.mocked(findCardUsageOverwriteFacts)).toHaveBeenCalledTimes(1);
+
+    const pick = (recordId: string, usageId: string) => judged.get(recordId)?.find((item) => item.row.id === usageId);
+    expect(pick(r1, u1.id)?.judged.blockedReason).toBeNull();
+    expect(pick(r2, u2.id)?.judged.blockedReason).toBe("합계 200,000 → 1,238,013 · 실행가 초과");
+    expect(pick(r3, u3.id)?.judged.blockedReason).toBeNull();
+
+    const candidates = await listAttachCandidates(fx.manager, { recordId: r1 });
+    expect(candidates.items.find((item) => item.id === u1.id)).toMatchObject({ amountKrw: 200_000 });
   });
 });

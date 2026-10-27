@@ -27,6 +27,11 @@ describe("evidenceReturnHref (G-06.1-40)", () => {
     expect(evidenceReturnHref(`/expenses/evidence?registered=${REGISTERED}`)).toBe("/expenses/evidence");
   });
 
+  // 07.1-04 PE4 ⓓ(이미 맞음 — 회귀): 등록 표시만 버리고 거르개는 그대로.
+  it("(PE4 ⓓ) state · kind 거르개는 유지하고 registered만 버린다", () => {
+    expect(evidenceReturnHref("/expenses/evidence?state=unmatched&kind=x&registered=1")).toBe("/expenses/evidence?state=unmatched&kind=x");
+  });
+
   it("hash는 버린다", () => {
     expect(evidenceReturnHref("/expenses/evidence?state=all#row")).toBe("/expenses/evidence?state=all");
   });

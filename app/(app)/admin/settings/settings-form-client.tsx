@@ -653,7 +653,7 @@ function renderFields(
 
 // 저장하지 않은 단계가 있으면 앱 안 링크로 떠날 때 확인한다 — next/link는 beforeunload 없이 이동한다(Codex P2
 // r4140619759). 연차 신청 폼과 같은 `입력 버리기` 확인. 새로 고침 · 창 닫기는 각 단계의 브라우저 이탈 경고.
-function useLeaveGuard(dirtySteps: number[]) {
+function useLeaveGuard(dirtySteps: number[], currentGroup: string) {
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const dirty = dirtySteps.length > 0;
 
@@ -668,13 +668,15 @@ function useLeaveGuard(dirtySteps: number[]) {
       const url = new URL(anchor.href, window.location.href);
       if (url.origin !== window.location.origin) return;
       if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      // 이미 보는 묶음으로 가는 링크는 버릴 것이 없다 — 확인 없이 그대로 이동한다.
+      if (url.pathname === window.location.pathname && url.searchParams.get("group") === currentGroup) return;
       event.preventDefault();
       event.stopPropagation();
       setLeaveHref(url.pathname + url.search + url.hash);
     }
     document.addEventListener("click", handleClick, true);
     return () => document.removeEventListener("click", handleClick, true);
-  }, [dirty]);
+  }, [dirty, currentGroup]);
 
   return { leaveHref, setLeaveHref };
 }
@@ -763,7 +765,7 @@ export function SettingsFormClient({ sections, currentGroup, viewerId }: { secti
     });
   }, []);
   const dirtySteps = Object.values(drafts).map((draft) => draft.stepIndex);
-  const { leaveHref, setLeaveHref } = useLeaveGuard(dirtySteps);
+  const { leaveHref, setLeaveHref } = useLeaveGuard(dirtySteps, currentGroup);
 
   const fieldsByStep = useMemo(() => {
     const groups = new Map<string, SettingsFieldViewModel[]>();
@@ -814,11 +816,11 @@ export function SettingsFormClient({ sections, currentGroup, viewerId }: { secti
   // 묶음을 옮기면 그 묶음의 단계가 사라지며 초안도 지워진다(뒤로 · 앞으로도 같다) — 입력 버리기로 떠난 때가 아니면 보관본으로 넘겨
   // 돌아오면 복원 줄로 되살리고, 되살린 초안은 비워 돌아와 단계가 다시 생길 때 옛 초안이 되살아나지 않게 한다.
   const [seenGroup, setSeenGroup] = useState(currentGroup);
-  const [discarding, setDiscarding] = useState(false);
+  const [discardTo, setDiscardTo] = useState<string | null>(null);
   if (seenGroup !== currentGroup) {
     setSeenGroup(currentGroup);
-    setDiscarding(false);
-    if (!discarding && Object.keys(drafts).length > 0) setStored((current) => ({ ...current, ...drafts }));
+    setDiscardTo(null);
+    if (discardTo !== currentGroup && Object.keys(drafts).length > 0) setStored((current) => ({ ...current, ...drafts }));
     setRestored((current) => (Object.keys(current.drafts).length === 0 ? current : { ...current, drafts: {} }));
   }
 
@@ -858,14 +860,17 @@ export function SettingsFormClient({ sections, currentGroup, viewerId }: { secti
   // `입력 버리기` — 이번에 고친 단계만 버린다. 아직 복원하지 않은 보관본은 남긴다.
   function leave() {
     if (!leaveHref) return;
-    setDiscarding(true);
+    const target = new URL(leaveHref, window.location.href);
+    const sameGroupPage = target.pathname === window.location.pathname && target.searchParams.has("group");
+    setDiscardTo(sameGroupPage ? target.searchParams.get("group") : null);
     writeStoredDrafts(scope, withoutKeys(stash, drafts));
-    router.push(leaveHref);
+    setLeaveHref(null);
+    router.push(leaveHref, sameGroupPage ? { scroll: false } : undefined);
   }
 
   // 묶음 select의 이동도 링크와 같은 입력 버리기 확인을 거친다 — select는 앱 안 링크 가드(클릭 캡처)가 못 잡는다.
   function selectGroup(href: string) {
-    if (dirtySteps.length > 0) setLeaveHref(href);
+    if (dirtySteps.length > 0 && new URLSearchParams(href).get("group") !== currentGroup) setLeaveHref(href);
     else router.push(href, { scroll: false });
   }
 

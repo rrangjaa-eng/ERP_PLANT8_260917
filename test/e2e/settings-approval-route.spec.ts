@@ -321,8 +321,63 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
 
     await page.getByLabel("묶음", { exact: true }).selectOption("세율");
     await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
-    await expect(page.getByRole("heading", { name: "세율" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "세율", exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog")).toBeHidden();
     expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
+  });
+
+  test("묶음 링크로 입력 버리기를 확인하면 새 묶음에서 확인 창이 닫힌다", async ({ page }) => {
+    await openSettings(page);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+
+    await page.getByRole("navigation", { name: "설정 묶음" }).getByRole("link", { name: "세율", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
+    await expect(page.getByRole("heading", { name: "세율", exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog")).toBeHidden();
+  });
+
+  test("이미 보는 묶음으로 가는 링크는 확인 없이 이동하고 편집이 남는다", async ({ page }) => {
+    await openSettings(page);
+    await page.goto(`/admin/settings?group=${encodeURIComponent("연차 결재선")}&x=1`);
+    await waitSettingsReady(page);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+
+    await page.getByRole("navigation", { name: "설정 묶음" }).getByRole("link", { name: "연차 결재선", exact: true }).click();
+    await expect(page).toHaveURL(/group=%EC%97%B0%EC%B0%A8[^&]*$/);
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+  });
+
+  // 묶음 이동은 같은 화면 안에서 일어난다(다시 마운트되지 않음) — 연차 결재선 → 세율 링크 한 번으로 기록을 쌓고 뒤로 · 앞으로 간다.
+  test("묶음 사이를 뒤로 · 앞으로 가도 저장 안 한 단계는 복원 줄로 돌아온다", async ({ page }) => {
+    await openSettings(page);
+    await openGroup(page, "세율");
+    await page.goBack();
+    await expect(leaveRoute(page)).toBeVisible();
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
+
+    await page.goForward();
+    await expect(page.getByRole("heading", { name: "세율", exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+  });
+
+  test("입력 버리기로 다른 묶음에 간 뒤 뒤로 · 앞으로 가도 복원 줄이 없다", async ({ page }) => {
+    await openSettings(page);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await page.getByRole("navigation", { name: "설정 묶음" }).getByRole("link", { name: "세율", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
+    await expect(page.getByRole("heading", { name: "세율", exact: true })).toBeVisible();
+
+    await page.goBack();
+    await expect(leaveRoute(page)).toBeVisible();
+    await expect(page.getByText(/저장 안 한 편집/)).toHaveCount(0);
+    await page.goForward();
+    await expect(page.getByRole("heading", { name: "세율", exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(leaveRoute(page)).toBeVisible();
+    await expect(page.getByText(/저장 안 한 편집/)).toHaveCount(0);
   });
 
   // Codex P2(PR #105 r4141687057 · 사용자 결정 2026-09-30 A-2): 뒤로 · 앞으로(popstate)는 막지 않는다 — 저장 안 한 단계를

@@ -66,11 +66,12 @@ test.describe("설정 화면 묶음 링크", () => {
     await expect(page.getByLabel("묶음", { exact: true })).toHaveValue("세율");
   });
 
-  test("폰 320: 가로로 넘치지 않고 select 높이가 44 이상이다", async ({ page }) => {
+  test("폰 320: 가로로 넘치지 않고 select 높이는 입력 높이 40 이상이다", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 700 });
     await openSettings(page);
 
     const box = await page.getByLabel("묶음", { exact: true }).boundingBox();
+    test.info().annotations.push({ type: "select-height", description: String(box!.height) });
     expect(box!.height).toBeGreaterThanOrEqual(40);
     const { scrollWidth, clientWidth } = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,

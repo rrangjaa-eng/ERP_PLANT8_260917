@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   describeSettingField,
@@ -440,6 +440,21 @@ describe("절사 단위 설정 두 키 — 1 · 10만", () => {
         expect(parsed.error?.issues[0]?.message, String(bad)).toBe("1 또는 10 · 다시 입력");
       }
       expect(describeSettingField(def).kind).toBe("number");
+    });
+  }
+});
+
+// #309 검토 P2 — 저장 값이 1 · 10 밖이면 실제로 던지는 곳은 설정 읽기(parseStoredSimpleValue → def.schema.parse · ZodError)다.
+// 지금 동작을 고정하는 시험이다(refine을 넣은 bd830421 뒤라 처음부터 녹색 — refine을 min(1)로 되돌리면 빨갛다).
+describe("절사 단위 저장 값이 1 · 10 밖 — 설정 읽기가 ZodError", () => {
+  for (const def of [TAX_ROUNDING_VAT_UNIT, TAX_ROUNDING_WITHHOLDING_UNIT]) {
+    it(`${def.key} — 저장 100 · 5는 getSettingValue가 ZodError, 저장 10은 그대로`, async () => {
+      for (const stored of [100, 5]) {
+        const findSimpleValue = vi.fn().mockResolvedValue({ key: def.key, value: stored, updatedAt: new Date(), updatedBy: null });
+        await expect(getSettingValue(def, undefined, { findSimpleValue }), String(stored)).rejects.toBeInstanceOf(ZodError);
+      }
+      const findSimpleValue = vi.fn().mockResolvedValue({ key: def.key, value: 10, updatedAt: new Date(), updatedBy: null });
+      expect(await getSettingValue(def, undefined, { findSimpleValue })).toBe(10);
     });
   }
 });

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, timestamp, boolean, integer, bigint, date, check } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, bigint, date, check, uuid } from "drizzle-orm/pg-core";
+import { orgUnits } from "./org";
 import { roles } from "./roles";
 
 // better-auth 1.7 core 스키마(node_modules/better-auth 문서 concepts/database 필드명 그대로) +
@@ -46,6 +47,8 @@ export const users = pgTable("users", {
   accountHolder: text("account_holder"),
   accountNumberEncrypted: text("account_number_encrypted"),
   accountNumberLast4: text("account_number_last4"),
+  // 07.1-07(D-7127 · D-7122): 팀 없이 본부에만 속한 사람(예: 경영관리본부 관리팀원)의 본부 — 증빙 행 범위가 오늘 발령 팀이 없을 때만 읽는다.
+  divisionId: uuid("division_id").references(() => orgUnits.id),
 }, (table) => [
   // A2-02: 입사일·퇴직일을 동시에 고쳐 앱 검증이 옛 상대값을 봐도 역전이 커밋되지 않게
   // DB가 마지막으로 막는다(마이그레이션에서 NOT VALID — 새 열이라 기존 행은 null).

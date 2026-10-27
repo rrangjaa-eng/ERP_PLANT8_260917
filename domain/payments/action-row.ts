@@ -88,8 +88,8 @@ export type EvidenceGateInput = {
   waived: boolean;
   confirmation: EvidenceConfirmation | null;
   drafterName: string;
-  // 07.1-03 D-7101 — 기안자가 증빙을 더 붙일 수 있는가(expenseDrafterAddsEvidence). 거짓이면 이유가 경영관리를 가리킨다 · 없으면 참.
-  drafterCanAdd?: boolean;
+  // 07.1-03 D-7101 — 기안자가 증빙을 더 붙일 수 있는가(expenseDrafterAddsEvidence). 거짓이면 이유가 경영관리를 가리킨다(필수 — 빠뜨리면 조용히 기안자 문구가 나온다).
+  drafterCanAdd: boolean;
 };
 
 export const EVIDENCE_MISSING_MANAGEMENT = "증빙 없음 · 경영관리 등록";
@@ -97,7 +97,7 @@ export const EVIDENCE_MISSING_MANAGEMENT = "증빙 없음 · 경영관리 등록
 export function evidenceGateDecision(ctx: EvidenceGateInput, gates: boolean = EVIDENCE_CONFIRMATION_GATES_PAYMENT): GateDecision {
   if (confirmationBlocksPayment(ctx, gates)) return { allowed: false, reason: EVIDENCE_UNCONFIRMED };
   if (!ctx.evidenceRequired || ctx.hasEvidence || ctx.prepaid || ctx.waived) return { allowed: true };
-  if (ctx.drafterCanAdd === false) return { allowed: false, reason: EVIDENCE_MISSING_MANAGEMENT };
+  if (!ctx.drafterCanAdd) return { allowed: false, reason: EVIDENCE_MISSING_MANAGEMENT };
   return { allowed: false, reason: `증빙 없음 · 기안자 ${ctx.drafterName}` };
 }
 

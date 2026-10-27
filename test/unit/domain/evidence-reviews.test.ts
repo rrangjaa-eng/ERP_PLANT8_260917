@@ -85,7 +85,7 @@ describe("resolveEvidenceStatus — 다섯 값 (06-06)", () => {
 });
 
 describe("O-2 — 확인 전 막힘은 상수 한 곳 (06-06 Task 2)", () => {
-  const ctx = { evidenceRequired: false, hasEvidence: true, prepaid: false, waived: false, confirmation: null, drafterName: "박서연" };
+  const ctx = { evidenceRequired: false, hasEvidence: true, prepaid: false, waived: false, confirmation: null, drafterName: "박서연", drafterCanAdd: true };
 
   it("EVIDENCE_CONFIRMATION_GATES_PAYMENT = true(O-2 확정)", () => {
     expect(EVIDENCE_CONFIRMATION_GATES_PAYMENT).toBe(true);

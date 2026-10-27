@@ -3,7 +3,7 @@
 
 export type ExpenseDrafterRuleInput = { closed: boolean; number: string | null; status: string | null; projectCompleted: boolean };
 
-export const EXPENSE_RETURNED_STATUSES = new Set(["rejected", "withdrawn"]);
+const EXPENSE_RETURNED_STATUSES = new Set(["rejected", "withdrawn"]);
 export const EXPENSE_IN_REVIEW_STATUSES = new Set(["submitted", "in_review"]);
 
 export function expenseDrafterRemoves(owner: ExpenseDrafterRuleInput): boolean {
@@ -11,5 +11,6 @@ export function expenseDrafterRemoves(owner: ExpenseDrafterRuleInput): boolean {
 }
 
 export function expenseDrafterAddsEvidence(owner: ExpenseDrafterRuleInput): boolean {
-  return expenseDrafterRemoves(owner) || (owner.status === "approved" && !owner.projectCompleted);
+  // 종결 문서는 증빙을 읽기만 한다(06-28) — 승인 · 미완료 갈래도 closed를 본다(#309 검토 P3).
+  return expenseDrafterRemoves(owner) || (!owner.closed && owner.status === "approved" && !owner.projectCompleted);
 }

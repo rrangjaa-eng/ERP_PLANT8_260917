@@ -273,6 +273,7 @@ export async function confirmEvidence(
     waived: false,
     confirmation,
     drafterName: "",
+    drafterCanAdd: true,
   });
   const actionRow = resolveExpenseActionRow(
     { approvalState: committed.approvalState, paid: committed.paid, hasEvidence: true, waived: false, confirmation, evidence, pair: pairGateDecision(payments.pairGateCtx(locked, shared)) },
@@ -326,7 +327,7 @@ export async function waiveEvidence(
   });
 
   const { locked } = committed;
-  const evidence = evidenceGateDecision({ evidenceRequired: shared.evidenceRequired, hasEvidence: false, prepaid: locked.prepaid, waived: true, confirmation: null, drafterName: "" });
+  const evidence = evidenceGateDecision({ evidenceRequired: shared.evidenceRequired, hasEvidence: false, prepaid: locked.prepaid, waived: true, confirmation: null, drafterName: "", drafterCanAdd: true });
   const actionRow = resolveExpenseActionRow(
     { approvalState: committed.approvalState, paid: committed.paid, hasEvidence: false, waived: true, confirmation: null, evidence, pair: pairGateDecision(payments.pairGateCtx(locked, shared)) },
     { canPay: true, amountVisible },

@@ -34,7 +34,7 @@ import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
 import { assertSeatsFree, COMPANY_SEAT_ROLE_IDS, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
-import { CEO_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { archivedSeatReason } from "@/domain/people/restore";
 import { assertNotRetiredInTx, isRetiredOn } from "@/domain/people/retired";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
@@ -608,6 +608,75 @@ export async function changePersonRole(
       },
       { tx },
     );
+  });
+}
+
+export const HANDOVER_NOT_SYSADMIN_MESSAGE = "시스템 관리자만 넘기기";
+
+// 07.1 D-2(2026-10-27 사용자 결정): 시스템 관리자가 한 명뿐이면 계급 변경 두 번으로는 자리를 못 넘긴다 — 새 사람을 올리면 회사
+// 자리(`assertSeatsFree`)가, 자기 계급을 내리면 자기 변경 거부가, 남이 옛 사람을 내리면 마지막 관리자(`assertNotLastAdmin`)가 막는다.
+// 한 tx에서 새 사람을 시스템 관리자로 넣고 옛 사람(행위자 본인)을 기본 계급(`DEFAULT_ROLE_ID` — CLI · 백필과 같은 기본값)으로 뺀다.
+// 커밋 전에는 어느 쪽도 보이지 않아 관리자 0명인 순간이 없다. 판정은 잠금 뒤 DB 행으로(세션 계급은 낡을 수 있다).
+export async function handOverSysadmin(
+  viewer: Viewer,
+  toUserId: string,
+  deps?: Partial<ChangePersonRoleDeps>,
+): Promise<void> {
+  if (!(await (deps?.can ?? defaultCan)(viewer, PEOPLE_MENU, "write"))) {
+    throw new ForbiddenError(HANDOVER_NOT_SYSADMIN_MESSAGE);
+  }
+  if (viewer.id === toUserId) throw new ValidationError("본인에게 넘기기 불가");
+
+  const today = seoulTodayOf(deps);
+  const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await withTransaction(async (tx) => {
+    // 계급 변경과 같은 층 순서(사람 둘 → 관리자 → 회사) — 사람 키는 lockSeatKeys가 정렬해 교착이 없다.
+    await lockSeatKeys(viewer, { personIds: [viewer.id, toUserId], admin: true, companyRoleIds: [SYSADMIN_ROLE_ID] }, tx);
+    for (const roleId of [SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID]) {
+      const lockedRole = await findRoleForShare(viewer, roleId, tx);
+      if (!lockedRole || lockedRole.archivedAt) throw new ValidationError(`존재하지 않거나 보관된 계급: ${roleId}`);
+    }
+    const from = await repoFindUserById(viewer, viewer.id, tx);
+    if (!from || from.archivedAt || from.roleId !== SYSADMIN_ROLE_ID) throw new ForbiddenError(HANDOVER_NOT_SYSADMIN_MESSAGE);
+    await assertNotRetiredInTx(viewer, viewer.id, today, tx);
+    const to = await repoFindUserById(viewer, toUserId, tx);
+    if (!to) throw new UserNotFoundError("사람 찾을 수 없음");
+    if (to.archivedAt) throw new ValidationError("보관된 사람 · 먼저 복원");
+    await assertNotRetiredInTx(viewer, toUserId, today, tx);
+    assertHiredForCompanySeat(SYSADMIN_ROLE_ID, to.hireDate, today);
+    await assertCanGrantRoles(viewer, [SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID, to.roleId], tx);
+
+    // 새 사람을 먼저 올려야 마지막 관리자 판정이 그를 남는 관리자로 센다(퇴직 예정이면 세지 않아 거부 — D-6412).
+    await repoUpdateUserRole(viewer, toUserId, SYSADMIN_ROLE_ID, tx);
+    await assertNotLastAdmin(viewer, { userId: viewer.id, asOf: today, nextRoleId: DEFAULT_ROLE_ID }, tx);
+    await repoUpdateUserRole(viewer, viewer.id, DEFAULT_ROLE_ID, tx);
+    // 옛 사람이 빠진 뒤 재조회 — 그 밖의 시스템 관리자(이미 있던 중복 · 다른 보유자)와 겹치면 거부. 팀 · 본부 자리는 둘 다 새로 생기지 않는다.
+    const seats = newSeats({
+      roleBefore: to.roleId,
+      roleAfter: SYSADMIN_ROLE_ID,
+      employedBefore: to,
+      employedAfter: to,
+      occupiedBefore: [],
+      occupiedAfter: [],
+    });
+    await assertSeatsFree(viewer, { userId: toUserId, roleId: SYSADMIN_ROLE_ID, seats, today, showNames }, tx);
+
+    for (const [userId, before, after] of [
+      [toUserId, to.roleId, SYSADMIN_ROLE_ID],
+      [viewer.id, SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID],
+    ] as const) {
+      await recordAction(
+        viewer,
+        {
+          actionType: "permission_change",
+          entity: "user",
+          entityId: userId,
+          detail: { reason: "sysadmin_handover", changes: buildChanges({ roleId: before }, { roleId: after }) },
+        },
+        { tx },
+      );
+    }
   });
 }
 

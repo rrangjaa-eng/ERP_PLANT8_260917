@@ -104,7 +104,7 @@ describe("시스템 관리자 넘기기(07.1 D-2)", () => {
     const c = await makeSeated(uniqueName("PM C"), DEFAULT_ROLE_ID, null);
     await handOverSysadmin(a, b.id, deps);
 
-    const error = await refusal(handOverSysadmin(a, c.id, { ...deps, can: async () => true }), ForbiddenError);
+    const error = await refusal(handOverSysadmin(a, c.id, { ...deps, can: () => Promise.resolve(true) }), ForbiddenError);
 
     expect(error.message).toBe("시스템 관리자만 넘기기");
     expect(await roleOf(c.id)).toBe(DEFAULT_ROLE_ID);
@@ -118,8 +118,8 @@ describe("시스템 관리자 넘기기 동시 실행(07.1 D-2)", () => {
     const c = await makeSeated(uniqueName("PM C"), DEFAULT_ROLE_ID, null);
 
     const results = await Promise.allSettled([
-      handOverSysadmin(a, b.id, { ...deps, can: async () => true }),
-      handOverSysadmin(a, c.id, { ...deps, can: async () => true }),
+      handOverSysadmin(a, b.id, { ...deps, can: () => Promise.resolve(true) }),
+      handOverSysadmin(a, c.id, { ...deps, can: () => Promise.resolve(true) }),
     ]);
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);

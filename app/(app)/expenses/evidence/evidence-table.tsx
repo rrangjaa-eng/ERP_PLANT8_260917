@@ -148,6 +148,11 @@ function hrefWith(filters: FilterQuery, defaults: EvidenceListFilters, page = 1)
   return text ? `/expenses/evidence?${text}` : "/expenses/evidence";
 }
 
+// 07.1-01 W9(#312 B-1) — 행동 열이 없는 1024 미만에서는 행 시트의 행동 자리가 표 행동 칸의 잠김 한 줄(막힌 붙이기 · 대리 등록의 까닭)을 대신한다.
+function sheetLockReason(row: Row): string | null {
+  return !row.canAttach && !row.canProxy ? row.actionBlockedReason : null;
+}
+
 // 상태 2행 요소 id — 잠긴 공개 칸이 `aria-describedby`로 가리킨다(이유는 화면에 이미 있는 그 글자, §7-3 (가)).
 function statusDetailId(rowId: string): string {
   return `evidence-status-detail-${rowId}`;
@@ -1104,7 +1109,14 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
               ]
             : []
         }
-        action={sheetRow && sheetFailure?.id === sheetRow.id ? <ConflictLine message={sheetFailure.message} /> : undefined}
+        action={
+          sheetRow && (sheetLockReason(sheetRow) || sheetFailure?.id === sheetRow.id) ? (
+            <>
+              {sheetLockReason(sheetRow) ? <p className={tableStyles.selectReason}>{sheetLockReason(sheetRow)}</p> : null}
+              {sheetFailure?.id === sheetRow.id ? <ConflictLine message={sheetFailure.message} /> : null}
+            </>
+          ) : undefined
+        }
       />
 
       {discardedEdits ? (

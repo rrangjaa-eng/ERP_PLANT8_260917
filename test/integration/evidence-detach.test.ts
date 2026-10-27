@@ -1,8 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db, pool } from "@/db/client";
-import { actionLog, approvalInstances, evidenceRecordLinks, evidenceRecords, expenses } from "@/db/schema";
+import { actionLog, approvalInstances, corpCardUsages, evidenceRecordLinks, evidenceRecords, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { createCorpCard } from "@/domain/corp-cards";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { approveDocument } from "@/domain/approvals";
 import { attachEvidenceRecord, detachEvidenceRecord, previewDetach } from "@/domain/evidence-records/attach";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
@@ -11,7 +13,7 @@ import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { makePerson } from "./approvals-fixtures";
 import { setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
-import { createInReviewExpenseFixture, createIntakeManager, createReturnedExpenseFixture, insertRecordFixture } from "./fixtures/evidence";
+import { createCardUsageFixture, createInReviewExpenseFixture, createIntakeManager, createReturnedExpenseFixture, insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 import { setEvidenceRequired } from "./fixtures/payments";
 import { deferred, waitForLockWaiter } from "./lock-race";
 
@@ -183,5 +185,77 @@ describe("previewDetach (PA-PREVIEW)", () => {
     const [link] = await db.select({ id: evidenceRecordLinks.id }).from(evidenceRecordLinks).where(eq(evidenceRecordLinks.ownerId, doc.expenseId));
     if (!link) throw new Error("붙임 없음");
     expect(await previewDetach(manager, { linkId: link.id })).toEqual({ result: null, amountKrw: null });
+  });
+});
+
+// 07.1-04 PE1 · E-P2-16 · CG-03: 카드 사용에 붙은 증빙도 서버에서 뗀다 — 권한은 붙이기와 같은 키(경영관리 = 등록 ∧ 범위 안 ∧ 보관 아님),
+// 트랜잭션 안에서 카드 사용 행을 잠근 뒤 다시 판정한다. 카드 사용 금액 · 사용일 · 승인번호는 되돌리지 않는다(덮은 기록은 로그에 있다).
+describe("카드 사용 증빙 떼기 (07.1-04 PE1)", () => {
+  async function cardUsageWithRecord(): Promise<{ manager: Viewer; pm: Viewer; usageId: string; recordId: string; linkId: string }> {
+    const pm = await makePerson("떼기PM", DEFAULT_ROLE_ID, "기획1팀");
+    const manager = await createIntakeManager("경영관리", { payments: true });
+    const last4 = String(4000 + Math.floor(Math.random() * 4000));
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "롯데카드", numberLast4: last4, label: `떼기 ${last4}`, kind: "personal", holderUserId: pm.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const usage = await createCardUsageFixture(pm, { corpCardId: card.id, usedOn: "2026-04-30", totalKrw: 200_000, approvalNo: "55500011" });
+    const recordId = await insertRecordFixture(manager, { evidenceType: "card_receipt", supplyKrw: 181_818, vatKrw: 18_182, issuedOn: "2026-04-30" });
+    const linkId = await insertLinkFixture({ recordId, ownerKind: "corp_card_usage", ownerId: usage.id, attachedBy: manager.id });
+    return { manager, pm, usageId: usage.id, recordId, linkId };
+  }
+
+  async function usageValues(id: string) {
+    const [row] = await db.select({ usedOn: corpCardUsages.usedOn, totalAmountKrw: corpCardUsages.totalAmountKrw, approvalNo: corpCardUsages.approvalNo }).from(corpCardUsages).where(eq(corpCardUsages.id, id));
+    return row;
+  }
+
+  async function cardDetachLogs(recordId: string) {
+    const rows = await db
+      .select({ detail: actionLog.detail })
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "evidence_record"), eq(actionLog.entityId, recordId), eq(actionLog.actionType, "document_update")));
+    return rows.filter((row) => (row.detail as { change?: string } | null)?.change === "evidence_record_detach");
+  }
+
+  it("경영관리가 떼면 detached · 카드 사용 값 그대로 · 떼기 로그 한 행(ownerKind corp_card_usage · 사유 길이) · 다시 떼면 detached 거짓 · 로그 그대로", async () => {
+    const fx = await cardUsageWithRecord();
+    const before = await usageValues(fx.usageId);
+    expect(await detachEvidenceRecord(fx.manager, { linkId: fx.linkId, reason: "다른 건 증빙" })).toEqual({ detached: true });
+    expect((await linkOf(fx.recordId)).detachedAt).not.toBeNull();
+    expect(await usageValues(fx.usageId)).toEqual(before);
+    const logs = await cardDetachLogs(fx.recordId);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.detail).toMatchObject({ ownerKind: "corp_card_usage", ownerId: fx.usageId, linkId: fx.linkId, reasonLength: "다른 건 증빙".length });
+
+    expect(await detachEvidenceRecord(fx.manager, { linkId: fx.linkId, reason: "다른 건 증빙" })).toEqual({ detached: false });
+    expect(await cardDetachLogs(fx.recordId)).toHaveLength(1);
+  });
+
+  it("붙이기 권한 없는 사람(등록 키 없음 · 범위 밖) → `없는 붙임 · 새로 고침` · 붙임 그대로", async () => {
+    const fx = await cardUsageWithRecord();
+    const narrow = await createIntakeManager("범위 좁음");
+    for (const who of [fx.pm, narrow]) {
+      expect(await messageOf(detachEvidenceRecord(who, { linkId: fx.linkId, reason: "다른 건 증빙" }))).toBe("없는 붙임 · 새로 고침");
+      expect(await messageOf(previewDetach(who, { linkId: fx.linkId }))).toBe("없는 붙임 · 새로 고침");
+    }
+    expect((await linkOf(fx.recordId)).detachedAt).toBeNull();
+  });
+
+  it("(E-P2-16) 사전 판독 뒤 카드 사용이 보관되면 잠금 뒤 재판정으로 거부 · 붙임 살아 있음 · 떼기 로그 0", async () => {
+    const fx = await cardUsageWithRecord();
+    const message = await messageOf(
+      detachEvidenceRecord(fx.manager, { linkId: fx.linkId, reason: "다른 건 증빙" }, {
+        afterPreRead: async () => {
+          await db.update(corpCardUsages).set({ archivedAt: new Date(), archivedBy: fx.pm.id }).where(eq(corpCardUsages.id, fx.usageId));
+        },
+      }),
+    );
+    expect(message).toBe("없는 붙임 · 새로 고침");
+    expect((await linkOf(fx.recordId)).detachedAt).toBeNull();
+    expect(await cardDetachLogs(fx.recordId)).toHaveLength(0);
+  });
+
+  it("previewDetach — 권한 있으면 빈 미리 보기(결과 없음)", async () => {
+    const fx = await cardUsageWithRecord();
+    expect(await previewDetach(fx.manager, { linkId: fx.linkId })).toEqual({ result: null, amountKrw: null });
   });
 });

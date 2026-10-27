@@ -18,6 +18,13 @@ registerAction({
 });
 
 registerAction({
+  name: "handOverSysadminAction",
+  menu: "admin.people",
+  action: "write",
+  dtoName: "PersonDto",
+});
+
+registerAction({
   name: "assignTeamAction",
   menu: "admin.people",
   action: "write",

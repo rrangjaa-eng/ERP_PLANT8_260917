@@ -747,3 +747,30 @@ test.describe("삭제 · 퇴직일 칸 상태와 삭제 사유 (06.4 D-6417 · D
     await expect(field).toHaveValue("");
   });
 });
+
+// 07.1 D-2(2026-10-27 사용자 결정): 시스템 관리자가 다른 사람에게 자리를 넘기는 화면 — 대상 상세의 3차 하나 → 확인 모달.
+// 게이트 N-1: 나 말고 시스템 관리자가 또 있으면 넘기기는 회사 자리 검사가 늘 거부하므로 버튼이 없다. CI의 erp_test에는 다른 스펙이 만든
+// 시스템 관리자 계정이 늘 여럿이라 이 스펙은 「다른 시스템 관리자가 있으면 없음」을 잰다(다른 관리자를 하나 만들어 상태를 고정한다).
+// 다른 관리자 유무 판정(hasOtherSysadmin) · 대표 · 퇴직 예정 · 성공 · 한 tx 원자성 · 동시 실행은 통합 sysadmin-handover.test.ts가 잰다.
+test.describe("시스템 관리자 넘기기 (07.1 D-2)", () => {
+  const HANDOVER = "시스템 관리자 넘기기";
+
+  test("다른 시스템 관리자가 있으면 넘길 수 있는 대상에도 버튼이 없다 · 위임 계정도 없다", async ({ page, browser, baseURL }) => {
+    await loginAsAdmin(page);
+    await makeAccount("E2E넘기기관리자", SYSADMIN_ROLE_ID);
+    const pm = await makeAccount("E2E넘기기대상", DEFAULT_ROLE_ID);
+
+    await page.goto(`/admin/people/${pm}`);
+    await expect(page.locator("#person-role-change")).toBeVisible();
+    await expect(page.getByRole("button", { name: HANDOVER })).toHaveCount(0);
+
+    const delegate = await createDelegatedAccount();
+    const context = await browser.newContext({ baseURL });
+    const delegatePage = await context.newPage();
+    await loginWith(delegatePage, delegate);
+    await delegatePage.goto(`/admin/people/${pm}`);
+    await expect(delegatePage.locator("#person-role-change")).toBeVisible();
+    await expect(delegatePage.getByRole("button", { name: HANDOVER })).toHaveCount(0);
+    await context.close();
+  });
+});

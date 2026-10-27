@@ -1,16 +1,16 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
-import { getPerson, isRetiredOn } from "@/domain/people";
+import { getPerson, hasOtherSysadmin, isRetiredOn } from "@/domain/people";
 import { RETIRED_EDIT_MESSAGE, retirementYearOf } from "@/domain/people/retired";
-import { assignableRoleIds, listAssignableRoles } from "@/domain/permissions/roles";
+import { assignableRoleIds, CEO_ROLE_ID, DEFAULT_ROLE_ID, listAssignableRoles, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
 import { listAssignableTeams, listOrgUnits } from "@/domain/org";
 import { KvList } from "@/ui/kv-list/KvList";
 import { Form } from "@/ui/form/Form";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
-import { PersonLoginActions, PersonRoleChange, PersonHistorySection } from "./person-detail-client";
+import { PersonLoginActions, PersonRoleChange, PersonHistorySection, PersonSysadminHandover } from "./person-detail-client";
 import { personLoginStatus, personLoginWord } from "../person-status";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { seoulToday } from "@/lib/dates";
@@ -117,6 +117,20 @@ export default async function PersonDetailPage({
   const editable = !targetOutOfCeiling && !retired;
   // 사용자 결정(카드 2026-10-23 11:14 KST) 「퇴직한 해 연차 조정만 허용」: 퇴직자는 퇴직한 해를 볼 때만 연차 조정 폼(연차만)이 있다.
   const adjustable = !targetOutOfCeiling && (!retired || (retiredDate !== null && leaveYear === retirementYearOf(retiredDate)));
+  // 07.1 D-2: 시스템 관리자 넘기기 — 보는 사람이 시스템 관리자이고 대상이 넘길 수 있을 때만(보관 · 퇴직(예정) · 입사일 오늘 뒤 ·
+  // 이미 시스템 관리자 · 대표(게이트 B-1)면 없음, 나 말고 시스템 관리자가 또 있으면 늘 거부되므로 없음(N-1) — 서버 handOverSysadmin과
+  // 같은 판정, 화면은 숨김일 뿐). 옛 사람이 받을 계급은 기본 계급.
+  const nextRoleName = roles.find((role) => role.id === DEFAULT_ROLE_ID)?.name ?? null;
+  const sysadminRoleName = roles.find((role) => role.id === SYSADMIN_ROLE_ID)?.name ?? null;
+  const canHandOver =
+    showRoleChange &&
+    session.viewer.roleId === SYSADMIN_ROLE_ID &&
+    currentRoleId !== SYSADMIN_ROLE_ID &&
+    currentRoleId !== CEO_ROLE_ID &&
+    !detail.person.archivedAt &&
+    retiredDate === null &&
+    (!current.hireDate || current.hireDate <= today) &&
+    !(await hasOtherSysadmin(session.viewer, today));
   const balanceLines = balance.annual
     ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null, resignation: balance.resignation ?? null }).map((line) => line.text)
     : [];
@@ -155,6 +169,15 @@ export default async function PersonDetailPage({
         {retired && (canWrite || payoutAccount !== null) ? <Form.Hint>{RETIRED_EDIT_MESSAGE}</Form.Hint> : null}
         {showRoleChange && !retired ? (
           <PersonRoleChange userId={id} roles={roles} currentRoleId={currentRoleId} lockedReason={lockedReason} />
+        ) : null}
+        {canHandOver && nextRoleName !== null && sysadminRoleName !== null ? (
+          <PersonSysadminHandover
+            userId={id}
+            name={detail.person.name}
+            targetRoleName={detail.person.roleName ?? "—"}
+            sysadminRoleName={sysadminRoleName}
+            nextRoleName={nextRoleName}
+          />
         ) : null}
       </div>
 

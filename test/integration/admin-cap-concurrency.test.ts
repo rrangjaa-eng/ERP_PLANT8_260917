@@ -15,6 +15,7 @@ import { ADMIN_SEAT_LOCK_KEY, listSeatHolders } from "@/repositories/seats";
 import { countActiveAdmins, findUserById, updateUserResignationDate } from "@/repositories/users";
 import { queryActionLog } from "@/repositories/action-log";
 import { createAccount } from "@/domain/auth/accounts";
+import { recordAction } from "@/domain/action-log/record";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 import { holdKey, makeAdmin, makeAdminRole, makeOrgTeam, makeSeated, uniqueName, waitingOnKey } from "./admin-cap-fixtures";
 
@@ -538,6 +539,67 @@ describe("회사 자리 경합(07.1 D-7128 · E-P1-06)", () => {
     expect(loserOf(results)).toBeInstanceOf(SeatTakenError);
     const roles = [(await findUserById(SYSTEM_VIEWER, a.id))?.roleId, (await findUserById(SYSTEM_VIEWER, b.id))?.roleId];
     expect(roles.filter((roleId) => roleId === CEO_ROLE_ID)).toHaveLength(1);
+  });
+
+  // 07.1 [검토] P1-1: 사후 판정 tx가 자리 충돌이 아닌 오류로 실패하면 tx 안의 보상 보관도 함께 되돌아간다 — 재판정 안 된
+  // 둘째 대표가 활성으로 남지 않도록 tx 밖에서 따로 보상 보관하고 원래 오류를 던진다.
+  it(
+    "ⓓ 사후 판정이 회사 키 대기 lock_timeout으로 실패하면 원래 오류를 던지고 · 새 계정은 보관 · 보상 로그 1행",
+    async () => {
+      const admin = await makeAdmin("관리자");
+      let createdId = "";
+      let holder: { release: () => Promise<void> } | null = null;
+      const holdAfterCreate: typeof createAccount = async (viewer, input) => {
+        const result = await createAccount(viewer, input);
+        createdId = result.userId;
+        holder = await holdKey(ceoKey);
+        return result;
+      };
+
+      const error = await registerPerson(admin, newCeo(), { ...deps, createAccount: holdAfterCreate })
+        .then(
+          () => null,
+          (caught: unknown) => caught,
+        )
+        .finally(() => holder?.release());
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(SeatTakenError);
+      expect(await archivedOf(createdId)).toBe(true);
+      expect(await rollbackLogs(createdId)).toBe(1);
+    },
+    30_000,
+  );
+
+  it("ⓔ 사후 판정이 충돌을 본 뒤 보상 로그 쓰기에서 실패하면 그 오류를 던지고 · 새 계정은 tx 밖에서 보관 · 보상 로그 1행", async () => {
+    const admin = await makeAdmin("관리자");
+    const x = await makeSeated(uniqueName("PM X"), DEFAULT_ROLE_ID, null);
+    let createdId = "";
+    const interlope: typeof createAccount = async (viewer, input) => {
+      await changePersonRole(admin, x.id, CEO_ROLE_ID, deps);
+      const result = await createAccount(viewer, input);
+      createdId = result.userId;
+      return result;
+    };
+    const boom = new Error("로그 쓰기 실패");
+    let failed = false;
+    const failOnce: typeof recordAction = async (viewer, entry, options) => {
+      if (!failed && (entry.detail as { reason?: string } | undefined)?.reason === "register_person_rollback") {
+        failed = true;
+        throw boom;
+      }
+      return recordAction(viewer, entry, options);
+    };
+
+    const error = await registerPerson(admin, newCeo(), { ...deps, createAccount: interlope, recordAction: failOnce }).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+
+    expect(failed).toBe(true);
+    expect(error).toBe(boom);
+    expect(await archivedOf(createdId)).toBe(true);
+    expect(await rollbackLogs(createdId)).toBe(1);
   });
 });
 

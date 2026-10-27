@@ -109,6 +109,17 @@ describe("before 훅 — 퇴사 · 보관 세션 갈래 (D-E6)", () => {
     expect(deleteUserSessions).not.toHaveBeenCalled();
   });
 
+  it("재직자 판정 읽기가 ctx.context.session에 남긴 캐시를 되돌린다 — 엔드포인트가 세션을 제 방식(갱신 포함)으로 다시 읽는다", async () => {
+    const active = sessionOf({ archivedAt: null, resignationDate: null });
+    sessionRead.fn.mockImplementation((ctx: { context: { session: unknown } }) => {
+      ctx.context.session = active;
+      return Promise.resolve(active);
+    });
+    const { input } = hookCtx("/update-user", { request: true });
+    await before(input);
+    expect((input as unknown as { context: { session: unknown } }).context.session).toBeNull();
+  });
+
   it("세션 없음(null) → 아무것도 하지 않는다", async () => {
     sessionRead.fn.mockResolvedValue(null);
     const { input, deleteUserSessions } = hookCtx("/verify-password", { request: true });

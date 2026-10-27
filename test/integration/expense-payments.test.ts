@@ -649,6 +649,72 @@ describe("증빙 · 짝 게이트 (06-04 Task 2 · 3)", () => {
     expect(await livePayments(doc.expenseId)).toHaveLength(0);
   });
 
+  // 07.1-03 D-7101 · U-2 — 완료 프로젝트의 승인 문서는 기안자가 증빙을 더 붙일 수 없다 → 이유가 경영관리를 가리킨다(막힘 규칙은 그대로).
+  it("증빙 필수 on · 완료(completed) 프로젝트의 증빙 0 문서 → 지급 완료 · 지급 행 막힘 이유 `증빙 없음 · 경영관리 등록`", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    const payable = await payableNow(payer, doc);
+    await setEvidenceRequired(true);
+    // 테스트 준비 전용 — 프로젝트를 완료 상태로(프로덕션 경로 아님).
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.projectId));
+    const error = await caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version }));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("증빙 없음 · 경영관리 등록");
+    expect((await getPaymentView(payer, doc.expenseId))?.row).toMatchObject({ row: "P3", primary: "pay", blockReason: "증빙 없음 · 경영관리 등록" });
+    expect(await livePayments(doc.expenseId)).toHaveLength(0);
+  });
+
+  // P3 notes-B — 지급 완료 tx의 이유 글자는 잠근 프로젝트 행 값이다: 사전 조회 뒤 · 잠금 전에 완료로 바뀌어도 경영관리 갈래.
+  it(
+    "잠금 대기 중 프로젝트가 완료로 바뀌면 지급 완료 거부 이유가 잠근 행 값 `증빙 없음 · 경영관리 등록`",
+    async () => {
+      const payer = await makePayer();
+      const fx = await setupExpenseProject();
+      const doc = await approvedExpenseWithoutEvidence(fx);
+      const expectedPayableKrw = await payableNow(payer, doc);
+      await setEvidenceRequired(true);
+
+      const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+      await lockClient.connect();
+      let txOpen = false;
+      let call: Promise<unknown> | undefined;
+      try {
+        await lockClient.query("BEGIN");
+        txOpen = true;
+        const { rows: pidRows } = await lockClient.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+        const lockPid = pidRows[0]?.pid;
+        await lockClient.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+        call = caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw, version: doc.version }));
+
+        let blocked = false;
+        for (let attempt = 0; attempt < 40 && !blocked; attempt += 1) {
+          const { rows } = await lockClient.query<{ count: number }>(
+            "SELECT count(*)::int AS count FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",
+            [lockPid],
+          );
+          blocked = (rows[0]?.count ?? 0) > 0;
+          if (!blocked) await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        expect(blocked, "지급 완료가 프로젝트 행 잠금에서 막히지 않았다").toBe(true);
+
+        await lockClient.query("UPDATE projects SET status = 'completed' WHERE id = $1", [fx.projectId]);
+        await lockClient.query("COMMIT");
+        txOpen = false;
+
+        const error = await call;
+        expect(error).toBeInstanceOf(GateBlockedError);
+        expect((error as Error).message).toBe("증빙 없음 · 경영관리 등록");
+        expect(await livePayments(doc.expenseId)).toHaveLength(0);
+      } finally {
+        if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
+        await lockClient.end();
+        if (call) await call;
+      }
+    },
+    30_000,
+  );
+
   it("짝 목록이 있고 문서의 (지급 방식, 증빙 종류)가 목록 밖이면 짝 이유로 거부 · 지급 기록 0, 목록이 비면 통과", async () => {
     const payer = await makePayer();
     const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());

@@ -11,6 +11,7 @@ import {
   expenseEvidenceReviews,
   expenses,
   files,
+  projects,
 } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
@@ -290,6 +291,24 @@ describe("증빙 기록 붙임 = 증빙 있음 (06.1-12 Task 1 트레이서)", (
     const blocked = await caught(completeExpensePayment(payer, { expenseId: approvedId, expectedPayableKrw, version: await versionOf(approvedId) }));
     expect(blocked).toBeInstanceOf(GateBlockedError);
     expect((blocked as Error).message).toBe("증빙 없음 · 기안자 박서연");
+  });
+
+  // 07.1-03 D-7101 — 같은 뗀 붙임 문서라도 프로젝트가 완료면 기안자가 붙일 수 없다 → 경영관리 갈래(단건 지급 · 지급 행 미리보기 같은 글자).
+  it("뗀 붙임만 남은 승인 문서 · 완료 프로젝트 → 지급 게이트 · 지급 행이 「증빙 없음 · 경영관리 등록」", async () => {
+    await setEvidenceRequired(true);
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const approvedId = await newDraft(fx, fx.lines.split);
+    const late = await insertRecordAndLink(payer, { ownerId: approvedId, attachMode: "registrar", supplyKrw: 10_000_000 });
+    await approveAll(fx, await submitWithoutFile(fx.pm, approvedId));
+    const expectedPayableKrw = await payableOf(payer, approvedId);
+    await detachLinkRow(late.linkId, payer);
+    // 테스트 준비 전용 — 프로젝트를 완료 상태로(프로덕션 경로 아님).
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.projectId));
+    const blocked = await caught(completeExpensePayment(payer, { expenseId: approvedId, expectedPayableKrw, version: await versionOf(approvedId) }));
+    expect(blocked).toBeInstanceOf(GateBlockedError);
+    expect((blocked as Error).message).toBe("증빙 없음 · 경영관리 등록");
+    expect((await getPaymentView(payer, approvedId))?.row?.blockReason).toBe("증빙 없음 · 경영관리 등록");
   });
 
   it("evidenceSourcesOf — 파일 1 · 붙임 2(경영관리 1 · 작성자 1) · 뗀 붙임만인 셋을 한 번에(질의 둘) · 증빙 0인 주인은 맵에 없다", async () => {

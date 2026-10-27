@@ -552,3 +552,86 @@ test.describe("증빙 종류 세금 규칙 칸 스킨 (07-08 감사 C3)", () => 
     expect(cell).toEqual({ top: "0px", bottom: "1px", radius: "0px" });
   });
 });
+
+// 07.1-02 PF8(C-66 · W6): 세금 규칙 구역 안 칸 묶음 폭은 단일 기둥(--form-max 720)을 넘지 않고, 구역 배경(--surface-muted)은 표 폭 그대로 끊기지 않는다.
+// 폰 갈래(PhoneOnly 한 줄 글자)는 flex가 빠져도 글자 한 줄 · 가로 넘침 0 그대로다.
+test.describe("증빙 종류 세금 규칙 구역 폭 (07.1-02 PF8)", () => {
+  async function visibleTaxRuleSection(page: Page): Promise<Locator> {
+    const detail = page.locator('main table tbody tr[data-ui="static-table-detail"]').first();
+    const section = detail.locator('[class*="taxRuleSection"]').filter({ visible: true }).first();
+    await expect(section).toBeVisible();
+    return section;
+  }
+
+  for (const width of [1280, 1024]) {
+    test(`${width}: 칸 묶음 래퍼는 max-width 720 이하로 서고 구역 배경은 행 폭 그대로다`, async ({ page }) => {
+      await loginAsSysadmin(page);
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/admin/code-tables?tableKey=evidence_type");
+      const section = await visibleTaxRuleSection(page);
+      const wrapper = section.locator(".single-column");
+      await expect(wrapper).toHaveCount(1);
+      await expect(wrapper).toHaveCSS("max-width", "720px");
+      const measured = await section.evaluate((node) => {
+        const inner = node.querySelector<HTMLElement>(".single-column");
+        const cell = node.closest("td");
+        if (!inner || !cell) throw new Error("래퍼 또는 칸 없음");
+        const innerRect = inner.getBoundingClientRect();
+        const lastRight = Math.max(...[...inner.children].map((child) => child.getBoundingClientRect().right));
+        const cellStyle = getComputedStyle(cell);
+        return {
+          wrapperWidth: innerRect.width,
+          contentSpan: lastRight - innerRect.left,
+          sectionWidth: node.getBoundingClientRect().width,
+          // 구역 상자는 칸(td) 안쪽 폭을 다 덮는다 — 배경이 중간에 끊기지 않는다.
+          cellContentWidth: cell.getBoundingClientRect().width - parseFloat(cellStyle.paddingLeft) - parseFloat(cellStyle.paddingRight),
+        };
+      });
+      expect(measured.wrapperWidth).toBeLessThanOrEqual(720 + 1);
+      expect(measured.contentSpan).toBeLessThanOrEqual(720 + 1);
+      expect(Math.abs(measured.sectionWidth - measured.cellContentWidth)).toBeLessThanOrEqual(1);
+    });
+  }
+
+  for (const width of [375, 320]) {
+    test(`${width}: 폰 갈래는 글자 한 구역 · 구역 폭이 행 폭이고 가로 넘침이 없다`, async ({ page }) => {
+      await loginAsSysadmin(page);
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/admin/code-tables?tableKey=evidence_type");
+      const section = await visibleTaxRuleSection(page);
+      await expect(section.locator(".single-column")).toHaveCount(0);
+      const measured = await section.evaluate((node) => {
+        const cell = node.closest("td");
+        if (!cell) throw new Error("칸 없음");
+        const linesOf = () => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          return new Set([...range.getClientRects()].filter((rect) => rect.width > 0).map((rect) => Math.round(rect.top))).size;
+        };
+        const lines = linesOf();
+        // 고치기 전 규칙(`display: flex; flex-wrap: wrap; gap`)을 잠깐 되살려 같은 글자의 줄 수를 맞대 본다 — 화면 상태(앞 테스트가 바꾼 규칙)와 무관한 같은 쪽 대조.
+        const html = node as HTMLElement;
+        const before = { display: html.style.display, flexWrap: html.style.flexWrap, gap: html.style.gap };
+        html.style.display = "flex";
+        html.style.flexWrap = "wrap";
+        html.style.gap = "var(--s-3)";
+        const linesBefore = linesOf();
+        html.style.display = before.display;
+        html.style.flexWrap = before.flexWrap;
+        html.style.gap = before.gap;
+        const cellStyle = getComputedStyle(cell);
+        return {
+          lines,
+          linesBefore,
+          sectionWidth: node.getBoundingClientRect().width,
+          cellContentWidth: cell.getBoundingClientRect().width - parseFloat(cellStyle.paddingLeft) - parseFloat(cellStyle.paddingRight),
+          scrollWidth: document.documentElement.scrollWidth,
+          innerWidth: window.innerWidth,
+        };
+      });
+      expect(measured.lines).toBe(measured.linesBefore);
+      expect(Math.abs(measured.sectionWidth - measured.cellContentWidth)).toBeLessThanOrEqual(1);
+      expect(measured.scrollWidth).toBeLessThanOrEqual(measured.innerWidth);
+    });
+  }
+});

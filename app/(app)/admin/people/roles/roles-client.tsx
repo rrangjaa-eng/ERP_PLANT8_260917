@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
 import {
   createRoleAction,
@@ -13,6 +13,7 @@ import {
 import type { RoleViewScope, RoleWorkScope } from "@/domain/permissions/roles";
 import type { RoleRowControls } from "./role-row-controls";
 import { TextField } from "@/ui/input/TextField";
+import { focusFirstInvalid } from "@/ui/form/focus-first-invalid";
 import { Num } from "@/ui/num/Num";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { ArchiveRejectedError, DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
@@ -281,6 +282,11 @@ export function RoleForm() {
   const { execute, result, isExecuting } = useAction(createRoleAction, {
     onSuccess: () => panelRef.current?.succeed({ status: "계급 추가됨" }),
   });
+
+  // 서버 검증 오류가 돌아오면 포커스를 이름 칸으로(07.1-02 S2 — 카드 폼과 같은 꼴).
+  useEffect(() => {
+    if (result.validationErrors !== undefined) focusFirstInvalid("role-form");
+  }, [result]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

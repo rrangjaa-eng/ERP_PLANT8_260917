@@ -85,12 +85,13 @@ export function DocumentActions({
     execute({ instanceId, expectedVersion: version });
   }
 
-  // 문서 화면의 1차 `승인` = Ctrl+Enter(§7-9). 확인 다이얼로그가 열려 있으면 그쪽 1차가 받는다. 렌더마다 다시
+  // 문서 화면의 1차 `승인` = Ctrl+Enter(§7-9). 확인 다이얼로그가 열려 있으면 그쪽 1차가 받고, 폰 「더보기」 시트 같은 열린 dialog 안 키는 그 dialog 몫이다(07.1-02 PC5). 렌더마다 다시
   // 건다(지금 렌더의 approve · 열린 다이얼로그 상태를 쓴다).
   const dialogOpen = rejectTarget !== null || withdrawTarget !== null;
   useEffect(() => {
     if (!canApprove || dialogOpen) return;
     function onKeyDown(event: KeyboardEvent) {
+      if (event.target instanceof Element && event.target.closest("dialog[open]")) return;
       if (!isCtrlCombo(event, "Enter")) return;
       event.preventDefault();
       approve();

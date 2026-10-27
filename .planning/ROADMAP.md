@@ -1188,6 +1188,17 @@ Review Dispositions — Round 2 — d9b427f(07 절만, eng-review R1~R15 · C1~C
 
 이 페이즈가 끝나면 인트라넷 4기능이 전부 새 시스템에 있다(패리티 완료). 그래서 바로 다음이 전환이다(하드 제약 4; 데이터 이전 없음 — 2026-09-23). Phase 3에서 미룬 관리 콘솔 전체 검수(CEO OV-5)도 여기서 끝난다.
 
+### Phase 07.3: 경영관리본부 자금 권한 (management-fund-scope) (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 07
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 07.3 to break down)
+
 ### Phase 07.2: 새 기능 (new-features) (INSERTED)
 
 **Goal:** 사용자가 2026-10-21 01:39 KST에 07.1로 지정한 새 기능 23개(07-vs-07.1.md ② 「사용자 지정」 PU1~PU23 — 프로젝트 삭제·되살리기, 완료 되돌리기, 고객 견적서 PDF·보냄 표시, 기본 정보 수정 범위, 견적 줄 일수, 사후 추인 딱지, 연차 규칙(근속 가산·종류별 결재선·승인 뒤 취소·반반차 시각·잔여 표·마이너스 막기·퇴직 부족), 일괄 결재, 반려 이력, 카드 사용 고치기·보관, 구매 요청 협력사 잠금, 확인증 자동 파기, 사용중지 규칙, 견적 줄 삭제 방식)를 260907 대조와 함께 넣는다. 07.1 후속과 나눈 사용자 결정 2026-10-26 16:28 KST 카드. 07.1 계획 PR 뒤 계획한다

@@ -66,7 +66,17 @@ export type DocumentDetailEvidenceFile = { id: string; name: string; sizeBytes: 
 export type DocumentDetailRow = { label: string; value: string; tone: "default" | "muted" | "warning"; files?: DocumentDetailEvidenceFile[] };
 export type DocumentDetailRows = { title: string; subtitle: string; rows: DocumentDetailRow[] };
 // now는 엔진이 받은 값을 그대로 넘긴다(CX-B2 — 엔진 · 종류 중간 층은 시계를 읽지 않는다).
-export type LoadDetailsDeps = { visible: typeof defaultVisible; now?: Date };
+// 결재함 한 번 로드 안에서 종류의 읽기 훅들이 같은 계산을 나눠 쓰는 자리(키 → 진행 중이거나 끝난 약속). 로드마다 새로 만들고 로드가 끝나면 버린다.
+export type LoadScope = Map<string, Promise<unknown>>;
+export function readOnce<T>(scope: LoadScope | undefined, key: string, read: () => Promise<T>): Promise<T> {
+  if (!scope) return read();
+  const hit = scope.get(key);
+  if (hit) return hit as Promise<T>;
+  const next = read();
+  scope.set(key, next);
+  return next;
+}
+export type LoadDetailsDeps = { visible: typeof defaultVisible; now?: Date; scope?: LoadScope };
 export type DetailFields = Record<string, unknown>;
 // 종류의 등록 DTO 명세(DtoSpec과 같은 모양 — 종류마다 키 타입이 달라 구조 타입으로 받는다).
 export type DetailDtoSpec = { readonly fields: ReadonlyArray<{ key: string; from: string; infoItem: InfoItemRef }> };
@@ -91,7 +101,7 @@ export type DocumentKindDef = {
   onFinalApprovalInTx?: (viewer: Viewer, documentId: string, tx: DbOrTx, prepared: unknown) => Promise<void>;
   // 05-01 E3: 지금 담당에게 `승인`을 막아 보일 이유(문서 id → 글자) — 표시 전용, 서버 승인 판정은 보지 않는다(최종 판정은 훅).
   // 엔진은 viewer가 지금 담당인 문서 id를 종류마다 한 배열로 한 번 넘긴다(트랜잭션 없음 · 읽기 전용).
-  approveBlockedReason?: (viewer: Viewer, documentIds: string[]) => Promise<Map<string, string>>;
+  approveBlockedReason?: (viewer: Viewer, documentIds: string[], scope?: LoadScope) => Promise<Map<string, string>>;
   // 05-10 G1: 승인된 기안 문서가 승인 뒤에 막혔음을 기안자의 「내 차례」 [막힘] 줄로 알릴 때(증빙 무효 등) — 문서 id → 상황 글자 · 행동 글자 · 주소.
   // 엔진은 기안자의 승인 문서 id를 종류마다 한 배열로 한 번 넘긴다(읽기 전용). 없으면 이 종류는 승인 뒤 막힘이 없다.
   blockedAfterApproval?: (viewer: Viewer, documentIds: string[]) => Promise<Map<string, { situation: string; actionLabel: string; href: string }>>;

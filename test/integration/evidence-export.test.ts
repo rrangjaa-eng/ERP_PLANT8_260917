@@ -143,6 +143,7 @@ describe("exportEvidenceRecords — 목록과 같은 범위 · 거르개 · 투�
     const intake = await createIntakeViewer();
     const id = await insertRecordFixture(intake, { nameOnDocument: "값 가림" });
     await db.update(evidenceRecords).set({ createdAt: new Date(Date.now() - 10 * 86_400_000) }).where(eq(evidenceRecords.id, id));
+    if (!intake.roleId) throw new Error("준비한 계급 없음");
     await upsertVisibility(SYSTEM_VIEWER, { roleId: intake.roleId, infoItem: "evidence.value", visible: false });
 
     const listed = await listEvidenceRecords(intake, { state: "all" });

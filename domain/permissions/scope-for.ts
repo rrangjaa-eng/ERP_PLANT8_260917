@@ -5,6 +5,8 @@ import { seoulToday } from "@/lib/dates";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
 import { findMembershipAtDate as defaultFindMembershipAtDate } from "@/repositories/team-memberships";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
+import { findUserById as defaultFindUserById } from "@/repositories/users";
+import { findOrgUnitById as defaultFindOrgUnitById } from "@/repositories/org-units";
 
 // ADMN-01·ADMN-12: 행 필터 서술자 — repositories가 where절로 번역한다. Drizzle
 // SQL 조각을 돌려주지 않는다 — boundaries/element-types가 domain에서 db 계층
@@ -151,17 +153,21 @@ async function computeRowScope(
 // ── 06.1 증빙 행 범위(D-6108) ─────────────────────────────────────────────────
 // Scope.rows를 넓히지 않는 이유 — 기존 리포지토리가 none만 보고 나머지를 전 행으로 읽는다(셋째 값이 전 행이 된다).
 // RowScope와 따로인 이유 — 입력이 계급 view_scope가 아니라 행의 공개 범위 칸이다(RP-5).
-// published의 팀 · 본부는 computeRowScope와 같은 길(오늘 서울 발령 → 팀의 본부)이고 발령이 없으면 둘 다 null이다.
+// published의 팀 · 본부는 computeRowScope와 같은 길(오늘 서울 발령 → 팀의 본부)이다. 발령 팀이 없으면 팀은 null이고 본부는 사람의 본부 칸(07.1-07
+// D-7122 · 보관된 본부는 null)이다 — 팀이 있으면 칸을 보지 않는다(팀 발령 이력이 정본, 칸은 팀 없는 사람만의 보조 값).
 // 권한 · 발령을 전역 풀로 읽으므로 트랜잭션 밖에서만 부른다(06-03 tx 규약).
 export type EvidenceScope =
   | { rows: "all" }
   | { rows: "published"; teamId: string | null; orgUnitId: string | null }
   | { rows: "none" };
 
-export async function evidenceScopeFor(
-  viewer: Viewer,
-  deps?: Partial<ScopeForDeps & Pick<RowScopeDeps, "findMembershipAtDate" | "findTeamById" | "today">>,
-): Promise<EvidenceScope> {
+type EvidenceScopeDeps = ScopeForDeps &
+  Pick<RowScopeDeps, "findMembershipAtDate" | "findTeamById" | "today"> & {
+    findUserById: (viewer: Viewer, id: string) => Promise<{ divisionId: string | null } | null>;
+    findOrgUnitById: (viewer: Viewer, id: string) => Promise<{ archivedAt: Date | null } | null>;
+  };
+
+export async function evidenceScopeFor(viewer: Viewer, deps?: Partial<EvidenceScopeDeps>): Promise<EvidenceScope> {
   const canFn = deps?.can ?? defaultCan;
   // 07-15(R18): 메뉴 판정(`evidence` 보기)이 먼저다 — 보기 없는 등록 쓰기만으로는 증빙을 보지 않는다.
   if (!(await canFn(viewer, "evidence", "view"))) return { rows: "none" };
@@ -170,7 +176,11 @@ export async function evidenceScopeFor(
   const findMembershipAtDate = deps?.findMembershipAtDate ?? defaultFindMembershipAtDate;
   const membership = await findMembershipAtDate(viewer, viewer.id, (deps?.today ?? seoulToday)());
   const teamId = membership?.teamId ?? null;
-  const findTeamById = deps?.findTeamById ?? defaultFindTeamById;
-  const team = teamId ? await findTeamById(viewer, teamId) : null;
-  return { rows: "published", teamId, orgUnitId: team?.orgUnitId ?? null };
+  if (teamId) {
+    const team = await (deps?.findTeamById ?? defaultFindTeamById)(viewer, teamId);
+    return { rows: "published", teamId, orgUnitId: team?.orgUnitId ?? null };
+  }
+  const divisionId = (await (deps?.findUserById ?? defaultFindUserById)(viewer, viewer.id))?.divisionId ?? null;
+  const division = divisionId ? await (deps?.findOrgUnitById ?? defaultFindOrgUnitById)(viewer, divisionId) : null;
+  return { rows: "published", teamId: null, orgUnitId: division && division.archivedAt === null ? divisionId : null };
 }

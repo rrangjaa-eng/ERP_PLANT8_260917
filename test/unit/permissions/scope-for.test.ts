@@ -291,14 +291,14 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
   const ORG_ID = "00000000-0000-4000-8000-0000000000o1";
   const DIVISION_ID = "00000000-0000-4000-8000-0000000000d1";
   const ARCHIVED_DIVISION_ID = "00000000-0000-4000-8000-0000000000d2";
-  // 발령은 effectiveFrom 이후 날짜에만 잡힌다(리포지토리의 「발령일 ≤ 날짜」 규칙을 흉내 낸다). teamUntil을 주면 그날부터는 팀이 없다(지난 발령).
+  // 발령은 effectiveFrom 이후 날짜에만 잡힌다(리포지토리의 「발령일 ≤ 날짜」 규칙을 흉내 낸다).
   // divisionId는 사람의 본부 칸(07.1-07 D-7127) — ARCHIVED_DIVISION_ID는 보관된 본부다.
-  function published(opts: { allowed?: string[]; teamFrom?: string | null; teamUntil?: string; today?: string; divisionId?: string | null }) {
+  function published(opts: { allowed?: string[]; teamFrom?: string | null; today?: string; divisionId?: string | null }) {
     const teamFrom = opts.teamFrom === undefined ? "2026-01-01" : opts.teamFrom;
     return {
       ...grants(opts.allowed ?? ["evidence:view"]),
       findMembershipAtDate: vi.fn((_v: Viewer, _userId: string, date: string) =>
-        Promise.resolve(teamFrom !== null && date >= teamFrom && (opts.teamUntil === undefined || date < opts.teamUntil) ? { teamId: TEAM_ID } : null),
+        Promise.resolve(teamFrom !== null && date >= teamFrom ? { teamId: TEAM_ID } : null),
       ),
       findTeamById: vi.fn((_v: Viewer, id: string) => Promise.resolve(id === TEAM_ID ? { orgUnitId: ORG_ID } : null)),
       findUserDivision: vi.fn((_v: Viewer, id: string) => Promise.resolve(id === viewer.id ? { divisionId: opts.divisionId ?? null } : null)),
@@ -342,9 +342,10 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
     });
   });
 
-  // D-E2 경계: 칸 비우기는 07.1-14(assignTeam)의 몫 — 이 함수는 오늘 팀이 없으면 칸을 그대로 읽는다.
-  it("지난 발령만 있고 오늘 팀이 없으면 본부 칸을 읽는다", async () => {
-    expect(await evidenceScopeFor(viewer, published({ teamFrom: "2026-01-01", teamUntil: "2026-10-01", divisionId: DIVISION_ID }))).toEqual({
+  // D-E2 경계: 칸 비우기는 07.1-14(assignTeam)의 몫 — 이 함수는 오늘 팀이 없으면 칸을 그대로 읽는다. 발령에는 끝나는 날이 없어(team_memberships)
+  // 오늘 팀이 없는 경우는 「발령 없음」과 「미래 발령만」뿐이다(PR #303 검토 P3-1).
+  it("미래 발령만 있고 오늘 팀이 없으면 본부 칸을 읽는다", async () => {
+    expect(await evidenceScopeFor(viewer, published({ teamFrom: "2026-10-20", divisionId: DIVISION_ID }))).toEqual({
       rows: "published",
       teamId: null,
       orgUnitId: DIVISION_ID,

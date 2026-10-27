@@ -196,6 +196,11 @@ export async function attachLinkInTx(
 // 못 보는 지출결의는 05 문서 읽기와 같은 판정(readEvidenceOwner의 범위 거부)으로 가른다 — 트랜잭션 밖에서만 부른다(06-03).
 export async function canSeeLinkOwner(viewer: Viewer, owner: Pick<LiveLinkOwner, "ownerKind" | "ownerId">): Promise<boolean> {
   if (owner.ownerKind === "purchase_request") return canSeePurchaseRequest(viewer, { id: owner.ownerId });
+  // 07.1-04 PE9: 카드 사용은 06 카드 사용 목록 범위(cardSlipRights.read)로 — 못 보면 번호 없는 글자.
+  if (owner.ownerKind === "corp_card_usage") {
+    const slip = await cardSlipOwner(viewer, owner.ownerId);
+    return slip !== null && (await cardSlipRights(viewer, slip)).read;
+  }
   if (owner.ownerKind !== EXPENSE_DOCUMENT_KIND) return false;
   try {
     await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: owner.ownerId });
@@ -663,6 +668,9 @@ export async function detachEvidenceRecord(viewer: Viewer, input: { linkId: stri
   const link = UUID_SHAPE.test(input.linkId) ? await findLinkById(viewer, input.linkId) : null;
   if (!link) throw new UserFacingError(LINK_NOT_FOUND);
   if (link.ownerKind === "purchase_request") return detachFromPurchaseRequest(viewer, keys, { linkId: link.id, recordId: link.evidenceRecordId, requestId: link.ownerId, reason: input.reason }, deps);
+  if (link.ownerKind === "corp_card_usage") {
+    return detachFromCardUsage(viewer, keys, { linkId: link.id, recordId: link.evidenceRecordId, usageId: link.ownerId, reason: input.reason, detachedAt: link.detachedAt }, deps);
+  }
   if (link.ownerKind !== EXPENSE_DOCUMENT_KIND) throw new UserFacingError(LINK_NOT_FOUND);
 
   const before = await readLinkedExpense(viewer, link.ownerId);
@@ -768,6 +776,47 @@ async function detachFromPurchaseRequest(
   });
 }
 
+// 07.1-04 PE1 · E-P2-16: 카드 사용 붙임 떼기 — 권한은 붙이기와 같은 키(경영관리 attach = 등록 ∧ 범위 안 ∧ 보관 아님). 권리 · 범위는 트랜잭션 밖 한 번,
+// 안에서는 붙이기와 같은 차례로 카드 사용 행을 잠근 뒤 잠근 행의 보관 여부로 다시 판정 → 증빙 행 → 붙임 해제. 카드 사용 금액 · 사용일 · 승인번호는
+// 되돌리지 않는다(덮은 전 · 후는 evidence_record_amount_change 로그에 있다). 못 보는 · 권리 없는 붙임은 없는 붙임과 같은 글자(P3-6).
+async function readCardDetachRights(viewer: Viewer, keys: ViewerKeys, usageId: string): Promise<CardUsageRightsRead> {
+  const read = await readCardUsageRights(viewer, usageId, keys);
+  if (!read || !read.rights.attach) throw new UserFacingError(LINK_NOT_FOUND);
+  return read;
+}
+
+async function detachFromCardUsage(
+  viewer: Viewer,
+  keys: ViewerKeys,
+  input: { linkId: string; recordId: string; usageId: string; reason: string; detachedAt: Date | null },
+  deps?: EvidenceAttachDeps,
+): Promise<{ detached: boolean }> {
+  const read = await readCardDetachRights(viewer, keys, input.usageId);
+  const reason = validateRejectReason(input.reason);
+  if (input.detachedAt !== null) return { detached: false };
+  await deps?.afterPreRead?.();
+  return withTransaction(async (tx) => {
+    const owner = await cardSlipOwner(viewer, input.usageId, tx);
+    if (!owner || !cardUsageRecordRights({ ...read.facts, drafterId: owner.drafterId, status: owner.status }, read.flags).attach) throw new UserFacingError(LINK_NOT_FOUND);
+    await lockEvidenceRecordState(viewer, input.recordId, tx);
+    await deps?.afterLock?.();
+    const detached = await detachLink(viewer, { linkId: input.linkId, reason }, tx);
+    if (!detached) return { detached };
+    await recordAction(
+      viewer,
+      {
+        actionType: "document_update",
+        entity: "evidence_record",
+        entityId: input.recordId,
+        documentId: owner.id,
+        detail: { change: "evidence_record_detach", ownerKind: "corp_card_usage", ownerId: owner.id, linkId: input.linkId, reasonLength: reason.length },
+      },
+      { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
+    );
+    return { detached };
+  });
+}
+
 // PA-PREVIEW: 떼면 문서 비용 기준이 확정(증빙) → 예상(문서 공급가액)으로 바뀌는가 — 남는 05 파일 0 ∧ 다른 붙임 0인 지출결의일 때만
 // `expected`. 산술 없음 · 비용 기준 함수 · 견적 줄 실행가를 부르지 않는다. 못 보는 문서 · 떼기 권리 없음은 떼기와 같은 거부(독립 검토 P3-1 · P3-6).
 // 금액은 문서 공급가액이라 문서 금액 항목(expense.amount)으로 투영한다 — 문서 금액의 정본은 문서 권한이다(P3-1).
@@ -790,6 +839,11 @@ export async function previewDetach(viewer: Viewer, input: { linkId: string }): 
   if (link.ownerKind === "purchase_request") {
     if (!(await canSeePurchaseRequest(viewer, { id: link.ownerId }))) throw new UserFacingError(LINK_NOT_FOUND);
     if (!keys.intake) throw new ForbiddenError(INTAKE_FORBIDDEN);
+    return (await projectMany(viewer, [none], EVIDENCE_DETACH_PREVIEW_DTO_SPEC))[0] ?? {};
+  }
+  if (link.ownerKind === "corp_card_usage") {
+    // 카드 사용은 문서 비용 기준이 없다 — 떼기와 같은 거부, 권리가 있으면 빈 미리 보기.
+    await readCardDetachRights(viewer, keys, link.ownerId);
     return (await projectMany(viewer, [none], EVIDENCE_DETACH_PREVIEW_DTO_SPEC))[0] ?? {};
   }
   if (link.ownerKind !== EXPENSE_DOCUMENT_KIND) throw new UserFacingError(LINK_NOT_FOUND);
@@ -1064,7 +1118,8 @@ export function cardUsageRecordRights(facts: CardUsageRightsFacts, flags: CardUs
   };
 }
 
-export type CardUsageRightsRead = { usage: CardUsageForWrite; rights: { attach: boolean; authorAttach: boolean } };
+// facts · flags는 트랜잭션 안 재판정이 잠근 행 상태만 바꿔 다시 쓴다(07.1-04 카드 사용 떼기).
+export type CardUsageRightsRead = { usage: CardUsageForWrite; rights: { attach: boolean; authorAttach: boolean }; facts: CardUsageRightsFacts; flags: CardUsageRightsFlags };
 
 // 트랜잭션 밖 한 번(06-03) — 못 보는 · 없는 카드 사용은 null(부르는 쪽이 STALE 글자 하나로 — carry-over 4).
 export async function readCardUsageRights(viewer: Viewer, usageId: string, keys?: ViewerKeys): Promise<CardUsageRightsRead | null> {
@@ -1075,11 +1130,9 @@ export async function readCardUsageRights(viewer: Viewer, usageId: string, keys?
   const usage = await findCardUsageForWrite(viewer, usageId, { includeArchived: true });
   if (!usage) return null;
   const [intake, evidenceView] = await Promise.all([keys ? Promise.resolve(keys.intake) : can(viewer, "evidence.intake", "write"), can(viewer, "evidence", "view")]);
-  const rights = cardUsageRecordRights(
-    { drafterId: owner.drafterId, status: owner.status, read: slip.read, slipWrite: slip.write, registeredVia: usage.registeredVia },
-    { viewerId: viewer.id, intake, evidenceView },
-  );
-  return { usage, rights };
+  const facts: CardUsageRightsFacts = { drafterId: owner.drafterId, status: owner.status, read: slip.read, slipWrite: slip.write, registeredVia: usage.registeredVia };
+  const flags: CardUsageRightsFlags = { viewerId: viewer.id, intake, evidenceView };
+  return { usage, rights: cardUsageRecordRights(facts, flags), facts, flags };
 }
 
 /** 작성자 막힌 행 글자(DB-8) — 값이 다른 줄은 경영관리만 덮는다. 덮을 값이 없으면 null. */

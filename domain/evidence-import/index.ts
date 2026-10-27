@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { buildChanges } from "@/domain/action-log/changes";
 import { recordAction, type CoreActionType } from "@/domain/action-log/record";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { CARD_USAGE_ENTITY, cardOverwriteSplit, cardUsageOverwriteBlocks, loadCardOverwriteBasis, type CardOverwriteBasis } from "@/domain/corp-card-usages";
@@ -293,7 +294,8 @@ async function reconcileCardRecords(
     const record = recordOf.get(match.recordId);
     if (!candidate || !record || !record.row.corpCardId) return [];
     const patch = fileWinsPatch(
-      { totalKrw: candidate.totalAmountKrw, corpCardId: candidate.corpCardId, cardLast4: candidate.cardLast4 },
+      // 07.1-04 PE2: 저장된 승인번호를 넘겨 있는 값은 덮지 않는다. 사용일은 1 · 2단계가 같은 날짜를 요구해 넘기지 않는다(E-P2-15).
+      { totalKrw: candidate.totalAmountKrw, corpCardId: candidate.corpCardId, cardLast4: candidate.cardLast4, approvalNo: candidate.approvalNo },
       { totalKrw: record.row.totalKrw, corpCardId: record.row.corpCardId, cardLast4: record.row.cardLast4 ?? "", approvalNo: record.row.approvalNo },
     );
     return [{ match, candidate, record, patch }];
@@ -350,8 +352,10 @@ async function reconcileCardRecords(
     );
     if (version === null) continue;
     applied.push(pair);
-    if (!patchChanges(pair)) continue;
     // D-6111 · RP-2: 덮은 전 · 후는 끌 수 없는 증빙 기록 금액 변경 종류로(06 공급가액 고침 종류와 섞지 않는다).
+    // 07.1-04 PE3 · PE2: 수동 붙임과 같은 changes 모양 — 승인번호만 채운 짝도 같은 종류 로그를 남긴다.
+    const before = { totalKrw: pair.candidate.totalAmountKrw, supplyKrw: pair.candidate.supplyKrw, vatKrw: pair.candidate.vatKrw };
+    const after = split ? { totalKrw: split.totalKrw, supplyKrw: split.supplyKrw, vatKrw: split.vatKrw } : before;
     await recordAction(
       viewer,
       {
@@ -359,11 +363,12 @@ async function reconcileCardRecords(
         entity: CARD_USAGE_ENTITY,
         entityId: pair.candidate.id,
         detail: {
-          before: { totalKrw: pair.candidate.totalAmountKrw, supplyKrw: pair.candidate.supplyKrw, vatKrw: pair.candidate.vatKrw },
-          after: split ? { totalKrw: split.totalKrw, supplyKrw: split.supplyKrw, vatKrw: split.vatKrw } : { totalKrw: pair.candidate.totalAmountKrw, supplyKrw: pair.candidate.supplyKrw, vatKrw: pair.candidate.vatKrw },
+          before,
+          after,
           cardLast4Before: pair.candidate.cardLast4,
           cardLast4After: pair.patch.card?.after.last4 ?? pair.candidate.cardLast4,
           evidenceRecordId: pair.record.id,
+          changes: buildChanges({ totalKrw: before.totalKrw, approvalNo: pair.candidate.approvalNo }, { totalKrw: after.totalKrw, approvalNo: pair.patch.approvalNo ?? pair.candidate.approvalNo }),
         },
       },
       { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },

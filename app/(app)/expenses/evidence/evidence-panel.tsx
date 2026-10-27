@@ -56,8 +56,9 @@ function AttachedValue({ detail }: { detail: EvidenceDetailView }) {
 function headItems(detail: EvidenceDetailView): KvItem[] {
   const items: KvItem[] = [];
   // 상태 줄은 공개 · 붙은 문서 줄이 말하지 않는 낱말일 때(미공개 · 팀 공개 · 본부 공개 · 붙음은 아래 줄과 같은 말 — 두 번 쓰지 않는다) 또는
-  // 사유가 있을 때(07.1-01 — 카드 미등록 · 음수 · 경영관리만 종류의 사유가 폰 시트에도 있다). `{낱말} · {사유}`(warning 낱말 — status-map).
-  if (detail.statusWord && (STATUS_ROW_WORDS.has(detail.statusWord) || detail.statusDetail)) {
+  // 미공개에 사유가 있을 때(07.1-01 — 음수 · 경영관리만 종류의 사유가 폰 시트에도 있다). 팀 · 본부 공개의 부가 글자는 공개 줄이 이미 말하므로 줄을 더하지 않는다
+  // (#312 N-1). `{낱말} · {사유}`(warning 낱말 — status-map).
+  if (detail.statusWord && (STATUS_ROW_WORDS.has(detail.statusWord) || (detail.statusWord === "미공개" && detail.statusDetail))) {
     items.push({
       label: "상태",
       value: (

@@ -25,3 +25,10 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: CSS 변경 0 · 새 클래스 이름 0(기존 `styles.loginActions` · `Button` · `ConfirmDialog`)
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: E2E 320 `scrollWidth <= innerWidth` 참, 3차 버튼 폰 44 터치는 `Button` 공용 규칙(§7-1). Codex 캡처 DOM 실측표(아래 보고서)
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 이 브랜치 /home/user/wt/07.1-06b/test-results/codex-design-review/branch-capture/admin_people_lockedId_-58fac12b-{375,320,768,1280}.png · main(21e3b8dd) /home/user/wt/07.1-06b-main/test-results/codex-design-review/main-21e3b8dd/ 같은 이름(CI=true, 시드 people-list-filled). DOM 실측(measurements-*.json): 네 폭 모두 overflowX false · scrollWidth = 폭, 새 3차 버튼 폰 375·320 높이 44 · 768·1280 높이 22(§7-1 3차) · 한 줄, main에는 버튼 0
+
+## 게이트 반영(r2 · PR #313 게이트 B-1 · P2-1 · N-1 · N-3)
+- [x] 할 수 없는 선택지 숨김 — 대표 대상 · 나 말고 시스템 관리자가 또 있을 때 버튼 없음 — 근거: page.tsx `canHandOver`에 `currentRoleId !== CEO_ROLE_ID` · `!hasOtherSysadmin` 추가, 서버도 같은 판정(통합 「재직 대표에게는 넘기지 못한다」 · 「시스템 관리자가 이미 둘이면」), E2E 「다른 시스템 관리자가 있으면 … 버튼이 없다」 통과
+- [x] 안내 문구 · 같은 말 두 번 — 결과 줄 둘(`대상 계급 {지금 계급} → {시스템 관리자}` · `내 계급 → {기본 계급} · 되돌리기는 새 시스템 관리자`) — 근거: 대상이 무엇을 잃는지(팀장 · 본부장 자리)가 확인 전에 보여야 한다(review P2-1). 부제는 이름만이라 겹치지 않음. 계급 이름은 데이터(listAssignableRoles)에서
+- [x] 실패 줄 — 서버 거부는 막힘(`disabledReason`), 연결 실패는 다시 누를 수 있는 `failure` — 근거: ConfirmDialog `failure` 계약(04.3-17)과 review-form.tsx · header-actions.tsx의 같은 갈래
+- [x] 새 색 · 서체 · radius · CSS 0 — 근거: `git diff origin/main -- '*.css'` 0줄
+- [x] 실제 앱 화면 — 근거: Codex r2 캡처(CI=true, 시드 people-list-filled — 시드 관리자가 유일 시스템 관리자) test-results/codex-design-review/20261027-115933-13881/admin_people_lockedId_-58fac12b-{375,320,768,1280}.png, DOM 실측: 네 폭 overflowX false · scrollWidth = 폭, 버튼 375·320 높이 44 · 768·1280 높이 22 · 한 줄. 확인 모달 안(결과 줄 둘 · 실패 줄)은 브라우저로 재지 못함(E2E erp_test에는 시스템 관리자가 늘 여럿이라 버튼이 없다) — /qa 몫

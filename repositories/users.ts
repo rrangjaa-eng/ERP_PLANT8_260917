@@ -17,6 +17,13 @@ export async function findUserById(viewer: Viewer, id: string, tx: DbOrTx = db):
   return row ?? null;
 }
 
+// 07.1-07(D-7122) · PR #303 검토 P2-3: 증빙 범위 판정에 드는 사람의 본부 칸 하나만 읽는다 — 판정마다 암호화 계좌가 든 사람 행 전체를 싣지 않는다.
+export async function findUserDivision(viewer: Viewer, id: string): Promise<{ divisionId: string | null } | null> {
+  void viewer;
+  const [row] = await db.select({ divisionId: users.divisionId }).from(users).where(eq(users.id, id)).limit(1);
+  return row ?? null;
+}
+
 // 05 /review A7 — 여러 사람 이름(id → 이름)을 한 쿼리로.
 export async function findUserNamesByIds(viewer: Viewer, ids: string[]): Promise<Map<string, string>> {
   void viewer;

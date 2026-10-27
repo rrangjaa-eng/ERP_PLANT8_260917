@@ -2,19 +2,27 @@ import { randomUUID, randomInt } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { evidenceRecords } from "@/db/schema";
+import { evidenceRecords, teamMemberships, users } from "@/db/schema";
+import { attachEvidenceAsAuthor } from "@/domain/evidence-records/attach";
+import { countEvidencePool, listEvidencePool } from "@/domain/evidence-records/pool";
+import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { createCorpCard } from "@/domain/corp-cards";
 import { getEvidenceRecord, listEvidenceRecords } from "@/domain/evidence-records";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { addDays } from "@/lib/kst-date";
-import { insertOrgUnit } from "@/repositories/org-units";
+import { insertOrgUnit, setOrgUnitArchived } from "@/repositories/org-units";
+import { upsertSimpleValue } from "@/repositories/settings";
+import { insertMembership } from "@/repositories/team-memberships";
 import { insertTeam, setTeamArchived } from "@/repositories/teams";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
+import { setupExpenseProject } from "./fixtures/expenses";
 import {
+  createDraftExpenseFixture,
   createIntakeViewer,
   createPmInTeam,
   insertLiveLinkFixture,
+  insertRecordFixture,
   registerFixtureFile,
   setRecordArchivedFixture,
   setRecordTypeFixture,
@@ -26,6 +34,7 @@ import { can } from "@/domain/permissions/can";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission } from "@/repositories/permissions";
+import { findUserById, findUserDivision } from "@/repositories/users";
 
 // 06.1-05 Task 2 — 증빙 행 범위 실측(EVID-07 · RP-5). 단언 대상 viewer는 시드 계급 role-pm(오늘 · 미래 발령)과 등록 계급뿐이다 —
 // 시스템 관리자 자격으로 재지 않는다(실제 사용자와 같은 자격으로 낮춰서). SYSTEM_VIEWER는 아래 준비(fixture) 줄에만 쓴다.
@@ -162,5 +171,117 @@ describe("증빙 범위 = 메뉴 판정(07-15 R18)", () => {
     expect(await can(both, "evidence", "view")).toBe(true);
     expect((await evidenceScopeFor(viewOnly)).rows).toBe("published");
     expect(await can(viewOnly, "evidence", "view")).toBe(true);
+  });
+});
+
+// 07.1-07(D-7127): 사람의 본부 칸 — 비어도 되는 칸이고 새 사람은 비어 있다(쓰기 길은 07.1-14).
+describe("사람의 본부 칸(07.1-07 D-7127)", () => {
+  it("새 사람의 divisionId는 null이고 저장소 읽기가 그 칸을 싣는다", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: `division-${randomUUID()}@example.test`, name: "본부칸" });
+    expect(await findUserById(SYSTEM_VIEWER, userId)).toHaveProperty("divisionId", null);
+  });
+
+  // PR #303 검토 P2-3: 증빙 범위 판정은 본부 칸 하나만 읽는다(암호화 계좌 등 사람 행 전체를 싣지 않는다).
+  it("본부 칸 읽기는 divisionId 하나만 싣고 없는 사람은 null이다", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: `division-narrow-${randomUUID()}@example.test`, name: "본부칸좁게" });
+    expect(await findUserDivision(SYSTEM_VIEWER, userId)).toStrictEqual({ divisionId: null });
+    expect(await findUserDivision(SYSTEM_VIEWER, randomUUID())).toBeNull();
+  });
+});
+
+// 07.1-07(D-7122 · C-1 · E-P1-07): 팀 없이 본부에만 속한 사람(role-pm — 증빙 보기 · 등록 쓰기 없음)은 사람의 본부 칸으로 그 본부 공개 증빙을
+// 증빙 고르기(작성자 풀 · 풀 건수)에서 본다. 증빙 목록 화면은 등록 쓰기가 있어야 열려 이 사람의 표면이 아니다 — 목록 함수는 같은 범위 SQL의 증명으로만 잰다.
+// 칸 쓰기 길은 07.1-14라 픽스처가 users.division_id를 직접 넣는다. 증빙 줄은 정상 공개 줄만(합계 0 이상 · 확인 필요 아님 · 안 붙음 · 문서와 같은 종류).
+describe("팀 없는 본부 사람의 증빙 범위(07.1-07 D-7122)", () => {
+  type Person = { viewer: Viewer; draftId: string };
+  let divisionB: string;
+  let divisionB2: string;
+  let teamTA: string;
+  let rec: { b: string; b2: string; a: string; teamA: string; privateRow: string };
+  let people: { main: Person; archived: Person; assigned: Person };
+
+  // 작성 중 지출결의 하나를 기안한 PM을, 오늘 발령 팀이 없고 본부 칸이 divisionId인 사람으로 만든다.
+  async function teamlessAuthor(divisionId: string): Promise<Person> {
+    const fx = await setupExpenseProject();
+    const draftId = await createDraftExpenseFixture(fx);
+    await db.delete(teamMemberships).where(eq(teamMemberships.userId, fx.pm.id));
+    await db.update(users).set({ divisionId }).where(eq(users.id, fx.pm.id));
+    return { viewer: fx.pm, draftId };
+  }
+
+  async function publishedRecord(target: Parameters<typeof setRecordVisibilityFixture>[1]): Promise<string> {
+    const id = await insertRecordFixture(matrix.viewers.intake);
+    await setRecordVisibilityFixture(id, target);
+    return id;
+  }
+
+  async function poolIds(person: Person): Promise<string[]> {
+    const pool = await listEvidencePool(person.viewer, { owner: { kind: "expense", id: person.draftId } });
+    return pool.items.map((item) => item.id ?? "").sort();
+  }
+
+  async function selectableCount(person: Person): Promise<number> {
+    const pool = await listEvidencePool(person.viewer, { owner: { kind: "expense", id: person.draftId } });
+    return pool.items.filter((item) => item.selectable).length;
+  }
+
+  beforeAll(async () => {
+    await upsertSimpleValue(SYSTEM_VIEWER, PAYMENT_METHOD_EVIDENCE_PAIRS.key, [], null);
+    const stamp = randomUUID().slice(0, 8);
+    divisionB = (await insertOrgUnit(SYSTEM_VIEWER, { name: `팀없는본부B-${stamp}` })).id;
+    divisionB2 = (await insertOrgUnit(SYSTEM_VIEWER, { name: `팀없는본부B2-${stamp}` })).id;
+    const divisionA = (await insertOrgUnit(SYSTEM_VIEWER, { name: `팀없는본부A-${stamp}` })).id;
+    teamTA = (await insertTeam(SYSTEM_VIEWER, { orgUnitId: divisionA, name: `팀없는본부TA-${stamp}` })).id;
+    rec = {
+      b: await publishedRecord({ visibility: "division", orgUnitId: divisionB }),
+      b2: await publishedRecord({ visibility: "division", orgUnitId: divisionB2 }),
+      a: await publishedRecord({ visibility: "division", orgUnitId: divisionA }),
+      teamA: await publishedRecord({ visibility: "team", teamId: teamTA }),
+      privateRow: await insertRecordFixture(matrix.viewers.intake),
+    };
+    people = { main: await teamlessAuthor(divisionB), archived: await teamlessAuthor(divisionB2), assigned: await teamlessAuthor(divisionB) };
+  });
+
+  it("증빙 고르기 풀에 자기 본부 공개 줄만 있고 풀 건수가 고를 수 있는 그 줄 수다 — 다른 본부 · 팀 공개 · 남의 미공개는 없다", async () => {
+    const { main } = people;
+    expect(await poolIds(main)).toEqual([rec.b]);
+    expect(await selectableCount(main)).toBe(1);
+    expect(await countEvidencePool(main.viewer, { kind: "expense", id: main.draftId })).toBe(1);
+  });
+
+  it("목록 함수(범위 SQL 증명)도 자기 본부 공개 줄만 돌려준다", async () => {
+    expect(await idsFor(people.main.viewer, { state: "all" })).toEqual([rec.b]);
+  });
+
+  it("본부 칸의 본부를 보관하면 그 본부 공개 줄이 풀 · 풀 건수 · 목록에서 사라진다", async () => {
+    const { archived } = people;
+    expect(await poolIds(archived)).toEqual([rec.b2]);
+    expect(await idsFor(archived.viewer, { state: "all" })).toEqual([rec.b2]);
+    await setOrgUnitArchived(SYSTEM_VIEWER, divisionB2, true);
+    expect(await poolIds(archived)).toEqual([]);
+    expect(await countEvidencePool(archived.viewer, { kind: "expense", id: archived.draftId })).toBe(0);
+    expect(await idsFor(archived.viewer, { state: "all" })).toEqual([]);
+  });
+
+  it("오늘 팀(다른 본부)을 발령하면 본부 칸을 보지 않고 팀 · 팀의 본부 공개를 본다(팀 우선)", async () => {
+    const { assigned } = people;
+    expect(await poolIds(assigned)).toEqual([rec.b]);
+    await insertMembership(SYSTEM_VIEWER, { userId: assigned.viewer.id, teamId: teamTA, effectiveFrom: seoulToday() });
+    expect(await poolIds(assigned)).toEqual([rec.a, rec.teamA].sort());
+    expect(await countEvidencePool(assigned.viewer, { kind: "expense", id: assigned.draftId })).toBe(2);
+    expect(await idsFor(assigned.viewer, { state: "all" })).toEqual([rec.a, rec.teamA].sort());
+  });
+
+  // PR #303 검토 P2-1: 넓어진 범위가 작성자 붙이기(attachEvidenceAsAuthor → preReadRecords → listEvidenceRecordsByIds)에도 쓰인다.
+  it("작성자 붙이기 — 자기 본부 공개 증빙은 붙고 다른 본부 공개 증빙은 없는 증빙 거부다", async () => {
+    const author = await teamlessAuthor(divisionB);
+    const own = await publishedRecord({ visibility: "division", orgUnitId: divisionB });
+    const owner = { kind: "expense" as const, id: author.draftId };
+    const refused = await attachEvidenceAsAuthor(author.viewer, { evidenceIds: [rec.a], owner }).then(
+      () => "붙었다",
+      (error: unknown) => (error instanceof Error ? error.message : "알 수 없는 거부"),
+    );
+    expect(refused).toBe("없는 증빙 · 새로 고침");
+    expect(await attachEvidenceAsAuthor(author.viewer, { evidenceIds: [own], owner })).toEqual({ attached: 1 });
   });
 });

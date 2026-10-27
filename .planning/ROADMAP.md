@@ -1190,14 +1190,24 @@ Review Dispositions — Round 2 — d9b427f(07 절만, eng-review R1~R15 · C1~C
 
 ### Phase 07.3: 경영관리본부 자금 권한 (management-fund-scope) (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
-**Depends on:** Phase 07
-**Plans:** 0 plans
+**Goal:** 자금 기능 8개(증빙 등록 · 증빙 무효 처리 · 결재 중 증빙 붙이기 · 견적 조정 줄 · 지급 처리 · 구매 처리 · 예산 현황 · 매출 정산)를 「계급에 켜진 키 ∧ 경영관리본부 소속」인 사람만 쓰게 한다(대표 · 시스템 관리자 등 회사 전체 계급은 그대로, 카드 대리 등록 제외). 판정은 `can()` 한 접점 · 자금 본부는 설정 uuid · 소속은 07.1-07 규칙(팀이 이긴다 · 팀 없으면 본부 칸). 그 위에 사원 · 팀장 · 본부 책임자 시드와 결재선 ③단(경영관리본부 책임자)을 맞추고, 권한표에 본부 조건 표지를 보이며, 계급 「기획 PM」을 「사원」으로 바꾼다. 입력 07.3-CONTEXT.md D-7301~D-7320 · 07.3-RESEARCH.md
+**Requirements**: D-7301 ~ D-7320(07.3-CONTEXT.md 결정 — 요구 ID 없음)
+**Depends on:** Phase 07 · 07.1-07(users.division_id) · 07.1-06 · 07.1-14 · 07.1-01 · 07.1-02 · 07.1-03 · 07.1-05 · 07.1-15 · 07.1-18(같은 파일 — 각 플랜 depends_on)
+**Plans:** 0/4 plans executed
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 07.3 to break down)
+- [ ] 07.3-01-PLAN.md — 자금 게이트: can() 한 접점 + 소속 본부 · 설정 · 행 범위 확대(위험 경로 · 사용자 머지)
+
+**Wave 2** *(blocked on Wave 1 completion — 07.3-02는 07.3-01 머지 · 스테이징 배포 초록 뒤)*
+
+- [ ] 07.3-02-PLAN.md — 자금 시드 · 결재선 ③단 본부 책임자 · 결재 스냅숏 본부 · 알림 받는 사람 정렬(/cso · 세션 머지)
+- [ ] 07.3-04-PLAN.md — 권한표 그룹 줄 「경영관리본부만」 표지(화면 · /design-review · /qa)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 07.3-03-PLAN.md — 계급 이름 「기획 PM」 → 「사원」 마이그레이션 · 시험 · 문서(위험 경로 · 사용자 머지)
 
 ### Phase 07.2: 새 기능 (new-features) (INSERTED)
 

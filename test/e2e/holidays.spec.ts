@@ -518,6 +518,8 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     const restored = rowOf(page, ROW_A.name).getByRole("button", { name: "삭제" });
     await expect(restored).toBeVisible();
     await expect(restored).not.toHaveAttribute("aria-disabled", "true");
+    // 경합 경로(같은 줄이 언마운트되지 않음)에서도 되돌린 줄의 `삭제`가 포커스를 받는다 — `되돌리기` 버튼이 사라져 포커스가 BODY로 떨어지지 않게(정상 경로와 같다).
+    await expect(restored).toBeFocused();
     await restored.click();
     await expect(rowOf(page, ROW_A.name)).toHaveCount(0);
     await expect(page.getByRole("status").filter({ hasText: `${ROW_A.date} ${ROW_A.name} 삭제됨` })).toHaveCount(1);

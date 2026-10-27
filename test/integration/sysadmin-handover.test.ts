@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
-import { LastAdminError, LAST_ADMIN_MESSAGE } from "@/domain/permissions/last-admin";
-import { ForbiddenError, handOverSysadmin, ValidationError } from "@/domain/people";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { db } from "@/db/client";
+import { ForbiddenError, handOverSysadmin, hasOtherSysadmin, ValidationError } from "@/domain/people";
+import { SeatTakenError } from "@/domain/people/seat-rules";
 import { RetiredPersonEditError } from "@/domain/people/retired";
 import { queryActionLog } from "@/repositories/action-log";
 import { countActiveAdmins, setUserArchived, updateUserHireDate, updateUserResignationDate } from "@/repositories/users";
+import { ADMIN_SEAT_LOCK_KEY, listCompanySeatHolders } from "@/repositories/seats";
 import { NOW_2026 } from "./approvals-fixtures";
-import { holdKey, makeAdmin, makeDelegatedRole, makeOrgTeam, makeSeated, roleOf, uniqueName, waitingOnKey } from "./admin-cap-fixtures";
+import { holdKey, makeAdmin, makeAdminRole, makeDelegatedRole, makeOrgTeam, makeSeated, roleOf, uniqueName, waitingOnKey } from "./admin-cap-fixtures";
 
 // 07.1 D-2(2026-10-27 17:39 KST 사용자 결정): 시스템 관리자가 한 명뿐일 때 화면에서 다른 사람에게 자리를 넘긴다 — 한 tx에서 새 사람을
 // 시스템 관리자로 넣고 옛 사람을 빼서 관리자 0명인 순간이 없다. 옛 사람은 기본 계급(DEFAULT_ROLE_ID)으로.
@@ -75,16 +77,61 @@ describe("시스템 관리자 넘기기(07.1 D-2)", () => {
     expect(await handoverLogs(a.id)).toHaveLength(0);
   });
 
-  it("퇴직 예정인 사람에게 넘기면 남는 관리자가 0명이라 거부(D-6412)", async () => {
+  it("퇴직 예정인 사람에게 넘기면 다른 관리자급이 있어도 전용 문구로 거부(화면과 같은 판정)", async () => {
     const a = await makeAdmin(uniqueName("관리자A"));
+    // 관리자급 계급을 가진 재직자가 따로 있으면 마지막 관리자 판정은 통과한다 — 퇴직 예정 거부는 그와 무관해야 한다.
+    await makeSeated(uniqueName("관리자급"), await makeAdminRole("관리자급"), null);
     const b = await makeSeated(uniqueName("PM B"), DEFAULT_ROLE_ID, null);
     await updateUserResignationDate(SYSTEM_VIEWER, b.id, "2026-12-31");
 
-    const error = await refusal(handOverSysadmin(a, b.id, deps), LastAdminError);
+    const error = await refusal(handOverSysadmin(a, b.id, deps), ValidationError);
 
-    expect(error.message).toBe(LAST_ADMIN_MESSAGE);
+    expect(error.message).toBe("퇴직 예정자에게 넘기기 불가");
     expect(await roleOf(a.id)).toBe(SYSADMIN_ROLE_ID);
     expect(await roleOf(b.id)).toBe(DEFAULT_ROLE_ID);
+    expect(await handoverLogs(a.id)).toHaveLength(0);
+  });
+
+  it("재직 대표에게는 넘기지 못한다 · 계급 그대로 · 재직 대표 수 그대로(사용자 결정 2026-10-27 20:45 KST)", async () => {
+    const a = await makeAdmin(uniqueName("관리자A"));
+    const ceo = await makeSeated(uniqueName("대표"), CEO_ROLE_ID, null);
+    const ceosBefore = await listCompanySeatHolders(SYSTEM_VIEWER, { roleId: CEO_ROLE_ID, today: TODAY }, db);
+
+    const error = await refusal(handOverSysadmin(a, ceo.id, deps), ValidationError);
+
+    expect(error.message).toBe("대표에게 넘기기 불가");
+    expect(await roleOf(ceo.id)).toBe(CEO_ROLE_ID);
+    expect(await roleOf(a.id)).toBe(SYSADMIN_ROLE_ID);
+    expect(await listCompanySeatHolders(SYSTEM_VIEWER, { roleId: CEO_ROLE_ID, today: TODAY }, db)).toHaveLength(ceosBefore.length);
+    expect(ceosBefore.some((row) => row.userId === ceo.id)).toBe(true);
+    expect(await handoverLogs(a.id)).toHaveLength(0);
+  });
+
+  it("시스템 관리자가 이미 둘이면(#304 이전 데이터) 회사 자리 검사가 거부 · 둘 다 그대로 · 화면 판정도 「다른 시스템 관리자 있음」", async () => {
+    const a = await makeAdmin(uniqueName("관리자A"));
+    expect(await hasOtherSysadmin(a, TODAY)).toBe(false);
+    const a2 = await makeAdmin(uniqueName("관리자A2"));
+    const b = await makeSeated(uniqueName("PM B"), DEFAULT_ROLE_ID, null);
+
+    expect(await hasOtherSysadmin(a, TODAY)).toBe(true);
+    await refusal(handOverSysadmin(a, b.id, deps), SeatTakenError);
+
+    expect(await roleOf(a.id)).toBe(SYSADMIN_ROLE_ID);
+    expect(await roleOf(a2.id)).toBe(SYSADMIN_ROLE_ID);
+    expect(await roleOf(b.id)).toBe(DEFAULT_ROLE_ID);
+  });
+
+  it("시스템 관리자가 아닌 행위자는 잠금을 잡기 전에 거부 — 관리자 키를 누가 쥐고 있어도 기다리지 않는다", async () => {
+    await makeAdmin(uniqueName("관리자A"));
+    const delegate = await makeSeated(uniqueName("위임"), await makeDelegatedRole({}), null);
+    const b = await makeSeated(uniqueName("PM B"), DEFAULT_ROLE_ID, null);
+    const held = await holdKey(ADMIN_SEAT_LOCK_KEY);
+    try {
+      const error = await refusal(handOverSysadmin(delegate, b.id, deps), ForbiddenError);
+      expect(error.message).toBe("시스템 관리자만 넘기기");
+    } finally {
+      await held.release();
+    }
   });
 
   it("시스템 관리자가 아닌 사람 쓰기 권한 보유자는 넘기지 못한다", async () => {

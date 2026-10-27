@@ -353,8 +353,9 @@ describe("시드 계급 기본값 표 리팩터 전후 행 집합(07-05 D-722)",
 
     // 재시드는 행을 바꾸지 않고, 반환 카운트는 리팩터 전 값과 같다(시스템 관리자 루프 + 시드 계급 표).
     // 07-19: 알림 규칙 메뉴(view · write · approve 셋)가 시스템 관리자 루프에 들어와 권한 128 → 131(PC-08 예외 지움).
+    // 07.1(D-7107): 연차 · 지출결의 시드 루프의 17행이 표로 와 표 루프가 센다 — 131 → 148(행 집합은 위 스냅숏 그대로).
     const result = await seedMasterData(SYSTEM_VIEWER);
-    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 131, visibility: 190 });
+    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 148, visibility: 190 });
   });
 });
 

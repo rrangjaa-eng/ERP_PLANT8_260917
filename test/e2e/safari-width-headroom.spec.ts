@@ -1,10 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
 import { loginAsAdmin } from "./people-list-helpers";
+import { SETTING_DEFS } from "@/domain/settings/keys";
 
 // 04.6 사파리 비교(#158) — WebKit은 같은 글꼴을 크롬보다 조금 넓게 그려, 크롬에서 96px에 딱 맞던 TextField 라벨
 // (「알림 발송 건수 상한」「차수당 견적 줄 상한」)이 사파리에서만 2줄(높이 25→46)이 됐다. 이 컨테이너엔 WebKit이 없어
 // 「라벨 칸이 글자 폭보다 --s-1만큼 넉넉한가 + 입력 칸 x는 그대로인가」를 크롬에서 재 지킨다.
 const BORDERLINE_LABELS = ["알림 발송 건수 상한", "차수당 견적 줄 상한"];
+// 설정 화면은 묶음마다 따로 그린다 — 경계 라벨이 있는 묶음을 모두 연다.
+const BORDERLINE_GROUPS = [...new Set(SETTING_DEFS.filter((def) => BORDERLINE_LABELS.includes(def.label)).map((def) => def.namespace))];
 
 async function tokenPx(page: Page, name: string): Promise<number> {
   return page.evaluate((token) => {
@@ -27,7 +30,7 @@ for (const width of [768, 1280]) {
     const gap = await tokenPx(page, "--s-2");
     const headroom = await tokenPx(page, "--s-1");
 
-    const rows = await page.evaluate(() =>
+    const measureRows = () => page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>('[data-ui="field-row"]')].flatMap((row) => {
         const label = row.querySelector<HTMLLabelElement>(":scope > label");
         const input = label?.htmlFor ? document.getElementById(label.htmlFor) : null;
@@ -44,6 +47,11 @@ for (const width of [768, 1280]) {
         ];
       }),
     );
+    const rows = [...(await measureRows())];
+    for (const group of BORDERLINE_GROUPS) {
+      await page.goto(`/admin/settings?group=${encodeURIComponent(group)}`);
+      rows.push(...(await measureRows()));
+    }
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       expect(row.labelWidth, `${row.text} 라벨 칸 폭 = --label-w + --s-1`).toBeGreaterThanOrEqual(labelW + headroom - 1);

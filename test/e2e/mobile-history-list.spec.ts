@@ -87,7 +87,7 @@ test.describe("§7-14 이력 목록 터치 목표 — 폰 3차 44 · 편집 행 
     await loginAsAdmin(page);
     for (const width of WIDTHS_PHONE) {
       await page.setViewportSize({ width, height: 800 });
-      await page.goto("/admin/settings");
+      await page.goto(`/admin/settings?group=${encodeURIComponent("세율")}`);
       const section = vatSection(page);
       const trigger = section.getByRole("button", { name: "새 이력 추가", exact: true });
       await expectTouchMin(trigger, `@${width} 새 이력 추가(3차)`);
@@ -105,7 +105,7 @@ test.describe("§7-14 이력 목록 터치 목표 — 폰 3차 44 · 편집 행 
     await person.getByRole("button", { name: "새 이력 추가", exact: true }).click();
     await expectEditRow(person, PC_CONTROL, "사람 상세 @1280");
 
-    await page.goto("/admin/settings");
+    await page.goto(`/admin/settings?group=${encodeURIComponent("세율")}`);
     const vat = vatSection(page);
     await vat.getByRole("button", { name: "새 이력 추가", exact: true }).click();
     await expectEditRow(vat, PC_CONTROL, "설정 부가세율 @1280");

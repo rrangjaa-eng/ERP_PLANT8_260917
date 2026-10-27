@@ -10,6 +10,13 @@ import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { findDocumentCounter, upsertDocumentCounter } from "@/repositories/document-counters";
 import { kstYear } from "@/lib/kst-date";
 
+// 설정 화면은 묶음(namespace)마다 따로 그린다 — 키가 있는 묶음 주소.
+function groupUrl(key: string): string {
+  const def = SETTING_DEFS.find((candidate) => candidate.key === key);
+  if (!def) throw new Error(`설정 키 없음: ${key}`);
+  return `/admin/settings?group=${encodeURIComponent(def.namespace)}`;
+}
+
 // ADMN-05·06, 성공 기준 4: 설정 화면이 레지스트리에서 자동 생성되고, 값
 // 변경이 저장 버튼 없이 즉시 반영되는 것과 이력형 키의 「예정」 상태를
 // end-to-end로 증명한다.
@@ -103,7 +110,7 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
     await page.getByRole("button", { name: "로그인" }).click();
     await expect(page).toHaveURL(/\/account$/);
 
-    await page.goto("/admin/settings");
+    await page.goto(`/admin/settings?group=${encodeURIComponent("세율")}`);
 
     // 부가세율(이력형) 섹션 근처의 「새 이력 추가」 3차 버튼을 연다.
     const vatLabel = page.getByText("부가세율", { exact: true });
@@ -131,7 +138,7 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
     await page.getByRole("button", { name: "로그인" }).click();
     await expect(page).toHaveURL(/\/account$/);
 
-    await page.goto("/admin/settings");
+    await page.goto(`/admin/settings?group=${encodeURIComponent("세율")}`);
 
     // 부가세율과 사업소득 원천징수율은 둘 다 이력형 키다 — 각각의
     // HistorizedFieldEditor가 HistoryList를 하나씩 렌더한다.
@@ -185,7 +192,7 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
       await page.getByLabel("비밀번호").fill(admin.password);
       await page.getByRole("button", { name: "로그인" }).click();
       await expect(page).toHaveURL(/\/account$/);
-      await page.goto("/admin/settings");
+      await page.goto(groupUrl(DOCUMENT_NUMBER_PROJECT_SEQ_START.key));
 
       const field = page.getByLabel(DOCUMENT_NUMBER_PROJECT_SEQ_START.label, { exact: true });
       await expect(field).toHaveValue("100");
@@ -231,15 +238,15 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
 
 // 07-08(SC-04 · D-734 · D-735): 지급 3키 · 원가율(비움 ≠ 0) · 수금 기한 일수가 설정 화면에서 바뀐다.
 test.describe("07-08 — 지급 · 프로젝트 새 설정 항목 (SC-04)", () => {
-  async function openSettingsAsAdmin(page: import("@playwright/test").Page) {
+  async function openSettingsAsAdmin(page: import("@playwright/test").Page, group = "지급") {
     const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(admin.email);
     await page.getByLabel("비밀번호").fill(admin.password);
     await page.getByRole("button", { name: "로그인" }).click();
     await expect(page).toHaveURL(/\/account$/);
-    await page.goto("/admin/settings");
-    await expect(page.getByRole("heading", { name: "지급", exact: true })).toBeVisible();
+    await page.goto(`/admin/settings?group=${encodeURIComponent(group)}`);
+    await expect(page.getByRole("heading", { name: group, exact: true })).toBeVisible();
   }
   const isServerAction = (response: { request: () => { method: () => string; headers: () => Record<string, string> } }) =>
     response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined;
@@ -284,7 +291,7 @@ test.describe("07-08 — 지급 · 프로젝트 새 설정 항목 (SC-04)", () =
     const original = await findSimpleValue(SYSTEM_VIEWER, key);
     await db.delete(settingsSimple).where(eq(settingsSimple.key, key));
     try {
-      await openSettingsAsAdmin(page);
+      await openSettingsAsAdmin(page, "프로젝트");
       const label = PROJECT_COST_RATE_PCT.label;
       const field = () => section(page, "프로젝트").getByLabel(label, { exact: true });
       await expect(field()).toHaveValue("");
@@ -322,7 +329,7 @@ test.describe("07-08 — 지급 · 프로젝트 새 설정 항목 (SC-04)", () =
     const key = PROJECT_COLLECTION_DUE_DAYS.key;
     const original = await findSimpleValue(SYSTEM_VIEWER, key);
     try {
-      await openSettingsAsAdmin(page);
+      await openSettingsAsAdmin(page, "프로젝트");
       const field = () => section(page, "프로젝트").getByLabel(PROJECT_COLLECTION_DUE_DAYS.label, { exact: true });
       await expect(field()).toHaveValue("60");
       await field().fill("90");
@@ -348,7 +355,11 @@ test.describe("07-08 — 지급 · 프로젝트 새 설정 항목 (SC-04)", () =
       DOCUMENT_NUMBER_PROJECT_SEPARATOR.key,
       EVIDENCE_MAX_SIZE_MB.key,
     ];
-    const widthOf = async (key: string) => (await page.locator(`[id="setting-${key}"]`).boundingBox())?.width ?? 0;
+    // 묶음마다 따로 그려지므로 칸이 있는 묶음을 열고 잰다.
+    const widthOf = async (key: string) => {
+      await page.goto(groupUrl(key));
+      return (await page.locator(`[id="setting-${key}"]`).boundingBox())?.width ?? 0;
+    };
     for (const size of [{ width: 1280, height: 900 }, { width: 768, height: 900 }]) {
       await page.setViewportSize(size);
       for (const key of ids) expect(Math.round(await widthOf(key)), `${key} @${size.width}`).toBe(280);
@@ -361,23 +372,29 @@ test.describe("07-08 — 지급 · 프로젝트 새 설정 항목 (SC-04)", () =
 // PR #104 후속 F(2) — ISSUE-001(/qa): 설정 칸의 힌트 <p>가 id를 갖고 칸(또는 묶음)의 aria-describedby가 그 id를 가리킨다.
 // DR-104-03(/design-review): 이력 목록 숫자가 쉼표 포맷터로 그려진다. 키에 점이 있어 id는 속성 선택자로 집는다.
 test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 이력 숫자 쉼표 (DR-104-03)", () => {
-  async function openSettings(page: import("@playwright/test").Page) {
+  async function openSettings(page: import("@playwright/test").Page, group = "로그인 잠금") {
     const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(admin.email);
     await page.getByLabel("비밀번호").fill(admin.password);
     await page.getByRole("button", { name: "로그인" }).click();
     await expect(page).toHaveURL(/\/account$/);
-    await page.goto("/admin/settings");
-    await expect(page.getByRole("heading", { name: "로그인 잠금" })).toBeVisible();
+    await page.goto(`/admin/settings?group=${encodeURIComponent(group)}`);
+    await expect(page.getByRole("heading", { name: group, exact: true })).toBeVisible();
   }
 
   test("ISSUE-001 — hint 있는 모든 설정 키의 힌트가 id를 갖고 칸 · fieldset · 이력 묶음의 aria-describedby에 들어간다, 매달린 id 없음", async ({ page }) => {
     await openSettings(page);
-    const hinted = SETTING_DEFS.filter((def) => def.hint).map((def) => ({ key: def.key, hint: def.hint as string }));
-    expect(hinted.length).toBeGreaterThan(0);
+    const hintedAll = SETTING_DEFS.filter((def) => def.hint).map((def) => ({ key: def.key, hint: def.hint as string, namespace: def.namespace }));
+    expect(hintedAll.length).toBeGreaterThan(0);
 
-    const problems = await page.evaluate((defs) => {
+    // 묶음마다 따로 그려진다 — 힌트가 있는 묶음을 차례로 열어 그 묶음의 키를 본다.
+    const problems: string[] = [];
+    for (const namespace of new Set(hintedAll.map((def) => def.namespace))) {
+      await page.goto(`/admin/settings?group=${encodeURIComponent(namespace)}`);
+      await expect(page.getByRole("heading", { name: namespace, exact: true })).toBeVisible();
+      const hinted = hintedAll.filter((def) => def.namespace === namespace);
+      problems.push(...(await page.evaluate((defs) => {
       const found: string[] = [];
       for (const { key, hint } of defs) {
         const hintId = `setting-${key}-hint`;
@@ -402,7 +419,8 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
         }
       }
       return found;
-    }, hinted);
+    }, hinted)));
+    }
     expect(problems).toEqual([]);
   });
 
@@ -412,7 +430,7 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
   });
 
   test("ISSUE-001 — 구분자 칸에 허용 밖 글자를 넣고 blur하면 aria-describedby가 오류 id 다음 힌트 id이고 저장은 거부된다", async ({ page }) => {
-    await openSettings(page);
+    await openSettings(page, "문서 번호");
     const key = DOCUMENT_NUMBER_PROJECT_SEPARATOR.key;
     const field = page.locator(`[id="setting-${key}"]`);
     await expect(field).toBeVisible();
@@ -430,7 +448,7 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
 
   // 05-04(UI-SPEC S13): `증빙` 섹션 — 값 옆 정적 단위 글자 · 숫자 오류는 명사형 한 줄(DECISIONS 2026-09-26).
   test("05-04 S13 — 증빙 크기 한도는 기본 10 · 입력 오른쪽에 MB이고, 비우고 blur하면 숫자 형식 오류 · 저장되지 않는다", async ({ page }) => {
-    await openSettings(page);
+    await openSettings(page, "증빙");
     const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "증빙", exact: true }) });
     const field = section.getByLabel(EVIDENCE_MAX_SIZE_MB.label, { exact: true });
     await expect(field).toHaveValue("10");
@@ -459,7 +477,7 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
   for (const width of [375, 320, 768, 1280]) {
     test(`05-04 S13 — ${width}px 단위 MB는 기본·오류 상태 모두 입력 칸과 세로 가운데가 같고 입력→힌트 간격이 다른 숫자 칸과 같다`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
-      await openSettings(page);
+      await openSettings(page, "증빙");
       const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "증빙", exact: true }) });
       const field = section.getByLabel(EVIDENCE_MAX_SIZE_MB.label, { exact: true });
       const unit = section.getByText(EVIDENCE_MAX_SIZE_MB.unitLabel ?? "", { exact: true });
@@ -497,7 +515,7 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
   }
 
   test("DR-104-03 — 이력 목록 숫자: 면제 기준 50,000, 비율은 저장값 그대로(0.033 · 0.1)", async ({ page }) => {
-    await openSettings(page);
+    await openSettings(page, "세율");
     // 시드 이력 행의 적용 시작일 — domain/seed/index.ts SEED_HISTORIZED_EFFECTIVE_FROM(export 안 된 상수).
     const seedDate = "2000-01-01";
     const valueOf = async (caption: string) => {
@@ -525,7 +543,7 @@ test.describe("내부 칸 오류 상태(04.3-03 F2 · F3 · 04.3-15 R3)", () => 
     await page.getByLabel("비밀번호").fill(admin.password);
     await page.getByRole("button", { name: "로그인" }).click();
     await expect(page).toHaveURL(/\/account$/);
-    await page.goto("/admin/settings");
+    await page.goto(`/admin/settings?group=${encodeURIComponent("환율")}`);
 
     const field = page.getByLabel("USD 최근 환율");
     await field.fill("1.12345");

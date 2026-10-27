@@ -74,7 +74,7 @@ test.describe("폰 375 하단 탭 현재 표시 (02-08 Task 3, WR-01)", () => {
 test.describe("폰 375 설정 체크박스 터치 목표 (F-05)", () => {
   test("체크박스를 가진 라벨이 높이 44 이상이고 체크박스 glyph는 20×20이다", async ({ page }) => {
     await loginAs(page, SYSADMIN_ROLE_ID);
-    await page.goto("/admin/settings");
+    await page.goto(`/admin/settings?group=${encodeURIComponent("증빙")}`);
 
     // 짝 격자(§7-2 · §7-13 PermissionGrid)는 PC 표와 폰 select · 목록을 둘 다 그리고 CSS로만 가른다 — 폰에서 숨은 PC 표의 라벨은 상자가 없다.
     const checkboxLabels = page

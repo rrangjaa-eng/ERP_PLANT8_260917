@@ -19,6 +19,7 @@ import { seoulToday } from "@/lib/dates";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { pairGridAxis } from "./pair-grid-axes";
+import { resolveSettingsGroup } from "./group-param";
 import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel } from "./settings-form-client";
 
 // D-36 계약: 화면 코드에 계급 이름 분기가 없다. 캐시 없음 — 화면 로드마다
@@ -172,17 +173,19 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
   }));
 }
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ group?: string | string[] }> }) {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.settings", "view"))) notFound();
 
   const sections = await buildSections(session.viewer);
+  const { group } = await searchParams;
+  const currentGroup = resolveSettingsGroup(sections.map((section) => section.namespace), group);
 
   return (
     <DetailScreen title="설정">
       <div className="single-column">
-        <SettingsFormClient sections={sections} viewerId={session.viewer.id} />
+        <SettingsFormClient sections={sections} currentGroup={currentGroup} viewerId={session.viewer.id} />
       </div>
     </DetailScreen>
   );

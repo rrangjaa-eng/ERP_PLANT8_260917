@@ -167,3 +167,46 @@
     min-width: var(--touch-min);
   }
 }
+
+/* 설정 묶음 링크 줄 — 코드표 선택 링크(code-tables.module.css .tableNav · .toggle)와 같은 모양. 폰(<700)은 링크 줄 대신 「묶음」 select. */
+.groupNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+  margin-bottom: var(--s-6);
+}
+
+.groupLink {
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  color: var(--text-link);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.groupLink:hover {
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
+.groupLink[aria-current="page"] {
+  color: var(--text-strong);
+  font-weight: var(--fw-bold);
+  text-decoration: none;
+}
+
+.groupSelect {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .groupNav {
+    display: none;
+  }
+
+  .groupSelect {
+    display: block;
+    margin-bottom: var(--s-6);
+  }
+}

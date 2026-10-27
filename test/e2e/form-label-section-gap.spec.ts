@@ -275,7 +275,7 @@ test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.
 
   test("설정 화면 select 칸", async ({ page }) => {
     await loginAsSysadmin(page);
-    await page.goto("/admin/settings");
+    await page.goto(`/admin/settings?group=${encodeURIComponent("지급")}`);
     await expectLabelLayoutAtAllWidths(page, "main", true, false);
   });
 

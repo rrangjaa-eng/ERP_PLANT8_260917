@@ -17,7 +17,7 @@ import { doorFor, lineExecution } from "@/domain/expenses";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
 import { sumKrw } from "@/domain/money";
 import { resolveLineDoor } from "@/domain/quotes/line-door";
-import { findReviewByExpense } from "@/repositories/expense-evidence-reviews";
+import { listReviewStatusByExpenses } from "@/repositories/expense-evidence-reviews";
 import { listExpenseIdsInScope, type ExpenseScope } from "@/repositories/expenses";
 import { listIssuedAmountsKrw, listPreSettleExpenseRows, listPreSettleLineRows, type PreSettleLineRow } from "@/repositories/pre-settle-check";
 import { sumQuoteAmountByRevision } from "@/repositories/quote-lines";
@@ -166,13 +166,16 @@ export async function computePreSettleCheck(viewer: Viewer, projectId: string, i
   // 낱말은 resolveEvidenceStatus(C5).
   const expenseRows = await listPreSettleExpenseRows(viewer, projectId, tx);
   const evidenceSources = await evidenceSourcesOf(viewer, { ownerKind: "expense", ownerIds: expenseRows.map((row) => row.id) }, tx);
+  // 07.1-01 PF2 — 확인 기록은 문서마다 따로 읽지 않고 한 번에(질의 수가 지출결의 수에 비례하지 않는다).
+  const reviewStatuses = await listReviewStatusByExpenses(viewer, expenseRows.map((row) => row.id), tx);
   const open: (PreSettleExpenseRowDto & { supplyAmountKrw: number | null })[] = [];
   const pending: (PreSettleExpenseRowDto & { supplyAmountKrw: number | null })[] = [];
   for (const row of expenseRows) {
+    const reviewStatus = reviewStatuses.get(row.id);
     const evidence = resolveEvidenceStatus({
       hasEvidence: evidenceSources.has(row.id),
       prepaid: row.prepaid,
-      review: await findReviewByExpense(viewer, row.id, tx),
+      review: reviewStatus ? { status: reviewStatus } : null,
     });
     const state = openExpenseState({ approvalStatus: row.approvalStatus, evidence, closed: false });
     const group = preSettleExpenseGroup({ approvalStatus: row.approvalStatus, state });
@@ -212,6 +215,7 @@ export async function computePreSettleCheck(viewer: Viewer, projectId: string, i
   const summary: PreSettleSummary = summarizePreSettle(
     { openExpenses: open.length, unmatchedLines: unmatched.length, missingRevenue: revenue.missingRevenue },
     inputs.allowances,
+    pending.length,
   );
   // 미결 지출결의 · 증빙 대기 행만 보는 사람의 범위로 가른다 — 범위 밖은 건수만(번호 · 항목 · 금액을 싣지 않는다).
   // 미매칭 줄 문의 마지막 문서(회수 등 — listNumberedByLines는 결재 상태 · 범위를 보지 않는다)도 같은 범위로 거른다 — 범위 밖이면 문 없음(검토 F-1).
@@ -228,7 +232,7 @@ export async function computePreSettleCheck(viewer: Viewer, projectId: string, i
   }
   return {
     openExpenses: { ...summary.groups.openExpenses, rows: visibleRows, outOfScopeCount: open.length - visibleRows.length },
-    evidencePending: { count: pending.length, rows: visiblePending, outOfScopeCount: pending.length - visiblePending.length },
+    evidencePending: { count: summary.evidencePendingCount, rows: visiblePending, outOfScopeCount: pending.length - visiblePending.length },
     unmatchedLines: { ...summary.groups.unmatchedLines, rows: unmatched },
     missingRevenue: summary.groups.missingRevenue,
     revenue: {

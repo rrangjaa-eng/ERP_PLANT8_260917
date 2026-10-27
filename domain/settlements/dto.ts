@@ -14,6 +14,8 @@ export type SettlementDocumentDto = {
   pmName: string | null;
   quoteTotalKrw: number;
   executionTotalKrw: number;
+  /** 07.1-01 PD3 — 결재 통과 · 증빙 없음 건수(완료 전 점검의 증빙 대기). 정산 프로젝트가 아니면 키째 없다. */
+  evidencePendingCount: number;
   drafterName: string;
   createdAt: Date;
   statusWord: string;
@@ -21,8 +23,8 @@ export type SettlementDocumentDto = {
 };
 
 // 투영 원본 — 두 합은 viewer가 견적 줄 금액을 볼 때만 실린다(못 보면 키째 없다).
-export type SettlementDocumentSource = Omit<SettlementDocumentDto, "quoteTotalKrw" | "executionTotalKrw"> &
-  Partial<Pick<SettlementDocumentDto, "quoteTotalKrw" | "executionTotalKrw">>;
+export type SettlementDocumentSource = Omit<SettlementDocumentDto, "quoteTotalKrw" | "executionTotalKrw" | "evidencePendingCount"> &
+  Partial<Pick<SettlementDocumentDto, "quoteTotalKrw" | "executionTotalKrw" | "evidencePendingCount">>;
 
 export const SETTLEMENT_DOCUMENT_DTO_SPEC: DtoSpec<SettlementDocumentSource, SettlementDocumentDto> = {
   fields: [
@@ -36,6 +38,7 @@ export const SETTLEMENT_DOCUMENT_DTO_SPEC: DtoSpec<SettlementDocumentSource, Set
     { key: "pmName", from: "pmName", infoItem: "project.value" },
     { key: "quoteTotalKrw", from: "quoteTotalKrw", infoItem: "quote.amount" },
     { key: "executionTotalKrw", from: "executionTotalKrw", infoItem: "quote.amount" },
+    { key: "evidencePendingCount", from: "evidencePendingCount", infoItem: "approval.value" },
     { key: "drafterName", from: "drafterName", infoItem: "approval.value" },
     { key: "createdAt", from: "createdAt", infoItem: "approval.value" },
     { key: "statusWord", from: "statusWord", infoItem: "approval.value" },

@@ -12,6 +12,8 @@ export type PreSettleSummary = {
   blockedCount: number;
   groups: Record<PreSettleGroupKey, { count: number; allowed: boolean }>;
   forcedResultLine: string | null;
+  /** 07.1-01 PD3 — 결재 통과 · 증빙 없음 건수(막힘 밖). 정산 결재 문서 칸 `증빙 대기 {N}건`이 읽는다. */
+  evidencePendingCount: number;
 };
 
 const GROUP_ORDER: readonly PreSettleGroupKey[] = ["openExpenses", "unmatchedLines", "missingRevenue"];
@@ -28,14 +30,14 @@ export function forcedResultLine(counts: PreSettleCounts, allowances: PreSettleA
   return parts.length > 0 ? `강행 · ${parts.join(" · ")}` : null;
 }
 
-export function summarizePreSettle(counts: PreSettleCounts, allowances: PreSettleAllowances): PreSettleSummary {
+export function summarizePreSettle(counts: PreSettleCounts, allowances: PreSettleAllowances, evidencePendingCount = 0): PreSettleSummary {
   const groups = {
     openExpenses: { count: counts.openExpenses, allowed: allowances.openExpenses },
     unmatchedLines: { count: counts.unmatchedLines, allowed: allowances.unmatchedLines },
     missingRevenue: { count: counts.missingRevenue, allowed: allowances.missingRevenue },
   };
   const blockedCount = GROUP_ORDER.reduce((sum, key) => sum + (allowances[key] ? 0 : counts[key]), 0);
-  return { blockedCount, groups, forcedResultLine: forcedResultLine(counts, allowances) };
+  return { blockedCount, groups, forcedResultLine: forcedResultLine(counts, allowances), evidencePendingCount };
 }
 
 export function preSettleBlockReason(blockedCount: number): string | null {

@@ -1752,6 +1752,22 @@ export function cardOverwriteSplit(basis: CardOverwriteBasis, input: { evidenceT
   return splitCardTotal({ money: { currency: "KRW", amount: input.totalKrw, fxRate: 1 }, rule: basis.rules.get(input.evidenceTypeCode) ?? { ruleKind: "none" } }, rates);
 }
 
+/**
+ * 덮을 때 돈 칸을 다시 쓸 합계 — 파일 합계, 또는 날짜만 옮기는 원화 건을 새 사용일 세율로 다시 나눈 공급가 · 세액이 저장값과 다를 때의 저장 합계
+ * (PR #305 검토 P2). null = 돈 칸 그대로(실행가 판정도 없다). 외화 건은 외화 칸을 보존해야 해서 다시 나누지 않는다(cardOverwriteSplit은 원화만).
+ * 붙이기(planCardAttach) · S4 후보(judgeCardCandidates) · S5 풀이 같은 값으로 실행가를 판정한다(PR #305 재검토).
+ */
+export function cardOverwriteTotal(
+  basis: CardOverwriteBasis,
+  usage: Pick<CardUsageRow, "evidenceTypeCode" | "totalAmountKrw" | "supplyKrw" | "vatKrw" | "totalForeignAmount">,
+  patch: { totalKrw: number | null; usedOn: string | null },
+): number | null {
+  if (patch.totalKrw !== null) return patch.totalKrw;
+  if (patch.usedOn === null || usage.totalForeignAmount !== null) return null;
+  const split = cardOverwriteSplit(basis, { evidenceTypeCode: usage.evidenceTypeCode, usedOn: patch.usedOn, totalKrw: usage.totalAmountKrw });
+  return split.supplyKrw !== usage.supplyKrw || split.vatKrw !== usage.vatKrw ? usage.totalAmountKrw : null;
+}
+
 /** 덮을 값 — null은 그대로(합계 · 카드 · 사용일). domain/evidence-records를 import하지 않으려고 평범한 값만 받는다(C-F14). */
 export type CardOverwritePatch = { usageId: string; totalKrw: number | null; corpCardId: string | null; usedOn: string | null };
 export type CardOverwriteBlock = "holder" | "fixed" | "completed" | "cap";

@@ -516,6 +516,11 @@ export type RelaxedCandidateRow = {
   approvalNo: string | null;
   usedOn: string;
   totalAmountKrw: number;
+  // PR #305 재검토: 날짜만 옮기는 원화 건의 재분할 판정(cardOverwriteTotal) 재료 — 후보 판정 안에서만 쓰고 DTO로 내보내지 않는다.
+  totalForeignAmount: string | null;
+  supplyKrw: number;
+  vatKrw: number;
+  evidenceTypeCode: string;
   usedByName: string | null;
   quoteLineId: string | null;
 };
@@ -548,6 +553,10 @@ export async function findRelaxedCandidates(
       approvalNo: corpCardUsages.approvalNo,
       usedOn: corpCardUsages.usedOn,
       totalAmountKrw: corpCardUsages.totalAmountKrw,
+      totalForeignAmount: corpCardUsages.totalForeignAmount,
+      supplyKrw: corpCardUsages.supplyKrw,
+      vatKrw: corpCardUsages.vatKrw,
+      evidenceTypeCode: corpCardUsages.evidenceTypeCode,
       usedByName: usedBy.name,
       quoteLineId: corpCardUsages.quoteLineId,
     })

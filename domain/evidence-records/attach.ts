@@ -4,6 +4,7 @@ import { validateRejectReason } from "@/domain/approvals";
 import {
   CARD_USAGE_ENTITY,
   cardOverwriteSplit,
+  cardOverwriteTotal,
   cardSlipNotFound,
   cardSlipOwner,
   cardSlipRights,
@@ -355,12 +356,8 @@ async function planCardAttach(viewer: Viewer, recordId: string, usageId: string)
   // E-P1-04: 덮은 뒤 분할 · 실행가 판정은 새 사용일 세율을 쓴다 — 옛 날짜 · 명세 날짜를 둘 다 읽는다.
   const basis = await loadCardOverwriteBasis(viewer, [usage.usedOn, record.issuedOn]);
   // PR #305 검토 P2: 날짜만 옮기는 원화 건은 수정 경로(loadTaxRates(usedOn))처럼 새 사용일 세율로 공급가 · 세액을 다시 나눈다 — 나뉜 값이 같으면 돈 칸 그대로.
-  // 외화 건은 외화 칸을 보존해야 해서 다시 나누지 않는다(cardOverwriteSplit은 원화만 — 남은 위험은 SUMMARY에 적었다).
-  let moneyTotal = patch.total?.after ?? null;
-  if (moneyTotal === null && patch.usedOn && usage.totalForeignAmount === null) {
-    const split = cardOverwriteSplit(basis, { evidenceTypeCode: usage.evidenceTypeCode, usedOn: patch.usedOn.after, totalKrw: usage.totalAmountKrw });
-    if (split.supplyKrw !== usage.supplyKrw || split.vatKrw !== usage.vatKrw) moneyTotal = usage.totalAmountKrw;
-  }
+  // 외화 건은 다시 나누지 않는다(남은 위험은 SUMMARY에 적었다). S4 후보 · S5 풀도 같은 함수로 실행가를 본다(PR #305 재검토).
+  const moneyTotal = cardOverwriteTotal(basis, usage, { totalKrw: patch.total?.after ?? null, usedOn: patch.usedOn?.after ?? null });
   return { usage, record, patch, basis, moneyTotal, teamId };
 }
 
@@ -1273,7 +1270,15 @@ export async function judgeCardCandidates(viewer: Viewer, records: readonly Card
   const blockGroups = basis
     ? await cardUsageOverwriteBlocksByGroup(
         viewer,
-        perLine.map(({ patches }) => patches.map(({ row, patch }) => ({ usageId: row.id, totalKrw: patch.total?.after ?? null, corpCardId: patch.card?.after.id ?? null, usedOn: patch.usedOn?.after ?? null }))),
+        // PR #305 재검토: 날짜만 옮기는 원화 건도 붙이기(planCardAttach)와 같은 합계로 실행가를 본다 — 붙이면 늘 거부되는 후보를 고를 수 있게 보이지 않는다.
+        perLine.map(({ patches }) =>
+          patches.map(({ row, patch }) => ({
+            usageId: row.id,
+            totalKrw: cardOverwriteTotal(basis, row, { totalKrw: patch.total?.after ?? null, usedOn: patch.usedOn?.after ?? null }),
+            corpCardId: patch.card?.after.id ?? null,
+            usedOn: patch.usedOn?.after ?? null,
+          })),
+        ),
         basis,
       )
     : [];

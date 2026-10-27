@@ -3,7 +3,7 @@ import { EVIDENCE_FORMATS, formatDateIsUsage } from "@/domain/evidence-import/re
 import { listEvidenceRecordsByIds, type EvidenceRecordView } from "@/domain/evidence-records";
 import { ATTACH_BATCH_CAP_LINE, ATTACH_BATCH_MAX, authorCardBlock, flagsOf, loadPairCodes, pairDecision, readCardUsageRights, readKeys, type PairCodes, type ViewerKeys } from "@/domain/evidence-records/attach";
 import { fileWinsPatch, overwriteBlockReason, usedOnGapOf, type FileWinsPatch } from "@/domain/evidence-records/reconcile";
-import { cardSlipNotFound, cardUsageOverwriteBlocksByGroup, loadCardOverwriteBasis } from "@/domain/corp-card-usages";
+import { cardOverwriteTotal, cardSlipNotFound, cardUsageOverwriteBlocksByGroup, loadCardOverwriteBasis } from "@/domain/corp-card-usages";
 import { ExpenseNotFoundError } from "@/domain/expenses";
 import { purchaseRequestAuthorOpen, readPurchaseRequestEvidenceFacts } from "@/domain/purchase-requests";
 import { can } from "@/domain/permissions/can";
@@ -199,7 +199,10 @@ async function registrarCardBlocks(viewer: Viewer, rows: readonly PoolRow[], ctx
   const basis = await loadCardOverwriteBasis(viewer, [...new Set([usage.usedOn, ...changing.map(({ row }) => row.issuedOn)])]);
   const groups = await cardUsageOverwriteBlocksByGroup(
     viewer,
-    changing.map(({ patch }) => [{ usageId: usage.id, totalKrw: patch.total?.after ?? null, corpCardId: null, usedOn: patch.usedOn?.after ?? null }]),
+    // PR #305 재검토: 날짜만 옮기는 원화 건도 붙이기(planCardAttach)와 같은 합계로 실행가를 본다.
+    changing.map(({ patch }) => [
+      { usageId: usage.id, totalKrw: cardOverwriteTotal(basis, usage, { totalKrw: patch.total?.after ?? null, usedOn: patch.usedOn?.after ?? null }), corpCardId: null, usedOn: patch.usedOn?.after ?? null },
+    ]),
     basis,
   );
   changing.forEach(({ row, patch }, index) => {

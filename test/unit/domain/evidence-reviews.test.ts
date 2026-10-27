@@ -137,8 +137,8 @@ describe("resolveExpenseActionRow — P5 (06-06 Task 2)", () => {
 
 describe("evidenceGateInputs — 잠금 뒤 tx로 한 함수에서 (06-06 Task 2)", () => {
   const tx = { marker: "tx" } as unknown as DbOrTx;
-  const locked = { id: "00000000-0000-4000-8000-000000000001", prepaid: true };
-  const pre = { evidenceRequired: true, drafterName: "박서연" };
+  const locked = { id: "00000000-0000-4000-8000-000000000001", prepaid: true, number: "EXP-1", closedAt: null };
+  const pre = { evidenceRequired: true, drafterName: "박서연", projectCompleted: false };
 
   beforeEach(() => {
     mocks.hasEvidence.mockReset().mockResolvedValue(true);
@@ -154,6 +154,7 @@ describe("evidenceGateInputs — 잠금 뒤 tx로 한 함수에서 (06-06 Task 2
       waived: true,
       confirmation: null,
       drafterName: "박서연",
+      drafterCanAdd: true,
     });
     expect(mocks.hasEvidence).toHaveBeenCalledWith(SYSTEM_VIEWER, { ownerKind: "expense", ownerId: locked.id }, tx);
     expect(mocks.findReviewByExpense).toHaveBeenCalledWith(SYSTEM_VIEWER, locked.id, tx);
@@ -167,6 +168,13 @@ describe("evidenceGateInputs — 잠금 뒤 tx로 한 함수에서 (06-06 Task 2
   it("기록 없음 → confirmation null", async () => {
     mocks.findReviewByExpense.mockResolvedValue(null);
     expect(await evidenceGateInputs(SYSTEM_VIEWER, locked, pre, tx)).toMatchObject({ waived: false, confirmation: null });
+  });
+
+  // 07.1-03 D-7101 — 완료 프로젝트의 승인 문서는 기안자가 붙일 수 없다(붙이기 규칙 expenseDrafterAddsEvidence와 같은 답).
+  it("projectCompleted → drafterCanAdd false · 미완료 → true", async () => {
+    mocks.findReviewByExpense.mockResolvedValue(null);
+    expect(await evidenceGateInputs(SYSTEM_VIEWER, locked, { ...pre, projectCompleted: true }, tx)).toMatchObject({ drafterCanAdd: false });
+    expect(await evidenceGateInputs(SYSTEM_VIEWER, locked, pre, tx)).toMatchObject({ drafterCanAdd: true });
   });
 });
 

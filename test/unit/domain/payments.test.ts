@@ -278,6 +278,7 @@ function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
     evidenceType: row.evidenceType,
     hasLiveEvidence,
     drafterName: "박서연",
+    projectCompleted: false,
     amount: pickPaymentAmount({ supplyAmountKrw: row.supplyAmountKrw }),
     tax: { taxRule, dates, recipientCount: row.recipientCount, rates: { ...RATES, asOf: dates.basisDate } },
   };

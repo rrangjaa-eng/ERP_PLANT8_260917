@@ -55,7 +55,7 @@ import { prepaidDueInfo, type PrepaidDue } from "@/domain/evidence-reviews/prepa
 import { findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repositories/expense-evidence-reviews";
 import { listAliveByOwners } from "@/repositories/files";
 import { findLiveLineBySourceExpense, findQuoteLineById, listLineageLinesByProjects } from "@/repositories/quote-lines";
-import { lockProjectForWrite } from "@/repositories/projects";
+import { findProjectById, lockProjectForWrite } from "@/repositories/projects";
 import { releaseTaxAdjustmentLine, syncTaxAdjustmentLine } from "@/domain/payments/adjustment-line";
 import { findExpenseQuoteLineIds, lockQuoteLines } from "@/repositories/quote-line-links";
 import { formatKrw } from "@/lib/format-number";
@@ -272,6 +272,8 @@ export type PaymentInputs = {
   hasLiveEvidence: boolean;
   // 06-04 — 증빙 없음 막힘 이유의 이름(지출결의 기안자 — P3). 표시 문자열.
   drafterName: string;
+  // 07.1-03 D-7101 — 사전 조회 프로젝트가 완료인가(팀 비용 문서는 거짓). 지급 행 미리보기 전용 — 지급 완료 tx는 잠근 프로젝트 행으로 다시 정한다.
+  projectCompleted: boolean;
   amount: PaymentAmount | null;
   tax: (PaymentTax & { rates: TaxRates }) | null;
   // 07-06(D-715 · P1): 사전 조회 때 셈한 자동 예정일 — 잠금 뒤 판정이 잠근 행의 수동 값 ?? 이 값을 세금 기준일로 쓴다(DB 없음). 없으면 저장값만.
@@ -313,6 +315,7 @@ export async function loadPaymentInputs(
   const approvalState = instance?.status ?? null;
   const stepName = approvalState && IN_PROGRESS.includes(approvalState) ? await currentStepName(viewer, row.id) : null;
   const drafterName = (await findUserNamesByIds(viewer, [row.drafterId])).get(row.drafterId) ?? "";
+  const projectCompleted = row.projectId ? (await findProjectById(viewer, row.projectId))?.status === "completed" : false;
   const today = seoulToday(input.now);
   const payDate = input.payDate ?? null;
   // 07-06(P1): 세금 기준일의 「지급 예정일」 = 유효 예정일(수동 ?? 자동) — 목록 · 승인 스냅숏과 같은 값.
@@ -329,6 +332,7 @@ export async function loadPaymentInputs(
     evidenceType: row.evidenceType,
     hasLiveEvidence,
     drafterName,
+    projectCompleted,
     amount,
     tax: tax ? { ...tax, rates: await ctxShared.ratesFor(tax.dates.basisDate) } : null,
     ...(schedule ? { autoPayDate: schedule.autoPayDate } : {}),
@@ -500,7 +504,7 @@ export async function completeExpensePayment(
     return await withTransaction(async (tx) => {
       // 06.5 D-6502: 조정 줄을 쓰므로 프로젝트 행을 먼저 잡는다(X-2 예외 해제) — 순서 프로젝트 행 → 견적 줄(문서 줄 + 연결 조정 줄) →
       // 문서 행(06-13 N-2 · N-3). 연결 줄은 잠근 뒤 다시 읽은 행으로 판정한다(잠금 전 읽은 줄은 그사이 보관됐을 수 있다).
-      if (pre.projectId) await lockProjectForWrite(viewer, pre.projectId, tx);
+      const lockedProject = pre.projectId ? await lockProjectForWrite(viewer, pre.projectId, tx) : null;
       const linked = await findLiveLineBySourceExpense(viewer, pre.expenseId, tx);
       const lineIds = await findExpenseQuoteLineIds(viewer, pre.expenseId, tx);
       await lockQuoteLines(viewer, linked ? [...lineIds, linked.id] : lineIds, tx);
@@ -513,7 +517,13 @@ export async function completeExpensePayment(
       if (live) throw new AlreadyPaidSignal(live.processedBy, live.processedAt);
       if (locked.version !== input.version) throw new PaymentConflictError(`다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`);
       const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
-      const evidenceGate = await evidenceGateInputs(viewer, locked, { evidenceRequired: shared.evidenceRequired, drafterName: pre.drafterName }, tx);
+      const evidenceGate = await evidenceGateInputs(
+        viewer,
+        locked,
+        // 07.1-03 P3 notes-B — 이유 글자의 완료 여부는 잠근 프로젝트 행 값(사전 조회 뒤 완료로 바뀌어도 잠금 뒤 값).
+        { evidenceRequired: shared.evidenceRequired, drafterName: pre.drafterName, projectCompleted: lockedProject?.status === "completed" },
+        tx,
+      );
       const { payable, paymentMethod, diffReason } = await judgeLockedPayment({
         pre,
         locked,
@@ -1072,7 +1082,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
   const pre = await loadPaymentInputs(viewer, { expenseId: row.id, payDate: today, now: deps?.now }, shared);
   // 화면 1차와 서버 게이트가 같은 규칙(gate) · 같은 입력 함수(evidenceGateInputs — 트랜잭션 없는 읽기라 tx 생략)를 읽는다.
   // 사전 조회 값이라 낡을 수 있고, 지급 완료는 잠금 뒤 tx 값으로 다시 판정한다.
-  const evidenceCtx = await evidenceGateInputs(viewer, row, { evidenceRequired: shared.evidenceRequired, drafterName: pre.drafterName });
+  const evidenceCtx = await evidenceGateInputs(viewer, row, { evidenceRequired: shared.evidenceRequired, drafterName: pre.drafterName, projectCompleted: pre.projectCompleted });
   const evidence = await gate(row, "payment.evidence-required", evidenceCtx);
   const pair = await gate(row, "payment.method-evidence-mismatch", pairGateCtx(row, shared));
   const actionRow = resolveExpenseActionRow(

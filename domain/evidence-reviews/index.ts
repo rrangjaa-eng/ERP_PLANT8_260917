@@ -6,6 +6,7 @@ import { recordAction } from "@/domain/action-log/record";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { autoConfirmEligible, evidenceSourcesOf, hasEvidence } from "@/domain/evidence/has-evidence";
+import { expenseDrafterAddsEvidence } from "@/domain/evidence/drafter-rule";
 import {
   CANCEL_REASON_REQUIRED,
   SUPPLY_AMOUNT_FRACTION,
@@ -116,8 +117,8 @@ export function evidenceStampOf(input: { fileIds: readonly string[]; evidenceDat
 // prepaid는 잠근 행 값. tx는 선택 — 지급 완료(잠금 뒤)는 반드시 넘기고, 트랜잭션 없는 읽기는 생략해 리포지토리 기본값을 쓴다.
 export async function evidenceGateInputs(
   viewer: Viewer,
-  lockedDoc: { id: string; prepaid: boolean },
-  pre: { evidenceRequired: boolean; drafterName: string },
+  lockedDoc: { id: string; prepaid: boolean; number: string | null; closedAt: Date | null },
+  pre: { evidenceRequired: boolean; drafterName: string; projectCompleted: boolean },
   tx?: DbOrTx,
 ): Promise<EvidenceGateInput> {
   const live = await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: lockedDoc.id }, tx);
@@ -129,6 +130,8 @@ export async function evidenceGateInputs(
     waived: review?.status === "waived",
     confirmation: review?.status === "confirmed" ? { reviewedAt: review.reviewedAt } : null,
     drafterName: pre.drafterName,
+    // 07.1-03 D-7101 — 지급 게이트에 오는 문서는 승인 상태다. 붙이기 규칙과 같은 함수로 기안자 허용 여부를 정한다.
+    drafterCanAdd: expenseDrafterAddsEvidence({ closed: lockedDoc.closedAt !== null, number: lockedDoc.number, status: "approved", projectCompleted: pre.projectCompleted }),
   };
 }
 

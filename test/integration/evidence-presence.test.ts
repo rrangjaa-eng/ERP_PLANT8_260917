@@ -916,7 +916,7 @@ describe("PE15 자동 확인 돈 경계 (07.1-03)", () => {
     ]);
     expect(attached.outcome).toBe("stored");
     const conflict = payError instanceof PaymentConflictError;
-    const refused = payError instanceof GateBlockedError && /^증빙 없음 · /.test((payError as Error).message);
+    const refused = payError instanceof GateBlockedError && /^증빙 없음 · /.test(payError.message);
     expect(conflict || refused, String(payError)).toBe(true);
     expect(await livePaymentCount(expenseId)).toBe(0);
     await expectPaymentInvariant(expenseId);

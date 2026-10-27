@@ -16,6 +16,8 @@ const payeeUsers = alias(users, "payee_users");
 export type PaymentTargetRow = ExpenseRow & {
   drafterName: string;
   projectName: string | null;
+  // 07.1-03 D-7101 — 프로젝트 상태(팀 비용은 null). 증빙 없음 막힘 이유의 판정 재료 — DTO로 나가지 않는다.
+  projectStatus: string | null;
   itemName: string | null;
   teamName: string | null;
   vendorName: string | null;
@@ -37,6 +39,7 @@ async function selectRows(where: SQL | undefined, documentKind: string): Promise
       expense: expenses,
       drafterName: users.name,
       projectName: projects.name,
+      projectStatus: projects.status,
       itemName: quoteLines.itemName,
       teamName: teams.name,
       vendorName: vendors.name,
@@ -62,6 +65,7 @@ async function selectRows(where: SQL | undefined, documentKind: string): Promise
     ...row.expense,
     drafterName: row.drafterName,
     projectName: row.projectName,
+    projectStatus: row.projectStatus,
     itemName: row.itemName,
     teamName: row.teamName,
     vendorName: row.vendorName,

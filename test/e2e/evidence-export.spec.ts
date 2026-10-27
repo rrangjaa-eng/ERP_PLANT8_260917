@@ -28,7 +28,8 @@ test("(G6) 1280 — `파일 받기` → 내려받기 하나 · `evidence-records
   const body = await readFile((await download.path()) ?? "", "utf8");
   expect(body.startsWith("﻿")).toBe(true);
   const lines = body.slice(1).split("\r\n").filter((line) => line !== "");
-  const headers = (await evidenceTable(page).locator("thead th").allTextContents()).map((text) => text.trim()).filter((text) => text !== "" && text !== "행동");
+  // 며칠째(07.1-01)는 지금 시각에 따라 달라지는 화면용 열이라 파일에 싣지 않는다 — 나머지 열 순서가 목록과 같다.
+  const headers = (await evidenceTable(page).locator("thead th").allTextContents()).map((text) => text.trim()).filter((text) => text !== "" && text !== "행동" && text !== "며칠째");
   expect(lines[0]?.split(",")).toEqual(headers);
   const count = Number((await evidenceTable(page).locator("tfoot").innerText()).match(/(\d+)줄/)?.[1]);
   expect(count).toBe(3);

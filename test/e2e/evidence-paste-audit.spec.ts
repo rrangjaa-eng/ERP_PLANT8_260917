@@ -418,7 +418,8 @@ test("E 필터 줄 — 순서 · 2차 꼴 · 1024 미만 0 · 거르개 select �
     if (download && width === 1280) {
       const body = await readFile((await download.path()) ?? "", "utf8");
       const lines = body.replace(/^﻿/, "").split("\r\n").filter((one) => one !== "");
-      const headers = (await evidenceTable(page).locator("thead th").allTextContents()).map((text) => text.trim()).filter((text) => text !== "" && text !== "행동");
+      // 며칠째(07.1-01)는 화면용 열이라 파일에 싣지 않는다 — 머리줄 · 줄 비교는 그 열을 뺀 나머지다.
+      const headers = (await evidenceTable(page).locator("thead th").allTextContents()).map((text) => text.trim()).filter((text) => text !== "" && text !== "행동" && text !== "며칠째");
       record("E CSV 머리줄 = 목록 열 순서", width, role, url, lines[0], headers.join(","), lines[0] === headers.join(","));
       const domRows = await evidenceRows(page).evaluateAll((trs) =>
         trs.map((tr) => {
@@ -429,7 +430,7 @@ test("E 필터 줄 — 순서 · 2차 꼴 · 1024 미만 0 · 거르개 select �
             const node = walker.nextNode();
             return (node?.textContent ?? "").trim();
           };
-          return [first(tds[0]), first(tds[1]), ...tds.slice(2, 5).map((td) => (td.textContent ?? "").replace(/,/g, "").trim())];
+          return [first(tds[0]), first(tds[2]), ...tds.slice(3, 6).map((td) => (td.textContent ?? "").replace(/,/g, "").trim())];
         }),
       );
       const csvRows = lines.slice(1).map((one) => one.split(",").slice(0, 5));
@@ -482,7 +483,7 @@ test("자격 — 경영관리 1280 붙여넣기 · 내려받기 / 금액 노출 
     await page.goto(url);
     await expect(evidenceRows(page)).toHaveCount(ids.length);
     await settle(page, 1280);
-    const domAmounts = await evidenceRows(page).evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll(":scope > td")].slice(2, 5).map((td) => (td.textContent ?? "").trim())));
+    const domAmounts = await evidenceRows(page).evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll(":scope > td")].slice(3, 6).map((td) => (td.textContent ?? "").trim())));
     record("자격 금액 노출 없음 — 화면 금액 칸 글자(정보)", 1280, "intake·금액없음", url, domAmounts, "보이지 않음", null);
     const buttons = await exportButton(page).count();
     record("자격 금액 노출 없음 — `파일 받기` 1(문 = intake 쓰기)", 1280, "intake·금액없음", url, buttons, 1, buttons === 1);

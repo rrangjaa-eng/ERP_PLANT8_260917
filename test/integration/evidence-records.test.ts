@@ -11,6 +11,7 @@ import {
   CARD_FORMATS,
   countTodoEvidence,
   getEvidenceBatch,
+  getEvidenceDetail,
   getEvidenceRecord,
   listAllEvidenceRecords,
   listEvidenceRecords,
@@ -805,6 +806,8 @@ describe("domain/evidence-records — 며칠째 열 DTO (07.1-01 D-7102)", () =>
     expect(paged.rows.find((row) => row.id === old)?.ageDays).toBe(10);
     expect(paged.rows.find((row) => row.id === attached)?.ageDays).toBeNull();
     expect((await getEvidenceRecord(manager, old))?.ageDays).toBe(10);
+    expect((await getEvidenceDetail(manager, old))?.ageDays).toBe(10);
+    expect((await getEvidenceDetail(manager, attached))?.ageDays).toBeNull();
   });
 
   it("경고 색 — 규칙이 꺼져 있으면 모두 거짓(U-3) · 켜져 있으면 공개 줄 중 경과 ≥ 일수만 참이고 그 수가 독촉 건수와 같다", async () => {

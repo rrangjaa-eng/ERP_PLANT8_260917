@@ -61,6 +61,9 @@ type Row = {
   version: number;
   format: string;
   issuedOn: string;
+  /** 07.1-01 D-7102 — 안 붙은 줄의 등록일 기준 경과일(붙음 · 보관됨은 null) · 임자 없는 증빙 규칙 기준 경고(U-3). */
+  ageDays: number | null;
+  ageWarn: boolean;
   counterparty: string | null;
   kindLine: string | null;
   supplyKrw: number | null;
@@ -178,6 +181,8 @@ function rowFromView(view: EvidenceRecordView): Row[] {
       version: view.version,
       format: view.format ?? "",
       issuedOn: view.issuedOn ?? "",
+      ageDays: view.ageDays ?? null,
+      ageWarn: view.ageWarn === true,
       counterparty: view.counterparty ?? null,
       kindLine: kindLineOf(view),
       supplyKrw: view.supplyKrw ?? null,
@@ -202,8 +207,14 @@ function rowFromView(view: EvidenceRecordView): Row[] {
 }
 
 // 06.1-06 S2 2행 — 붙은 문서 번호 링크(지출결의 문서 · 구매 요청 목록). 번호 없는 임시 문서는 링크 없는 낱말(경영관리는 그 문서를 못 본다).
+// U-16: 연결 문서를 가리킬 수 없으면(번호 없는 옛 카드 사용) 번호 없이 사유만 남긴다 — 작성 중 문서 낱말은 번호 없는 작성 중 지출결의(pending)만 쓴다.
+function attachedShown(attached: NonNullable<Row["attached"]>): boolean {
+  return attached.pending || (attached.id !== null && attached.number !== null);
+}
+
 function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
-  if (attached.pending || attached.id === null || attached.number === null) return <span>{COPY.draftOwner}</span>;
+  if (attached.pending) return <span>{COPY.draftOwner}</span>;
+  if (attached.id === null || attached.number === null) return null;
   const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : attached.kind === "corp_card_usage" ? `/cards?editId=${attached.id}` : "/cards/purchases";
   // 링크 모양은 지출결의 목록 번호 링크(`expenseStyles.link` — `--text-link`)와 같다. 격자 로빙 밖(tabIndex -1 — §7-3 (아) 탭 정지 1개)이고
   // 키보드 경로는 그 칸 Enter(`pressCellAction` — 지급 대상 · 리저브 대장 선례)다.
@@ -707,6 +718,25 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const columns: TableColumn<Row>[] = [
     { key: "issuedOn", header: "날짜", priority: "p2", cell: (row) => <Num value={row.issuedOn.slice(5)} />, copyText: (row) => row.issuedOn },
     {
+      key: "ageDays",
+      header: "며칠째",
+      priority: "p3",
+      align: "right",
+      headerClassName: styles.nowrapHeader,
+      editability: () => "readonly",
+      cell: (row) =>
+        row.ageDays === null ? (
+          "—"
+        ) : row.ageWarn ? (
+          <span className={expenseStyles.warningGroup}>
+            <Num value={`${row.ageDays}일`} />
+          </span>
+        ) : (
+          <Num value={`${row.ageDays}일`} />
+        ),
+      copyText: (row) => (row.ageDays === null ? "" : String(row.ageDays)),
+    },
+    {
       key: "counterparty",
       header: "거래처·가맹점",
       priority: "p1",
@@ -778,7 +808,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       // PR-D D-2 — 붙은 기록도 확인 필요 · 카드 미등록이면 사유가 번호 링크 뒤에 남는다(문서 증빙 줄과 같은 사유 · 공개 칸 aria-describedby가 가리키는 id).
       secondaryLine: (row) => {
         const detail = row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null;
-        if (!row.attached) return detail;
+        if (!row.attached || !attachedShown(row.attached)) return detail;
         return (
           <>
             <AttachedLine attached={row.attached} />

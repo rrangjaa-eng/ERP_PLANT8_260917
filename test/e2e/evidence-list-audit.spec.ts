@@ -582,7 +582,7 @@ test("③ intake 1280 — Ctrl+U 파일 선택 · 방향키 → Enter 편집 →
   await focusGridCell(evidenceCell(page, rowIndex, EVIDENCE_COL.date));
   await page.keyboard.press("ArrowRight");
   const focusAfterRight = await page.evaluate(() => (document.activeElement as HTMLTableCellElement | null)?.cellIndex ?? -1);
-  record("방향키 → 오른쪽 칸으로 초점", 1280, role, url, focusAfterRight, EVIDENCE_COL.counterparty, focusAfterRight === EVIDENCE_COL.counterparty);
+  record("방향키 → 오른쪽 칸으로 초점(날짜 오른쪽 = 며칠째)", 1280, role, url, focusAfterRight, EVIDENCE_COL.ageDays, focusAfterRight === EVIDENCE_COL.ageDays);
   await page.keyboard.press("ArrowDown");
   const focusRowAfterDown = await page.evaluate(() => ((document.activeElement as HTMLElement | null)?.parentElement as HTMLTableRowElement | null)?.rowIndex ?? -1);
   record("방향키 ↓ 아래 행으로 초점(rowIndex 증가)", 1280, role, url, focusRowAfterDown, "> 0", focusRowAfterDown > 0);
@@ -1043,6 +1043,8 @@ test("⑫ intake 375 · 320 — 며칠째 머리글 숨김(DOM 남음) · 행 �
       const sheet = page.locator("dialog[open]");
       await expect(sheet).toBeVisible();
       await expect(sheet.locator("dt").first()).toBeVisible();
+      // 상세를 받아 시트 항목이 바뀐 뒤에 읽는다 — 상세에만 있는 `이력` 줄이 보이면 로드가 끝난 것이다.
+      await expect(sheet.locator("dt", { hasText: /^이력$/ })).toBeVisible();
       const pairs = await sheet.locator("dt").evaluateAll((elements) => elements.map((element) => [(element.textContent ?? "").trim(), (element.nextElementSibling?.textContent ?? "").trim()]));
       const line = pairs.find(([label]) => label === "며칠째");
       record(`시트 며칠째 줄 — ${name}`, width, role, url, JSON.stringify(pairs), expectLine === null ? "며칠째 줄 없음" : `며칠째 ${expectLine}`, expectLine === null ? line === undefined : line?.[1] === expectLine);

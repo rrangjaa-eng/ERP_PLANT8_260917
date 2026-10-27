@@ -199,8 +199,8 @@ export function evidenceRows(page: Page): Locator {
   return evidenceTable(page).locator("tbody tr:has(> td:nth-child(2))");
 }
 
-// 열 순서: 날짜 · 거래처·가맹점 · 공급가 · 세액 · 합계 · 공개 · 상태 · 행 행동(편집 폭에서만 — 머리글 숨김).
-export const EVIDENCE_COL = { date: 0, counterparty: 1, supply: 2, vat: 3, total: 4, visibility: 5, status: 6, actions: 7 } as const;
+// 열 순서: 날짜 · 며칠째 · 거래처·가맹점 · 공급가 · 세액 · 합계 · 공개 · 상태 · 행 행동(편집 폭에서만 — 머리글 숨김).
+export const EVIDENCE_COL = { date: 0, ageDays: 1, counterparty: 2, supply: 3, vat: 4, total: 5, visibility: 6, status: 7, actions: 8 } as const;
 
 export function evidenceCell(page: Page, rowIndex: number, colIndex: number): Locator {
   return evidenceRows(page).nth(rowIndex).locator(":scope > td").nth(colIndex);

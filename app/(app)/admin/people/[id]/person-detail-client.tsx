@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
-import { changePersonRoleAction, assignTeamAction, cancelAssignmentAction, unlockPersonAction } from "../actions";
+import { changePersonRoleAction, assignTeamAction, cancelAssignmentAction, handOverSysadminAction, unlockPersonAction } from "../actions";
 import { resetPersonPasswordAction } from "./actions";
 import { Button } from "@/ui/button/Button";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
@@ -79,6 +79,50 @@ export function PersonRoleChange({
           />
         </Form.Field>
       </div>
+    </>
+  );
+}
+
+// 07.1 D-2: 시스템 관리자 넘기기 — 되돌릴 수 없는 일(넘긴 뒤 나는 관리 권한이 없다)이라 확인 모달(§7-17). 서버 거부는 모달 안
+// 막힘 자리에, 성공하면 이 화면을 더 볼 수 없으므로 첫 화면으로 간다.
+const HANDOVER_LABEL = "시스템 관리자 넘기기";
+
+export function PersonSysadminHandover({ userId, name, nextRoleName }: { userId: string; name: string; nextRoleName: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handOver() {
+    if (pending) return;
+    setPending(true);
+    const result = await handOverSysadminAction({ userId }).catch(() => undefined);
+    if (!result || result.serverError || result.validationErrors) {
+      setPending(false);
+      setError(typeof result?.serverError === "string" ? result.serverError : "넘기기 실패 · 다시 시도");
+      return;
+    }
+    router.push("/");
+  }
+
+  return (
+    <>
+      <div className={styles.loginActions}>
+        <Button variant="tertiary" onClick={() => setOpen(true)}>
+          {HANDOVER_LABEL}
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={open}
+        onClose={() => {
+          setOpen(false);
+          setError(null);
+        }}
+        title={HANDOVER_LABEL}
+        subtitle={name}
+        resultLines={[`내 계급 → ${nextRoleName} · 되돌리기는 새 시스템 관리자`]}
+        primary={{ label: HANDOVER_LABEL, onConfirm: () => void handOver(), pending, disabledReason: error ?? undefined }}
+      />
     </>
   );
 }

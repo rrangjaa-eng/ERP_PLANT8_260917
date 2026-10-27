@@ -9,6 +9,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { createOrgUnit } from "@/domain/org";
 import { archivePerson } from "@/domain/people";
 import { updateUserHireDate, updateUserRole } from "@/repositories/users";
+import { findRoleById } from "@/repositories/roles";
 import { seoulToday } from "@/lib/dates";
 import { addDays } from "@/lib/kst-date";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -794,11 +795,13 @@ test.describe("시스템 관리자 넘기기 (07.1 D-2)", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("heading", { name: HANDOVER })).toBeVisible();
     await expect(dialog.getByText("E2E넘기기거부", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("내 계급 → 기획 PM · 되돌리기는 새 시스템 관리자", { exact: true })).toBeVisible();
+    // 계급 이름은 데이터에서 읽는다(사용자가 기본 계급 이름을 바꿀 수 있다).
+    const nextRoleName = (await findRoleById(SYSTEM_VIEWER, DEFAULT_ROLE_ID))?.name ?? "";
+    await expect(dialog.getByText(`내 계급 → ${nextRoleName} · 되돌리기는 새 시스템 관리자`, { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: new RegExp(`^${HANDOVER}`) }).click();
     // 같은 글자가 1차 Button 안 이유 자리에도 있으나 display:none(ConfirmDialog.module.css `.primaryWrap > span > span`) — 보이는 한 자리만 잰다.
     await expect(dialog.getByText(/^시스템 관리자 있음 · /).filter({ visible: true })).toHaveCount(1);
     await expect(dialog).toBeVisible();
-    await expect(page.locator("dd").filter({ hasText: /^기획 PM$/ })).toBeVisible();
+    await expect(page.locator("dd").filter({ hasText: nextRoleName }).first()).toHaveText(nextRoleName);
   });
 });

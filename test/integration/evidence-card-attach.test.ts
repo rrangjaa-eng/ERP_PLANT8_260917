@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
-import { actionLog, codeItems, corpCardUsages, evidenceRecordLinks, evidenceRecords, projects, purchaseRequests } from "@/db/schema";
+import { actionLog, codeItems, corpCardUsages, evidenceRecordLinks, evidenceRecords, projects, purchaseRequests, users } from "@/db/schema";
 import { cardOverwriteSplit, cardSlipNotFound, cardUsageFormDefaults, cardUsageFormOptions, cardUsageReadScope, loadCardOverwriteBasis } from "@/domain/corp-card-usages";
+import { cardUsedOnError } from "@/domain/corp-card-usages/amounts";
 import { createCorpCard } from "@/domain/corp-cards";
 import { attachEvidenceAsAuthor, attachEvidenceRecord, cardUsagePrefillFromEvidence, createCardUsageFromEvidence, judgeCardCandidates, listAttachCandidates } from "@/domain/evidence-records/attach";
 import { listEvidenceRecordsByIds } from "@/domain/evidence-records";
@@ -11,14 +12,18 @@ import { evidencePickerMode, listEvidencePool } from "@/domain/evidence-records/
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { TAX_VAT_RATE } from "@/domain/settings/keys";
+import { addHistorizedValue } from "@/domain/settings/registry";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { detachLiveLinksForOwner } from "@/repositories/evidence-record-links";
 import { findCardUsageOverwriteFacts } from "@/repositories/corp-card-usages";
 import { findRecordForScope } from "@/repositories/evidence-records";
 import { evidenceScopeFor } from "@/domain/permissions/scope-for";
+import { insertMembership } from "@/repositories/team-memberships";
 import { insertVendor } from "@/repositories/vendors";
-import { lotteFixture } from "@/test/fixtures/evidence-import/build";
+import { bcFixture, lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
 import { createCardUsageFixture, createInReviewExpenseFixture, createIntakeManager, insertLinkFixture, insertRecordFixture, registerFixtureFile, setRecordVisibilityFixture } from "./fixtures/evidence";
@@ -47,22 +52,23 @@ function approval(): string {
   return String(10_000_000 + Math.floor(Math.random() * 89_999_999));
 }
 
-async function lotteCard(holderUserId: string): Promise<{ id: string; last4: string }> {
+async function lotteCard(holderUserId: string, issuer = "롯데카드"): Promise<{ id: string; last4: string }> {
   const last4 = nextLast4();
-  const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "롯데카드", numberLast4: last4, label: `붙이기 ${last4}`, kind: "personal", holderUserId });
+  const card = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4: last4, label: `붙이기 ${last4}`, kind: "personal", holderUserId });
   if (!card.id) throw new Error("카드 id 없음");
   return { id: card.id, last4 };
 }
 
 type Fx = { pm: Viewer; manager: Viewer; cardA: { id: string; last4: string }; cardB: { id: string; last4: string } };
 
-async function setup(): Promise<Fx> {
+// issuer: 카드 발급사 — 07.1-04 검토 P1 뒤 사용일 덮기는 날짜 칸이 사용(승인)일인 서식(비씨 · 신한)만이라 그 시험은 비씨카드로 잰다.
+async function setup(issuer = "롯데카드"): Promise<Fx> {
   const pm = await makePerson("붙이기PM", DEFAULT_ROLE_ID, "기획1팀");
   // 지급 권한(expenses.payments) = 06 카드 사용 목록 전부 범위 — 경영관리 S4가 읽는 범위.
   const manager = await createIntakeManager("경영관리", { payments: true });
   if (!manager.roleId) throw new Error("계급 없음");
   for (const infoItem of ["card_usage.value", "card_usage.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: manager.roleId, infoItem, visible: true });
-  return { pm, manager, cardA: await lotteCard(pm.id), cardB: await lotteCard(pm.id) };
+  return { pm, manager, cardA: await lotteCard(pm.id, issuer), cardB: await lotteCard(pm.id, issuer) };
 }
 
 // 카드 파일 한 줄 등록(대사 후보 없음 — 승인번호 새로) → 그 기록 id.
@@ -217,6 +223,18 @@ describe("경영관리 → 카드 사용 붙이기(06.1-09 Task 2)", () => {
 // 카드 파일 한 줄(승인번호 · 사용일을 정해) → 그 기록 id.
 async function cardRecordWith(fx: Fx, input: { last4: string; approvalNo: string; total: string; vat: string; date: string }): Promise<string> {
   const result = await registerFixtureFile(fx.manager, lotteFixture([{ 카드번호: `999900001111${input.last4}`, 승인번호: input.approvalNo, 매입금액: input.total, 부가세: input.vat, 매입일자: input.date }]));
+  const [row] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.batchId, result.batchId));
+  if (!row) throw new Error("기록 없음");
+  return row.id;
+}
+
+// 비씨 이용내역 한 줄(승인일자 = 사용일 · `YYYY-MM-DD`) — overseas면 해외 이용 줄(확인 필요).
+async function bcRecordWith(fx: Fx, input: { last4: string; approvalNo: string; total: string; vat: string; date: string; overseas?: boolean }): Promise<string> {
+  const result = await registerFixtureFile(
+    fx.manager,
+    bcFixture([{ 카드번호: `9430-0000-0000-${input.last4}`, 승인번호: input.approvalNo, 승인일자: input.date, "거래금액(원화)": input.total, 부가세: input.vat, 국내외사용구분: input.overseas ? "해외" : "국내" }]),
+    "비씨.xls",
+  );
   const [row] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.batchId, result.batchId));
   if (!row) throw new Error("기록 없음");
   return row.id;
@@ -698,9 +716,9 @@ describe("카드 사용 사용일 덮기 · 전후 로그(07.1-04 D-7104)", () =
   }
 
   it("합계 · 사용일 다름 → used_on = 명세 날짜 · 합계 = 명세 · 공급가 · 세액 = 새 사용일 세율 · version +1 · 로그 changes 두 칸", async () => {
-    const fx = await setup();
+    const fx = await setup("비씨카드");
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
-    const recordId = await cardRecord(fx, fx.cardA.last4, "204,100", "18,555");
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "204,100", vat: "18,555", date: "2026-04-10" });
     await pairByApproval(usage.id, [recordId]);
 
     await attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } });
@@ -713,10 +731,10 @@ describe("카드 사용 사용일 덮기 · 전후 로그(07.1-04 D-7104)", () =
   });
 
   it("(E-P1-03) 합계 · 카드 같음 · 사용일만 다름(2일) → used_on만 덮고 돈 칸 그대로 · version +1 · 로그 changes = usedOn 한 칸", async () => {
-    const fx = await setup();
+    const fx = await setup("비씨카드");
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
     const before = await usageRow(usage.id);
-    const recordId = await cardRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026.04.28" });
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-04-28" });
     await pairByApproval(usage.id, [recordId]);
 
     await attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } });
@@ -738,10 +756,10 @@ describe("카드 사용 사용일 덮기 · 전후 로그(07.1-04 D-7104)", () =
   });
 
   it("(E-P1-04) 견적 줄 연결 · 합계 · 사용일 다름 → 후보 목록이 예외 없이 그 행을 내고 · 붙이기도 새 날짜 세율로 나눈다(덮기 세율 없음 0)", async () => {
-    const fx = await setup();
+    const fx = await setup("비씨카드");
     const { lineId } = await lineOf(fx.pm, 3_000_000);
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000, lineId });
-    const recordId = await cardRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "204,100", vat: "18,555", date: "2026.04.05" });
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "204,100", vat: "18,555", date: "2026-04-05" });
     await pairByApproval(usage.id, [recordId]);
 
     const candidates = await listAttachCandidates(fx.manager, { recordId });
@@ -753,9 +771,9 @@ describe("카드 사용 사용일 덮기 · 전후 로그(07.1-04 D-7104)", () =
   });
 
   it("(D-E1) 승인번호 같음 · 날짜 차 32일 → 후보는 막힌 행 `날짜 다름 · 32일` · 직접 붙이기도 같은 글자로 거부 · 붙임 0 · used_on 그대로 · 로그 0", async () => {
-    const fx = await setup();
+    const fx = await setup("비씨카드");
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
-    const recordId = await cardRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026.03.29" });
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-03-29" });
     await pairByApproval(usage.id, [recordId]);
 
     const candidates = await listAttachCandidates(fx.manager, { recordId });
@@ -767,20 +785,20 @@ describe("카드 사용 사용일 덮기 · 전후 로그(07.1-04 D-7104)", () =
   });
 
   it("(D-E1) 날짜 차 31일은 덮는다", async () => {
-    const fx = await setup();
+    const fx = await setup("비씨카드");
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
-    const recordId = await cardRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026.03.30" });
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-03-30" });
     await pairByApproval(usage.id, [recordId]);
     await attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } });
     expect(await usageRow(usage.id)).toMatchObject({ usedOn: "2026-03-30" });
   });
 
   it("(E-P2-17) 완료 프로젝트 · 날짜만 다름 → `사용일 04-30 → 04-28 · 완료 프로젝트` · 구매에서 생긴 건 → `… · 연결 고정` · 붙임 0 · used_on 그대로", async () => {
-    const fx = await setup();
+    const fx = await setup("비씨카드");
     const done = await lineOf(fx.pm, 3_000_000);
     const completed = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000, lineId: done.lineId });
     await db.update(projects).set({ status: "completed" }).where(eq(projects.id, done.projectId));
-    const r1 = await cardRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026.04.28" });
+    const r1 = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-04-28" });
     await pairByApproval(completed.id, [r1]);
     expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId: r1, owner: { kind: "corp_card_usage", id: completed.id } }))).toBe("사용일 04-30 → 04-28 · 완료 프로젝트");
     expect(await liveLinks(completed.id)).toEqual([]);
@@ -789,7 +807,7 @@ describe("카드 사용 사용일 덮기 · 전후 로그(07.1-04 D-7104)", () =
     const open = await lineOf(fx.pm, 3_000_000);
     const bought = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000, lineId: open.lineId });
     await purchaseOrigin(fx, bought.id, open.projectId, open.lineId);
-    const r2 = await cardRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026.04.28" });
+    const r2 = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-04-28" });
     await pairByApproval(bought.id, [r2]);
     expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId: r2, owner: { kind: "corp_card_usage", id: bought.id } }))).toBe("사용일 04-30 → 04-28 · 연결 고정");
     expect(await liveLinks(bought.id)).toEqual([]);
@@ -797,12 +815,12 @@ describe("카드 사용 사용일 덮기 · 전후 로그(07.1-04 D-7104)", () =
   });
 
   it("(PE2) 합계 · 사용일 같고 승인번호 빈 카드 사용 → 승인번호만 채움 · 로그 changes = approvalNo 한 칸 · 합계 · 사용일 그대로", async () => {
-    const fx = await setup();
+    const fx = await setup("비씨카드");
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: "2026-04-10", totalKrw: 200_000 });
     const before = await usageRow(usage.id);
     expect(before.approvalNo).toBeNull();
     // 같은 사용일 · 합계 — 등록 대사가 2단계로 먼저 붙이지 않게 등록 뒤 줄 날짜를 맞춘다.
-    const recordId = await cardRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026.04.11" });
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-04-11" });
     await db.update(evidenceRecords).set({ issuedOn: "2026-04-10" }).where(eq(evidenceRecords.id, recordId));
     const [record] = await db.select({ approvalNo: evidenceRecords.approvalNo }).from(evidenceRecords).where(eq(evidenceRecords.id, recordId));
 
@@ -815,9 +833,9 @@ describe("카드 사용 사용일 덮기 · 전후 로그(07.1-04 D-7104)", () =
   });
 
   it("낡은 version(사전 판독 뒤 다른 쓰기) → 기존 충돌 글자로 거부 · 붙임 0 · used_on 그대로 · 로그 0", async () => {
-    const fx = await setup();
+    const fx = await setup("비씨카드");
     const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
-    const recordId = await cardRecord(fx, fx.cardA.last4, "204,100", "18,555");
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "204,100", vat: "18,555", date: "2026-04-10" });
     await pairByApproval(usage.id, [recordId]);
     const message = await messageOf(
       attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } }, {
@@ -867,5 +885,179 @@ describe("쪽 단위 덮기 막힘 판정(07.1-04 PE6)", () => {
 
     const candidates = await listAttachCandidates(fx.manager, { recordId: r1 });
     expect(candidates.items.find((item) => item.id === u1.id)).toMatchObject({ amountKrw: 200_000 });
+  });
+});
+
+// 07.1-04 PR #305 검토 반영: 날짜 칸이 사용일이 아닌 서식(롯데 매입일자) · 확인 필요 줄 · 다른 카드의 같은 승인번호는 덮지 않고,
+// 사용일을 옮기는 덮기는 수정 경로와 같은 날짜 판정(미래 · 재직 · 팀 카드 소속 · 팀 비용 소속 팀) · 새 날짜 세율 재분할 · 전후 로그를 받는다.
+describe("카드 대사 붙임 검토 반영(07.1-04 PR #305)", () => {
+  function changesOf(log: { detail: unknown } | undefined): Record<string, unknown> {
+    return ((log?.detail as { changes?: Record<string, unknown> } | undefined)?.changes ?? {}) as Record<string, unknown>;
+  }
+
+  it("(P1) 롯데 매입일자 줄 · 승인번호 같음 · 합계 다름 → 합계만 덮고 used_on 그대로 · 로그 changes에 usedOn 없음", async () => {
+    const fx = await setup();
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const recordId = await cardRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "204,100", vat: "18,555", date: "2026.05.02" });
+    await pairByApproval(usage.id, [recordId]);
+
+    await attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } });
+
+    expect(await usageRow(usage.id)).toMatchObject({ usedOn: USED_ON, totalAmountKrw: 204_100 });
+    const [log] = await amountLogs(usage.id);
+    expect(changesOf(log)).not.toHaveProperty("usedOn");
+    expect(changesOf(log).totalKrw).toEqual([200_000, 204_100]);
+  });
+
+  it("(P1) 롯데 매입일자 줄 · 합계 · 카드 같음 · 날짜만 다름 → 붙임만 · used_on · version 그대로 · 금액 로그 0", async () => {
+    const fx = await setup();
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const recordId = await cardRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026.05.02" });
+    await pairByApproval(usage.id, [recordId]);
+
+    await attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } });
+
+    expect(await liveLinks(usage.id)).toEqual([{ recordId, attachMode: "registrar" }]);
+    expect(await usageRow(usage.id)).toMatchObject({ usedOn: USED_ON, version: usage.version });
+    expect(await amountLogs(usage.id)).toHaveLength(0);
+  });
+
+  it("(P1) 해외 이용 줄(확인 필요)은 카드 사용에 붙지 않는다 — 붙임 0 · 사용일 · 합계 그대로 · 금액 로그 0", async () => {
+    const fx = await setup("비씨카드");
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "204,100", vat: "18,555", date: "2026-04-28", overseas: true });
+    await pairByApproval(usage.id, [recordId]);
+
+    expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } }))).not.toBe("(성공)");
+    expect(await liveLinks(usage.id)).toEqual([]);
+    expect(await usageRow(usage.id)).toMatchObject({ usedOn: USED_ON, totalAmountKrw: 200_000, version: usage.version });
+    expect(await amountLogs(usage.id)).toHaveLength(0);
+  });
+
+  it("(F2) 다른 카드의 같은 승인번호(사용일 · 합계 다름) → 후보 아님 · 직접 붙여도 거부 · 카드 · 합계 · 사용일 그대로", async () => {
+    const fx = await setup("비씨카드");
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const recordId = await bcRecordWith(fx, { last4: fx.cardB.last4, approvalNo: approval(), total: "204,100", vat: "18,555", date: "2026-04-28" });
+    await pairByApproval(usage.id, [recordId]);
+
+    const candidates = await listAttachCandidates(fx.manager, { recordId });
+    expect(candidates.items.some((item) => item.id === usage.id)).toBe(false);
+    expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } }))).not.toBe("(성공)");
+    expect(await liveLinks(usage.id)).toEqual([]);
+    expect(await usageRow(usage.id)).toMatchObject({ corpCardId: fx.cardA.id, totalAmountKrw: 200_000, usedOn: USED_ON });
+  });
+
+  it("(P2) 팀 비용 · 사용일을 옛 팀 시절로 덮으면 team_id = 새 사용일 소속 팀", async () => {
+    const fx = await setup("비씨카드");
+    const before = await teamIdByName("기획1팀");
+    const after = await teamIdByName("경영관리팀");
+    await insertMembership(SYSTEM_VIEWER, { userId: fx.pm.id, teamId: after, effectiveFrom: "2026-04-29" });
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
+    expect((await usageRow(usage.id)).teamId).toBe(after);
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-04-28" });
+    await pairByApproval(usage.id, [recordId]);
+
+    await attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } });
+
+    expect(await usageRow(usage.id)).toMatchObject({ usedOn: "2026-04-28", linkKind: "team_cost", teamId: before });
+  });
+
+  it("(P2) 팀 비용 · 새 사용일에 소속이 없으면 `{이름} {MM-DD} 소속 없음 · 소속 발령은 관리자` 거부 · 붙임 0 · 값 그대로", async () => {
+    const fx = await setup("비씨카드");
+    const late = await makePerson("늦은발령", DEFAULT_ROLE_ID, null);
+    await insertMembership(SYSTEM_VIEWER, { userId: late.id, teamId: await teamIdByName("기획1팀"), effectiveFrom: "2026-04-29" });
+    const card = await lotteCard(late.id, "비씨카드");
+    const usage = await createCardUsageFixture(late, { corpCardId: card.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const recordId = await bcRecordWith(fx, { last4: card.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-04-28" });
+    await pairByApproval(usage.id, [recordId]);
+
+    expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } }))).toBe("늦은발령 04-28 소속 없음 · 소속 발령은 관리자");
+    expect(await liveLinks(usage.id)).toEqual([]);
+    expect(await usageRow(usage.id)).toMatchObject({ usedOn: USED_ON, version: usage.version });
+  });
+
+  it("(P2) 새 사용일이 오늘 뒤면 사용일 상한 글자로 거부 · 붙임 0", async () => {
+    const fx = await setup("비씨카드");
+    const today = seoulToday();
+    const tomorrow = seoulToday(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: today, totalKrw: 200_000 });
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: tomorrow });
+    await pairByApproval(usage.id, [recordId]);
+
+    expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } }))).toBe(cardUsedOnError(tomorrow, today));
+    expect(await liveLinks(usage.id)).toEqual([]);
+    expect(await usageRow(usage.id)).toMatchObject({ usedOn: today });
+  });
+
+  it("(P2) 팀 카드 — 새 사용일에 사용한 사람이 카드 팀 소속이 아니거나 재직 전이면 거부 · 붙임 0", async () => {
+    const fx = await setup("비씨카드");
+    const managementTeam = await teamIdByName("경영관리팀");
+    await insertMembership(SYSTEM_VIEWER, { userId: fx.pm.id, teamId: managementTeam, effectiveFrom: "2026-04-29" });
+    const movedLast4 = nextLast4();
+    const moved = await createCorpCard(SYSTEM_VIEWER, { issuer: "비씨카드", numberLast4: movedLast4, label: "팀 카드 이동", kind: "team", teamId: managementTeam });
+    if (!moved.id) throw new Error("카드 없음");
+    const u1 = await createCardUsageFixture(fx.pm, { corpCardId: moved.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const r1 = await bcRecordWith(fx, { last4: movedLast4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-04-28" });
+    await pairByApproval(u1.id, [r1]);
+    expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId: r1, owner: { kind: "corp_card_usage", id: u1.id } }))).toBe("붙이기PM 04-28 카드 팀 소속 아님");
+    expect(await liveLinks(u1.id)).toEqual([]);
+
+    const hired = await makePerson("늦은입사", DEFAULT_ROLE_ID, "기획1팀");
+    await db.update(users).set({ hireDate: "2026-04-29" }).where(eq(users.id, hired.id));
+    const teamLast4 = nextLast4();
+    const teamCard = await createCorpCard(SYSTEM_VIEWER, { issuer: "비씨카드", numberLast4: teamLast4, label: "팀 카드 입사", kind: "team", teamId: await teamIdByName("기획1팀") });
+    if (!teamCard.id) throw new Error("카드 없음");
+    const u2 = await createCardUsageFixture(hired, { corpCardId: teamCard.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const r2 = await bcRecordWith(fx, { last4: teamLast4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-04-28" });
+    await pairByApproval(u2.id, [r2]);
+    expect(await messageOf(attachEvidenceRecord(fx.manager, { recordId: r2, owner: { kind: "corp_card_usage", id: u2.id } }))).toBe("늦은입사 04-28 재직 아님");
+    expect(await liveLinks(u2.id)).toEqual([]);
+    expect(await usageRow(u2.id)).toMatchObject({ usedOn: USED_ON });
+  });
+
+  it("(P2) 날짜만 덮는 원화 카드 사용 — 공급가 · 세액을 새 사용일 세율로 다시 나눈다(04-29부터 20% · 그 전 10%)", async () => {
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2026-04-29", value: 0.2 }, { now: new Date("2026-04-01T00:00:00+09:00") });
+    const fx = await setup("비씨카드");
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 240_000 });
+    expect(await usageRow(usage.id)).toMatchObject({ supplyKrw: 200_000, vatKrw: 40_000 });
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "240,000", vat: "21,818", date: "2026-04-28" });
+    await pairByApproval(usage.id, [recordId]);
+
+    await attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } });
+
+    expect(await usageRow(usage.id)).toMatchObject({ usedOn: "2026-04-28", totalAmountKrw: 240_000, supplyKrw: 218_182, vatKrw: 21_818, totalCurrency: "KRW" });
+    const [log] = await amountLogs(usage.id);
+    expect(changesOf(log)).toEqual({ usedOn: [USED_ON, "2026-04-28"], supplyKrw: [200_000, 218_182], vatKrw: [40_000, 21_818] });
+  });
+
+  it("(P2) 카드만 바꾼 덮기도 로그 changes에 카드 끝 4자리가 남는다", async () => {
+    const fx = await setup("비씨카드");
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardB.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const recordId = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: USED_ON });
+
+    await attachEvidenceRecord(fx.manager, { recordId, owner: { kind: "corp_card_usage", id: usage.id } });
+
+    expect(await usageRow(usage.id)).toMatchObject({ corpCardId: fx.cardA.id });
+    const [log] = await amountLogs(usage.id);
+    expect(changesOf(log)).toMatchObject({ cardLast4: [fx.cardB.last4, fx.cardA.last4] });
+  });
+
+  it("(P2) 경영관리 S5 풀 — 날짜만 다른 줄 changesCardUsage 참 · 32일 차는 `날짜 다름 · 32일` · 완료 프로젝트 날짜만 다른 줄은 막힘", async () => {
+    const fx = await setup("비씨카드");
+    const usage = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000 });
+    const near = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-04-28" });
+    const far = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-03-29" });
+    await pairByApproval(usage.id, [near, far]);
+    const pool1 = await listEvidencePool(fx.manager, { owner: { kind: "corp_card_usage", id: usage.id } });
+    expect(pool1.items.find((item) => item.id === near)).toMatchObject({ selectable: true, reason: null, changesCardUsage: true });
+    expect(pool1.items.find((item) => item.id === far)).toMatchObject({ selectable: false, reason: "날짜 다름 · 32일" });
+
+    const done = await lineOf(fx.pm, 3_000_000);
+    const completed = await createCardUsageFixture(fx.pm, { corpCardId: fx.cardA.id, usedOn: USED_ON, totalKrw: 200_000, lineId: done.lineId });
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, done.projectId));
+    const line = await bcRecordWith(fx, { last4: fx.cardA.last4, approvalNo: approval(), total: "200,000", vat: "18,182", date: "2026-04-28" });
+    await pairByApproval(completed.id, [line]);
+    const pool2 = await listEvidencePool(fx.manager, { owner: { kind: "corp_card_usage", id: completed.id } });
+    expect(pool2.items.find((item) => item.id === line)).toMatchObject({ selectable: false, reason: "사용일 04-30 → 04-28 · 완료 프로젝트" });
   });
 });

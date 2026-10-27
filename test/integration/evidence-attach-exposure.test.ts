@@ -144,7 +144,8 @@ describe("PE9 카드 사용 붙은 곳 보기", () => {
     const wide = await createIntakeManager("경영관리", { payments: true });
     const narrow = await createIntakeManager("범위 좁음");
     const last4 = String(4000 + Math.floor(Math.random() * 4000));
-    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "롯데카드", numberLast4: last4, label: `붙은곳 ${last4}`, kind: "personal", holderUserId: pm.id });
+    // 발급사를 시험마다 새로 — 고정 발급사 + 끝 4자리 4000개는 corp_cards 유일 인덱스에 가끔 부딪힌다(main 꼴).
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `카드사-${randomUUID()}`, numberLast4: last4, label: `붙은곳 ${last4}`, kind: "personal", holderUserId: pm.id });
     if (!card.id) throw new Error("카드 id 없음");
     const usage = await createCardUsageFixture(pm, { corpCardId: card.id, usedOn: "2026-04-30", totalKrw: 200_000 });
     const recordId = await insertRecordFixture(wide, { evidenceType: "card_receipt", supplyKrw: 181_818, vatKrw: 18_182, issuedOn: "2026-04-30" });

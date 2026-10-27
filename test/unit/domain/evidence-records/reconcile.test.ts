@@ -211,7 +211,7 @@ describe("overwriteBlockReason — 덮기 막힘 글자(카드 R3 · P2-C4)", ()
 
 describe("relaxedCandidatesOf — 3단계 사람 고르기 후보(PA-RELAX · DB-9 · N-6 · 카드 R3)", () => {
   const card = { id: CARD_A, last4: "1111" };
-  const relaxLine = { corpCardId: CARD_A, cardLast4: "1111", approvalNo: "44403241", usedOn: "2026-04-30", totalKrw: 204_100 };
+  const relaxLine = { corpCardId: CARD_A, cardLast4: "1111", approvalNo: "44403241", usedOn: "2026-04-30", totalKrw: 204_100, dateIsUsage: true };
   function cand(patch: Partial<RelaxedCandidateInput> = {}): RelaxedCandidateInput {
     return { id: "u1", number: "K-26-0001", corpCardId: card.id, cardLast4: card.last4, sameIssuer: true, approvalNo: null, usedOn: "2026-04-30", totalKrw: 204_100, cardStatementAttached: false, overwriteBlock: null, ...patch };
   }
@@ -225,11 +225,30 @@ describe("relaxedCandidatesOf — 3단계 사람 고르기 후보(PA-RELAX · DB
     expect(result.map((item) => item.id)).toEqual(["a", "b"]);
   });
 
-  it("합계가 다르면 patch.total · 카드가 다르면 patch.card(같은 카드사) — 고를 수 있는 행", () => {
-    const [item] = relaxedCandidatesOf(relaxLine, [cand({ approvalNo: "44403241", totalKrw: 200_000, corpCardId: CARD_B, cardLast4: "2222" })]);
-    expect(item?.blockedReason).toBeNull();
-    expect(item?.patch.total).toEqual({ before: 200_000, after: 204_100 });
-    expect(item?.patch.card?.before.last4).toBe("2222");
+  it("합계가 다르면 patch.total(같은 카드 · 같은 승인번호) · 카드가 다르면 patch.card(같은 사용일 · 합계 · 같은 카드사) — 고를 수 있는 행", () => {
+    const [byApproval] = relaxedCandidatesOf(relaxLine, [cand({ approvalNo: "44403241", totalKrw: 200_000 })]);
+    expect(byApproval?.blockedReason).toBeNull();
+    expect(byApproval?.patch.total).toEqual({ before: 200_000, after: 204_100 });
+    const [byDay] = relaxedCandidatesOf(relaxLine, [cand({ corpCardId: CARD_B, cardLast4: "2222" })]);
+    expect(byDay?.blockedReason).toBeNull();
+    expect(byDay?.patch.card?.before.last4).toBe("2222");
+  });
+
+  // 07.1-04 검토 P2(F2): 승인번호는 카드사 안에서 되풀이된다 — 다른 카드의 같은 승인번호는 후보가 아니다(같은 사용일 · 합계 갈래는 그대로 카드 무관).
+  it("(검토 F2) 다른 카드 · 같은 승인번호 · 사용일 · 합계 다름 → 후보 아님", () => {
+    expect(relaxedCandidatesOf(relaxLine, [cand({ approvalNo: "44403241", usedOn: "2026-04-28", totalKrw: 200_000, corpCardId: CARD_B, cardLast4: "2222" })])).toEqual([]);
+  });
+
+  // 07.1-04 검토 P1: 날짜 칸이 사용(승인)일이 아닌 서식(롯데 매입일자)은 사용일을 덮지 않는다 — 날짜 차 한도(D-E1)는 그대로 잰다.
+  it("(검토 P1) dateIsUsage 거짓 → patch.usedOn 없음(합계 덮기는 그대로) · 32일 차는 여전히 `날짜 다름 · 32일`", () => {
+    const posting = { ...relaxLine, dateIsUsage: false };
+    const [near] = relaxedCandidatesOf(posting, [cand({ approvalNo: "44403241", usedOn: "2026-04-28", totalKrw: 200_000 })]);
+    expect(near?.patch.usedOn).toBeNull();
+    expect(near?.patch.total).toEqual({ before: 200_000, after: 204_100 });
+    expect(near?.blockedReason).toBeNull();
+    const [far] = relaxedCandidatesOf(posting, [cand({ approvalNo: "44403241", usedOn: "2026-03-29" })]);
+    expect(far?.patch.usedOn).toBeNull();
+    expect(far?.blockedReason).toBe("날짜 다름 · 32일");
   });
 
   it("막힌 이유 — 카드 명세 붙음 `증빙 있음 · {번호}` · 다른 카드사 `카드 다름 · {끝 4자리}` · 덮기 막힘 글자, 막힌 행은 맨 뒤", () => {

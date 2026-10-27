@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { orgUnits } from "@/db/schema";
+import { orgUnits, users } from "@/db/schema";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { createOrgUnit } from "@/domain/org";
 import { archivePerson } from "@/domain/people";
-import { updateUserRole } from "@/repositories/users";
+import { updateUserHireDate, updateUserRole } from "@/repositories/users";
 import { seoulToday } from "@/lib/dates";
 import { addDays } from "@/lib/kst-date";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -745,5 +745,60 @@ test.describe("삭제 · 퇴직일 칸 상태와 삭제 사유 (06.4 D-6417 · D
     await field.blur();
     await expect(page.locator("#resignationDate-error")).toHaveText("계급 지정 권한 없음 · 시스템 관리자");
     await expect(field).toHaveValue("");
+  });
+});
+
+// 07.1 D-2(2026-10-27 사용자 결정): 시스템 관리자가 다른 사람에게 자리를 넘기는 화면 — 대상 상세의 3차 하나 → 확인 모달.
+// CI의 erp_test에는 다른 시스템 관리자 계정이 쌓여 있어 실제 넘기기는 회사 자리 검사가 거부한다 — 거부가 모달 안에 붙는 길을 잰다
+// (성공 · 한 tx 원자성 · 동시 실행은 통합 sysadmin-handover.test.ts).
+test.describe("시스템 관리자 넘기기 (07.1 D-2)", () => {
+  const HANDOVER = "시스템 관리자 넘기기";
+
+  test("시스템 관리자에게만 · 넘길 수 있는 대상에만 3차 하나가 선다", async ({ page, browser, baseURL }) => {
+    const admin = await loginAsAdmin(page);
+    const pm = await makeAccount("E2E넘기기대상", DEFAULT_ROLE_ID);
+    const future = await makeAccount("E2E넘기기내일", DEFAULT_ROLE_ID);
+    await updateUserHireDate(SYSTEM_VIEWER, future, addDays(seoulToday(), 1));
+    const other = await makeAccount("E2E넘기기관리자", SYSADMIN_ROLE_ID);
+
+    await page.goto(`/admin/people/${pm}`);
+    await expect(page.getByRole("button", { name: HANDOVER })).toHaveCount(1);
+    for (const id of [future, other]) {
+      await page.goto(`/admin/people/${id}`);
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(page.getByRole("button", { name: HANDOVER })).toHaveCount(0);
+    }
+    const [self] = await db.select({ id: users.id }).from(users).where(eq(users.email, admin.email));
+    await page.goto(`/admin/people/${self?.id ?? ""}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("button", { name: HANDOVER })).toHaveCount(0);
+
+    const delegate = await createDelegatedAccount();
+    const context = await browser.newContext({ baseURL });
+    const delegatePage = await context.newPage();
+    await loginWith(delegatePage, delegate);
+    await delegatePage.goto(`/admin/people/${pm}`);
+    await expect(delegatePage.locator("#person-role-change")).toBeVisible();
+    await expect(delegatePage.getByRole("button", { name: HANDOVER })).toHaveCount(0);
+    await context.close();
+  });
+
+  test("누르면 확인 모달 · 서버 거부는 모달 안에 붙고 계급 그대로 · 320 가로 넘침 없음", async ({ page }) => {
+    await loginAsAdmin(page);
+    const pm = await makeAccount("E2E넘기기거부", DEFAULT_ROLE_ID);
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.goto(`/admin/people/${pm}`);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    await page.getByRole("button", { name: HANDOVER }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: HANDOVER })).toBeVisible();
+    await expect(dialog.getByText("E2E넘기기거부", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("내 계급 → 기획 PM · 되돌리기는 새 시스템 관리자", { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: new RegExp(`^${HANDOVER}`) }).click();
+    // 같은 글자가 1차 Button 안 이유 자리에도 있으나 display:none(ConfirmDialog.module.css `.primaryWrap > span > span`) — 보이는 한 자리만 잰다.
+    await expect(dialog.getByText(/^시스템 관리자 있음 · /).filter({ visible: true })).toHaveCount(1);
+    await expect(dialog).toBeVisible();
+    await expect(page.locator("dd").filter({ hasText: /^기획 PM$/ })).toBeVisible();
   });
 });

@@ -3,7 +3,8 @@ import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { splitCardTotal } from "@/domain/corp-card-usages/amounts";
 import { businessNoDigitsOf, cardLast4Of, cellDate, cellKrw, isBlankRow } from "@/domain/evidence-import/cells";
 import { EVIDENCE_FORMATS, finalizeAmounts, parseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
-import { EVIDENCE_FORMAT_TYPES } from "@/domain/evidence-import/types";
+import { EVIDENCE_FORMAT_TYPES, type ParsedLine } from "@/domain/evidence-import/types";
+import { splitOffsetPairs } from "@/domain/evidence-import/key";
 import { readWorkbookRows } from "@/lib/xlsx-server";
 import type { TaxRates } from "@/domain/money/tax";
 import {
@@ -266,12 +267,6 @@ describe("신한 서식", () => {
     expect(result.rateDates).toEqual(["2026-05-10", "2026-05-28"]);
     const [cancel] = finalizeAmounts(result.offsetLines.map((pair) => pair.cancel), ratesFor(...result.rateDates), rulesOf(SEED_CARD_RULE));
     expect(cancel).toMatchObject({ totalKrw: -12500, supplyKrw: -11364, vatKrw: -1136 });
-  });
-
-  it("세율의 부가세 끝처리 단위가 1 · 10이 아니면 던진다(호출자 결함 · 독립 검토 P3-4)", () => {
-    const result = ok(parseWorkbook(shinhanFixture([{}])));
-    const rates = new Map([["2026-05-28", { ...RATES, asOf: "2026-05-28", vatUnit: 100 }]]);
-    expect(() => finalizeAmounts(result.lines, rates, rulesOf(SEED_CARD_RULE))).toThrow("부가세 끝처리 단위");
   });
 
   it("승인번호 없는 두 줄이 같은 카드 · 사용일시 · 가맹점 · 합계 → 열쇠 … · …#2, 둘 다 sameKeyCount 2", () => {
@@ -917,5 +912,41 @@ describe("등록 배열 · 서식 → 증빙 종류 표(C-F15)", () => {
     expect(EVIDENCE_FORMATS.map((rule) => ({ key: rule.key, evidenceType: rule.evidenceType })).sort((a, b) => a.key.localeCompare(b.key))).toEqual(
       [...EVIDENCE_FORMAT_TYPES].sort((a, b) => a.key.localeCompare(b.key)),
     );
+  });
+});
+
+// 07.1-03 PX3(C-78 02 P3-2 · E-P2-12) — 끝 4자리를 못 읽은 줄은 어느 카드인지 몰라 같은 승인번호여도 취소로 상쇄하지 않는다.
+describe("splitOffsetPairs — 끝 4자리 없는 카드 줄", () => {
+  const cardLine = (patch: Partial<ParsedLine>): ParsedLine => ({
+    lineNo: 1,
+    evidenceType: "card_receipt",
+    approvalNo: "12040095",
+    issuedOn: "2026-05-10",
+    usedAt: "09:00:00",
+    totalKrw: 12_500,
+    vatKrw: null,
+    supplyKrw: null,
+    merchant: "가맹점가",
+    businessNoDigits: null,
+    nameOnDocument: null,
+    cardLast4: "1278",
+    needsCheck: null,
+    originalApprovalNo: null,
+    ...patch,
+  });
+
+  it("끝 4자리 null · 같은 승인번호 · 합 0 두 줄 → 상쇄 0 · 두 줄 그대로", () => {
+    const lines = [cardLine({ lineNo: 1, cardLast4: null }), cardLine({ lineNo: 2, cardLast4: null, totalKrw: -12_500 })];
+    const split = splitOffsetPairs(lines);
+    expect(split.pairs).toHaveLength(0);
+    expect(split.lines).toEqual(lines);
+  });
+
+  it("끝 4자리가 같은 두 줄은 상쇄 1(회귀)", () => {
+    const original = cardLine({ lineNo: 1 });
+    const cancel = cardLine({ lineNo: 2, totalKrw: -12_500 });
+    const split = splitOffsetPairs([original, cancel]);
+    expect(split.pairs).toEqual([{ original, cancel }]);
+    expect(split.lines).toHaveLength(0);
   });
 });

@@ -27,6 +27,12 @@ export type Money = {
 export type MoneyInput = { currency: Currency; amount: number; fxRate: number };
 
 export type RoundingUnit = 1 | 10;
+
+// 07.1-03 PX3(E-P2-10) — 설정 값(number)을 절사 단위로 좁히는 한 곳. 단언하지 않고 1 · 10이 아니면 던진다(설정 스키마가 저장을 막는다).
+export function roundingUnitOf(unit: number): RoundingUnit {
+  if (unit === 1 || unit === 10) return unit;
+  throw new Error(`끝처리 단위 ${unit} — 1 · 10만`);
+}
 export type RoundingMethod = "truncate" | "round" | "ceil";
 
 // CEO 리뷰 D4 — 반올림은 서버 단일 함수 하나. 단위(1원·10원)와 방식(절사·

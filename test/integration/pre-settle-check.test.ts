@@ -22,7 +22,7 @@ import { DTO_REGISTRY } from "@/domain/permissions/dto-registry";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { getSettlementPreSettleSummary, SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
-import { loadKindDetails } from "@/domain/approvals";
+import { listMyInbox, loadKindDetails } from "@/domain/approvals";
 import { visible } from "@/domain/permissions/visible";
 import { setSettingValue } from "@/domain/settings/registry";
 import {
@@ -1208,5 +1208,18 @@ describe("PD3 — 정산 결재 문서 칸의 `증빙 대기 {N}건` 행", () =>
     reviewReads.list = 0;
     await loadKindDetails(a.fx.ceo, SETTLEMENT_DOCUMENT_KIND, [back.doc.documentId], { visible });
     expect([inject.loadCalls, inject.computeCalls, reviewReads.list]).toEqual([0, 0, 0]);
+  }, 30_000);
+
+  it("#312 /review P2 — 결재함 한 번 로드(상세 포함)는 같은 프로젝트의 완료 전 점검을 한 번만 돈다(승인 막힘 이유와 증빙 대기 건수가 결과를 나눠 쓴다)", async () => {
+    const a = await pendingSettlement(2);
+    inject.loadCalls = 0;
+    inject.computeCalls = 0;
+
+    const inbox = await listMyInbox(a.fx.ceo, { withDetails: true });
+
+    const item = inbox.mine.find((row) => row.documentId === a.doc.documentId);
+    expect(item?.detail?.rows.find((row) => row.label === "증빙 대기")?.value).toBe("2건");
+    expect(inject.computeCalls).toBe(1);
+    expect(inject.loadCalls).toBe(1);
   }, 30_000);
 });

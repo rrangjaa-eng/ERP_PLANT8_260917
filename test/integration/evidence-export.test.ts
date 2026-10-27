@@ -131,7 +131,9 @@ describe("exportEvidenceRecords — 목록과 같은 범위 · 거르개 · 투�
     expect(ageOfName.get("오늘 등록")).toBe("0");
     expect(ageOfName.get("열흘 전 등록")).toBe("10");
     expect(ageOfName.get("붙은 줄")).toBe("");
-    expect(ageOfName.get("보관한 줄")).toBe("");
+    // 보관한 줄은 `보관` 보기에서만 나온다.
+    const archivedRows = await exportRows(intake, { state: "archived" });
+    expect(archivedRows.slice(1).map((row) => [row[2], row[1]])).toEqual([["보관한 줄", ""]]);
     // 화면 목록 DTO와 같은 값이다.
     const listed = await listEvidenceRecords(intake, { state: "all" });
     for (const row of listed.rows) expect(ageOfName.get(row.counterparty ?? "")).toBe(row.ageDays === null ? "" : String(row.ageDays));

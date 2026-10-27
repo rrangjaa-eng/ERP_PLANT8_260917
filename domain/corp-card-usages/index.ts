@@ -1730,8 +1730,8 @@ export function cardOverwriteSplit(basis: CardOverwriteBasis, input: { evidenceT
   return splitCardTotal({ money: { currency: "KRW", amount: input.totalKrw, fxRate: 1 }, rule: basis.rules.get(input.evidenceTypeCode) ?? { ruleKind: "none" } }, rates);
 }
 
-/** 덮을 값 — null은 그대로(합계 · 카드). domain/evidence-records를 import하지 않으려고 평범한 값만 받는다(C-F14). */
-export type CardOverwritePatch = { usageId: string; totalKrw: number | null; corpCardId: string | null };
+/** 덮을 값 — null은 그대로(합계 · 카드 · 사용일). domain/evidence-records를 import하지 않으려고 평범한 값만 받는다(C-F14). */
+export type CardOverwritePatch = { usageId: string; totalKrw: number | null; corpCardId: string | null; usedOn: string | null };
 export type CardOverwriteBlock = "holder" | "fixed" | "completed" | "cap";
 
 function holderDiffers(before: { kind: string; holderUserId: string | null; teamId: string | null }, after: { kind: string; holderUserId: string | null; teamId: string | null }): boolean {
@@ -1751,7 +1751,8 @@ export async function cardUsageOverwriteBlocks(
   tx?: DbOrTx,
 ): Promise<Map<string, CardOverwriteBlock>> {
   const blocks = new Map<string, CardOverwriteBlock>();
-  const changed = patches.filter((patch) => patch.totalKrw !== null || patch.corpCardId !== null);
+  // 07.1-04 E-P2-17: 날짜만 바뀌는 덮기도 고정 연결 · 완료 프로젝트 판정을 받는다.
+  const changed = patches.filter((patch) => patch.totalKrw !== null || patch.corpCardId !== null || patch.usedOn !== null);
   if (changed.length === 0) return blocks;
   const facts = await findCardUsageOverwriteFacts(
     viewer,
@@ -1791,7 +1792,7 @@ export async function cardUsageOverwriteBlocks(
     const adjusted = new Map(links);
     adjusted.set(fact.quoteLineId, { ...lineLinks, cardUsages: lineLinks.cardUsages.map((usage) => ({ ...usage, supplyKrw: raised.get(usage.id) ?? usage.supplyKrw })) });
     const room = lineRoom({ links: adjusted, basis: roomBasis, lineId: fact.quoteLineId, exclude: { usageId: patch.usageId } });
-    const supplyKrw = cardOverwriteSplit(basis, { evidenceTypeCode: fact.evidenceTypeCode, usedOn: fact.usedOn, totalKrw: patch.totalKrw }).supplyKrw;
+    const supplyKrw = cardOverwriteSplit(basis, { evidenceTypeCode: fact.evidenceTypeCode, usedOn: patch.usedOn ?? fact.usedOn, totalKrw: patch.totalKrw }).supplyKrw;
     const cap = cardExecutionCap({ execution: lineLinks.currentExecution, otherSupplies: room.otherSupplies, supply: { currency: "KRW", amount: supplyKrw, fxRate: 1 }, source: "reconciliation" });
     if (cap.exceeds) blocks.set(patch.usageId, "cap");
     else raised.set(patch.usageId, supplyKrw);

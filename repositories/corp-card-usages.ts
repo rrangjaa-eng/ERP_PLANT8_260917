@@ -416,7 +416,7 @@ export async function lockCardUsagesForUpdate(viewer: Viewer, ids: readonly stri
 // D-6111 파일 값 덮기 — version 조건부 · 보관 안 된 건만. 번호 · 연결 칸은 쓰지 않는다. 0행(null) = 낡음.
 export async function applyFileWins(
   viewer: Viewer,
-  input: { id: string; version: number; corpCardId: string; approvalNo: string | null; total: { totalKrw: number; supplyKrw: number; vatKrw: number } | null },
+  input: { id: string; version: number; corpCardId: string; approvalNo: string | null; usedOn: string | null; total: { totalKrw: number; supplyKrw: number; vatKrw: number } | null },
   tx: DbOrTx,
 ): Promise<number | null> {
   void viewer;
@@ -425,6 +425,8 @@ export async function applyFileWins(
     .set({
       corpCardId: input.corpCardId,
       approvalNo: input.approvalNo,
+      // 07.1-04 D-7104: 사용일은 명세 날짜가 다를 때만 쓴다(null = 그대로).
+      ...(input.usedOn !== null ? { usedOn: input.usedOn } : {}),
       // 합계가 바뀔 때만 돈 칸을 쓴다 — 카드 명세의 합계는 원화라 외화 칸은 비운다(KRW = 환율 1).
       ...(input.total
         ? { totalCurrency: "KRW", totalForeignAmount: null, totalFxRate: "1.0000", totalAmountKrw: input.total.totalKrw, supplyKrw: input.total.supplyKrw, vatKrw: input.total.vatKrw }

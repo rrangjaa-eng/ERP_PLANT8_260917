@@ -321,7 +321,7 @@ async function reconcileCardRecords(
 
   const blocks = await cardUsageOverwriteBlocks(
     viewer,
-    pairs.filter(patchChanges).map((pair) => ({ usageId: pair.candidate.id, totalKrw: pair.patch.total?.after ?? null, corpCardId: pair.patch.card?.after.id ?? null })),
+    pairs.filter(patchChanges).map((pair) => ({ usageId: pair.candidate.id, totalKrw: pair.patch.total?.after ?? null, corpCardId: pair.patch.card?.after.id ?? null, usedOn: null })),
     basis,
     tx,
   );
@@ -343,6 +343,7 @@ async function reconcileCardRecords(
         version: pair.match.version,
         corpCardId: pair.patch.card?.after.id ?? pair.candidate.corpCardId,
         approvalNo: pair.patch.approvalNo ?? pair.candidate.approvalNo,
+        usedOn: null,
         total: split ? { totalKrw: split.totalKrw, supplyKrw: split.supplyKrw, vatKrw: split.vatKrw } : null,
       },
       tx,

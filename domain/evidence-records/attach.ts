@@ -1,3 +1,4 @@
+import { buildChanges } from "@/domain/action-log/changes";
 import { recordAction, type RecordActionDeps } from "@/domain/action-log/record";
 import { validateRejectReason } from "@/domain/approvals";
 import {
@@ -42,7 +43,7 @@ import {
   type EvidenceRecordFacts,
 } from "@/domain/evidence-records";
 import { compareCandidates, dayGapOf, scoreCandidate, type RankedCandidate } from "@/domain/evidence-records/score";
-import { fileWinsPatch, isRelaxedHit, overwriteBlockReason, relaxedCandidatesOf, type FileWinsPatch, type RelaxedCandidate, type RelaxedLine } from "@/domain/evidence-records/reconcile";
+import { fileWinsPatch, isRelaxedHit, overwriteBlockReason, relaxedCandidatesOf, usedOnGapReason, type FileWinsPatch, type RelaxedCandidate, type RelaxedLine } from "@/domain/evidence-records/reconcile";
 import { autoConfirmOnAttach } from "@/domain/evidence-reviews";
 import { codeLabelsOf, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses";
 import { visibleExpenseScope } from "@/domain/expenses/access";
@@ -298,8 +299,11 @@ async function attachToExpense(viewer: Viewer, keys: ViewerKeys, record: Evidenc
 
 type CardAttachPlan = { usage: CardUsageForWrite; record: EvidenceRecordListRow; patch: FileWinsPatch | null; basis: CardOverwriteBasis | null };
 
-function patchChangesValues(patch: FileWinsPatch | null): patch is FileWinsPatch & ({ total: NonNullable<FileWinsPatch["total"]> } | { card: NonNullable<FileWinsPatch["card"]> }) {
-  return patch !== null && (patch.total !== null || patch.card !== null);
+function patchChangesValues(
+  patch: FileWinsPatch | null,
+): patch is FileWinsPatch & ({ total: NonNullable<FileWinsPatch["total"]> } | { card: NonNullable<FileWinsPatch["card"]> } | { usedOn: NonNullable<FileWinsPatch["usedOn"]> }) {
+  // 07.1-04 E-P1-03: 날짜만 다른 붙임도 값을 바꾸는 쓰기다 — 보임 검사 · 바탕 · 막힘 · 덮기 · 로그 갈래로.
+  return patch !== null && (patch.total !== null || patch.card !== null || patch.usedOn !== null);
 }
 
 async function planCardAttach(viewer: Viewer, recordId: string, usageId: string): Promise<CardAttachPlan> {
@@ -319,14 +323,18 @@ async function planCardAttach(viewer: Viewer, recordId: string, usageId: string)
     throw new UserFacingError(RECORD_NOT_FOUND);
   }
   const patch = fileWinsPatch(
-    { totalKrw: usage.totalAmountKrw, corpCardId: usage.corpCardId, cardLast4: usage.cardLast4 },
-    { totalKrw: record.totalKrw, corpCardId: record.corpCardId, cardLast4: record.cardLast4 ?? "", approvalNo: record.approvalNo },
+    { totalKrw: usage.totalAmountKrw, corpCardId: usage.corpCardId, cardLast4: usage.cardLast4, usedOn: usage.usedOn, approvalNo: usage.approvalNo },
+    { totalKrw: record.totalKrw, corpCardId: record.corpCardId, cardLast4: record.cardLast4 ?? "", approvalNo: record.approvalNo, usedOn: record.issuedOn },
   );
+  // D-E1: 후보가 막힌 행으로 보인 날짜 차(31일 초과)는 서버도 같은 글자로 거부한다.
+  const gap = usedOnGapReason(patch);
+  if (gap) throw new UserFacingError(gap);
   if (!patchChangesValues(patch)) return { usage, record, patch, basis: null };
   // 값을 바꾸는 쓰기는 두 금액 칸을 다 볼 수 있는 사람만(보이지 않는 금액을 덮어쓰지 않는다).
   const [usageAmount, recordAmount] = await Promise.all([visible(viewer, "card_usage.amount"), visible(viewer, "evidence.amount")]);
   if (!usageAmount || !recordAmount) denyCardSlipWrite();
-  return { usage, record, patch, basis: await loadCardOverwriteBasis(viewer, [usage.usedOn]) };
+  // E-P1-04: 덮은 뒤 분할 · 실행가 판정은 새 사용일 세율을 쓴다 — 옛 날짜 · 명세 날짜를 둘 다 읽는다.
+  return { usage, record, patch, basis: await loadCardOverwriteBasis(viewer, [usage.usedOn, record.issuedOn]) };
 }
 
 async function attachToCardUsage(viewer: Viewer, keys: ViewerKeys, recordId: string, usageId: string, deps?: EvidenceAttachDeps): Promise<{ created: boolean }> {
@@ -350,28 +358,65 @@ async function attachToCardUsage(viewer: Viewer, keys: ViewerKeys, recordId: str
     if (!lockedRecord || lockedRecord.version !== record.version + 1) throw new UserFacingError(RECORD_NOT_FOUND);
 
     if (patchChangesValues(patch) && basis) {
-      const blocks = await cardUsageOverwriteBlocks(viewer, [{ usageId: usage.id, totalKrw: patch.total?.after ?? null, corpCardId: patch.card?.after.id ?? null }], basis, tx);
+      const blocks = await cardUsageOverwriteBlocks(
+        viewer,
+        [{ usageId: usage.id, totalKrw: patch.total?.after ?? null, corpCardId: patch.card?.after.id ?? null, usedOn: patch.usedOn?.after ?? null }],
+        basis,
+        tx,
+      );
       const block = blocks.get(usage.id);
       if (block) throw new UserFacingError(overwriteBlockReason(patch, block) ?? cardSlipNotFound().message);
-      const split = patch.total ? cardOverwriteSplit(basis, { evidenceTypeCode: usage.evidenceTypeCode, usedOn: usage.usedOn, totalKrw: patch.total.after }) : null;
+      const usedOn = patch.usedOn?.after ?? usage.usedOn;
+      const approvalNo = patch.approvalNo ?? usage.approvalNo;
+      // 분할은 합계가 바뀔 때만, 새 사용일 세율로(PE3 · E-P1-04). 날짜만 바뀌면 돈 칸 · 외화 칸은 그대로다(applyFileWins 합계 갈래 없음).
+      const split = patch.total ? cardOverwriteSplit(basis, { evidenceTypeCode: usage.evidenceTypeCode, usedOn, totalKrw: patch.total.after }) : null;
       const before = { totalKrw: usage.totalAmountKrw, supplyKrw: usage.supplyKrw, vatKrw: usage.vatKrw };
       const after = split ? { totalKrw: split.totalKrw, supplyKrw: split.supplyKrw, vatKrw: split.vatKrw } : before;
-      const version = await applyFileWins(viewer, { id: usage.id, version: usage.version, corpCardId: patch.card?.after.id ?? usage.corpCardId, approvalNo: patch.approvalNo ?? usage.approvalNo, total: split ? after : null }, tx);
+      const version = await applyFileWins(
+        viewer,
+        { id: usage.id, version: usage.version, corpCardId: patch.card?.after.id ?? usage.corpCardId, approvalNo, usedOn: patch.usedOn?.after ?? null, total: split ? after : null },
+        tx,
+      );
       if (version === null) throw cardSlipNotFound();
-      // D-6111 · RP-2: 덮은 전 · 후는 끌 수 없는 증빙 기록 금액 변경 종류로 — 대사와 같은 상세 꼴.
+      // D-6111 · RP-2 · 07.1-04 PE3: 덮은 전 · 후는 끌 수 없는 증빙 기록 금액 변경 종류로 — 대사와 같은 상세 꼴 + 바뀐 칸만 changes.
       await recordAction(
         viewer,
         {
           actionType: "evidence_record_amount_change",
           entity: CARD_USAGE_ENTITY,
           entityId: usage.id,
-          detail: { before, after, cardLast4Before: usage.cardLast4, cardLast4After: patch.card?.after.last4 ?? usage.cardLast4, evidenceRecordId: record.id },
+          detail: {
+            before,
+            after,
+            cardLast4Before: usage.cardLast4,
+            cardLast4After: patch.card?.after.last4 ?? usage.cardLast4,
+            evidenceRecordId: record.id,
+            changes: buildChanges({ usedOn: usage.usedOn, totalKrw: before.totalKrw, approvalNo: usage.approvalNo }, { usedOn, totalKrw: after.totalKrw, approvalNo }),
+          },
         },
         { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
       );
     } else if (patch?.approvalNo && patch.approvalNo !== usage.approvalNo) {
-      // 값이 같으면 승인번호만 채운다(금액 칸 · 기록 0).
-      if ((await applyFileWins(viewer, { id: usage.id, version: usage.version, corpCardId: usage.corpCardId, approvalNo: patch.approvalNo, total: null }, tx)) === null) throw cardSlipNotFound();
+      // 값이 같으면 비어 있던 승인번호만 채운다(금액 칸 그대로). PE2: 채운 전 · 후도 같은 종류 로그로 남긴다.
+      if ((await applyFileWins(viewer, { id: usage.id, version: usage.version, corpCardId: usage.corpCardId, approvalNo: patch.approvalNo, usedOn: null, total: null }, tx)) === null) throw cardSlipNotFound();
+      const amounts = { totalKrw: usage.totalAmountKrw, supplyKrw: usage.supplyKrw, vatKrw: usage.vatKrw };
+      await recordAction(
+        viewer,
+        {
+          actionType: "evidence_record_amount_change",
+          entity: CARD_USAGE_ENTITY,
+          entityId: usage.id,
+          detail: {
+            before: amounts,
+            after: amounts,
+            cardLast4Before: usage.cardLast4,
+            cardLast4After: usage.cardLast4,
+            evidenceRecordId: record.id,
+            changes: buildChanges({ approvalNo: usage.approvalNo }, { approvalNo: patch.approvalNo }),
+          },
+        },
+        { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
+      );
     }
     await recordAction(
       viewer,
@@ -1112,13 +1157,21 @@ export async function judgeCardCandidates(viewer: Viewer, records: readonly Card
   if (lines.length === 0) return result;
   const rows = await findRelaxedCandidates(viewer, { scope, lines: lines.map(({ line }) => line) });
   const statements = await cardStatementOwners(viewer, rows.map((row) => row.id));
-  const basis = rows.length > 0 ? await loadCardOverwriteBasis(viewer, [...new Set(rows.map((row) => row.usedOn))]) : null;
+  // E-P1-04: 실행가 판정이 새 사용일(줄 날짜) 세율을 찾는다 — 후보 날짜 + 줄 날짜.
+  const basis = rows.length > 0 ? await loadCardOverwriteBasis(viewer, [...new Set([...rows.map((row) => row.usedOn), ...lines.map(({ line }) => line.usedOn)])]) : null;
   for (const { record, line } of lines) {
     const hits = rows.filter((row) => isRelaxedHit(line, { approvalNo: row.approvalNo, usedOn: row.usedOn, totalKrw: row.totalAmountKrw }));
-    const patches = hits.map((row) => ({ row, patch: fileWinsPatch({ totalKrw: row.totalAmountKrw, corpCardId: row.corpCardId, cardLast4: row.cardLast4 }, { ...line, totalKrw: line.totalKrw }) }));
+    const patches = hits.map((row) => ({
+      row,
+      patch: fileWinsPatch({ totalKrw: row.totalAmountKrw, corpCardId: row.corpCardId, cardLast4: row.cardLast4, usedOn: row.usedOn, approvalNo: row.approvalNo }, { ...line, totalKrw: line.totalKrw }),
+    }));
     const blocks =
       basis && patches.length > 0
-        ? await cardUsageOverwriteBlocks(viewer, patches.map(({ row, patch }) => ({ usageId: row.id, totalKrw: patch.total?.after ?? null, corpCardId: patch.card?.after.id ?? null })), basis)
+        ? await cardUsageOverwriteBlocks(
+            viewer,
+            patches.map(({ row, patch }) => ({ usageId: row.id, totalKrw: patch.total?.after ?? null, corpCardId: patch.card?.after.id ?? null, usedOn: patch.usedOn?.after ?? null })),
+            basis,
+          )
         : new Map<string, CardOverwriteBlock>();
     const judged = relaxedCandidatesOf(
       line,

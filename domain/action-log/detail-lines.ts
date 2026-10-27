@@ -46,7 +46,10 @@ export const CHANGE_FIELD_LABELS: Record<string, string> = {
   password: "비밀번호",
   tempPassword: "비밀번호",
   usedOn: "사용일",
+  cardLast4: "카드",
   totalKrw: "결제 합계",
+  supplyKrw: "공급가",
+  vatKrw: "부가세",
   approvalNo: "승인번호",
 };
 

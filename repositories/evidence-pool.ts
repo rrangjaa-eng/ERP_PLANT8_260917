@@ -45,6 +45,8 @@ export type PoolRow = {
   supplyKrw: number;
   totalKrw: number;
   issuedOn: string;
+  // 카드 사용 풀의 사용일 덮기 판정(날짜 칸이 사용일인 서식인가 — PR #305 검토 P2).
+  format: string;
   pairOk: boolean;
   score: number;
 };
@@ -137,6 +139,7 @@ export async function listPoolForScope(viewer: Viewer, scope: EvidenceScope, que
       supplyKrw: evidenceRecords.supplyKrw,
       totalKrw: evidenceRecords.totalKrw,
       issuedOn: evidenceRecords.issuedOn,
+      format: evidenceRecords.format,
       pairOk,
       score,
     })

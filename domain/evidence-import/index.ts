@@ -346,6 +346,7 @@ async function reconcileCardRecords(
         corpCardId: pair.patch.card?.after.id ?? pair.candidate.corpCardId,
         approvalNo: pair.patch.approvalNo ?? pair.candidate.approvalNo,
         usedOn: null,
+        teamId: null,
         total: split ? { totalKrw: split.totalKrw, supplyKrw: split.supplyKrw, vatKrw: split.vatKrw } : null,
       },
       tx,
@@ -368,7 +369,11 @@ async function reconcileCardRecords(
           cardLast4Before: pair.candidate.cardLast4,
           cardLast4After: pair.patch.card?.after.last4 ?? pair.candidate.cardLast4,
           evidenceRecordId: pair.record.id,
-          changes: buildChanges({ totalKrw: before.totalKrw, approvalNo: pair.candidate.approvalNo }, { totalKrw: after.totalKrw, approvalNo: pair.patch.approvalNo ?? pair.candidate.approvalNo }),
+          // PR #305 검토 P2: 카드만 바뀐 덮기도 줄이 남게 카드 끝 4자리 · 공급가 · 부가세도 changes에(수동 붙임과 같은 모양).
+          changes: buildChanges(
+            { cardLast4: pair.candidate.cardLast4, ...before, approvalNo: pair.candidate.approvalNo },
+            { cardLast4: pair.patch.card?.after.last4 ?? pair.candidate.cardLast4, ...after, approvalNo: pair.patch.approvalNo ?? pair.candidate.approvalNo },
+          ),
         },
       },
       { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },

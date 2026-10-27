@@ -60,6 +60,8 @@ export type FormatRule = {
   /** card = 카드 열쇠(끝4 · 승인번호 · 날짜 · 합계)와 같은 파일 안 `#n`, approval = 승인번호 하나(겹침은 줄 오류),
    *  approval-dated = 승인번호 · 날짜 · 사업자번호 · 부호 있는 합계(현금영수증 — 겹침은 줄 오류). */
   keyKind: "card" | "approval" | "approval-dated";
+  /** 카드 서식의 날짜 칸이 사용(승인)일인가 — 참일 때만 붙임이 카드 사용 사용일을 그 날짜로 덮는다(07.1-04 PR #305 검토 P1 · 롯데 매입일자는 거짓). */
+  dateIsUsage?: boolean;
   /** 열쇠 접두어 — 없으면 `key`. 같은 거래를 두 양식으로 올려도 같은 열쇠가 되도록 이름공간을 나눌 때만 쓴다(신한 회계양식 → card-shinhan). */
   keyPrefix?: EvidenceFormatKey;
   detect(sheets: readonly SheetPreview[], container: Container): DetectResult;

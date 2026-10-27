@@ -1,9 +1,9 @@
 import { evidenceOwnerPhase, evidenceRecordRights, readEvidenceOwner, type EvidenceOwnerView } from "@/domain/evidence";
-import { EVIDENCE_FORMATS } from "@/domain/evidence-import/registry";
+import { EVIDENCE_FORMATS, formatDateIsUsage } from "@/domain/evidence-import/registry";
 import { listEvidenceRecordsByIds, type EvidenceRecordView } from "@/domain/evidence-records";
 import { ATTACH_BATCH_CAP_LINE, ATTACH_BATCH_MAX, authorCardBlock, flagsOf, loadPairCodes, pairDecision, readCardUsageRights, readKeys, type PairCodes, type ViewerKeys } from "@/domain/evidence-records/attach";
-import { fileWinsPatch } from "@/domain/evidence-records/reconcile";
-import { cardSlipNotFound } from "@/domain/corp-card-usages";
+import { fileWinsPatch, overwriteBlockReason, usedOnGapOf, type FileWinsPatch } from "@/domain/evidence-records/reconcile";
+import { cardSlipNotFound, cardUsageOverwriteBlocksByGroup, loadCardOverwriteBasis } from "@/domain/corp-card-usages";
 import { ExpenseNotFoundError } from "@/domain/expenses";
 import { purchaseRequestAuthorOpen, readPurchaseRequestEvidenceFacts } from "@/domain/purchase-requests";
 import { can } from "@/domain/permissions/can";
@@ -161,17 +161,58 @@ export type EvidencePool = {
   limit: number;
 };
 
-// 카드 사용 작성자 모드 — 합계(카드는 같은 카드 줄만이라 늘 같다)가 다른 줄은 막힌 행(DB-8). 경영관리 모드는 고를 수 있다(D-6111 덮기).
-function cardBlockOf(row: PoolRow, ctx: PoolContext): string | null {
-  if (!ctx.card || ctx.mode !== "author") return null;
+// 카드 사용 작성자 모드 — 합계(카드는 같은 카드 줄만이라 늘 같다)가 다른 줄은 막힌 행(DB-8). 경영관리 모드는 고를 수 있다(D-6111 덮기) —
+// 단 서버 붙이기(planCardAttach)가 거부하는 줄(31일 넘는 날짜 차 · 덮기 막힘)은 S4 후보(judgeCardCandidates)와 같은 글자로 막힌 행(PR #305 검토 P2).
+function cardBlockOf(row: PoolRow, ctx: PoolContext, registrarBlocks: ReadonlyMap<string, string>): string | null {
+  if (!ctx.card) return null;
+  if (ctx.mode === "registrar") return registrarBlocks.get(row.id) ?? null;
   const { usage } = ctx.card;
   return authorCardBlock(
     fileWinsPatch({ totalKrw: usage.totalAmountKrw, corpCardId: usage.corpCardId, cardLast4: usage.cardLast4 }, { totalKrw: row.totalKrw, corpCardId: usage.corpCardId, cardLast4: usage.cardLast4, approvalNo: null }),
   );
 }
 
-function itemOf(view: EvidenceRecordView, row: PoolRow, ctx: PoolContext): EvidencePoolItemDto {
-  const cardBlock = cardBlockOf(row, ctx);
+// 경영관리 S5 덮기 patch — 풀은 같은 카드 줄만(cardHitFilter)이라 카드 칸은 늘 같다. 사용일은 날짜 칸이 사용(승인)일인 서식만 덮는다(PR #305 검토 P1).
+function registrarPatchOf(row: PoolRow, usage: CardUsageForWrite): FileWinsPatch {
+  return fileWinsPatch(
+    { totalKrw: usage.totalAmountKrw, corpCardId: usage.corpCardId, cardLast4: usage.cardLast4, usedOn: usage.usedOn, approvalNo: usage.approvalNo },
+    { totalKrw: row.totalKrw, corpCardId: usage.corpCardId, cardLast4: usage.cardLast4, approvalNo: null, usedOn: formatDateIsUsage(row.format) ? row.issuedOn : undefined },
+  );
+}
+
+// 줄마다 따로 판정(줄 하나를 고른다) · 재료 읽기는 한 번(cardUsageOverwriteBlocksByGroup — 07.1-04 PE6). 트랜잭션 밖.
+async function registrarCardBlocks(viewer: Viewer, rows: readonly PoolRow[], ctx: PoolContext): Promise<Map<string, string>> {
+  const blocked = new Map<string, string>();
+  if (!ctx.card || ctx.mode !== "registrar") return blocked;
+  const { usage } = ctx.card;
+  const changing: { row: PoolRow; patch: FileWinsPatch }[] = [];
+  for (const row of rows) {
+    const gap = usedOnGapOf(usage.usedOn, row.issuedOn);
+    if (gap) {
+      blocked.set(row.id, gap);
+      continue;
+    }
+    const patch = registrarPatchOf(row, usage);
+    if (patch.total || patch.usedOn) changing.push({ row, patch });
+  }
+  if (changing.length === 0) return blocked;
+  const basis = await loadCardOverwriteBasis(viewer, [...new Set([usage.usedOn, ...changing.map(({ row }) => row.issuedOn)])]);
+  const groups = await cardUsageOverwriteBlocksByGroup(
+    viewer,
+    changing.map(({ patch }) => [{ usageId: usage.id, totalKrw: patch.total?.after ?? null, corpCardId: null, usedOn: patch.usedOn?.after ?? null }]),
+    basis,
+  );
+  changing.forEach(({ row, patch }, index) => {
+    const block = groups[index]?.get(usage.id);
+    const reason = block ? overwriteBlockReason(patch, block) : null;
+    if (reason) blocked.set(row.id, reason);
+  });
+  return blocked;
+}
+
+function itemOf(view: EvidenceRecordView, row: PoolRow, ctx: PoolContext, registrarBlocks: ReadonlyMap<string, string>): EvidencePoolItemDto {
+  const cardBlock = cardBlockOf(row, ctx, registrarBlocks);
+  const registrarPatch = ctx.card && ctx.mode === "registrar" ? registrarPatchOf(row, ctx.card.usage) : null;
   const pair = cardBlock ? { allowed: false as const, reason: cardBlock } : ctx.codes && ctx.doc.kind === "expense" ? pairDecision(ctx.codes, ctx.doc.paymentMethod, row.evidenceType) : { allowed: true as const };
   return {
     id: row.id,
@@ -181,7 +222,8 @@ function itemOf(view: EvidenceRecordView, row: PoolRow, ctx: PoolContext): Evide
     amountKrw: row.totalKrw,
     selectable: pair.allowed,
     reason: pair.allowed ? null : pair.reason,
-    changesCardUsage: ctx.card !== undefined && ctx.mode === "registrar" && row.totalKrw !== ctx.card.usage.totalAmountKrw,
+    // PR #305 검토 P2: 사용일만 옮기는 줄도 카드 사용 값을 바꾼다(S4 patchChangesValues와 같은 판정 — 카드 칸은 같은 카드 풀이라 늘 같다).
+    changesCardUsage: registrarPatch !== null && (registrarPatch.total !== null || registrarPatch.usedOn !== null),
   };
 }
 
@@ -198,10 +240,11 @@ export async function listEvidencePool(viewer: Viewer, input: { owner: PoolOwner
   });
   const kept = rows.slice(0, POOL_LIMIT);
   const views = new Map((await listEvidenceRecordsByIds(viewer, kept.map((row) => row.id))).flatMap((view) => (view.id ? [[view.id, view] as const] : [])));
+  const registrarBlocks = await registrarCardBlocks(viewer, kept, ctx);
   // 범위가 같은 두 질의 사이에 공개 범위가 바뀐 줄은 보기에서 빠진다(없는 것으로) — 목록은 그 줄을 뺀다.
   const dtos = kept.flatMap((row) => {
     const view = views.get(row.id);
-    return view ? [itemOf(view, row, ctx)] : [];
+    return view ? [itemOf(view, row, ctx, registrarBlocks)] : [];
   });
   const first = dtos[0];
   const registrarInReview = ctx.mode === "registrar" && ctx.phase === "in_review";

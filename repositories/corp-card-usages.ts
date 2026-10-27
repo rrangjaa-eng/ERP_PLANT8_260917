@@ -416,7 +416,16 @@ export async function lockCardUsagesForUpdate(viewer: Viewer, ids: readonly stri
 // D-6111 파일 값 덮기 — version 조건부 · 보관 안 된 건만. 번호 · 연결 칸은 쓰지 않는다. 0행(null) = 낡음.
 export async function applyFileWins(
   viewer: Viewer,
-  input: { id: string; version: number; corpCardId: string; approvalNo: string | null; usedOn: string | null; total: { totalKrw: number; supplyKrw: number; vatKrw: number } | null },
+  input: {
+    id: string;
+    version: number;
+    corpCardId: string;
+    approvalNo: string | null;
+    usedOn: string | null;
+    // 팀 비용의 새 사용일 소속 팀(null = 그대로) — 사용일을 옮길 때 생성 · 수정 경로와 같이 다시 정한다(PR #305 검토 P2).
+    teamId: string | null;
+    total: { totalKrw: number; supplyKrw: number; vatKrw: number } | null;
+  },
   tx: DbOrTx,
 ): Promise<number | null> {
   void viewer;
@@ -427,6 +436,7 @@ export async function applyFileWins(
       approvalNo: input.approvalNo,
       // 07.1-04 D-7104: 사용일은 명세 날짜가 다를 때만 쓴다(null = 그대로).
       ...(input.usedOn !== null ? { usedOn: input.usedOn } : {}),
+      ...(input.teamId !== null ? { teamId: input.teamId } : {}),
       // 합계가 바뀔 때만 돈 칸을 쓴다 — 카드 명세의 합계는 원화라 외화 칸은 비운다(KRW = 환율 1).
       ...(input.total
         ? { totalCurrency: "KRW", totalForeignAmount: null, totalFxRate: "1.0000", totalAmountKrw: input.total.totalKrw, supplyKrw: input.total.supplyKrw, vatKrw: input.total.vatKrw }
@@ -510,12 +520,13 @@ export type RelaxedCandidateRow = {
   quoteLineId: string | null;
 };
 
-export type RelaxedLineKey = { approvalNo: string | null; usedOn: string; totalKrw: number };
+export type RelaxedLineKey = { corpCardId: string; approvalNo: string | null; usedOn: string; totalKrw: number };
 
-// (같은 승인번호 — 사용일 무관) 또는 (같은 사용일 ∧ 같은 합계 — 카드 무관). 카드사 일치는 별칭 정규화가 서식 쪽이라 domain이 가른다.
+// (같은 카드 ∧ 같은 승인번호 — 사용일 무관) 또는 (같은 사용일 ∧ 같은 합계 — 카드 무관). 카드사 일치는 별칭 정규화가 서식 쪽이라 domain이 가른다.
+// 승인번호 갈래의 같은 카드 조건(PR #305 검토 F2): 승인번호는 카드사 안에서 되풀이된다 — 다른 카드의 같은 번호로 카드 · 합계 · 사용일을 덮지 않는다.
 function relaxedLineCondition(line: RelaxedLineKey): SQL | undefined {
   const sameDayTotal = and(eq(corpCardUsages.usedOn, line.usedOn), eq(corpCardUsages.totalAmountKrw, line.totalKrw));
-  return line.approvalNo === null ? sameDayTotal : or(eq(corpCardUsages.approvalNo, line.approvalNo), sameDayTotal);
+  return line.approvalNo === null ? sameDayTotal : or(and(eq(corpCardUsages.approvalNo, line.approvalNo), eq(corpCardUsages.corpCardId, line.corpCardId)), sameDayTotal);
 }
 
 export async function findRelaxedCandidates(

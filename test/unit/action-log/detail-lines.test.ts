@@ -135,6 +135,17 @@ describe("카드 사용 덮기 줄 (07.1-04 PE3 · PE2)", () => {
     ]);
   });
 
+  // PR #305 검토 P2: 카드만 · 날짜만 바뀐 덮기도 줄이 남는다 — 카드 끝 4자리 · 공급가 · 부가세 라벨, 폼 차례(사용일 → 카드 → 합계 → 공급가 → 부가세 → 승인번호).
+  it("카드 · 공급가 · 부가세 — 라벨 · 차례", () => {
+    expect(detailLines({ changes: { approvalNo: [null, "A1"], vatKrw: [40000, 21818], supplyKrw: [200000, 218182], cardLast4: ["1111", "2222"], usedOn: ["2026-04-30", "2026-04-28"] } })).toEqual([
+      { label: "사용일", before: "2026-04-30", after: "2026-04-28" },
+      { label: "카드", before: "1111", after: "2222" },
+      { label: "공급가", before: "200,000", after: "218,182" },
+      { label: "부가세", before: "40,000", after: "21,818" },
+      { label: "승인번호", before: "없음", after: "A1" },
+    ]);
+  });
+
   it("승인번호 채움 — 빈 이전 값은 `없음`", () => {
     expect(detailLines({ changes: { approvalNo: [null, "A1"] } })).toEqual([{ label: "승인번호", before: "없음", after: "A1" }]);
   });

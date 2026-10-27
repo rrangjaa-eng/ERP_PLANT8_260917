@@ -143,8 +143,12 @@ function dayNumber(date: string): number {
 
 /** 사용일 차가 한도를 넘으면 막힌 후보 · 서버 거부 글자, 아니면 null. */
 export function usedOnGapReason(patch: FileWinsPatch): string | null {
-  if (!patch.usedOn) return null;
-  const gap = Math.abs(dayNumber(patch.usedOn.after) - dayNumber(patch.usedOn.before));
+  return patch.usedOn ? usedOnGapOf(patch.usedOn.before, patch.usedOn.after) : null;
+}
+
+/** 저장된 사용일과 줄 날짜의 차 판정 — 사용일을 덮지 않는 서식(롯데 매입일자)도 다시 쓰인 승인번호를 막으려고 같은 한도로 잰다(PR #305 검토 P1). */
+export function usedOnGapOf(storedUsedOn: string, lineDate: string): string | null {
+  const gap = Math.abs(dayNumber(lineDate) - dayNumber(storedUsedOn));
   return gap > USED_ON_GAP_MAX_DAYS ? `날짜 다름 · ${gap}일` : null;
 }
 
@@ -176,7 +180,8 @@ export function overwriteBlockReason(patch: FileWinsPatch, kind: OverwriteBlockK
 // 완화 후보 = (같은 승인번호 — 사용일 무관, 카드사가 다르면 막힌 행) 또는 (같은 사용일 ∧ 같은 합계 — 카드 무관). 막힘 판정은 1단계와 같은
 // 「카드 명세 붙음」(영수증 · 05 전표 파일은 막지 않는다) → 다른 카드사 → 덮기 막힘(호출자가 06 cardUsageOverwriteBlocks로 구한 종류) 차례.
 
-export type RelaxedLine = { corpCardId: string; cardLast4: string; approvalNo: string | null; usedOn: string; totalKrw: number };
+// dateIsUsage: 줄 서식의 날짜 칸이 사용(승인)일인가 — 거짓(롯데 매입일자)이면 사용일을 덮지 않는다(PR #305 검토 P1 · formatDateIsUsage).
+export type RelaxedLine = { corpCardId: string; cardLast4: string; approvalNo: string | null; usedOn: string; totalKrw: number; dateIsUsage: boolean };
 export type RelaxedCandidateInput = {
   id: string;
   number: string | null;
@@ -191,15 +196,19 @@ export type RelaxedCandidateInput = {
 };
 export type RelaxedCandidate = { id: string; patch: FileWinsPatch; blockedReason: string | null };
 
-export function isRelaxedHit(line: Pick<RelaxedLine, "approvalNo" | "usedOn" | "totalKrw">, candidate: Pick<RelaxedCandidateInput, "approvalNo" | "usedOn" | "totalKrw">): boolean {
-  if (line.approvalNo !== null && candidate.approvalNo === line.approvalNo) return true;
+// 같은 승인번호 갈래는 같은 카드만(PR #305 검토 F2 — 승인번호는 카드사 안에서 되풀이된다). 재발급(E28)은 가져오기 1단계 · 같은 사용일 ∧ 합계 갈래가 맡는다.
+export function isRelaxedHit(
+  line: Pick<RelaxedLine, "corpCardId" | "approvalNo" | "usedOn" | "totalKrw">,
+  candidate: Pick<RelaxedCandidateInput, "corpCardId" | "approvalNo" | "usedOn" | "totalKrw">,
+): boolean {
+  if (line.approvalNo !== null && candidate.approvalNo === line.approvalNo && candidate.corpCardId === line.corpCardId) return true;
   return candidate.usedOn === line.usedOn && candidate.totalKrw === line.totalKrw;
 }
 
-function relaxedBlock(candidate: RelaxedCandidateInput, patch: FileWinsPatch): string | null {
+function relaxedBlock(candidate: RelaxedCandidateInput, line: RelaxedLine, patch: FileWinsPatch): string | null {
   if (candidate.cardStatementAttached) return `증빙 있음 · ${candidate.number ?? "—"}`;
   if (!candidate.sameIssuer) return `카드 다름 · ${candidate.cardLast4}`;
-  const gap = usedOnGapReason(patch);
+  const gap = usedOnGapOf(candidate.usedOn, line.usedOn);
   if (gap) return gap;
   return candidate.overwriteBlock ? overwriteBlockReason(patch, candidate.overwriteBlock) : null;
 }
@@ -211,9 +220,9 @@ export function relaxedCandidatesOf(line: RelaxedLine, candidates: readonly Rela
     .map((candidate) => {
       const patch = fileWinsPatch(
         { totalKrw: candidate.totalKrw, corpCardId: candidate.corpCardId, cardLast4: candidate.cardLast4, usedOn: candidate.usedOn, approvalNo: candidate.approvalNo },
-        { totalKrw: line.totalKrw, corpCardId: line.corpCardId, cardLast4: line.cardLast4, approvalNo: line.approvalNo, usedOn: line.usedOn },
+        { totalKrw: line.totalKrw, corpCardId: line.corpCardId, cardLast4: line.cardLast4, approvalNo: line.approvalNo, usedOn: line.dateIsUsage ? line.usedOn : undefined },
       );
-      return { id: candidate.id, patch, blockedReason: relaxedBlock(candidate, patch) };
+      return { id: candidate.id, patch, blockedReason: relaxedBlock(candidate, line, patch) };
     });
   return [...items.filter((item) => item.blockedReason === null), ...items.filter((item) => item.blockedReason !== null)];
 }

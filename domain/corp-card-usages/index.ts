@@ -17,7 +17,7 @@ import { seoulToday } from "@/lib/dates";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCorpCardById, listCorpCards, type CorpCardRow } from "@/repositories/corp-cards";
 import { findLiveShaConflicts } from "@/repositories/files";
-import { findUserNamesByIds, listUsers } from "@/repositories/users";
+import { findUserById, findUserNamesByIds, listUsers } from "@/repositories/users";
 import { findMembershipAtDate, findMembershipsAtDate } from "@/repositories/team-memberships";
 import { findTeamsByIds } from "@/repositories/teams";
 import { listVendorsForPick } from "@/repositories/vendors";
@@ -325,6 +325,28 @@ async function purchaseUsedBy(
     throw new CardUsageRejectedError(`요청자 ${name} ${mmdd(input.usedOn)} 소속 없음 · 소속 발령은 관리자`);
   }
   return { usedByUserId: input.stored, teamId };
+}
+
+// 07.1-04 PR #305 검토 P2: 카드 명세 붙임이 사용일만 옮길 때(D-7104 — 파일이 사용일을 정한다) 수정 경로의 날짜 판정을 같은 날짜로 다시 본다 —
+// 미래 날짜(assertUsageBasics) · 팀 카드는 사용한 사람이 그날 재직 ∧ 카드 팀 소속(usedByCandidates) · 팀 비용은 그날 소속 팀(resolveUsedBy, 없으면 거부).
+// 개인 카드의 재직 · 카드 자격 · 본인/대리 경로는 수정 경로도 날짜로 다시 가르지 않으므로(사용한 사람 그대로면 경로 그대로) 여기서도 보지 않는다.
+// 돌려주는 teamId = 팀 비용의 새 팀(그 밖 null = 그대로). 트랜잭션 밖에서만(전역 풀 조회).
+export async function precheckUsedOnMove(
+  viewer: Viewer,
+  usage: Pick<CardUsageForWrite, "usedByUserId" | "linkKind" | "cardKind" | "cardTeamId">,
+  usedOn: string,
+): Promise<{ teamId: string | null }> {
+  const futureError = cardUsedOnError(usedOn, seoulToday());
+  if (futureError) throw new CardUsageRejectedError(futureError);
+  const teamCost = usage.linkKind === "team_cost";
+  if (usage.cardKind === "personal" && !teamCost) return { teamId: null };
+  const [user, membership] = await Promise.all([findUserById(viewer, usage.usedByUserId), findMembershipAtDate(viewer, usage.usedByUserId, usedOn)]);
+  const name = user?.name ?? "";
+  if (usage.cardKind !== "personal" && (!user || !employedOn(user, usedOn))) throw new CardUsageRejectedError(`${name} ${mmdd(usedOn)} 재직 아님`);
+  if (usage.cardKind === "team" && membership?.teamId !== usage.cardTeamId) throw new CardUsageRejectedError(`${name} ${mmdd(usedOn)} 카드 팀 소속 아님`);
+  if (!teamCost) return { teamId: null };
+  if (!membership) throw new CardUsageRejectedError(`${name} ${mmdd(usedOn)} 소속 없음 · 소속 발령은 관리자`);
+  return { teamId: membership.teamId };
 }
 
 // ── 증빙 종류(코드표) ──────────────────────────────────────────────────────

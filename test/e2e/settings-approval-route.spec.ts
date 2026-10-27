@@ -470,6 +470,43 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
   });
 
   // WINDOWS #42(05-03 발견): 복원 줄은 보관본을 만든 결재선 섹션에만 뜨고, 그 섹션의 「복원」 · 「버림」은 그 섹션 단계만 다룬다.
+  // PR #311 Codex P2(r4388850486): 되돌리기를 다른 묶음에서 눌러도 결재선 보관본이 남아 돌아오면 복원 줄로 뜬다.
+  test("버림 뒤 다른 묶음에서 되돌리기를 누르면 결재선 묶음으로 돌아와 복원 줄이 있다", async ({ page }) => {
+    await openSettingsInApp(page);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
+    page.once("dialog", (leaving) => void leaving.accept());
+    await page.reload();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+
+    await leaveRoute(page).getByRole("button", { name: "버림" }).click();
+    await openGroup(page, "세율");
+    await page.getByRole("button", { name: "되돌리기" }).click();
+    await waitStashed(page, ["leave-2"]);
+    await openGroup(page, "연차 결재선");
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+  });
+
+  // PR #311 Codex P2(r4388850476): 묶음 없는 설정 주소로 입력 버리기를 확인해도 버린 단계가 되살아나지 않는다.
+  test("묶음 없는 설정 주소로 입력 버리기를 확인하면 결재선 묶음으로 돌아와도 복원 줄이 없다", async ({ page }) => {
+    await openSettings(page);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    // 메뉴의 「시스템 설정」(ui/shell/role-menu.ts)처럼 묶음 없는 주소 — 설정 화면 안에는 그런 링크가 없어 하나 붙인다.
+    await page.evaluate(() => {
+      const link = document.createElement("a");
+      link.href = "/admin/settings";
+      link.textContent = "묶음 없는 설정";
+      document.querySelector("main")!.prepend(link);
+    });
+    await page.getByRole("link", { name: "묶음 없는 설정" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
+    await expect(page).not.toHaveURL(/group=/);
+    await expect(page.getByRole("dialog")).toBeHidden();
+
+    await openGroup(page, "연차 결재선");
+    await expect(page.getByText(/저장 안 한 편집/)).toHaveCount(0);
+  });
+
   test("복원 줄은 보관한 결재선 섹션에만 뜨고, 지출결의 쪽 복원은 연차 보관본을 건드리지 않는다", async ({ page }) => {
     const expenseRoute = page.locator("section").filter({ has: page.getByRole("heading", { name: "지출결의 결재선", exact: true }) });
     const originalLeaveRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);

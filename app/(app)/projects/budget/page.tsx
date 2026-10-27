@@ -38,7 +38,7 @@ export default async function ProjectBudgetPage({ searchParams }: { searchParams
       <ListScreen title="예산 현황">
         <ListEmpty
           message="원가율 미설정"
-          action={canOpenSettings ? { label: "시스템 설정에서 입력", href: `/admin/settings#setting-${PROJECT_COST_RATE_PCT.key}` } : undefined}
+          action={canOpenSettings ? { label: "시스템 설정에서 입력", href: `/admin/settings?group=${encodeURIComponent(PROJECT_COST_RATE_PCT.namespace)}#setting-${PROJECT_COST_RATE_PCT.key}` } : undefined}
         />
       </ListScreen>
     );

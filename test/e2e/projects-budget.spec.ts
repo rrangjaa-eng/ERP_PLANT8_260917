@@ -302,6 +302,7 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     await expect(budgetTable(page)).toHaveCount(0);
     await page.getByRole("link", { name: "시스템 설정에서 입력" }).click();
     await expect(page).toHaveURL(/\/admin\/settings/);
+    await expect(page.locator('[id="setting-project.cost_rate_pct"]')).toBeVisible();
 
     await setCostRate(0);
     await page.goto("/projects/budget");

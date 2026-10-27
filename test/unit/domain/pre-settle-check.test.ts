@@ -42,6 +42,13 @@ describe("summarizePreSettle — 막힘 건수 · 강행", () => {
     expect(summary.blockedCount).toBe(0);
     expect(summary.forcedResultLine).toBeNull();
   });
+
+  it("07.1-01 PD3 — 증빙 대기 건수는 막힘 · 강행 줄과 별개로 그대로 실린다(안 주면 0)", () => {
+    expect(summarizePreSettle(NONE, OFF).evidencePendingCount).toBe(0);
+    const summary = summarizePreSettle({ ...NONE, openExpenses: 1 }, OFF, 3);
+    expect(summary.evidencePendingCount).toBe(3);
+    expect(summary.blockedCount).toBe(1);
+  });
 });
 
 describe("preSettleBlockReason — 게이트 이유 한 문자열", () => {

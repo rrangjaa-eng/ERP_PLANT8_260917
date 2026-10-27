@@ -63,11 +63,15 @@
 
 /* 03-06: 증빙 종류 항목 아래 세금 규칙 편집 섹션(StaticTable 행 아래 전폭 줄). */
 .taxRuleSection {
+  padding: var(--s-2) var(--cell-pad-x) var(--s-3);
+  background: var(--surface-muted);
+}
+
+/* 07.1-02 PF8(W6): 칸 묶음은 단일 기둥 안쪽 래퍼가 받는다 — 폭 상한은 전역 `.single-column`(--form-max) 한 곳, 구역 배경은 표 폭 그대로. */
+.taxRuleSection > :global(.single-column) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s-3);
-  padding: var(--s-2) var(--cell-pad-x) var(--s-3);
-  background: var(--surface-muted);
 }
 
 .taxRuleHint {

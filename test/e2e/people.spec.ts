@@ -345,6 +345,17 @@ test.describe("사람 · 조직 · 계급 옆 패널 (04.6-14)", () => {
     await expect(panel).toBeVisible();
   });
 
+  test("S2(07.1-02): 사람 등록 패널을 빈 칸으로 제출하면 포커스가 첫 aria-invalid 칸(이름)으로 간다", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto("/admin/people?new=1");
+    const panel = sidePanel(page);
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+    await panel.locator("#person-form button[type=submit]").click();
+    await expect(panel.locator("#name")).toHaveAttribute("aria-invalid", "true");
+    await expect(panel.locator("#person-form [aria-invalid=true]").first()).toBeFocused();
+    await expect(panel.locator("#name")).toBeFocused();
+  });
+
   test("UQ-8 B · R9 D: 본부 · 팀 · 계급 등록 성공 → 패널이 열린 채 칸이 비고 첫 칸 포커스 · 상태 한 줄 · 목록에 새 줄", async ({ page }) => {
     await loginAsAdmin(page);
     const stamp = Date.now();

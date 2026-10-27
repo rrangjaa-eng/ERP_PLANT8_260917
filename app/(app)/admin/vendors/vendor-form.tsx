@@ -17,6 +17,7 @@ import { registerVendorFromWorkAction, pickExistingVendorFromWorkAction } from "
 import { CONTACTS_ADD_ID, VendorContacts, readContacts, type VendorContactValue } from "./vendor-contacts";
 import { TextField } from "@/ui/input/TextField";
 import { Form } from "@/ui/form/Form";
+import { focusFirstInvalid } from "@/ui/form/focus-first-invalid";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
@@ -376,11 +377,10 @@ export function VendorForm({
   const blocked = serverReason?.blocked === true;
   const firstErrorId = errorFields[0]?.id;
 
-  // 계좌 칸 오류가 오면 첫 오류 칸으로 포커스(UI-SPEC V3 「칸 오류」 · 직원 지급 계좌 패널과 같은 꼴).
-  const hasAccountError = Boolean(accountBankError ?? accountHolderError ?? result.validationErrors?.accountNumber?._errors?.[0]);
+  // 서버 검증 오류가 돌아오면 포커스를 오류 난 첫 칸으로(UI-SPEC V3 「칸 오류」 · 07.1-02 S2 — 카드 폼과 같은 꼴). 계좌 칸도 aria-invalid라 이 한 곳이 받는다.
   useEffect(() => {
-    if (hasAccountError && firstErrorId) document.getElementById(firstErrorId)?.focus();
-  }, [result.validationErrors, hasAccountError, firstErrorId]);
+    if (result.validationErrors !== undefined) focusFirstInvalid("vendor-form");
+  }, [result]);
 
   // 같은 사업자번호 오류 줄의 다음 한 수 — 「원인 · 다음 행동」 한 줄 안에 붙인다(field-definition-form 「보관함에서 복원」과 같은 모양).
   // 「거래처 정보」를 못 보면(name null) 링크를 내지 않고, 「갈래 더하기」가 실패하면 다시 눌러도 같은 실패라 치운다.

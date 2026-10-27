@@ -538,6 +538,25 @@ test.describe("거래처 구분 (261006-biv)", () => {
     expect(await findVendorsByNormalizedName(SYSTEM_VIEWER, name.toLowerCase())).toHaveLength(0);
   });
 
+  test("S2(07.1-02): 거래처 등록 패널을 빈 칸으로 제출하면 포커스가 첫 aria-invalid 칸으로 가고, 계좌 칸만 틀려도 그 칸으로 간다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/vendors?new=1");
+    const dialog = page.locator('dialog[data-ui="side-panel"]');
+    await dialog.getByRole("button", { name: "거래처 등록" }).click();
+    await expect(dialog.locator("#name")).toHaveAttribute("aria-invalid", "true");
+    await expect(dialog.locator("#vendor-form [aria-invalid=true]").first()).toBeFocused();
+    await expect(dialog.locator("#name")).toBeFocused();
+
+    // 계좌 칸만 틀린 경우(기존 동작 유지): 이름 · 은행 · 계좌번호를 채우고 예금주만 비운다 — 서버가 예금주 오류를 낸다.
+    await dialog.locator("#name").fill(`E2E포커스계좌-${randomUUID()}`);
+    await dialog.locator("#accountBank").fill("국민");
+    await dialog.locator("#accountNumber").fill("123456789012");
+    await dialog.getByRole("button", { name: "거래처 등록" }).click();
+    await expect(dialog.locator("#accountHolder")).toHaveAttribute("aria-invalid", "true");
+    await expect(dialog.locator("#name")).not.toHaveAttribute("aria-invalid", "true");
+    await expect(dialog.locator("#accountHolder")).toBeFocused();
+  });
+
   test("같은 사업자번호 등록은 칸 아래 문구와 요약으로 막히고, 다른 갈래면 「구분 더하기」로 그 거래처 수정 패널로 넘어간다", async ({ page }) => {
     await loginAsSysadmin(page);
     const businessNo = uniqueBusinessNo();

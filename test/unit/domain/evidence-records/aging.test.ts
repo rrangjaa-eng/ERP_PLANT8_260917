@@ -19,6 +19,10 @@ describe("evidenceAgeDays", () => {
     expect(evidenceAgeDays(new Date("2026-10-26T14:59:00Z"), "2026-10-27")).toBe(1);
   });
 
+  it("등록일이 오늘보다 뒤(시계 차이)여도 음수가 되지 않고 0일이다(#312 /review P3)", () => {
+    expect(evidenceAgeDays(new Date("2026-10-28T10:00:00+09:00"), "2026-10-27")).toBe(0);
+  });
+
   it("월 · 해를 넘겨도 날짜 차다", () => {
     expect(evidenceAgeDays(new Date("2025-12-30T10:00:00+09:00"), "2026-01-02")).toBe(3);
   });

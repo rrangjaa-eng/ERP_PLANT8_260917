@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { codeItems, permissionMatrix, visibilityMatrix } from "@/db/schema";
 import { seedMasterData } from "@/domain/seed";
+import { seedApprovalsLeave } from "@/domain/seed/approvals-leave";
+import { seedExpenses } from "@/domain/seed/expenses";
+import { ROLE_DEFAULT_PERMISSIONS } from "@/domain/seed/role-defaults";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import {
   CEO_ROLE_ID,
@@ -463,3 +466,44 @@ describe("등록 쓰기 계급 증빙 보기 시드(07-15 R18 · A-P2-10)", () =
     expect(await snapshot()).toEqual(before);
   });
 });
+
+// 07.1(D-7107 · S1): 연차 · 지출결의 시드 루프의 권한 17행이 기본값 표 한 곳으로 옮겨졌다 — 결과 집합은 위 스냅숏(SEED_ROLE_PERMISSIONS_BEFORE_0705)이 지킨다.
+describe("연차 · 지출결의 기본 권한 표 이동(07.1 D-7107)", () => {
+  const SEED_ROLES_4 = [CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID];
+
+  it("연차 view · write × 4계급 · 지출결의 view · write × 4계급 · 팀장 expenses.team view 17행이 표에 있다", () => {
+    const want = [
+      ...SEED_ROLES_4.flatMap((roleId) => (["view", "write"] as const).map((action) => `${roleId}|leave|${action}|true`)),
+      ...SEED_ROLES_4.flatMap((roleId) => (["view", "write"] as const).map((action) => `${roleId}|expenses|${action}|true`)),
+      `${TEAM_LEAD_ROLE_ID}|expenses.team|view|true`,
+    ].sort();
+    const rows = ROLE_DEFAULT_PERMISSIONS.filter((row) => row.menu === "leave" || row.menu === "expenses" || row.menu === "expenses.team");
+    expect(rows.map((row) => `${row.roleId}|${row.menu}|${row.action}|${row.allowed}`).sort()).toEqual(want);
+  });
+
+  it("두 시드 함수는 권한 행을 넣지 않는다(노출 · 설정 값만)", async () => {
+    await db.delete(permissionMatrix);
+
+    await seedApprovalsLeave(SYSTEM_VIEWER);
+    await seedExpenses(SYSTEM_VIEWER);
+
+    expect(await db.select().from(permissionMatrix)).toEqual([]);
+  });
+
+  it("관리자가 끈 연차 · 지출결의 행은 재시드가 덮지 않는다", async () => {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "leave", action: "write", allowed: false });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, menu: "expenses.team", action: "view", allowed: false });
+
+    await seedMasterData(SYSTEM_VIEWER);
+
+    expect((await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "leave", "write"))?.allowed).toBe(false);
+    expect((await findPermission(SYSTEM_VIEWER, TEAM_LEAD_ROLE_ID, "expenses.team", "view"))?.allowed).toBe(false);
+  });
+
+  // 07.1(D-7119 · S13): 추적 행 — 권한 변경 0. ⑧을 켜는 플랜이 이 시험을 함께 바꾼다.
+  it("대표 action-log 보기는 ⑧(대표 action_log.detail)과 함께 켠다 — D-7119 보류", async () => {
+    expect(ROLE_DEFAULT_PERMISSIONS.filter((row) => row.roleId === CEO_ROLE_ID && row.menu === "admin.action-log")).toEqual([]);
+    expect(await can({ id: "viewer-ceo", roleId: CEO_ROLE_ID }, "admin.action-log", "view")).toBe(false);
+  });
+});
+

@@ -969,6 +969,8 @@ test("⑪ intake 1280 · 1024 · 768 · 700 — 며칠째 열: 날짜 바로 뒤
     record("며칠째 머리글 보임(display)", width, role, url, heads[ageAt]?.display ?? "DOM 0", "none 아님", (heads[ageAt]?.display ?? "none") !== "none");
 
     const header = evidenceTable(page).locator("thead th", { hasText: /^며칠째$/ });
+    // 사용자 결정 2026-10-27 — 태블릿(768 · 700)과 1024 · 1280 모두 며칠째 열이 실제로 보인다(폭 > 0).
+    await expect(header).toBeVisible();
     record("며칠째 머리글 글자 줄 수", width, role, url, await textLines(header), 1, (await textLines(header)) === 1);
 
     const fresh = evidenceCell(page, await rowIndexByName(page, names[0]!), EVIDENCE_COL.ageDays);
@@ -1054,6 +1056,38 @@ test("⑫ intake 375 · 320 — 며칠째 머리글 숨김(DOM 남음) · 행 �
   }
 });
 
+test("⑮ intake 1280 · 768 · 375 · 320 — 팀 공개 줄의 패널 · 시트에는 `상태` 줄이 없고(공개 줄과 같은 말) 사유가 있는 미공개(음수) 줄에는 `상태 미공개 · 음수…`가 있다 (#312 N-1)", async ({ page }) => {
+  test.setTimeout(600_000);
+  const viewer = await loginIntake(page);
+  const { names } = await seedAging(viewer);
+  const role = "intake";
+  const url = "/expenses/evidence?state=all";
+
+  for (const width of [1280, 768, 375, 320] as const) {
+    await goto(page, width, url);
+    for (const [name, expectStatusRow] of [
+      [names[1]!, false],
+      [names[3]!, true],
+    ] as const) {
+      const opener = width >= 700 ? evidenceTable(page).locator('[role="button"][aria-haspopup="dialog"]', { hasText: name }).first() : page.getByRole("button", { name: new RegExp(`${name}.*상세 보기$`) }).first();
+      await opener.click();
+      const dialog = width >= 1024 ? page.getByRole("dialog", { name: new RegExp(`${name}$`) }) : page.locator("dialog[open]");
+      await expect(dialog).toBeVisible();
+      // 상세를 받아 항목이 바뀐 뒤에 읽는다 — 상세에만 있는 `이력` 줄이 보이면 로드가 끝난 것이다.
+      await expect(dialog.locator("dt", { hasText: /^이력$/ })).toBeVisible();
+      const pairs = await dialog.locator("dt").evaluateAll((elements) => elements.map((element) => [(element.textContent ?? "").trim(), (element.nextElementSibling?.textContent ?? "").replace(/\s+/g, " ").trim()]));
+      const status = pairs.find(([label]) => label === "상태");
+      if (expectStatusRow) {
+        record(`읽기 줄 상태 — 사유 있는 미공개 ${name}`, width, role, url, JSON.stringify(pairs), "상태 줄 = 미공개 · 음수…", status !== undefined && status[1]!.startsWith("미공개 · 음수"));
+      } else {
+        record(`읽기 줄 상태 — 팀 공개 ${name}`, width, role, url, JSON.stringify(pairs), "상태 줄 없음 · 공개 줄 있음", status === undefined && pairs.some(([label]) => label === "공개"));
+      }
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+    }
+  }
+});
+
 async function cardRecordIds(viewer: Viewer, count: number): Promise<string[]> {
   const card = await addLotteCard({ kind: "shared" });
   const batch = await registerFile(viewer, lotteFixture(lotteLines(card, count)), "롯데_잠김.xls");
@@ -1083,6 +1117,33 @@ test("⑬ 대리 등록 없는 등록 계급 1280 — 짝 없는 카드 줄 행�
   const dialogs = await page.locator("dialog[open], [role=dialog]").count();
   record("Ctrl+E 뒤 열린 대화상자 수", 1280, role, url, dialogs, 0, dialogs === 0 && new URL(page.url()).pathname === "/expenses/evidence");
   void recordId;
+});
+
+test("⑯ 대리 등록 없는 등록 계급 768 · 375 · 320 — 짝 없는 카드 줄 행 시트 행동 자리에 잠김 한 줄 `대리 등록 · 경영관리` 하나 · 붙이기 · 대리 등록 컨트롤 0 (#312 B-1 · UI-SPEC W9)", async ({ page }) => {
+  test.setTimeout(300_000);
+  const viewer = await loginIntake(page);
+  await cardRecordIds(viewer, 1);
+  const role = "intake";
+  const url = "/expenses/evidence";
+
+  for (const width of [768, 375, 320] as const) {
+    await goto(page, width, url);
+    await expect(evidenceRows(page)).toHaveCount(1);
+    const opener = width >= 700 ? evidenceTable(page).locator('[role="button"][aria-haspopup="dialog"]').first() : page.getByRole("button", { name: /상세 보기$/ }).first();
+    await opener.click();
+    const sheet = page.locator("dialog[open]");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator("dt", { hasText: /^이력$/ })).toBeVisible();
+    const lock = sheet.locator('[class*="selectReason"]');
+    const texts = (await lock.allInnerTexts()).map((text) => text.trim());
+    record("시트 행동 자리 잠김 한 줄", width, role, url, JSON.stringify(texts), '["대리 등록 · 경영관리"]', texts.length === 1 && texts[0] === "대리 등록 · 경영관리");
+    const controls = (await sheet.locator("button, a").allInnerTexts()).map((text) => text.trim());
+    record("시트 붙이기 · 대리 등록 컨트롤 수", width, role, url, JSON.stringify(controls), "0", controls.filter((text) => text === "붙이기" || text === "대리 등록").length === 0);
+    const overflow = await docOverflow(page);
+    record("문서 가로 넘침 없음", width, role, url, `${overflow.scrollWidth}/${overflow.clientWidth}`, "scrollWidth <= clientWidth", overflow.scrollWidth <= overflow.clientWidth);
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+  }
 });
 
 test("⑭ 확인 필요 줄 1280 — 번호 없는 카드 사용에 붙은 줄은 2행에 사유만(`작성 중 문서` 없음), 번호 없는 작성 중 지출결의에 붙은 줄은 `작성 중 문서` 그대로(U-16)", async ({ page }) => {

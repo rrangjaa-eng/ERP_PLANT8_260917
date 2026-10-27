@@ -1187,6 +1187,34 @@ export function authorCardBlock(patch: FileWinsPatch): string | null {
   return null;
 }
 
+// PR #305 재검토: 작성자 붙이기 · 대리 등록 붙임이 비어 있던 승인번호를 채우면 경영관리 붙이기(attachToCardUsage)와 같은 꼴의 금액 변경 로그를
+// 남긴다(돈 칸 그대로 · changes = approvalNo [null, 값]) — 떼기(clearStampedApprovalNo)가 이 로그로 채운 번호를 되돌린다.
+async function recordApprovalNoFill(
+  viewer: Viewer,
+  input: { usage: { id: string; totalAmountKrw: number; supplyKrw: number; vatKrw: number }; cardLast4: string; recordId: string; approvalNo: string },
+  isActionTypeEnabled: RecordActionDeps["isActionTypeEnabled"],
+  tx: DbOrTx,
+): Promise<void> {
+  const amounts = { totalKrw: input.usage.totalAmountKrw, supplyKrw: input.usage.supplyKrw, vatKrw: input.usage.vatKrw };
+  await recordAction(
+    viewer,
+    {
+      actionType: "evidence_record_amount_change",
+      entity: CARD_USAGE_ENTITY,
+      entityId: input.usage.id,
+      detail: {
+        before: amounts,
+        after: amounts,
+        cardLast4Before: input.cardLast4,
+        cardLast4After: input.cardLast4,
+        evidenceRecordId: input.recordId,
+        changes: buildChanges({ approvalNo: null }, { approvalNo: input.approvalNo }),
+      },
+    },
+    { tx, isActionTypeEnabled },
+  );
+}
+
 // ── 06.1-09 작성자 → 카드 사용 붙이기(S5 · E23 · DB-8 · O-6104 닫음) ─────────────────────────────────────────────
 // 같은 카드 · 같은 합계 줄 하나만. 값은 바꾸지 않고 비어 있던 승인번호만 채운다(덮기는 경영관리 · 대사만 — applyFileWins를 부르지 않는다).
 // 잠금 순서는 경영관리 갈래와 같다(카드 사용 행 → 증빙 행 → 붙임) — 합계가 안 바뀌니 견적 줄 잠금은 없다.
@@ -1220,6 +1248,7 @@ async function attachAuthorToCardUsage(viewer: Viewer, ids: readonly string[], u
     // 검토 P3-1: 비어 있던 승인번호만 채운다 — 이미 있는 승인번호는 덮지 않는다.
     if (patch.approvalNo && usage.approvalNo === null) {
       if ((await fillCardUsageApprovalNo(viewer, { id: usage.id, version: usage.version, approvalNo: patch.approvalNo }, tx)) === null) throw cardSlipNotFound();
+      await recordApprovalNoFill(viewer, { usage, cardLast4: usage.cardLast4, recordId, approvalNo: patch.approvalNo }, deps?.isActionTypeEnabled, tx);
     }
     await recordAction(
       viewer,
@@ -1388,6 +1417,7 @@ async function attachProxyLink(tx: DbOrTx, viewer: Viewer, ctx: { evidenceId: st
   if (!created) return;
   if (ctx.line.approvalNo && locked.approvalNo === null) {
     if ((await fillCardUsageApprovalNo(viewer, { id: locked.id, version: locked.version, approvalNo: ctx.line.approvalNo }, tx)) === null) throw cardSlipNotFound();
+    await recordApprovalNoFill(viewer, { usage: locked, cardLast4: ctx.line.cardLast4, recordId: ctx.evidenceId, approvalNo: ctx.line.approvalNo }, deps.isActionTypeEnabled, tx);
   }
   await recordAction(
     viewer,

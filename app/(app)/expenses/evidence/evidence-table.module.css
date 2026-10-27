@@ -66,7 +66,7 @@
   }
 }
 
-/* 07.1-01 W8 — 머리글 한 줄(action-log.module.css `.nowrapHeader` · ui/table `.nowrapHeader`와 같은 이름 · 같은 값). 며칠째 머리글이 줄바꿈으로 눌리지 않게 한다. */
+/* 07.1-01 W8 — 머리글 한 줄(행동 로그 · ui/table의 같은 이름 같은 값). 며칠째 머리글이 줄바꿈으로 눌리지 않게 한다. */
 .nowrapHeader {
   white-space: nowrap;
 }

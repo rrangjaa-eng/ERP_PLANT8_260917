@@ -34,6 +34,7 @@ import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
 import { assertSeatsFree, COMPANY_SEAT_ROLE_IDS, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
+import { CEO_ROLE_ID } from "@/domain/permissions/roles";
 import { archivedSeatReason } from "@/domain/people/restore";
 import { assertNotRetiredInTx, isRetiredOn } from "@/domain/people/retired";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
@@ -400,6 +401,10 @@ export async function registerPerson(
   });
   // 07.1(D-7128 · E-P1-06): 회사 자리 계급이면 회사 키 → 팀 없는 대표도 판정을 지난다(회사 판정은 팀 · 본부 판정 앞).
   const isCompanySeat = COMPANY_SEAT_ROLE_IDS.includes(input.roleId);
+  // 07.1 D-1(2026-10-27 사용자 결정): 입사일 전에 후임이 대표 · 시스템 관리자 권한을 쥐지 않게 — 입사일이 오늘(서울) 뒤면 등록 거부.
+  if (isCompanySeat && input.hireDate !== undefined && input.hireDate > today) {
+    throw new ValidationError(`${input.roleId === CEO_ROLE_ID ? "대표" : "시스템 관리자"} · 입사일부터 등록`);
+  }
   await withTransaction(async (tx) => {
     await assertCanGrantRoles(viewer, [input.roleId], tx);
     if (isCompanySeat) await lockSeatKeys(viewer, { companyRoleIds: [input.roleId] }, tx);

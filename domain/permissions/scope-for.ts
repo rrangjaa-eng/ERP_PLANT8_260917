@@ -5,7 +5,7 @@ import { seoulToday } from "@/lib/dates";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
 import { findMembershipAtDate as defaultFindMembershipAtDate } from "@/repositories/team-memberships";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
-import { findUserById as defaultFindUserById } from "@/repositories/users";
+import { findUserDivision as defaultFindUserDivision } from "@/repositories/users";
 import { findOrgUnitById as defaultFindOrgUnitById } from "@/repositories/org-units";
 
 // ADMN-01·ADMN-12: 행 필터 서술자 — repositories가 where절로 번역한다. Drizzle
@@ -163,7 +163,7 @@ export type EvidenceScope =
 
 type EvidenceScopeDeps = ScopeForDeps &
   Pick<RowScopeDeps, "findMembershipAtDate" | "findTeamById" | "today"> & {
-    findUserById: (viewer: Viewer, id: string) => Promise<{ divisionId: string | null } | null>;
+    findUserDivision: (viewer: Viewer, id: string) => Promise<{ divisionId: string | null } | null>;
     findOrgUnitById: (viewer: Viewer, id: string) => Promise<{ archivedAt: Date | null } | null>;
   };
 
@@ -180,7 +180,7 @@ export async function evidenceScopeFor(viewer: Viewer, deps?: Partial<EvidenceSc
     const team = await (deps?.findTeamById ?? defaultFindTeamById)(viewer, teamId);
     return { rows: "published", teamId, orgUnitId: team?.orgUnitId ?? null };
   }
-  const divisionId = (await (deps?.findUserById ?? defaultFindUserById)(viewer, viewer.id))?.divisionId ?? null;
+  const divisionId = (await (deps?.findUserDivision ?? defaultFindUserDivision)(viewer, viewer.id))?.divisionId ?? null;
   const division = divisionId ? await (deps?.findOrgUnitById ?? defaultFindOrgUnitById)(viewer, divisionId) : null;
   return { rows: "published", teamId: null, orgUnitId: division && division.archivedAt === null ? divisionId : null };
 }

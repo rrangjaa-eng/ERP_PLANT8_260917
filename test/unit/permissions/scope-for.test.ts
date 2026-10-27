@@ -17,7 +17,7 @@ vi.mock("@/domain/permissions/can", () => ({ can: () => Promise.resolve(true) })
 vi.mock("@/repositories/roles", () => ({ findRoleById: defaults.findRoleById }));
 vi.mock("@/repositories/team-memberships", () => ({ findMembershipAtDate: () => Promise.resolve(null) }));
 vi.mock("@/repositories/teams", () => ({ findTeamById: () => Promise.resolve(null) }));
-vi.mock("@/repositories/users", () => ({ findUserById: () => Promise.resolve(null) }));
+vi.mock("@/repositories/users", () => ({ findUserDivision: () => Promise.resolve(null) }));
 vi.mock("@/repositories/org-units", () => ({ findOrgUnitById: () => Promise.resolve(null) }));
 
 const viewer: Viewer = { id: "u1", roleId: "role-pm" };
@@ -301,7 +301,7 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
         Promise.resolve(teamFrom !== null && date >= teamFrom && (opts.teamUntil === undefined || date < opts.teamUntil) ? { teamId: TEAM_ID } : null),
       ),
       findTeamById: vi.fn((_v: Viewer, id: string) => Promise.resolve(id === TEAM_ID ? { orgUnitId: ORG_ID } : null)),
-      findUserById: vi.fn((_v: Viewer, id: string) => Promise.resolve(id === viewer.id ? { divisionId: opts.divisionId ?? null } : null)),
+      findUserDivision: vi.fn((_v: Viewer, id: string) => Promise.resolve(id === viewer.id ? { divisionId: opts.divisionId ?? null } : null)),
       findOrgUnitById: vi.fn((_v: Viewer, id: string) =>
         Promise.resolve(id === DIVISION_ID ? { archivedAt: null } : id === ARCHIVED_DIVISION_ID ? { archivedAt: new Date("2026-09-01T00:00:00Z") } : null),
       ),
@@ -323,7 +323,7 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
   it("발령 팀이 없고 본부 칸이 보관 안 된 본부면 그 본부로 published다", async () => {
     const deps = published({ teamFrom: null, divisionId: DIVISION_ID });
     expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "published", teamId: null, orgUnitId: DIVISION_ID });
-    expect(deps.findUserById).toHaveBeenCalledWith(viewer, "u1");
+    expect(deps.findUserDivision).toHaveBeenCalledWith(viewer, "u1");
   });
 
   it("발령 팀이 없고 본부 칸이 보관된 본부면 orgUnitId가 null이다", async () => {
@@ -355,7 +355,7 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
   it("오늘 발령 팀이 있으면 본부 칸을 보지 않고 팀의 본부로 published다", async () => {
     const deps = published({ divisionId: DIVISION_ID });
     expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "published", teamId: TEAM_ID, orgUnitId: ORG_ID });
-    expect(deps.findUserById).not.toHaveBeenCalled();
+    expect(deps.findUserDivision).not.toHaveBeenCalled();
     expect(deps.findOrgUnitById).not.toHaveBeenCalled();
   });
 
@@ -372,12 +372,12 @@ describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
     expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "all" });
     expect(deps.findMembershipAtDate).not.toHaveBeenCalled();
     expect(deps.findTeamById).not.toHaveBeenCalled();
-    expect(deps.findUserById).not.toHaveBeenCalled();
+    expect(deps.findUserDivision).not.toHaveBeenCalled();
   });
 
   it("evidence 보기가 없으면 none이고 본부 칸을 읽지 않는다", async () => {
     const deps = published({ allowed: [], teamFrom: null, divisionId: DIVISION_ID });
     expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "none" });
-    expect(deps.findUserById).not.toHaveBeenCalled();
+    expect(deps.findUserDivision).not.toHaveBeenCalled();
   });
 });

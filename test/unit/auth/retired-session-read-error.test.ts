@@ -20,7 +20,8 @@ vi.mock("@/db/client", () => {
 
 const { before } = await import("@/domain/auth/hooks");
 
-type Store = Record<string, Record<string, unknown>[]>;
+type Row = Record<string, unknown>;
+type Store = { user: Row[]; session: Row[]; account: Row[]; verification: Row[] };
 
 function makeAuth() {
   const store: Store = { user: [], session: [], account: [], verification: [] };

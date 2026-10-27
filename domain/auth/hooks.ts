@@ -1,4 +1,4 @@
-import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
+import { createAuthMiddleware, APIError, getSession } from "better-auth/api";
 import { log } from "@/lib/log";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -71,8 +71,31 @@ export const before = createAuthMiddleware(async (ctx) => {
     // 엔드포인트의 sessionMiddleware가 갱신 없이 읽은 세션을 재사용해 재직자의 세션 연장이 빠진다.
     if (!ctx.request || RETIRED_SESSION_ALLOWED_PATHS.has(ctx.path)) return;
     const cached = ctx.context.session;
-    const session = await getSessionFromCtx(ctx, { disableRefresh: true });
-    ctx.context.session = cached;
+    // PR #307 P2: getSessionFromCtx와 같은 호출이되 그 .catch(() => null)이 없다 — 읽기 오류를 「세션 없음」과 가른다.
+    // 쿠키가 없거나 서명이 틀리면 DB에 닿기 전에 null이라 비로그인 요청은 여기서 던지지 않는다. 쿠키가 있는데 읽기가
+    // 실패하면 판정을 못 한 채 통과시키지 않고 401(fail-closed) — 엔드포인트의 다시 읽기가 성공하면 퇴사자 응답이 나간다.
+    let read;
+    try {
+      read = await getSession()({
+        ...ctx,
+        method: "GET",
+        asResponse: false,
+        headers: ctx.headers ?? ctx.request.headers,
+        returnHeaders: true,
+        returnStatus: false,
+        query: { disableRefresh: true },
+      });
+    } catch (e) {
+      log.error("auth.retired_session_read_failed", { path: ctx.path, name: e instanceof Error ? e.name : typeof e });
+      throw APIError.from("UNAUTHORIZED", { message: "Unauthorized", code: "UNAUTHORIZED" });
+    } finally {
+      ctx.context.session = cached;
+    }
+    // getSessionFromCtx처럼 낡은 쿠키 지우기 등 읽기가 남긴 Set-Cookie를 응답에 넘긴다.
+    read.headers.forEach((value, key) => {
+      if (key.toLowerCase() === "set-cookie") ctx.responseHeaders?.append(key, value);
+    });
+    const session = read.response;
     if (!session || !retiredOrArchived(session.user as { archivedAt?: Date | null; resignationDate?: string | null }, toKstDate(new Date()))) {
       return;
     }

@@ -18,7 +18,8 @@ vi.mock("@/db/client", () => {
 const sessionRead = vi.hoisted(() => ({ fn: vi.fn() }));
 vi.mock("better-auth/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("better-auth/api")>()),
-  getSessionFromCtx: (...args: unknown[]) => sessionRead.fn(...args) as unknown,
+  // hooks.ts는 getSessionFromCtx의 오류 삼킴을 피하려고 getSession 엔드포인트를 직접 부른다(PR #307 P2) — 읽은 값만 모의한다.
+  getSession: () => async (input: unknown) => ({ headers: new Headers(), response: (await sessionRead.fn(input)) as unknown }),
 }));
 
 const { before, retiredOrArchived } = await import("@/domain/auth/hooks");
@@ -92,7 +93,7 @@ describe("before 훅 — 퇴사 · 보관 세션 갈래 (D-E6)", () => {
     const { input } = hookCtx("/get-session", { request: true });
     await before(input);
     expect(sessionRead.fn).toHaveBeenCalledTimes(1);
-    expect(sessionRead.fn.mock.calls[0]?.[1]).toEqual({ disableRefresh: true });
+    expect((sessionRead.fn.mock.calls[0]?.[0] as { query?: unknown } | undefined)?.query).toEqual({ disableRefresh: true });
   });
 
   it("퇴사일 어제 → 401 · 삭제", async () => {

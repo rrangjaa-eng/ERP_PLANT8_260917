@@ -1210,18 +1210,18 @@ Plans:
 **Wave 1**
 
 - [ ] 07.1-01-PLAN.md
-- [ ] 07.1-02-PLAN.md
 - [ ] 07.1-03-PLAN.md
 - [ ] 07.1-04-PLAN.md
 - [ ] 07.1-06-PLAN.md
+- [ ] 07.1-07-PLAN.md
 - [ ] 07.1-08-PLAN.md
-- [ ] 07.1-09-PLAN.md
 - [ ] 07.1-10-PLAN.md
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
+- [ ] 07.1-02-PLAN.md
 - [ ] 07.1-05-PLAN.md
-- [ ] 07.1-07-PLAN.md
+- [ ] 07.1-09-PLAN.md
 - [ ] 07.1-11-PLAN.md
 - [ ] 07.1-12-PLAN.md
 - [ ] 07.1-13-PLAN.md

@@ -33,7 +33,8 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
-import { assertSeatsFree, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
+import { assertSeatsFree, COMPANY_SEAT_ROLE_IDS, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
+import { CEO_ROLE_ID } from "@/domain/permissions/roles";
 import { archivedSeatReason } from "@/domain/people/restore";
 import { assertNotRetiredInTx, isRetiredOn } from "@/domain/people/retired";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
@@ -45,6 +46,7 @@ import {
   updateUserRole as repoUpdateUserRole,
   updateUserHireDate as repoUpdateUserHireDate,
   updateUserResignationDate as repoUpdateUserResignationDate,
+  setUserArchived as repoSetUserArchived,
   type UserRow,
 } from "@/repositories/users";
 import {
@@ -325,6 +327,13 @@ export type RegisterPersonInput = {
   hireDate?: string;
 };
 
+// 07.1 D-1(2026-10-27 사용자 결정): 입사일 전에 후임이 대표 · 시스템 관리자 권한을 쥐지 않게 — 회사 자리 계급인데 입사일이
+// 오늘(서울) 뒤면 거부한다. 등록 · 입사일 변경 · 계급 변경 세 길이 같은 판정 · 같은 문구.
+function assertHiredForCompanySeat(roleId: string | null, hireDate: string | null, today: string): void {
+  if (roleId === null || !COMPANY_SEAT_ROLE_IDS.includes(roleId) || hireDate === null || hireDate <= today) return;
+  throw new ValidationError(`${roleId === CEO_ROLE_ID ? "대표" : "시스템 관리자"} · 입사일부터 등록`);
+}
+
 export type RegisterPersonDeps = {
   can: typeof defaultCan;
   createAccount: typeof defaultCreateAccount;
@@ -386,23 +395,23 @@ export async function registerPerson(
   const orgUnit = seat ? await repoFindOrgUnitById(viewer, seat.orgUnitId) : null;
   // 07-21 Codex P2: 팀은 활성이어도 본부가 보관됐으면 계정을 만들기 전에 거부한다 — 발령(`assignTeam`)의 잠금 뒤 재검사와 같은 문구.
   if (orgUnit?.archivedAt) throw new ValidationError("보관된 본부 · 먼저 옮기기");
+  const occupied: OccupiedTeamRow[] = seat
+    ? [{ teamId: seat.teamId, orgUnitId: orgUnit?.id ?? null, from: seat.effectiveFrom > today ? seat.effectiveFrom : today, to: null }]
+    : [];
+  const seats = newSeats({
+    roleBefore: null,
+    roleAfter: input.roleId,
+    employedBefore: null,
+    employedAfter: { archivedAt: null, resignationDate: null, hireDate: input.hireDate ?? null },
+    occupiedBefore: [],
+    occupiedAfter: occupied,
+  });
+  // 07.1(D-7128 · E-P1-06): 회사 자리 계급이면 회사 키 → 팀 없는 대표도 판정을 지난다(회사 판정은 팀 · 본부 판정 앞).
+  const isCompanySeat = COMPANY_SEAT_ROLE_IDS.includes(input.roleId);
+  assertHiredForCompanySeat(input.roleId, input.hireDate ?? null, today);
   await withTransaction(async (tx) => {
     await assertCanGrantRoles(viewer, [input.roleId], tx);
-    if (!seat) return;
-    const occupied: OccupiedTeamRow = {
-      teamId: seat.teamId,
-      orgUnitId: orgUnit?.id ?? null,
-      from: seat.effectiveFrom > today ? seat.effectiveFrom : today,
-      to: null,
-    };
-    const seats = newSeats({
-      roleBefore: null,
-      roleAfter: input.roleId,
-      employedBefore: null,
-      employedAfter: { archivedAt: null, resignationDate: null },
-      occupiedBefore: [],
-      occupiedAfter: [occupied],
-    });
+    if (isCompanySeat) await lockSeatKeys(viewer, { companyRoleIds: [input.roleId] }, tx);
     await assertSeatsFree(viewer, { roleId: input.roleId, seats, today, showNames }, tx);
   });
 
@@ -415,7 +424,41 @@ export async function registerPerson(
 
   // 07-21 게이트(/cso P3-a): 계정 생성(better-auth, 다른 연결)은 위 tx 잠금 밖이다 — 생성 뒤 계급 행을 FOR SHARE로 다시 읽어
   // 계급 보관(FOR UPDATE 뒤 소속 세기)과 줄 선다. 보관이 먼저 셌으면(이 계정이 아직 안 보였으면) 여기서 보관을 보고 계정을 보상 보관한다.
-  const lockedRole = await withTransaction((tx) => findRoleForShare(viewer, input.roleId, tx));
+  // 07.1(E-P1-06): 회사 자리도 같은 창 — 사람 · 회사 키를 다시 잡고 재조회해, 그새 다른 보유자가 생겼으면 잠금을 쥔 이 tx 안에서
+  // 보상 보관까지 커밋한다(잠금을 놓은 뒤 따로 보관하면 동시 등록 둘이 서로의 보관 전 계정을 보고 둘 다 진다). 던지면 보관도 되돌아가므로
+  // 막힘은 값으로 돌려주고 커밋 뒤 던진다.
+  const after = await withTransaction(async (tx) => {
+    if (isCompanySeat) await lockSeatKeys(viewer, { personIds: [userId], companyRoleIds: [input.roleId] }, tx);
+    const locked = await findRoleForShare(viewer, input.roleId, tx);
+    if (!locked || locked.archivedAt) return { lockedRole: null, seatTaken: null };
+    try {
+      await assertSeatsFree(viewer, { userId, roleId: input.roleId, seats: { teams: [], orgUnits: [], company: seats.company }, today, showNames }, tx);
+    } catch (error) {
+      if (!(error instanceof SeatTakenError)) throw error;
+      await repoSetUserArchived(SYSTEM_VIEWER, userId, true, tx);
+      await (deps?.recordAction ?? defaultRecordAction)(
+        SYSTEM_VIEWER,
+        { actionType: "archive", entity: "user", entityId: userId, detail: { reason: "register_person_rollback", requestedBy: viewer.id } },
+        { tx },
+      );
+      return { lockedRole: locked, seatTaken: error };
+    }
+    return { lockedRole: locked, seatTaken: null };
+  }).catch(async (error: unknown) => {
+    // 07.1 [검토] P1-1: 위 tx가 자리 충돌이 아닌 오류(lock_timeout · 재조회 실패 · 충돌 뒤 보상 로그 실패)로 던지면 tx 안 보상 보관도
+    // 함께 되돌아가 재판정 안 된 계정이 활성으로 남는다 — tx 밖에서 따로 보상 보관하고 원래 오류를 던진다.
+    await (deps?.archive ?? defaultArchive)(SYSTEM_VIEWER, "user", userId, {
+      recordAction: async (v, entry, options) =>
+        (deps?.recordAction ?? defaultRecordAction)(
+          v,
+          { ...entry, detail: { reason: "register_person_rollback", requestedBy: viewer.id } },
+          options,
+        ),
+    });
+    throw error;
+  });
+  if (after.seatTaken) throw after.seatTaken;
+  const lockedRole = after.lockedRole;
   if (!lockedRole || lockedRole.archivedAt) {
     const archive = deps?.archive ?? defaultArchive;
     await archive(SYSTEM_VIEWER, "user", userId, {
@@ -532,7 +575,8 @@ export async function changePersonRole(
   const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
-    await lockSeatKeys(viewer, { personIds: [userId], admin: true }, tx);
+    // 07.1(D-7128): 옮길 계급이 회사 자리면 그 회사 키도 첫 잠금에서(사람 → 관리자 → 회사).
+    await lockSeatKeys(viewer, { personIds: [userId], admin: true, companyRoleIds: COMPANY_SEAT_ROLE_IDS.filter((id) => id === roleId) }, tx);
     // 07-21(F2): 옮길 계급 행을 FOR SHARE로 다시 읽는다 — 계급 보관(FOR UPDATE 뒤 소속 세기)과 줄 서서 보관된 계급으로 옮기지 않는다.
     const lockedRole = await findRoleForShare(viewer, roleId, tx);
     if (!lockedRole || lockedRole.archivedAt) throw new ValidationError(`존재하지 않거나 보관된 계급: ${roleId}`);
@@ -540,6 +584,8 @@ export async function changePersonRole(
     const row = await repoFindUserById(viewer, userId, tx);
     if (!row) throw new UserNotFoundError("사람 찾을 수 없음");
     await assertCanGrantRoles(viewer, [roleId, row.roleId], tx);
+    // 같은 계급 저장은 새 권한을 쥐지 않는다 — 이미 있는 데이터(입사일 미래인 보유자)를 막지 않는다.
+    if (roleId !== row.roleId) assertHiredForCompanySeat(roleId, row.hireDate, today);
     await assertNotLastAdmin(viewer, { userId, asOf: today, nextRoleId: roleId }, tx);
     const occupied = await listOccupiedTeams(viewer, userId, today, tx);
     const seats = newSeats({
@@ -761,7 +807,7 @@ async function setEmploymentDate(
   const gate = await loadActionLogGate();
   // 잠금 중 노출 판정이 풀에서 따로 빌리지 않게 tx 전에 정한다(06.4-02와 같은 규칙).
   const today = seoulTodayOf(deps);
-  const showNames = field === "resignation_date" ? await (deps?.visible ?? defaultVisible)(viewer, "person.value") : false;
+  const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
   try {
     await withTransaction(async (tx) => {
       // 06.4(D-6411 · O3 · D-6412 · D-6404 퇴직일 진입점 · D-6415 — eng E2 · Codex B1 · 재검토 R4): 퇴직일 분기는 값과 무관하게
@@ -770,7 +816,8 @@ async function setEmploymentDate(
       // 재개 라우트 `people.ts:1155` 인덱스 충돌 409 `:1258-1264`). O3 사용자 확정(2026-10-11 카드): 마지막 재직 관리자에게는
       // 어떤 날짜의 퇴직일도 넣지 않는다 — 미래 날짜는 시간 경과로 0명이 되는 시한폭탄(RESEARCH Pitfall 7).
       // 07-17 독립 검토 M1: 입사일도 같은 잠금 → 재조회 → 대상 계급 상한(관리자 키는 마지막 관리자 판정이 있는 퇴직일만).
-      await lockSeatKeys(viewer, { personIds: [userId], admin: field === "resignation_date" }, tx);
+      // 07.1(D-7128 · D-E5): 계급은 잠금 뒤 재조회에서야 알므로 회사 키 둘을 첫 잠금에서 함께 — 입사일 당기기 · 퇴직일 지우기가 회사 구간을 늘린다.
+      await lockSeatKeys(viewer, { personIds: [userId], admin: field === "resignation_date", companyRoleIds: COMPANY_SEAT_ROLE_IDS }, tx);
       // F24: 입사일은 퇴직자면 거부. 퇴직일은 지우기(재입사, 260907 `people.ts:1155` rejoin)만 받는다 — 사용자 결정
       // (카드 2026-10-23 12:34 KST) 「퇴직한 사람의 퇴직일은 비우기만 허용」: 다른 날짜로 옮기기는 같은 거부.
       if (field === "hire_date" || value !== null) await assertNotRetiredInTx(viewer, userId, today, tx);
@@ -792,12 +839,24 @@ async function setEmploymentDate(
             roleBefore: fresh.roleId,
             roleAfter: fresh.roleId,
             employedBefore: fresh,
-            employedAfter: { archivedAt: fresh.archivedAt, resignationDate: value },
+            employedAfter: { archivedAt: fresh.archivedAt, resignationDate: value, hireDate: fresh.hireDate },
             occupiedBefore: occupied,
             occupiedAfter: occupied,
           });
           await assertSeatsFree(viewer, { userId, roleId: fresh.roleId, seats, today, showNames }, tx);
         }
+      } else if (fresh.roleId !== null && COMPANY_SEAT_ROLE_IDS.includes(fresh.roleId)) {
+        assertHiredForCompanySeat(fresh.roleId, value, today);
+        // 팀 · 본부 구간은 입사일과 무관 — 회사 구간만 늘어날 수 있다.
+        const seats = newSeats({
+          roleBefore: fresh.roleId,
+          roleAfter: fresh.roleId,
+          employedBefore: fresh,
+          employedAfter: { ...fresh, hireDate: value },
+          occupiedBefore: [],
+          occupiedAfter: [],
+        });
+        await assertSeatsFree(viewer, { userId, roleId: fresh.roleId, seats, today, showNames }, tx);
       }
       if (field === "hire_date") await repoUpdateUserHireDate(viewer, userId, value, tx);
       else await repoUpdateUserResignationDate(viewer, userId, value, tx);

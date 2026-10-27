@@ -1,17 +1,21 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { db, pool } from "@/db/client";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError, setPermissionCell } from "@/domain/permissions/matrix";
 import { LastAdminError } from "@/domain/permissions/last-admin";
-import { changePersonRole, setResignationDate } from "@/domain/people";
+import { changePersonRole, registerPerson, setResignationDate } from "@/domain/people";
 import { archive, restore, type RestoreResult } from "@/domain/archive";
 import { assignTeam } from "@/domain/org";
 import { SeatTakenError } from "@/domain/people/seat-rules";
 import { findPermission } from "@/repositories/permissions";
 import { ADMIN_SEAT_LOCK_KEY, listSeatHolders } from "@/repositories/seats";
-import { countActiveAdmins, updateUserResignationDate } from "@/repositories/users";
+import { countActiveAdmins, findUserById, updateUserResignationDate } from "@/repositories/users";
+import { queryActionLog } from "@/repositories/action-log";
+import { createAccount } from "@/domain/auth/accounts";
+import { recordAction } from "@/domain/action-log/record";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 import { holdKey, makeAdmin, makeAdminRole, makeOrgTeam, makeSeated, uniqueName, waitingOnKey } from "./admin-cap-fixtures";
 
@@ -443,3 +447,159 @@ describe("보관 팀 복원 ∥ 그 팀 사람의 자리 쓰기(06.4 /cso)", () 
     expect((await teamLeadsOf(teamId)).length).toBeLessThanOrEqual(1);
   });
 });
+
+// 07.1(D-7128 · E-P1-06): 회사 자리 경합 — 계정 생성(다른 연결)은 판정 tx 잠금 밖이라, 등록은 생성 뒤 같은 회사 키를 다시 잡고
+// 재조회해 겹치면 그 tx 안에서 방금 만든 계정을 보상 보관한다. 정확히 하나만 대표로 남는다.
+const ceoKey = `seat:company:${CEO_ROLE_ID}`;
+const newCeo = () => ({ name: uniqueName("새 대표"), email: `${randomUUID()}@example.test`, roleId: CEO_ROLE_ID });
+
+async function archivedOf(userId: string): Promise<boolean> {
+  return ((await findUserById(SYSTEM_VIEWER, userId))?.archivedAt ?? null) !== null;
+}
+
+async function rollbackLogs(userId: string): Promise<number> {
+  const rows = await queryActionLog(SYSTEM_VIEWER, { actionType: "archive" });
+  return rows.filter(
+    (row) => row.entity === "user" && row.entityId === userId && (row.detail as { reason?: string } | null)?.reason === "register_person_rollback",
+  ).length;
+}
+
+describe("회사 자리 경합(07.1 D-7128 · E-P1-06)", () => {
+  it("ⓐ 대표 등록 둘이 모두 사전 판정을 지나 계정을 만든 뒤 사후 판정에 들어가면 하나만 성공 · 진 쪽 계정은 보관 · 보상 로그 1행", async () => {
+    const admin = await makeAdmin("관리자");
+    const created: string[] = [];
+    let open: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const barrier: typeof createAccount = async (viewer, input) => {
+      const result = await createAccount(viewer, input);
+      created.push(result.userId);
+      if (created.length === 2) open();
+      await gate;
+      return result;
+    };
+
+    const results = await Promise.allSettled([
+      registerPerson(admin, newCeo(), { ...deps, createAccount: barrier }),
+      registerPerson(admin, newCeo(), { ...deps, createAccount: barrier }),
+    ]);
+
+    expect(created).toHaveLength(2);
+    expect(loserOf(results)).toBeInstanceOf(SeatTakenError);
+    const winner = results.find((result) => result.status === "fulfilled");
+    const winnerId = winner?.status === "fulfilled" ? winner.value.userId : "";
+    const loserId = created.find((id) => id !== winnerId) ?? "";
+    expect((loserOf(results) as Error).message).toBe(`대표 있음 · ${(await findUserById(SYSTEM_VIEWER, winnerId))?.name}`);
+    expect(await archivedOf(winnerId)).toBe(false);
+    expect(await archivedOf(loserId)).toBe(true);
+    expect(await rollbackLogs(loserId)).toBe(1);
+  });
+
+  it("ⓑ 대표 등록의 사전 판정과 계정 생성 사이에 다른 사람을 대표로 바꾸면 등록이 지고 새 계정은 보관 · 대표는 바꾼 사람 하나", async () => {
+    const admin = await makeAdmin("관리자");
+    const x = await makeSeated(uniqueName("PM X"), DEFAULT_ROLE_ID, null);
+    let createdId = "";
+    const interlope: typeof createAccount = async (viewer, input) => {
+      await changePersonRole(admin, x.id, CEO_ROLE_ID, deps);
+      const result = await createAccount(viewer, input);
+      createdId = result.userId;
+      return result;
+    };
+
+    const error = await registerPerson(admin, newCeo(), { ...deps, createAccount: interlope }).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(SeatTakenError);
+    expect((error as Error).message).toBe(`대표 있음 · ${(await findUserById(SYSTEM_VIEWER, x.id))?.name}`);
+    expect((await findUserById(SYSTEM_VIEWER, x.id))?.roleId).toBe(CEO_ROLE_ID);
+    expect(await archivedOf(createdId)).toBe(true);
+    expect(await rollbackLogs(createdId)).toBe(1);
+  });
+
+  // 계급 변경은 사람 → 관리자 → 회사 순이라, 회사 키를 쥐면 앞 저장은 회사 키에서 · 뒤 저장은 앞 저장이 쥔 관리자 키에서 기다린다.
+  it("ⓒ 회사 키를 쥔 동안 두 PM을 대표로 바꾸면 둘 다 기다리고(회사 키 1 · 관리자 키 1), 풀면 하나만 · 패자는 대표 있음", async () => {
+    const admin = await makeAdmin("관리자");
+    const a = await makeSeated(uniqueName("PM A"), DEFAULT_ROLE_ID, null);
+    const b = await makeSeated(uniqueName("PM B"), DEFAULT_ROLE_ID, null);
+    const holder = await holdKey(ceoKey);
+
+    const both = Promise.allSettled([changePersonRole(admin, a.id, CEO_ROLE_ID, deps), changePersonRole(admin, b.id, CEO_ROLE_ID, deps)]);
+    let waiting = [0, 0];
+    for (let tries = 0; tries < 60 && waiting.join() !== "1,1"; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      waiting = [await waitingOnKey(ceoKey), await waitingOnKey(ADMIN_SEAT_LOCK_KEY)];
+    }
+    await holder.release();
+    const results = await both;
+
+    expect(waiting).toEqual([1, 1]);
+    expect(loserOf(results)).toBeInstanceOf(SeatTakenError);
+    const roles = [(await findUserById(SYSTEM_VIEWER, a.id))?.roleId, (await findUserById(SYSTEM_VIEWER, b.id))?.roleId];
+    expect(roles.filter((roleId) => roleId === CEO_ROLE_ID)).toHaveLength(1);
+  });
+
+  // 07.1 [검토] P1-1: 사후 판정 tx가 자리 충돌이 아닌 오류로 실패하면 tx 안의 보상 보관도 함께 되돌아간다 — 재판정 안 된
+  // 둘째 대표가 활성으로 남지 않도록 tx 밖에서 따로 보상 보관하고 원래 오류를 던진다.
+  it(
+    "ⓓ 사후 판정이 회사 키 대기 lock_timeout으로 실패하면 원래 오류를 던지고 · 새 계정은 보관 · 보상 로그 1행",
+    async () => {
+      const admin = await makeAdmin("관리자");
+      let createdId = "";
+      let holder: { release: () => Promise<void> } | null = null;
+      const holdAfterCreate: typeof createAccount = async (viewer, input) => {
+        const result = await createAccount(viewer, input);
+        createdId = result.userId;
+        holder = await holdKey(ceoKey);
+        return result;
+      };
+
+      const error = await registerPerson(admin, newCeo(), { ...deps, createAccount: holdAfterCreate })
+        .then(
+          () => null,
+          (caught: unknown) => caught,
+        )
+        .finally(() => holder?.release());
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(SeatTakenError);
+      expect(await archivedOf(createdId)).toBe(true);
+      expect(await rollbackLogs(createdId)).toBe(1);
+    },
+    30_000,
+  );
+
+  it("ⓔ 사후 판정이 충돌을 본 뒤 보상 로그 쓰기에서 실패하면 그 오류를 던지고 · 새 계정은 tx 밖에서 보관 · 보상 로그 1행", async () => {
+    const admin = await makeAdmin("관리자");
+    const x = await makeSeated(uniqueName("PM X"), DEFAULT_ROLE_ID, null);
+    let createdId = "";
+    const interlope: typeof createAccount = async (viewer, input) => {
+      await changePersonRole(admin, x.id, CEO_ROLE_ID, deps);
+      const result = await createAccount(viewer, input);
+      createdId = result.userId;
+      return result;
+    };
+    const boom = new Error("로그 쓰기 실패");
+    let failed = false;
+    const failOnce: typeof recordAction = async (viewer, entry, options) => {
+      if (!failed && (entry.detail as { reason?: string } | undefined)?.reason === "register_person_rollback") {
+        failed = true;
+        throw boom;
+      }
+      return recordAction(viewer, entry, options);
+    };
+
+    const error = await registerPerson(admin, newCeo(), { ...deps, createAccount: interlope, recordAction: failOnce }).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+
+    expect(failed).toBe(true);
+    expect(error).toBe(boom);
+    expect(await archivedOf(createdId)).toBe(true);
+    expect(await rollbackLogs(createdId)).toBe(1);
+  });
+});
+

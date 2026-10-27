@@ -435,6 +435,18 @@ export async function registerPerson(
       return { lockedRole: locked, seatTaken: error };
     }
     return { lockedRole: locked, seatTaken: null };
+  }).catch(async (error: unknown) => {
+    // 07.1 [검토] P1-1: 위 tx가 자리 충돌이 아닌 오류(lock_timeout · 재조회 실패 · 충돌 뒤 보상 로그 실패)로 던지면 tx 안 보상 보관도
+    // 함께 되돌아가 재판정 안 된 계정이 활성으로 남는다 — tx 밖에서 따로 보상 보관하고 원래 오류를 던진다.
+    await (deps?.archive ?? defaultArchive)(SYSTEM_VIEWER, "user", userId, {
+      recordAction: async (v, entry, options) =>
+        (deps?.recordAction ?? defaultRecordAction)(
+          v,
+          { ...entry, detail: { reason: "register_person_rollback", requestedBy: viewer.id } },
+          options,
+        ),
+    });
+    throw error;
   });
   if (after.seatTaken) throw after.seatTaken;
   const lockedRole = after.lockedRole;

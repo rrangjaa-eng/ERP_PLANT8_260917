@@ -15,6 +15,7 @@ paths:
 - UI 완료 판정은 `/design-review`(SYSTEM.md 일관성) → `/qa` 통과 후. 묶음(PR)마다 한 번.
 - **화면 검증 순서: 싼 게이트(lint·typecheck·build) → 독립 DOM 감사 → 수정 → 전체 게이트 한 번.** 감사는 실행자가 아닌 별도 에이전트(Sonnet)가 `CI=true`로 DOM을 실측 판정한다(스크린샷 육안 금지). 전체 게이트의 "한 번"은 CI다 — 로컬은 건드린 스펙만.
 - 컴포넌트가 된 계약은 지켜지고 산문으로 남은 계약은 어긋난다(Phase 3 실측 26건). 반복되는 지적(폰 44px 터치 영역, 320px 가로 넘침, 포커스 링)은 `test/e2e/mobile-320-no-overflow.spec.ts`처럼 E2E로 만든다.
+- Codex 보고서는 `--out test-results/<이름>.md`로 받은 뒤 남길 자리(`docs/design/checks/…` 등)로 복사하거나 `--out .planning/…`로 바로 쓴다. 스크립트의 `--out` 제한은 보호 파일 덮어쓰기를 막는 장치라 풀지 않는다(D-7117).
 
 ## 화면 사용성 원칙
 - 목표: 사람이 읽고 고민하지 않아도 화면이 다음 행동으로 이끈다.

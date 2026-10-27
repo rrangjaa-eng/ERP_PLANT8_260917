@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { pgTable, text, timestamp, boolean, integer, bigint, date, check, uuid } from "drizzle-orm/pg-core";
-import { orgUnits } from "./org";
+import { orgUnits } from "./org-units";
 import { roles } from "./roles";
 
 // better-auth 1.7 core 스키마(node_modules/better-auth 문서 concepts/database 필드명 그대로) +

@@ -1,26 +1,13 @@
 import { pgTable, text, integer, jsonb, timestamp, uuid, date, unique, index } from "drizzle-orm/pg-core";
 import { users } from "./auth";
+import { orgUnits } from "./org-units";
+
+export { orgUnits };
 
 // MAST-02: 조직 3표 — 본부(orgUnits) ⊂ 팀(teams), 팀 소속 발령 이력
 // (teamMemberships). 본부·팀은 마스터 표라 03-01이 정한 경계대로 보관함 컬럼 +
 // customFields를 둔다. 발령 이력은 append-only 감사 이력이라 그 경계 밖이다 —
 // 보관함·customFields 컬럼을 두지 않는다.
-export const orgUnits = pgTable(
-  "org_units",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    name: text("name").notNull().unique(),
-    sortOrder: integer("sort_order").notNull().default(0),
-    customFields: jsonb("custom_fields").notNull().default({}),
-    archivedAt: timestamp("archived_at"),
-    archivedBy: text("archived_by"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  },
-  // 03-06이 GIN 인덱스를 뒤늦게 채운다(field_definitions 규약이 이제 정해졌다).
-  (table) => [index("org_units_custom_fields_idx").using("gin", table.customFields)],
-);
-
 export const teams = pgTable(
   "teams",
   {

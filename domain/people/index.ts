@@ -32,7 +32,7 @@ import { withTransaction } from "@/lib/db-transaction";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
-import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
+import { listCompanySeatHolders, listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
 import { assertSeatsFree, COMPANY_SEAT_ROLE_IDS, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { archivedSeatReason } from "@/domain/people/restore";
@@ -626,6 +626,9 @@ export async function handOverSysadmin(
     throw new ForbiddenError(HANDOVER_NOT_SYSADMIN_MESSAGE);
   }
   if (viewer.id === toUserId) throw new ValidationError("본인에게 넘기기 불가");
+  // 게이트 P3-3: 시스템 관리자가 아니면 관리자 키를 잡기 전에 거부한다(사람 쓰기 권한만으로 키를 쥐지 않게). 잠금 뒤 재확인은 그대로 — 동시 넘기기에서 진 쪽.
+  const actor = await repoFindUserById(viewer, viewer.id);
+  if (!actor || actor.archivedAt || actor.roleId !== SYSADMIN_ROLE_ID) throw new ForbiddenError(HANDOVER_NOT_SYSADMIN_MESSAGE);
 
   const today = seoulTodayOf(deps);
   const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
@@ -644,6 +647,10 @@ export async function handOverSysadmin(
     if (!to) throw new UserNotFoundError("사람 찾을 수 없음");
     if (to.archivedAt) throw new ValidationError("보관된 사람 · 먼저 복원");
     await assertNotRetiredInTx(viewer, toUserId, today, tx);
+    // 게이트 P3-1: 퇴직 예정자는 넘겨도 퇴직일에 자리가 다시 빈다 — 다른 관리자급 유무와 무관하게 막는다(화면 숨김과 같은 판정).
+    if (to.resignationDate !== null) throw new ValidationError("퇴직 예정자에게 넘기기 불가");
+    // 게이트 B-1(사용자 결정 2026-10-27 20:45 KST): 사람당 계급이 하나라 넘기면 대표 자리가 빈다 — 대표에게는 넘기지 못한다.
+    if (to.roleId === CEO_ROLE_ID) throw new ValidationError("대표에게 넘기기 불가");
     assertHiredForCompanySeat(SYSADMIN_ROLE_ID, to.hireDate, today);
     await assertCanGrantRoles(viewer, [SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID, to.roleId], tx);
 
@@ -678,6 +685,13 @@ export async function handOverSysadmin(
       );
     }
   });
+}
+
+// 게이트 N-1: 나 말고 시스템 관리자가 또 있으면(#304 이전 데이터) 넘기기는 회사 자리 검사가 늘 거부한다 — 화면은 버튼을 그리지 않는다.
+// 보유자 정의는 그 검사(`listCompanySeatHolders` — 보관 아님 · 오늘 이후 재직)와 같다.
+export async function hasOtherSysadmin(viewer: Viewer, today: string): Promise<boolean> {
+  const holders = await listCompanySeatHolders(viewer, { roleId: SYSADMIN_ROLE_ID, today, excludeUserId: viewer.id });
+  return holders.length > 0;
 }
 
 export type ArchivePersonDeps = {

@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { evidenceRecords, teamMemberships, users } from "@/db/schema";
+import { attachEvidenceAsAuthor } from "@/domain/evidence-records/attach";
 import { countEvidencePool, listEvidencePool } from "@/domain/evidence-records/pool";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { createCorpCard } from "@/domain/corp-cards";
@@ -262,5 +263,18 @@ describe("팀 없는 본부 사람의 증빙 범위(07.1-07 D-7122)", () => {
     expect(await poolIds(assigned)).toEqual([rec.a, rec.teamA].sort());
     expect(await countEvidencePool(assigned.viewer, { kind: "expense", id: assigned.draftId })).toBe(2);
     expect(await idsFor(assigned.viewer, { state: "all" })).toEqual([rec.a, rec.teamA].sort());
+  });
+
+  // PR #303 검토 P2-1: 넓어진 범위가 작성자 붙이기(attachEvidenceAsAuthor → preReadRecords → listEvidenceRecordsByIds)에도 쓰인다.
+  it("작성자 붙이기 — 자기 본부 공개 증빙은 붙고 다른 본부 공개 증빙은 없는 증빙 거부다", async () => {
+    const author = await teamlessAuthor(divisionB);
+    const own = await publishedRecord({ visibility: "division", orgUnitId: divisionB });
+    const owner = { kind: "expense" as const, id: author.draftId };
+    const refused = await attachEvidenceAsAuthor(author.viewer, { evidenceIds: [rec.a], owner }).then(
+      () => "붙었다",
+      (error: unknown) => (error instanceof Error ? error.message : "알 수 없는 거부"),
+    );
+    expect(refused).toBe("없는 증빙 · 새로 고침");
+    expect(await attachEvidenceAsAuthor(author.viewer, { evidenceIds: [own], owner })).toEqual({ attached: 1 });
   });
 });

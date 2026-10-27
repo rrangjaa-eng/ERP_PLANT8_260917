@@ -191,7 +191,7 @@ describe("previewDetach (PA-PREVIEW)", () => {
 });
 
 // 07.1-04 PE1 · E-P2-16 · CG-03: 카드 사용에 붙은 증빙도 서버에서 뗀다 — 권한은 붙이기와 같은 키(경영관리 = 등록 ∧ 범위 안 ∧ 보관 아님),
-// 트랜잭션 안에서 카드 사용 행을 잠근 뒤 다시 판정한다. 카드 사용 금액 · 사용일 · 승인번호는 되돌리지 않는다(덮은 기록은 로그에 있다).
+// 트랜잭션 안에서 카드 사용 행을 잠근 뒤 다시 판정한다. 카드 사용 금액 · 사용일은 되돌리지 않고(덮은 기록은 로그에 있다), 그 붙임이 채운 승인번호만 비운다(PR #305 검토 P1-2).
 describe("카드 사용 증빙 떼기 (07.1-04 PE1)", () => {
   async function cardUsageWithRecord(): Promise<{ manager: Viewer; pm: Viewer; usageId: string; recordId: string; linkId: string }> {
     const pm = await makePerson("떼기PM", DEFAULT_ROLE_ID, "기획1팀");

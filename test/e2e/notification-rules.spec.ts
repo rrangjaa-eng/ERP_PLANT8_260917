@@ -231,6 +231,36 @@ test("범위 밖 일수는 `일수 범위 1~30 · 다시 입력`이고 패널이
   expect(await db.select().from(notificationRules).where(eq(notificationRules.kind, "project-end-no-expense"))).toEqual([]);
 });
 
+test("S3(07.1-02 · U-10): 범위 밖 일수는 범위 글자가 한 곳에만 보이고 패널 이유는 `저장할 수 없음 — 일수 1칸 · 일수 고치기`이며 포커스는 일수 칸 · 같은 값 재제출도 일수 칸", async ({ page }) => {
+  await loginAsSysadmin(page);
+  await page.goto("/admin/notification-rules");
+  await editLink(page, "종료 후 지출결의 없음").click();
+  const panel = page.getByRole("dialog", { name: "종료 후 지출결의 없음 수정" });
+  const days = panel.locator("#days");
+  const save = panel.getByRole("button", { name: /규칙 저장/ });
+  await expect(panel.locator("#days-range")).toBeVisible();
+  await days.fill("31");
+  await save.click();
+  await expect(days).toHaveAttribute("aria-invalid", "true");
+  await expect(panel.getByText("일수 범위 1~30 · 다시 입력")).toBeVisible();
+  // `1~30` 글자를 가진 보이는 요소는 칸 오류 하나 — 보조 범위 줄은 숨고 패널 이유는 범위를 되풀이하지 않는다.
+  await expect(panel.getByText(/1~30/).filter({ visible: true })).toHaveCount(1);
+  await expect(panel.locator("#days-range")).toHaveCount(0);
+  await expect(panel.locator("#rule-form-reason")).toHaveText(/^저장할 수 없음 — 일수 1칸 · 일수 고치기$/);
+  await expect(days).toBeFocused();
+  // 같은 잘못된 값으로 다시 제출 — 저장 버튼에 포커스를 둔 채 눌러도 일수 칸으로 돌아온다(E-P2-05).
+  // PanelForm은 제출 직후 0.5초(SUBMIT_LOCK_GRACE_MS) 같은 제출을 무시한다 — 사람이 다시 누르는 시간만큼 둔다.
+  await page.waitForTimeout(600);
+  await save.focus();
+  await save.press("Enter");
+  await expect(days).toBeFocused();
+  // 값을 고쳐 저장 요청이 나가기 전 입력만 바꾸면 오류는 다음 제출까지 남는다 — 범위 안 값으로 저장하면 패널이 닫힌다.
+  await page.waitForTimeout(600);
+  await days.fill("5");
+  await save.click();
+  await expect(panel).toHaveCount(0);
+});
+
 test("결재 결과(사건 종류) 패널에는 일수 칸이 없고 결재 차례 패널 aux는 0~10 · 화면에 고치기 · 허용 1~30 글자가 없다", async ({ page }) => {
   await loginAsSysadmin(page);
   await page.goto("/admin/notification-rules");

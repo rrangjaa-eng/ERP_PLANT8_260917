@@ -492,6 +492,37 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     expect(rowsB).toEqual([{ id: rowBBefore?.id, archivedAt: null }]);
   });
 
+  // 07.1-02 PC7(C-34 · E-P2-07): 삭제 직후 화면 새로고침(RSC)이 끝나기 전에 `되돌리기`를 누르는 경합 — 행이 아직 빠지지 않았으니 같은 `삭제` 버튼이
+  // 그대로 남은 채 되살아난 행이 된다. 새로고침 응답을 늦춰 그 순서를 만든다(행이 사라지기를 기다린 뒤 되돌리면 main에서도 통과한다).
+  test("PC7(07.1-02): 삭제 직후 새로고침이 끝나기 전에 되돌려도 되살아난 줄의 `삭제`가 다시 눌린다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+    const deleteA = rowOf(page, ROW_A.name).getByRole("button", { name: "삭제" });
+    await expect(deleteA).toBeVisible();
+
+    let delayRefresh = true;
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (delayRefresh && request.method() === "GET" && request.headers()["rsc"] === "1") {
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+      }
+      await route.continue().catch(() => {});
+    });
+    await deleteA.click();
+    const resultLine = page.getByRole("status").filter({ hasText: "삭제됨" });
+    await expect(resultLine).toContainText(`${ROW_A.date} ${ROW_A.name} 삭제됨`);
+    await resultLine.getByRole("button", { name: "되돌리기" }).click();
+    delayRefresh = false;
+
+    await expect(resultLine).toHaveCount(0);
+    const restored = rowOf(page, ROW_A.name).getByRole("button", { name: "삭제" });
+    await expect(restored).toBeVisible();
+    await expect(restored).not.toHaveAttribute("aria-disabled", "true");
+    await restored.click();
+    await expect(rowOf(page, ROW_A.name)).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: `${ROW_A.date} ${ROW_A.name} 삭제됨` })).toHaveCount(1);
+  });
+
   test("결과 줄은 연도를 바꾸면 사라지고, 공휴일 추가 패널을 열고 닫아도 남는다", async ({ page }) => {
     await loginAsSysadmin(page);
     await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);

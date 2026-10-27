@@ -50,6 +50,8 @@ export function DeleteHoliday({ id, date }: { id: string; date: string }) {
         if (result.data.deleted) {
           show({ id: result.data.id, date: result.data.date, name: result.data.name, kind: result.data.kind });
         }
+        // 새로고침이 끝나기 전에 되돌리면 이 줄이 빠지지 않고 되살아난 줄이 되므로 대기를 성공 경로에서도 푼다(07.1-02 PC7).
+        setPending(false);
         router.refresh();
         return;
       }

@@ -163,7 +163,7 @@ export async function findFlaggableRecordIdsByDedupeKeys(viewer: Viewer, keys: r
 // 행의 공개 칸이다). repositories/row-scope.ts 규약을 따른다: id가 null인 갈래는 거짓 조각(조각을 undefined로 두면 and() · or()가 조용히
 // 빼서 조건 전체가 사라진다 — CSO-4), 보관된 팀 발령은 팀 범위를 주지 않는다, 모르는 갈래는 거짓(fail-closed). 하위 질의의 teams는
 // 가장 안쪽 FROM에 묶인다.
-function scopeWhere(scope: EvidenceScope): SQL {
+function scopeWhere(scope: EvidenceScope, cardFormats: readonly string[]): SQL {
   switch (scope.rows) {
     case "all":
       return sql`true`;
@@ -175,7 +175,9 @@ function scopeWhere(scope: EvidenceScope): SQL {
       const division =
         scope.orgUnitId === null ? sql`false` : sql`(${evidenceRecords.visibility} = 'division' and ${evidenceRecords.visibleOrgUnitId} = ${scope.orgUnitId})`;
       // P2-1(사용자 결정 2026-10-17): 확인 필요 줄(취소 줄이 등록된 원거래 등)은 공개 범위가 저장돼 있어도 팀원에게 내지 않는다.
-      return sql`((${team}) or (${division})) and not ${liveLinkExists} and ${evidenceRecords.archivedAt} is null and ${evidenceRecords.needsCheck} is null and not ${privateToOwnerType}`;
+      // 07.1-01(C-80 #3 · E-P1-01): 붙음 · 보관 · 확인 필요 · 경영관리만 종류 거름은 「공개」 상태 조각 하나가 맡는다(같은 판정 두 벌 금지) —
+      // 카드 미등록 · 음수 합계 줄도 이 조각이 뺀다.
+      return sql`((${team}) or (${division})) and (${stateWhere("published", cardFormats)})`;
     }
     case "none":
       return sql`false`;
@@ -188,9 +190,9 @@ function scopeWhere(scope: EvidenceScope): SQL {
 }
 
 // 06.1-08 풀(repositories/evidence-pool.ts)이 같은 범위 번역을 쓴다 — 새 범위 판정을 짓지 않는 얇은 내보내기(RP-5).
-export function evidenceScopeCondition(viewer: Viewer, scope: EvidenceScope): SQL {
+export function evidenceScopeCondition(viewer: Viewer, scope: EvidenceScope, cardFormats: readonly string[]): SQL {
   void viewer;
-  return scopeWhere(scope);
+  return scopeWhere(scope, cardFormats);
 }
 
 /** `[상태 ▾]` 값(UI-SPEC S2). 기본은 todo — 값이 없거나 모르는 값이면 domain이 todo로 읽는다. */
@@ -262,7 +264,7 @@ export async function countPublishedUnattachedBefore(
 
 // 목록 조건 — 범위 + 상태 · 종류 · 기간 · 묶음. 합계 · 그룹 건수 · 쪽 · 제안이 모두 이 한 조건을 쓴다(합계가 쪽만 더하지 않게).
 function listWhere(scope: EvidenceScope, filters: EvidenceRecordFilters): SQL {
-  const parts: SQL[] = [sql`(${scopeWhere(scope)})`, sql`(${stateWhere(filters.state, filters.cardFormats)})`];
+  const parts: SQL[] = [sql`(${scopeWhere(scope, filters.cardFormats)})`, sql`(${stateWhere(filters.state, filters.cardFormats)})`];
   if (filters.evidenceType !== null) parts.push(sql`${evidenceRecords.evidenceType} = ${filters.evidenceType}`);
   if (filters.issuedOn !== null) {
     parts.push(sql`${evidenceRecords.issuedOn} >= ${filters.issuedOn.from}::date and ${evidenceRecords.issuedOn} < ${filters.issuedOn.before}::date`);
@@ -293,6 +295,7 @@ export type EvidenceRecordListRow = {
   cardLast4: string | null;
   needsCheck: string | null;
   originalApprovalNo: string | null;
+  createdAt: Date;
   visibility: string;
   visibleTeamId: string | null;
   archivedAt: Date | null;
@@ -321,6 +324,7 @@ const LIST_COLUMNS = {
   cardLast4: evidenceRecords.cardLast4,
   needsCheck: evidenceRecords.needsCheck,
   originalApprovalNo: evidenceRecords.originalApprovalNo,
+  createdAt: evidenceRecords.createdAt,
   visibility: evidenceRecords.visibility,
   visibleTeamId: evidenceRecords.visibleTeamId,
   archivedAt: evidenceRecords.archivedAt,
@@ -357,21 +361,22 @@ export async function listRecordsForScope(
 }
 
 // 단건 — 목록과 같은 범위(범위 밖 · 보관 = 없음). 06.1-06 · 07 · 08이 이 함수만 부른다.
-export async function findRecordForScope(viewer: Viewer, scope: EvidenceScope, id: string): Promise<EvidenceRecordListRow | null> {
+// cardFormats는 선택이다(07.1-01) — 빈 배열이면 카드 미등록 거름만 빠지고 나머지 갈래는 선다(붙이기 경로가 카드 미등록을 스스로 다시 거부한다).
+export async function findRecordForScope(viewer: Viewer, scope: EvidenceScope, id: string, cardFormats: readonly string[] = []): Promise<EvidenceRecordListRow | null> {
   void viewer;
   if (scope.rows === "none") return null;
   const [row] = await selectList(db)
-    .where(and(eq(evidenceRecords.id, id), sql`(${scopeWhere(scope)})`))
+    .where(and(eq(evidenceRecords.id, id), sql`(${scopeWhere(scope, cardFormats)})`))
     .limit(1);
   return row ?? null;
 }
 
 // O-6106: 저장한 줄을 id로 다시 읽는다(같은 범위) — 화면이 그 줄을 다음 불러오기까지 제자리에 두고 상태 글자만 바꾼다.
-export async function listRecordsByIdsForScope(viewer: Viewer, scope: EvidenceScope, ids: readonly string[]): Promise<EvidenceRecordListRow[]> {
+export async function listRecordsByIdsForScope(viewer: Viewer, scope: EvidenceScope, ids: readonly string[], cardFormats: readonly string[]): Promise<EvidenceRecordListRow[]> {
   void viewer;
   if (scope.rows === "none" || ids.length === 0) return [];
   return selectList(db)
-    .where(and(sql`${evidenceRecords.id} = ANY(${sql.param([...ids])}::uuid[])`, sql`(${scopeWhere(scope)})`))
+    .where(and(sql`${evidenceRecords.id} = ANY(${sql.param([...ids])}::uuid[])`, sql`(${scopeWhere(scope, cardFormats)})`))
     .orderBy(...LIST_ORDER);
 }
 
@@ -397,10 +402,10 @@ export async function countAndSumForScope(viewer: Viewer, scope: EvidenceScope, 
 }
 
 // 범위 안에 줄이 하나라도 있나(보관 포함 — 보관 줄만 있어도 등록한 적은 있다). 빈 상태 글자 · 필터 줄을 가른다.
-export async function hasAnyRecordForScope(viewer: Viewer, scope: EvidenceScope): Promise<boolean> {
+export async function hasAnyRecordForScope(viewer: Viewer, scope: EvidenceScope, cardFormats: readonly string[]): Promise<boolean> {
   void viewer;
   if (scope.rows === "none") return false;
-  const [row] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(scopeWhere(scope)).limit(1);
+  const [row] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(scopeWhere(scope, cardFormats)).limit(1);
   return row !== undefined;
 }
 

@@ -166,7 +166,8 @@ describe("attachEvidenceAsAuthor — 거부 (RP-4 · 못 보는 대상은 같은
     const intake = await createIntakeManager();
     const draft = await createDraftExpenseFixture(fx);
     const negative = await publish(intake, { supplyKrw: -50_000 });
-    expect(await messageOf(attachEvidenceAsAuthor(fx.pm, { evidenceIds: [negative], owner: owner(draft) }))).toMatch(/바꿈 · 새로 고침$/);
+    // 07.1-01: 음수 줄은 팀 공개로 저장돼 있어도 팀 사람 범위(published)에 들지 않는다 — 못 보는 줄과 같은 거부.
+    expect(await messageOf(attachEvidenceAsAuthor(fx.pm, { evidenceIds: [negative], owner: owner(draft) }))).toBe("없는 증빙 · 새로 고침");
     expect(await liveLinks(negative)).toHaveLength(0);
   });
 

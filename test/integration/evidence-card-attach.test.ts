@@ -407,7 +407,7 @@ describe("S2 행 행동 배타 · M10 표식(06.1-09 Task 3)", () => {
     expect(await rowOf(fx.manager, blocked)).toMatchObject({ canProxy: false, canAttach: false, actionBlockedReason: `증빙 있음 · ${held.number}` });
 
     const noProxy = await createIntakeManager("대리 없음", { payments: true });
-    expect(await rowOf(noProxy, none)).toMatchObject({ canProxy: false, canAttach: false, actionBlockedReason: null });
+    expect(await rowOf(noProxy, none)).toMatchObject({ canProxy: false, canAttach: false, actionBlockedReason: "대리 등록 · 경영관리" });
 
     await db.update(evidenceRecords).set({ archivedAt: new Date(), archivedBy: fx.manager.id }).where(eq(evidenceRecords.id, none));
     expect(await rowOf(fx.manager, none)).toMatchObject({ canProxy: false, canAttach: false, actionBlockedReason: null });

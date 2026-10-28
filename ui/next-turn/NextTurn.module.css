@@ -115,17 +115,27 @@
 
   .why {
     grid-row: 2;
-    grid-column: 3;
+    grid-column: 3 / -1; /* 2행 4번째 칸(행동 칸 아래)은 비어 있다 — 이유가 거기까지 쓴다 */
     min-width: 0;
     font-size: var(--text-aux);
-    white-space: normal; /* .grow(contents)의 nowrap을 물려받지 않는다 */
+    /* 07.1-17 G10: 이유는 한 줄 말줄임 — 줄바꿈하면 폰 줄이 3줄이 된다. 전체 글자는 title로 남는다. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* §10 터치 목표 44 — 글자 위치는 그대로 두고 닿는 영역만 위아래로 늘린다. */
-  .action .tertiary {
+  /* §10 터치 목표 44 — 링크 상자는 글자 높이 그대로 두어 밑줄이 글자 바로 아래에 그려지고, 닿는 영역만 ::after가 위아래로 늘린다.
+     padding으로 늘리면 밑줄이 상자 맨 아래로 내려가 이유 칸(4번째 칸까지 넓다)의 글자를 가로지른다. 링크(a)에만 건다 — 위로는 s-1만 늘린다(s-3이면 윗줄 결재 열기 단추의 ::after를 덮어 줄 아래쪽 누름이 아랫줄 링크로 샌다). 결재 줄의 열기 단추(.phoneTap)는
+     자기 ::after로 행 전체를 덮으므로 여기서 position을 주면 덮는 범위가 단추로 줄어든다. */
+  .action a.tertiary {
     display: inline-block;
-    padding: var(--s-3) 0;
-    margin: calc(-1 * var(--s-3)) 0;
+    position: relative;
+  }
+
+  .action a.tertiary::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--s-1)) 0 calc(-1 * var(--s-4));
   }
 }
 

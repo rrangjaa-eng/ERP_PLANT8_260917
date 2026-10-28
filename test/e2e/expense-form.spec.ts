@@ -636,4 +636,69 @@ test.describe("증빙일 칸 — 증빙 붙으면 숨김 · 떼면 다시 (07.1-
     await expect.poll(() => page.evaluate(() => document.activeElement?.tagName ?? "BODY")).not.toBe("BODY");
     await page.context().close();
   });
+
+  // #324 P2 회귀: 저장된 증빙일이 있는 문서에 증빙만 붙여 칸이 숨어도 바뀜이 아니다 — 떠날 때 beforeunload 경고가 없다.
+  async function draftWithSavedDate(): Promise<{ fx: ExpenseE2E; expenseId: string }> {
+    const fx = await setupExpenseE2E();
+    const manager = await createIntakeManager();
+    const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+    await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id], fields: { note: "행사 운영비" } });
+    const expenseId = created.created[0]?.expenseId;
+    if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+    await saveExpenseDraft(fx.pm.viewer, { expenseId, expectedVersion: 1, fields: { evidenceDate: "2026-10-20" } });
+    return { fx, expenseId };
+  }
+
+  async function pickEvidence(page: Page): Promise<void> {
+    await page.getByRole("button", { name: /^증빙 고르기/ }).click();
+    const dialog = page.getByRole("dialog", { name: "증빙 고르기" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("[aria-busy]")).toHaveCount(0);
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible")).toHaveCount(1);
+    await expect(page.locator("#evidenceDate")).toHaveCount(0);
+  }
+
+  test("저장된 증빙일이 있는 문서에 증빙을 붙여 칸이 숨어도 바뀜이 아니다 — 떠날 때 beforeunload 0", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const { fx, expenseId } = await draftWithSavedDate();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^증빙 고르기/ }));
+    await expect(page.locator("#evidenceDate")).toHaveValue("2026-10-20");
+    await pickEvidence(page);
+
+    const dialogs: string[] = [];
+    page.on("dialog", (dialog) => {
+      dialogs.push(dialog.type());
+      void dialog.dismiss();
+    });
+    await page.close({ runBeforeUnload: true });
+    await expect.poll(() => page.isClosed()).toBe(true);
+    expect(dialogs).toEqual([]);
+    await page.context().close();
+  });
+
+  test("숨기기 전에 고쳐 적은 증빙일은 떼어 칸이 다시 서면 저장값(DB)으로 돌아온다", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const { fx, expenseId } = await draftWithSavedDate();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^증빙 고르기/ }));
+    await page.locator("#evidenceDate").fill("2026-10-25");
+    await pickEvidence(page);
+
+    await page.getByRole("button", { name: "떼기" }).click();
+    const detach = page.getByRole("dialog", { name: "증빙 떼기" });
+    await expect(detach).toBeVisible();
+    await detach.getByLabel("사유").fill("잘못 고름");
+    await detach.getByRole("button", { name: /^증빙 떼기/ }).click();
+    await expect(detach).toHaveCount(0);
+    await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+    await expect(page.locator("#evidenceDate")).toHaveValue("2026-10-20");
+    expect(await evidenceDateOf(expenseId)).toBe("2026-10-20");
+    await page.context().close();
+  });
 });

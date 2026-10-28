@@ -11,9 +11,11 @@ import { loadExpenseSchedules, scheduleOf, TEAM_EXPENSE_KIND_LABELS, type TeamEx
 import { payWeekIndex, type PaySchedule } from "@/domain/payments/pay-schedule";
 import {
   EXPENSE_GROUP_RANKS,
+  listExpenseMonths,
   listExpensePage,
   listUnpaidApprovedScheduleSources,
   summarizeExpenseList,
+  type ExpenseListFilter,
   type ExpenseListRow as RepoRow,
   type ExpenseScope,
   type ExpenseSearch,
@@ -24,6 +26,8 @@ import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { loadPrepaidDueDays } from "@/domain/evidence-reviews";
 import { prepaidDueInfo } from "@/domain/evidence-reviews/prepaid";
 import { findListPaymentStatusByIds, type ListPaymentStatusRow } from "@/repositories/payment-targets";
+import { listTeams as listTeamRows } from "@/repositories/teams";
+import type { RowScope } from "@/domain/permissions/scope-for";
 
 export type { ExpenseListRowDto } from "@/domain/expenses/dto";
 
@@ -113,6 +117,9 @@ export type ExpenseList = {
   // 보임 범위 안 지출결의가 하나라도 있나(보기와 무관) — 거짓이면 화면이 `empty` 슬롯을 쓴다.
   hasAny: boolean;
   page: { page: number; pageCount: number; total: number; pageSize: number };
+  // 07.1-09(PF4): 팀 select 옵션(보는 범위 안 활성 팀 — 범위가 팀 하나 이하면 빈 목록 = select를 그리지 않는다) · 월 select 옵션(등록 월, 최신 먼저).
+  teams: { value: string; label: string }[];
+  months: string[];
 };
 
 function teamKindLabel(kind: string | null): string | null {
@@ -178,10 +185,23 @@ function toSource(row: RepoRow, schedule: PaySchedule, currentSteps: Map<string,
   };
 }
 
+// 07.1-09: 월 거름 형식 — 지급 보기 MONTH_SHAPE(payments/targets.ts)는 내보내지 않은 상수이고 그 파일은 다른 플랜 몫이라 같은 정규식을 둔다. 틀린 월은 거름 무시.
+const FILTER_MONTH_SHAPE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+// 07.1-09(PF4 · P3): 팀 옵션은 행 범위 모양별 — 전사는 활성 팀 전부, 본부 범위는 그 본부의 활성 팀(둘 미만이면 없음), 팀 · 본인 · 없음은 빈 목록.
+async function teamOptionsFor(viewer: Viewer, rowScope: RowScope): Promise<{ value: string; label: string }[]> {
+  if (rowScope.rows === "none") return [];
+  if (rowScope.rows === "limited" && rowScope.by.kind !== "org_unit") return [];
+  const active = await listTeamRows(viewer, { scope: { rows: "all", includeArchived: false } });
+  const inScope = rowScope.rows === "all" ? active : active.filter((team) => rowScope.by.kind === "org_unit" && rowScope.by.orgUnitId !== null && team.orgUnitId === rowScope.by.orgUnitId);
+  if (rowScope.rows === "limited" && inScope.length < 2) return [];
+  return inScope.map((team) => ({ value: team.id, label: team.name }));
+}
+
 // 07-06(AQ-01 · B-P2-1): 보이는 미지급 승인 건(검색 포함)의 유효 예정일 ↑ → 번호 → id 순 id 배열. 승인 묶음이 보기에 없으면 읽지 않는다.
-async function approvedOrderOf(viewer: Viewer, input: { scope: ExpenseScope; ranks: readonly number[]; search?: ExpenseSearch }): Promise<string[]> {
+async function approvedOrderOf(viewer: Viewer, input: { scope: ExpenseScope; ranks: readonly number[]; search?: ExpenseSearch; filter?: ExpenseListFilter }): Promise<string[]> {
   if (!input.ranks.includes(EXPENSE_GROUP_RANKS.approved)) return [];
-  const sources = await listUnpaidApprovedScheduleSources(viewer, { scope: input.scope, documentKind: EXPENSE_DOCUMENT_KIND, ...(input.search ? { search: input.search } : {}) });
+  const sources = await listUnpaidApprovedScheduleSources(viewer, { scope: input.scope, documentKind: EXPENSE_DOCUMENT_KIND, ...(input.search ? { search: input.search } : {}), ...(input.filter ? { filter: input.filter } : {}) });
   const loaded = await loadExpenseSchedules(viewer, sources);
   const keyed = sources.map((source) => ({ id: source.id, number: source.number ?? "", payDate: scheduleOf(loaded, source.id).payDate }));
   keyed.sort((a, b) => (a.payDate !== b.payDate ? (a.payDate < b.payDate ? -1 : 1) : a.number !== b.number ? (a.number < b.number ? -1 : 1) : a.id < b.id ? -1 : 1));
@@ -190,7 +210,7 @@ async function approvedOrderOf(viewer: Viewer, input: { scope: ExpenseScope; ran
 
 export async function listExpenses(
   viewer: Viewer,
-  input: { status: ExpenseListStatus; page?: string | number; q?: string | null },
+  input: { status: ExpenseListStatus; page?: string | number; q?: string | null; team?: string | null; month?: string | null; mine?: boolean },
   deps?: { today?: string; pageSize?: number },
 ): Promise<ExpenseList> {
   if (!(await can(viewer, "expenses", "view"))) throw new ForbiddenError("지출결의 보기 권한 없음");
@@ -202,7 +222,11 @@ export async function listExpenses(
     visible(viewer, "expense.amount"),
     buildExpenseSearch(viewer, "list", input.q),
   ]);
-  const summary = await summarizeExpenseList(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, ...(search ? { search } : {}) });
+  // 07.1-09: 모르는 팀 · 모양이 틀린 팀 값은 저장소 글자 비교로 결과 0(범위 AND라 넓어지지 않는다) · 틀린 월은 거름 무시.
+  const team = input.team?.trim() ? input.team.trim() : null;
+  const month = input.month && FILTER_MONTH_SHAPE.test(input.month) ? input.month : null;
+  const filter: ExpenseListFilter | undefined = team || month || input.mine ? { teamId: team, month, drafterId: input.mine ? viewer.id : null } : undefined;
+  const summary = await summarizeExpenseList(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, ...(search ? { search } : {}), ...(filter ? { filter } : {}) });
   const pageCount = pageCountFrom(summary.viewCount, pageSize);
   const page = clampPage(input.page, pageCount);
   const rows =
@@ -214,12 +238,18 @@ export async function listExpenses(
           limit: pageSize,
           offset: (page - 1) * pageSize,
           ...(search ? { search } : {}),
-          approvedOrder: await approvedOrderOf(viewer, { scope, ranks, ...(search ? { search } : {}) }),
+          ...(filter ? { filter } : {}),
+          approvedOrder: await approvedOrderOf(viewer, { scope, ranks, ...(search ? { search } : {}), ...(filter ? { filter } : {}) }),
         })
       : [];
   const drafterColumn =
     scope.rowScope.rows === "all" || (scope.rowScope.rows === "limited" && scope.rowScope.by.kind !== "own") || summary.othersCount > 0;
-  const [payments, loaded] = await Promise.all([paymentStatuses(viewer, rows, today), loadExpenseSchedules(viewer, rows)]);
+  const [payments, loaded, teamOptions, months] = await Promise.all([
+    paymentStatuses(viewer, rows, today),
+    loadExpenseSchedules(viewer, rows),
+    teamOptionsFor(viewer, scope.rowScope),
+    listExpenseMonths(viewer, { scope, documentKind: EXPENSE_DOCUMENT_KIND }),
+  ]);
   const projected = await projectMany(
     viewer,
     rows.map((row) => toSource(row, scheduleOf(loaded, row.id), scope.currentSteps, payments.get(row.id))),
@@ -242,5 +272,7 @@ export async function listExpenses(
     amountColumn,
     hasAny: summary.visibleCount > 0,
     page: { page, pageCount, total: summary.viewCount, pageSize },
+    teams: teamOptions,
+    months,
   };
 }

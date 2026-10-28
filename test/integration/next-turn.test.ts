@@ -816,6 +816,19 @@ describe("「내 차례」 Phase 6 — 전표 대기 줄 (07.1-17 PD1)", () => {
     expect(await waitingCount(manager)).toBe(before + 1);
   });
 
+  it("원 구매 요청에 증빙 붙임이 있으면(카드 목록 `증빙` 있음) 세지 않는다 · 붙임을 떼면 다시 센다 (#321 /review P2 — 카드 목록 `listCardUsages`의 구매 요청 증빙 OR)", async () => {
+    const manager = await makeFinanceManager();
+    const before = await waitingCount(manager);
+    const target = await requestWithUsage();
+    expect(await waitingCount(manager)).toBe(before + 1);
+
+    const linkId = await insertLinkFixture({ recordId: await insertRecordFixture(manager), ownerKind: "purchase_request", ownerId: target.requestId, attachedBy: manager.id });
+    expect(await waitingCount(manager)).toBe(before);
+
+    await db.update(evidenceRecordLinks).set({ detachedAt: new Date(), detachedBy: manager.id, detachReason: "시험" }).where(eq(evidenceRecordLinks.id, linkId));
+    expect(await waitingCount(manager)).toBe(before + 1);
+  });
+
   it("`cards.purchases` write 없는 사람 → 줄 없음 · 집계 함수를 부르지 않는다 (T-07.1-17-01)", async () => {
     await requestWithUsage();
     const viewer = await roleViewer("구매권한없음", [{ menu: "expenses", action: "view" }], ["purchase_request.value"]);

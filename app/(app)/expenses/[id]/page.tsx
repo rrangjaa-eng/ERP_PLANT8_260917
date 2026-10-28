@@ -28,22 +28,19 @@ import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { ExpenseDocument } from "./expense-document";
 import { EvidenceRecordsSection, type EvidencePickState, type LinkedEvidenceItem } from "./evidence-records-section";
 import { listLinkedEvidence } from "@/domain/evidence-records/linked";
-import { countEvidencePool, countRecommendedEvidence, evidencePickerMode } from "@/domain/evidence-records/pool";
+import { countRecommendedEvidence } from "@/domain/evidence-records/pool";
 import { DeleteDraftButton } from "./delete-draft-button";
 import { CloseExpenseButton } from "./close-expense-button";
 import { ExpenseForm } from "./expense-form";
 import styles from "./expense.module.css";
 
 // 06.1-08(S5): 증빙 고르기 트리거 재료 — 모드가 none이거나 후보가 0이면 null(트리거 DOM 0). 못 읽으면 트리거만 비운다(문서는 이미 읽기 판정을 지났다).
-// 07.1-09(E-P2-28): 트리거는 모든 종류의 붙일 수 있는 후보 수로 가르고(추천 0이어도 다른 종류가 있으면 검색으로 닿는다), 부제 N은 같은 종류 추천 수다.
+// 07.1-09(E-P2-28 · #320 B-1): 트리거를 보일지는 모든 종류의 붙일 수 있는 후보 수(total)로 가르고(추천 0이어도 다른 종류가 있으면 검색으로 닿는다), 트리거 글자 N은 같은 종류 추천 수(count)다 — 한 번 읽는다.
 async function readEvidencePick(viewer: Viewer, id: string): Promise<EvidencePickState | null> {
   try {
-    const { mode } = await evidencePickerMode(viewer, { kind: "expense", id });
-    if (mode === "none") return null;
-    const triggerCount = await countEvidencePool(viewer, { kind: "expense", id });
-    if (triggerCount < 1) return null;
     const recommended = await countRecommendedEvidence(viewer, id);
-    return { ownerKind: "expense", ownerId: id, mode, count: triggerCount, recommended: recommended.count, typeLabel: recommended.typeLabel };
+    if (recommended.mode === "none" || recommended.total < 1) return null;
+    return { ownerKind: "expense", ownerId: id, mode: recommended.mode, count: recommended.count, typeLabel: recommended.typeLabel };
   } catch {
     return null;
   }

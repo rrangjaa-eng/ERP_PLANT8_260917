@@ -8,7 +8,7 @@ import { db } from "@/db/client";
 import { expenses, projects, purchaseRequests } from "@/db/schema";
 import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, submitExpense, withdrawExpense } from "@/domain/expenses";
-import { countEvidencePool, countRecommendedEvidence } from "@/domain/evidence-records/pool";
+import { countRecommendedEvidence } from "@/domain/evidence-records/pool";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -128,7 +128,9 @@ async function lockLines(page: Page): Promise<string[]> {
   }, LOCK_RE.source);
 }
 
-const pickTrigger = (page: Page) => page.getByRole("button", { name: /^증빙 고르기 \d+$/ });
+const pickTrigger = (page: Page) => page.getByRole("button", { name: /^증빙 고르기( \d+)?$/ });
+// 07.1-09(#320 B-1): 트리거 글자 N = 문서 증빙 종류와 같은 종류의 붙일 수 있는 후보 수(06.1-UI-SPEC S5 · D-7124) — 0이면 숫자 없이 `증빙 고르기`.
+const triggerLabelOf = (n: number): string => (n > 0 ? `증빙 고르기 ${n}` : "증빙 고르기");
 const pickDialog = (page: Page) => page.getByRole("dialog", { name: "증빙 고르기" });
 
 // 「증빙」 섹션(트리거를 품은 블록)과 폼 · 고정 행동 줄의 자리 — 폼 분기에서 섹션을 폼 위로 옮긴 배치(편차 4)를 잰다.
@@ -384,7 +386,7 @@ test("P1 작성자 1팀 PM — 임시 문서 「증빙」 섹션 · S5 (4폭) ·
   await insertRecordFixture(manager, { nameOnDocument: names.hidden });
   const expenseId = await draftDocument(fx);
   const url = `/expenses/${expenseId}`;
-  const serverN = await countEvidencePool(fx.pm.viewer, { kind: "expense", id: expenseId });
+  const serverN = (await countRecommendedEvidence(fx.pm.viewer, expenseId)).count;
   const page = await loginPage(browser, baseURL, fx.pm);
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: PHONE(width) ? 700 : 900 });
@@ -394,7 +396,7 @@ test("P1 작성자 1팀 PM — 임시 문서 「증빙」 섹션 · S5 (4폭) ·
     await waitForHydration(trigger);
     await page.waitForLoadState("networkidle");
     const label = (await trigger.textContent())?.trim() ?? "";
-    record("트리거 글자 N = 서버가 센 후보 수", width, role, url, { label, serverN }, `증빙 고르기 ${serverN}`, label === `증빙 고르기 ${serverN}`);
+    record("트리거 글자 N = 서버가 센 추천 후보 수(같은 종류)", width, role, url, { label, serverN }, triggerLabelOf(serverN), label === triggerLabelOf(serverN));
     const ov = await docOverflow(page);
     record("문서 scrollWidth <= clientWidth", width, role, url, ov.join("/"), "scrollWidth <= clientWidth", ov[0] <= ov[1]);
     const tb = await box(trigger);
@@ -422,7 +424,7 @@ test("P1 작성자 1팀 PM — 임시 문서 「증빙」 섹션 · S5 (4폭) ·
     const hiddenLeak = ((await pickDialog(page).textContent()) ?? "").includes(names.hidden);
     record("S5 비공개 증빙이 PM 후보에 없음", width, role, url, hiddenLeak, false, !hiddenLeak);
     await shot(page, `p1-s5-${width}`);
-    await closeAndCheckFocus(page, width, role, url, /^button«증빙 고르기 \d+»/, "트리거");
+    await closeAndCheckFocus(page, width, role, url, /^button«증빙 고르기( \d+)?»/, "트리거");
   }
 
   // 키보드 · 빈 결과 · 고른 것 0 · 실패 · 붙인 뒤(1280).
@@ -494,7 +496,7 @@ test("P1 작성자 1팀 PM — 임시 문서 「증빙」 섹션 · S5 (4폭) ·
   record("S5 Enter 뒤 읽기 행 2행 `{이름} 고름 · {MM-DD}`", width, role, url, readRow, `${fx.pm.name} 고름 · ${mmdd}`, readRow.includes(`${fx.pm.name} 고름 · ${mmdd}`));
   await page.waitForTimeout(600);
   const focusAfter = await activeDescription(page);
-  record("S5 붙인 뒤 포커스 = 트리거(후보 남음) 또는 첫 행동", width, role, url, focusAfter, "button«증빙 고르기 N» / button«떼기»", /^button«(증빙 고르기 \d+|떼기)/.test(focusAfter));
+  record("S5 붙인 뒤 포커스 = 트리거(후보 남음) 또는 첫 행동", width, role, url, focusAfter, "button«증빙 고르기 N» / button«떼기»", /^button«(증빙 고르기( \d+)?|떼기)/.test(focusAfter));
   for (const w of [375, 320] as const) {
     await page.setViewportSize({ width: w, height: 700 });
     await page.goto(url);
@@ -543,9 +545,9 @@ test("P2 문서 상태 × 작성자 — 반려 · 회수 · 승인(완료 아님
       await page.goto(url);
       await page.waitForLoadState("networkidle");
       const n = await pickTrigger(page).count();
-      const serverN = c.trigger ? await countEvidencePool(fx.pm.viewer, { kind: "expense", id: c.id }) : 0;
+      const serverN = c.trigger ? (await countRecommendedEvidence(fx.pm.viewer, c.id)).count : 0;
       const label = n > 0 ? ((await pickTrigger(page).first().textContent()) ?? "").trim() : null;
-      record(`${c.label} 트리거 ${c.trigger ? "있음 · N = 서버" : "없음"}`, width, role, url, { n, label }, c.trigger ? `증빙 고르기 ${serverN}` : 0, c.trigger ? n === 1 && label === `증빙 고르기 ${serverN}` : n === 0);
+      record(`${c.label} 트리거 ${c.trigger ? "있음 · N = 서버" : "없음"}`, width, role, url, { n, label }, c.trigger ? triggerLabelOf(serverN) : 0, c.trigger ? n === 1 && label === triggerLabelOf(serverN) : n === 0);
       const locks = await lockLines(page);
       record(`${c.label} 잠김 줄 ≤ 1${c.lock ? ` · = ${c.lock}` : ""}`, width, role, url, locks, c.lock ? [c.lock] : "≤ 1", c.lock ? locks.length === 1 && locks[0] === c.lock : locks.length <= 1);
       const primary = await page.locator('main [data-ui="primary-button"]:visible').count();
@@ -624,7 +626,7 @@ test("P3 결재 중 문서 × 다섯 자격 — 1팀 PM · 1팀 팀장 · 2팀 P
   await kl.context().close();
 
   const k = await asRole(browser, baseURL, keyed.roleId);
-  const keyedN = await countEvidencePool(keyed, { kind: "expense", id: expenseId });
+  const keyedN = (await countRecommendedEvidence(keyed, expenseId)).count;
   for (const width of WIDTHS) {
     await k.setViewportSize({ width, height: PHONE(width) ? 700 : 900 });
     await k.goto(url);
@@ -632,7 +634,7 @@ test("P3 결재 중 문서 × 다섯 자격 — 1팀 PM · 1팀 팀장 · 2팀 P
     await waitForHydration(trigger);
     const label = ((await trigger.textContent()) ?? "").trim();
     const detach = await k.getByRole("button", { name: /^(떼기|무효 처리)$/ }).count();
-    record("경영관리 키 있음 — 트리거 하나 · N = 서버 · 떼기 0", width, "경영관리(키 있음)", url, { label, keyedN, detach }, `증빙 고르기 ${keyedN} · 떼기 0`, label === `증빙 고르기 ${keyedN}` && detach === 0);
+    record("경영관리 키 있음 — 트리거 하나 · N = 서버 · 떼기 0", width, "경영관리(키 있음)", url, { label, keyedN, detach }, `${triggerLabelOf(keyedN)} · 떼기 0`, label === triggerLabelOf(keyedN) && detach === 0);
     const locks = await lockLines(k);
     record("경영관리 키 있음 — 잠김 줄 ≤ 1", width, "경영관리(키 있음)", url, locks, "≤ 1", locks.length <= 1);
     const ov = await docOverflow(k);
@@ -641,7 +643,7 @@ test("P3 결재 중 문서 × 다섯 자격 — 1팀 PM · 1팀 팀장 · 2팀 P
     await trigger.click();
     await measureDialog(k, width, "경영관리(키 있음)", url, { expectPreselect: false });
     await shot(k, `p3-keyed-s5-${width}`);
-    await closeAndCheckFocus(k, width, "경영관리(키 있음)", url, /^button«증빙 고르기 \d+»/, "트리거");
+    await closeAndCheckFocus(k, width, "경영관리(키 있음)", url, /^button«증빙 고르기( \d+)?»/, "트리거");
   }
   await k.context().close();
 });
@@ -890,7 +892,7 @@ test("P6 (G-06.1-29) 작성자 — 고르기 붙인 직후 · 마지막 떼기 �
     preview.release();
     record("⑻ 붙인 읽기 행 직후 한 번 읽은 1차 aria-disabled(재판정 대기 중 true)", width, role, url, immediate, "true", immediate === "true");
     const focusAfterPick = await activeDescription(page);
-    record("⑺ 고르기 모달 닫힘 뒤 document.activeElement(06.1-08: 트리거 또는 떼기)", width, role, url, focusAfterPick, "button«증빙 고르기 N» / button«떼기»", /^(button«(증빙 고르기 \d+|떼기)|body)/.test(focusAfterPick) && !focusAfterPick.startsWith("body"));
+    record("⑺ 고르기 모달 닫힘 뒤 document.activeElement(06.1-08: 트리거 또는 떼기)", width, role, url, focusAfterPick, "button«증빙 고르기 N» / button«떼기»", /^(button«(증빙 고르기( \d+)?|떼기)|body)/.test(focusAfterPick) && !focusAfterPick.startsWith("body"));
 
     const samples: { t: string; ariaDisabled: string | null; reason: string }[] = [];
     let elapsed = 0;
@@ -930,7 +932,7 @@ test("P6 (G-06.1-29) 작성자 — 고르기 붙인 직후 · 마지막 떼기 �
     const after = await gate();
     record("⑷ 마지막 기록 뗀 뒤 1차 aria-disabled=true · 이유 줄 `증빙 없음 · 증빙 올리기`(1280·768 +` Ctrl+U`)", width, role, url, after, { ariaDisabled: "true", reason: reasonText }, after.ariaDisabled === "true" && after.reason === reasonText);
     const focusAfterDetach = await activeDescription(page);
-    record("⑺ 떼기 모달 닫힘 뒤 document.activeElement(06.1-08: 트리거 `증빙 고르기 N`)", width, role, url, focusAfterDetach, "button«증빙 고르기 N»", /^button«증빙 고르기 \d+/.test(focusAfterDetach));
+    record("⑺ 떼기 모달 닫힘 뒤 document.activeElement(06.1-08: 트리거 `증빙 고르기 N`)", width, role, url, focusAfterDetach, "button«증빙 고르기 N»", /^button«증빙 고르기( \d+)?/.test(focusAfterDetach));
     const primary2 = await page.locator('[data-ui="primary-button"]:visible').count();
     record("⑸ 뗀 뒤 화면 1차 DOM 수", width, role, url, primary2, 1, primary2 === 1);
     const ov2 = await docOverflow(page);
@@ -939,7 +941,7 @@ test("P6 (G-06.1-29) 작성자 — 고르기 붙인 직후 · 마지막 떼기 �
   }
 });
 
-// 07.1-09 D-7124(C-92) W10: 증빙 고르기 추천은 문서 증빙 종류와 같은 것만, 검색하면 다른 종류도 `{종류} · {거래처}`로 나온다. 부제 `후보 N`은 검색과 무관하고,
+// 07.1-09 D-7124(C-92) W10 · #320 B-1: 증빙 고르기 추천은 문서 증빙 종류와 같은 것만, 검색하면 다른 종류도 `{종류} · {거래처}`로 나온다. 트리거 N = 추천 수(0이면 숫자 없음) · 부제는 `번호 · 종류`뿐이다.
 // 추천 0이어도 트리거가 남아 `{종류} 증빙이 없습니다` + `검색으로 찾기`로 다른 종류에 닿는다. 문서 종류가 비면 지금처럼(종류 낱말 없음).
 test.describe("P7 같은 종류만 추천 (07.1-09 C-92)", () => {
   async function setDocType(expenseId: string, evidenceType: string | null): Promise<void> {
@@ -956,7 +958,7 @@ test.describe("P7 같은 종류만 추천 (07.1-09 C-92)", () => {
     return dialog;
   }
 
-  test("세금계산서 문서 — 추천은 세금계산서 둘뿐 · 부제 후보 2 · 검색하면 카드 줄이 `종류 · 거래처`로 나오고 부제는 그대로", async ({ browser, baseURL }) => {
+  test("세금계산서 문서 — 추천은 세금계산서 둘뿐 · 트리거 N = 2 · 검색하면 카드 줄이 `종류 · 거래처`로 나오고 부제는 그대로", async ({ browser, baseURL }) => {
     test.setTimeout(240_000);
     const fx = await setupExpenseE2E();
     const manager = await createIntakeManager("P7경영");
@@ -973,10 +975,11 @@ test.describe("P7 같은 종류만 추천 (07.1-09 C-92)", () => {
     const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 900 });
     await expect(async () => {
       await page.goto(`/expenses/${expenseId}`);
-      await expect(pickTrigger(page)).toHaveText("증빙 고르기 5");
+      await expect(pickTrigger(page)).toHaveText("증빙 고르기 2");
     }).toPass();
     const dialog = await open(page, expenseId);
-    await expect(dialog).toContainText(`${recommended.typeLabel} · 후보 2`);
+    await expect(dialog).toContainText(`${recommended.typeLabel}`);
+    await expect(dialog).not.toContainText("후보");
     const options = dialog.getByRole("option");
     await expect(options).toHaveCount(2);
     for (const option of await options.all()) await expect(option).toContainText(`P7세금`);
@@ -985,11 +988,11 @@ test.describe("P7 같은 종류만 추천 (07.1-09 C-92)", () => {
     await dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first().fill(`P7카드A${s}`);
     await expect(options).toHaveCount(1);
     await expect(options.first()).toContainText(new RegExp(`· P7카드A${s}`));
-    await expect(dialog).toContainText(`${recommended.typeLabel} · 후보 2`);
+    await expect(dialog).not.toContainText("후보");
     await page.context().close();
   });
 
-  test("추천 0 — 트리거가 남고, 부제 후보 0 · `{종류} 증빙이 없습니다` + `검색으로 찾기` → 검색으로 다른 종류 줄에 닿는다", async ({ browser, baseURL }) => {
+  test("추천 0 — 트리거가 숫자 없이 남고, 부제에 후보 낱말 없음 · `{종류} 증빙이 없습니다` + `검색으로 찾기` → 검색으로 다른 종류 줄에 닿는다", async ({ browser, baseURL }) => {
     test.setTimeout(240_000);
     const fx = await setupExpenseE2E();
     const manager = await createIntakeManager("P7경영0");
@@ -1003,10 +1006,10 @@ test.describe("P7 같은 종류만 추천 (07.1-09 C-92)", () => {
     const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 900 });
     await expect(async () => {
       await page.goto(`/expenses/${expenseId}`);
-      await expect(pickTrigger(page)).toHaveText("증빙 고르기 3");
+      await expect(pickTrigger(page)).toHaveText("증빙 고르기");
     }).toPass();
     const dialog = await open(page, expenseId);
-    await expect(dialog).toContainText(`${recommended.typeLabel} · 후보 0`);
+    await expect(dialog).not.toContainText("후보");
     await expect(dialog).toContainText(`${recommended.typeLabel} 증빙이 없습니다`);
     const next = dialog.getByRole("button", { name: "검색으로 찾기" });
     await expect(next).toHaveCount(1);
@@ -1018,7 +1021,7 @@ test.describe("P7 같은 종류만 추천 (07.1-09 C-92)", () => {
     await page.context().close();
   });
 
-  test("문서 증빙 종류가 비면 거름 없음 — 부제에 종류 낱말 없이 `후보 N`, 목록은 전부", async ({ browser, baseURL }) => {
+  test("문서 증빙 종류가 비면 거름 없음 — 부제에 종류 낱말 · 후보 낱말 없이, 트리거 N = 전부, 목록은 전부", async ({ browser, baseURL }) => {
     test.setTimeout(240_000);
     const fx = await setupExpenseE2E();
     const manager = await createIntakeManager("P7경영N");
@@ -1036,8 +1039,8 @@ test.describe("P7 같은 종류만 추천 (07.1-09 C-92)", () => {
     const dialog = await open(page, expenseId);
     await expect(dialog.getByRole("option")).toHaveCount(2);
     const subtitle = (await dialog.textContent()) ?? "";
-    expect(subtitle).toContain("후보 2");
-    expect(subtitle).not.toMatch(/세금계산서 · 후보|카드 전표 · 후보/);
+    expect(subtitle).not.toContain("후보");
+    expect(subtitle).not.toMatch(/세금계산서|카드 전표/);
     await page.context().close();
   });
 });

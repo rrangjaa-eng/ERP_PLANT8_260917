@@ -79,7 +79,7 @@ test.describe("07.1-09 디자인 검토 증거 캡처", () => {
       for (const viewport of VIEWPORTS) {
         await page.setViewportSize(viewport);
         await page.goto(`/expenses/${expenseId}`);
-        const trigger = page.getByRole("button", { name: /^증빙 고르기 \d+$/ });
+        const trigger = page.getByRole("button", { name: /^증빙 고르기( \d+)?$/ });
         await waitForHydration(trigger);
         await trigger.click();
         const dialog = dialogOf(page);

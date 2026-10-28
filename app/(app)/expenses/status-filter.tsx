@@ -79,10 +79,10 @@ export function StatusFilter({
         </div>
       ))}
       {mine ? (
-        <div className={styles.selectLabel}>
-          <label htmlFor="expense-filter-mine">내 것만</label>
+        <label className={styles.checkboxLabel}>
           <input key={String(mine.checked)} id="expense-filter-mine" name="mine" type="checkbox" value="1" defaultChecked={mine.checked} onChange={() => formRef.current?.requestSubmit()} />
-        </div>
+          내 것만
+        </label>
       ) : null}
       {endLink ? (
         <RowActions>

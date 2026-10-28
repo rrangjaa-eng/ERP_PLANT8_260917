@@ -20,6 +20,17 @@
   color: var(--text-muted);
 }
 
+/* 07.1-09(#320 B-2) 내 것만 — 관리자 활동 기록 필터 `.checkboxLabel`과 같은 선언(다른 라우트 CSS 모듈 import 금지 · 라우트마다 같은 이름으로 둔다). */
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  min-height: var(--touch-min);
+}
+
 .select {
   height: var(--control-h);
   border: var(--line-w) solid var(--border-control);

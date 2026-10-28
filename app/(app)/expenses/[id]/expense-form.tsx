@@ -268,7 +268,8 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
     content,
     prepaid,
     prepaid ? prepaidReason : "",
-    evidenceDate,
+    // #324 P3: 숨은 증빙일은 저장에 싣지 않으므로 바뀜 판정에서도 뺀다 — 모두 떼어 칸이 다시 서면 저장 안 된 값이 바뀜으로 잡힌다.
+    evidenceDateShown ? evidenceDate : "",
     headcountShown ? headcountRaw : "",
   ]);
   const [savedSnapshot, setSavedSnapshot] = useState(snapshot);

@@ -943,9 +943,14 @@ async function setEmploymentDate(
       }
       if (field === "hire_date") await repoUpdateUserHireDate(viewer, userId, value, tx);
       else await repoUpdateUserResignationDate(viewer, userId, value, tx);
+      // 07.1-13 S8: 잠금 뒤 재조회한 행(이전)과 쓴 값(이후) — 감사 때 무엇에서 무엇으로 바꿨는지 읽힌다.
+      const changes =
+        field === "hire_date"
+          ? buildChanges({ hireDate: fresh.hireDate }, { hireDate: value })
+          : buildChanges({ resignationDate: fresh.resignationDate }, { resignationDate: value });
       await recordActionInTx(
         viewer,
-        { actionType: "document_update", entity: "user", entityId: userId, detail: { field } },
+        { actionType: "document_update", entity: "user", entityId: userId, detail: { field, changes } },
         tx,
         gate,
         { appendActionLog: deps?.appendActionLog },

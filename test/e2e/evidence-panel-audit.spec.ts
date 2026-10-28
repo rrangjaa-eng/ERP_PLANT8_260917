@@ -86,8 +86,30 @@ async function offTokens(page: Page, root: string): Promise<string[]> {
   return [...bad].slice(0, 12);
 }
 
+// 문서가 넘치면(scrollWidth > clientWidth) 어느 요소가 넘치게 했는지 test-results에 남긴다(단언은 호출한 쪽 그대로 · F-12 진단).
 async function docOverflow(page: Page): Promise<[number, number]> {
-  return page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth] as [number, number]);
+  const [sw, cw] = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth] as [number, number]);
+  if (sw > cw) {
+    const offenders = await page.evaluate((viewport) => {
+      const describe = (el: Element): string => {
+        const parts: string[] = [];
+        for (let node: Element | null = el; node && node !== document.documentElement && parts.length < 4; node = node.parentElement) {
+          const id = node.id ? `#${node.id}` : "";
+          const ui = node.getAttribute("data-ui") ? `[data-ui=${node.getAttribute("data-ui")}]` : "";
+          const role = node.getAttribute("role") ? `[role=${node.getAttribute("role")}]` : "";
+          parts.unshift(`${node.tagName.toLowerCase()}${id}${ui}${role}`);
+        }
+        return parts.join(" > ");
+      };
+      return [...document.querySelectorAll("*")]
+        .map((el) => ({ el, rect: el.getBoundingClientRect() }))
+        .filter(({ el, rect }) => (el.scrollWidth > el.clientWidth && el.clientWidth > 0) || rect.right > viewport + 0.5)
+        .slice(0, 40)
+        .map(({ el, rect }) => ({ selector: describe(el), text: (el.textContent ?? "").trim().slice(0, 40), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width) }));
+    }, cw);
+    await test.info().attach(`doc-overflow-${cw}.json`, { body: JSON.stringify({ url: page.url(), scrollWidth: sw, clientWidth: cw, offenders }, null, 2), contentType: "application/json" });
+  }
+  return [sw, cw];
 }
 
 async function axe(page: Page): Promise<string[]> {

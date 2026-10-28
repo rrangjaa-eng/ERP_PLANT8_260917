@@ -23,6 +23,7 @@ import { findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { lineCardSideFacts } from "@/domain/corp-card-usages/link-targets";
 import { log } from "@/lib/log";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { moneyChangeText } from "@/domain/action-log/changes";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { projectRowScope } from "@/domain/projects/visibility";
@@ -290,7 +291,8 @@ export async function saveProjectLedger(
         denyWrite(viewer, PO_NUMBER_RULE, { projectId }, new UserFacingError(poNumberRejection));
       }
 
-      // A-16: 누가 무엇을 바꿨는지 — 바뀐 칸만 싣는다(총 매출 예상가는 금액 없이 표시만). 같은 tx, 한 줄.
+      // A-16: 누가 무엇을 바꿨는지 — 바뀐 칸만 싣는다. 같은 tx, 한 줄. 총 매출 예상가는 07.1-13(사용자 결정 카드
+      // 2026-10-28 01:03Z — 04-44 「금액 없이 표시만」을 바꿈)부터 preEstimateChanged 표시와 함께 전후 Money 글자를 싣는다.
       const changed: Record<string, unknown> = {};
 
       const resolved = input.period
@@ -331,6 +333,17 @@ export async function saveProjectLedger(
           locked.preEstimateAmountKrw !== columns.amountKrw
         ) {
           changed.preEstimateChanged = true;
+          changed.changes = {
+            preEstimate: [
+              moneyChangeText({
+                currency: locked.preEstimateCurrency,
+                foreignAmount: locked.preEstimateForeignAmount,
+                fxRate: locked.preEstimateFxRate,
+                amountKrw: locked.preEstimateAmountKrw,
+              }),
+              moneyChangeText(columns),
+            ],
+          };
         }
         await recordBudgetEvent(
           viewer,

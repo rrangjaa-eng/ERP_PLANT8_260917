@@ -216,7 +216,7 @@ describe("07-06 Task 2 — 세금 기준일 · 홈 지급 묶음 = 유효 예정
     const payer = await makePayer();
     const count = async () => {
       const entry = (await listPhase6NextTurnItems(payer, seoulToday())).find((item) => item.key === "phase6-payment");
-      const match = entry ? /예정일 지남·오늘 (\d+)건/.exec(entry.label) : null;
+      const match = entry && entry.reason.startsWith("예정일 지남·오늘") ? /^지급 (\d+)건$/.exec(entry.label) : null;
       return match ? Number(match[1]) : 0;
     };
     const before = await count();

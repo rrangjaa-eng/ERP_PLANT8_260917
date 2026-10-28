@@ -11,7 +11,17 @@ vi.mock("@/domain/purchase-requests", async () => {
 });
 vi.mock("@/repositories/next-turn", async () => {
   const actual = await vi.importActual<typeof import("@/repositories/next-turn")>("@/repositories/next-turn");
-  return { ...actual, listSettlingProjectsOfPm: vi.fn(actual.listSettlingProjectsOfPm), findOldestRequestedPurchaseAt: vi.fn(actual.findOldestRequestedPurchaseAt) };
+  return {
+    ...actual,
+    listSettlingProjectsOfPm: vi.fn(actual.listSettlingProjectsOfPm),
+    findOldestRequestedPurchaseAt: vi.fn(actual.findOldestRequestedPurchaseAt),
+    findCardSlipWaiting: vi.fn(actual.findCardSlipWaiting),
+  };
+});
+// 07.1-17(PF2): 구매 묶음은 목록 전체가 아니라 목록 합계가 쓰는 견적 질의를 부른다 — 호출을 센다.
+vi.mock("@/repositories/purchase-requests", async () => {
+  const actual = await vi.importActual<typeof import("@/repositories/purchase-requests")>("@/repositories/purchase-requests");
+  return { ...actual, listPurchaseRequestEstimates: vi.fn(actual.listPurchaseRequestEstimates) };
 });
 vi.mock("@/domain/issue-requests", async () => {
   const actual = await vi.importActual<typeof import("@/domain/issue-requests")>("@/domain/issue-requests");
@@ -34,7 +44,7 @@ vi.mock("@/domain/pre-settle-check", async () => {
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { randomBytes, randomUUID } from "node:crypto";
-import { approvalInstances, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, expenseEvidenceReviews, expensePayments, expenses, files, projects, purchaseRequests, teams } from "@/db/schema";
+import { approvalInstances, corpCardUsages, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, expenseEvidenceReviews, expensePayments, expenses, files, projects, purchaseRequests, teams } from "@/db/schema";
 import { approveDocument, getDocumentKind, listMyBlockedDocuments, listMyInbox, loadKindDetails, registerDocumentKind, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { closeExpense, createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
 import { listExpenseEvidenceSignals, pickExpenseEvidenceSignal } from "@/domain/expenses/evidence-signals";
@@ -59,12 +69,16 @@ import { seoulToday } from "@/lib/dates";
 import { listPurchaseRequests } from "@/domain/purchase-requests";
 import { summarizeOpenIssueRequests } from "@/domain/issue-requests";
 import { computePreSettleCheck, getPreSettleCheck, loadPreSettleInputs } from "@/domain/pre-settle-check";
-import { findOldestRequestedPurchaseAt, listSettlingProjectsOfPm } from "@/repositories/next-turn";
+import { findCardSlipWaiting, findOldestRequestedPurchaseAt, listSettlingProjectsOfPm } from "@/repositories/next-turn";
+import { listPurchaseRequestEstimates } from "@/repositories/purchase-requests";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
+import { insertFile } from "@/repositories/files";
+import { createCorpCard } from "@/domain/corp-cards";
+import { insertLinkFixture, insertRecordFixture, createCardUsageFixture } from "./fixtures/evidence";
 import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { formatKrw } from "@/lib/format-number";
@@ -414,7 +428,7 @@ describe("「내 차례」 Phase 6 — 지급 묶음 (06-23)", () => {
     return { fx, payer };
   }
 
-  it("지급 권한자 — [오늘] `지급 — 예정일 지남·오늘 1건 · 확인 전 1건` · 지급 총액 · `지급 대상 보기` → 지급 대상 목록", async () => {
+  it("지급 권한자 — [오늘] label `지급 1건` · reason `예정일 지남·오늘 · 확인 전 1건` · 지급 총액 · `지급 대상 보기` → 지급 대상 목록", async () => {
     const { payer } = await payerWithTarget();
 
     const items = await listNextTurnItems(payer, undefined, { today });
@@ -424,12 +438,30 @@ describe("「내 차례」 Phase 6 — 지급 묶음 (06-23)", () => {
       {
         key: "phase6-payment",
         tag: "오늘",
-        label: "지급 — 예정일 지남·오늘 1건 · 확인 전 1건",
-        reason: "",
+        label: "지급 1건",
+        reason: "예정일 지남·오늘 · 확인 전 1건",
         measureText: "13,640,000",
         action: { label: "지급 대상 보기", href: "/expenses?status=지급 대상" },
       },
     ]);
+  });
+
+  it("세 번째 인자 `phase6`(E-P2-45) — 넘긴 함수가 한 번 불리고 그 결과가 결재 · 막힘 뒤에 붙는다(지금 호출은 하지 않는다) · 안 넘기면 지금처럼 Phase 6를 계산", async () => {
+    const { payer } = await payerWithTarget();
+    const sentinel = { key: "phase6-sentinel", tag: "대기" as const, label: "시험 줄", reason: "", measureText: "", action: { label: "열기", href: "/x" } };
+    const phase6 = vi.fn(() => Promise.resolve([sentinel]));
+    vi.mocked(listAllPaymentTargets).mockClear();
+
+    const items = await listNextTurnItems(payer, undefined, { today, phase6 });
+
+    expect(phase6).toHaveBeenCalledTimes(1);
+    expect(items.at(-1)).toEqual(sentinel);
+    expect(items.filter((item) => item.key === "phase6-payment")).toEqual([]);
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
+
+    const plain = await listNextTurnItems(payer, undefined, { today });
+    expect(plain.filter((item) => item.key === "phase6-payment")).toHaveLength(1);
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(1);
   });
 
   it("대표 · 기안 직원 · 팀장 — 지급 줄이 없고 지급 대상 원천을 부르지 않는다", async () => {
@@ -530,7 +562,7 @@ function phase6Kinds(items: readonly { key: string }[]): string[] {
   return [...new Set(items.filter((item) => item.key.startsWith("phase6-")).map((item) => (item.key.startsWith("phase6-presettle-") ? "phase6-presettle" : item.key)))].sort();
 }
 
-const PHASE6_SOURCES = [listAllPaymentTargets, listPurchaseRequests, findOldestRequestedPurchaseAt, summarizeOpenIssueRequests, listSettlingProjectsOfPm, loadPreSettleInputs, computePreSettleCheck, getPreSettleCheck];
+const PHASE6_SOURCES = [listAllPaymentTargets, listPurchaseRequests, listPurchaseRequestEstimates, findCardSlipWaiting, findOldestRequestedPurchaseAt, summarizeOpenIssueRequests, listSettlingProjectsOfPm, loadPreSettleInputs, computePreSettleCheck, getPreSettleCheck];
 
 function clearSourceMocks(): void {
   for (const source of PHASE6_SOURCES) vi.mocked(source).mockClear();
@@ -570,6 +602,8 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
 
     expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
     expect(listPurchaseRequests).toHaveBeenCalledTimes(0);
+    expect(listPurchaseRequestEstimates).toHaveBeenCalledTimes(0);
+    expect(findCardSlipWaiting).toHaveBeenCalledTimes(0);
     expect(findOldestRequestedPurchaseAt).toHaveBeenCalledTimes(0);
     expect(summarizeOpenIssueRequests).toHaveBeenCalledTimes(0);
   });
@@ -589,13 +623,16 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
     expect(list.rows.map((row) => row.id)).not.toContain(oldestId);
     expect(list.totals).toEqual({ count: 51, estimateKrw: 57_000 });
 
+    clearSourceMocks();
     const items = await listNextTurnItems(purchaser, undefined, { today });
+    expect(listPurchaseRequests).toHaveBeenCalledTimes(0);
+    expect(listPurchaseRequestEstimates).toHaveBeenCalledTimes(1);
     expect(items.filter((item) => item.key === "phase6-purchase")).toEqual([
       {
         key: "phase6-purchase",
         tag: "대기",
-        label: "구매 요청 — 신청 51건 · 가장 오래된 09-18",
-        reason: "",
+        label: "구매 요청 51건",
+        reason: "신청 · 가장 오래된 09-18",
         measureText: formatKrw(57_000),
         action: { label: "구매 요청 보기", href: "/cards/purchases" },
       },
@@ -632,8 +669,8 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
       {
         key: "phase6-issue",
         tag: "대기",
-        label: "매출 발행 요청 — 2건 · 희망 09-30",
-        reason: "",
+        label: "매출 발행 요청 2건",
+        reason: "희망 09-30",
         measureText: "5,000,000",
         action: { label: "발행 요청 보기", href: "/projects/issue-requests" },
       },
@@ -656,10 +693,11 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
       [first, second].map(async (id) => ({ id, blocked: (await getPreSettleCheck(pm, id)).blockedCount })),
     );
     expect(expected.every((entry) => entry.blocked > 0)).toBe(true);
-    expect(items.map((item) => [item.tag, item.label, item.measureText, item.action.href]).sort()).toEqual(
+    // 07.1-17 사용자 결정(10/28): label = 프로젝트 이름, 이유 칸 = `완료 전 점검 {n}건`.
+    expect(items.map((item) => [item.tag, item.label, item.reason, item.measureText, item.action.href]).sort()).toEqual(
       [
-        ["막힘", `정산 하나 — 완료 전 점검 ${expected[0]?.blocked}건`, "—", `/projects/${first}#pre-settle-check`],
-        ["막힘", `정산 둘 — 완료 전 점검 ${expected[1]?.blocked}건`, "—", `/projects/${second}#pre-settle-check`],
+        ["막힘", "정산 하나", `완료 전 점검 ${expected[0]?.blocked}건`, "—", `/projects/${first}#pre-settle-check`],
+        ["막힘", "정산 둘", `완료 전 점검 ${expected[1]?.blocked}건`, "—", `/projects/${second}#pre-settle-check`],
       ].sort(),
     );
   });
@@ -679,7 +717,11 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
     clearSourceMocks();
     await listNextTurnItems(manager, undefined, { today });
     expect(listAllPaymentTargets).toHaveBeenCalledTimes(1);
-    expect(listPurchaseRequests).toHaveBeenCalledTimes(1);
+    // 07.1-17(PF2): 목록 전체(행 · 줄 번호 · 붙임 수 · 투영)를 읽지 않고 견적 질의만 한 번.
+    expect(listPurchaseRequests).toHaveBeenCalledTimes(0);
+    expect(listPurchaseRequestEstimates).toHaveBeenCalledTimes(1);
+    expect(listPurchaseRequestEstimates).toHaveBeenCalledWith(manager, { scope: { kind: "all" }, filter: { status: "requested" } });
+    expect(findCardSlipWaiting).toHaveBeenCalledTimes(1);
     expect(findOldestRequestedPurchaseAt).toHaveBeenCalledTimes(1);
     expect(summarizeOpenIssueRequests).toHaveBeenCalledTimes(1);
     expect(loadPreSettleInputs).toHaveBeenCalledTimes(0);
@@ -692,6 +734,118 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
     expect(computePreSettleCheck).toHaveBeenCalledTimes(2);
     expect(getPreSettleCheck).toHaveBeenCalledTimes(0);
     expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
+  });
+});
+
+// 07.1-17 Task 2(PD1 · C-01 · U-11): 전표 대기 — 구매 완료 요청에 딸린 보관되지 않은 카드 사용 중 살아 있는 전표 파일도 증빙 붙임도 없는 것.
+describe("「내 차례」 Phase 6 — 전표 대기 줄 (07.1-17 PD1)", () => {
+  const today = seoulToday();
+
+  async function holderAndCard() {
+    const holder = await makePerson("카드 보유자", DEFAULT_ROLE_ID, "기획1팀");
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `카드사-${randomUUID().slice(0, 6)}`, numberLast4: String(1000 + Math.floor(Math.random() * 9000)), label: "전표 대기", kind: "personal", holderUserId: holder.id });
+    if (!card.id) throw new Error("카드 없음");
+    return { holder, cardId: card.id };
+  }
+
+  // 구매 요청(상태 지정) + 그 요청에 딸린 카드 사용 한 건(구매 경로 — `purchase_request_id` 고리). 구매 완료 시각은 지정할 수 있다.
+  async function requestWithUsage(opts: { status?: "requested" | "purchased" | "cancelled"; completedAt?: Date; archived?: boolean } = {}) {
+    const { holder, cardId } = await holderAndCard();
+    const [requestId] = await seedPurchases([{ requester: holder, status: opts.status ?? "purchased" }]);
+    if (!requestId) throw new Error("구매 요청 없음");
+    if (opts.completedAt) await db.update(purchaseRequests).set({ completedAt: opts.completedAt }).where(eq(purchaseRequests.id, requestId));
+    const usage = await createCardUsageFixture(holder, { corpCardId: cardId, usedOn: today, totalKrw: 33_000 });
+    await db.update(corpCardUsages).set({ registeredVia: "purchase", purchaseRequestId: requestId, ...(opts.archived ? { archivedAt: new Date(), archivedBy: holder.id } : {}) }).where(eq(corpCardUsages.id, usage.id));
+    return { holder, requestId, usageId: usage.id };
+  }
+
+  async function slipItems(viewer: Viewer) {
+    return (await listNextTurnItems(viewer, undefined, { today })).filter((item) => item.key === "phase6-card-slip");
+  }
+
+  async function waitingCount(viewer: Viewer): Promise<number> {
+    return (await findCardSlipWaiting(viewer)).count;
+  }
+
+  it("구매 완료 셋 — 전표 파일 있음 · 증빙 붙임 있음 · 둘 다 없음 → 대기 1건 · 가장 오래된 날짜 = 그 건의 구매 완료 서울 날짜 · 줄 모양(U-11)", async () => {
+    const manager = await makeFinanceManager();
+    const before = await waitingCount(manager);
+    // 서울 2020-01-01 01:30(UTC 2019-12-31 16:30) — 어느 시험의 구매 완료보다 오래돼 가장 오래된 날짜가 된다.
+    await requestWithUsage({ completedAt: new Date("2019-12-31T16:30:00Z") });
+    const withFile = await requestWithUsage();
+    const withLink = await requestWithUsage();
+    await insertFile(SYSTEM_VIEWER, { ownerKind: "corp_card_usage", ownerId: withFile.usageId, objectKey: `evidence/${randomUUID()}`, sha256: randomBytes(32).toString("hex"), sizeBytes: 10, contentType: "image/png", originalName: "전표.png", uploadedBy: withFile.holder.id, privateToOwner: false }, db);
+    await insertLinkFixture({ recordId: await insertRecordFixture(manager), ownerKind: "corp_card_usage", ownerId: withLink.usageId, attachedBy: manager.id });
+
+    expect(await waitingCount(manager)).toBe(before + 1);
+    expect((await findCardSlipWaiting(manager)).oldestCompletedAt).toEqual(new Date("2019-12-31T16:30:00Z"));
+    expect(await slipItems(manager)).toEqual([
+      {
+        key: "phase6-card-slip",
+        tag: "대기",
+        label: `전표 대기 ${before + 1}건`,
+        reason: "결제 완료 · 가장 오래된 01-01",
+        measureText: "",
+        action: { label: "구매 요청 보기", href: `/cards/purchases?status=${encodeURIComponent("구매 완료")}` },
+      },
+    ]);
+  });
+
+  it("전표 파일을 지우면(살아 있지 않음) 다시 센다 · 신청됨 · 취소 요청은 세지 않는다", async () => {
+    const manager = await makeFinanceManager();
+    const before = await waitingCount(manager);
+    const target = await requestWithUsage();
+    const file = await insertFile(SYSTEM_VIEWER, { ownerKind: "corp_card_usage", ownerId: target.usageId, objectKey: `evidence/${randomUUID()}`, sha256: randomBytes(32).toString("hex"), sizeBytes: 10, contentType: "image/png", originalName: "전표.png", uploadedBy: target.holder.id, privateToOwner: false }, db);
+    expect(await waitingCount(manager)).toBe(before);
+
+    await db.update(files).set({ removedAt: new Date() }).where(eq(files.id, file.id));
+    expect(await waitingCount(manager)).toBe(before + 1);
+
+    await requestWithUsage({ status: "requested" });
+    await requestWithUsage({ status: "cancelled" });
+    expect(await waitingCount(manager)).toBe(before + 1);
+  });
+
+  it("보관된 카드 사용(전표 · 붙임 없음)은 세지 않는다 — 카드 목록 `listCardUsageRows`와 같은 대상 집합 · 보관을 풀면 다시 센다 (P3 notes-C #2)", async () => {
+    const manager = await makeFinanceManager();
+    const before = await waitingCount(manager);
+    const archived = await requestWithUsage({ archived: true });
+    expect(await waitingCount(manager)).toBe(before);
+
+    await db.update(corpCardUsages).set({ archivedAt: null, archivedBy: null }).where(eq(corpCardUsages.id, archived.usageId));
+    expect(await waitingCount(manager)).toBe(before + 1);
+  });
+
+  it("원 구매 요청에 증빙 붙임이 있으면(카드 목록 `증빙` 있음) 세지 않는다 · 붙임을 떼면 다시 센다 (#321 /review P2 — 카드 목록 `listCardUsages`의 구매 요청 증빙 OR)", async () => {
+    const manager = await makeFinanceManager();
+    const before = await waitingCount(manager);
+    const target = await requestWithUsage();
+    expect(await waitingCount(manager)).toBe(before + 1);
+
+    const linkId = await insertLinkFixture({ recordId: await insertRecordFixture(manager), ownerKind: "purchase_request", ownerId: target.requestId, attachedBy: manager.id });
+    expect(await waitingCount(manager)).toBe(before);
+
+    await db.update(evidenceRecordLinks).set({ detachedAt: new Date(), detachedBy: manager.id, detachReason: "시험" }).where(eq(evidenceRecordLinks.id, linkId));
+    expect(await waitingCount(manager)).toBe(before + 1);
+  });
+
+  it("`cards.purchases` write 없는 사람 → 줄 없음 · 집계 함수를 부르지 않는다 (T-07.1-17-01)", async () => {
+    await requestWithUsage();
+    const viewer = await roleViewer("구매권한없음", [{ menu: "expenses", action: "view" }], ["purchase_request.value"]);
+    vi.mocked(findCardSlipWaiting).mockClear();
+
+    expect(await slipItems(viewer)).toEqual([]);
+    expect(findCardSlipWaiting).toHaveBeenCalledTimes(0);
+  });
+
+  it("대기가 0건이면 줄이 없고, 구매 요청 줄 바로 다음이 전표 대기 줄이다", async () => {
+    const manager = await makeFinanceManager();
+    if ((await waitingCount(manager)) === 0) expect(await slipItems(manager)).toEqual([]);
+    await requestWithUsage();
+    await seedPurchases([{ requester: await makePerson("요청자", DEFAULT_ROLE_ID, null) }]);
+
+    const keys = (await listNextTurnItems(manager, undefined, { today })).map((item) => item.key).filter((key) => key.startsWith("phase6-"));
+    expect(keys.indexOf("phase6-card-slip")).toBe(keys.indexOf("phase6-purchase") + 1);
   });
 });
 

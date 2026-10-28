@@ -11,7 +11,7 @@ export type NextTurnEntry = {
   key: string;
   // ui NextTurnTag와 같은 리터럴(domain은 ui를 import하지 않는다). 06-23이 오늘 · 대기를 더했다.
   tag: "막힘" | "오늘" | "결재" | "대기";
-  // `{대상} — {상황}`. 이유 칸은 쓰지 않는다(상황이 같은 줄에 있다 — §7-4).
+  // 결재 · 막힘 줄: `{대상} — {상황}`, 이유 칸은 비운다(상황이 같은 줄에 있다 — §7-4). Phase 6 묶음 줄: `{항목} {n}건` + 상황은 이유 칸(07.1 W4).
   label: string;
   reason: string;
   // 숫자 칸 글자 — 돈은 원화, 일수는 종류가 만든 글자, 숫자 없는 종류는 `—`, 투영에서 빠졌으면 빈 글자.
@@ -28,7 +28,9 @@ function measureTextOf(measure: DocumentMeasure | null | undefined): string {
 }
 
 // 06-23(PN-3): 원천 하나라도 던지면 그대로 던진다 — 홈의 catch가 블록 전체를 오류 한 줄로 바꾼다(일부 항목만 보이지 않는다).
-export async function listNextTurnItems(viewer: Viewer, deps?: ApprovalDeps, options?: { today?: string }): Promise<NextTurnEntry[]> {
+// 07.1-17(E-P2-45): `options.phase6`가 있으면 Phase 6 항목은 그 함수에서 받는다(호출부가 요청 memo로 한 번만 계산하게) — 없으면 지금 호출한다.
+// 프로미스가 아니라 불러 쓰는 함수로 받는 까닭: Phase 6 시작 시점을 결재함 · 막힘 뒤로 두고, 미리 만든 프로미스가 그 사이 거절돼 처리기 없는 거절이 되지 않게.
+export async function listNextTurnItems(viewer: Viewer, deps?: ApprovalDeps, options?: { today?: string; phase6?: () => Promise<NextTurnEntry[]> }): Promise<NextTurnEntry[]> {
   const inbox = await listMyInbox(viewer, deps);
   const entries: NextTurnEntry[] = [];
   for (const item of inbox.mine) {
@@ -59,6 +61,6 @@ export async function listNextTurnItems(viewer: Viewer, deps?: ApprovalDeps, opt
     });
   }
   // 06-23(O-15): 경영관리 묶음 · PM 점검 항목 — 정렬 · 6줄 절단은 ui buildNextTurnView가 한다.
-  entries.push(...(await listPhase6NextTurnItems(viewer, options?.today ?? seoulToday())));
+  entries.push(...(await (options?.phase6 ? options.phase6() : listPhase6NextTurnItems(viewer, options?.today ?? seoulToday()))));
   return entries;
 }

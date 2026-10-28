@@ -58,6 +58,9 @@ export type LinkedEvidence = {
   items: Partial<EvidenceLinkedItemDto>[];
   /** 섹션당 하나 이하 — 글자는 app(evidence-locked-lines)이 그린다. */
   lockLine: EvidenceRecordLockLine | null;
+  /** #324 P2: 살아 있는 붙임 수 — 보이는 행 수, 보이는 행이 0인데 숨긴 붙임이 있으면 1(숨긴 건수는 싣지 않는다 · G15).
+   *  세금 증빙 기준일 · 증빙 있음은 보는 사람 거름 없이 붙임 전부로 정하므로 폼의 증빙일 칸 숨김이 이 값을 따른다. */
+  linkCount: number;
 };
 
 const PURCHASE_REQUEST_NOT_FOUND = "없는 구매 요청 · 새로 고침";
@@ -102,7 +105,7 @@ export async function listLinkedEvidence(viewer: Viewer, owner: { kind: "expense
       can(viewer, "evidence.intake", "write"),
     ]);
     const items = (await visibleRows(viewer, rows)).map((row) => itemOf(row, typeNames, intake ? "detach" : null));
-    return { items: await projectMany(viewer, items, EVIDENCE_LINKED_ITEM_DTO_SPEC), lockLine: null };
+    return { items: await projectMany(viewer, items, EVIDENCE_LINKED_ITEM_DTO_SPEC), lockLine: null, linkCount: linkCountOf(items.length, rows.length) };
   }
   const state = await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: owner.id });
   const [rows, typeNames, intake, attachKey, voidKey, expensesWrite] = await Promise.all([
@@ -120,7 +123,11 @@ export async function listLinkedEvidence(viewer: Viewer, owner: { kind: "expense
     const own = rights.authorDetach && row.attachMode === "author" && row.attachedBy === viewer.id;
     return itemOf(row, typeNames, own ? "detach" : null, own);
   });
-  return { items: await projectMany(viewer, items, EVIDENCE_LINKED_ITEM_DTO_SPEC), lockLine: rights.lockLine };
+  return { items: await projectMany(viewer, items, EVIDENCE_LINKED_ITEM_DTO_SPEC), lockLine: rights.lockLine, linkCount: linkCountOf(items.length, rows.length) };
+}
+
+function linkCountOf(visibleCount: number, liveCount: number): number {
+  return visibleCount > 0 ? visibleCount : Math.min(liveCount, 1);
 }
 
 // 06.1-08(PA-PRLINE): 구매 요청 목록 쪽마다 한 번 — 요청마다 첫 붙은 증빙(붙인 순). 범위 밖 id는 06 목록 범위로 버린다(새 범위 판정 없음).

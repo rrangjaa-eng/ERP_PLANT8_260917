@@ -50,6 +50,9 @@ export async function findCardSlipWaiting(viewer: Viewer): Promise<{ count: numb
         isNull(corpCardUsages.archivedAt),
         not(aliveFileExists(viewer, "corp_card_usage", corpCardUsages.id)),
         not(liveLinkExists(viewer, "corp_card_usage", corpCardUsages.id)),
+        // 카드 목록 `listCardUsages`는 구매에서 생긴 건의 원 구매 요청 증빙(파일 · 살아 있는 붙임)도 「증빙 있음」으로 본다(06.1-09 PA-HASEV) — 같은 정의.
+        // 파일 쪽은 `files_owner_kind_check`에 purchase_request가 없어 늘 거짓이라 붙임만 본다.
+        not(liveLinkExists(viewer, "purchase_request", purchaseRequests.id)),
       ),
     );
   return { count: row?.count ?? 0, oldestCompletedAt: row?.oldest ?? null };

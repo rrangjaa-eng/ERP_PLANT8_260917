@@ -413,15 +413,19 @@ async function flagCanceledOriginals(viewer: Viewer, keys: readonly string[], lo
     const owner = locked.get(ownerId);
     if (owner === undefined) throw new UserFacingError(CANCEL_FLAG_RACE);
     if (owner === null) continue;
+    // D-7106: 확인 기록이 풀렸든(지급 전) 아니든(지급 뒤 · 확인 기록 없음 · 작성 중 · 반려) 확인 필요가 선 문서마다 로그 한 줄 — reviewReleased는 풀린 상태 또는 null.
     const released = await releaseConfirmationOnRecordFlag(viewer, owner, tx);
-    if (released) {
-      await recordAction(
-        viewer,
-        { actionType: "document_update", entity: "expense", entityId: owner.id, documentId: owner.id, detail: { field: "evidenceReview", status: "released", reason: CANCEL_REGISTERED_CHECK, reviewReleased: released } },
-        { tx },
-      );
-    }
+    await recordAction(
+      viewer,
+      { actionType: "document_update", entity: "expense", entityId: owner.id, documentId: owner.id, detail: { field: "evidenceReview", status: "released", reason: CANCEL_REGISTERED_CHECK, reviewReleased: released } },
+      { tx },
+    );
   }
+}
+
+// D-7106(E-P2-35): 확인 필요 표시 단계의 경합은 등록 tx 전체를 다시 돌아야 풀린다(잠금 순서 카드 → 거래처 → 프로젝트 → 문서 → 견적 줄 → 카드 사용 → 증빙 행).
+function isCancelFlagRace(error: unknown): boolean {
+  return error instanceof UserFacingError && error.message === CANCEL_FLAG_RACE;
 }
 
 // 서버 액션의 파일 칸 하나(FormData `file`) → 등록. 크기는 바이트를 읽기 전에 File.size로 잰다(액션 본문 크기 미들웨어는
@@ -534,8 +538,9 @@ export async function registerEvidenceFile(
     });
   // RP-7: 관리 화면 저장은 거래처 잠금을 쓰지 않아 조회와 생성 · 되살림 사이에 같은 번호가 살아날 수 있다 — 유일 색인 위반이면
   // 트랜잭션을 통째로 한 번 다시 돈다(앞 시도는 롤백됐다 · 트랜잭션 전 조회 값은 그대로 쓰고 줄 판정은 tx로 다시 읽는다). 두 번째 위반은 그대로 던진다.
+  // D-7106: 취소 원거래가 그사이 다른 문서에 붙은 경합(CANCEL_FLAG_RACE)도 같은 재시도 한 번에 합친다 — 원인과 무관하게 한 번.
   const written = await write().catch((error: unknown) => {
-    if (!isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) throw error;
+    if (!isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX) && !isCancelFlagRace(error)) throw error;
     return write();
   });
 

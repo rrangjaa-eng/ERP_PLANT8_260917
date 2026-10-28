@@ -812,7 +812,7 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
     );
 
     expect(raced).toBe(true);
-    expect(result.refused).toBeNull();
+    if (result.refused) throw new Error(`거절됨: ${result.refused.headline}`);
     expect(result.registered).toBe(1);
     expect(await importCounts()).toEqual({ ...before, batches: (before.batches ?? 0) + 1, records: (before.records ?? 0) + 1 });
     expect(await needsCheckOf(originalId)).toBe(CANCEL_REGISTERED_CHECK);

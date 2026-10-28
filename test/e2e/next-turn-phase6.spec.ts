@@ -244,7 +244,7 @@ test.describe("「내 차례」 전표 대기 (07.1-17 PD1)", () => {
     return usage.id;
   }
 
-  test("구매 권한자 홈 — 전표 대기 줄이 구매 요청 줄 다음에 서고 `구매 요청 보기`가 /cards/purchases로 간다 · 전표가 붙으면 줄이 줄어든다", async ({ browser, baseURL }) => {
+  test("구매 권한자 홈 — 전표 대기 줄이 구매 요청 줄 다음에 서고 `구매 요청 보기`가 /cards/purchases 구매 완료 보기로 간다 · 전표가 붙으면 줄이 줄어든다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const purchaser = await makePurchaser(fx);
     const page = await loginPage(browser, baseURL, purchaser, DESKTOP);
@@ -262,6 +262,7 @@ test.describe("「내 차례」 전표 대기 (07.1-17 PD1)", () => {
 
     await row.getByRole("link", { name: "구매 요청 보기" }).click();
     await expect.poll(() => new URL(page.url()).pathname).toBe("/cards/purchases");
+    expect(new URL(page.url()).searchParams.get("status")).toBe("구매 완료");
 
     // 전표 파일이 붙으면 다음 렌더에서 줄어든다(0건이면 줄 DOM 0).
     await db.insert(files).values({ ownerKind: "corp_card_usage", ownerId: usageId, objectKey: `evidence/${randomUUID()}`, sha256: "a".repeat(64), sizeBytes: 10, contentType: "image/png", originalName: "전표.png", uploadedBy: fx.pm.viewer.id });

@@ -786,7 +786,7 @@ describe("「내 차례」 Phase 6 — 전표 대기 줄 (07.1-17 PD1)", () => {
         label: `전표 대기 ${before + 1}건`,
         reason: "결제 완료 · 가장 오래된 01-01",
         measureText: "",
-        action: { label: "구매 요청 보기", href: "/cards/purchases" },
+        action: { label: "구매 요청 보기", href: `/cards/purchases?status=${encodeURIComponent("구매 완료")}` },
       },
     ]);
   });

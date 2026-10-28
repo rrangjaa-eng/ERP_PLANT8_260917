@@ -58,7 +58,8 @@ export function buildCardSlipWaitingBundle(input: { count: number; oldestComplet
     label: `전표 대기 ${input.count}건`,
     reason: `결제 완료 · 가장 오래된 ${input.oldestCompletedOn.slice(5)}`,
     measureText: "",
-    action: { label: "구매 요청 보기", href: "/cards/purchases" },
+    // 목록 기본 보기는 「신청됨」이라 이 줄이 세는 구매 완료 건이 안 보인다 — 구매 완료 보기로 연다.
+    action: { label: "구매 요청 보기", href: `/cards/purchases?status=${encodeURIComponent("구매 완료")}` },
   };
 }
 

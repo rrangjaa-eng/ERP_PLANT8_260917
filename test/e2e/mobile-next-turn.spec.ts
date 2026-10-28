@@ -210,7 +210,7 @@ const PHASE6_ITEMS: NextTurnItem[] = [
   { tag: "오늘", label: "지급 12건", reason: "예정일 지남·오늘 · 확인 전 12건", amount: 0, measureText: "123,456,789", action: { label: "지급 대상 보기", href: "/expenses?status=지급 대상" } },
   { tag: "대기", label: "지급 3건", reason: "이번 주", amount: 0, measureText: "123,456,789", action: { label: "지급 대상 보기", href: "/expenses?status=지급 대상" } },
   { tag: "대기", label: "구매 요청 51건", reason: "신청 · 가장 오래된 09-18", amount: 0, measureText: "57,000,000", action: { label: "구매 요청 보기", href: "/cards/purchases" } },
-  { tag: "대기", label: "전표 대기 2건", reason: "결제 완료 · 가장 오래된 10-03", amount: 0, measureText: "", action: { label: "구매 요청 보기", href: "/cards/purchases" } },
+  { tag: "대기", label: "전표 대기 2건", reason: "결제 완료 · 가장 오래된 10-03", amount: 0, measureText: "", action: { label: "구매 요청 보기", href: `/cards/purchases?status=${encodeURIComponent("구매 완료")}` } },
   { tag: "오늘", label: "매출 발행 요청 12건", reason: "희망 09-30", amount: 0, measureText: "123,456,789", action: { label: "발행 요청 보기", href: "/projects/issue-requests" } },
   { tag: "막힘", label: "정산 팝업", reason: "완료 전 점검 3건", amount: 0, measureText: "—", action: { label: "점검 보기", href: "/projects/p1#pre-settle-check" } },
 ];

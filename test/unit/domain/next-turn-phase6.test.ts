@@ -84,14 +84,14 @@ describe("buildPurchaseBundle — 구매 요청 묶음", () => {
 });
 
 describe("buildCardSlipWaitingBundle — 전표 대기 (07.1-17 PD1 · U-11)", () => {
-  it("2건 · 가장 오래된 구매 완료 10-03 → [대기] label `전표 대기 2건` · reason `결제 완료 · 가장 오래된 10-03` · 금액 빈 글자 · 구매 요청 보기 → /cards/purchases", () => {
+  it("2건 · 가장 오래된 구매 완료 10-03 → [대기] label `전표 대기 2건` · reason `결제 완료 · 가장 오래된 10-03` · 금액 빈 글자 · 구매 요청 보기 → /cards/purchases?status=구매 완료", () => {
     expect(buildCardSlipWaitingBundle({ count: 2, oldestCompletedOn: "2026-10-03" })).toEqual({
       key: "phase6-card-slip",
       tag: "대기",
       label: "전표 대기 2건",
       reason: "결제 완료 · 가장 오래된 10-03",
       measureText: "",
-      action: { label: "구매 요청 보기", href: "/cards/purchases" },
+      action: { label: "구매 요청 보기", href: `/cards/purchases?status=${encodeURIComponent("구매 완료")}` },
     });
   });
 

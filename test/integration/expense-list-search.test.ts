@@ -377,6 +377,15 @@ describe("지출결의 목록 거르개 — 팀 · 월 · 내 것만 (07.1-09)",
     expect(mine(await inMonth("2025-11"), w)).toEqual([w.payeeDoc.expenseId]);
   }, 60_000);
 
+  it("옵션에 없는 월 값은 거름도 무시한다 — 월 select 표시(월 전체)와 결과가 같다", async () => {
+    const { w, viewer } = await filterWorld();
+    const all = await listExpenses(viewer, { status: "all" }, { today: seoulToday() });
+    expect(all.months).not.toContain("2020-01");
+    const offOption = await listExpenses(viewer, { status: "all", month: "2020-01" }, { today: seoulToday() });
+    expect(mine(offOption, w)).toEqual(mine(all, w));
+    expect(offOption.total?.count).toBe(all.total?.count);
+  }, 60_000);
+
   it("내 것만 = 기안자가 나인 행 · 셋 조합 · 합계 줄이 거른 전체와 같다 · 거른 결과가 0이어도 hasAny는 참", async () => {
     const { w, viewer } = await filterWorld();
     await db.update(expenses).set({ drafterId: viewer.id }).where(eq(expenses.id, w.payeeDoc.expenseId));

@@ -127,7 +127,7 @@ export async function listLinkedEvidence(viewer: Viewer, owner: { kind: "expense
 }
 
 function linkCountOf(visibleCount: number, liveCount: number): number {
-  return visibleCount > 0 ? visibleCount : Math.min(liveCount, 1);
+  return visibleCount + (liveCount > visibleCount ? 1 : 0);
 }
 
 // 06.1-08(PA-PRLINE): 구매 요청 목록 쪽마다 한 번 — 요청마다 첫 붙은 증빙(붙인 순). 범위 밖 id는 06 목록 범위로 버린다(새 범위 판정 없음).

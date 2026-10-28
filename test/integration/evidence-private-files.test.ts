@@ -238,6 +238,28 @@ describe("G15 붙은 증빙 기록(PA-G15-LINKED)", () => {
     expect(managed.items).toHaveLength(2);
     expect(managed.linkCount).toBe(2);
   });
+
+  // #324 P3: 보이는 붙임이 늘거나 줄어도 폼의 미리보기 키(linkCount)가 바뀌어야 한다 — 숨긴 쪽은 「있음」만 1로 더한다.
+  it("보이는 기록 + 숨긴 기록 — 숨긴 쪽은 1만 더해 보이는 건수가 늘면 linkCount도 는다", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const { expenseId } = await createInReviewExpenseFixture(fx);
+    await setEvidenceType(expenseId, "card_receipt");
+    const hiddenOne = await insertRecordFixture(manager, { evidenceType: PRIVATE_TYPE, nameOnDocument: "개인카드사" });
+    const hiddenTwo = await insertRecordFixture(manager, { evidenceType: PRIVATE_TYPE, nameOnDocument: "개인카드사 둘" });
+    const publicOne = await insertRecordFixture(manager, { evidenceType: "card_receipt", nameOnDocument: "스테이지원" });
+    await insertLinkFixture({ recordId: hiddenOne, ownerId: expenseId, attachedBy: manager.id });
+    await insertLinkFixture({ recordId: publicOne, ownerId: expenseId, attachedBy: manager.id });
+
+    const oneAndOne = await listLinkedEvidence(fx.lead, { kind: "expense", id: expenseId });
+    expect(oneAndOne.items).toHaveLength(1);
+    expect(oneAndOne.linkCount).toBe(2);
+
+    await insertLinkFixture({ recordId: hiddenTwo, ownerId: expenseId, attachedBy: manager.id });
+    const twoAndOne = await listLinkedEvidence(fx.lead, { kind: "expense", id: expenseId });
+    expect(twoAndOne.items).toHaveLength(1);
+    expect(twoAndOne.linkCount).toBe(2);
+  });
 });
 
 // 06.1-14 독립 검토 P2-1 — 승인 문서의 지급 패널 보기(getPaymentView)는 클라이언트 컴포넌트로 통째로 넘어간다.

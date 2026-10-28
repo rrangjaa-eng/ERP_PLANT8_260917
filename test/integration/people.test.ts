@@ -365,6 +365,32 @@ describe("입사일·퇴직일 — 권한 · 역전 · 로그 · DB CHECK(A-04 �
     expect(JSON.stringify(afterResign.map((entry) => entry.detail))).toContain("resignation_date");
   });
 
+  it("07.1-13 S8 — 입사일 · 퇴직일 로그가 바뀐 날짜의 전후 값을 담고 · 같은 값 저장은 전후가 비어 있다", async () => {
+    const userId = await makePlainPerson("전후대상");
+    const lastDetail = async () => {
+      const logs = (await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" })).filter(
+        (entry) => entry.entity === "user" && entry.entityId === userId,
+      );
+      return { count: logs.length, detail: logs.at(-1)?.detail as Record<string, unknown> | null | undefined };
+    };
+
+    await setHireDate(SYSTEM_VIEWER, userId, "2026-01-02");
+    await setHireDate(SYSTEM_VIEWER, userId, "2026-02-01");
+    const hire = await lastDetail();
+    expect(hire.detail?.field).toBe("hire_date");
+    expect(hire.detail?.changes).toEqual({ hireDate: ["2026-01-02", "2026-02-01"] });
+
+    await setHireDate(SYSTEM_VIEWER, userId, "2026-02-01");
+    const same = await lastDetail();
+    expect(same.count).toBe(hire.count + 1);
+    expect(same.detail?.changes).toEqual({});
+
+    await setResignationDate(SYSTEM_VIEWER, userId, "2026-12-31");
+    const resign = await lastDetail();
+    expect(resign.detail?.field).toBe("resignation_date");
+    expect(resign.detail?.changes).toEqual({ resignationDate: [null, "2026-12-31"] });
+  });
+
   it("앱 검증을 거치지 않은 직접 UPDATE도 역전이면 23514로 거부된다", async () => {
     const userId = await makePlainPerson("CHECK대상");
     await setHireDate(SYSTEM_VIEWER, userId, "2026-03-10");

@@ -281,3 +281,15 @@ describe("changes 없는 기존 기록의 대체 줄 (07-25 Codex P2)", () => {
     expect(detailLines({ reason: "무시", changes: { days: [3, 5] } }, PAYMENT_CANCEL)).toEqual([{ label: "일수", before: "3", after: "5" }]);
   });
 });
+
+// 07.1-13 S8: 사람 입사일 · 퇴직일 바꾸기 로그(setEmploymentDate)의 전후 줄.
+describe("입사일 · 퇴직일 줄 (07.1-13 S8)", () => {
+  it("입사일 전후 · 퇴직일 없음 → 날짜", () => {
+    expect(detailLines({ field: "hire_date", changes: { hireDate: ["2026-01-02", "2026-02-01"] } })).toEqual([
+      { label: "입사일", before: "2026-01-02", after: "2026-02-01" },
+    ]);
+    expect(detailLines({ field: "resignation_date", changes: { resignationDate: [null, "2026-12-31"] } })).toEqual([
+      { label: "퇴직일", before: "없음", after: "2026-12-31" },
+    ]);
+  });
+});

@@ -1195,14 +1195,14 @@ SETTING_DEFS.push(EVIDENCE_MIN_SIZE_KB);
 // 06-02 구매 요청 번호(A#3) — 프로젝트 요청 `{프로젝트 번호}{구분자}{접두어}{순번}`(기본 26001-C0001, 카운터 `purchase_request` ·
 // period = 프로젝트 번호 — 지출결의 번호와 같은 꼴), 팀 비용 요청 `TC26-0001`(카운터 `purchase_request_team` · period = 연도 — 팀 비용 지출결의 번호와 같은 꼴).
 // 07.1-05 PJ4 — 접두가 카드 사용 표지와 같으면 요청서 번호와 카드 사용 번호가 같은 생김새가 된다(260907 020_functions.sql:3127-3137은 대소문자 무시 같음 비교).
-// `K1`처럼 표지로 시작하는 값은 막지 않는다. refine은 읽기에도 걸리므로 두 접두 키는 readInvalidAsDefault를 단다.
+// 비교 · 저장 전에 앞뒤 공백을 자른다(#319 게이트). `K1`처럼 표지로 시작하는 값은 막지 않는다. refine은 읽기에도 걸리므로 두 접두 키는 readInvalidAsDefault를 단다.
 const NOT_CARD_USAGE_MARK = (value: string): boolean => value.toUpperCase() !== CARD_USAGE_NUMBER_MARK.toUpperCase();
 const CARD_USAGE_MARK_CLASH = "카드 사용 표지와 같음 · 다른 글자";
 
 export const DOCUMENT_NUMBER_PURCHASE_REQUEST_PREFIX: SettingDef<string> = {
   key: "document_number.purchase_request.prefix",
   kind: "simple",
-  schema: z.string().refine(NOT_CARD_USAGE_MARK, CARD_USAGE_MARK_CLASH),
+  schema: z.string().trim().refine(NOT_CARD_USAGE_MARK, CARD_USAGE_MARK_CLASH),
   label: "구매 요청 번호 접두어",
   hint: "프로젝트 번호 뒤 구분자 다음에 붙는 문자열입니다(기본 C).",
   namespace: "문서 번호",
@@ -1244,7 +1244,7 @@ export const DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START: SettingDef<number> = {
 export const DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_PREFIX: SettingDef<string> = {
   key: "document_number.purchase_request_team.prefix",
   kind: "simple",
-  schema: z.string().refine(NOT_CARD_USAGE_MARK, CARD_USAGE_MARK_CLASH),
+  schema: z.string().trim().refine(NOT_CARD_USAGE_MARK, CARD_USAGE_MARK_CLASH),
   label: "팀 비용 구매 요청 번호 접두어",
   hint: "번호 맨 앞에 붙는 문자열입니다(기본 TC).",
   namespace: "문서 번호",

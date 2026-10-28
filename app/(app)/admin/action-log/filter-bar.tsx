@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 // 잎(leaf) 모듈에서만 import한다 — domain/action-log(index)는 repositories를
@@ -181,21 +181,25 @@ export function ExportButton({ filter, count }: { filter: ActionLogFilterPayload
       link.remove();
       URL.revokeObjectURL(url);
     },
-    onError: () => setToast({ message: "Excel 내보내기 · 실패 · 다시 시도", tone: "error" }),
+    // #319 P3 — 서버가 5,000건 상한 등으로 거부하면(UserFacingError) 그 문장을 그대로 보인다. 그 밖의 실패는 일반 문구.
+    onError: ({ error }) => setToast({ message: error.serverError ?? "Excel 내보내기 · 실패 · 다시 시도", tone: "error" }),
   });
+  const reasonId = useId();
 
   return (
     <>
-      <Button
-        variant="secondary"
-        pending={isExecuting}
-        disabled={tooMany}
-        disabledReason={tooMany ? "5,000건 넘음 · 기간이나 필터로 줄이기" : undefined}
-        reasonTone="info"
-        onClick={() => execute(filter)}
-      >
-        Excel 내보내기
-      </Button>
+      {/* #319 B-1 — 이유 줄을 Button 안(옆)에 두면 폰에서 단추를 눌러 좁혀 글자가 단추 밖으로 넘친다. 단추는 줄지 않고 이유는 모자라면 아랫줄로 내려가게
+          줄바꿈 되는 묶음(confirmRow)에 단추와 이유를 따로 둔다 — 이유 글자 모양은 Button 이유(info)와 같은 confirmText. */}
+      <span className={styles.confirmRow}>
+        <Button variant="secondary" pending={isExecuting} disabled={tooMany} aria-describedby={tooMany ? reasonId : undefined} onClick={() => execute(filter)}>
+          Excel 내보내기
+        </Button>
+        {tooMany ? (
+          <span id={reasonId} className={styles.confirmText}>
+            5,000건 넘음 · 기간이나 필터로 줄이기
+          </span>
+        ) : null}
+      </span>
       {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}
     </>
   );

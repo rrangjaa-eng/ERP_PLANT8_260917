@@ -429,6 +429,18 @@ test.describe("목록 팀 · 월 · 내 것만 (07.1-09 W11)", () => {
     await page.context().close();
   });
 
+  test("옵션에 없는 ?month= — 월 select는 월 전체로 보이고 결과도 거르지 않는다(#320 P2)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const doc = await submitTeamCost(fx.pm.viewer, `옵션밖월-${randomUUID().slice(0, 4)}`);
+    const page = await loginPage(browser, baseURL, fx.ceo, DESKTOP);
+    await page.goto("/expenses?status=전체&month=2020-01");
+    const monthSelect = filterForm(page).getByRole("combobox", { name: "월" });
+    await waitForHydration(filterForm(page).getByRole("combobox", { name: "상태" }));
+    await expect(monthSelect).toHaveValue("");
+    await expect(rowOf(page, doc.expenseId)).toHaveCount(1);
+    await page.context().close();
+  });
+
   test("내 것만 — 기안자가 나인 행만 남는다(팀장은 자기 문서만, 팀원 문서는 빠진다)", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const pmDoc = await submitTeamCost(fx.pm.viewer, `팀원문서-${randomUUID().slice(0, 4)}`);

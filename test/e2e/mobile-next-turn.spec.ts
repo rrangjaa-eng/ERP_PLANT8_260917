@@ -159,3 +159,86 @@ test.describe("폰 375 「내 차례」 긴 대상 글자 (06-23 D-1)", () => {
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
   });
 });
+
+// 07.1-17(PA2 · C-31 · W4): Phase 6 묶음 줄은 상황을 이유 칸에 둔다 — 폰 375 · 320에서 줄마다 2줄 이하(1줄 label + 2줄 금액 · 이유).
+// 픽스처 글자는 `domain/next-turn/phase6-items.ts` 빌더 출력과 같다(단위 시험 `next-turn-phase6.test.ts`가 고정). 금액은 실제 최악에 가까운 아홉 자리.
+const PHASE6_ITEMS: NextTurnItem[] = [
+  { tag: "오늘", label: "지급 12건", reason: "예정일 지남·오늘 · 확인 전 12건", amount: 0, measureText: "123,456,789", action: { label: "지급 대상 보기", href: "/expenses?status=지급 대상" } },
+  { tag: "대기", label: "지급 3건", reason: "이번 주", amount: 0, measureText: "123,456,789", action: { label: "지급 대상 보기", href: "/expenses?status=지급 대상" } },
+  { tag: "대기", label: "구매 요청 51건", reason: "신청 · 가장 오래된 09-18", amount: 0, measureText: "57,000,000", action: { label: "구매 요청 보기", href: "/cards/purchases" } },
+  { tag: "대기", label: "전표 대기 2건", reason: "결제 완료 · 가장 오래된 10-03", amount: 0, measureText: "", action: { label: "구매 요청 보기", href: "/cards/purchases" } },
+  { tag: "오늘", label: "매출 발행 요청 12건", reason: "희망 09-30", amount: 0, measureText: "123,456,789", action: { label: "발행 요청 보기", href: "/projects/issue-requests" } },
+  { tag: "막힘", label: "정산 팝업 — 완료 전 점검 3건", reason: "", amount: 0, measureText: "—", action: { label: "점검 보기", href: "/projects/p1#pre-settle-check" } },
+];
+
+type LineProbe = { labelLines: number; whyLines: number; whyClipped: boolean; whyTitle: string | null; whyText: string | null; labelClipped: boolean; labelText: string; overflowX: boolean };
+
+for (const width of [375, 320]) {
+  test.describe(`폰 ${width} 「내 차례」 Phase 6 줄 (07.1-17 PA2)`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      const html = `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width">
+<style>${css("docs/design/tokens.css")}</style>
+<style>${css("app/globals.css")}</style>
+<style>${css("ui/status-tag/StatusTag.module.css")}</style>
+<style>${css("ui/next-turn/NextTurn.module.css")}</style>
+</head><body><main style="padding: 0 var(--pad-page)">${await renderNextTurn(PHASE6_ITEMS)}</main></body></html>`;
+      await page.setContent(html);
+    });
+
+    async function probe(page: import("@playwright/test").Page): Promise<LineProbe[]> {
+      return page.locator(".item").evaluateAll((rows) =>
+        rows.map((row) => {
+          const lines = (el: Element) => new Set(Array.from((() => { const r = document.createRange(); r.selectNodeContents(el); return r.getClientRects(); })()).map((rect) => Math.round(rect.top))).size;
+          const label = row.querySelector<HTMLElement>(".label");
+          if (!label) throw new Error("label 없음");
+          const why = row.querySelector<HTMLElement>(".why");
+          return {
+            labelLines: lines(label),
+            whyLines: why ? lines(why) : 0,
+            whyClipped: why ? why.scrollWidth > why.clientWidth || why.scrollHeight > why.clientHeight : false,
+            whyTitle: why ? why.getAttribute("title") : null,
+            whyText: why ? (why.textContent ?? "").replace(/^ · /, "") : null,
+            labelClipped: label.scrollHeight > label.clientHeight,
+            labelText: label.textContent ?? "",
+            overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          };
+        }),
+      );
+    }
+
+    test("Phase 6 줄마다 label 1줄 · 이유 1줄(전체 2줄 이하) · 건수 숫자가 보이고 · 말줄임이면 title이 전체 이유", async ({ page }, testInfo) => {
+      const rows = await probe(page);
+      await testInfo.attach(`probe-${width}`, { body: JSON.stringify(rows, null, 2), contentType: "application/json" });
+      console.log(`PROBE ${width} ${JSON.stringify(rows)}`);
+      // 줄은 태그 순(막힘 → 오늘 → 결재 → 대기)으로 놓이므로 label로 찾는다. 완료 전 점검 줄(이유 없음)은 실측 기록만(점검표).
+      const phase6 = rows.filter((row) => PHASE6_ITEMS.some((item) => item.label === row.labelText && item.reason !== ""));
+      expect(phase6).toHaveLength(PHASE6_ITEMS.filter((item) => item.reason !== "").length);
+      for (const row of phase6) {
+        expect(row.labelLines, row.labelText).toBe(1);
+        expect(row.labelClipped, row.labelText).toBe(false);
+        expect(row.whyLines, `${row.labelText} 이유`).toBeLessThanOrEqual(1);
+        expect(row.overflowX).toBe(false);
+        if (row.whyClipped) expect(row.whyTitle, row.labelText).toBe(row.whyText);
+      }
+    });
+
+    // P3 notes-C 07.1-17 #3: `.why` 말줄임은 공용 줄이라 결재 · 막힘 줄 이유(픽스처 ITEM `증빙 없음`)도 같은 값을 받는다 — 잘리는지 잰다.
+    // 도메인이 만드는 결재 · 막힘 줄은 reason이 빈 글자라 `.why` span이 0개다(`domain/next-turn/index.ts`).
+    test("결재 · 막힘 줄(ITEM) 이유 `증빙 없음`은 잘리지 않는다 · 이유가 빈 도메인 줄은 .why가 없다", async ({ page }, testInfo) => {
+      await page.setContent(
+        `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width">
+<style>${css("docs/design/tokens.css")}</style>
+<style>${css("app/globals.css")}</style>
+<style>${css("ui/status-tag/StatusTag.module.css")}</style>
+<style>${css("ui/next-turn/NextTurn.module.css")}</style>
+</head><body><main style="padding: 0 var(--pad-page)">${await renderNextTurn([ITEM, { ...ITEM, reason: "", label: "도메인 줄" }])}</main></body></html>`,
+      );
+      const rows = await probe(page);
+      await testInfo.attach(`probe-item-${width}`, { body: JSON.stringify(rows, null, 2), contentType: "application/json" });
+      expect(rows[0]?.whyText).toBe("증빙 없음");
+      expect(rows[0]?.whyClipped).toBe(false);
+      await expect(page.locator(".item").nth(1).locator(".why")).toHaveCount(0);
+    });
+  });
+}

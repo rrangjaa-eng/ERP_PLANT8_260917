@@ -414,7 +414,7 @@ describe("「내 차례」 Phase 6 — 지급 묶음 (06-23)", () => {
     return { fx, payer };
   }
 
-  it("지급 권한자 — [오늘] `지급 — 예정일 지남·오늘 1건 · 확인 전 1건` · 지급 총액 · `지급 대상 보기` → 지급 대상 목록", async () => {
+  it("지급 권한자 — [오늘] label `지급 1건` · reason `예정일 지남·오늘 · 확인 전 1건` · 지급 총액 · `지급 대상 보기` → 지급 대상 목록", async () => {
     const { payer } = await payerWithTarget();
 
     const items = await listNextTurnItems(payer, undefined, { today });
@@ -424,8 +424,8 @@ describe("「내 차례」 Phase 6 — 지급 묶음 (06-23)", () => {
       {
         key: "phase6-payment",
         tag: "오늘",
-        label: "지급 — 예정일 지남·오늘 1건 · 확인 전 1건",
-        reason: "",
+        label: "지급 1건",
+        reason: "예정일 지남·오늘 · 확인 전 1건",
         measureText: "13,640,000",
         action: { label: "지급 대상 보기", href: "/expenses?status=지급 대상" },
       },
@@ -594,8 +594,8 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
       {
         key: "phase6-purchase",
         tag: "대기",
-        label: "구매 요청 — 신청 51건 · 가장 오래된 09-18",
-        reason: "",
+        label: "구매 요청 51건",
+        reason: "신청 · 가장 오래된 09-18",
         measureText: formatKrw(57_000),
         action: { label: "구매 요청 보기", href: "/cards/purchases" },
       },
@@ -632,8 +632,8 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
       {
         key: "phase6-issue",
         tag: "대기",
-        label: "매출 발행 요청 — 2건 · 희망 09-30",
-        reason: "",
+        label: "매출 발행 요청 2건",
+        reason: "희망 09-30",
         measureText: "5,000,000",
         action: { label: "발행 요청 보기", href: "/projects/issue-requests" },
       },

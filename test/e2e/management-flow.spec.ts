@@ -19,7 +19,9 @@ import { archiveTempRoles, insertTempRole, setupExpenseE2E, uniqueReceipt, type 
 
 const DESKTOP = { width: 1280, height: 900 };
 const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"];
-const PAYMENT_DUE = /지급 — 예정일 지남·오늘 (\d+)건/;
+// 07.1-17(PA2): 상황은 이유 칸으로 옮겨 줄은 `지급 {n}건` + ` · 예정일 지남·오늘` — 줄은 이유로 찾고 건수는 label에서 읽는다.
+const PAYMENT_DUE = /예정일 지남·오늘/;
+const PAYMENT_COUNT = /지급 (\d+)건/;
 
 test.afterAll(async () => {
   await archiveTempRoles();
@@ -77,9 +79,9 @@ async function approveAll(fx: ExpenseE2E, expenseId: string): Promise<void> {
 }
 
 async function dueCount(page: Page): Promise<number> {
-  const label = page.getByText(PAYMENT_DUE);
-  if ((await label.count()) === 0) return 0;
-  const match = PAYMENT_DUE.exec((await label.first().textContent()) ?? "");
+  const row = page.getByRole("listitem").filter({ hasText: PAYMENT_DUE });
+  if ((await row.count()) === 0) return 0;
+  const match = PAYMENT_COUNT.exec((await row.first().textContent()) ?? "");
   return Number(match?.[1] ?? 0);
 }
 

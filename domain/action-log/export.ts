@@ -3,6 +3,7 @@ import { queryActionLog as defaultQueryActionLog, type ActionLogFilter } from "@
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerExport } from "@/lib/actions/registry";
 import { csvEscape } from "@/lib/csv";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // ADMN-10·OPS-05·Task 1 결정(옵션 A): 필터 결과를 Excel에서 열리는 파일로
 // 직렬화한다 — UTF-8 BOM CSV, 신규 의존성 0. 반환 형태
@@ -74,6 +75,15 @@ export function serializeActionLogExportAsCsv(rows: ActionLogExportRow[]): Expor
   };
 }
 
+// 07.1-05 D-7113: 넘으면 화면이 내보내기를 막는다 — 서버도 같은 수로 거부한다. 개수는 queryActionLog 결과 길이라 화면이 버튼에 넘기는
+// rows.length와 같은 집합이다(같은 거르개 · 같은 includePruned). 판정은 recordAction · 직렬화 전이다.
+export const ACTION_LOG_EXPORT_LIMIT = 5000;
+export class ActionLogExportTooManyError extends UserFacingError {
+  constructor() {
+    super("5,000건 넘음 · 기간이나 필터로 줄이기");
+  }
+}
+
 export type ExportActionLogDeps = {
   queryActionLog: typeof defaultQueryActionLog;
   recordAction: typeof defaultRecordAction;
@@ -91,6 +101,7 @@ export async function exportActionLog(
 ): Promise<ExportFile> {
   const queryActionLog = deps?.queryActionLog ?? defaultQueryActionLog;
   const rows = await queryActionLog(viewer, filter);
+  if (rows.length > ACTION_LOG_EXPORT_LIMIT) throw new ActionLogExportTooManyError();
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, {

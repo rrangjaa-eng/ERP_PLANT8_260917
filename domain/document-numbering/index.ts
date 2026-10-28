@@ -14,6 +14,7 @@ import { can } from "@/domain/permissions/can";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstYear } from "@/lib/kst-date";
+import { CARD_USAGE_NUMBER_MARK } from "@/domain/document-numbering/marks";
 import {
   DOCUMENT_NUMBER_PROJECT_PREFIX,
   DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS,
@@ -353,7 +354,8 @@ export async function allocatePurchaseRequestNumber(
 // 또는 연도 두 자 + 팀 비용 접두어, 가름 글자 K). 순번은 프로젝트별(이 저장소의 지출결의 · 구매 요청 C 규약) — 옛 전사 통번호(:3143)와 다르다.
 // K · 4자리 · 시작 1은 상수다(새 설정 키를 만들지 않는다 — 시작값 설정이 없으니 `seqStartGuardFor` 대상도 아니다). 재료(프로젝트 번호 ·
 // 팀 비용 접두어 · KST 연도)는 사전 판정이 트랜잭션 밖에서 만든다.
-export const CARD_USAGE_NUMBER_MARK = "K";
+// 가름 글자 상수는 설정 키가 순환 없이 가져오도록 import 없는 잎 파일 marks.ts에 있다(07.1-05 PJ4) — 기존 가져오는 곳을 위해 다시 내보낸다.
+export { CARD_USAGE_NUMBER_MARK };
 const CARD_USAGE_SEQ_DIGITS = 4;
 
 export type CardUsageNumberHead = { projectNumber: string | null; teamPrefix: string; year: number };

@@ -493,6 +493,14 @@ export async function listAllEvidenceRecords(viewer: Viewer, query: EvidenceList
   return { filters, rows: await projectMany(viewer, rows.map((row) => sourceOf(row, age)), EVIDENCE_RECORD_DTO_SPEC) };
 }
 
+// 07.1-05 D-7113(E-P2-19) — 파일 받기의 읽기 전 건수. 목록과 같은 앞 단계(listInputsFor — 범위 · 거르개)와 같은 합계 질의라
+// 화면이 버튼 상태를 정하는 건수(list.total.count)와 서버가 거부를 판정하는 수가 같은 집합이다. 행은 읽지 않는다.
+export async function countEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<number> {
+  const { scope, repoFilters } = await listInputsFor(viewer, query);
+  const formatTotals = await countAndSumForScope(viewer, scope, repoFilters);
+  return formatTotals.reduce((sum, row) => sum + row.count, 0);
+}
+
 // P-3 · DA-10: 지출결의 목록 필터 줄 끝 `증빙 {N}`의 N — 기본 보기 `할 일`과 같은 집합(확인 필요 포함 · 보관 · 카드 미등록 제외).
 // 등록 권한(evidence.intake 쓰기)이 없으면 null(링크 없음).
 export async function countTodoEvidence(viewer: Viewer): Promise<number | null> {

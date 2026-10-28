@@ -1,5 +1,6 @@
 import { businessNoDigitsOf, cellDate, cellKrw, cellText, isBlankRow } from "@/domain/evidence-import/cells";
 import { columnIndex } from "@/domain/evidence-import/detect";
+import { companyNoOf, isHeaderRow } from "@/domain/evidence-import/formats/hometax-common";
 import { sumKrw } from "@/domain/money";
 import type { DetectResult, FormatReadResult, FormatRule, LineError, ParsedLine, Rows } from "@/domain/evidence-import/types";
 
@@ -12,17 +13,6 @@ const TOTAL_LABELS = ["총 합계금액", "총 공급가액", "총 세액"] as c
 // 국세청 승인번호 끝 8자리는 소문자 영숫자가 섞인다(C-86 실물).
 const APPROVAL_NO = /^\d{8}-\d{8}-[0-9a-z]{8}$/;
 const ORIGINAL_APPROVAL_NO = /당초\s*승인번호\s*\(([^)]+)\)/;
-
-// 0행 `사업자 등록번호` 다음 칸 — 내려받은 사람의 회사. 숫자 10자리가 아니면 null(E18).
-function companyNoOf(rows: Rows): string | null {
-  const row = rows[0] ?? [];
-  const at = row.findIndex((cell) => cellText(cell).replaceAll(/\s/g, "") === "사업자등록번호");
-  return at < 0 ? null : businessNoDigitsOf(row[at + 1]);
-}
-
-function isHeaderRow(row: readonly unknown[]): boolean {
-  return cellText(row[0]) === "작성일자" && cellText(row[1]) === "승인번호";
-}
 
 // 계산서 꼴이 세금계산서로 갈리지 않게 띠(`매입` 시작 · `세금계산서` 포함)와 `세액` 칸을 함께 본다.
 function detect(sheets: Parameters<FormatRule["detect"]>[0], container: Parameters<FormatRule["detect"]>[1]): DetectResult {

@@ -1,11 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, evidenceRecords, teams } from "@/db/schema";
+import { actionLog, evidenceImportBatches, evidenceRecords, teams } from "@/db/schema";
 import { ForbiddenError } from "@/domain/permissions/can";
-import { listEvidenceRecords } from "@/domain/evidence-records";
-import { exportEvidenceRecords } from "@/domain/evidence-records/export";
+import { listAllEvidenceRecords, listEvidenceRecords } from "@/domain/evidence-records";
+import { EvidenceExportTooManyError, exportEvidenceRecords } from "@/domain/evidence-records/export";
 import { createAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -201,4 +201,53 @@ describe("exportEvidenceRecords — 기록 · 권한", () => {
     await expect(exportEvidenceRecords(pm, { state: "all" })).rejects.toBeInstanceOf(ForbiddenError);
     expect(await exportLogs(pm)).toHaveLength(0);
   });
+});
+
+// 07.1-05 D-7113 — 5,000건 상한. 고유 묶음(batch)에 행을 한꺼번에 넣고 `batch` 거르개로 그 집합만 센다 — 다른 시험의 행과 섞이지 않는다.
+async function insertBatchOf(by: Viewer, count: number): Promise<string> {
+  const [batch] = await db
+    .insert(evidenceImportBatches)
+    .values({ format: "hometax-tax-invoice", originalName: "상한 시험.xls", fileSha256: randomBytes(32).toString("hex"), rowCount: count, registeredCount: count, skippedDuplicateCount: 0, uploadedBy: by.id })
+    .returning({ id: evidenceImportBatches.id });
+  if (!batch) throw new Error("등록 묶음 없음");
+  const values = Array.from({ length: count }, (_, index) => ({
+    batchId: batch.id,
+    format: "hometax-tax-invoice",
+    evidenceType: "tax_invoice",
+    dedupeKey: `limit:${batch.id}:${index}`,
+    issuedOn: "2026-09-20",
+    supplyKrw: 1000,
+    vatKrw: 0,
+    totalKrw: 1000,
+    nameOnDocument: "상한 시험",
+    createdBy: by.id,
+  }));
+  for (let at = 0; at < values.length; at += 1000) await db.insert(evidenceRecords).values(values.slice(at, at + 1000));
+  return batch.id;
+}
+
+describe("exportEvidenceRecords — 07.1-05 D-7113 5,000건 상한", () => {
+  it("5,001건이면 거부 — 사용자 문구 · 행을 읽지 않고 기록도 0", async () => {
+    const intake = await createIntakeViewer();
+    const batch = await insertBatchOf(intake, 5_001);
+    let rowsRead = 0;
+    const error = await exportEvidenceRecords(intake, { state: "all", batch }, {
+      listAllEvidenceRecords: async (...args: Parameters<typeof listAllEvidenceRecords>) => {
+        rowsRead += 1;
+        return listAllEvidenceRecords(...args);
+      },
+    }).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(EvidenceExportTooManyError);
+    expect((error as Error).message).toBe("5,000건 넘음 · 필터나 검색으로 줄이기");
+    expect(rowsRead).toBe(0);
+    expect(await exportLogs(intake)).toHaveLength(0);
+  }, 120_000);
+
+  it("5,000건은 받는다 — 파일 줄 5,001(머리줄 + 5,000) · excel_export 한 줄", async () => {
+    const intake = await createIntakeViewer();
+    const batch = await insertBatchOf(intake, 5_000);
+    const rows = await exportRows(intake, { state: "all", batch });
+    expect(rows).toHaveLength(5_001);
+    expect(await exportLogs(intake)).toHaveLength(1);
+  }, 120_000);
 });

@@ -3,7 +3,8 @@ import { can, ForbiddenError } from "@/domain/permissions/can";
 import type { Viewer } from "@/domain/viewer";
 import { registerExport } from "@/lib/actions/registry";
 import { csvEscape } from "@/lib/csv";
-import { INTAKE_FORBIDDEN, listAllEvidenceRecords, type EvidenceListQuery, type EvidenceRecordView } from "@/domain/evidence-records";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { countEvidenceRecords, INTAKE_FORBIDDEN, listAllEvidenceRecords, type EvidenceListQuery, type EvidenceRecordView } from "@/domain/evidence-records";
 
 // 06.1-13 G6(RP-16 · 260907 Receipts 목록 내려받기) — 증빙 목록 `파일 받기`. 화면이 가진 줄이 아니라 서버가 목록과 같은 범위 · 거르개 ·
 // 투영으로 필터 결과 전체를 다시 읽는다(볼 수 없는 칸은 빈 칸). 기록 → 직렬화 차례는 행동 로그 내보내기와 같다 — 기록이 실패하면 파일이 없다.
@@ -37,9 +38,26 @@ export function serializeEvidenceRecordsAsCsv(rows: readonly EvidenceRecordView[
   return { filename: `evidence-records-${Date.now()}.csv`, contentType: "text/csv; charset=utf-8", body: `﻿${lines.join("\r\n")}\r\n` };
 }
 
-export async function exportEvidenceRecords(viewer: Viewer, query: EvidenceListQuery): Promise<EvidenceExportFile> {
+// 07.1-05 D-7113: 넘으면 화면이 `파일 받기`를 막는다 — 서버도 같은 수로 거부한다(거래처 목록 VENDOR_EXPORT_LIMIT 꼴).
+export const EVIDENCE_EXPORT_LIMIT = 5000;
+export class EvidenceExportTooManyError extends UserFacingError {
+  constructor() {
+    super("5,000건 넘음 · 필터나 검색으로 줄이기");
+  }
+}
+
+export type EvidenceExportDeps = {
+  countEvidenceRecords: typeof countEvidenceRecords;
+  listAllEvidenceRecords: typeof listAllEvidenceRecords;
+};
+
+export async function exportEvidenceRecords(viewer: Viewer, query: EvidenceListQuery, deps?: Partial<EvidenceExportDeps>): Promise<EvidenceExportFile> {
   if (!(await can(viewer, "evidence.intake", "write"))) throw new ForbiddenError(INTAKE_FORBIDDEN);
-  const { filters, rows } = await listAllEvidenceRecords(viewer, query);
+  // 수를 먼저 센다(E-P2-19) — 넘으면 행을 읽지도 기록하지도 않는다.
+  if ((await (deps?.countEvidenceRecords ?? countEvidenceRecords)(viewer, query)) > EVIDENCE_EXPORT_LIMIT) throw new EvidenceExportTooManyError();
+  const { filters, rows } = await (deps?.listAllEvidenceRecords ?? listAllEvidenceRecords)(viewer, query);
+  // 세기와 읽기는 한 스냅숏이 아니다 — 사이에 늘어난 행도 상한으로 다시 막는다.
+  if (rows.length > EVIDENCE_EXPORT_LIMIT) throw new EvidenceExportTooManyError();
   // 끌 수 없는 기록(excel_export — ALWAYS_ON)을 직렬화 전에. detail에는 거르개 · 건수만(파일 이름 · 금액 · 카드 번호 · 사람 이름 없음 — T-061-133).
   await recordAction(viewer, { actionType: "excel_export", entity: "evidence_record", detail: { filter: { state: filters.state, type: filters.type, period: filters.period, batch: filters.batch }, count: rows.length } });
   return serializeEvidenceRecordsAsCsv(rows);

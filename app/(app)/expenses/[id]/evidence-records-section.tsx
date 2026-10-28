@@ -30,8 +30,11 @@ export type LinkedEvidenceItem = {
   needsCheck: string | null;
 };
 
-/** 06.1-08 — 증빙 고르기 트리거. 모드가 none이거나 후보가 0이면 서버가 이 값을 null로 준다(트리거 DOM 0). */
-export type EvidencePickState = { ownerKind: "expense"; ownerId: string; mode: "registrar" | "author"; count: number };
+/**
+ * 06.1-08 — 증빙 고르기 트리거. 모드가 none이거나 붙일 수 있는 후보(모든 종류)가 0이면 서버가 이 값을 null로 준다(트리거 DOM 0).
+ * 07.1-09(D-7124 · #320 B-1): `count`는 트리거 글자 N = 문서 증빙 종류와 같은 종류의 붙일 수 있는 후보 수(0이면 숫자 없이 `증빙 고르기`), `typeLabel`은 문서 증빙 종류 라벨(없으면 null).
+ */
+export type EvidencePickState = { ownerKind: "expense"; ownerId: string; mode: "registrar" | "author"; count: number; typeLabel: string | null };
 
 const COLUMNS: StaticTableColumn[] = [
   { key: "what", header: "증빙", priority: "p1" },
@@ -100,7 +103,7 @@ export function EvidenceRecordsSection({
     <div className={styles.evidenceRecords} ref={rootRef} tabIndex={-1}>
       {pick ? (
         <Button data-evidence-pick="" variant="tertiary" onClick={() => setPicking(true)}>
-          {`증빙 고르기 ${pick.count}`}
+          {pick.count > 0 ? `증빙 고르기 ${pick.count}` : "증빙 고르기"}
         </Button>
       ) : null}
       {items.length > 0 ? <StaticTable
@@ -147,7 +150,7 @@ export function EvidenceRecordsSection({
         }}
       />
       <PickEvidenceDialog
-        target={picking && pick ? { ownerKind: pick.ownerKind, ownerId: pick.ownerId, mode: pick.mode, subtitle: [number, `후보 ${pick.count}`].filter(Boolean).join(" · ") } : null}
+        target={picking && pick ? { ownerKind: pick.ownerKind, ownerId: pick.ownerId, mode: pick.mode, subtitle: [number, pick.typeLabel].filter(Boolean).join(" · ") } : null}
         onClose={() => setPicking(false)}
         onAttached={() => {
           attachedPending.current = true;

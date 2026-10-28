@@ -4,7 +4,7 @@ import { listEvidenceRecordsByIds, type EvidenceRecordView } from "@/domain/evid
 import { ATTACH_BATCH_CAP_LINE, ATTACH_BATCH_MAX, authorCardBlock, flagsOf, loadPairCodes, pairDecision, readCardUsageRights, readKeys, type PairCodes, type ViewerKeys } from "@/domain/evidence-records/attach";
 import { fileWinsPatch, overwriteBlockReason, usedOnGapOf, type FileWinsPatch } from "@/domain/evidence-records/reconcile";
 import { cardOverwriteTotal, cardSlipNotFound, cardUsageOverwriteBlocksByGroup, loadCardOverwriteBasis } from "@/domain/corp-card-usages";
-import { ExpenseNotFoundError } from "@/domain/expenses";
+import { codeLabelsOf, ExpenseNotFoundError } from "@/domain/expenses";
 import { purchaseRequestAuthorOpen, readPurchaseRequestEvidenceFacts } from "@/domain/purchase-requests";
 import { can } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
@@ -12,7 +12,7 @@ import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { evidenceScopeFor } from "@/domain/permissions/scope-for";
 import type { Viewer } from "@/domain/viewer";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { countPoolForScope, listPoolForScope, POOL_LIMIT, readPoolDocFacts, cardHitFilter, sameCardFilter, type PoolDocFacts, type PoolRow } from "@/repositories/evidence-pool";
+import { countPoolForScope, listPoolForScope, POOL_LIMIT, readPoolDocFacts, cardHitFilter, sameCardFilter, type PoolDocFacts, type PoolQuery, type PoolRow } from "@/repositories/evidence-pool";
 import type { CardUsageForWrite } from "@/repositories/corp-card-usages";
 import type { SQL } from "drizzle-orm";
 import { findLivePayment } from "@/repositories/expense-payments";
@@ -159,6 +159,8 @@ export type EvidencePool = {
   /** 21째 행이 있다. */
   truncated: boolean;
   limit: number;
+  /** 07.1-09(C-92): 검색어 없는 추천이 0일 때의 빈 목록 한 줄 `{종류} 증빙이 없습니다`(문서 증빙 종류가 있을 때만 — 그 밖은 null). */
+  emptyDefault: string | null;
 };
 
 // 카드 사용 작성자 모드 — 합계(카드는 같은 카드 줄만이라 늘 같다)가 다른 줄은 막힌 행(DB-8). 경영관리 모드는 고를 수 있다(D-6111 덮기) —
@@ -213,15 +215,17 @@ async function registrarCardBlocks(viewer: Viewer, rows: readonly PoolRow[], ctx
   return blocked;
 }
 
-function itemOf(view: EvidenceRecordView, row: PoolRow, ctx: PoolContext, registrarBlocks: ReadonlyMap<string, string>): EvidencePoolItemDto {
+// 07.1-09(C-92): 검색 결과에서 문서 증빙 종류와 다른 줄은 제목 앞에 종류를 붙여 왜 나왔는지 글자로 보인다(`{종류} · {거래처}`) — 종류는 부제에서 뺀다.
+function itemOf(view: EvidenceRecordView, row: PoolRow, ctx: PoolContext, registrarBlocks: ReadonlyMap<string, string>, searching: boolean): EvidencePoolItemDto {
+  const otherKind = searching && ctx.doc.evidenceType !== null && row.evidenceType !== ctx.doc.evidenceType && !!view.typeLabel;
   const cardBlock = cardBlockOf(row, ctx, registrarBlocks);
   const registrarPatch = ctx.card && ctx.mode === "registrar" ? registrarPatchOf(row, ctx.card.usage) : null;
   const pair = cardBlock ? { allowed: false as const, reason: cardBlock } : ctx.codes && ctx.doc.kind === "expense" ? pairDecision(ctx.codes, ctx.doc.paymentMethod, row.evidenceType) : { allowed: true as const };
   return {
     id: row.id,
     number: (view.issuedOn ?? row.issuedOn).slice(5),
-    title: view.counterparty ?? "—",
-    subtitle: [view.typeLabel, view.visibilityLabel].filter((part): part is string => !!part).join(" · "),
+    title: otherKind ? `${view.typeLabel} · ${view.counterparty ?? "—"}` : (view.counterparty ?? "—"),
+    subtitle: [otherKind ? null : view.typeLabel, view.visibilityLabel].filter((part): part is string => !!part).join(" · "),
     amountKrw: row.totalKrw,
     selectable: pair.allowed,
     reason: pair.allowed ? null : pair.reason,
@@ -233,9 +237,10 @@ function itemOf(view: EvidenceRecordView, row: PoolRow, ctx: PoolContext, regist
 export async function listEvidencePool(viewer: Viewer, input: { owner: PoolOwner; q?: string | null }): Promise<EvidencePool> {
   const ctx = await contextOf(viewer, input.owner);
   const scope = await evidenceScopeFor(viewer);
+  const q = input.q?.trim() ? input.q.trim().slice(0, 100) : null;
   const rows = await listPoolForScope(viewer, scope, {
     doc: ctx.doc,
-    q: input.q?.trim() ? input.q.trim().slice(0, 100) : null,
+    q,
     author: ctx.mode === "author",
     cardFormats: CARD_FORMATS,
     allowedTypes: ctx.allowedTypes,
@@ -247,10 +252,11 @@ export async function listEvidencePool(viewer: Viewer, input: { owner: PoolOwner
   // 범위가 같은 두 질의 사이에 공개 범위가 바뀐 줄은 보기에서 빠진다(없는 것으로) — 목록은 그 줄을 뺀다.
   const dtos = kept.flatMap((row) => {
     const view = views.get(row.id);
-    return view ? [itemOf(view, row, ctx, registrarBlocks)] : [];
+    return view ? [itemOf(view, row, ctx, registrarBlocks, q !== null)] : [];
   });
   const first = dtos[0];
   const registrarInReview = ctx.mode === "registrar" && ctx.phase === "in_review";
+  const docTypeLabel = q === null && dtos.length === 0 && ctx.doc.evidenceType !== null ? ((await codeLabelsOf(viewer, "evidence_type")).get(ctx.doc.evidenceType) ?? null) : null;
   return {
     mode: ctx.mode,
     items: await projectMany(viewer, dtos, EVIDENCE_POOL_ITEM_DTO_SPEC),
@@ -259,6 +265,7 @@ export async function listEvidencePool(viewer: Viewer, input: { owner: PoolOwner
     capLine: ATTACH_BATCH_CAP_LINE,
     truncated: rows.length > POOL_LIMIT,
     limit: POOL_LIMIT,
+    emptyDefault: docTypeLabel === null ? null : `${docTypeLabel} 증빙이 없습니다`,
   };
 }
 
@@ -273,23 +280,46 @@ export async function countEvidencePool(viewer: Viewer, owner: { kind: PoolOwner
     if (mode === "none" || !usage) return 0;
     // 작성자 모드는 막힌 행(합계 다름)을 센 수에서 뺀다(DB-16).
     const ownerFilter = mode === "author" ? sameCardFilter(viewer, usage.corpCardId, usage.totalAmountKrw) : cardPoolFilter(viewer, mode, usage);
-    return countPoolForScope(viewer, await evidenceScopeFor(viewer), { author: mode === "author", cardFormats: CARD_FORMATS, allowedTypes: null, ownerFilter });
+    return countPoolForScope(viewer, await evidenceScopeFor(viewer), { author: mode === "author", cardFormats: CARD_FORMATS, allowedTypes: null, ownerFilter, docEvidenceType: null });
   }
   if (owner.kind === "purchase_request") {
     if (owner.id !== undefined && (await requestMode(viewer, owner.id)) !== "author") return 0;
     if (owner.id === undefined && !(await can(viewer, "evidence", "view"))) return 0;
-    return countPoolForScope(viewer, await evidenceScopeFor(viewer), { author: true, cardFormats: CARD_FORMATS, allowedTypes: null });
+    return countPoolForScope(viewer, await evidenceScopeFor(viewer), { author: true, cardFormats: CARD_FORMATS, allowedTypes: null, docEvidenceType: null });
   }
   if (owner.id === undefined) return 0;
+  const counted = await expenseCountInput(viewer, owner.id);
+  if (!counted) return 0;
+  return countPoolForScope(viewer, await evidenceScopeFor(viewer), { ...counted.query, docEvidenceType: null });
+}
+
+// 지출결의 건수의 앞 단계(모드 · 문서 사실 · 짝 코드) 한 벌 — 트리거 판정(countEvidencePool)과 부제 건수(countRecommendedEvidence)가 같이 쓴다(같은 판정 두 벌 금지).
+async function expenseCountInput(viewer: Viewer, id: string): Promise<{ mode: Exclude<EvidencePickerMode, "none">; query: Pick<PoolQuery, "author" | "cardFormats" | "allowedTypes">; doc: PoolDocFacts } | null> {
   const keys = await readKeys(viewer);
-  const resolved = await expenseMode(viewer, keys, owner.id);
-  if (resolved.mode === "none") return 0;
-  const doc = await readPoolDocFacts(viewer, { kind: "expense", id: owner.id });
-  if (!doc) return 0;
+  const resolved = await expenseMode(viewer, keys, id);
+  if (resolved.mode === "none") return null;
+  const doc = await readPoolDocFacts(viewer, { kind: "expense", id });
+  if (!doc) return null;
   const codes = await loadPairCodes(viewer);
-  return countPoolForScope(viewer, await evidenceScopeFor(viewer), {
-    author: resolved.mode === "author",
-    cardFormats: CARD_FORMATS,
-    allowedTypes: allowedTypesOf(codes, doc.paymentMethod),
-  });
+  return { mode: resolved.mode, query: { author: resolved.mode === "author", cardFormats: CARD_FORMATS, allowedTypes: allowedTypesOf(codes, doc.paymentMethod) }, doc };
+}
+
+/**
+ * 07.1-09(D-7124 · E-P2-28 · #320 B-1): 증빙 고르기의 두 수를 한 번에 — `count`는 트리거 글자 `증빙 고르기 {N}`의 N(검색어 없는 추천 목록과 같은 거름:
+ * 문서 증빙 종류와 같은 종류 · 문서 종류가 비면 전부 · 붙일 수 있는 상태 · 범위 · 짝 막힌 행 제외), `total`은 트리거를 보일지 정하는 모든 종류 후보 수(`countEvidencePool`과 같은 값).
+ * 추천이 0이어도 다른 종류가 있으면(total ≥ 1) 트리거가 남아 검색으로 닿는다. `typeLabel`은 문서 증빙 종류의 기존 라벨(없으면 null), `mode`는 고르기 모드(못 열면 none · 0 · 0).
+ */
+export async function countRecommendedEvidence(
+  viewer: Viewer,
+  expenseId: string,
+): Promise<{ count: number; total: number; typeLabel: string | null; mode: EvidencePickerMode }> {
+  const counted = await expenseCountInput(viewer, expenseId);
+  if (!counted) return { count: 0, total: 0, typeLabel: null, mode: "none" };
+  const scope = await evidenceScopeFor(viewer);
+  const [count, total, labels] = await Promise.all([
+    countPoolForScope(viewer, scope, { ...counted.query, docEvidenceType: counted.doc.evidenceType }),
+    countPoolForScope(viewer, scope, { ...counted.query, docEvidenceType: null }),
+    counted.doc.evidenceType === null ? null : codeLabelsOf(viewer, "evidence_type"),
+  ]);
+  return { count, total, typeLabel: labels?.get(counted.doc.evidenceType ?? "") ?? null, mode: counted.mode };
 }

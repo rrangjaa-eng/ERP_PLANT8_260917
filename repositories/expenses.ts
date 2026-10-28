@@ -604,6 +604,48 @@ export function expenseSearchCondition(viewer: Viewer, query: string, fields: re
 
 export type ExpenseSearch = { query: string; fields: readonly ExpenseSearchField[] };
 
+// 07.1-09(PF4 · C-36 · E-P1-08): 목록 거르개 — 팀(문서의 팀 docTeamId, 행 범위와 같은 칸 · 기안자 발령 팀 아님) · 월(문서 등록 시각의 서울 월) · 내 것(기안자).
+// 검색어와 같은 자리에 AND로 걸린다(합계 FILTER · 쪽 · 승인 정렬 공용). scopeCondition에는 섞지 않는다 — 문서 하나 판정(isExpenseInScope)이 같이 쓰므로 거름이 보임을 바꾸면 안 된다.
+export type ExpenseListFilter = { teamId: string | null; month: string | null; drafterId: string | null };
+
+// created_at은 시간대 없는 UTC 값 — UTC로 읽은 뒤 서울로 한 번 더 바꿔야 서울 날짜다(`at time zone 'Asia/Seoul'` 한 번이면 9시간 틀린다 · projects.ts CREATED_ON_KST 선례).
+const createdMonthKst = sql`to_char((${expenses.createdAt} at time zone 'UTC') at time zone 'Asia/Seoul', 'YYYY-MM')`;
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function expenseListFilterCondition(viewer: Viewer, filter: ExpenseListFilter): SQL | null {
+  void viewer; // 4계층 규약 자리 — 범위 판정은 호출 쪽 scopeCondition이 한다.
+  const parts: SQL[] = [];
+  // 팀 — 문서의 팀(프로젝트가 있으면 프로젝트 팀, 없으면 귀속 팀)을 칸 그대로 비교한다(칸에 ::text 를 씌우면 인덱스를 못 탄다). uuid 모양이 아닌 값은 Postgres 형식 오류(500) 대신 결과 0.
+  if (filter.teamId !== null) {
+    parts.push(
+      UUID_SHAPE.test(filter.teamId)
+        ? sql`((${expenses.projectId} is not null and ${projects.teamId} = ${filter.teamId}::uuid) or (${expenses.projectId} is null and ${expenses.attributedTeamId} = ${filter.teamId}::uuid))`
+        : sql`false`,
+    );
+  }
+  // 월 — 서울 월의 시작·끝을 UTC 값으로 한 번 바꿔 칸에는 범위 비교만 건다(월 글자를 칸마다 만들지 않는다 · domain이 YYYY-MM 모양을 이미 거른다).
+  if (filter.month !== null) {
+    const startUtc = sql`(((${filter.month}::text || '-01')::timestamp) at time zone 'Asia/Seoul') at time zone 'UTC'`;
+    const endUtc = sql`(((${filter.month}::text || '-01')::timestamp + interval '1 month') at time zone 'Asia/Seoul') at time zone 'UTC'`;
+    parts.push(sql`(${expenses.createdAt} >= ${startUtc} and ${expenses.createdAt} < ${endUtc})`);
+  }
+  if (filter.drafterId !== null) parts.push(sql`${expenses.drafterId} = ${filter.drafterId}`);
+  return parts.length === 0 ? null : sql`(${sql.join(parts, sql` and `)})`;
+}
+
+/** 월 select 옵션 — 보는 범위 안 문서의 등록 월(서울), 최신 먼저. */
+export async function listExpenseMonths(viewer: Viewer, input: { scope: ExpenseScope; documentKind: string }): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ month: createdMonthKst.mapWith(String) })
+    .from(expenses)
+    .leftJoin(approvalInstances, instanceJoin(input.documentKind))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .where(scopeCondition(viewer, input.scope))
+    .orderBy(sql`1 desc`);
+  return rows.map((row) => row.month);
+}
+
 export type ExpenseListRow = ExpenseRow & {
   groupRank: number;
   drafterName: string;
@@ -661,7 +703,7 @@ const liveExpensePaymentExists = sql`exists (select 1 from expense_payments ep w
 
 export async function listUnpaidApprovedScheduleSources(
   viewer: Viewer,
-  input: { scope: ExpenseScope; documentKind: string; search?: ExpenseSearch },
+  input: { scope: ExpenseScope; documentKind: string; search?: ExpenseSearch; filter?: ExpenseListFilter },
 ): Promise<UnpaidApprovedScheduleSource[]> {
   return db
     .select({ id: expenses.id, number: expenses.number, submittedAt: expenses.submittedAt, scheduledPaymentDate: expenses.scheduledPaymentDate, vendorId: expenses.vendorId })
@@ -674,6 +716,7 @@ export async function listUnpaidApprovedScheduleSources(
         ranksCondition([EXPENSE_GROUP_RANKS.approved]),
         sql`not ${liveExpensePaymentExists}`,
         input.search ? expenseSearchCondition(viewer, input.search.query, input.search.fields) : undefined,
+        input.filter ? (expenseListFilterCondition(viewer, input.filter) ?? undefined) : undefined,
       ),
     );
 }
@@ -681,7 +724,7 @@ export async function listUnpaidApprovedScheduleSources(
 export async function listExpensePage(
   viewer: Viewer,
   // approvedOrder — 미지급 승인 건 id의 유효 예정일 순서(도메인 사전 정렬). 배열 밖 승인 건(지급 끝남)은 그 뒤 실제 지급일 ↑ → 번호 → id.
-  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; limit: number; offset: number; search?: ExpenseSearch; approvedOrder?: readonly string[] },
+  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; limit: number; offset: number; search?: ExpenseSearch; filter?: ExpenseListFilter; approvedOrder?: readonly string[] },
 ): Promise<ExpenseListRow[]> {
   const q = db
     .select({
@@ -698,7 +741,14 @@ export async function listExpensePage(
     .leftJoin(approvalInstances, instanceJoin(input.documentKind))
     .leftJoin(projects, eq(projects.id, expenses.projectId))
     // 06.5 D-6508: 검색은 범위 · 보기와 AND로 안쪽 서브쿼리 WHERE에 — LIMIT 전에 걸린다.
-    .where(and(scopeCondition(viewer, input.scope), ranksCondition(input.ranks), input.search ? expenseSearchCondition(viewer, input.search.query, input.search.fields) : undefined))
+    .where(
+      and(
+        scopeCondition(viewer, input.scope),
+        ranksCondition(input.ranks),
+        input.search ? expenseSearchCondition(viewer, input.search.query, input.search.fields) : undefined,
+        input.filter ? (expenseListFilterCondition(viewer, input.filter) ?? undefined) : undefined,
+      ),
+    )
     .as("q");
   const rows = await db
     .select({
@@ -756,12 +806,15 @@ export type ExpenseListSummary = { visibleCount: number; viewCount: number; view
 // 남의 문서 건수(기안 열 여부).
 export async function summarizeExpenseList(
   viewer: Viewer,
-  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; search?: ExpenseSearch },
+  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; search?: ExpenseSearch; filter?: ExpenseListFilter },
 ): Promise<ExpenseListSummary> {
   // 06.5 D-6508(G20 · EP1-13 · EP2-D5): 검색은 보기 건수 · 합계(FILTER)에만 — 범위 전체 건수(visibleCount, 빈 화면 판정)와 남의 문서 수(othersCount, 기안 열)는
   // 검색과 무관하다. 검색을 바깥 WHERE에 넣으면 0건 검색에서 필터 줄이 사라진다.
   const inRanks = ranksCondition(input.ranks);
-  const inView = input.search ? sql`${inRanks} and ${expenseSearchCondition(viewer, input.search.query, input.search.fields)}` : inRanks;
+  // 07.1-09: 팀 · 월 · 내 것 거름도 같은 자리(보기 FILTER)에만 — 범위 전체 건수와 남의 문서 수에는 걸지 않아 0건 필터에서도 필터 줄 · 빈 결과 문구가 남는다.
+  const searchPart = input.search ? sql`${inRanks} and ${expenseSearchCondition(viewer, input.search.query, input.search.fields)}` : inRanks;
+  const filterPart = input.filter ? expenseListFilterCondition(viewer, input.filter) : null;
+  const inView = filterPart ? sql`${searchPart} and ${filterPart}` : searchPart;
   const [row] = await db
     .select({
       visibleCount: sql<number>`count(*)::int`,

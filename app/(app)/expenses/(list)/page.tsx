@@ -63,10 +63,16 @@ function firstParam(raw: string | string[] | undefined): string | undefined {
   return Array.isArray(raw) ? raw[0] : raw;
 }
 
-function viewHref(view: ExpenseStatusView, page?: number, q?: string | null): string {
+type MainFilters = { team: string; month: string; mine: boolean };
+
+function viewHref(view: ExpenseStatusView, page?: number, q?: string | null, filters?: MainFilters): string {
   const params = new URLSearchParams({ status: view });
   // 06.5 D-6508: 쪽 이동 · 보기 링크는 검색어를 잇는다(필터를 바꿀 때는 폼 제출이 page 없이 다시 연다).
   if (q) params.set("q", q);
+  // 07.1-09(PF4): 쪽 이동은 팀 · 월 · 내 것만도 잇는다 — `필터 지우기` · 보기 링크는 filters 없이 불러 셋을 지운다.
+  if (filters?.team) params.set("team", filters.team);
+  if (filters?.month) params.set("month", filters.month);
+  if (filters?.mine) params.set("mine", "1");
   if (page && page > 1) params.set("page", String(page));
   return `/expenses?${params.toString()}`;
 }
@@ -129,10 +135,19 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   const view = toView(params.status);
   const page = Array.isArray(params.page) ? params.page[0] : params.page;
   const q = normalizeListQuery(firstParam(params.q));
+  const filters: MainFilters = { team: firstParam(params.team) ?? "", month: firstParam(params.month) ?? "", mine: firstParam(params.mine) === "1" };
   const [list, canWrite] = await Promise.all([
-    listExpenses(session.viewer, { status: VIEW_STATUS[view], page, q }),
+    listExpenses(session.viewer, { status: VIEW_STATUS[view], page, q, team: filters.team, month: filters.month, mine: filters.mine }),
     can(session.viewer, "expenses", "write"),
   ]);
+
+  // 07.1-09(PF4): 팀 select는 범위 안 팀이 둘 이상일 때만(서버가 빈 목록을 주면 DOM 0) · 월 select는 등록 월이 있을 때만. 모르는 값은 `전체`로 보인다.
+  const filterSelects = [
+    ...(list.teams.length > 0 ? [{ name: "team", label: "팀", value: list.teams.some((option) => option.value === filters.team) ? filters.team : "", options: [{ value: "", label: "팀 전체" }, ...list.teams] }] : []),
+    ...(list.months.length > 0 ? [{ name: "month", label: "월", value: list.months.includes(filters.month) ? filters.month : "", options: [{ value: "", label: "월 전체" }, ...list.months.map((value) => ({ value, label: value }))] }] : []),
+  ];
+  const teamApplied = list.teams.length === 0 ? filters.team : list.teams.some((option) => option.value === filters.team) ? filters.team : "";
+  const filtered = Boolean(teamApplied || list.months.includes(filters.month) || filters.mine);
 
   const rows: ExpenseTableRow[] = list.groups.flatMap((group) =>
     group.rows.map((row) => ({ ...row, id: row.id ?? "", group: group.label, ...(group.tone ? { groupTone: group.tone } : {}) })),
@@ -152,7 +167,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       // 06.1-05(Round 2 G8) — 그때도 증빙 링크가 있으면 링크 하나만 든 필터 줄을 넘긴다(보이는 지출결의가 0건인 경영관리도 증빙으로 간다).
       filters={
         list.hasAny ? (
-          <StatusFilter value={view} views={views} searchValue={q ?? ""} endLink={evidenceLink} />
+          <StatusFilter value={view} views={views} selects={filterSelects} searchValue={q ?? ""} mine={{ checked: filters.mine }} endLink={evidenceLink} />
         ) : evidenceLink ? (
           <RowActions>
             <RowAction href={evidenceLink.href}>{evidenceLink.label}</RowAction>
@@ -183,7 +198,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
             label="지출결의"
             page={list.page.page}
             pageCount={list.page.pageCount}
-            href={(target) => viewHref(view, target, q)}
+            href={(target) => viewHref(view, target, q, filters)}
             rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
           />
         ) : undefined
@@ -191,8 +206,9 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     >
       {rows.length > 0 ? (
         <ExpensesTable rows={rows} drafterColumn={list.drafterColumn} amountColumn={list.amountColumn} />
-      ) : q ? (
+      ) : q || filtered ? (
         // 06.5 D-6508(EP1-13): 문서는 있는데 검색으로 0건 — 필터 줄 · 검색어는 그대로 서고 표 자리에서 검색을 지우고 빠져나간다.
+        // 07.1-09(W11): 팀 · 월 · 내 것만으로 0건이어도 같은 갈래 — `필터 지우기`가 검색어와 셋을 모두 지운다.
         <ListEmpty message="조건에 맞는 건이 없습니다" action={{ label: "필터 지우기", href: viewHref(view) }} />
       ) : view === "승인" ? (
         <ListEmpty message="승인된 지출결의가 없습니다" action={{ label: "진행 중 보기", href: viewHref("진행 중") }} />

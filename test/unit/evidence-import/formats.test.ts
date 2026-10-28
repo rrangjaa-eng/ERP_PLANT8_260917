@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { splitCardTotal } from "@/domain/corp-card-usages/amounts";
 import { businessNoDigitsOf, cardLast4Of, cellDate, cellKrw, isBlankRow } from "@/domain/evidence-import/cells";
+import { companyNoOf, isHeaderRow } from "@/domain/evidence-import/formats/hometax-common";
 import { EVIDENCE_FORMATS, finalizeAmounts, parseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
 import { EVIDENCE_FORMAT_TYPES, type ParsedLine } from "@/domain/evidence-import/types";
 import { splitOffsetPairs } from "@/domain/evidence-import/key";
@@ -948,5 +949,24 @@ describe("splitOffsetPairs — 끝 4자리 없는 카드 줄", () => {
     const split = splitOffsetPairs([original, cancel]);
     expect(split.pairs).toEqual([{ original, cancel }]);
     expect(split.lines).toHaveLength(0);
+  });
+});
+
+// 07.1-05 PF9 — 홈택스 계산서 · 세금계산서 두 형식이 한 파일의 회사 사업자번호 읽기 · 머리 줄 판정을 함께 쓴다.
+// 두 형식의 읽기 결과가 옮기기 전과 같음은 위 「홈택스 매입 세금계산서」 · 계산서 시험이 그대로 녹색인 것으로 고정한다.
+describe("홈택스 공유 — companyNoOf · isHeaderRow (PF9)", () => {
+  it("0행 `사업자 등록번호` 다음 칸이 숫자 10자리면 그 숫자, 아니면 null", () => {
+    expect(companyNoOf([["사업자 등록번호", "723-81-01234"]])).toBe("7238101234");
+    expect(companyNoOf([["사업자등록번호", "7238101234"]])).toBe("7238101234");
+    expect(companyNoOf([["사업자 등록번호", "723-**-*****"]])).toBeNull();
+    expect(companyNoOf([["사업자 등록번호", ""]])).toBeNull();
+    expect(companyNoOf([["상호", "회사"]])).toBeNull();
+    expect(companyNoOf([])).toBeNull();
+  });
+
+  it("머리 줄은 0열 `작성일자` · 1열 `승인번호`", () => {
+    expect(isHeaderRow(["작성일자", "승인번호", "발급일자"])).toBe(true);
+    expect(isHeaderRow(["작성일자", "합계금액"])).toBe(false);
+    expect(isHeaderRow([])).toBe(false);
   });
 });

@@ -213,10 +213,10 @@ async function changeRecord(viewer: Viewer, input: ChangeInput, deps?: EvidenceA
       if (!(await clearNeedsCheckIfVersionMatches(viewer, { id: input.id, version: input.version }, tx))) throw conflictOf(row.updatedAt);
     }
     if (input.clearNeedsCheck) {
-      // PA-CONFIRM — 풀기 기록은 금액 변경이 아니다(document_update). 무엇을 풀었는지(사유 글자)를 남긴다.
+      // PA-CONFIRM — 풀기 기록은 금액 변경이 아니다. 07.1-05 D-7115: 끌 수 없는 전용 종류로 남기고 무엇을 풀었는지(사유 글자)만 detail에 둔다.
       await recordAction(
         viewer,
-        { actionType: "document_update", entity: "evidence_record", entityId: input.id, documentId: input.id, detail: { change: "evidence_record_needs_check_clear", needsCheck: row.needsCheck } },
+        { actionType: "evidence_record_needs_check_clear", entity: "evidence_record", entityId: input.id, documentId: input.id, detail: { needsCheck: row.needsCheck } },
         { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
       );
     }

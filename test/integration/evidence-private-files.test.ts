@@ -1,20 +1,24 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { approvalInstances, codeItems, expenses } from "@/db/schema";
+import { approvalInstances, codeItems, expenses, files } from "@/db/schema";
 import { approveDocument, createVisibleMemo, loadKindDetails, rejectDocument } from "@/domain/approvals";
-import { createEvidenceViewUrl, getEvidenceActions, listEvidence, privateEvidenceNotice, removeEvidence, voidEvidence } from "@/domain/evidence";
+import { createEvidenceViewUrl, EvidenceCheckError, getEvidenceActions, listEvidence, privateEvidenceNotice, removeEvidence, requestEvidenceUpload, voidEvidence } from "@/domain/evidence";
+import { EVIDENCE_DUPLICATE_HIDDEN, EVIDENCE_DUPLICATE_SAME_OWNER } from "@/domain/evidence/upload-checks";
+import { createExpenseFromLines } from "@/domain/expenses";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { evidenceSourcesOf, hasEvidence } from "@/domain/evidence/has-evidence";
 import { listLinkedEvidence, listLinkedEvidenceForOwners } from "@/domain/evidence-records/linked";
 import { getPaymentView } from "@/domain/payments";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission } from "@/repositories/permissions";
-import { insertRole } from "@/repositories/roles";
+import { insertRole, setRoleViewScope } from "@/repositories/roles";
 import { makePerson } from "./approvals-fixtures";
 import { purchaseProject, request as createPurchaseRequestFixture } from "./fixtures/purchase-requests";
-import { attachEvidence, setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
+import { createMemoryStorage } from "./fakes/memory-storage";
 import { createInReviewExpenseFixture, createIntakeManager, insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 
 // 06.1-14(G15 · RP-15 ⑵ · T-061-142 · T-061-147 · T-061-148): 「올린 사람 · 경영관리만 보기」 증빙 종류(개인카드 전표 — 06.1-01 시드,
@@ -289,5 +293,46 @@ describe("G15 쓰기 길 — 지우기 · 무효 처리(P3-1)", () => {
     );
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe(NOT_FOUND);
+  });
+});
+
+// 07.1-12 PF7(D-E3 · E-P1-10 · T-07.1-12-07): 같은 sha256 중복 판정은 비공개 파일(개인카드 전표 같은 청구 영수증)도 막는다 — 빼면 같은 영수증을
+// 다른 사람이 다시 올려 이중 청구한다. 그 문서를 못 보는 사람에게는 번호 · 이름 없는 문구만 나간다(남는 정보는 「같은 바이트가 있다」뿐).
+describe("PF7 비공개 파일 중복 판정(07.1-12 · D-E3)", () => {
+  async function blockedReason(promise: Promise<unknown>): Promise<string> {
+    const error = await promise.then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    if (!(error instanceof EvidenceCheckError)) throw new Error("중복으로 막히지 않았다");
+    return error.message;
+  }
+
+  it("A의 비공개 파일과 같은 sha256을 B(그 문서를 못 봄)가 올리면 번호 없는 문구로 막히고, A가 같은 문서에 다시 올리면 같은 파일 문구 · 공개 파일도 같은 판정", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const storage = createMemoryStorage();
+    const { expenseId } = await createInReviewExpenseFixture(fx);
+    const extra = await addApprovedRevision(
+      fx,
+      ["공개 현장", "B 현장"].map((itemName) => ({ itemName, vendorId: fx.stageOneId, execution: { currency: "KRW" as const, amount: 2_000_000, fxRate: 1 } })),
+    );
+    await setEvidenceType(expenseId, PRIVATE_TYPE);
+    const privateSha = randomBytes(32).toString("hex");
+    const privateFile = await attachEvidence(manager, expenseId, storage, { sha256: privateSha, name: "개인카드 전표.jpg" });
+    expect((await db.select({ privateToOwner: files.privateToOwner }).from(files).where(eq(files.id, privateFile.id)))[0]?.privateToOwner).toBe(true);
+    const publicSha = randomBytes(32).toString("hex");
+    const publicDoc = await createInReviewExpenseFixture(fx, { lineId: extra.lineIds.get("공개 현장") });
+    const publicFile = await attachEvidence(manager, publicDoc.expenseId, storage, { sha256: publicSha });
+    expect((await db.select({ privateToOwner: files.privateToOwner }).from(files).where(eq(files.id, publicFile.id)))[0]?.privateToOwner).toBe(false);
+
+    // B — 다른 PM, 보는 범위 own이라 A의 문서를 못 본다.
+    const draftB = (await createExpenseFromLines(fx.otherPm, { lineIds: [extra.lineIds.get("B 현장") ?? ""] })).created[0]?.expenseId ?? "";
+    await setRoleViewScope(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "own");
+    const declare = (ownerId: string, sha256: string) => ({ ownerKind: "expense", ownerId, size: 1000, contentType: "image/jpeg", sha256, name: "영수증.jpg" });
+
+    expect(await blockedReason(requestEvidenceUpload(fx.otherPm, declare(draftB, privateSha), { storage }))).toBe(EVIDENCE_DUPLICATE_HIDDEN);
+    expect(await blockedReason(requestEvidenceUpload(fx.otherPm, declare(draftB, publicSha), { storage }))).toBe(EVIDENCE_DUPLICATE_HIDDEN);
+    expect(await blockedReason(requestEvidenceUpload(manager, declare(expenseId, privateSha), { storage }))).toBe(EVIDENCE_DUPLICATE_SAME_OWNER);
   });
 });

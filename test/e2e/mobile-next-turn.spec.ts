@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -180,6 +180,12 @@ const PHASE6_ITEMS: NextTurnItem[] = [
   { tag: "막힘", label: "정산 팝업", reason: "완료 전 점검 3건", amount: 0, measureText: "—", action: { label: "점검 보기", href: "/projects/p1#pre-settle-check" } },
 ];
 
+// 점검표에 옮길 실측 — 통과한 시험은 첨부가 남지 않아 test-results(gitignore)에 한 줄씩 적는다.
+function record(kind: string, width: number, rows: LineProbe[]): void {
+  mkdirSync(path.join(ROOT, "test-results"), { recursive: true });
+  appendFileSync(path.join(ROOT, "test-results", "next-turn-probe.jsonl"), `${JSON.stringify({ kind, width, rows })}\n`);
+}
+
 type LineProbe = { labelLines: number; whyLines: number; whyClipped: boolean; whyTitle: string | null; whyText: string | null; labelClipped: boolean; labelText: string; overflowX: boolean };
 
 for (const width of [375, 320]) {
@@ -219,7 +225,7 @@ for (const width of [375, 320]) {
     test("Phase 6 줄마다 label 1줄 · 이유 1줄(전체 2줄 이하) · 건수 숫자가 보이고 · 말줄임이면 title이 전체 이유", async ({ page }, testInfo) => {
       const rows = await probe(page);
       await testInfo.attach(`probe-${width}`, { body: JSON.stringify(rows, null, 2), contentType: "application/json" });
-      console.log(`PROBE ${width} ${JSON.stringify(rows)}`);
+      record("phase6", width, rows);
       // 줄은 태그 순(막힘 → 오늘 → 결재 → 대기)으로 놓이므로 label로 찾는다. 완료 전 점검 줄(label=프로젝트 이름 · 이유=`완료 전 점검 {n}건` — 사용자 결정 10/28)도 같은 단언을 받는다.
       const phase6 = rows.filter((row) => PHASE6_ITEMS.some((item) => item.label === row.labelText && item.reason !== ""));
       expect(phase6).toHaveLength(PHASE6_ITEMS.filter((item) => item.reason !== "").length);
@@ -245,7 +251,7 @@ for (const width of [375, 320]) {
       );
       const rows = await probe(page);
       await testInfo.attach(`probe-presettle-long-${width}`, { body: JSON.stringify(rows, null, 2), contentType: "application/json" });
-      console.log(`PROBE-LONG ${width} ${JSON.stringify(rows)}`);
+      record("presettle-long", width, rows);
       expect(rows[0]?.labelLines).toBeLessThanOrEqual(2);
       expect(rows[0]?.whyLines).toBe(1);
       expect(rows[0]?.overflowX).toBe(false);

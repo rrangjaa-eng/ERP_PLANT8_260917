@@ -82,8 +82,9 @@ export function buildPreSettleBlockedItems(rows: readonly { projectId: string; p
     .map((row) => ({
       key: `phase6-presettle-${row.projectId}`,
       tag: "막힘",
-      label: `${row.projectName} — 완료 전 점검 ${row.blockedCount}건`,
-      reason: "",
+      // 사용자 결정(07.1-17 · 10/28): 다른 묶음 줄과 같은 꼴 — 위(label)에는 프로젝트 이름, 이유 칸에 상황.
+      label: row.projectName,
+      reason: `완료 전 점검 ${row.blockedCount}건`,
       measureText: "—",
       action: { label: "점검 보기", href: `/projects/${row.projectId}#pre-settle-check` },
     }));

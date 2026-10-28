@@ -2,6 +2,7 @@ import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { buildChanges, moneyChangeText, type LineChange } from "@/domain/action-log/changes";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
@@ -36,6 +37,7 @@ import {
   listRevenueEntriesByProject as repoListRevenueEntriesByProject,
   insertRevenueEntry as repoInsertRevenueEntry,
   findRevenueEntryById as repoFindRevenueEntryById,
+  findRevenueEntriesByIds as repoFindRevenueEntriesByIds,
   updateRevenueEntryIfVersionMatches as repoUpdateRevenueEntryIfVersionMatches,
   listCollectionRows as repoListCollectionRows,
   type RevenueEntryRow,
@@ -447,6 +449,20 @@ function sameStoredEntry(stored: RevenueEntryRow, owner: { projectId: string; ki
   );
 }
 
+// 07.1-13 S8: 로그 줄 전후 보기 — 날짜 · 금액(Money 글자) · 메모만 비교한다(version · id 제외).
+function entryChangeView(entry: EntryPayload | RevenueEntryRow): Record<string, unknown> {
+  return {
+    entryDate: entry.entryDate,
+    amount: moneyChangeText({
+      currency: entry.amountCurrency,
+      foreignAmount: entry.amountForeignAmount,
+      fxRate: entry.amountFxRate,
+      amountKrw: entry.amountAmountKrw,
+    }),
+    note: entry.note,
+  };
+}
+
 // 04-41(Codex #1 · ENG-D10) — 기존 줄은 이 프로젝트·이 종류의 줄만 고친다(아니면 `줄을 찾을 수 없음`). 새 줄은 화면
 // id로 멱등 삽입하고, 이미 있으면 같은 프로젝트·종류의 활성 줄이고 값이 같을 때만 응답을 잃은 재전송(no-op)이다.
 // 환율 기억은 여기서 하지 않고 실제로 쓴 외화 줄만 돌려준다 — 커밋 뒤에 트랜잭션을 연 쪽이 기억한다.
@@ -455,10 +471,16 @@ async function saveEntries(
   projectId: string,
   kind: RevenueEntryKind,
   entries: PreparedEntry[],
+  priorById: ReadonlyMap<string, RevenueEntryRow>,
   tx: DbOrTx,
-): Promise<{ written: number; fxToRemember: FxToRemember[] }> {
+): Promise<{ written: number; fxToRemember: FxToRemember[]; lineChanges: Omit<LineChange, "no">[] }> {
   let written = 0;
   const fxToRemember: FxToRemember[] = [];
+  // 07.1-13 S8: 실제로 쓴 줄의 전후. 순번(no)은 saveRevenueInTx가 쓰기 뒤 표 순서로 붙인다. 매출 줄은 항목명이 없다(name null).
+  const lineChanges: Omit<LineChange, "no">[] = [];
+  const pushChange = (id: string, changes: Record<string, [unknown, unknown]>) => {
+    if (Object.keys(changes).length > 0) lineChanges.push({ id, kind, name: null, changes });
+  };
   for (const { input, payload } of entries) {
     if (input.id && input.isNew) {
       const inserted = await repoInsertRevenueEntry(viewer, { id: input.id, projectId, kind, ...payload }, tx);
@@ -469,6 +491,7 @@ async function saveEntries(
         }
         continue;
       }
+      pushChange(inserted.id, buildChanges({}, entryChangeView(payload)));
     } else if (input.id) {
       if (input.version === undefined) {
         throw new UserFacingError("버전 정보 필요 · 새로 고침");
@@ -483,15 +506,34 @@ async function saveEntries(
         if (stored.version === input.version + 1 && sameStoredEntry(stored, { projectId, kind }, payload)) continue;
         throw new UserFacingError(`다른 사람이 먼저 이 줄을 바꿈 · 덮어쓰기 / 그 값으로(줄 ${input.id})`);
       }
+      // 이전 값은 묶음 읽기 행이 입력 version과 같을 때만 — 조건 UPDATE가 성공했으니 그 행이 덮인 값이다(이전 값을 지어내지 않는다).
+      const prior = priorById.get(input.id);
+      if (prior && prior.version === input.version) pushChange(input.id, buildChanges(entryChangeView(prior), entryChangeView(payload)));
     } else {
-      await repoInsertRevenueEntry(viewer, { projectId, kind, ...payload }, tx);
+      const inserted = await repoInsertRevenueEntry(viewer, { projectId, kind, ...payload }, tx);
+      if (inserted) pushChange(inserted.id, buildChanges({}, entryChangeView(payload)));
     }
     written += 1;
     if (payload.amountCurrency !== "KRW" && input.fxRateTouched) {
       fxToRemember.push({ currency: payload.amountCurrency, rate: Number(payload.amountFxRate) });
     }
   }
-  return { written, fxToRemember };
+  return { written, fxToRemember, lineChanges };
+}
+
+// 07.1-13(#316 P2): 순번 = 쓰기 뒤 매출 표의 그 줄 자리(1부터). 화면은 고친 줄만 보내므로 요청 배열 순서가 아니라 listRevenue와
+// 같은 목록(listRevenueEntriesByProject — 종류별 날짜 순)을 같은 tx로 읽고, 화면이 그 순서 그대로 발행 · 입금 표를 그린다
+// (app/(app)/projects/[id]/quote-table.tsx entriesFromDto → revenue-section.tsx Table rows). 바뀐 줄이 없으면 읽지 않는다.
+async function numberEntryChanges(viewer: Viewer, projectId: string, changes: Omit<LineChange, "no">[], tx: DbOrTx): Promise<LineChange[]> {
+  if (changes.length === 0) return [];
+  const rows = await repoListRevenueEntriesByProject(viewer, projectId, tx);
+  const numbers = new Map<string, number>();
+  for (const kind of ["issue", "payment"] as const) {
+    rows.filter((row) => row.kind === kind).forEach((row, index) => numbers.set(row.id, index + 1));
+  }
+  return changes
+    .map((change) => ({ ...change, no: numbers.get(change.id) ?? 0 }))
+    .sort((a, b) => (a.kind === b.kind ? a.no - b.no : a.kind === "issue" ? -1 : 1));
 }
 
 // 04-41(B §1) — 트랜잭션을 여는 쪽(원장 합성 저장)이 잠그기 전에 읽는 매출 줄 쓰기 권한.
@@ -521,13 +563,21 @@ export async function saveRevenueInTx(
   const paid = prepareEntries(input.paidEntries ?? [], formatErrors);
   if (formatErrors.length > 0) throw new SaveRejectedError([], formatErrors);
 
-  const issuedResult = await saveEntries(viewer, projectId, "issue", issued, tx);
-  const paidResult = await saveEntries(viewer, projectId, "payment", paid, tx);
+  // 07.1-13 S8(E-P2-39): 고치는 기존 줄의 이전 값을 쓰기 전에 같은 tx로 한 번 묶어 읽는다(줄마다 질의하지 않는다).
+  const editedIds = [...issued, ...paid].flatMap(({ input }) => (input.id && !input.isNew ? [input.id] : []));
+  const priorById = new Map((await repoFindRevenueEntriesByIds(viewer, editedIds, tx)).map((row) => [row.id, row] as const));
+  const issuedResult = await saveEntries(viewer, projectId, "issue", issued, priorById, tx);
+  const paidResult = await saveEntries(viewer, projectId, "payment", paid, priorById, tx);
 
   // 04-12(엔지 리뷰 A §1 P2) — 같은 tx로 남긴다(합성 저장이 뒤에서 거부되면 로그도 되돌아간다). 재전송 no-op은 남기지 않는다.
   if (issuedResult.written + paidResult.written > 0) {
     const recordAction = deps.recordAction ?? defaultRecordAction;
-    await recordAction(viewer, { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId }, { tx });
+    const lineChanges = await numberEntryChanges(viewer, projectId, [...issuedResult.lineChanges, ...paidResult.lineChanges], tx);
+    await recordAction(
+      viewer,
+      { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId, ...(lineChanges.length > 0 ? { detail: { lineChanges } } : {}) },
+      { tx },
+    );
   }
   return [...issuedResult.fxToRemember, ...paidResult.fxToRemember];
 }

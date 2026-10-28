@@ -126,4 +126,55 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
     await expect(radio).toBeChecked();
     await page.context().close();
   });
+
+  // 07.1-11 PE7(W20 정정): 폰 카드 사용 등록 폼 — 줄(`field-row`)마다 자기 상자를 넘지 않고, 키보드 포커스 링이 잘라내는 조상(overflow) 안에 그려진다.
+  test("[07.1-11 PE7] 375 · 320 — 등록 폼 줄 넘침 0 · 문서 가로 넘침 0 · 포커스 링이 잘리지 않음", async ({ browser, baseURL }) => {
+    const { person } = await makeHolder();
+    for (const width of [375, 320]) {
+      const page = await loginPage(browser, baseURL, person, { width, height: 800 });
+      await page.goto("/cards?new=1");
+      const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
+      const usedOn = sheet.getByLabel("사용일");
+      await waitForHydration(usedOn);
+
+      const rows = await sheet.evaluate((root) => [...root.querySelectorAll("[data-ui='field-row']")].map((row) => ({ label: (row.querySelector("span, label")?.textContent ?? "").trim(), scroll: [row.scrollWidth, row.clientWidth] })));
+      expect(rows.length, `${width}`).toBeGreaterThan(0);
+      expect(rows.filter((row) => (row.scroll[0] ?? 0) > (row.scroll[1] ?? 0)), `${width} 줄 넘침`).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${width} 문서`).toBe(0);
+
+      // 사용일에서 Tab으로 폼 끝까지 — 포커스된 요소의 외곽선(굵기 + offset)이 가로로 잘라내는 조상 안인가.
+      await usedOn.focus();
+      const clipped: string[] = [];
+      const seen = new Set<string>();
+      for (let step = 0; step < 40; step += 1) {
+        const fact = await page.evaluate(() => {
+          const element = document.activeElement;
+          if (!(element instanceof HTMLElement) || !element.closest("dialog, [role='dialog']")) return null;
+          const name = `${element.tagName.toLowerCase()}:${element.getAttribute("aria-label") ?? element.id ?? ""}:${(element.textContent ?? "").trim().slice(0, 12)}`;
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          if (style.outlineStyle === "none" || rect.width < 2 || rect.height < 2) return { name, cut: null };
+          const grow = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+          const ring = { left: rect.left - grow, right: rect.right + grow };
+          for (let parent = element.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+            const overflowX = getComputedStyle(parent).overflowX;
+            if (overflowX === "visible") continue;
+            const box = parent.getBoundingClientRect();
+            const left = box.left + parent.clientLeft;
+            const right = left + parent.clientWidth;
+            if (ring.left < left - 0.5 || ring.right > right + 0.5) return { name, cut: `${parent.className || parent.tagName} ${Math.round(ring.left)}~${Math.round(ring.right)} / ${Math.round(left)}~${Math.round(right)}` };
+          }
+          return { name, cut: null };
+        });
+        // 날짜 칸은 Tab이 연 · 월 · 일 사이를 먼저 돈다 — 같은 요소는 한 번만 적고 계속 간다(패널 밖으로 나가면 끝).
+        if (fact === null) break;
+        if (!seen.has(fact.name) && fact.cut) clipped.push(`${fact.name} ${fact.cut}`);
+        seen.add(fact.name);
+        await page.keyboard.press("Tab");
+      }
+      expect(seen.size, `${width} 포커스 이동`).toBeGreaterThan(3);
+      expect(clipped, `${width} 포커스 링`).toEqual([]);
+      await page.context().close();
+    }
+  });
 });

@@ -905,3 +905,125 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
     });
   });
 });
+
+// 07.1-13 S8(E-P2-39): 매출 줄 저장 로그는 바뀐 줄의 전후를 lineChanges 원소로 남긴다 — 이전 값은 쓰기 전 같은 tx 묶음 읽기.
+describe("매출 줄 저장 로그의 줄 전후(07.1-13 S8)", () => {
+  const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+  type Element = { id: string; kind: string; no: number; name: string | null; changes: Record<string, [unknown, unknown]> };
+
+  async function revenueLogs(projectId: string) {
+    return db
+      .select({ seq: actionLog.seq, detail: actionLog.detail })
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "revenue_entry"), eq(actionLog.entityId, projectId)))
+      .orderBy(actionLog.seq);
+  }
+
+  async function lastElements(projectId: string): Promise<Element[]> {
+    const detail = (await revenueLogs(projectId)).at(-1)?.detail as { lineChanges?: Element[] } | null | undefined;
+    return detail?.lineChanges ?? [];
+  }
+
+  it("발행 줄 금액 고침 · 새 입금 줄 — 고친 줄은 바뀐 칸 전후, 새 줄은 이후만, 그대로인 줄은 원소가 없다", async () => {
+    const finance = await createFinanceViewer();
+    const { project } = await setupProject();
+    const saved = await saveRevenue(finance, project.id, {
+      issuedEntries: [
+        { entryDate: "2026-09-01", amount: krw(1_000_000), note: "1차" },
+        { entryDate: "2026-09-05", amount: krw(500_000), note: "2차" },
+      ],
+    });
+    const [first, second] = saved?.issuedEntries ?? [];
+    if (!first || !second) throw new Error("발행 줄 준비 실패");
+    const target = first.amount.amountKrw === 1_000_000 ? first : second;
+    const untouched = target === first ? second : first;
+    const paymentId = randomUUID();
+
+    await saveRevenue(finance, project.id, {
+      issuedEntries: [
+        { id: target.id, version: target.version, entryDate: target.entryDate, amount: krw(1_100_000), note: target.note },
+        { id: untouched.id, version: untouched.version, entryDate: untouched.entryDate, amount: krw(untouched.amount.amountKrw), note: untouched.note },
+      ],
+      paidEntries: [{ id: paymentId, isNew: true, entryDate: "2026-10-01", amount: krw(300_000), note: "입금" }],
+    });
+
+    const elements = await lastElements(project.id);
+    expect(elements).toHaveLength(2);
+    expect(elements.find((element) => element.id === untouched.id)).toBeUndefined();
+    expect(elements.find((element) => element.id === target.id)).toEqual({
+      id: target.id,
+      kind: "issue",
+      no: 1,
+      name: null,
+      changes: { amount: ["1,000,000원", "1,100,000원"] },
+    });
+    const payment = elements.find((element) => element.id === paymentId)!;
+    expect(payment).toMatchObject({ kind: "payment", no: 1, name: null });
+    expect(payment.changes).toEqual({ entryDate: [null, "2026-10-01"], amount: [null, "300,000원"], note: [null, "입금"] });
+  });
+
+  // #316 게이트 P2: 화면은 고친 줄만 보낸다 — 순번은 요청 배열이 아니라 매출 표 순서(listRevenue · 종류별 발행일/입금일 순)의 그 줄 자리다.
+  it("여러 줄 가운데 뒤쪽 줄만 고쳐도 그 줄의 실제 번호(표 순서)로 남는다", async () => {
+    const finance = await createFinanceViewer();
+    const { project } = await setupProject();
+    await saveRevenue(finance, project.id, {
+      issuedEntries: [
+        { entryDate: "2026-09-01", amount: krw(1_000) },
+        { entryDate: "2026-09-02", amount: krw(2_000) },
+        { entryDate: "2026-09-03", amount: krw(3_000) },
+      ],
+    });
+    const listed = (await listRevenue(finance, project.id))?.issuedEntries ?? [];
+    expect(listed.map((entry) => entry.entryDate)).toEqual(["2026-09-01", "2026-09-02", "2026-09-03"]);
+    const third = listed[2]!;
+
+    await saveRevenue(finance, project.id, {
+      issuedEntries: [{ id: third.id, version: third.version, entryDate: third.entryDate, amount: krw(3_500), note: third.note }],
+    });
+
+    expect(await lastElements(project.id)).toEqual([
+      { id: third.id, kind: "issue", no: 3, name: null, changes: { amount: ["3,000원", "3,500원"] } },
+    ]);
+  });
+
+  it("고치는 줄 둘을 한 번에 — 두 원소의 이전 값이 각자 그 줄의 값이다(묶음 읽기)", async () => {
+    const finance = await createFinanceViewer();
+    const { project } = await setupProject();
+    const saved = await saveRevenue(finance, project.id, {
+      issuedEntries: [{ entryDate: "2026-09-01", amount: krw(1_000) }],
+      paidEntries: [{ entryDate: "2026-09-02", amount: krw(2_000), note: "가" }],
+    });
+    const issue = saved?.issuedEntries?.[0];
+    const paid = saved?.paidEntries?.[0];
+    if (!issue || !paid) throw new Error("매출 줄 준비 실패");
+
+    await saveRevenue(finance, project.id, {
+      issuedEntries: [{ id: issue.id, version: issue.version, entryDate: "2026-09-03", amount: krw(1_000) }],
+      paidEntries: [{ id: paid.id, version: paid.version, entryDate: paid.entryDate, amount: krw(2_500), note: "나" }],
+    });
+
+    const elements = await lastElements(project.id);
+    expect(elements.find((element) => element.id === issue.id)?.changes).toEqual({ entryDate: ["2026-09-01", "2026-09-03"] });
+    expect(elements.find((element) => element.id === paid.id)?.changes).toEqual({ amount: ["2,000원", "2,500원"], note: ["가", "나"] });
+  });
+
+  it("응답을 잃은 재전송(SF-2)은 로그가 없고 · 다른 사람이 먼저 고친 줄은 지금 문구로 거부되고 로그가 없다", async () => {
+    const finance = await createFinanceViewer();
+    const { project } = await setupProject();
+    const saved = await saveRevenue(finance, project.id, { issuedEntries: [{ entryDate: "2026-09-01", amount: krw(1_000) }] });
+    const entry = saved?.issuedEntries?.[0];
+    if (!entry) throw new Error("매출 줄 준비 실패");
+    const batch = { issuedEntries: [{ id: entry.id, version: entry.version, entryDate: "2026-09-01", amount: krw(2_000) }] };
+
+    await saveRevenue(finance, project.id, batch);
+    expect((await lastElements(project.id))[0]?.changes).toEqual({ amount: ["1,000원", "2,000원"] });
+    const logsAfterFirst = (await revenueLogs(project.id)).length;
+    await saveRevenue(finance, project.id, batch);
+    expect((await revenueLogs(project.id)).length).toBe(logsAfterFirst);
+
+    await expect(
+      saveRevenue(finance, project.id, { issuedEntries: [{ id: entry.id, version: entry.version, entryDate: "2026-09-01", amount: krw(3_000) }] }),
+    ).rejects.toThrow(/다른 사람이 먼저 이 줄을 바꿈/);
+    expect((await revenueLogs(project.id)).length).toBe(logsAfterFirst);
+  });
+});

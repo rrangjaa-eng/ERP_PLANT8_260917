@@ -2372,6 +2372,7 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: 위쪽 바 + 레일 병행 · 레일 접기 단추 · 260907처럼 묶음 머리글.
 **범위**: `ui/shell/`(TopBar · SideRail · RailSheet · Shell) · `ui/toast/` · `ui/detail-screen/` · `ui/permission-grid/` · `docs/design/tokens.css` · 셸 E2E 스펙. 본문 가용 폭이 ≥1280에서 176 줄어든다 — 표 열 숨김 기준의 본문 폭 이동은 후속.
 **추가(같은 날, CI e2e 실측)**: 1280–1439에서 본문이 1064라 지출결의 지급 대상 필터 줄(SP-65-2 한 줄)이 넘쳤다 — 필터 줄이 1280–1439에서 한 줄을 넘으면 검색 칸을 `--field-w-select`에서 `--s-8`을 뺀 폭(168)으로 줄이고, 필터 select 폭에도 상한 `--field-w-select`에서 `--s-4`를 뺀 폭(184)을 둔다 — 네이티브 select는 가장 긴 옵션(팀 이름)만큼 넓어지는데 CI 공용 DB엔 긴 팀 이름이 쌓여 있어 검색 칸만 줄이면 데이터에 따라 다시 두 줄이 된다(실측: select 상한을 `--field-w-select` 200 그대로 두면 한 줄 여유 0이라 넘쳤다). 1440 이상 · 768 · 폰 그대로. 첫 적용 `app/(app)/expenses/expenses.module.css`.
+**추가(2026-10-28, 07.1-09 CI e2e 실측)**: 폰(<700)에서도 필터 select 폭에 상한 `--field-w-select`에서 `--s-4`와 `--s-1`을 뺀 폭(180)을 둔다 — 지출결의 필터 줄이 CI 공용 DB의 긴 팀 이름 옵션 때문에 네 줄로 늘었다(긴 옵션을 넣어 재현). 앞 줄의 「폰 그대로」를 이 한 가지만 바꾼다. 긴 팀 이름은 select 안에서 잘린다(1280–1439 상한과 같은 절충). 첫 적용 `app/(app)/expenses/expenses.module.css`(`@media (max-width: 699.98px)` `.select`).
 
 ---
 

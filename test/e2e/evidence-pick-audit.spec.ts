@@ -8,7 +8,7 @@ import { db } from "@/db/client";
 import { expenses, projects, purchaseRequests } from "@/db/schema";
 import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, submitExpense, withdrawExpense } from "@/domain/expenses";
-import { countEvidencePool } from "@/domain/evidence-records/pool";
+import { countEvidencePool, countRecommendedEvidence } from "@/domain/evidence-records/pool";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -937,4 +937,107 @@ test("P6 (G-06.1-29) 작성자 — 고르기 붙인 직후 · 마지막 떼기 �
     record("⑹ 뗀 뒤 문서 scrollWidth <= clientWidth", width, role, url, ov2.join("/"), "scrollWidth <= clientWidth", ov2[0] <= ov2[1]);
     await page.context().close();
   }
+});
+
+// 07.1-09 D-7124(C-92) W10: 증빙 고르기 추천은 문서 증빙 종류와 같은 것만, 검색하면 다른 종류도 `{종류} · {거래처}`로 나온다. 부제 `후보 N`은 검색과 무관하고,
+// 추천 0이어도 트리거가 남아 `{종류} 증빙이 없습니다` + `검색으로 찾기`로 다른 종류에 닿는다. 문서 종류가 비면 지금처럼(종류 낱말 없음).
+test.describe("P7 같은 종류만 추천 (07.1-09 C-92)", () => {
+  async function setDocType(expenseId: string, evidenceType: string | null): Promise<void> {
+    await db.update(expenses).set({ evidenceType }).where(eq(expenses.id, expenseId));
+  }
+
+  async function open(page: Page, expenseId: string) {
+    await page.goto(`/expenses/${expenseId}`);
+    const trigger = pickTrigger(page);
+    await waitForHydration(trigger);
+    await trigger.click();
+    const dialog = pickDialog(page);
+    await expect(dialog).toBeVisible();
+    return dialog;
+  }
+
+  test("세금계산서 문서 — 추천은 세금계산서 둘뿐 · 부제 후보 2 · 검색하면 카드 줄이 `종류 · 거래처`로 나오고 부제는 그대로", async ({ browser, baseURL }) => {
+    test.setTimeout(240_000);
+    const fx = await setupExpenseE2E();
+    const manager = await createIntakeManager("P7경영");
+    const s = randomUUID().slice(0, 4);
+    await teamPublic(manager, fx.teamId, { nameOnDocument: `P7세금A${s}`, evidenceType: "tax_invoice" });
+    await teamPublic(manager, fx.teamId, { nameOnDocument: `P7세금B${s}`, evidenceType: "tax_invoice" });
+    for (const letter of ["A", "B", "C"]) await teamPublic(manager, fx.teamId, { nameOnDocument: `P7카드${letter}${s}`, evidenceType: "card_receipt" });
+    const expenseId = await draftDocument(fx);
+    await setDocType(expenseId, "tax_invoice");
+    const recommended = await countRecommendedEvidence(fx.pm.viewer, expenseId);
+    expect(recommended.count).toBe(2);
+    expect(recommended.typeLabel).toBeTruthy();
+
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 900 });
+    await expect(async () => {
+      await page.goto(`/expenses/${expenseId}`);
+      await expect(pickTrigger(page)).toHaveText("증빙 고르기 5");
+    }).toPass();
+    const dialog = await open(page, expenseId);
+    await expect(dialog).toContainText(`${recommended.typeLabel} · 후보 2`);
+    const options = dialog.getByRole("option");
+    await expect(options).toHaveCount(2);
+    for (const option of await options.all()) await expect(option).toContainText(`P7세금`);
+    await expect(dialog).not.toContainText("P7카드");
+
+    await dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first().fill(`P7카드A${s}`);
+    await expect(options).toHaveCount(1);
+    await expect(options.first()).toContainText(new RegExp(`· P7카드A${s}`));
+    await expect(dialog).toContainText(`${recommended.typeLabel} · 후보 2`);
+    await page.context().close();
+  });
+
+  test("추천 0 — 트리거가 남고, 부제 후보 0 · `{종류} 증빙이 없습니다` + `검색으로 찾기` → 검색으로 다른 종류 줄에 닿는다", async ({ browser, baseURL }) => {
+    test.setTimeout(240_000);
+    const fx = await setupExpenseE2E();
+    const manager = await createIntakeManager("P7경영0");
+    const s = randomUUID().slice(0, 4);
+    for (const letter of ["A", "B", "C"]) await teamPublic(manager, fx.teamId, { nameOnDocument: `P7만카드${letter}${s}`, evidenceType: "card_receipt" });
+    const expenseId = await draftDocument(fx);
+    await setDocType(expenseId, "tax_invoice");
+    const recommended = await countRecommendedEvidence(fx.pm.viewer, expenseId);
+    expect(recommended.count).toBe(0);
+
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 900 });
+    await expect(async () => {
+      await page.goto(`/expenses/${expenseId}`);
+      await expect(pickTrigger(page)).toHaveText("증빙 고르기 3");
+    }).toPass();
+    const dialog = await open(page, expenseId);
+    await expect(dialog).toContainText(`${recommended.typeLabel} · 후보 0`);
+    await expect(dialog).toContainText(`${recommended.typeLabel} 증빙이 없습니다`);
+    const next = dialog.getByRole("button", { name: "검색으로 찾기" });
+    await expect(next).toHaveCount(1);
+    await next.click();
+    await expect(dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first()).toBeFocused();
+    await dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first().fill(`P7만카드B${s}`);
+    await expect(dialog.getByRole("option")).toHaveCount(1);
+    await expect(dialog.getByRole("option").first()).toContainText(new RegExp(`· P7만카드B${s}`));
+    await page.context().close();
+  });
+
+  test("문서 증빙 종류가 비면 거름 없음 — 부제에 종류 낱말 없이 `후보 N`, 목록은 전부", async ({ browser, baseURL }) => {
+    test.setTimeout(240_000);
+    const fx = await setupExpenseE2E();
+    const manager = await createIntakeManager("P7경영N");
+    const s = randomUUID().slice(0, 4);
+    await teamPublic(manager, fx.teamId, { nameOnDocument: `P7빈세금${s}`, evidenceType: "tax_invoice" });
+    await teamPublic(manager, fx.teamId, { nameOnDocument: `P7빈카드${s}`, evidenceType: "card_receipt" });
+    const expenseId = await draftDocument(fx);
+    await setDocType(expenseId, null);
+
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 900 });
+    await expect(async () => {
+      await page.goto(`/expenses/${expenseId}`);
+      await expect(pickTrigger(page)).toHaveText("증빙 고르기 2");
+    }).toPass();
+    const dialog = await open(page, expenseId);
+    await expect(dialog.getByRole("option")).toHaveCount(2);
+    const subtitle = (await dialog.textContent()) ?? "";
+    expect(subtitle).toContain("후보 2");
+    expect(subtitle).not.toMatch(/세금계산서 · 후보|카드 전표 · 후보/);
+    await page.context().close();
+  });
 });

@@ -54,7 +54,7 @@ export function PickEvidenceDialog({ target, onClose, onAttached }: { target: Pi
             },
           ];
         });
-        return { items, truncated: data.truncated, preselect: data.preselect, limit: data.limit };
+        return { items, truncated: data.truncated, preselect: data.preselect, limit: data.limit, emptyDefault: data.emptyDefault };
       } catch {
         return null;
       }
@@ -127,7 +127,7 @@ export function PickEvidenceDialog({ target, onClose, onAttached }: { target: Pi
       search={search}
       primaryLabel={COPY.primary}
       noun="증빙"
-      emptyNextStep={null}
+      // 07.1-09(C-92): 추천 0 · 검색어 없음의 `{종류} 증빙이 없습니다`(서버 emptyDefault)에는 기본 3차 `검색으로 찾기`가 붙는다.
       resultLineMany={(rows) => (rows.length > 0 ? `고른 ${rows.length}건` : null)}
       onPickMany={onPickMany}
       maxSelected={cap ?? undefined}

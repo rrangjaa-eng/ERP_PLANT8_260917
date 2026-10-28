@@ -414,10 +414,17 @@ async function flagCanceledOriginals(viewer: Viewer, keys: readonly string[], lo
     if (owner === undefined) throw new UserFacingError(CANCEL_FLAG_RACE);
     if (owner === null) continue;
     // D-7106: 확인 기록이 풀렸든(지급 전) 아니든(지급 뒤 · 확인 기록 없음 · 작성 중 · 반려) 확인 필요가 선 문서마다 로그 한 줄 — reviewReleased는 풀린 상태 또는 null.
+    // 풀린 게 없으면 status는 released가 아니라 needs_check(#318 P3 — 풀리지 않은 것을 풀렸다고 남기지 않는다).
     const released = await releaseConfirmationOnRecordFlag(viewer, owner, tx);
     await recordAction(
       viewer,
-      { actionType: "document_update", entity: "expense", entityId: owner.id, documentId: owner.id, detail: { field: "evidenceReview", status: "released", reason: CANCEL_REGISTERED_CHECK, reviewReleased: released } },
+      {
+        actionType: "document_update",
+        entity: "expense",
+        entityId: owner.id,
+        documentId: owner.id,
+        detail: { field: "evidenceReview", status: released ? "released" : "needs_check", reason: CANCEL_REGISTERED_CHECK, reviewReleased: released },
+      },
       { tx },
     );
   }

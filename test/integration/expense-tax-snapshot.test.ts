@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { approveDocument } from "@/domain/approvals";
+import { insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { expenses, settingsHistorized } from "@/db/schema";
@@ -91,7 +93,7 @@ describe("세율 스냅숏 · 세율 바뀜", () => {
     await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { evidenceType: "test_vat_scheduled" } });
     // 07-01 D-714: 작성자 저장은 지급 예정일을 칸에 쓰지 않는다 — 저장 칸 값(D-740 기존 값 · 지급 권한자 수동 지정)을 시험이 직접 둔다.
     await db.update(expenses).set({ scheduledPaymentDate: addDays(scheduledFrom, 5) }).where(eq(expenses.id, expenseId));
-    const before = await computeExpenseTax(fx.pm, await expenseRow(expenseId));
+    const before = await computeExpenseTax(fx.pm, { ...(await expenseRow(expenseId)), earliestEvidenceIssuedOn: null });
     if (before.unavailable) throw new Error("예정 행 전 계산 불가");
 
     await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: scheduledFrom, value: 0.12 });
@@ -184,4 +186,45 @@ describe("공급가액 고친 문서 — D-6520 · UI-SPEC V8 고친 뒤 문서 
     expect(view?.taxLine?.text).toBe("부가세 10% 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙");
     expect(view?.taxDrift?.text).toBe("세율 바뀜 · 부가세 10% → 12% · 지급 총액 13,640,000 → 13,888,000");
   });
+});
+
+// 07.1-16(T-07.1-16-02): 증빙 기준일이 붙은 증빙 가장 이른 발행일로 바뀌어도 승인 때 찍힌 스냅숏은 소급해 바뀌지 않는다 — 새 계산만 새 기준일이고
+// 다르면 세율 바뀜 한 줄이 드러낸다. 이력 행은 미래(2027)에 둬 다른 시험의 오늘 세율을 건드리지 않고 끝에 취소한다.
+describe("07.1-16 — 승인 스냅숏 불변", () => {
+  it("수동 증빙일(10-20)로 승인된 문서에 더 이른 발행일(10-05) 기록이 붙어도 스냅숏 칸은 그대로 · 상세는 세율 바뀜", async () => {
+    await seedCodeItem(SYSTEM_VIEWER, {
+      tableKey: "evidence_type",
+      value: "test_vat_evidence_0716",
+      label: "증빙일 부가세 07.1-16",
+      sortOrder: 99,
+      taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "evidence_date" },
+    });
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOnStageLine(fx);
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { evidenceType: "test_vat_evidence_0716", evidenceDate: "2027-10-20" } });
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2027-10-10", value: 0.17 });
+    try {
+      const submitted = await submitReadyDraft(fx.pm, expenseId);
+      if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+      const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+      await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
+      const pick = (row: Awaited<ReturnType<typeof expenseRow>>) => ({
+        taxRate: row.taxRate,
+        taxBasisDate: row.taxBasisDate,
+        taxRateEffectiveFrom: row.taxRateEffectiveFrom,
+        vatKrw: row.vatKrw,
+        payableKrw: row.payableKrw,
+      });
+      const stamped = pick(await expenseRow(expenseId));
+      expect(stamped).toMatchObject({ taxRate: "0.170000", taxBasisDate: "2027-10-20", vatKrw: 2_108_000, payableKrw: 14_508_000 });
+
+      await insertLinkFixture({ recordId: await insertRecordFixture(fx.pm, { issuedOn: "2027-10-05" }), ownerId: expenseId, attachedBy: fx.pm.id });
+      expect(pick(await expenseRow(expenseId))).toEqual(stamped);
+      const doc = await getExpense(fx.pm, { expenseId });
+      expect(doc?.taxLine?.text).toContain("지급 총액 14,508,000");
+      expect(doc?.taxDrift?.text).toContain("17% →");
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, "2027-10-10");
+    }
+  }, 60_000);
 });

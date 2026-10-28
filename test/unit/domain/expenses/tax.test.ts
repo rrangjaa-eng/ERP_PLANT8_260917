@@ -16,7 +16,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("코드 항목 기준일 payment_date · 지급 예정일 없음 → 서울 오늘이고 지급 슬롯에 들어간다", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: null, createdAt },
+      { scheduledPaymentDate: null, earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "withholding", codeBasis: "payment_date", ...settings, todayKst: "2026-09-26" },
     );
     expect(picked.basisKind).toBe("payment_date");
@@ -26,7 +26,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("코드 항목 기준일 payment_date · 지급 예정일 있음 → 지급 예정일", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: "2026-10-05", createdAt },
+      { scheduledPaymentDate: "2026-10-05", earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "withholding", codeBasis: "payment_date", ...settings, todayKst: "2026-09-26" },
     );
     expect(picked.basisDate).toBe("2026-10-05");
@@ -34,7 +34,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("코드 항목에 기준일이 없고 부가세 규칙 · 설정 evidence_date → 작성일(created_at의 서울 날짜)이고 증빙 슬롯에 들어간다", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: "2026-10-05", createdAt },
+      { scheduledPaymentDate: "2026-10-05", earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "vat_surcharge", codeBasis: undefined, ...settings, todayKst: "2026-10-04" },
     );
     expect(picked.basisKind).toBe("evidence_date");
@@ -44,7 +44,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("설정을 document_date로 바꿔도 작성일이다", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: "2026-10-05", createdAt },
+      { scheduledPaymentDate: "2026-10-05", earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "vat_surcharge", codeBasis: undefined, basisWithholding: "payment_date", basisVat: "document_date", todayKst: "2026-10-04" },
     );
     expect(picked.basisKind).toBe("document_date");
@@ -53,7 +53,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("코드 항목 scheduled_payment_date + 지급 예정일 2026-10-05 → 2026-10-05(부가세 규칙이어도 코드 항목이 설정보다 먼저)", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: "2026-10-05", createdAt },
+      { scheduledPaymentDate: "2026-10-05", earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "vat_surcharge", codeBasis: "scheduled_payment_date", ...settings, todayKst: "2026-10-04" },
     );
     expect(picked.basisKind).toBe("scheduled_payment_date");
@@ -63,7 +63,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("회사 대납은 원천징수 설정(지급 쪽)을 따른다", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: "2026-10-05", createdAt },
+      { scheduledPaymentDate: "2026-10-05", earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "company_borne", codeBasis: undefined, ...settings, todayKst: "2026-10-04" },
     );
     expect(picked.basisKind).toBe("payment_date");
@@ -131,6 +131,7 @@ const doc = (evidenceType: string, supplyAmountKrw: number, recipientCount?: num
   supplyAmountKrw,
   ...(recipientCount === undefined ? {} : { recipientCount }),
   scheduledPaymentDate: null,
+  earliestEvidenceIssuedOn: null,
   createdAt: new Date("2026-10-01T03:00:00Z"),
 });
 

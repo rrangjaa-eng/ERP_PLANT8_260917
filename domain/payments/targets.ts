@@ -43,7 +43,7 @@ import { addDays, kstDayStart } from "@/lib/kst-date";
 import { findTransferFileTimes } from "@/repositories/action-log";
 import { canExportBankTransferFile } from "@/domain/payments/transfer-gate";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
-import { loadPayCalendar, loadPaySchedules } from "@/domain/payments/pay-schedule-load";
+import { loadPayCalendar, loadPaySchedules, type LoadedPaySchedule } from "@/domain/payments/pay-schedule-load";
 import { payWeekGroupLabel, payWeekIndex, thisWeekPayDate, type PaySchedule } from "@/domain/payments/pay-schedule";
 import { accountChangedSinceLastPayment } from "@/domain/vendors/account-changes";
 
@@ -103,13 +103,24 @@ const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 // 지급 총액(DB 없음 — 세율은 shared 캐시) — 06-03 basisOf와 같은 순서. 금액 · 세금 규칙이 없으면 null(단건 경로는 TAX_UNAVAILABLE).
 // 07-06(P1 · B-P1-3): 기준일 사슬의 지급 예정일 자리는 유효 예정일(이미 셈한 PaySchedule.payDate — 다시 셈하지 않는다).
-async function payableOf(row: PaymentTargetRow, ctx: Pick<JudgeContext, "shared" | "today">, scheduledPaymentDate: string): Promise<number | null> {
+// 07.1-16(D-7123): 증빙 기준일 자리는 같은 일정 로더가 읽은 붙은 증빙 가장 이른 발행일 — 단건 지급 · 승인 스냅숏과 같은 입력(행마다 질의 없음).
+async function payableOf(
+  row: PaymentTargetRow,
+  ctx: Pick<JudgeContext, "shared" | "today">,
+  schedule: Pick<LoadedPaySchedule, "payDate" | "earliestEvidenceIssuedOn">,
+): Promise<number | null> {
   if (row.supplyAmountKrw === null) return null;
   const taxRule = ctx.shared.taxRuleOf(row.evidenceType);
   if (!taxRule) return null;
   const amount = pickPaymentAmount({ supplyAmountKrw: row.supplyAmountKrw });
   const dates = pickTaxDates(
-    { paidDate: ctx.today, scheduledPaymentDate, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
+    {
+      paidDate: ctx.today,
+      scheduledPaymentDate: schedule.payDate,
+      evidenceDate: row.evidenceDate,
+      earliestEvidenceIssuedOn: schedule.earliestEvidenceIssuedOn,
+      createdAt: row.createdAt,
+    },
     { ruleKind: taxRule.ruleKind, codeBasis: taxRule.basisDate, basisWithholding: ctx.shared.basisWithholding, basisVat: ctx.shared.basisVat, todayKst: ctx.today },
   );
   const rates = await ctx.shared.ratesFor(dates.basisDate);
@@ -164,7 +175,7 @@ async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], c
       { approvalState: row.approvalStatus, paid: row.paid, hasEvidence: hasLiveEvidence, waived: evidenceCtx.waived, confirmation: evidenceCtx.confirmation, evidence, pair },
       { canPay: true, amountVisible: ctx.amountVisible },
     );
-    const payableKrw = await payableOf(row, ctx, schedule.payDate);
+    const payableKrw = await payableOf(row, ctx, schedule);
     const reason = reasonOf(row, bar, payableKrw);
     judged.push({
       row,
@@ -373,7 +384,7 @@ async function listApprovingByWeek(
     if (!schedule || schedule.failed || schedule.payDate < ctx.today) continue;
     const week = payWeekIndex(schedule.payDate, ctx.today);
     if (week !== 0 && week !== 1) continue;
-    picked.push({ row, schedule, payableKrw: await payableOf(row, ctx, schedule.payDate), status: (await cutoffReasonOf(row, schedule)) ?? "결재 중" });
+    picked.push({ row, schedule, payableKrw: await payableOf(row, ctx, schedule), status: (await cutoffReasonOf(row, schedule)) ?? "결재 중" });
   }
   picked.sort((a, b) => compareTargetKey({ failed: false, payDate: a.schedule.payDate, number: a.row.number, id: a.row.id }, { failed: false, payDate: b.schedule.payDate, number: b.row.number, id: b.row.id }));
   const dtos = await projectMany(

@@ -333,8 +333,13 @@ export function scheduleOf(loaded: ExpenseSchedules, id: string): LoadedPaySched
 
 // 07 P1 · B-P1-3: 세금 기준일 사슬의 「지급 예정일」 자리 = 유효 예정일 — computeExpenseTax 호출처 넷(목록 차이 · 제출 스냅숏 · 미리보기 · 상세 차이)이
 // 같은 로더 값을 넘겨 승인 스냅숏 세액 = 지급 때 세액이 된다(domain/expenses/tax.ts는 그대로).
-function withEffectiveDate<Row extends { id: string; scheduledPaymentDate: string | null }>(row: Row, loaded: ExpenseSchedules): Row {
-  return { ...row, scheduledPaymentDate: scheduleOf(loaded, row.id).payDate };
+// 07.1-16(E-P1-11): 「증빙일」 자리도 같은 로더가 읽은 붙은 증빙 가장 이른 발행일을 함께 얹는다.
+function withEffectiveDate<Row extends { id: string; scheduledPaymentDate: string | null }>(
+  row: Row,
+  loaded: ExpenseSchedules,
+): Row & { earliestEvidenceIssuedOn: string | null } {
+  const schedule = scheduleOf(loaded, row.id);
+  return { ...row, scheduledPaymentDate: schedule.payDate, earliestEvidenceIssuedOn: schedule.earliestEvidenceIssuedOn };
 }
 
 type PaymentFields = Pick<

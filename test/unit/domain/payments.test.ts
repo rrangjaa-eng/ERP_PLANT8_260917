@@ -87,7 +87,7 @@ describe("decidePayable", () => {
   ];
   for (const [label, rule, evidenceType] of SAME_AS_05) {
     it(`같은 입력의 05 computeExpenseTax payable과 같다 — ${label}`, async () => {
-      const doc = { evidenceType, supplyAmountKrw: 712_500, scheduledPaymentDate: "2026-09-22", evidenceDate: "2026-09-22", createdAt: new Date("2026-09-01T00:00:00Z") };
+      const doc = { evidenceType, supplyAmountKrw: 712_500, scheduledPaymentDate: "2026-09-22", evidenceDate: "2026-09-22", earliestEvidenceIssuedOn: null, createdAt: new Date("2026-09-01T00:00:00Z") };
       const tax = await computeExpenseTax({ id: "u1" } as never, doc, {
         listCodeItems: vi.fn(() => Promise.resolve([{ value: evidenceType, taxRule: rule }])) as never,
         getSettingValue: vi.fn((def: { key: string }) => Promise.resolve(SETTING_VALUES[def.key])) as never,
@@ -137,7 +137,7 @@ describe("decidePayable", () => {
 describe("미래 지급일 (RS-11 · Q6)", () => {
   it("pickTaxDates의 payment_date 기준일은 미래 지급일 그대로다", () => {
     const dates = pickTaxDates(
-      { paidDate: "2027-03-02", scheduledPaymentDate: "2026-09-30", createdAt: new Date("2026-09-01T00:00:00Z") },
+      { paidDate: "2027-03-02", scheduledPaymentDate: "2026-09-30", earliestEvidenceIssuedOn: null, createdAt: new Date("2026-09-01T00:00:00Z") },
       { ruleKind: "withholding", codeBasis: "payment_date", basisWithholding: "payment_date", basisVat: "evidence_date", todayKst: "2026-09-22" },
     );
     expect(dates.basisDate).toBe("2027-03-02");
@@ -334,7 +334,7 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
   it("사전 조회에 붙은 증빙 가장 이른 발행일(09-05)이 있으면 잠금 뒤 기준일도 그 날이다(기준 바뀜 신호 없음)", async () => {
     const pre = preOf(ROW, true, "2026-09-05");
     expect(pre.tax?.dates.basisDate).toBe("2026-09-05");
-    const result = await judge({ pre, lockedHasEvidence: true, expectedPayableKrw: 1_100_000 });
+    const result = await judge({ pre, expectedPayableKrw: 1_100_000 });
     expect(result.payable.payableKrw).toBe(1_100_000);
   });
 
@@ -357,7 +357,7 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
     const future = "2027-03-02";
     const row: LockedExpense = { ...ROW, evidenceType: "business_income" };
     const dates = pickTaxDates(
-      { paidDate: future, scheduledPaymentDate: null, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
+      { paidDate: future, scheduledPaymentDate: null, evidenceDate: row.evidenceDate, earliestEvidenceIssuedOn: null, createdAt: row.createdAt },
       { ruleKind: "withholding", codeBasis: "payment_date", basisWithholding: "payment_date", basisVat: "evidence_date", todayKst: TODAY },
     );
     const pre: PaymentInputs = {

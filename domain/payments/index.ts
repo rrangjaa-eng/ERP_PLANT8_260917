@@ -274,6 +274,9 @@ export type PaymentInputs = {
   drafterName: string;
   // 07.1-03 D-7101 — 사전 조회 프로젝트가 완료인가(팀 비용 문서는 거짓). 지급 행 미리보기 전용 — 지급 완료 tx는 잠근 프로젝트 행으로 다시 정한다.
   projectCompleted: boolean;
+  // 07.1-16(D-7123 · P3): 사전 조회 때 일정 로더가 읽은 붙은 증빙 가장 이른 발행일 — 잠금 뒤 판정이 같은 값을 증빙 기준일로 쓴다.
+  // 그 사이 승인 문서에 붙이거나 떼면 문서 version이 올라 잠금 뒤 version 검사가 거부한다(낡은 기준일로 지급되지 않는다).
+  earliestEvidenceIssuedOn: string | null;
   amount: PaymentAmount | null;
   tax: (PaymentTax & { rates: TaxRates }) | null;
   // 07-06(D-715 · P1): 사전 조회 때 셈한 자동 예정일 — 잠금 뒤 판정이 잠근 행의 수동 값 ?? 이 값을 세금 기준일로 쓴다(DB 없음). 없으면 저장값만.
@@ -282,14 +285,20 @@ export type PaymentInputs = {
 
 // 잠근 행이든 사전 조회 행이든 같은 규칙으로 기준(세금 규칙 · 기준일 · 받는 인원 · 금액)을 정한다 — DB 없음.
 function basisOf(
-  row: Pick<ExpenseRow, "evidenceType" | "supplyAmountKrw" | "scheduledPaymentDate" | "evidenceDate" | "createdAt" | "recipientCount">,
+  row: Pick<ExpenseRow, "evidenceType" | "supplyAmountKrw" | "scheduledPaymentDate" | "evidenceDate" | "createdAt" | "recipientCount"> & { earliestEvidenceIssuedOn: string | null },
   ctx: { shared: PaymentShared; payDate: string | null; today: string },
 ): { amount: PaymentAmount | null; tax: PaymentTax | null } {
   const amount = row.supplyAmountKrw === null ? null : pickPaymentAmount({ supplyAmountKrw: row.supplyAmountKrw });
   const taxRule = ctx.shared.taxRuleOf(row.evidenceType);
   if (!taxRule) return { amount, tax: null };
   const dates = pickTaxDates(
-    { paidDate: ctx.payDate, scheduledPaymentDate: row.scheduledPaymentDate, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
+    {
+      paidDate: ctx.payDate,
+      scheduledPaymentDate: row.scheduledPaymentDate,
+      evidenceDate: row.evidenceDate,
+      earliestEvidenceIssuedOn: row.earliestEvidenceIssuedOn,
+      createdAt: row.createdAt,
+    },
     { ruleKind: taxRule.ruleKind, codeBasis: taxRule.basisDate, basisWithholding: ctx.shared.basisWithholding, basisVat: ctx.shared.basisVat, todayKst: ctx.today },
   );
   return { amount, tax: { taxRule, dates, recipientCount: row.recipientCount } };
@@ -320,7 +329,8 @@ export async function loadPaymentInputs(
   const payDate = input.payDate ?? null;
   // 07-06(P1): 세금 기준일의 「지급 예정일」 = 유효 예정일(수동 ?? 자동) — 목록 · 승인 스냅숏과 같은 값.
   const schedule = (await loadPaySchedules(viewer, [row], { today, now: input.now ?? new Date() })).get(row.id);
-  const basisRow = { ...row, scheduledPaymentDate: input.scheduledPayDate ?? schedule?.payDate ?? row.scheduledPaymentDate };
+  const earliestEvidenceIssuedOn = schedule?.earliestEvidenceIssuedOn ?? null;
+  const basisRow = { ...row, scheduledPaymentDate: input.scheduledPayDate ?? schedule?.payDate ?? row.scheduledPaymentDate, earliestEvidenceIssuedOn };
   const { amount, tax } = basisOf(basisRow, { shared: ctxShared, payDate, today });
   return {
     expenseId: row.id,
@@ -333,6 +343,7 @@ export async function loadPaymentInputs(
     hasLiveEvidence,
     drafterName,
     projectCompleted,
+    earliestEvidenceIssuedOn,
     amount,
     tax: tax ? { ...tax, rates: await ctxShared.ratesFor(tax.dates.basisDate) } : null,
     ...(schedule ? { autoPayDate: schedule.autoPayDate } : {}),
@@ -406,7 +417,7 @@ export async function judgeLockedPayment(input: {
   if (!pair.allowed) throw new GateBlockedError(pair.reason);
 
   const basis = basisOf(
-    { ...locked, scheduledPaymentDate: locked.scheduledPaymentDate ?? pre.autoPayDate ?? null },
+    { ...locked, scheduledPaymentDate: locked.scheduledPaymentDate ?? pre.autoPayDate ?? null, earliestEvidenceIssuedOn: pre.earliestEvidenceIssuedOn },
     { shared: input.shared, payDate: input.payDate, today: pre.today },
   );
   if (!sameBasis(pre, { evidenceType: locked.evidenceType, ...basis })) {

@@ -33,6 +33,8 @@ import { setOrgUnitArchived } from "@/repositories/org-units";
 import { activeTeamMembers } from "@/repositories/team-memberships";
 import { assertNoSeatDuplicates, SeatTakenError, seatDuplicateBaseline } from "@/domain/people/seat-rules";
 import { withTransaction } from "@/lib/db-transaction";
+import { setCorpCardArchived } from "@/repositories/corp-cards";
+import { lockEvidenceCardImport } from "@/repositories/evidence-import-batches";
 import { kstToday } from "@/lib/kst-date";
 
 // ADMN-12: "지우지 않는다" — archived_at/archived_by 규약의 유일한 진입점.
@@ -271,6 +273,28 @@ async function restoreSeatedOrg(viewer: Viewer, entity: "team" | "org_unit", id:
   });
 }
 
+// PE12(E-P2-37): 카드 복원은 범용 길에서 떼어 한 트랜잭션에서 — 보관 풀기 → (실제로 되살린 때만) 「카드 미등록」 증빙 다시 잇기 → 복원 로그.
+// 다시 잇기가 실패하면 복원 · 로그도 되돌아간다. CG-07: 카드 명세 가져오기와 같은 잠금이 첫 줄. 같은 발급사 · 뒤 4자리의 살아 있는 카드가
+// 있으면 유일 색인이 막는다 — 사용자 문구로 바꾼다.
+async function restoreCorpCard(viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>): Promise<RestoreResult> {
+  const relink = deps?.relinkUnknownCardRecords ?? defaultRelinkUnknownCardRecords;
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  return withTransaction(async (tx) => {
+    await lockEvidenceCardImport(viewer, tx);
+    let reactivated: boolean;
+    try {
+      reactivated = await setCorpCardArchived(viewer, id, false, tx);
+    } catch (error) {
+      if (isUniqueViolation(error, CORP_CARD_LAST4_UNIQUE_INDEX)) throw new CorpCardLast4TakenError("같은 발급사와 뒤 4자리 카드 있음 · 복원 불가");
+      throw error;
+    }
+    if (!reactivated) return { restored: false };
+    await relink(viewer, id, tx);
+    await recordAction(viewer, { actionType: "restore", entity: "corp_card", entityId: id }, { tx });
+    return { restored: true };
+  });
+}
+
 export async function restore(
   viewer: Viewer,
   entity: string,
@@ -290,6 +314,7 @@ export async function restore(
   if (row.archivedAt === null) return { restored: false };
 
   if (entity === "team" || entity === "org_unit") return restoreSeatedOrg(viewer, entity, id, deps);
+  if (entity === "corp_card") return restoreCorpCard(viewer, id, deps);
 
   // 동시 복원은 둘 다 위 판정을 지날 수 있다 — 조건부 갱신이 실제로 바꾼 쪽만 「복원됨」 · 로그(PR #149 리뷰).
   // 거래처는 같은 사업자번호의 살아 있는 거래처가 생겼으면 유일 색인이 막는다 — 사용자 문구로 바꾼다.
@@ -303,14 +328,9 @@ export async function restore(
     reactivated = await entry.setArchived(viewer, id, false);
   } catch (error) {
     if (entity === "vendor" && isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) throw (await vendorRestoreBlock(viewer, id)) ?? error;
-    if (entity === "corp_card" && isUniqueViolation(error, CORP_CARD_LAST4_UNIQUE_INDEX)) {
-      throw new CorpCardLast4TakenError("같은 발급사와 뒤 4자리 카드 있음 · 복원 불가");
-    }
     throw error;
   }
   if (!reactivated) return { restored: false };
-  // 06.1-04 G11: 되살린 카드의 끝 4자리 「카드 미등록」 증빙 기록을 다시 잇는다(실제로 되살린 때만).
-  if (entity === "corp_card") await (deps?.relinkUnknownCardRecords ?? defaultRelinkUnknownCardRecords)(viewer, id);
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "restore", entity, entityId: id });

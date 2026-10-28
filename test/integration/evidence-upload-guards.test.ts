@@ -7,11 +7,13 @@ import { createExpenseFromLines } from "@/domain/expenses";
 import { EVIDENCE_MIN_SIZE_KB } from "@/domain/settings/keys";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertSimpleValue } from "@/repositories/settings";
-import { completeEvidenceUpload, EvidenceUploadRefusedError, requestEvidenceUpload } from "@/domain/evidence";
+import { completeEvidenceUpload, EvidenceCheckError, EvidenceUploadRefusedError, requestEvidenceUpload } from "@/domain/evidence";
+import { registerEvidenceUpload } from "@/domain/evidence-import";
 import { EVIDENCE_UPLOAD_FAILED } from "@/domain/evidence/upload-checks";
 import { log } from "@/lib/log";
 import { createMemoryStorage, type MemoryStorage } from "./fakes/memory-storage";
 import { setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
+import { createIntakeViewer } from "./fixtures/evidence";
 
 // 06.1-14(E14 · RP-14 · T-061-141): 05 사진 · PDF 올리기의 수용 마감 — 완료 통보가 저장소 머리 16바이트로 선언 형식의 서명을
 // 대조한다(어긋나면 지우고 다시 올리기). 260907 server/src/storage.ts sniffDocumentType 꼴.
@@ -118,6 +120,36 @@ describe("E14 최소 용량 — 올리기 요청", () => {
     await upsertSimpleValue(SYSTEM_VIEWER, EVIDENCE_MIN_SIZE_KB.key, 0, null);
     const intent = await requestEvidenceUpload(fx.pm, { ...owner, ...declared(15 * 1024) }, { storage, now: NOW });
     expect(intent.intentId).toBeTruthy();
+  });
+});
+
+// 07.1-12 D-7114(PF11 · W15) · PE10: 빈 파일은 정확한 이유로 — 카드 명세 등록(서버 액션 파일 칸)은 「빈 파일」, 05 사진 · PDF 올리기의
+// 크기 0 선언은 지금처럼 「올리지 못함」(의도 0). 엑셀 · CSV가 아닌 파일은 지금 문구 그대로.
+describe("D-7114 빈 파일 — 증빙 등록 · 05 올리기", () => {
+  it("0바이트 CSV · xlsx 파일은 빈 파일, 내용 있는 PDF는 엑셀·CSV 파일 아님", async () => {
+    const viewer = await createIntakeViewer();
+    for (const name of ["명세.csv", "명세.xlsx"]) {
+      const result = await registerEvidenceUpload(viewer, new File([], name));
+      expect(result).toEqual({ refused: { kind: "not-excel", headline: "빈 파일 · 내려받은 파일 그대로", lines: [], restCount: 0 } });
+    }
+    const pdf = new File([Buffer.from("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n\x78\x9c\x00\x01\n%%EOF\n", "latin1")], "명세.pdf");
+    expect((await registerEvidenceUpload(viewer, pdf)).refused?.headline).toBe("엑셀·CSV 파일 아님 · 내려받은 파일 그대로");
+  });
+
+  it("05 올리기의 크기 0 선언은 올리지 못함 · 의도 0", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const blocked = await requestEvidenceUpload(
+      fx.pm,
+      { ownerKind: "expense", ownerId: expenseId, size: 0, contentType: "image/png", sha256: randomBytes(32).toString("hex"), name: "영수증.png" },
+      { storage: createMemoryStorage(), now: NOW },
+    ).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(blocked).toBeInstanceOf(EvidenceCheckError);
+    expect((blocked as Error).message).toBe(EVIDENCE_UPLOAD_FAILED);
+    expect(await db.select().from(uploadIntents).where(eq(uploadIntents.ownerId, expenseId))).toEqual([]);
   });
 });
 

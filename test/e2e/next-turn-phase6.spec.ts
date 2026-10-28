@@ -1,3 +1,5 @@
+import { appendFileSync, mkdirSync } from "node:fs";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
@@ -86,6 +88,88 @@ test.describe("「내 차례」 Phase 6 — 지급 묶음 (06-23 트레이서)",
     await row.getByRole("link", { name: "지급 대상 보기" }).click();
     await expect.poll(() => new URL(page.url()).pathname).toBe("/expenses");
     expect(new URL(page.url()).searchParams.get("status")).toBe("지급 대상");
+  });
+});
+
+// #321 재검토(07.1-17): 폰에서 행동 링크의 padding이 밑줄을 이유 글자 쪽으로 내려, 이유 칸이 4번째 칸까지 넓어진 뒤 밑줄이 이유 글자를 가로질렀다.
+// 하네스(mobile-next-turn.spec.ts)가 아닌 실제 앱 홈(실제 셸 · 실제 서체)에서 375 · 320 두 폭을 잰다. 줄은 실제 지급(오늘) 줄이고,
+// 잘림 크기는 같은 줄의 글자를 최악(건수 두 자리 + 금액 아홉 · 열 자리)으로 바꿔 실제 칸 폭에서 잰다 — 서버에서 열두 건을 만드는 것보다 싸고 칸 폭은 그대로다.
+const HOME_PHONE_WIDTHS = [375, 320] as const;
+const HOME_CLIPPED_MAX_PX: Record<number, { nine: number; ten: number }> = { 375: { nine: 0, ten: 0 }, 320: { nine: 4, ten: 15 } };
+
+type HomeRowProbe = { rowWidth: number; rowHeight: number; why: { x: number; w: number }; amt: { x: number; w: number }; action: { x: number; w: number; h: number }; whyOver: number; crossings: string[]; overflowX: boolean };
+
+async function probeHomeRow(page: Page, amountText?: string): Promise<HomeRowProbe> {
+  const row = page.getByRole("listitem").filter({ hasText: PAYMENT_DUE }).first();
+  return row.evaluate((li, amount) => {
+    const why = li.querySelector<HTMLElement>(".why, [class*='why']");
+    const amt = li.querySelector<HTMLElement>("[class*='amt']");
+    const link = li.querySelector<HTMLElement>("a[href]");
+    if (!why || !amt || !link) throw new Error("이유 · 금액 · 링크 칸 없음");
+    if (amount !== undefined) {
+      const inner = amt.querySelector<HTMLElement>("*") ?? amt;
+      inner.textContent = amount;
+      why.textContent = " · 예정일 지남·오늘 · 확인 전 12건";
+    }
+    const box = (el: Element) => el.getBoundingClientRect();
+    const linkRect = link.getBoundingClientRect();
+    const border = parseFloat(getComputedStyle(link).borderBottomWidth);
+    const underline = { left: linkRect.left, right: linkRect.right, top: linkRect.bottom - border, bottom: linkRect.bottom };
+    const whyRect = why.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(why);
+    const crossings = Array.from(range.getClientRects())
+      .map((text) => ({ left: Math.max(text.left, whyRect.left), right: Math.min(text.right, whyRect.right), top: Math.max(text.top, whyRect.top), bottom: Math.min(text.bottom, whyRect.bottom) }))
+      .filter((text) => text.right > underline.left && text.left < underline.right && text.bottom > underline.top && text.top < underline.bottom)
+      .map((text) => `밑줄 y ${underline.top.toFixed(1)}~${underline.bottom.toFixed(1)} / 이유 글자 y ${text.top.toFixed(1)}~${text.bottom.toFixed(1)}`);
+    return {
+      rowWidth: Math.round(box(li).width),
+      rowHeight: Math.round(box(li).height),
+      why: { x: Math.round(whyRect.x), w: Math.round(whyRect.width) },
+      amt: { x: Math.round(box(amt).x), w: Math.round(box(amt).width) },
+      action: { x: Math.round(linkRect.x), w: Math.round(linkRect.width), h: Math.round(linkRect.height) },
+      whyOver: why.scrollWidth - why.clientWidth,
+      crossings,
+      overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    };
+  }, amountText);
+}
+
+function recordHome(kind: string, width: number, probe: HomeRowProbe): void {
+  mkdirSync(path.join(process.cwd(), "test-results"), { recursive: true });
+  appendFileSync(path.join(process.cwd(), "test-results", "next-turn-home-phone.jsonl"), `${JSON.stringify({ kind, width, ...probe })}\n`);
+}
+
+test.describe("「내 차례」 폰 홈 — 지급 줄 밑줄 · 이유 잘림 (#321 재검토 · 실제 앱)", () => {
+  test("375 · 320 — 밑줄이 이유 글자를 가로지르지 않고 가로 넘침 0 · 최악 글자의 잘림 크기가 상한 안이다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const expenseId = await approvedLine(fx, "tracer");
+    await db.update(expenses).set({ scheduledPaymentDate: seoulToday() }).where(eq(expenses.id, expenseId));
+
+    const page = await loginPage(browser, baseURL, payer, { width: 375, height: 800 });
+    await page.goto("/");
+    await expect(page.getByRole("listitem").filter({ hasText: PAYMENT_DUE })).toHaveCount(1);
+    await page.evaluate(() => document.fonts.ready);
+    for (const width of HOME_PHONE_WIDTHS) {
+      // 폭마다 홈을 새로 읽는다 — 앞 폭에서 글자를 최악으로 바꾼 DOM을 그대로 두면 「실제 줄」이 실제가 아니다.
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/");
+      await expect(page.getByRole("listitem").filter({ hasText: PAYMENT_DUE })).toHaveCount(1);
+      await page.evaluate(() => document.fonts.ready);
+      const real = await probeHomeRow(page);
+      recordHome("real", width, real);
+      expect(real.crossings, `${width} 실제 줄 — 밑줄이 이유 글자와 겹침`).toEqual([]);
+      expect(real.overflowX, `${width} 가로 넘침`).toBe(false);
+      const nine = await probeHomeRow(page, "123,456,789");
+      recordHome("worst-nine", width, nine);
+      expect(nine.crossings, `${width} 최악(아홉 자리) — 밑줄이 이유 글자와 겹침`).toEqual([]);
+      expect(nine.whyOver, `${width} 아홉 자리 잘림 ${nine.whyOver}px`).toBeLessThanOrEqual(HOME_CLIPPED_MAX_PX[width]?.nine ?? -1);
+      const ten = await probeHomeRow(page, "1,234,567,890");
+      recordHome("worst-ten", width, ten);
+      expect(ten.whyOver, `${width} 열 자리 잘림 ${ten.whyOver}px`).toBeLessThanOrEqual(HOME_CLIPPED_MAX_PX[width]?.ten ?? -1);
+    }
+    await page.context().close();
   });
 });
 

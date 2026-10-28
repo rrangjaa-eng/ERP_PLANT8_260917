@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { db } from "@/db/client";
 import { purchaseRequests } from "@/db/schema";
 import { createOrgUnit, createTeam } from "@/domain/org";
@@ -63,6 +63,27 @@ function css(relative: string): string {
   return readFileSync(path.join(ROOT, relative), "utf8");
 }
 
+// 앱과 같은 서체(Pretendard)로 재는 문서 — setContent는 about:blank라 /fonts를 못 받아 대체 서체로 그려지고, 대체 서체는 글자가 넓어
+// 잘림 크기가 실제 앱과 어긋난다(#321 재검토: 25px로 낸 것이 실제 앱에서는 4px). 숫자 모듈(Num — tabular-nums)도 얹는다: 빼면 금액 칸이 7~8px 좁아져
+// 이유 칸이 그만큼 넓게 재진다. 서체 조각이 실제로 받아졌는지까지 확인한다. 실제 앱 홈과의 대조는 next-turn-phase6.spec.ts의 폰 홈 시험이 한다.
+async function openPhoneDocument(page: Page, items: NextTurnItem[]): Promise<void> {
+  const html = `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width">
+<link rel="stylesheet" href="/fonts/pretendard/pretendard-dynamic-subset.css">
+<style>${css("docs/design/tokens.css")}</style>
+<style>${css("app/globals.css")}</style>
+<style>${css("ui/status-tag/StatusTag.module.css")}</style>
+<style>${css("ui/num/Num.module.css")}</style>
+<style>${css("ui/next-turn/NextTurn.module.css")}</style>
+</head><body><main style="padding: 0 var(--pad-page)">${await renderNextTurn(items)}</main></body></html>`;
+  await page.route("http://harness.local/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith("/fonts/")) await route.fulfill({ path: path.join(ROOT, "public", decodeURIComponent(url.pathname)) });
+    else await route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
+  });
+  await page.goto("http://harness.local/index.html");
+  await page.waitForFunction(() => document.fonts.status === "loaded" && Array.from(document.fonts).some((face) => face.status === "loaded"));
+}
+
 const ITEM: NextTurnItem = {
   tag: "막힘",
   label: "아이오닉9 쇼케이스 — 무대설치 지출결의",
@@ -111,7 +132,7 @@ test.describe("폰 375 「내 차례」 두 줄 배치 (§7-4 · 02-VERIFICATION
     expect(Math.abs(amount.x - label.x)).toBeLessThanOrEqual(1);
   });
 
-  test("가로 스크롤이 없고 행동 링크의 터치 목표가 44 이상이다 (§10)", async ({ page }) => {
+  test("가로 스크롤이 없고 행동 링크의 누르는 영역이 위아래로 44 이상이다 (§10)", async ({ page }) => {
     const { scrollWidth, clientWidth } = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
@@ -120,9 +141,22 @@ test.describe("폰 375 「내 차례」 두 줄 배치 (§7-4 · 02-VERIFICATION
 
     const link = page.locator(".action a").first();
     await expect(link).toHaveAttribute("href", "/expenses/1");
-    const box = await link.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    // 링크 상자는 글자 높이만큼이다 — 밑줄(border-bottom)이 글자 바로 아래에 그려지려면 padding이 없어야 한다(#321 재검토: padding 12가 밑줄을 이유 글자 쪽으로 15px 내려 보냈다).
+    // 누르는 영역은 ::after가 늘리므로 상자 높이 대신 링크 가운데 세로선에서 elementFromPoint가 링크를 가리키는 구간의 길이로 잰다.
+    const reach = await link.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      let top = Number.POSITIVE_INFINITY;
+      let bottom = Number.NEGATIVE_INFINITY;
+      for (let y = Math.max(0, Math.floor(rect.top) - 30); y <= Math.ceil(rect.bottom) + 30; y += 1) {
+        if (document.elementFromPoint(x, y + 0.5)?.closest("a") === el) {
+          top = Math.min(top, y);
+          bottom = Math.max(bottom, y + 1);
+        }
+      }
+      return { span: bottom - top, boxHeight: rect.height };
+    });
+    expect(reach.span, `누르는 영역 ${reach.span}px`).toBeGreaterThanOrEqual(44);
   });
 });
 
@@ -189,27 +223,30 @@ function record(kind: string, width: number, rows: LineProbe[]): void {
 type Box = { x: number; y: number; w: number; h: number };
 type LineProbe = { whyScrollWidth: number; rowHeight: number; amt: Box; action: Box; whyBox: Box | null; labelLines: number; whyLines: number; whyClipped: boolean; whyTitle: string | null; whyText: string | null; labelClipped: boolean; labelText: string; overflowX: boolean };
 
-// 이유 칸을 `3 / -1`로 넓힌 뒤에도 안 들어가는 줄 — 320에서 지급(오늘) `예정일 지남·오늘 · 확인 전 12건` + 금액 9자리(`123,456,789`)는 이유 폭 159px에 글자가 184px라 25px 모자란다.
-// 그리드 한 줄 수정으로는 못 닫는 갈래라 title(전체 이유)만 단언하고 /design-review 항목으로 남긴다(점검표). 닫히면 이 목록에서 뺀다.
-const KNOWN_CLIPPED: Record<number, readonly string[]> = { 320: ["지급 12건"] };
+// 이유 칸을 `3 / -1`로 넓힌 뒤에도 안 들어가는 줄 — 폰 320의 지급(오늘) `예정일 지남·오늘 · 확인 전 12건`(건수가 두 자리 이상)에 금액이 아홉 자리면 글자가 이유 칸보다 넓다.
+// 그리드 한 줄 수정으로는 못 닫는 갈래라 title(전체 이유)과 잘림 크기 상한(px)만 단언하고 /design-review 항목으로 남긴다. 상한은 실제 서체(Pretendard)로 잰 값이다 —
+// 상한을 넘으면(= 더 나빠지면) 실패하고, 0이 되면(= 닫히면) 이 목록에서 뺀다. 잘림 크기 = 이유 span의 scrollWidth − clientWidth.
+const KNOWN_CLIPPED_MAX_PX: Record<number, Record<string, number>> = { 320: { "지급 12건": 4 } };
+// 같은 줄에 금액이 열 자리(`1,234,567,890`)일 때의 상한 — 실제로는 억 단위 지급이 한 줄에 몰리는 최악이다.
+const TEN_DIGIT_CLIPPED_MAX_PX: Record<number, number> = { 375: 0, 320: 15 };
 
-// 이유 칸을 넓히기 전(`grid-column: 3`) 실측 — [x, y, w, h], 줄 위 기준 y.
+// 이유 칸을 넓히기 전(`grid-column: 3`, 링크 padding 12) 실측 — [x, y, w, h], 줄 위 기준 y. 실제 서체(Pretendard) + 숫자 모듈(Num)로 쟀다.
 const LAYOUT_BASELINE: Record<number, Record<string, { rowHeight: number; amt: readonly number[]; action: readonly number[] }>> = {
   375: {
-    "정산 팝업": { rowHeight: 67, amt: [60, 37, 13, 21], action: [296, 8, 63, 25] },
-    "지급 12건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [263, 8, 96, 25] },
-    "매출 발행 요청 12건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [263, 8, 96, 25] },
-    "지급 3건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [263, 8, 96, 25] },
-    "구매 요청 51건": { rowHeight: 67, amt: [60, 37, 67, 21], action: [263, 8, 96, 25] },
-    "전표 대기 2건": { rowHeight: 66, amt: [60, 52, 0, 0], action: [263, 8, 96, 25] },
+    "정산 팝업": { rowHeight: 67, amt: [57, 37, 12, 21], action: [305, 8, 54, 25] },
+    "지급 12건": { rowHeight: 67, amt: [57, 37, 78, 21], action: [276, 8, 83, 25] },
+    "매출 발행 요청 12건": { rowHeight: 67, amt: [57, 37, 78, 21], action: [276, 8, 83, 25] },
+    "지급 3건": { rowHeight: 67, amt: [57, 37, 78, 21], action: [276, 8, 83, 25] },
+    "구매 요청 51건": { rowHeight: 67, amt: [57, 37, 70, 21], action: [276, 8, 83, 25] },
+    "전표 대기 2건": { rowHeight: 66, amt: [57, 51, 0, 0], action: [276, 8, 83, 25] },
   },
   320: {
-    "정산 팝업": { rowHeight: 67, amt: [60, 37, 13, 21], action: [241, 8, 63, 25] },
-    "지급 12건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [208, 8, 96, 25] },
-    "매출 발행 요청 12건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [208, 8, 96, 25] },
-    "지급 3건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [208, 8, 96, 25] },
-    "구매 요청 51건": { rowHeight: 67, amt: [60, 37, 67, 21], action: [208, 8, 96, 25] },
-    "전표 대기 2건": { rowHeight: 66, amt: [60, 52, 0, 0], action: [208, 8, 96, 25] },
+    "정산 팝업": { rowHeight: 67, amt: [57, 37, 12, 21], action: [250, 8, 54, 25] },
+    "지급 12건": { rowHeight: 67, amt: [57, 37, 78, 21], action: [221, 8, 83, 25] },
+    "매출 발행 요청 12건": { rowHeight: 67, amt: [57, 37, 78, 21], action: [221, 8, 83, 25] },
+    "지급 3건": { rowHeight: 67, amt: [57, 37, 78, 21], action: [221, 8, 83, 25] },
+    "구매 요청 51건": { rowHeight: 67, amt: [57, 37, 70, 21], action: [221, 8, 83, 25] },
+    "전표 대기 2건": { rowHeight: 66, amt: [57, 51, 0, 0], action: [221, 8, 83, 25] },
   },
 };
 
@@ -217,13 +254,7 @@ for (const width of [375, 320]) {
   test.describe(`폰 ${width} 「내 차례」 Phase 6 줄 (07.1-17 PA2)`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
-      const html = `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width">
-<style>${css("docs/design/tokens.css")}</style>
-<style>${css("app/globals.css")}</style>
-<style>${css("ui/status-tag/StatusTag.module.css")}</style>
-<style>${css("ui/next-turn/NextTurn.module.css")}</style>
-</head><body><main style="padding: 0 var(--pad-page)">${await renderNextTurn(PHASE6_ITEMS)}</main></body></html>`;
-      await page.setContent(html);
+      await openPhoneDocument(page, PHASE6_ITEMS);
     });
 
     async function probe(page: import("@playwright/test").Page): Promise<LineProbe[]> {
@@ -285,8 +316,12 @@ for (const width of [375, 320]) {
       for (const row of phase6) {
         const base = LAYOUT_BASELINE[width]?.[row.labelText];
         expect(base, `${width} ${row.labelText} 기준값`).toBeDefined();
-        if (KNOWN_CLIPPED[width]?.includes(row.labelText)) expect(row.whyTitle, `${width} ${row.labelText} 알려진 잘림 — title은 전체 이유`).toBe(row.whyText);
-        else expect(row.whyClipped, `${width} ${row.labelText} 이유 잘림`).toBe(false);
+        const cap = KNOWN_CLIPPED_MAX_PX[width]?.[row.labelText];
+        if (cap !== undefined) {
+          const over = row.whyScrollWidth - (row.whyBox?.w ?? 0);
+          expect(row.whyTitle, `${width} ${row.labelText} 알려진 잘림 — title은 전체 이유`).toBe(row.whyText);
+          expect(over, `${width} ${row.labelText} 잘림 ${over}px — 상한 ${cap}px`).toBeLessThanOrEqual(cap);
+        } else expect(row.whyClipped, `${width} ${row.labelText} 이유 잘림`).toBe(false);
         expect(Math.abs(row.rowHeight - (base?.rowHeight ?? -99)), `${row.labelText} 줄 높이`).toBeLessThanOrEqual(1);
         const near = (box: Box, want: readonly number[] | undefined) => [box.x, box.y, box.w, box.h].every((value, i) => Math.abs(value - (want?.[i] ?? -99)) <= 1);
         expect(near(row.amt, base?.amt), `${width} ${row.labelText} 금액 칸 ${JSON.stringify(row.amt)}`).toBe(true);
@@ -294,17 +329,45 @@ for (const width of [375, 320]) {
       }
     });
 
+    // #321 재검토: 행동 링크의 padding 12가 밑줄(border-bottom)을 글자 아래 15px로 내려, 이유 칸이 4번째 칸까지 넓어진 뒤 밑줄이 이유 글자를 가로지른다(320에서는 취소선처럼 보인다).
+    // 밑줄의 y 범위(링크 상자 아래 border 두께)와 이유 글자 상자(칸 안에 보이는 부분)가 겹치지 않아야 한다.
+    test("행동 링크 밑줄이 이유 글자를 가로지르지 않는다", async ({ page }) => {
+      const crossings = await page.locator(".item").evaluateAll((rows) =>
+        rows.flatMap((row) => {
+          const link = row.querySelector<HTMLElement>(".action a");
+          const why = row.querySelector<HTMLElement>(".why");
+          const label = row.querySelector(".label")?.textContent ?? "";
+          if (!link || !why) return [];
+          const linkRect = link.getBoundingClientRect();
+          const border = parseFloat(getComputedStyle(link).borderBottomWidth);
+          const underline = { left: linkRect.left, right: linkRect.right, top: linkRect.bottom - border, bottom: linkRect.bottom };
+          const whyRect = why.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(why);
+          return Array.from(range.getClientRects())
+            .map((text) => ({ left: Math.max(text.left, whyRect.left), right: Math.min(text.right, whyRect.right), top: Math.max(text.top, whyRect.top), bottom: Math.min(text.bottom, whyRect.bottom) }))
+            .filter((text) => text.right > underline.left && text.left < underline.right && text.bottom > underline.top && text.top < underline.bottom)
+            .map((text) => `${label}: 밑줄 y ${underline.top.toFixed(1)}~${underline.bottom.toFixed(1)} x ${underline.left.toFixed(0)}~${underline.right.toFixed(0)} / 이유 글자 y ${text.top.toFixed(1)}~${text.bottom.toFixed(1)}`);
+        }),
+      );
+      expect(crossings, `${width} 밑줄이 이유 글자와 겹친 줄`).toEqual([]);
+    });
+
+    // 금액이 열 자리인 최악 — 잘림이 상한을 넘지 않는다(서체 Pretendard 실측).
+    test("지급(오늘) 금액 열 자리 — 이유 잘림 크기가 상한 안이다", async ({ page }) => {
+      await openPhoneDocument(page, [{ ...PHASE6_ITEMS[0], measureText: "1,234,567,890" } as NextTurnItem]);
+      const rows = await probe(page);
+      record("phase6-ten-digit", width, rows);
+      const row = rows[0];
+      const over = (row?.whyScrollWidth ?? 0) - (row?.whyBox?.w ?? 0);
+      expect(over, `${width} 열 자리 잘림 ${over}px — 상한 ${TEN_DIGIT_CLIPPED_MAX_PX[width]}px`).toBeLessThanOrEqual(TEN_DIGIT_CLIPPED_MAX_PX[width] ?? -1);
+      if (over > 0) expect(row?.whyTitle).toBe(row?.whyText);
+    });
+
     // 사용자 결정(10/28): 완료 전 점검 줄의 label은 프로젝트 이름만 — 이름이 길면 06-23 D-1 clamp(2줄)가 받는다. 줄 수를 기록하고 2줄 이하만 단언한다(그 이상은 D-1 결정 몫).
     test("완료 전 점검 줄 — 긴 프로젝트 이름은 label 2줄 이내 · 이유 1줄 · 넘침 0 (기록)", async ({ page }, testInfo) => {
       const longName = { ...PHASE6_ITEMS[5], label: "아이오닉9 쇼케이스 행사 운영 정산" } as NextTurnItem;
-      await page.setContent(
-        `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width">
-<style>${css("docs/design/tokens.css")}</style>
-<style>${css("app/globals.css")}</style>
-<style>${css("ui/status-tag/StatusTag.module.css")}</style>
-<style>${css("ui/next-turn/NextTurn.module.css")}</style>
-</head><body><main style="padding: 0 var(--pad-page)">${await renderNextTurn([longName])}</main></body></html>`,
-      );
+      await openPhoneDocument(page, [longName]);
       const rows = await probe(page);
       await testInfo.attach(`probe-presettle-long-${width}`, { body: JSON.stringify(rows, null, 2), contentType: "application/json" });
       record("presettle-long", width, rows);
@@ -316,14 +379,7 @@ for (const width of [375, 320]) {
     // P3 notes-C 07.1-17 #3: `.why` 말줄임은 공용 줄이라 결재 · 막힘 줄 이유(픽스처 ITEM `증빙 없음`)도 같은 값을 받는다 — 잘리는지 잰다.
     // 도메인이 만드는 결재 · 막힘 줄은 reason이 빈 글자라 `.why` span이 0개다(`domain/next-turn/index.ts`).
     test("결재 · 막힘 줄(ITEM) 이유 `증빙 없음`은 잘리지 않는다 · 이유가 빈 도메인 줄은 .why가 없다", async ({ page }, testInfo) => {
-      await page.setContent(
-        `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width">
-<style>${css("docs/design/tokens.css")}</style>
-<style>${css("app/globals.css")}</style>
-<style>${css("ui/status-tag/StatusTag.module.css")}</style>
-<style>${css("ui/next-turn/NextTurn.module.css")}</style>
-</head><body><main style="padding: 0 var(--pad-page)">${await renderNextTurn([ITEM, { ...ITEM, reason: "", label: "도메인 줄" }])}</main></body></html>`,
-      );
+      await openPhoneDocument(page, [ITEM, { ...ITEM, reason: "", label: "도메인 줄" }]);
       const rows = await probe(page);
       await testInfo.attach(`probe-item-${width}`, { body: JSON.stringify(rows, null, 2), contentType: "application/json" });
       expect(rows[0]?.whyText).toBe("증빙 없음");

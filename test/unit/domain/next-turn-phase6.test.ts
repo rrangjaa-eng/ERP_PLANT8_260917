@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildIssueBundle, buildPaymentBundle, buildPreSettleBlockedItems, buildPurchaseBundle, type PaymentBundleTarget } from "@/domain/next-turn/phase6-items";
+import { buildCardSlipWaitingBundle, buildIssueBundle, buildPaymentBundle, buildPreSettleBlockedItems, buildPurchaseBundle, type PaymentBundleTarget } from "@/domain/next-turn/phase6-items";
 
 // 06-23(S19 · UA-611) — 「내 차례」 Phase 6 묶음 빌더. 순수 함수라 DB 없이 돈다. 날짜는 서울 달력 `YYYY-MM-DD`.
 // 2026-09-24는 목요일 — 이번 주(서울 월~일) = 09-21 ~ 09-27.
@@ -80,6 +80,24 @@ describe("buildPurchaseBundle — 구매 요청 묶음", () => {
 
   it("예상 금액을 볼 수 없으면(합계 null) 숫자 칸은 빈 글자", () => {
     expect(buildPurchaseBundle({ count: 1, estimateKrw: null, oldestRequestedOn: "2026-09-18" })?.measureText).toBe("");
+  });
+});
+
+describe("buildCardSlipWaitingBundle — 전표 대기 (07.1-17 PD1 · U-11)", () => {
+  it("2건 · 가장 오래된 구매 완료 10-03 → [대기] label `전표 대기 2건` · reason `결제 완료 · 가장 오래된 10-03` · 금액 빈 글자 · 구매 요청 보기 → /cards/purchases", () => {
+    expect(buildCardSlipWaitingBundle({ count: 2, oldestCompletedOn: "2026-10-03" })).toEqual({
+      key: "phase6-card-slip",
+      tag: "대기",
+      label: "전표 대기 2건",
+      reason: "결제 완료 · 가장 오래된 10-03",
+      measureText: "",
+      action: { label: "구매 요청 보기", href: "/cards/purchases" },
+    });
+  });
+
+  it("0건이면 줄이 없다(날짜가 없어도 없다)", () => {
+    expect(buildCardSlipWaitingBundle({ count: 0, oldestCompletedOn: null })).toBeNull();
+    expect(buildCardSlipWaitingBundle({ count: 0, oldestCompletedOn: "2026-10-03" })).toBeNull();
   });
 });
 

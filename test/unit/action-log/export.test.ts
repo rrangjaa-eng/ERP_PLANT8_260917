@@ -173,7 +173,7 @@ describe("exportActionLog — 5,000건 상한 (07.1-05)", () => {
 
   it("5,001행이면 거부 — 기록(recordAction) 0", async () => {
     let recorded = 0;
-    const error = await exportActionLog(SYSTEM_VIEWER, {}, { queryActionLog: async () => rowsOf(5_001), recordAction: async () => void (recorded += 1) }).catch((thrown: unknown) => thrown);
+    const error = await exportActionLog(SYSTEM_VIEWER, {}, { queryActionLog: () => Promise.resolve(rowsOf(5_001)), recordAction: () => { recorded += 1; return Promise.resolve(); } }).catch((thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(ActionLogExportTooManyError);
     expect((error as Error).message).toBe("5,000건 넘음 · 기간이나 필터로 줄이기");
     expect(recorded).toBe(0);
@@ -181,7 +181,7 @@ describe("exportActionLog — 5,000건 상한 (07.1-05)", () => {
 
   it("5,000행은 받는다 — 기록 한 번", async () => {
     let recorded = 0;
-    const file = await exportActionLog(SYSTEM_VIEWER, {}, { queryActionLog: async () => rowsOf(5_000), recordAction: async () => void (recorded += 1) });
+    const file = await exportActionLog(SYSTEM_VIEWER, {}, { queryActionLog: () => Promise.resolve(rowsOf(5_000)), recordAction: () => { recorded += 1; return Promise.resolve(); } });
     expect(file.body.split("\r\n").length).toBe(5_002);
     expect(recorded).toBe(1);
   });

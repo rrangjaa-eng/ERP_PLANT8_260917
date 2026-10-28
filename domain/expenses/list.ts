@@ -185,7 +185,7 @@ function toSource(row: RepoRow, schedule: PaySchedule, currentSteps: Map<string,
   };
 }
 
-// 07.1-09: 월 거름 형식 — 지급 보기 MONTH_SHAPE(payments/targets.ts)는 내보내지 않은 상수이고 그 파일은 다른 플랜 몫이라 같은 정규식을 둔다. 틀린 월은 거름 무시.
+// 07.1-09: 월 거름 형식 — 지급 보기 MONTH_SHAPE(payments/targets.ts)는 내보내지 않은 상수이고 그 파일은 다른 플랜 몫이라 같은 정규식을 둔다. 월도 같다 — 옵션(months)에 없거나 형식이 틀린 월은 거름 무시(PaidPayments가 지급 월을 보내 옵션의 등록 월과 달라질 수 있다 · #320 P2).
 const FILTER_MONTH_SHAPE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 // 07.1-09(PF4 · P3): 팀 옵션은 행 범위 모양별 — 전사는 활성 팀 전부, 본부 범위는 그 본부의 활성 팀(둘 미만이면 없음), 팀 · 본인 · 없음은 빈 목록.
@@ -226,7 +226,8 @@ export async function listExpenses(
   const teamOptions = await teamOptionsFor(viewer, scope.rowScope);
   const rawTeam = input.team?.trim() ? input.team.trim() : null;
   const team = rawTeam !== null && teamOptions.length > 0 && !teamOptions.some((option) => option.value === rawTeam) ? null : rawTeam;
-  const month = input.month && FILTER_MONTH_SHAPE.test(input.month) ? input.month : null;
+  const months = await listExpenseMonths(viewer, { scope, documentKind: EXPENSE_DOCUMENT_KIND });
+  const month = input.month && FILTER_MONTH_SHAPE.test(input.month) && months.includes(input.month) ? input.month : null;
   const filter: ExpenseListFilter | undefined = team || month || input.mine ? { teamId: team, month, drafterId: input.mine ? viewer.id : null } : undefined;
   const summary = await summarizeExpenseList(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, ...(search ? { search } : {}), ...(filter ? { filter } : {}) });
   const pageCount = pageCountFrom(summary.viewCount, pageSize);
@@ -246,11 +247,7 @@ export async function listExpenses(
       : [];
   const drafterColumn =
     scope.rowScope.rows === "all" || (scope.rowScope.rows === "limited" && scope.rowScope.by.kind !== "own") || summary.othersCount > 0;
-  const [payments, loaded, months] = await Promise.all([
-    paymentStatuses(viewer, rows, today),
-    loadExpenseSchedules(viewer, rows),
-    listExpenseMonths(viewer, { scope, documentKind: EXPENSE_DOCUMENT_KIND }),
-  ]);
+  const [payments, loaded] = await Promise.all([paymentStatuses(viewer, rows, today), loadExpenseSchedules(viewer, rows)]);
   const projected = await projectMany(
     viewer,
     rows.map((row) => toSource(row, scheduleOf(loaded, row.id), scope.currentSteps, payments.get(row.id))),

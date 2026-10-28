@@ -4,7 +4,9 @@ import { cardUsageReadScope } from "@/domain/corp-card-usages";
 import { EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
 import { EVIDENCE_FORMATS } from "@/domain/evidence-import/registry";
 import type { FormatRule } from "@/domain/evidence-import/types";
+import { evidenceAgeDays, isAgeWarn, ORPHAN_EVIDENCE_RULE } from "@/domain/evidence-records/aging";
 import { formatKstTime } from "@/domain/holidays/business-day";
+import { effectiveRule } from "@/domain/notify/rules";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
@@ -54,6 +56,7 @@ import {
 import type { DbOrTx } from "@/repositories/document-counters";
 import { AUTO_DETACH_REASONS, findCardReplacedRecordIds, listLiveLinkOwnersByRecords } from "@/repositories/evidence-record-links";
 import { listRecordHistory } from "@/repositories/evidence-record-detail";
+import { listNotificationRules } from "@/repositories/notification-rules";
 import { findOrgUnitById } from "@/repositories/org-units";
 import { findMembershipsAtDate } from "@/repositories/team-memberships";
 import { findTeamsByIds, listTeams, type TeamRow } from "@/repositories/teams";
@@ -65,6 +68,8 @@ import { findTeamsByIds, listTeams, type TeamRow } from "@/repositories/teams";
 export type { EvidenceRecordVisibility, EvidenceRecordWord, EvidenceRowAction, EvidenceVisibilityCell } from "@/domain/evidence-records/status";
 
 export const INTAKE_FORBIDDEN = "증빙 등록 권한 없음";
+// 07.1-01 D-7105: 짝 없는 카드 줄인데 대리 등록 권한이 없을 때 행동 칸 자리의 한 줄 — 할 수 있는 사람을 말한다(권한은 늘지 않는다).
+export const PROXY_BY_MANAGEMENT = "대리 등록 · 경영관리";
 // 화면이 만들 수 없는 요청(같은 줄 두 번 · 없는 줄 · 본부 설정 없음의 본부 공개 — PA-DIV-UNSET)은 줄 오류 없이 요청 전체를 거부한다.
 // 글자는 입력 검증의 일반 문구(lib/actions/zod-error-message.ts) 그대로다.
 const INVALID_REQUEST = "입력값 오류 · 값 확인";
@@ -83,6 +88,10 @@ export type EvidenceRecordDto = {
   evidenceType: string;
   typeLabel: string | null;
   issuedOn: string;
+  /** 07.1-01 D-7102 — 안 붙은 줄의 등록일 기준 경과일(KST 날짜 차 · 오늘 0). 붙은 줄 · 보관 줄은 null. */
+  ageDays: number | null;
+  /** 07.1-01 U-3 — 임자 없는 증빙 규칙이 켜져 있고 공개 줄이 규칙 일수 이상이면 참(경고 표시). 규칙 꺼짐이면 늘 거짓. */
+  ageWarn: boolean;
   /** 1행 — 카드 줄은 가맹점, 그 밖은 문서에 적힌 거래처 이름. */
   counterparty: string | null;
   businessNo: string | null;
@@ -131,6 +140,8 @@ export const EVIDENCE_RECORD_DTO_SPEC: DtoSpec<EvidenceRecordDto, EvidenceRecord
     { key: "evidenceType", from: "evidenceType", infoItem: "evidence.value" },
     { key: "typeLabel", from: "typeLabel", infoItem: "evidence.value" },
     { key: "issuedOn", from: "issuedOn", infoItem: "evidence.value" },
+    { key: "ageDays", from: "ageDays", infoItem: "evidence.value" },
+    { key: "ageWarn", from: "ageWarn", infoItem: "evidence.value" },
     { key: "counterparty", from: "counterparty", infoItem: "evidence.value" },
     { key: "businessNo", from: "businessNo", infoItem: "evidence.value" },
     { key: "cardLabel", from: "cardLabel", infoItem: "evidence.value" },
@@ -262,9 +273,19 @@ function statusInputOf(row: EvidenceRecordListRow): EvidenceRecordStatusInput {
   };
 }
 
-function sourceOf(row: EvidenceRecordListRow): EvidenceRecordDto {
+// 07.1-01 D-7102: 「며칠째」 열의 재료 — 임자 없는 증빙 독촉과 같은 규칙 · 같은 경계(aging.ts)를 요청마다 한 번 읽는다(트랜잭션 밖).
+type AgeContext = { rule: { enabled: boolean; days: number }; today: string };
+
+async function readAgeContext(viewer: Viewer): Promise<AgeContext> {
+  const rule = effectiveRule(ORPHAN_EVIDENCE_RULE, (await listNotificationRules(viewer)).find((row) => row.kind === "orphan-evidence") ?? null);
+  return { rule: { enabled: rule.enabled, days: rule.days ?? ORPHAN_EVIDENCE_RULE.defaults.days }, today: seoulToday() };
+}
+
+// age가 null이면 경과일을 싣지 않는다(붙이기 판정이 낱말만 쓰는 호출부 — 규칙 읽기를 아낀다). 살아 있는 붙임 · 보관 줄은 규칙과 무관하게 null이다.
+function sourceOf(row: EvidenceRecordListRow, age: AgeContext | null): EvidenceRecordDto {
   const input = statusInputOf(row);
   const status = evidenceRecordStatus(input);
+  const ageDays = age === null || row.attached || row.archivedAt !== null ? null : evidenceAgeDays(row.createdAt, age.today);
   return {
     id: row.id,
     version: row.version,
@@ -274,6 +295,8 @@ function sourceOf(row: EvidenceRecordListRow): EvidenceRecordDto {
     evidenceType: row.evidenceType,
     typeLabel: evidenceKindLabel({ evidenceType: row.evidenceType, typeLabel: row.typeLabel, originalApprovalNo: row.originalApprovalNo }),
     issuedOn: row.issuedOn,
+    ageDays,
+    ageWarn: age === null ? false : isAgeWarn(age.rule, status.word, ageDays),
     counterparty: row.merchant ?? row.nameOnDocument,
     businessNo: businessNoOf(row.businessNoDigits),
     cardLabel: input.cardLabel,
@@ -302,7 +325,8 @@ function sourceOf(row: EvidenceRecordListRow): EvidenceRecordDto {
 // 06.1-06: 붙은 문서 · `붙이기` 판정을 한 쪽(최대 50줄)에 한 번에 — 붙임 주인 읽기 한 번 + 대상 문서 있음 조회 둘(쪽마다). 등록 권한자(범위 all)만.
 // 순환 import를 피해 대상 있음 조회는 부르는 쪽이 넘긴다(domain/evidence-records/attach.ts — 지출결의 · 구매 요청 범위).
 async function withAttachFacts(viewer: Viewer, scope: Awaited<ReturnType<typeof evidenceScopeFor>>, rows: EvidenceRecordListRow[]): Promise<EvidenceRecordDto[]> {
-  const dtos = rows.map(sourceOf);
+  const age = await readAgeContext(viewer);
+  const dtos = rows.map((row) => sourceOf(row, age));
   if (scope.rows !== "all" || dtos.length === 0) return dtos;
   const owners = new Map((await listLiveLinkOwnersByRecords(viewer, dtos.map((dto) => dto.id))).map((owner) => [owner.recordId, owner]));
   const attachable = (dto: EvidenceRecordDto) => !owners.has(dto.id) && (dto.statusWord === "미공개" || dto.statusWord === "팀 공개" || dto.statusWord === "본부 공개");
@@ -348,7 +372,7 @@ async function withAttachFacts(viewer: Viewer, scope: Awaited<ReturnType<typeof 
       ...base,
       canAttach: selectable,
       canProxy: candidates.length === 0 && proxy,
-      actionBlockedReason: candidates.length > 0 && !selectable ? (candidates[0]?.judged.blockedReason ?? null) : null,
+      actionBlockedReason: candidates.length > 0 && !selectable ? (candidates[0]?.judged.blockedReason ?? null) : candidates.length === 0 && !proxy ? PROXY_BY_MANAGEMENT : null,
     };
   });
 }
@@ -363,7 +387,7 @@ async function readDivision(viewer: Viewer): Promise<EvidenceDivision | null> {
     throw error;
   }
   const unit = await findOrgUnitById(viewer, id);
-  return unit ? { id: unit.id, name: unit.name } : null;
+  return unit && unit.archivedAt === null ? { id: unit.id, name: unit.name } : null;
 }
 
 // O-6102 · C1: 카드 줄 = 카드의 팀, 없으면 소지자의 오늘 발령 팀 → 팀 공개 / 그 밖(또는 보관 · 없는 팀) = 설정 본부 공개.
@@ -439,7 +463,7 @@ export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQue
   const [rows, division, hasAny, batch] = await Promise.all([
     count === 0 ? Promise.resolve([]) : listRecordsForScope(viewer, scope, repoFilters, { limit: EVIDENCE_PAGE_SIZE, offset: (page - 1) * EVIDENCE_PAGE_SIZE }),
     readDivision(viewer),
-    count > 0 ? Promise.resolve(true) : hasAnyRecordForScope(viewer, scope),
+    count > 0 ? Promise.resolve(true) : hasAnyRecordForScope(viewer, scope, CARD_FORMATS),
     // 묶음(등록 묶음의 원래 파일 이름)은 등록 권한자(범위 all)만 본다.
     scope.rows === "all" && filters.batch !== null ? findBatchSummary(viewer, filters.batch) : Promise.resolve(null),
   ]);
@@ -465,14 +489,18 @@ export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQue
 export async function listAllEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<{ filters: EvidenceListFilters; rows: EvidenceRecordView[] }> {
   const { scope, filters, repoFilters } = await listInputsFor(viewer, query);
   const rows = await listRecordsForScope(viewer, scope, repoFilters, null);
-  return { filters, rows: await projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC) };
+  const age = await readAgeContext(viewer);
+  return { filters, rows: await projectMany(viewer, rows.map((row) => sourceOf(row, age)), EVIDENCE_RECORD_DTO_SPEC) };
 }
 
 // P-3 · DA-10: 지출결의 목록 필터 줄 끝 `증빙 {N}`의 N — 기본 보기 `할 일`과 같은 집합(확인 필요 포함 · 보관 · 카드 미등록 제외).
 // 등록 권한(evidence.intake 쓰기)이 없으면 null(링크 없음).
 export async function countTodoEvidence(viewer: Viewer): Promise<number | null> {
   if (!(await can(viewer, "evidence.intake", "write"))) return null;
-  const totals = await countAndSumForScope(viewer, { rows: "all" }, repositoryFilters(EVIDENCE_LIST_DEFAULTS));
+  // 07.1-01 C-80 #4: 목록과 같은 범위 규칙 — 증빙 보기가 없으면 범위가 none이라 링크를 그리지 않는다(빈 페이지로 가지 않게).
+  const scope = await evidenceScopeFor(viewer);
+  if (scope.rows === "none") return null;
+  const totals = await countAndSumForScope(viewer, scope, repositoryFilters(EVIDENCE_LIST_DEFAULTS));
   return totals.reduce((sum, row) => sum + row.count, 0);
 }
 
@@ -481,7 +509,7 @@ export async function listEvidenceRecordsByIds(viewer: Viewer, ids: readonly str
   const valid = ids.filter((id) => UUID.safeParse(id).success).slice(0, EVIDENCE_PAGE_SIZE);
   if (valid.length === 0) return [];
   const scope = await evidenceScopeFor(viewer);
-  const rows = await listRecordsByIdsForScope(viewer, scope, valid);
+  const rows = await listRecordsByIdsForScope(viewer, scope, valid, CARD_FORMATS);
   return projectMany(viewer, await withAttachFacts(viewer, scope, rows), EVIDENCE_RECORD_DTO_SPEC);
 }
 
@@ -489,7 +517,7 @@ export async function listEvidenceRecordsByIds(viewer: Viewer, ids: readonly str
 export async function getEvidenceRecord(viewer: Viewer, id: string): Promise<EvidenceRecordView | null> {
   if (!UUID.safeParse(id).success) return null;
   const scope = await evidenceScopeFor(viewer);
-  const row = await findRecordForScope(viewer, scope, id);
+  const row = await findRecordForScope(viewer, scope, id, CARD_FORMATS);
   if (!row) return null;
   const [view] = await projectMany(viewer, await withAttachFacts(viewer, scope, [row]), EVIDENCE_RECORD_DTO_SPEC);
   return view ?? null;
@@ -507,6 +535,8 @@ export type EvidenceDetailDto = {
   statusDetail: string | null;
   visibilityLabel: string;
   issuedOn: string;
+  /** 07.1-01 D-7102 — 목록 `며칠째` 열과 같은 계산(폰 행 시트 · 데스크톱 패널의 `며칠째` 줄). 붙음 · 보관됨은 null. */
+  ageDays: number | null;
   approvalNo: string | null;
   originalApprovalNo: string | null;
   businessNo: string | null;
@@ -538,6 +568,7 @@ export const EVIDENCE_DETAIL_DTO_SPEC: DtoSpec<EvidenceDetailDto, EvidenceDetail
         "statusDetail",
         "visibilityLabel",
         "issuedOn",
+        "ageDays",
         "approvalNo",
         "originalApprovalNo",
         "businessNo",
@@ -612,7 +643,7 @@ export async function getEvidenceDetail(viewer: Viewer, id: string): Promise<Evi
   if (!(await can(viewer, "evidence.intake", "write"))) throw new ForbiddenError(INTAKE_FORBIDDEN);
   if (!UUID.safeParse(id).success) return null;
   const scope = await evidenceScopeFor(viewer);
-  const row = await findRecordForScope(viewer, scope, id);
+  const row = await findRecordForScope(viewer, scope, id, CARD_FORMATS);
   if (!row) return null;
   const [base] = await withAttachFacts(viewer, scope, [row]);
   if (!base) return null;
@@ -634,6 +665,7 @@ export async function getEvidenceDetail(viewer: Viewer, id: string): Promise<Evi
     statusDetail: base.statusDetail,
     visibilityLabel: base.visibilityLabel,
     issuedOn: base.issuedOn,
+    ageDays: base.ageDays,
     approvalNo: row.approvalNo,
     originalApprovalNo: row.originalApprovalNo,
     businessNo: base.businessNo,
@@ -855,9 +887,9 @@ export type EvidenceRecordFacts = {
 
 export async function readEvidenceRecordFacts(viewer: Viewer, id: string): Promise<EvidenceRecordFacts | null> {
   if (!UUID.safeParse(id).success) return null;
-  const row = await findRecordForScope(viewer, await evidenceScopeFor(viewer), id);
+  const row = await findRecordForScope(viewer, await evidenceScopeFor(viewer), id, CARD_FORMATS);
   if (!row) return null;
-  const source = sourceOf(row);
+  const source = sourceOf(row, null);
   return {
     id: row.id,
     evidenceType: row.evidenceType,

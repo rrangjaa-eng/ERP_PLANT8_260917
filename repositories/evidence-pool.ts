@@ -109,7 +109,7 @@ export async function countPoolForScope(
   const [row] = await tx
     .select({ count: sql<number>`count(*)::int` })
     .from(evidenceRecords)
-    .where(and(sql`(${evidenceScopeCondition(viewer, scope)})`, attachableState(query), pair, ownerWhere(query.ownerFilter)));
+    .where(and(sql`(${evidenceScopeCondition(viewer, scope, query.cardFormats)})`, attachableState(query), pair, ownerWhere(query.ownerFilter)));
   return row?.count ?? 0;
 }
 
@@ -128,7 +128,7 @@ export async function listPoolForScope(viewer: Viewer, scope: EvidenceScope, que
   const amountScore = doc.amountKrw === null ? sql`0` : sql`(case when ${recordAmount} = ${doc.amountKrw}::bigint then 1 else 0 end)`;
   const score = sql<number>`(${kindScore} + ${businessScore} + ${amountScore})`;
   const dayGap = doc.date === null ? sql`null::int` : sql`abs(${evidenceRecords.issuedOn} - ${doc.date}::date)`;
-  const conditions: SQL[] = [sql`(${evidenceScopeCondition(viewer, scope)})`, attachableState(query), ownerWhere(query.ownerFilter)];
+  const conditions: SQL[] = [sql`(${evidenceScopeCondition(viewer, scope, query.cardFormats)})`, attachableState(query), ownerWhere(query.ownerFilter)];
   const search = searchWhere(query.q);
   if (search) conditions.push(search);
   const rows = await tx

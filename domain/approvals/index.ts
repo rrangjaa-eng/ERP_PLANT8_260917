@@ -44,7 +44,7 @@ import {
   type SnapshotPerson,
   type WalkRouteResult,
 } from "@/domain/approvals/route";
-import { getDocumentKind, listDocumentKinds, resubmittableStatuses, type DetailFields, type DocumentKindDef, type DocumentSummary, type DocumentDetailRows, type LoadDetailsDeps, type RouteConfigStep } from "@/domain/approvals/kinds";
+import { getDocumentKind, listDocumentKinds, resubmittableStatuses, type DetailFields, type DocumentKindDef, type DocumentSummary, type DocumentDetailRows, type LoadDetailsDeps, type LoadScope, type RouteConfigStep } from "@/domain/approvals/kinds";
 import { buildConflictMessage, isApprovalParty } from "@/domain/approvals/conflict-message";
 import { loadActionLogGate as defaultLoadActionLogGate, recordActionInTx, type ActionLogGate, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
@@ -674,10 +674,10 @@ export async function describeFinalApprovalNote(viewer: Viewer, input: { kind: s
 }
 
 // 05-01 E3: 종류의 승인 막힘 이유 — 필드가 없거나 문서가 없으면 부르지 않는다(04.1 결재함 조회 수 범위를 흔들지 않는다).
-async function approveBlockedReasonsOf(viewer: Viewer, kind: string, documentIds: string[]): Promise<Map<string, string>> {
+async function approveBlockedReasonsOf(viewer: Viewer, kind: string, documentIds: string[], scope?: LoadScope): Promise<Map<string, string>> {
   const reasonsOf = getDocumentKind(kind).approveBlockedReason;
   if (!reasonsOf || documentIds.length === 0) return new Map();
-  return reasonsOf(viewer, documentIds);
+  return reasonsOf(viewer, documentIds, scope);
 }
 
 // 결재 차례 알림(07-10 approval-waiting)의 단계 키 — 단계 행 id, 대표 폴백 자리는 처리 전 행이 없어 `{차수 id}:fallback`.
@@ -1102,7 +1102,7 @@ export async function loadKindDetails(
   const def = getDocumentKind(kind);
   const result = new Map<string, DocumentDetailRows>();
   if (!def.loadDetails || !def.detailDto || !def.buildDetailRows || documentIds.length === 0) return result;
-  const raw = await def.loadDetails(viewer, documentIds, { visible: deps.visible, now: deps.now });
+  const raw = await def.loadDetails(viewer, documentIds, { visible: deps.visible, now: deps.now, scope: deps.scope });
   for (const [documentId, fields] of raw) {
     const projected = await project<DetailFields, DetailFields>(viewer, fields, def.detailDto, { visible: deps.visible });
     const built = def.buildDetailRows(projected);
@@ -1142,6 +1142,8 @@ const PROCESSED_LIMIT = 50;
 // 결재선을 지금 조직으로 다시 풀어 viewer가 후보인지 본다. 읽기 전용이다.
 export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<InboxResult> {
   const visible = createVisibleMemo(deps?.findVisibility);
+  // 이 로드 안에서 막힘 이유와 상세가 같은 종류 계산(정산 완료 전 점검 등)을 나눠 쓴다.
+  const scope: LoadScope = new Map();
   const snapshot = await readSnapshot(viewer, deps);
   const active = await listActiveInstances(viewer);
 
@@ -1234,7 +1236,7 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
   const blockedIdsByKind = new Map<string, string[]>();
   for (const source of mineSources) blockedIdsByKind.set(source.kind, [...(blockedIdsByKind.get(source.kind) ?? []), source.documentId]);
   for (const [kind, ids] of blockedIdsByKind) {
-    const reasons = await approveBlockedReasonsOf(viewer, kind, [...new Set(ids)]);
+    const reasons = await approveBlockedReasonsOf(viewer, kind, [...new Set(ids)], scope);
     for (const source of mineSources) {
       if (source.kind === kind) source.approveBlockedReason = reasons.get(source.documentId) ?? null;
     }
@@ -1245,7 +1247,7 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
     const mineIdsByKind = new Map<string, string[]>();
     for (const source of mineSources) mineIdsByKind.set(source.kind, [...(mineIdsByKind.get(source.kind) ?? []), source.documentId]);
     for (const [kind, ids] of mineIdsByKind) {
-      const details = await loadKindDetails(viewer, kind, [...new Set(ids)], { visible, now: deps.now });
+      const details = await loadKindDetails(viewer, kind, [...new Set(ids)], { visible, now: deps.now, scope });
       for (const source of mineSources) {
         if (source.kind === kind) source.detail = details.get(source.documentId) ?? null;
       }

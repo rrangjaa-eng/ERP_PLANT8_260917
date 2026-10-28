@@ -51,9 +51,10 @@ async function submitExpenseInBrowser(browser: Browser, baseURL: string | undefi
 }
 
 // 06-36(G-06-E): 제출 뒤 처리 — 반려, 또는 결재 통과 + 살아 있는 증빙 전부 무효(증빙 대기 = 결재 통과 · 증빙 없음).
-type SettlingOutcome = "rejected" | "evidencePending";
+// 07.1-01 PD3: `evidenceKept` = 결재 통과 + 증빙을 그대로 둔 문서(점검 항목 0 — 증빙 대기 0건).
+type SettlingOutcome = "rejected" | "evidencePending" | "evidenceKept";
 
-async function approveAndVoidEvidence(org: LeaveOrg, expenseId: string): Promise<void> {
+async function approveAndVoidEvidence(org: LeaveOrg, expenseId: string, voidAlive = true): Promise<void> {
   const view = await getApprovalView(org.teamLead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
   if (!view) throw new Error("지출결의 결재 화면이 없습니다");
   let version = view.version;
@@ -64,6 +65,7 @@ async function approveAndVoidEvidence(org: LeaveOrg, expenseId: string): Promise
     status = result.status;
   }
   if (status !== "approved") throw new Error(`결재 통과 안 됨: ${status}`);
+  if (!voidAlive) return;
   const voider = await makeEvidenceManagerE2E();
   const alive = await db
     .select({ id: files.id })
@@ -123,7 +125,7 @@ async function setupSettling(browser: Browser, baseURL: string | undefined, outc
     if (!view) throw new Error("지출결의 결재 화면이 없습니다");
     await rejectDocument(org.teamLead.viewer, { instanceId: view.instanceId, expectedVersion: view.version, reason: "금액 다시" });
   } else {
-    await approveAndVoidEvidence(org, expenseId);
+    await approveAndVoidEvidence(org, expenseId, outcome === "evidencePending");
   }
   // 종료일이 지난 진행 프로젝트는 지출결의 제출의 잠금 읽기에서 이미 정산이 됐을 수 있다 — 자동 정산 뒤 상태로 확인한다.
   await applyAutoSettlement({ projectIds: [project.id] });
@@ -222,6 +224,79 @@ test.describe("완료 전 점검 — 증빙 대기(G-06-E · 카드 ② 「경�
     const [itemBox, openBox] = [await itemCell.locator("span").first().boundingBox(), await open.boundingBox()];
     expect((openBox?.y ?? 0) >= (itemBox?.y ?? Number.POSITIVE_INFINITY) + (itemBox?.height ?? 0) - 1, "3차가 항목 이름 아래 줄").toBe(true);
     expect(await sectionOverflow(section)).toBeLessThanOrEqual(0);
+  });
+});
+
+// 07.1-01 PD3(W7): 정산 결재 문서 화면 · 결재함 문서 칸(폰 결재 시트)에 `증빙 대기 {N}건` — 0건이면 행 없음. 준비는 점검 화면과 같은 픽스처에 정산 기안만 더한다.
+async function submitSettlementFor(fx: PreSettleE2E): Promise<string> {
+  const result = await submitSettlement(fx.org.drafter.viewer, { projectId: fx.projectId });
+  if (result.kind !== "submitted") throw new Error("정산 기안 안 됨");
+  const name = (await findProjectById(SYSTEM_VIEWER, fx.projectId))?.name;
+  if (!name) throw new Error("프로젝트 이름이 없습니다");
+  return name;
+}
+
+function warningColor(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--status-warning)";
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  });
+}
+
+test.describe("정산 결재 문서 — 증빙 대기 건수 행(07.1-01 PD3)", () => {
+  test("증빙 대기 1건 → 대표 문서 화면 `증빙 대기` · `1건` · 경고 색 · 숫자는 Num 안 · 폰 결재 시트에도 같은 행", async ({ browser, baseURL }) => {
+    const fx = await setupSettling(browser, baseURL, "evidencePending");
+    const projectName = await submitSettlementFor(fx);
+
+    const ceo = await loginPage(browser, baseURL, fx.org.ceo);
+    await ceo.goto(`/projects/${fx.projectId}/settlement`);
+    await expect(ceo.getByRole("heading", { level: 1, name: `정산 결재 — ${projectName}`, exact: true })).toBeVisible();
+    const terms = ceo.locator("dl dt");
+    await expect(terms.filter({ hasText: /^증빙 대기$/ })).toHaveCount(1);
+    const value = terms.filter({ hasText: /^증빙 대기$/ }).locator("xpath=following-sibling::dd[1]");
+    await expect(value).toHaveText("1건");
+    expect(await value.locator("span").first().evaluate((element) => getComputedStyle(element).color)).toBe(await warningColor(ceo));
+    await expect(value.locator('[class*="Num-module__"][class$="__num"], [class*="Num-module__"][class*="__num "]')).toHaveText("1");
+    // 「실행가 합」 뒤 · 「기안」 앞.
+    const labels = await terms.allTextContents();
+    expect(labels.indexOf("증빙 대기")).toBe(labels.indexOf("실행가 합") + 1);
+    expect(labels.indexOf("기안")).toBe(labels.indexOf("증빙 대기") + 1);
+
+    await ceo.setViewportSize({ width: 375, height: 800 });
+    await ceo.goto("/approvals");
+    const trigger = ceo.getByRole("button", { name: new RegExp(projectName) });
+    await waitForHydration(trigger);
+    await trigger.click();
+    const sheet = ceo.getByRole("dialog");
+    const sheetValue = sheet.locator("dt", { hasText: /^증빙 대기$/ }).locator("xpath=following-sibling::dd[1]");
+    await expect(sheetValue).toHaveText("1건");
+    expect(await sheetValue.locator("span").first().evaluate((element) => getComputedStyle(element).color)).toBe(await warningColor(ceo));
+    await ceo.context().close();
+  });
+
+  test("증빙 대기 0건 → 문서 화면 · 폰 결재 시트에 `증빙 대기` 글자 DOM 0", async ({ browser, baseURL }) => {
+    const fx = await setupSettling(browser, baseURL, "evidenceKept");
+    const projectName = await submitSettlementFor(fx);
+
+    const ceo = await loginPage(browser, baseURL, fx.org.ceo);
+    await ceo.goto(`/projects/${fx.projectId}/settlement`);
+    await expect(ceo.getByRole("heading", { level: 1, name: `정산 결재 — ${projectName}`, exact: true })).toBeVisible();
+    await expect(ceo.locator("dl dt", { hasText: "실행가 합" })).toHaveCount(1);
+    await expect(ceo.getByText("증빙 대기")).toHaveCount(0);
+
+    await ceo.setViewportSize({ width: 375, height: 800 });
+    await ceo.goto("/approvals");
+    const trigger = ceo.getByRole("button", { name: new RegExp(projectName) });
+    await waitForHydration(trigger);
+    await trigger.click();
+    const sheet = ceo.getByRole("dialog");
+    await expect(sheet.locator("dt", { hasText: "실행가 합" })).toHaveCount(1);
+    await expect(sheet.getByText("증빙 대기")).toHaveCount(0);
+    await ceo.context().close();
   });
 });
 

@@ -2,13 +2,14 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { evidenceImportBatches, evidenceRecords, orgUnits, teams } from "@/db/schema";
+import { corpCards, corpCardUsages, evidenceImportBatches, evidenceRecords, orgUnits, teams } from "@/db/schema";
 import { createTeamExpenseDraft } from "@/domain/expenses";
 import { seoulToday } from "@/lib/dates";
 import type { Viewer } from "@/domain/viewer";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
+import { createCardUsageFixture, createPmInTeam, insertLinkFixture } from "@/test/integration/fixtures/evidence";
 import {
   addLotteCard,
   attachRecordFixture,
@@ -581,7 +582,7 @@ test("③ intake 1280 — Ctrl+U 파일 선택 · 방향키 → Enter 편집 →
   await focusGridCell(evidenceCell(page, rowIndex, EVIDENCE_COL.date));
   await page.keyboard.press("ArrowRight");
   const focusAfterRight = await page.evaluate(() => (document.activeElement as HTMLTableCellElement | null)?.cellIndex ?? -1);
-  record("방향키 → 오른쪽 칸으로 초점", 1280, role, url, focusAfterRight, EVIDENCE_COL.counterparty, focusAfterRight === EVIDENCE_COL.counterparty);
+  record("방향키 → 오른쪽 칸으로 초점(날짜 오른쪽 = 며칠째)", 1280, role, url, focusAfterRight, EVIDENCE_COL.ageDays, focusAfterRight === EVIDENCE_COL.ageDays);
   await page.keyboard.press("ArrowDown");
   const focusRowAfterDown = await page.evaluate(() => ((document.activeElement as HTMLElement | null)?.parentElement as HTMLTableRowElement | null)?.rowIndex ?? -1);
   record("방향키 ↓ 아래 행으로 초점(rowIndex 증가)", 1280, role, url, focusRowAfterDown, "> 0", focusRowAfterDown > 0);
@@ -913,3 +914,262 @@ for (const [roleId, roleName] of [
     }
   });
 }
+
+// ── 11. 07.1-01 며칠째 열(D-7102 · W8) · 잠김 한 줄(D-7105 · W9) · 확인 필요 연결 문서(U-16) ──────────────────────
+
+const DAY_MS = 86_400_000;
+
+// 며칠째 열 시험 자료 — 홈택스 6줄 중 [0] 오늘 등록 미공개 · [1] 120일 전 등록 팀 공개 · [2] 오늘 본부 공개 · [3] 음수 미공개 · [4] 붙음.
+async function seedAging(viewer: Viewer): Promise<{ ids: string[]; names: string[] }> {
+  const { ids } = await insertHometax(viewer);
+  const team1 = await teamIdByName("기획1팀");
+  await db
+    .update(evidenceRecords)
+    .set({ visibility: "team", visibleTeamId: team1, visibilitySavedAt: new Date(), createdAt: new Date(Date.now() - 120 * DAY_MS) })
+    .where(eq(evidenceRecords.id, ids[1]!));
+  await db.update(evidenceRecords).set({ supplyKrw: -300_000, vatKrw: -30_000, totalKrw: -330_000, originalApprovalNo: "20260101-41000000-00000099" }).where(eq(evidenceRecords.id, ids[3]!));
+  await attachRecordFixture(ids[4]!, viewer.id);
+  return { ids, names: ids.map((_, index) => `감사공급사${index + 1}`) };
+}
+
+function rowByName(page: Page, name: string): Locator {
+  return evidenceRows(page).filter({ hasText: name });
+}
+
+async function rowIndexByName(page: Page, name: string): Promise<number> {
+  const texts = await evidenceRows(page).evaluateAll((rows) => rows.map((row) => row.textContent ?? ""));
+  return texts.findIndex((text) => text.includes(name));
+}
+
+// 글자(Range) 폭 — 칸 폭이 머리글 · 가장 넓은 값 중 큰 쪽에 맞는지(3회차 R3-3) 잴 때 쓴다.
+async function textWidth(target: Locator): Promise<number> {
+  return target.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return range.getBoundingClientRect().width;
+  });
+}
+
+test("⑪ intake 1280 · 1024 · 768 · 700 — 며칠째 열: 날짜 바로 뒤 · 우측 정렬 · 붙은 줄 `—` · 오늘 `0일` · 한 줄 · 폭 = max(머리글, 값) · 거래처 칸 하한 9em · 가로 넘침 0 · Ctrl+C `0`", async ({ page }) => {
+  test.setTimeout(600_000);
+  const viewer = await loginIntake(page);
+  const { names } = await seedAging(viewer);
+  const role = "intake";
+  const url = "/expenses/evidence?state=all";
+
+  for (const width of [1280, 1024, 768, 700] as const) {
+    await goto(page, width, url);
+    await expect(evidenceTable(page)).toBeVisible();
+    await expect(rowByName(page, names[0]!)).toHaveCount(1);
+
+    const heads = await evidenceTable(page).locator("thead th").evaluateAll((elements) => elements.map((element) => ({ text: (element.textContent ?? "").trim(), display: getComputedStyle(element).display })));
+    const dateAt = heads.findIndex((head) => head.text === "날짜");
+    const ageAt = heads.findIndex((head) => head.text === "며칠째");
+    record("며칠째 머리글 = 날짜 바로 뒤", width, role, url, `날짜 ${dateAt} · 며칠째 ${ageAt}`, "며칠째 = 날짜 + 1", dateAt >= 0 && ageAt === dateAt + 1);
+    record("며칠째 머리글 보임(display)", width, role, url, heads[ageAt]?.display ?? "DOM 0", "none 아님", (heads[ageAt]?.display ?? "none") !== "none");
+
+    const header = evidenceTable(page).locator("thead th", { hasText: /^며칠째$/ });
+    // 사용자 결정 2026-10-27 — 태블릿(768 · 700)과 1024 · 1280 모두 며칠째 열이 실제로 보인다(폭 > 0).
+    await expect(header).toBeVisible();
+    record("며칠째 머리글 글자 줄 수", width, role, url, await textLines(header), 1, (await textLines(header)) === 1);
+
+    const fresh = evidenceCell(page, await rowIndexByName(page, names[0]!), EVIDENCE_COL.ageDays);
+    const old = evidenceCell(page, await rowIndexByName(page, names[1]!), EVIDENCE_COL.ageDays);
+    const attached = evidenceCell(page, await rowIndexByName(page, names[4]!), EVIDENCE_COL.ageDays);
+    record("오늘 등록 안 붙은 줄", width, role, url, (await fresh.innerText()).trim(), "0일", (await fresh.innerText()).trim() === "0일");
+    record("120일 전 등록 안 붙은 줄(세 자리)", width, role, url, (await old.innerText()).trim(), "120일", (await old.innerText()).trim() === "120일");
+    record("붙은 줄", width, role, url, (await attached.innerText()).trim(), "—", (await attached.innerText()).trim() === "—");
+
+    const align = await old.evaluate((element) => getComputedStyle(element).textAlign);
+    record("값 칸 text-align", width, role, url, align, "right", align === "right");
+    const valueLines = await textLines(old.locator("span").first());
+    record("값 글자 줄 수(120일)", width, role, url, valueLines, 1, valueLines === 1);
+
+    // 폭 = max(머리글 글자 폭, 가장 넓은 값 글자 폭) + 칸 좌우 padding. 줄바꿈 · 잘림 0.
+    const valueWidth = await textWidth(old.locator("span").first());
+    const headerWidth = await textWidth(header);
+    const pad = await old.evaluate((element) => parseFloat(getComputedStyle(element).paddingLeft) + parseFloat(getComputedStyle(element).paddingRight));
+    const cellWidth = (await old.boundingBox())?.width ?? 0;
+    record("며칠째 칸 폭 ≥ max(머리글, 값) + padding", width, role, url, `칸 ${cellWidth.toFixed(1)} · 머리글 ${headerWidth.toFixed(1)} · 값 ${valueWidth.toFixed(1)} · padding ${pad}`, "칸 ≥ max + padding", cellWidth + 0.5 >= Math.max(headerWidth, valueWidth) + pad);
+
+    // 거래처 칸 하한 — `.counterpartyCell` min-width가 9em px로 실제 걸렸다(auto · 0px이면 실패).
+    const counterparty = moduleClass(page, "counterpartyCell").first();
+    const minWidth = await counterparty.evaluate((element) => {
+      const probe = document.createElement("div");
+      probe.style.minWidth = "9em";
+      element.appendChild(probe);
+      const expected = getComputedStyle(probe).minWidth;
+      probe.remove();
+      return { got: getComputedStyle(element).minWidth, expected, width: element.getBoundingClientRect().width };
+    });
+    record("거래처 칸 computed min-width = 9em", width, role, url, JSON.stringify(minWidth), "got = 9em px · width ≥ got", minWidth.got === minWidth.expected && minWidth.got !== "auto" && minWidth.got !== "0px" && minWidth.width + 0.5 >= parseFloat(minWidth.got));
+
+    const overflow = await docOverflow(page);
+    record("문서 가로 넘침 없음", width, role, url, `${overflow.scrollWidth}/${overflow.clientWidth}`, "scrollWidth <= clientWidth", overflow.scrollWidth <= overflow.clientWidth);
+
+    if (width >= 1024) {
+      await page.evaluate(() => {
+        window.addEventListener("copy", (event) => {
+          (window as unknown as { __copied?: string }).__copied = event.clipboardData?.getData("text/plain") ?? "";
+        });
+      });
+      await focusGridCell(fresh);
+      await page.keyboard.press("Control+c");
+      const copied = await page.waitForFunction(() => (window as unknown as { __copied?: string }).__copied);
+      const text = (await copied.jsonValue()) as string;
+      record("며칠째 칸 Ctrl+C 글자", width, role, url, text, "0", text === "0");
+    }
+  }
+});
+
+test("⑫ intake 375 · 320 — 며칠째 머리글 숨김(DOM 남음) · 행 탭 시트에 `며칠째 {n}일` 줄 · 붙음 줄 시트에는 그 줄 없음", async ({ page }) => {
+  test.setTimeout(300_000);
+  const viewer = await loginIntake(page);
+  const { names } = await seedAging(viewer);
+  const role = "intake";
+  const url = "/expenses/evidence?state=all";
+
+  for (const width of [375, 320] as const) {
+    await goto(page, width, url);
+    const header = evidenceTable(page).locator("thead th", { hasText: /^며칠째$/ });
+    await expect(header).toHaveCount(1);
+    await expect(header).toBeHidden();
+    record("폰 며칠째 머리글 숨김(DOM 남음)", width, role, url, await header.evaluate((element) => getComputedStyle(element).display), "none", (await header.evaluate((element) => getComputedStyle(element).display)) === "none");
+
+    for (const [name, expectLine] of [
+      [names[0]!, "0일"],
+      [names[1]!, "120일"],
+      [names[4]!, null],
+    ] as const) {
+      await page.getByRole("button", { name: new RegExp(`${name}.*상세 보기$`) }).first().click();
+      const sheet = page.locator("dialog[open]");
+      await expect(sheet).toBeVisible();
+      await expect(sheet.locator("dt").first()).toBeVisible();
+      // 상세를 받아 시트 항목이 바뀐 뒤에 읽는다 — 상세에만 있는 `이력` 줄이 보이면 로드가 끝난 것이다.
+      await expect(sheet.locator("dt", { hasText: /^이력$/ })).toBeVisible();
+      const pairs = await sheet.locator("dt").evaluateAll((elements) => elements.map((element) => [(element.textContent ?? "").trim(), (element.nextElementSibling?.textContent ?? "").trim()]));
+      const line = pairs.find(([label]) => label === "며칠째");
+      record(`시트 며칠째 줄 — ${name}`, width, role, url, JSON.stringify(pairs), expectLine === null ? "며칠째 줄 없음" : `며칠째 ${expectLine}`, expectLine === null ? line === undefined : line?.[1] === expectLine);
+      await sheet.getByRole("button", { name: "닫기" }).click();
+      await expect(sheet).toBeHidden();
+    }
+  }
+});
+
+test("⑮ intake 1280 · 768 · 375 · 320 — 팀 공개 줄의 패널 · 시트에는 `상태` 줄이 없고(공개 줄과 같은 말) 사유가 있는 미공개(음수) 줄에는 `상태 미공개 · 음수…`가 있다 (#312 N-1)", async ({ page }) => {
+  test.setTimeout(600_000);
+  const viewer = await loginIntake(page);
+  const { names } = await seedAging(viewer);
+  const role = "intake";
+  const url = "/expenses/evidence?state=all";
+
+  for (const width of [1280, 768, 375, 320] as const) {
+    await goto(page, width, url);
+    for (const [name, expectStatusRow] of [
+      [names[1]!, false],
+      [names[3]!, true],
+    ] as const) {
+      const opener = width >= 700 ? evidenceTable(page).locator('[role="button"][aria-haspopup="dialog"]', { hasText: name }).first() : page.getByRole("button", { name: new RegExp(`${name}.*상세 보기$`) }).first();
+      await opener.click();
+      const dialog = width >= 1024 ? page.getByRole("dialog", { name: new RegExp(`${name}$`) }) : page.locator("dialog[open]");
+      await expect(dialog).toBeVisible();
+      // 상세를 받아 항목이 바뀐 뒤에 읽는다 — 상세에만 있는 `이력` 줄이 보이면 로드가 끝난 것이다.
+      await expect(dialog.locator("dt", { hasText: /^이력$/ })).toBeVisible();
+      const pairs = await dialog.locator("dt").evaluateAll((elements) => elements.map((element) => [(element.textContent ?? "").trim(), (element.nextElementSibling?.textContent ?? "").replace(/\s+/g, " ").trim()]));
+      const status = pairs.find(([label]) => label === "상태");
+      if (expectStatusRow) {
+        record(`읽기 줄 상태 — 사유 있는 미공개 ${name}`, width, role, url, JSON.stringify(pairs), "상태 줄 = 미공개 · 음수…", status !== undefined && status[1]!.startsWith("미공개 · 음수"));
+      } else {
+        record(`읽기 줄 상태 — 팀 공개 ${name}`, width, role, url, JSON.stringify(pairs), "상태 줄 없음 · 공개 줄 있음", status === undefined && pairs.some(([label]) => label === "공개"));
+      }
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+    }
+  }
+});
+
+async function cardRecordIds(viewer: Viewer, count: number): Promise<string[]> {
+  const card = await addLotteCard({ kind: "shared" });
+  const batch = await registerFile(viewer, lotteFixture(lotteLines(card, count)), "롯데_잠김.xls");
+  return recordIdsOf(batch);
+}
+
+test("⑬ 대리 등록 없는 등록 계급 1280 — 짝 없는 카드 줄 행동 칸: 붙이기 · 대리 등록 컨트롤 0 · 글자 `대리 등록 · 경영관리` · 보관 행동 그대로 · Ctrl+E 무동작", async ({ page }) => {
+  test.setTimeout(300_000);
+  const viewer = await loginIntake(page);
+  const [recordId] = await cardRecordIds(viewer, 1);
+  const role = "intake";
+  const url = "/expenses/evidence";
+  await goto(page, 1280, url);
+  await expect(evidenceRows(page)).toHaveCount(1);
+  const cell = evidenceCell(page, 0, EVIDENCE_COL.actions);
+
+  const controls = await cell.locator("button, a").evaluateAll((elements) => elements.map((element) => (element.textContent ?? "").trim()));
+  const blocked = controls.filter((text) => text === "붙이기" || text === "대리 등록");
+  record("행동 칸 붙이기 · 대리 등록 컨트롤 수", 1280, role, url, JSON.stringify(controls), "붙이기 · 대리 등록 0", blocked.length === 0);
+  const reason = (await cell.locator('[class*="selectReason"]').allInnerTexts()).map((text) => text.trim());
+  record("행동 칸 잠김 한 줄", 1280, role, url, JSON.stringify(reason), '["대리 등록 · 경영관리"]', reason.length === 1 && reason[0] === "대리 등록 · 경영관리");
+  record("보관 행 행동은 그대로", 1280, role, url, JSON.stringify(controls), "보관 포함", controls.includes("보관"));
+
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.date));
+  await page.keyboard.press("Control+e");
+  await page.waitForTimeout(500);
+  const dialogs = await page.locator("dialog[open], [role=dialog]").count();
+  record("Ctrl+E 뒤 열린 대화상자 수", 1280, role, url, dialogs, 0, dialogs === 0 && new URL(page.url()).pathname === "/expenses/evidence");
+  void recordId;
+});
+
+test("⑯ 대리 등록 없는 등록 계급 768 · 375 · 320 — 짝 없는 카드 줄 행 시트 행동 자리에 잠김 한 줄 `대리 등록 · 경영관리` 하나 · 붙이기 · 대리 등록 컨트롤 0 (#312 B-1 · UI-SPEC W9)", async ({ page }) => {
+  test.setTimeout(300_000);
+  const viewer = await loginIntake(page);
+  await cardRecordIds(viewer, 1);
+  const role = "intake";
+  const url = "/expenses/evidence";
+
+  for (const width of [768, 375, 320] as const) {
+    await goto(page, width, url);
+    await expect(evidenceRows(page)).toHaveCount(1);
+    const opener = width >= 700 ? evidenceTable(page).locator('[role="button"][aria-haspopup="dialog"]').first() : page.getByRole("button", { name: /상세 보기$/ }).first();
+    await opener.click();
+    const sheet = page.locator("dialog[open]");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator("dt", { hasText: /^이력$/ })).toBeVisible();
+    const lock = sheet.locator('[class*="selectReason"]');
+    const texts = (await lock.allInnerTexts()).map((text) => text.trim());
+    record("시트 행동 자리 잠김 한 줄", width, role, url, JSON.stringify(texts), '["대리 등록 · 경영관리"]', texts.length === 1 && texts[0] === "대리 등록 · 경영관리");
+    const controls = (await sheet.locator("button, a").allInnerTexts()).map((text) => text.trim());
+    record("시트 붙이기 · 대리 등록 컨트롤 수", width, role, url, JSON.stringify(controls), "0", controls.filter((text) => text === "붙이기" || text === "대리 등록").length === 0);
+    const overflow = await docOverflow(page);
+    record("문서 가로 넘침 없음", width, role, url, `${overflow.scrollWidth}/${overflow.clientWidth}`, "scrollWidth <= clientWidth", overflow.scrollWidth <= overflow.clientWidth);
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+  }
+});
+
+test("⑭ 확인 필요 줄 1280 — 번호 없는 카드 사용에 붙은 줄은 2행에 사유만(`작성 중 문서` 없음), 번호 없는 작성 중 지출결의에 붙은 줄은 `작성 중 문서` 그대로(U-16)", async ({ page }) => {
+  test.setTimeout(300_000);
+  const manager = await loginIntake(page);
+  const team1 = await teamIdByName("기획1팀");
+  const pm = await createPmInTeam(team1);
+  const last4 = await addLotteCard({ kind: "personal", holderUserId: pm.id });
+  const [card] = await db
+    .select({ id: corpCards.id })
+    .from(corpCards)
+    .where(and(eq(corpCards.numberLast4, last4), eq(corpCards.issuer, "롯데카드"), isNull(corpCards.archivedAt)));
+  if (!card) throw new Error("카드 없음");
+  const usage = await createCardUsageFixture(pm, { corpCardId: card.id, usedOn: seoulToday(), totalKrw: 55_000 });
+  await db.update(corpCardUsages).set({ number: null }).where(eq(corpCardUsages.id, usage.id));
+  const { ids } = await insertHometax(manager);
+  await insertLinkFixture({ recordId: ids[0]!, ownerKind: "corp_card_usage", ownerId: usage.id, attachedBy: manager.id });
+  await insertLinkFixture({ recordId: ids[1]!, ownerKind: "expense", ownerId: randomUUID(), attachedBy: manager.id });
+  await db.update(evidenceRecords).set({ needsCheck: "카드 사용 사유" }).where(eq(evidenceRecords.id, ids[0]!));
+  await db.update(evidenceRecords).set({ needsCheck: "지출결의 사유" }).where(eq(evidenceRecords.id, ids[1]!));
+  const role = "intake";
+  const url = "/expenses/evidence?state=all";
+  await goto(page, 1280, url);
+
+  const usageStatus = (await evidenceCell(page, await rowIndexByName(page, "감사공급사1"), EVIDENCE_COL.status).innerText()).replace(/\s+/g, " ").trim();
+  record("번호 없는 카드 사용에 붙은 확인 필요 줄 상태 칸", 1280, role, url, usageStatus, "작성 중 문서 없음 · 사유 `카드 사용 사유`", !usageStatus.includes("작성 중 문서") && usageStatus.includes("카드 사용 사유"));
+  const draftStatus = (await evidenceCell(page, await rowIndexByName(page, "감사공급사2"), EVIDENCE_COL.status).innerText()).replace(/\s+/g, " ").trim();
+  record("번호 없는 작성 중 지출결의에 붙은 줄 상태 칸", 1280, role, url, draftStatus, "작성 중 문서 · 사유 `지출결의 사유`", draftStatus.includes("작성 중 문서") && draftStatus.includes("지출결의 사유"));
+});

@@ -2,15 +2,18 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, evidenceRecords, orgUnits, teams } from "@/db/schema";
+import { actionLog, evidenceRecordLinks, evidenceRecords, notificationRules, orgUnits, teams } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { createCorpCard, type CardOwnerKind } from "@/domain/corp-cards";
 import { EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
 import {
   archiveEvidenceRecord,
+  CARD_FORMATS,
   countTodoEvidence,
   getEvidenceBatch,
+  getEvidenceDetail,
   getEvidenceRecord,
+  listAllEvidenceRecords,
   listEvidenceRecords,
   listEvidenceRecordsByIds,
   publishEvidenceRecords,
@@ -18,6 +21,8 @@ import {
   type EvidencePublishGroup,
   type EvidenceRecordList,
 } from "@/domain/evidence-records";
+import { orphanCreatedBefore } from "@/domain/evidence-records/aging";
+import { countEvidencePool } from "@/domain/evidence-records/pool";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import { EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT } from "@/domain/settings/keys";
@@ -28,14 +33,18 @@ import { MAX_ACTION_PAYLOAD_BYTES } from "@/lib/actions/payload-size";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulToday } from "@/lib/dates";
 import * as evidenceRecordsRepo from "@/repositories/evidence-records";
-import { upsertVisibility } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertRole } from "@/repositories/roles";
 import { insertMembership } from "@/repositories/team-memberships";
-import { insertOrgUnit } from "@/repositories/org-units";
+import { insertOrgUnit, setOrgUnitArchived } from "@/repositories/org-units";
 import { insertTeam, setTeamArchived } from "@/repositories/teams";
 import { bcFixture, hometaxTaxInvoiceFixture, lotteFixture, type FixtureRow } from "@/test/fixtures/evidence-import/build";
 import {
+  createIntakeManager,
   createIntakeViewer,
+  createPmInTeam,
   insertLiveLinkFixture,
+  insertRecordFixture,
   registerFixtureFile,
   setRecordArchivedFixture,
   setRecordTypeFixture,
@@ -738,5 +747,193 @@ describe("domain/evidence-records — 서버가 거부하는 편집 · 보관 / 
     await expect(archiveEvidenceRecord(pm, { id: rows.plain, version: versions.get(rows.plain) ?? 0 })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(restoreEvidenceRecord(pm, { id: rows.archived, version: versions.get(rows.archived) ?? 0 })).rejects.toBeInstanceOf(ForbiddenError);
     expect(await storedRows([rows.plain, rows.archived])).toEqual(expect.arrayContaining([expect.objectContaining({ id: rows.plain, archivedAt: null }), expect.objectContaining({ id: rows.archived, archivedBy: intake.id })]));
+  });
+});
+
+// ─── 07.1-01: 며칠째(D-7102) · 잠김 한 줄(D-7105) · 범위 방어(C-80 비권한부) ───────────────────────────────────
+
+const DAY_MS = 86_400_000;
+
+async function backdate(id: string, days: number): Promise<void> {
+  await db.update(evidenceRecords).set({ createdAt: new Date(Date.now() - days * DAY_MS) }).where(eq(evidenceRecords.id, id));
+}
+
+async function setOrphanRule(enabled: boolean, days: number): Promise<void> {
+  await db.delete(notificationRules).where(eq(notificationRules.kind, "orphan-evidence"));
+  await db.insert(notificationRules).values({ kind: "orphan-evidence", enabled, days, enabledAt: new Date("2026-09-01T00:00:00+09:00") });
+}
+
+async function clearOrphanRule(): Promise<void> {
+  await db.delete(notificationRules).where(eq(notificationRules.kind, "orphan-evidence"));
+}
+
+async function teamPublishedFixture(by: Viewer, teamId: string): Promise<string> {
+  const id = await insertRecordFixture(by, { supplyKrw: 10_000, vatKrw: 1_000 });
+  await setRecordVisibilityFixture(id, { visibility: "team", teamId });
+  return id;
+}
+
+async function isolatedTeam(): Promise<string> {
+  const division = await insertOrgUnit(SYSTEM_VIEWER, { name: `며칠째본부-${randomUUID().slice(0, 8)}` });
+  const team = await insertTeam(SYSTEM_VIEWER, { orgUnitId: division.id, name: `며칠째팀-${randomUUID().slice(0, 8)}` });
+  return team.id;
+}
+
+describe("domain/evidence-records — 며칠째 열 DTO (07.1-01 D-7102)", () => {
+  it("안 붙은 줄은 등록일 기준 경과일 · 오늘 등록 0 · 붙은 줄 · 보관 줄은 null — 내보내기 앞 단계(listAllEvidenceRecords)에서도 같다(E-P2-01)", async () => {
+    const manager = await createIntakeManager("며칠째 경영관리");
+    const teamId = await isolatedTeam();
+    const fresh = await teamPublishedFixture(manager, teamId);
+    const old = await teamPublishedFixture(manager, teamId);
+    await backdate(old, 10);
+    const attached = await teamPublishedFixture(manager, teamId);
+    await backdate(attached, 10);
+    await insertLiveLinkFixture(attached, manager.id);
+    const archived = await teamPublishedFixture(manager, teamId);
+    await backdate(archived, 10);
+    await setRecordArchivedFixture(archived, manager.id);
+    await clearOrphanRule();
+
+    const all = await listAllEvidenceRecords(manager, { state: "all" });
+    const ageOf = (id: string) => all.rows.find((row) => row.id === id)?.ageDays;
+    expect(ageOf(fresh)).toBe(0);
+    expect(ageOf(old)).toBe(10);
+    expect(ageOf(attached)).toBeNull();
+    const archivedRows = await listAllEvidenceRecords(manager, { state: "archived" });
+    expect(archivedRows.rows.find((row) => row.id === archived)?.ageDays).toBeNull();
+
+    const paged = await listEvidenceRecords(manager, { state: "all" });
+    expect(paged.rows.find((row) => row.id === old)?.ageDays).toBe(10);
+    expect(paged.rows.find((row) => row.id === attached)?.ageDays).toBeNull();
+    expect((await getEvidenceRecord(manager, old))?.ageDays).toBe(10);
+    expect((await getEvidenceDetail(manager, old))?.ageDays).toBe(10);
+    expect((await getEvidenceDetail(manager, attached))?.ageDays).toBeNull();
+  });
+
+  it("경고 색 — 규칙이 꺼져 있으면 모두 거짓(U-3) · 켜져 있으면 공개 줄 중 경과 ≥ 일수만 참이고 그 수가 독촉 건수와 같다", async () => {
+    const manager = await createIntakeManager("경고 경영관리");
+    const teamId = await isolatedTeam();
+    const old = await teamPublishedFixture(manager, teamId);
+    await backdate(old, 10);
+    const older = await teamPublishedFixture(manager, teamId);
+    await backdate(older, 30);
+    const fresh = await teamPublishedFixture(manager, teamId);
+    const privateOld = await insertRecordFixture(manager);
+    await backdate(privateOld, 30);
+
+    try {
+      await setOrphanRule(false, 7);
+      const off = await listAllEvidenceRecords(manager, { state: "all" });
+      expect(off.rows.filter((row) => row.ageWarn).map((row) => row.id)).toEqual([]);
+
+      await setOrphanRule(true, 7);
+      const on = await listAllEvidenceRecords(manager, { state: "all" });
+      const warned = on.rows.filter((row) => row.ageWarn).map((row) => row.id ?? "");
+      expect(warned).toEqual(expect.arrayContaining([old, older]));
+      expect(warned).not.toContain(fresh);
+      expect(warned).not.toContain(privateOld);
+      const counted = await evidenceRecordsRepo.countPublishedUnattachedBefore(SYSTEM_VIEWER, { cardFormats: CARD_FORMATS, createdBefore: orphanCreatedBefore(seoulToday(), 7) });
+      expect(warned).toHaveLength(counted);
+    } finally {
+      await clearOrphanRule();
+    }
+  });
+});
+
+describe("domain/evidence-records — 잠김 한 줄 · 범위 방어 (07.1-01 D-7105 · C-80 비권한부)", () => {
+  // E-P2-02: 대리 등록 없는 등록 계급 = evidence 보기 + intake 쓰기 + 금액 보임 둘, cards.proxy 쓰기 없음.
+  async function noProxyViewer(): Promise<Viewer> {
+    const viewer = await createIntakeManager("대리 없는 등록", { payments: true });
+    if (!viewer.roleId) throw new Error("계급 없음");
+    for (const infoItem of ["card_usage.value", "card_usage.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: viewer.roleId, infoItem, visible: true });
+    return viewer;
+  }
+
+  it("짝 없는 카드 줄 — 대리 등록 없는 등록 계급은 canAttach · canProxy 거짓 + 한 줄 `대리 등록 · 경영관리`, cards.proxy를 더하면 canProxy 참 · 이유 없음", async () => {
+    const viewer = await noProxyViewer();
+    const holder = await personViewer("role-pm");
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "롯데카드", numberLast4: "8101", label: "롯데 8101", kind: "personal", holderUserId: holder.id });
+    const { batchId } = await registerFixtureFile(viewer, lotteFixture(lotteLines("8101", ["81010001"])), "롯데.xls");
+    const id = idOf(await idsByApproval([batchId]), "81010001");
+    expect(card.id).toBeTruthy();
+
+    const [locked] = await listEvidenceRecordsByIds(viewer, [id]);
+    expect(locked).toMatchObject({ canAttach: false, canProxy: false, actionBlockedReason: "대리 등록 · 경영관리" });
+
+    if (!viewer.roleId) throw new Error("계급 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: viewer.roleId, menu: "cards.proxy", action: "write", allowed: true });
+    const [open] = await listEvidenceRecordsByIds(viewer, [id]);
+    expect(open).toMatchObject({ canAttach: false, canProxy: true, actionBlockedReason: null });
+  });
+
+  it("countTodoEvidence — evidence 보기 없는 intake 쓰기 계급은 null · intake 쓰기 없음 null · 경영관리는 숫자", async () => {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-intake-only-${randomUUID().slice(0, 8)}`, name: `등록만-${randomUUID().slice(0, 8)}` });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "evidence.intake", action: "write", allowed: true });
+    const intakeOnly = await personViewer(role.id);
+    expect(await countTodoEvidence(intakeOnly)).toBeNull();
+    expect(await countTodoEvidence(await personViewer("role-pm"))).toBeNull();
+    expect(typeof (await countTodoEvidence(await createIntakeViewer()))).toBe("number");
+  });
+
+  it("설정 본부가 보관된 본부면 본부 공개 대상 · 제안이 없다(PA-DIV-UNSET 갈래)", async () => {
+    const intake = await createIntakeViewer();
+    const previous = await getSettingValue(EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT);
+    const archivedUnit = await insertOrgUnit(SYSTEM_VIEWER, { name: `보관될본부-${randomUUID().slice(0, 8)}` });
+    try {
+      await setSettingValue(SYSTEM_VIEWER, EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT, archivedUnit.id);
+      expect((await listEvidenceRecords(intake)).division).toEqual({ id: archivedUnit.id, name: archivedUnit.name });
+      await setOrgUnitArchived(SYSTEM_VIEWER, archivedUnit.id, true);
+      const list = await listEvidenceRecords(intake);
+      expect(list.division).toBeNull();
+      expect(list.proposals.every((proposal) => proposal.visibility !== "division")).toBe(true);
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT, previous);
+    }
+  });
+
+  it("(E-P1-02 · T-07.1-01-01) 팀 공개 줄이 카드 미등록 · 음수가 되면 팀 사람 목록에서 빠진다 — 경영관리(all)에는 그대로 · 확인 필요 줄 · 증빙 고르기 풀에도 없다", async () => {
+    const manager = await createIntakeManager("범위 경영관리");
+    const teamId = await isolatedTeam();
+    const pm = await createPmInTeam(teamId);
+    const good = await teamPublishedFixture(manager, teamId);
+    const cardUnknown = await teamPublishedFixture(manager, teamId);
+    const negative = await teamPublishedFixture(manager, teamId);
+    const needsCheck = await teamPublishedFixture(manager, teamId);
+    const cardFormat = CARD_FORMATS[0];
+    if (!cardFormat) throw new Error("카드 서식 없음");
+    await db.update(evidenceRecords).set({ format: cardFormat, corpCardId: null }).where(eq(evidenceRecords.id, cardUnknown));
+    await db.update(evidenceRecords).set({ supplyKrw: -10_000, vatKrw: -1_000, totalKrw: -11_000 }).where(eq(evidenceRecords.id, negative));
+    await evidenceRecordsRepo.flagRecordsNeedsCheckByDedupeKeys(
+      SYSTEM_VIEWER,
+      (await db.select({ key: evidenceRecords.dedupeKey }).from(evidenceRecords).where(eq(evidenceRecords.id, needsCheck))).map((row) => row.key),
+      "취소 줄 확인",
+      db,
+    );
+
+    const mine = (await listEvidenceRecords(pm, { state: "all" })).rows.map((row) => row.id);
+    expect(mine).toContain(good);
+    expect(mine).not.toContain(cardUnknown);
+    expect(mine).not.toContain(negative);
+    expect(mine).not.toContain(needsCheck);
+    expect(await listEvidenceRecordsByIds(pm, [cardUnknown, negative, needsCheck])).toEqual([]);
+    expect(await getEvidenceRecord(pm, cardUnknown)).toBeNull();
+    expect(await evidenceRecordsRepo.hasAnyRecordForScope(pm, { rows: "published", teamId, orgUnitId: null }, CARD_FORMATS)).toBe(true);
+
+    const all = (await listEvidenceRecords(manager, { state: "all" })).rows.map((row) => row.id);
+    expect(all).toEqual(expect.arrayContaining([good, cardUnknown, negative, needsCheck]));
+
+    // 풀 — 작성자 풀(구매 요청)은 좋은 줄 하나만 센다(붙을 수 없는 상태는 풀 자체가 이미 뺀다 — 범위 조각 교체 뒤에도 같은 수).
+    expect(await countEvidencePool(pm, { kind: "purchase_request" })).toBe(1);
+  });
+
+  it("(E-P2-01) 붙은 줄 · 보관 줄에 살아 있는 붙임 표가 있어도 경과일은 null — 붙임 표 직접 확인", async () => {
+    const manager = await createIntakeManager("붙임 확인");
+    const teamId = await isolatedTeam();
+    const attached = await teamPublishedFixture(manager, teamId);
+    await insertLiveLinkFixture(attached, manager.id);
+    const live = await db.select().from(evidenceRecordLinks).where(eq(evidenceRecordLinks.evidenceRecordId, attached));
+    expect(live).toHaveLength(1);
+    const rows = (await listAllEvidenceRecords(manager, { state: "attached" })).rows;
+    expect(rows.find((row) => row.id === attached)?.ageDays).toBeNull();
   });
 });

@@ -418,6 +418,7 @@ test("E 필터 줄 — 순서 · 2차 꼴 · 1024 미만 0 · 거르개 select �
     if (download && width === 1280) {
       const body = await readFile((await download.path()) ?? "", "utf8");
       const lines = body.replace(/^﻿/, "").split("\r\n").filter((one) => one !== "");
+      // 며칠째(07.1-01)도 파일에 싣는다 — 머리줄이 목록 열 순서와 같고, 줄 비교는 화면 `{n}일` · `—`을 정수 · 빈 칸으로 본 값과 한다.
       const headers = (await evidenceTable(page).locator("thead th").allTextContents()).map((text) => text.trim()).filter((text) => text !== "" && text !== "행동");
       record("E CSV 머리줄 = 목록 열 순서", width, role, url, lines[0], headers.join(","), lines[0] === headers.join(","));
       const domRows = await evidenceRows(page).evaluateAll((trs) =>
@@ -429,15 +430,16 @@ test("E 필터 줄 — 순서 · 2차 꼴 · 1024 미만 0 · 거르개 select �
             const node = walker.nextNode();
             return (node?.textContent ?? "").trim();
           };
-          return [first(tds[0]), first(tds[1]), ...tds.slice(2, 5).map((td) => (td.textContent ?? "").replace(/,/g, "").trim())];
+          const ageText = (tds[1]?.textContent ?? "").trim();
+          return [first(tds[0]), ageText === "—" ? "" : ageText.replace(/일$/, ""), first(tds[2]), ...tds.slice(3, 6).map((td) => (td.textContent ?? "").replace(/,/g, "").trim())];
         }),
       );
-      const csvRows = lines.slice(1).map((one) => one.split(",").slice(0, 5));
+      const csvRows = lines.slice(1).map((one) => one.split(",").slice(0, 6));
       const sameRows = csvRows.length === domRows.length && csvRows.every((csv, i) => {
         const dom = domRows[i] ?? [];
-        return (csv[0] ?? "").endsWith(dom[0] ?? "@") && csv[1] === dom[1] && csv[2] === dom[2] && csv[3] === dom[3] && csv[4] === dom[4];
+        return (csv[0] ?? "").endsWith(dom[0] ?? "@") && csv[1] === dom[1] && csv[2] === dom[2] && csv[3] === dom[3] && csv[4] === dom[4] && csv[5] === dom[5];
       });
-      record("E CSV 줄(날짜 끝 · 거래처 첫 줄 · 금액 셋) = 화면 줄", width, role, url, { csv: csvRows, dom: domRows }, "같음(CSV 날짜는 연도까지 — 화면은 MM-DD)", sameRows);
+      record("E CSV 줄(날짜 끝 · 며칠째 · 거래처 첫 줄 · 금액 셋) = 화면 줄", width, role, url, { csv: csvRows, dom: domRows }, "같음(CSV 날짜는 연도까지 — 화면은 MM-DD)", sameRows);
       record("E CSV BOM", width, role, url, body.startsWith("﻿"), true, body.startsWith("﻿"));
     }
     const disabled = await nativeDisabled(page.locator("main"));
@@ -482,7 +484,7 @@ test("자격 — 경영관리 1280 붙여넣기 · 내려받기 / 금액 노출 
     await page.goto(url);
     await expect(evidenceRows(page)).toHaveCount(ids.length);
     await settle(page, 1280);
-    const domAmounts = await evidenceRows(page).evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll(":scope > td")].slice(2, 5).map((td) => (td.textContent ?? "").trim())));
+    const domAmounts = await evidenceRows(page).evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll(":scope > td")].slice(3, 6).map((td) => (td.textContent ?? "").trim())));
     record("자격 금액 노출 없음 — 화면 금액 칸 글자(정보)", 1280, "intake·금액없음", url, domAmounts, "보이지 않음", null);
     const buttons = await exportButton(page).count();
     record("자격 금액 노출 없음 — `파일 받기` 1(문 = intake 쓰기)", 1280, "intake·금액없음", url, buttons, 1, buttons === 1);
@@ -491,7 +493,7 @@ test("자격 — 경영관리 1280 붙여넣기 · 내려받기 / 금액 노출 
       await exportButton(page).click();
       const download = await downloading.catch(() => null);
       const body = download ? await readFile((await download.path()) ?? "", "utf8") : "";
-      const csvAmounts = body.replace(/^﻿/, "").split("\r\n").filter((one) => one !== "").slice(1).map((one) => one.split(",").slice(2, 5));
+      const csvAmounts = body.replace(/^﻿/, "").split("\r\n").filter((one) => one !== "").slice(1).map((one) => one.split(",").slice(3, 6));
       record("자격 금액 노출 없음 — CSV 금액 셋 빈 칸", 1280, "intake·금액없음", url, csvAmounts, "전부 빈 칸", csvAmounts.length === ids.length && csvAmounts.every((cells) => cells.every((cell) => cell === "")));
     }
     await page.context().close();

@@ -58,6 +58,19 @@
   max-width: 16em;
 }
 
+/* 07.1-01 W8 — 700 이상에서 거래처 칸이 9em 아래로 눌리지 않는다(SYSTEM §6-1 가장 긴 문자 열 min-width · 프로젝트 목록 `.nameCell`과 같은 값).
+   폰(<700)은 말줄임 한 줄 몫이라 걸지 않는다. 하한이 걸리면 칸이 눌리는 대신 표가 넘치므로 며칠째 열의 접기 판정은 scrollWidth로 한다. */
+@media (min-width: 700px) {
+  .counterpartyCell {
+    min-width: 9em;
+  }
+}
+
+/* 07.1-01 W8 — 머리글 한 줄(행동 로그 · ui/table의 같은 이름 같은 값). 며칠째 머리글이 줄바꿈으로 눌리지 않게 한다. */
+.nowrapHeader {
+  white-space: nowrap;
+}
+
 .counterpartyText {
   overflow: hidden;
   text-overflow: ellipsis;

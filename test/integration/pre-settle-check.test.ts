@@ -22,6 +22,8 @@ import { DTO_REGISTRY } from "@/domain/permissions/dto-registry";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { getSettlementPreSettleSummary, SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
+import { listMyInbox, loadKindDetails } from "@/domain/approvals";
+import { visible } from "@/domain/permissions/visible";
 import { setSettingValue } from "@/domain/settings/registry";
 import {
   APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED,
@@ -61,11 +63,30 @@ vi.mock("@/domain/pre-settle-check", async (importOriginal) => {
   };
 });
 
+// 07.1-01 PF2 — 점검이 증빙 확인 기록을 읽는 횟수(묶음 읽기 · 단건 읽기)를 센다. 원래 함수 그대로 부르고 호출만 센다.
+const reviewReads = vi.hoisted(() => ({ list: 0, single: 0 }));
+vi.mock("@/repositories/expense-evidence-reviews", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/repositories/expense-evidence-reviews")>();
+  return {
+    ...actual,
+    listReviewStatusByExpenses: (...args: Parameters<typeof actual.listReviewStatusByExpenses>) => {
+      reviewReads.list += 1;
+      return actual.listReviewStatusByExpenses(...args);
+    },
+    findReviewByExpense: (...args: Parameters<typeof actual.findReviewByExpense>) => {
+      reviewReads.single += 1;
+      return actual.findReviewByExpense(...args);
+    },
+  };
+});
+
 beforeEach(() => {
   inject.load = false;
   inject.compute = false;
   inject.computeCalls = 0;
   inject.loadCalls = 0;
+  reviewReads.list = 0;
+  reviewReads.single = 0;
 });
 
 const AFTER_END = { now: () => new Date("2027-01-02T03:00:00Z") };
@@ -941,12 +962,12 @@ describe("완료 전 점검 — 정산 결재 문서 요약(getSettlementPreSett
     await settle(fx.projectId);
     await setAllowOpenExpenses(true);
     await draftSettlement(fx);
-    expect(await getSettlementPreSettleSummary(fx.ceo, { projectId: fx.projectId })).toEqual({ blockedCount: 0, forcedResultLine: "강행 · 미결 지출결의 2건" });
+    expect(await getSettlementPreSettleSummary(fx.ceo, { projectId: fx.projectId })).toEqual({ blockedCount: 0, forcedResultLine: "강행 · 미결 지출결의 2건", evidencePendingCount: 0 });
   });
 
   it("정산 · 강행 없음 · 막힘 0 → 결과 줄 없음", async () => {
     const { fx } = await draftedWithOpen({});
-    expect(await getSettlementPreSettleSummary(fx.ceo, { projectId: fx.projectId })).toEqual({ blockedCount: 0, forcedResultLine: null });
+    expect(await getSettlementPreSettleSummary(fx.ceo, { projectId: fx.projectId })).toEqual({ blockedCount: 0, forcedResultLine: null, evidencePendingCount: 0 });
   });
 
   it("진행 복귀 프로젝트 → null", async () => {
@@ -962,7 +983,7 @@ describe("완료 전 점검 — 정산 결재 문서 요약(getSettlementPreSett
     const { fx } = await draftedWithOpen({ rejected: true });
     const outsider = await makePerson("무관피엠", DEFAULT_ROLE_ID, "기획1팀");
     expect(await getSettlementPreSettleSummary(outsider, { projectId: fx.projectId })).toBeNull();
-    expect(await getSettlementPreSettleSummary(fx.pm, { projectId: fx.projectId })).toEqual({ blockedCount: 1, forcedResultLine: null });
+    expect(await getSettlementPreSettleSummary(fx.pm, { projectId: fx.projectId })).toEqual({ blockedCount: 1, forcedResultLine: null, evidencePendingCount: 0 });
   });
 });
 
@@ -1083,7 +1104,7 @@ describe("G-06-E — 결재 통과 · 증빙 대기(카드 ② 「경고만」)"
     await issueRevenue(fx.projectId);
     await settle(fx.projectId);
     await draftSettlement(fx);
-    expect(await getSettlementPreSettleSummary(fx.ceo, { projectId: fx.projectId })).toEqual({ blockedCount: 0, forcedResultLine: null });
+    expect(await getSettlementPreSettleSummary(fx.ceo, { projectId: fx.projectId })).toEqual({ blockedCount: 0, forcedResultLine: null, evidencePendingCount: 2 });
   });
 
   it("범위가 좁은 기안자 A: 증빙 대기 행은 A 문서만 · 그 밖 1건 · count 2 · DTO 글자에 B 문서 번호 · id 없음 · 키 셋 고정", async () => {
@@ -1110,4 +1131,95 @@ describe("G-06-E — 결재 통과 · 증빙 대기(카드 ② 「경고만」)"
     expect(wide.evidencePending.outOfScopeCount).toBe(0);
     expect(wide.evidencePending.count).toBe(2);
   });
+});
+
+
+// ── 07.1-01 PF2 · PD3 — 점검 리뷰 묶음 읽기 · 정산 결재 문서 칸 `증빙 대기 {N}건` ─────────────────────────────
+
+describe("PF2 — 점검이 지출결의마다 리뷰를 따로 읽지 않는다", () => {
+  it("지출결의 여럿인 프로젝트 → 리뷰 읽기는 묶음 1회 · 단건 읽기 0 · 결과는 그대로", async () => {
+    const fx = await setupExpenseProject();
+    const first = await approvedWithoutEvidenceBy(fx, fx.pm, fx.lines.withVendor);
+    await approvedExpenseWithEvidence(fx, fx.lines.split);
+    reviewReads.list = 0;
+    reviewReads.single = 0;
+
+    const check = await getPreSettleCheck(fx.pm, fx.projectId);
+
+    expect(reviewReads.list).toBe(1);
+    expect(reviewReads.single).toBe(0);
+    expect(check.evidencePending.rows.map((row) => [row.number, row.state])).toEqual([[first.number, "no_evidence"]]);
+  });
+});
+
+describe("PD3 — 정산 결재 문서 칸의 `증빙 대기 {N}건` 행", () => {
+  async function pendingSettlement(pendingCount: 0 | 1 | 2) {
+    const fx = await setupExpenseProject();
+    if (pendingCount >= 1) await approvedWithoutEvidenceBy(fx, fx.pm, fx.lines.withVendor);
+    else await approvedExpenseWithEvidence(fx, fx.lines.withVendor);
+    if (pendingCount >= 2) await approvedWithoutEvidenceBy(fx, fx.pm, fx.lines.split);
+    else await approvedExpenseWithEvidence(fx, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+    await settle(fx.projectId);
+    return { fx, doc: await draftSettlement(fx) };
+  }
+
+  it("2건 → 「실행가 합」 뒤 · 「기안」 앞에 { 증빙 대기, 2건, warning } 행", async () => {
+    const { fx, doc } = await pendingSettlement(2);
+    const rows = (await loadKindDetails(fx.ceo, SETTLEMENT_DOCUMENT_KIND, [doc.documentId], { visible })).get(doc.documentId)?.rows ?? [];
+    const labels = rows.map((row) => row.label);
+    expect(rows.find((row) => row.label === "증빙 대기")).toEqual({ label: "증빙 대기", value: "2건", tone: "warning" });
+    expect(labels.indexOf("증빙 대기")).toBe(labels.indexOf("실행가 합") + 1);
+    expect(labels.indexOf("기안")).toBe(labels.indexOf("증빙 대기") + 1);
+  });
+
+  it("0건 → 행이 없다(대시 행 금지)", async () => {
+    const { fx, doc } = await pendingSettlement(0);
+    const rows = (await loadKindDetails(fx.ceo, SETTLEMENT_DOCUMENT_KIND, [doc.documentId], { visible })).get(doc.documentId)?.rows ?? [];
+    expect(rows.map((row) => row.label)).not.toContain("증빙 대기");
+  });
+
+  it("E-P2-04 — 정산 프로젝트 둘 · 진행 복귀 하나인 상세 로드는 점검 입력 1회 · 점검 2회 · 리뷰 묶음 읽기 2회, 정산 문서가 없으면 0", async () => {
+    const a = await pendingSettlement(2);
+    const b = await pendingSettlement(1);
+    const back = await pendingSettlement(1);
+    await saveProjectLedger(back.fx.lead, back.fx.projectId, {
+      seenStatus: "settling",
+      period: { startDate: "2026-09-01", endDate: "2099-12-31", baseline: { startDate: "2026-09-01", endDate: "2026-12-31" } },
+    });
+    inject.loadCalls = 0;
+    inject.computeCalls = 0;
+    reviewReads.list = 0;
+
+    const ids = [a.doc.documentId, b.doc.documentId, back.doc.documentId];
+    const details = await loadKindDetails(a.fx.ceo, SETTLEMENT_DOCUMENT_KIND, ids, { visible });
+
+    expect(inject.loadCalls).toBe(1);
+    expect(inject.computeCalls).toBe(2);
+    expect(reviewReads.list).toBe(2);
+    const valueOf = (id: string) => details.get(id)?.rows.find((row) => row.label === "증빙 대기")?.value;
+    expect(valueOf(a.doc.documentId)).toBe("2건");
+    expect(valueOf(b.doc.documentId)).toBe("1건");
+    expect(valueOf(back.doc.documentId)).toBeUndefined();
+
+    inject.loadCalls = 0;
+    inject.computeCalls = 0;
+    reviewReads.list = 0;
+    await loadKindDetails(a.fx.ceo, SETTLEMENT_DOCUMENT_KIND, [back.doc.documentId], { visible });
+    expect([inject.loadCalls, inject.computeCalls, reviewReads.list]).toEqual([0, 0, 0]);
+  }, 30_000);
+
+  it("#312 /review P2 — 결재함 한 번 로드(상세 포함)는 같은 프로젝트의 완료 전 점검을 한 번만 돈다(승인 막힘 이유와 증빙 대기 건수가 결과를 나눠 쓴다)", async () => {
+    const a = await pendingSettlement(2);
+    inject.loadCalls = 0;
+    inject.computeCalls = 0;
+
+    const inbox = await listMyInbox(a.fx.ceo, { withDetails: true });
+
+    const item = inbox.mine.find((row) => row.documentId === a.doc.documentId);
+    expect(item?.detail?.rows.find((row) => row.label === "증빙 대기")?.value).toBe("2건");
+    expect(inject.computeCalls).toBe(1);
+    expect(inject.loadCalls).toBe(1);
+  }, 30_000);
 });

@@ -54,7 +54,7 @@ import {
 } from "@/domain/approvals";
 import { buildConflictMessage, buildLateUndoMessage } from "@/domain/approvals/conflict-message";
 import { hasPriorApproval, type ApprovalStatus } from "@/domain/approvals/route";
-import type { DescribeDeps, DocumentDetailRow, DocumentDetailRows, DocumentSummary, RouteConfigStep } from "@/domain/approvals/kinds";
+import { readOnce, type DescribeDeps, type DocumentDetailRow, type DocumentDetailRows, type DocumentSummary, type LoadScope, type RouteConfigStep } from "@/domain/approvals/kinds";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { computePreSettleCheck, loadPreSettleInputs, preSettleLogDetail, type PreSettleInputs } from "@/domain/pre-settle-check";
@@ -174,7 +174,7 @@ const STATUS_WORDS: Record<string, string> = {
   withdrawn: "회수",
 };
 
-type Totals = Partial<Pick<SettlementDocumentDto, "quoteTotalKrw" | "executionTotalKrw">>;
+type Totals = Partial<Pick<SettlementDocumentDto, "quoteTotalKrw" | "executionTotalKrw" | "evidencePendingCount">>;
 
 // G4: 현재 차수 견적 줄(보관 제외)의 견적가(원화) 합 · 실행가(원화 환산) 합 — 견적 줄 표가 그리는 같은 줄 값의 단순 합(새 계산 규칙 없음).
 // 06.2(D-6205 ② · 06.2-03 넘김): 두 합은 문서 보임(canSeeSettlement · 결재 엔진의 결재 관련자 판정) 뒤에만 읽는다(post-gate) —
@@ -231,11 +231,46 @@ async function describeSettlementDocuments(viewer: Viewer, ids: string[], deps?:
   return result;
 }
 
+// 결재함 한 번 로드(listMyInbox)에서 막힘 이유와 상세가 같은 프로젝트의 완료 전 점검을 두 번 돌지 않게 로드 범위(scope)로 결과를 나눠 쓴다.
+// 범위가 없으면(단건 호출) 그대로 계산한다. 표시 전용 읽기만 나눈다 — 트랜잭션 안 판정(승인 · 기안)은 이 길을 쓰지 않는다.
+function sharedPreSettleInputs(viewer: Viewer, scope?: LoadScope): Promise<PreSettleInputs> {
+  return readOnce(scope, "pre-settle-inputs", () => loadPreSettleInputs(viewer));
+}
+
+function sharedPreSettleCheck(viewer: Viewer, projectId: string, inputs: PreSettleInputs, scope?: LoadScope) {
+  return readOnce(scope, `pre-settle-check:${projectId}`, () => computePreSettleCheck(viewer, projectId, inputs));
+}
+
 // 결재 시트 상세 — 구조 필드만(엔진이 detailDto로 투영한 뒤 buildDetailRows가 문자열 행을 만든다).
-async function loadSettlementDetails(viewer: Viewer, ids: string[]): Promise<Map<string, Record<string, unknown>>> {
+async function loadSettlementDetails(viewer: Viewer, ids: string[], deps?: { scope?: LoadScope }): Promise<Map<string, Record<string, unknown>>> {
   const rows = await listSettlementSummaries(viewer, { ids, documentKind: SETTLEMENT_DOCUMENT_KIND });
+  // 07.1-01 PD3 · E-P2-04 — 증빙 대기 건수는 정산 중인 프로젝트만(정산 아닌 문서는 점검 0회 · 칸 없음). 점검 입력은 이 호출에서 한 번만 읽고
+  // 프로젝트마다 점검을 동시에 돈다. 점검이 던지면 그 프로젝트 칸만 비운다(결재함 전체를 깨지 않는다 — 막힘 이유 갈래와 같은 꼴).
+  const pendingByProject = new Map<string, number>();
+  const settlingProjectIds = [...new Set(rows.filter((row) => row.projectStatus === SETTLING).map((row) => row.projectId))];
+  if (settlingProjectIds.length > 0) {
+    try {
+      const inputs = await sharedPreSettleInputs(viewer, deps?.scope);
+      await Promise.all(
+        settlingProjectIds.map(async (projectId) => {
+          try {
+            pendingByProject.set(projectId, (await sharedPreSettleCheck(viewer, projectId, inputs, deps?.scope)).evidencePending.count);
+          } catch (error) {
+            log.warn("settlement.pre_settle_display_failed", { projectId, reason: error instanceof Error ? error.constructor.name : "unknown" });
+          }
+        }),
+      );
+    } catch (error) {
+      log.warn("settlement.pre_settle_display_failed", { projectId: null, reason: error instanceof Error ? error.constructor.name : "unknown" });
+    }
+  }
   // 문서마다 합계 읽기를 동시에(05 /review A13).
-  const entries = await Promise.all(rows.map(async (row) => [row.id, toSource(row, await totalsOf(viewer, row))] as const));
+  const entries = await Promise.all(
+    rows.map(async (row) => {
+      const pending = pendingByProject.get(row.projectId);
+      return [row.id, toSource(row, { ...(await totalsOf(viewer, row)), ...(pending === undefined ? {} : { evidencePendingCount: pending }) })] as const;
+    }),
+  );
   return new Map<string, Record<string, unknown>>(entries);
 }
 
@@ -251,7 +286,7 @@ export function periodText(startDate: string | null | undefined, endDate: string
   return `${startDate ?? ""} ~ ${endDate ?? ""}`;
 }
 
-// 문서 화면 읽기 칸과 같은 순서 — 프로젝트 · 기간 · 담당 PM · 견적가 합 · 실행가 합 · 기안. 투영에서 빠진 필드는 행째 없다(손익 행 없음 — D11).
+// 문서 화면 읽기 칸과 같은 순서 — 프로젝트 · 기간 · 담당 PM · 견적가 합 · 실행가 합 · 증빙 대기 · 기안. 투영에서 빠진 필드는 행째 없다(손익 행 없음 — D11).
 function buildSettlementDetailRows(projected: Partial<SettlementDocumentDto>): DocumentDetailRows {
   const projectText = projected.projectName === undefined ? undefined : [projected.projectNumber, projected.projectName].filter(Boolean).join(" ");
   const rows = [
@@ -260,6 +295,8 @@ function buildSettlementDetailRows(projected: Partial<SettlementDocumentDto>): D
     textRow("담당 PM", projected.pmName),
     textRow("견적가 합", projected.quoteTotalKrw === undefined ? undefined : formatKrw(projected.quoteTotalKrw)),
     textRow("실행가 합", projected.executionTotalKrw === undefined ? undefined : formatKrw(projected.executionTotalKrw)),
+    // 07.1-01 PD3 — 1건 이상일 때만(0 · 없음이면 행 없음 — 대시 행 금지). 경고 글자는 결재함이 warning tone으로 그린다.
+    projected.evidencePendingCount ? { label: "증빙 대기", value: `${projected.evidencePendingCount}건`, tone: "warning" as const } : null,
     textRow("기안", projected.drafterName === undefined ? undefined : [projected.drafterName, projected.createdAt ? kstDateOf(projected.createdAt) : null].filter(Boolean).join(" · ")),
   ].filter((row): row is DocumentDetailRow => row !== null);
   return {
@@ -299,12 +336,12 @@ export async function getSettlement(viewer: Viewer, input: { projectId: string }
 export async function getSettlementPreSettleSummary(
   viewer: Viewer,
   input: { projectId: string },
-): Promise<{ blockedCount: number; forcedResultLine: string | null } | null> {
+): Promise<{ blockedCount: number; forcedResultLine: string | null; evidencePendingCount: number } | null> {
   if (!UUID_SHAPE.test(input.projectId)) return null;
   const [row] = await listSettlementSummaries(viewer, { projectIds: [input.projectId], documentKind: SETTLEMENT_DOCUMENT_KIND });
   if (!row || row.projectStatus !== SETTLING || !(await canSeeSettlement(viewer, row))) return null;
   const check = await computePreSettleCheck(viewer, row.projectId, await loadPreSettleInputs(viewer));
-  return { blockedCount: check.blockedCount, forcedResultLine: check.forcedResultLine };
+  return { blockedCount: check.blockedCount, forcedResultLine: check.forcedResultLine, evidencePendingCount: check.evidencePending.count };
 }
 
 // 프로젝트 상세 머리 줄 재료(S10 (가)) — 문서가 있고 볼 수 있으면 상태 낱말(`정산 결재 {낱말}` 링크), 없고 정산 · 담당 PM 쓰기 권리면 올리기,
@@ -534,7 +571,7 @@ async function onSettlementFinalApprovalInTx(viewer: Viewer, documentId: string,
 // 표시 전용(트랜잭션 없음) — 엔진은 viewer가 지금 담당인 문서만 넘긴다. 프로젝트가 정산이 아니면(D-80 진행 복귀) · 결재 중 지출결의가
 // 남았으면(A8) · 완료 전 점검이 막히면(06-22 O-16) `승인`을 막아 보인다 — 순서는 서버와 같다(R-2). 점검은 앞 두 갈래에 걸리지 않은
 // 프로젝트마다 한 번, 사전 조회(프로젝트 무관)는 호출당 한 번(E-30). 계산하지 못하면 `점검 결과 없음 · 다시 시도`(fail-closed).
-async function settlementApproveBlockedReason(viewer: Viewer, ids: string[]): Promise<Map<string, string>> {
+async function settlementApproveBlockedReason(viewer: Viewer, ids: string[], scope?: LoadScope): Promise<Map<string, string>> {
   const rows = await listSettlementSummaries(viewer, { ids, documentKind: SETTLEMENT_DOCUMENT_KIND });
   const inReview = await countInReviewByProjects(viewer, [...new Set(rows.map((row) => row.projectId))]);
   const reasons = new Map<string, string>();
@@ -550,11 +587,11 @@ async function settlementApproveBlockedReason(viewer: Viewer, ids: string[]): Pr
   const blockedByProject = new Map<string, number | null>();
   let namesVisible = false;
   try {
-    const inputs = await loadPreSettleInputs(viewer);
+    const inputs = await sharedPreSettleInputs(viewer, scope);
     namesVisible = await visible(viewer, "project.value");
     for (const projectId of projectIds) {
       try {
-        blockedByProject.set(projectId, (await computePreSettleCheck(viewer, projectId, inputs)).blockedCount);
+        blockedByProject.set(projectId, (await sharedPreSettleCheck(viewer, projectId, inputs, scope)).blockedCount);
       } catch (error) {
         log.warn("settlement.pre_settle_display_failed", { projectId, reason: error instanceof Error ? error.constructor.name : "unknown" });
         blockedByProject.set(projectId, null);

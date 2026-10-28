@@ -15,6 +15,7 @@ import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
 import { leaveStatusWord, routeListSteps, toLeaveStatusKey, withdrawResultLines } from "@/app/(app)/leave/status-display";
 import { preSettleBlockReason } from "@/domain/pre-settle-check/summary";
 import { SettlementActions } from "./settlement-actions";
+import detailStyles from "../project-detail.module.css";
 import styles from "./settlement.module.css";
 
 // 05-11(UI-SPEC S10 (나)): 정산 결재 문서 화면 — `DetailScreen`(제목 `정산 결재 — {프로젝트명}` · 태그 · 메타 프로젝트 번호) → 읽기 칸(KvList:
@@ -76,6 +77,18 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
   // G4 — 금액을 볼 수 없는 계급에는 두 행째 없다(투영에서 빠진 필드는 행을 만들지 않는다).
   if (doc.quoteTotalKrw !== undefined) items.push({ label: "견적가 합", value: <Num value={doc.quoteTotalKrw} /> });
   if (doc.executionTotalKrw !== undefined) items.push({ label: "실행가 합", value: <Num value={doc.executionTotalKrw} /> });
+  // 07.1-01 PD3 — 증빙 대기 건수(막지 않는 경고 글자). 점검이 오류거나 0건이면 행이 없다(대시 행 금지).
+  const evidencePendingCount = preSettle.status === "ready" ? (preSettle.summary?.evidencePendingCount ?? 0) : 0;
+  if (evidencePendingCount > 0) {
+    items.push({
+      label: "증빙 대기",
+      value: (
+        <span className={detailStyles.preSettleWarning}>
+          <Num value={evidencePendingCount} />건
+        </span>
+      ),
+    });
+  }
   items.push({ label: "기안", value: [doc.drafterName, doc.createdAt ? kstDateOf(doc.createdAt) : null].filter(Boolean).join(" · ") || dash });
   if (view?.steps && view.steps.length > 0) {
     items.push({ label: "결재선", value: <ApprovalRoute mode="list" steps={routeListSteps(view.steps)} endLines={view.endLines ?? []} /> });

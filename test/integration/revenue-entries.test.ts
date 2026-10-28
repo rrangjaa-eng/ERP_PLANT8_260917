@@ -962,6 +962,30 @@ describe("매출 줄 저장 로그의 줄 전후(07.1-13 S8)", () => {
     expect(payment.changes).toEqual({ entryDate: [null, "2026-10-01"], amount: [null, "300,000원"], note: [null, "입금"] });
   });
 
+  // #316 게이트 P2: 화면은 고친 줄만 보낸다 — 순번은 요청 배열이 아니라 매출 표 순서(listRevenue · 종류별 발행일/입금일 순)의 그 줄 자리다.
+  it("여러 줄 가운데 뒤쪽 줄만 고쳐도 그 줄의 실제 번호(표 순서)로 남는다", async () => {
+    const finance = await createFinanceViewer();
+    const { project } = await setupProject();
+    await saveRevenue(finance, project.id, {
+      issuedEntries: [
+        { entryDate: "2026-09-01", amount: krw(1_000) },
+        { entryDate: "2026-09-02", amount: krw(2_000) },
+        { entryDate: "2026-09-03", amount: krw(3_000) },
+      ],
+    });
+    const listed = (await listRevenue(finance, project.id))?.issuedEntries ?? [];
+    expect(listed.map((entry) => entry.entryDate)).toEqual(["2026-09-01", "2026-09-02", "2026-09-03"]);
+    const third = listed[2]!;
+
+    await saveRevenue(finance, project.id, {
+      issuedEntries: [{ id: third.id, version: third.version, entryDate: third.entryDate, amount: krw(3_500), note: third.note }],
+    });
+
+    expect(await lastElements(project.id)).toEqual([
+      { id: third.id, kind: "issue", no: 3, name: null, changes: { amount: ["3,000원", "3,500원"] } },
+    ]);
+  });
+
   it("고치는 줄 둘을 한 번에 — 두 원소의 이전 값이 각자 그 줄의 값이다(묶음 읽기)", async () => {
     const finance = await createFinanceViewer();
     const { project } = await setupProject();

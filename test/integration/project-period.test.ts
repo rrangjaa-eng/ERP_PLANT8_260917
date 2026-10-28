@@ -695,7 +695,8 @@ describe("총 매출 예상가 저장 (04-44)", () => {
     const updates = await logs(s.projectId, "document_update");
     expect(updates).toHaveLength(1);
     expect(updates[0]?.actorId).toBe(s.lead.id);
-    expect(updates[0]?.detail).toEqual({ preEstimateChanged: true, changes: { preEstimate: ["0원", "50,000,000원"] } });
+    // 등록 기본값 0원은 미입력이라 이전은 null(없음 — #316 게이트 P3).
+    expect(updates[0]?.detail).toEqual({ preEstimateChanged: true, changes: { preEstimate: [null, "50,000,000원"] } });
   });
 
   it("(o2) 정산 프로젝트의 담당 PM(권리 none)이 보낸 총 매출 예상가 저장은 「총 매출 예상가 바꾸기 권한 없음」 · DB 무변경 · write.denied 한 번(금액 키 없음)", async () => {

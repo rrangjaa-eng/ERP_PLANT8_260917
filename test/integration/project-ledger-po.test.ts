@@ -92,6 +92,7 @@ describe("saveProjectLedger poNumber (07-18 · D-737)", () => {
 });
 
 // 07.1-13 S8(E-P2-38 · 사용자 결정 카드 2026-10-28 01:03Z — A): 사전 견적(총 매출 예상가) 바꾸기 로그에 전후 Money 글자.
+// #316 게이트 P3: 저장된 0원은 미입력이다(등록 기본 0 · 화면 「없음」 — pre-estimate-field.tsx preEstimateValue) — 로그도 null(없음).
 describe("saveProjectLedger preEstimate 로그 전후 (07.1-13 S8)", () => {
   async function projectUpdates(projectId: string) {
     const rows = await db.select().from(actionLog).where(eq(actionLog.entityId, projectId)).orderBy(actionLog.seq);
@@ -113,7 +114,7 @@ describe("saveProjectLedger preEstimate 로그 전후 (07.1-13 S8)", () => {
     await saveProjectLedger(s.pm, s.projectId, { seenStatus: "bidding", preEstimate: { currency: "USD", amount: 40_000, fxRate: 1350, fxRateTouched: true } });
     const [detail] = await projectUpdates(s.projectId);
     const pair = (detail?.changes as { preEstimate?: [string, string] } | undefined)?.preEstimate;
-    expect(pair?.[0]).toBe("0원");
+    expect(pair?.[0]).toBeNull();
     expect(pair?.[1]).toMatch(/^USD 40,000\.00 @1,350 · 54,000,000원$/);
   });
 
@@ -128,7 +129,18 @@ describe("saveProjectLedger preEstimate 로그 전후 (07.1-13 S8)", () => {
     const s = await setup();
     await saveProjectLedger(s.pm, s.projectId, { seenStatus: "bidding", preEstimate: krw(2_000_000), poNumber: "PO-PE" });
     expect(await projectUpdates(s.projectId)).toEqual([
-      { preEstimateChanged: true, changes: { preEstimate: ["0원", "2,000,000원"] }, poNumber: { from: null, to: "PO-PE" } },
+      { preEstimateChanged: true, changes: { preEstimate: [null, "2,000,000원"] }, poNumber: { from: null, to: "PO-PE" } },
+    ]);
+  });
+
+  it("값을 비우면(0) 이후가 null(없음) · 처음 넣기는 이전이 null", async () => {
+    const s = await setup();
+    await saveProjectLedger(s.pm, s.projectId, { seenStatus: "bidding", preEstimate: krw(3_000_000) });
+    await saveProjectLedger(s.pm, s.projectId, { seenStatus: "bidding", preEstimate: krw(0) });
+    const updates = await projectUpdates(s.projectId);
+    expect(updates.map((detail) => (detail.changes as { preEstimate?: unknown }).preEstimate)).toEqual([
+      [null, "3,000,000원"],
+      ["3,000,000원", null],
     ]);
   });
 });

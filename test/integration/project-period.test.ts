@@ -678,7 +678,8 @@ describe("정산 대 종료일 연장 경합 (04-22 Task 2 · OV-5)", () => {
 // 04-44(DR-28 · DR-37 · 계약 8 · S17) — 총 매출 예상가가 같은 합성 저장에 합류한다. 권리는 기간과 같은
 // periodEditRights + quote.amount 노출, 쓰기는 moneyToColumns를 지난다. 로그에는 금액을 싣지 않는다.
 describe("총 매출 예상가 저장 (04-44)", () => {
-  it("(o) 팀장이 수주중 프로젝트의 총 매출 예상가를 50,000,000으로 저장 → DB 값 · document_update detail preEstimateChanged · 금액 키 없음", async () => {
+  // 07.1-13(사용자 결정 카드 2026-10-28 01:03Z — A): 04-44 「로그에 금액을 싣지 않는다」를 바꿔 사전 견적도 바꾸기 전후 금액을 남긴다.
+  it("(o) 팀장이 수주중 프로젝트의 총 매출 예상가를 50,000,000으로 저장 → DB 값 · document_update detail preEstimateChanged · 전후 금액 changes.preEstimate", async () => {
     const s = await setup({ status: "bidding", startDate: null, endDate: FAR });
 
     await saveProjectLedger(s.lead, s.projectId, {
@@ -694,8 +695,7 @@ describe("총 매출 예상가 저장 (04-44)", () => {
     const updates = await logs(s.projectId, "document_update");
     expect(updates).toHaveLength(1);
     expect(updates[0]?.actorId).toBe(s.lead.id);
-    expect(updates[0]?.detail).toEqual({ preEstimateChanged: true });
-    expect(JSON.stringify(updates[0]?.detail)).not.toMatch(/amount|50000000/i);
+    expect(updates[0]?.detail).toEqual({ preEstimateChanged: true, changes: { preEstimate: ["0원", "50,000,000원"] } });
   });
 
   it("(o2) 정산 프로젝트의 담당 PM(권리 none)이 보낸 총 매출 예상가 저장은 「총 매출 예상가 바꾸기 권한 없음」 · DB 무변경 · write.denied 한 번(금액 키 없음)", async () => {

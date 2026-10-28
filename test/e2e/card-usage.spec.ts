@@ -13,6 +13,7 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
+import { setCorpCardArchived } from "@/repositories/corp-cards";
 import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -1028,6 +1029,65 @@ test.describe("[07.1-11 PC1 · PC3] 저장된 새 건 다시 저장", () => {
     const rows = await holderUsages(holder);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.total).toBe(55_000);
+    await page.context().close();
+  });
+});
+
+// 07.1-11 D-7112 · U-14 · W12: 보관된 카드는 `{이름} (보관) · {발급사} {뒤4자리}` — 목록 묶음 머리 · 수정 패널 `카드` 줄 · 카드 거르개 옵션(끝 · 사용 있는 것만).
+async function seedUsageOn(holder: CardHolder, cardId: string, amount: number): Promise<string> {
+  const input = {
+    corpCardId: cardId,
+    usedOn: seoulToday(),
+    merchantVendorId: null,
+    total: { currency: "KRW" as const, amount, fxRate: 1 },
+    evidenceTypeCode: "card_receipt",
+    linkKind: "team_cost" as const,
+    memo: null,
+  };
+  return (await createCardUsage(holder.person.viewer, input, await precheckCardUsage(holder.person.viewer, input))).id;
+}
+
+test.describe("[07.1-11 W12] 보관 카드 표시", () => {
+  test("묶음 머리 · 수정 패널 `카드` 줄 `(보관)` · 거르개 옵션 = 전체 → 활성 → 사용 있는 보관 카드(끝) · 사용 없는 보관 카드 0", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder(3);
+    const [activeId = "", archivedId = "", emptyArchivedId = ""] = holder.cardIds;
+    await seedUsageOn(holder, activeId, 11_000);
+    const archivedUsage = await seedUsageOn(holder, archivedId, 22_000);
+    await setCorpCardArchived(SYSTEM_VIEWER, archivedId, true);
+    await setCorpCardArchived(SYSTEM_VIEWER, emptyArchivedId, true);
+    const activeText = `${holder.cardLabel} · ${holder.issuer} 4321`;
+    const archivedText = `${holder.cardLabel}-2 (보관) · ${holder.issuer} 4322`;
+
+    const page = await loginPage(browser, baseURL, holder.person, { width: 1280, height: 800 });
+    await page.goto("/cards");
+    const groups = page.locator("tbody tr[class*='groupRow']");
+    await expect(groups).toHaveText([activeText, archivedText]);
+    const options = page.getByLabel("카드", { exact: true }).locator("option");
+    await expect(options).toHaveText(["전체", activeText, archivedText]);
+
+    await page.goto(`/cards?editId=${archivedUsage}`);
+    await expect(page.getByRole("dialog", { name: "카드 사용 수정" }).getByText(archivedText, { exact: true })).toBeVisible();
+
+    // 375 — `(보관)`은 이름 바로 뒤라 말줄임에 잘리지 않는다(그 글자 상자가 묶음 머리 칸 안).
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto("/cards");
+    const header = page.locator("tbody tr[class*='groupRow']").filter({ hasText: "(보관)" }).locator("th, td").first();
+    await expect(header).toBeVisible();
+    const clipped = await header.evaluate((cell) => {
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const at = node.textContent?.indexOf("(보관)") ?? -1;
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + "(보관)".length);
+        const mark = range.getBoundingClientRect();
+        const box = cell.getBoundingClientRect();
+        return mark.right > box.right + 0.5 || mark.left < box.left - 0.5;
+      }
+      return true;
+    });
+    expect(clipped).toBe(false);
     await page.context().close();
   });
 });

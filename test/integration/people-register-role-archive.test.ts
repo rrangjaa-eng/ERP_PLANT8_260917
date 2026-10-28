@@ -4,11 +4,14 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { roles } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { createRole } from "@/domain/permissions/roles";
+import { createRole, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { archive } from "@/domain/archive";
 import { registerPerson, ValidationError } from "@/domain/people";
 import { findUserById } from "@/repositories/users";
+import { createOrgUnit, createTeam } from "@/domain/org";
+import { setOrgUnitArchived } from "@/repositories/org-units";
+import { users } from "@/db/schema";
 import { NOW_2026 } from "./approvals-fixtures";
 import { makeAdmin, uniqueName } from "./admin-cap-fixtures";
 
@@ -123,5 +126,56 @@ describe("사람 등록 ∥ 계급 보관(07-21 게이트 /cso P3-a)", () => {
     const error = await registering;
     expect(error).toBeInstanceOf(ValidationError);
     expect((await findUserById(SYSTEM_VIEWER, box.createdId ?? ""))?.archivedAt).not.toBeNull();
+  });
+});
+
+// 07.1-14(D-7127): 새로 만들기 폼의 본부 칸 — 팀이 없을 때만 받는다. 화면은 팀과 본부를 함께 보내지 않지만 서버가 막는다.
+describe("사람 등록 — 팀 없는 사람의 본부(07.1-14 D-7127)", () => {
+  async function newDivision(): Promise<string> {
+    return (await createOrgUnit(SYSTEM_VIEWER, { name: `등록본부-${randomUUID().slice(0, 8)}` })).id;
+  }
+
+  async function userCount(): Promise<number> {
+    return db.$count(users);
+  }
+
+  it("팀 없이 본부 B로 만들면 본부 칸이 B다", async () => {
+    const division = await newDivision();
+    const { userId } = await registerPerson(
+      SYSTEM_VIEWER,
+      { name: "등록본부P", email: `${randomUUID()}@test.local`, roleId: DEFAULT_ROLE_ID, divisionId: division },
+      deps,
+    );
+    expect((await findUserById(SYSTEM_VIEWER, userId))?.divisionId).toBe(division);
+  });
+
+  it("팀과 본부를 함께 보내면 계정 생성 전에 거부 「팀 있음 · 본부는 팀에서」", async () => {
+    const division = await newDivision();
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: division, name: `등록팀-${randomUUID().slice(0, 8)}` });
+    const before = await userCount();
+    const error = await refusal(
+      registerPerson(
+        SYSTEM_VIEWER,
+        { name: "등록둘다", email: `${randomUUID()}@test.local`, roleId: DEFAULT_ROLE_ID, teamId: team.id, effectiveFrom: "2026-01-01", divisionId: division },
+        deps,
+      ),
+      ValidationError,
+    );
+    expect(error.message).toBe("팀 있음 · 본부는 팀에서");
+    expect(await userCount()).toBe(before);
+  });
+
+  it("보관된 본부 · 없는 본부면 계정 생성 전에 거부 「보관된 본부 · 다른 본부」", async () => {
+    const division = await newDivision();
+    await setOrgUnitArchived(SYSTEM_VIEWER, division, true);
+    const before = await userCount();
+    for (const divisionId of [division, randomUUID()]) {
+      const error = await refusal(
+        registerPerson(SYSTEM_VIEWER, { name: "등록보관", email: `${randomUUID()}@test.local`, roleId: DEFAULT_ROLE_ID, divisionId }, deps),
+        ValidationError,
+      );
+      expect(error.message).toBe("보관된 본부 · 다른 본부");
+    }
+    expect(await userCount()).toBe(before);
   });
 });

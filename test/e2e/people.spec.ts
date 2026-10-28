@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { orgUnits } from "@/db/schema";
+import { orgUnits, users } from "@/db/schema";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
-import { createOrgUnit } from "@/domain/org";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { archivePerson } from "@/domain/people";
 import { updateUserRole } from "@/repositories/users";
 import { seoulToday } from "@/lib/dates";
@@ -783,5 +783,137 @@ test.describe("시스템 관리자 넘기기 (07.1 D-2)", () => {
     await expect(delegatePage.locator("#person-role-change")).toBeVisible();
     await expect(delegatePage.getByRole("button", { name: HANDOVER })).toHaveCount(0);
     await context.close();
+  });
+});
+
+// 07.1-14(D-7127 · N-P2-B · R2-2 · S6): 팀 없는 사람의 본부 칸 — 상세는 즉시 저장(계급 변경 칸 꼴), 새로 만들기는 폼 저장.
+// 오늘 팀도 예정 발령도 없는 사람에게만 칸이 있다. 저장된 본부가 보관됐으면 그 하나만 `{이름} (보관)` 비활성 옵션으로 선택된 채 남는다.
+test.describe("사람 본부 칸 (07.1-14 D-7127)", () => {
+  async function newDivision(prefix: string): Promise<{ id: string; name: string }> {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `${prefix}-${randomUUID().slice(0, 8)}` });
+    return { id: orgUnit.id, name: orgUnit.name };
+  }
+
+  async function divisionOf(userId: string): Promise<string | null> {
+    const [row] = await db.select({ divisionId: users.divisionId }).from(users).where(eq(users.id, userId));
+    return row?.divisionId ?? null;
+  }
+
+  test("팀 없는 사람 상세: 첫 선택지 「본부 없음」 · 보관 본부 없음 · 고르면 저장 버튼 없이 바로 저장 · 저장 중 aria-busy · 거부되면 저장값으로", async ({ page }) => {
+    await loginAsAdmin(page);
+    const live = await newDivision("E2E본부칸");
+    const archived = await newDivision("E2E본부칸보관");
+    await db.update(orgUnits).set({ archivedAt: new Date() }).where(eq(orgUnits.id, archived.id));
+    const pm = await makeAccount("E2E본부칸대상", DEFAULT_ROLE_ID);
+
+    await page.goto(`/admin/people/${pm}`);
+    const select = page.locator("#person-division");
+    await expect(page.getByLabel("본부", { exact: true })).toHaveCount(1);
+    await expect(select).toHaveValue("");
+    await expect(select.locator("option").first()).toHaveText("본부 없음");
+    const labels = await select.locator("option").allTextContents();
+    expect(labels).toContain(live.name);
+    expect(labels.some((label) => label.startsWith(archived.name))).toBe(false);
+
+    // 저장 중 표시 — 서버 액션 POST를 잠깐 붙잡아 aria-busy를 본다.
+    let holdPost = true;
+    await page.route(`**/admin/people/${pm}`, async (route) => {
+      if (holdPost && route.request().method() === "POST") await new Promise((resolve) => setTimeout(resolve, 800));
+      await route.continue();
+    });
+    await select.selectOption(live.id);
+    await expect(select).toHaveAttribute("aria-busy", "true");
+    await expect(select).not.toHaveAttribute("aria-busy", "true");
+    holdPost = false;
+    await expect.poll(() => divisionOf(pm)).toBe(live.id);
+    await expect(page.locator(".single-column").getByRole("button", { name: /저장/ })).toHaveCount(0);
+    await expect(page.getByText("저장됨")).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator("#person-division")).toHaveValue(live.id);
+
+    // 거부 — 없는 본부 id 옵션을 끼워 고르면 서버 문구가 오류 줄에 서고 값이 저장값으로 돌아온다.
+    const reloaded = page.locator("#person-division");
+    await reloaded.evaluate((element: HTMLSelectElement, missing: string) => {
+      const option = document.createElement("option");
+      option.value = missing;
+      option.textContent = "없는 본부";
+      element.append(option);
+    }, randomUUID());
+    await reloaded.selectOption({ label: "없는 본부" });
+    await expect(page.locator("#person-division-error")).toContainText("보관된 본부 · 다른 본부");
+    await expect(reloaded).toHaveValue(live.id);
+    expect(await divisionOf(pm)).toBe(live.id);
+  });
+
+  test("오늘 팀이 있는 사람 · 미래 발령만 있는 사람 상세에는 본부 칸이 없다(N-P2-B)", async ({ page }) => {
+    await loginAsAdmin(page);
+    const orgUnit = await newDivision("E2E본부칸팀");
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E본부칸팀-${randomUUID().slice(0, 8)}` });
+    const withTeam = await makeAccount("E2E본부칸팀있음", DEFAULT_ROLE_ID);
+    await assignTeam(SYSTEM_VIEWER, { userId: withTeam, teamId: team.id, effectiveFrom: seoulToday() });
+    const scheduled = await makeAccount("E2E본부칸예정", DEFAULT_ROLE_ID);
+    await assignTeam(SYSTEM_VIEWER, { userId: scheduled, teamId: team.id, effectiveFrom: addDays(seoulToday(), 7) });
+
+    for (const userId of [withTeam, scheduled]) {
+      await page.goto(`/admin/people/${userId}`);
+      await expect(page.locator("#person-role-change")).toBeVisible();
+      await expect(page.locator("#person-division")).toHaveCount(0);
+    }
+  });
+
+  test("저장된 본부가 보관되면 「{이름} (보관)」 비활성 옵션이 선택된 채 남고 · 다른 본부로 바꾸면 저장되고 그 옵션이 빠진다(R2-2)", async ({ page }) => {
+    await loginAsAdmin(page);
+    const old = await newDivision("E2E본부칸옛");
+    const next = await newDivision("E2E본부칸새");
+    const pm = await makeAccount("E2E본부칸보관대상", DEFAULT_ROLE_ID);
+    await db.update(users).set({ divisionId: old.id }).where(eq(users.id, pm));
+    await db.update(orgUnits).set({ archivedAt: new Date() }).where(eq(orgUnits.id, old.id));
+
+    await page.goto(`/admin/people/${pm}`);
+    const select = page.locator("#person-division");
+    const archivedOption = select.locator(`option[value="${old.id}"]`);
+    await expect(archivedOption).toHaveText(`${old.name} (보관)`);
+    await expect(archivedOption).toBeDisabled();
+    await expect(select).toHaveValue(old.id);
+
+    await select.selectOption(next.id);
+    await expect.poll(() => divisionOf(pm)).toBe(next.id);
+    await page.reload();
+    await expect(page.locator("#person-division")).toHaveValue(next.id);
+    await expect(page.locator(`#person-division option[value="${old.id}"]`)).toHaveCount(0);
+  });
+
+  test("새로 만들기: 팀 「배정 없음」이면 본부 칸이 있고 · 팀을 고르면 없어지고 · 다시 비우면 빈 값으로 돌아온다 · Tab 순서 = 보이는 순서 · 본부와 함께 저장", async ({ page }) => {
+    await loginAsAdmin(page);
+    const division = await newDivision("E2E등록본부");
+    await page.goto("/admin/people?new=1");
+    const team = page.locator("#teamId");
+    const divisionSelect = page.locator("#divisionId");
+    await expect(divisionSelect).toBeVisible();
+    await expect(divisionSelect).toHaveValue("");
+    await expect(divisionSelect.locator("option").first()).toHaveText("본부 없음");
+
+    await team.focus();
+    await page.keyboard.press("Tab");
+    await expect(divisionSelect).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#effectiveFrom")).toBeFocused();
+
+    await divisionSelect.selectOption(division.id);
+    await team.selectOption({ index: 1 });
+    await expect(page.locator("#divisionId")).toHaveCount(0);
+    await team.selectOption("");
+    await expect(page.locator("#divisionId")).toHaveValue("");
+
+    const email = `e2e-division-${randomUUID()}@example.test`;
+    await page.getByLabel("이름").fill("E2E등록본부사람");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
+    await page.locator("#divisionId").selectOption(division.id);
+    await page.getByLabel("입사일").fill("2026-01-01");
+    await page.getByRole("button", { name: "사람 등록" }).click();
+    await expect(page.getByText(`초기 비밀번호 — ${email}`)).toBeVisible({ timeout: 20_000 });
+    const [row] = await db.select({ divisionId: users.divisionId }).from(users).where(eq(users.email, email));
+    expect(row?.divisionId).toBe(division.id);
   });
 });

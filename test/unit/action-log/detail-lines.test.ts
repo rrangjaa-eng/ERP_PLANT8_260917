@@ -375,3 +375,14 @@ describe("줄 전후 lineChanges (07.1-13 S8)", () => {
     expect(detailLines({ lineIds: [LINE_ID], archivedLineIds: [VENDOR_A] })).toBeNull();
   });
 });
+
+// 07.1-14(E-P2-41): 사람 본부 칸 로그는 id가 아니라 본부 이름 글자를 담는다 — 라벨 `본부` · 빈 값 `없음`.
+describe("detailLines — 사람 본부(07.1-14 E-P2-41)", () => {
+  it("본부를 비우면 본부 · {이전} → 없음", () => {
+    expect(detailLines({ changes: { division: ["경영관리본부", null] } })).toEqual([{ label: "본부", before: "경영관리본부", after: "없음" }]);
+  });
+
+  it("본부를 처음 넣으면 본부 · 없음 → {이후}", () => {
+    expect(detailLines({ changes: { division: [null, "영업본부"] } })).toEqual([{ label: "본부", before: "없음", after: "영업본부" }]);
+  });
+});

@@ -1244,3 +1244,53 @@ test("W13 증빙 파일 받기 — 5,001건이면 비활성 + 이유 줄(aria-de
     await db.delete(evidenceImportBatches).where(eq(evidenceImportBatches.id, batchId));
   }
 });
+
+// #319 B-1 — 증빙 `파일 받기`도 이유 줄이 단추를 좁히지 않는다(1024 · 1280): 단추 글자 한 줄 · 단추 안. 이유 줄은 폭이 모자라면 단추 아래로 내려간다.
+// #319 P3 ① — 화면은 활성(5,000건)인데 서버가 사이에 늘어난 행으로 거부하면 서버가 보낸 사유 문장을 그대로 보인다(일반 실패 문구 아님).
+test("W13 증빙 파일 받기 — 단추 글자 한 줄 · 단추 안 (1024 · 1280), 서버 거부 사유 표시 (#319)", async ({ page }) => {
+  test.setTimeout(120_000);
+  const manager = await loginIntake(page);
+  const batchId = await insertLimitBatch(manager, 5_001);
+  try {
+    for (const width of [1280, 1024] as const) {
+      await goto(page, width, `/expenses/evidence?state=all&batch=${batchId}`);
+      const button = page.getByRole("button", { name: "파일 받기" });
+      await expect(button).toHaveAttribute("aria-disabled", "true");
+      const label = await button.evaluate((node) => {
+        const tops = new Set<number>();
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+        for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+          if (!text.textContent?.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          for (const rect of range.getClientRects()) if (rect.width > 0) tops.add(Math.round(rect.top));
+        }
+        return { lines: tops.size, overflowX: node.scrollWidth - node.clientWidth, overflowY: node.scrollHeight - node.clientHeight };
+      });
+      expect(label, `단추 글자 @${width}`).toEqual({ lines: 1, overflowX: 0, overflowY: 0 });
+    }
+    const [one] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.batchId, batchId)).limit(1);
+    await db.delete(evidenceRecords).where(eq(evidenceRecords.id, one!.id));
+    await goto(page, 1280, `/expenses/evidence?state=all&batch=${batchId}`);
+    const button = page.getByRole("button", { name: "파일 받기" });
+    await expect(button).not.toHaveAttribute("aria-disabled", "true");
+    await db.insert(evidenceRecords).values({
+      batchId,
+      format: "hometax-tax-invoice",
+      evidenceType: "tax_invoice",
+      dedupeKey: `limit:${batchId}:extra`,
+      issuedOn: seoulToday(),
+      supplyKrw: 1000,
+      vatKrw: 0,
+      totalKrw: 1000,
+      nameOnDocument: "상한 시험",
+      createdBy: manager.id,
+    });
+    await button.click();
+    await expect(page.getByText(EXPORT_LIMIT_REASON)).toBeVisible();
+    await expect(page.getByText("파일 받기 · 실패 · 다시 시도")).toHaveCount(0);
+  } finally {
+    await db.delete(evidenceRecords).where(eq(evidenceRecords.batchId, batchId));
+    await db.delete(evidenceImportBatches).where(eq(evidenceImportBatches.id, batchId));
+  }
+});

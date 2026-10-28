@@ -479,6 +479,14 @@ describe("번호 접두 ↔ 카드 사용 표지 충돌 (07.1-05 PJ4)", () => {
       for (const ok of ["PR", "", "K1"]) expect(def.schema.safeParse(ok).success, ok).toBe(true);
     });
 
+    // #319 게이트 P3 — 앞뒤 공백은 비교 · 저장 전에 자른다(` K `가 표지 검사를 피해 저장되면 번호 앞에 공백이 붙는다).
+    it(`${def.key} — 앞뒤 공백을 자르고 비교한다: ' K ' 거부 · ' PR '은 'PR'로 저장`, () => {
+      for (const bad of [" K ", "k ", "\tK"]) expect(def.schema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+      const trimmed = def.schema.safeParse(" PR ");
+      expect(trimmed.success).toBe(true);
+      if (trimmed.success) expect(trimmed.data).toBe("PR");
+    });
+
     it(`${def.key} — 이미 K로 저장돼 있어도 읽기는 ZodError가 아니라 기본값(${fallback})과 invalid_stored_value 로그`, async () => {
       const spy = vi.spyOn(log, "error").mockImplementation(() => {});
       const findSimpleValue = vi.fn().mockResolvedValue({ key: def.key, value: "K", updatedAt: new Date(), updatedBy: null });

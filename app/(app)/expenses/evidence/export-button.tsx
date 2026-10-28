@@ -12,9 +12,14 @@ export type EvidenceExportQuery = { state: string; type: string; period: string;
 
 const FAILED = "파일 받기 · 실패 · 다시 시도";
 
+// 07.1-05 D-7113(W13) — 서버(EVIDENCE_EXPORT_LIMIT)와 같은 수. count는 목록 합계 건수(서버가 거부를 판정하는 집합과 같은 수)다.
+// 넘으면 비활성 + 이유 한 줄(Button의 disabledReason — 거래처 `파일 받기`와 같은 모양 · info 색). 0건이면 위 emptyReasonId가 먼저다.
+const LIMIT = 5000;
+const TOO_MANY = "5,000건 넘음 · 필터나 검색으로 줄이기";
+
 // emptyReasonId — 결과 0건이면 화면의 빈 줄(「조건에 맞는 증빙이 없습니다」) id. 머리줄뿐인 파일은 뜻이 없어 비활성(aria-disabled — 네이티브 disabled
 // 아님 · §7-1 DR-11)이고, 이유는 이미 화면에 있는 그 줄을 가리킨다 — 버튼 옆에 같은 말을 또 쓰지 않는다(화면 사용성 원칙 · 검토 P3-5).
-export function EvidenceExportButton({ query, emptyReasonId }: { query: EvidenceExportQuery; emptyReasonId?: string }) {
+export function EvidenceExportButton({ query, count, emptyReasonId }: { query: EvidenceExportQuery; count: number; emptyReasonId?: string }) {
   const [failed, setFailed] = useState(false);
   const { execute, isExecuting } = useAction(exportEvidenceRecordsAction, {
     onSuccess: ({ data }) => {
@@ -36,13 +41,17 @@ export function EvidenceExportButton({ query, emptyReasonId }: { query: Evidence
     onError: () => setFailed(true),
   });
 
+  const tooMany = emptyReasonId === undefined && count > LIMIT;
+
   return (
     <>
       <Button
         type="button"
         variant="secondary"
         pending={isExecuting}
-        disabled={emptyReasonId !== undefined}
+        disabled={emptyReasonId !== undefined || tooMany}
+        disabledReason={tooMany ? TOO_MANY : undefined}
+        reasonTone="info"
         aria-describedby={emptyReasonId}
         onClick={() => {
           setFailed(false);

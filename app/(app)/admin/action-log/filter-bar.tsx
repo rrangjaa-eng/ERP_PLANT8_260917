@@ -156,7 +156,12 @@ export type ActionLogFilterPayload = {
 
 // Excel 내보내기 — 화면 전환 없는 동작이라 실패는 §7-6 토스트로 알리고
 // 부분 파일을 내려주지 않는다(직렬화가 끝난 뒤에만 응답이 온다).
-export function ExportButton({ filter }: { filter: ActionLogFilterPayload }) {
+// 07.1-05 D-7113(W13) — count는 page.tsx가 queryActionLog 결과 길이(rows.length)를 넘긴다 — 서버 exportActionLog가 거부를 판정하는 집합과 같은 수다.
+// 정리 단추의 pruneCount(정리 가능 종류 · 정리 안 된 행만)는 더 작은 수라 쓰지 않는다.
+const EXPORT_LIMIT = 5000;
+
+export function ExportButton({ filter, count }: { filter: ActionLogFilterPayload; count: number }) {
+  const tooMany = count > EXPORT_LIMIT;
   const [toast, setToast] = useState<{ message: string; tone: "default" | "error" } | null>(null);
   const { execute, isExecuting } = useAction(exportActionLogAction, {
     onSuccess: ({ data }) => {
@@ -181,7 +186,14 @@ export function ExportButton({ filter }: { filter: ActionLogFilterPayload }) {
 
   return (
     <>
-      <Button variant="secondary" pending={isExecuting} onClick={() => execute(filter)}>
+      <Button
+        variant="secondary"
+        pending={isExecuting}
+        disabled={tooMany}
+        disabledReason={tooMany ? "5,000건 넘음 · 기간이나 필터로 줄이기" : undefined}
+        reasonTone="info"
+        onClick={() => execute(filter)}
+      >
         Excel 내보내기
       </Button>
       {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}

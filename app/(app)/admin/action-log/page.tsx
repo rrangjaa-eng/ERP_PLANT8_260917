@@ -124,7 +124,7 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
       }
     >
       <div className={styles.actionRow}>
-        <ExportButton filter={filterValues} />
+        <ExportButton filter={filterValues} count={rows.length} />
         {canWrite ? <PruneControl filter={filterValues} count={pruneCount} /> : null}
       </div>
 

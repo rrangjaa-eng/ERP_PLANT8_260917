@@ -967,6 +967,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             {editableWidth ? (
               <EvidenceExportButton
                 query={{ state: filters.state, type: filters.type, period: filters.period, ...(filters.batch ? { batch: filters.batch } : {}) }}
+                count={list.total.count}
                 emptyReasonId={list.total.count === 0 ? emptyReasonId : undefined}
               />
             ) : null}

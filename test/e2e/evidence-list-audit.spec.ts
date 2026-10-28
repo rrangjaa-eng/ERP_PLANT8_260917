@@ -1173,3 +1173,74 @@ test("⑭ 확인 필요 줄 1280 — 번호 없는 카드 사용에 붙은 줄�
   const draftStatus = (await evidenceCell(page, await rowIndexByName(page, "감사공급사2"), EVIDENCE_COL.status).innerText()).replace(/\s+/g, " ").trim();
   record("번호 없는 작성 중 지출결의에 붙은 줄 상태 칸", 1280, role, url, draftStatus, "작성 중 문서 · 사유 `지출결의 사유`", draftStatus.includes("작성 중 문서") && draftStatus.includes("지출결의 사유"));
 });
+
+// ── 07.1-05 W13 — 파일 받기 5,000건 상한 (D-7113 · E-P2-20) ─────────────────────────────────────────────────────────
+// 고유 묶음 하나에 5,001건을 넣고 `?state=all&batch=<묶음>`으로만 연다 — 공유 E2E DB의 다른 화면에는 보이지 않고, 끝에 그 묶음의 행을 지운다.
+// 버튼 상태를 정하는 건수는 목록 합계 건수(서버 countEvidenceRecords와 같은 집합)다. 렌더 시간(goto → 버튼 보임 ms)을 SUMMARY용으로 남긴다.
+const EXPORT_LIMIT_REASON = "5,000건 넘음 · 필터나 검색으로 줄이기";
+
+async function insertLimitBatch(viewer: Viewer, count: number): Promise<string> {
+  const batchId = randomUUID();
+  await db.insert(evidenceImportBatches).values({
+    id: batchId,
+    format: "hometax-tax-invoice",
+    originalName: "상한_시험.xls",
+    fileSha256: createHash("sha256").update(batchId).digest("hex"),
+    rowCount: count,
+    registeredCount: count,
+    skippedDuplicateCount: 0,
+    uploadedBy: viewer.id,
+  });
+  const values = Array.from({ length: count }, (_, index) => ({
+    batchId,
+    format: "hometax-tax-invoice",
+    evidenceType: "tax_invoice",
+    dedupeKey: `limit:${batchId}:${index}`,
+    issuedOn: seoulToday(),
+    supplyKrw: 1000,
+    vatKrw: 0,
+    totalKrw: 1000,
+    nameOnDocument: "상한 시험",
+    createdBy: viewer.id,
+  }));
+  for (let at = 0; at < values.length; at += 1000) await db.insert(evidenceRecords).values(values.slice(at, at + 1000));
+  return batchId;
+}
+
+test("W13 증빙 파일 받기 — 5,001건이면 비활성 + 이유 줄(aria-describedby), 5,000건이면 활성 (1280 · 1024)", async ({ page }) => {
+  test.setTimeout(120_000);
+  const manager = await loginIntake(page);
+  const batchId = await insertLimitBatch(manager, 5_001);
+  const timings: Record<string, number> = {};
+  try {
+    for (const width of [1280, 1024] as const) {
+      const started = Date.now();
+      await goto(page, width, `/expenses/evidence?state=all&batch=${batchId}`);
+      const button = page.getByRole("button", { name: "파일 받기" });
+      await expect(button).toBeVisible();
+      timings[`5001@${width}`] = Date.now() - started;
+      await expect(button).toHaveAttribute("aria-disabled", "true");
+      const describedBy = await button.getAttribute("aria-describedby");
+      expect(describedBy).toBeTruthy();
+      await expect(page.locator(`[id="${describedBy ?? ""}"]`)).toHaveText(EXPORT_LIMIT_REASON);
+    }
+    // 한 행을 지우면 5,000건 — 활성, 이유 줄 없음.
+    const [one] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.batchId, batchId)).limit(1);
+    await db.delete(evidenceRecords).where(eq(evidenceRecords.id, one!.id));
+    for (const width of [1280, 1024] as const) {
+      const started = Date.now();
+      await goto(page, width, `/expenses/evidence?state=all&batch=${batchId}`);
+      const button = page.getByRole("button", { name: "파일 받기" });
+      await expect(button).toBeVisible();
+      timings[`5000@${width}`] = Date.now() - started;
+      await expect(button).not.toHaveAttribute("aria-disabled", "true");
+      await expect(page.getByText(EXPORT_LIMIT_REASON)).toHaveCount(0);
+      const overflow = await docOverflow(page);
+      expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+    }
+    record("W13 렌더 시간(ms) goto → 파일 받기 보임", "1280/1024", "intake", "/expenses/evidence?state=all&batch=<5001>", timings, "참고값(통과 기준 없음)", null);
+  } finally {
+    await db.delete(evidenceRecords).where(eq(evidenceRecords.batchId, batchId));
+    await db.delete(evidenceImportBatches).where(eq(evidenceImportBatches.id, batchId));
+  }
+});

@@ -7,6 +7,8 @@ import { recordAction } from "@/domain/action-log/record";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { createDelegatedAccount } from "./admin-cap-fixtures";
+import { db } from "@/db/client";
+import { actionLog } from "@/db/schema";
 import { insertKstMidnightRow, KST_MIDNIGHT_LABEL, UTC_DATE_OF_ROW } from "./action-log-kst-fixture";
 
 // ADMN-10·OPS-05: 필터 → 내보내기 → 정리 → 정리가 다시 로그에 남는 end-to-end.
@@ -439,5 +441,55 @@ test.describe("행동 로그 상세 칸 (07-25 K16)", () => {
     await expect(page).toHaveURL(/\/account$/);
     const response = await page.goto("/admin/action-log");
     expect(response?.status()).toBe(404);
+  });
+});
+
+// 07.1-05 W13 · E-P1-05 · E-P2-20 — Excel 내보내기 5,000건 상한. 행동 로그는 지울 수 없으므로(0046 트리거) 모든 행에 pruned_at을 채워
+// 기본 보기(정리 행 뺌)와 다른 스펙 화면에 보이지 않게 하고, 고유 documentId + includePruned=1로만 연다.
+// 5,000행은 정리 가능 종류(settings_change), 1행은 정리할 수 없는 종류(cert_view) — 정리 단추의 pruneCount는 0이라 그 수를 쓰면 활성이 되어 실패한다.
+test.describe("행동 로그 내보내기 상한 (07.1-05 W13)", () => {
+  test("5,001행이면 비활성 + 이유 줄(aria-describedby), actionType으로 5,000행이면 활성", async ({ page }) => {
+    test.setTimeout(120_000);
+    const token = `e2e-limit-${randomUUID()}`;
+    const prunedAt = new Date("2026-10-01T00:00:00Z");
+    const base = { entity: "limit_fixture", entityId: token, documentId: token, detail: {}, prunedAt, prunedBy: "e2e-limit" };
+    const values = [
+      ...Array.from({ length: 5_000 }, () => ({ ...base, actionType: "settings_change" })),
+      { ...base, actionType: "cert_view" },
+    ];
+    for (let at = 0; at < values.length; at += 1000) await db.insert(actionLog).values(values.slice(at, at + 1000));
+
+    await loginAsSysadmin(page);
+    const reason = "5,000건 넘음 · 기간이나 필터로 줄이기";
+    const timings: Record<string, number> = {};
+
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      const started = Date.now();
+      await page.goto(`/admin/action-log?includePruned=1&documentId=${token}`);
+      const button = page.getByRole("button", { name: "Excel 내보내기" });
+      await expect(button).toBeVisible();
+      timings[`5001@${width}`] = Date.now() - started;
+      await expect(button).toHaveAttribute("aria-disabled", "true");
+      const describedBy = await button.getAttribute("aria-describedby");
+      expect(describedBy).toBeTruthy();
+      await expect(page.locator(`[id="${describedBy ?? ""}"]`)).toHaveText(reason);
+    }
+
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      const started = Date.now();
+      await page.goto(`/admin/action-log?includePruned=1&documentId=${token}&actionType=settings_change`);
+      const button = page.getByRole("button", { name: "Excel 내보내기" });
+      await expect(button).toBeVisible();
+      timings[`5000@${width}`] = Date.now() - started;
+      await expect(button).not.toHaveAttribute("aria-disabled", "true");
+      await expect(page.getByText(reason)).toHaveCount(0);
+    }
+
+    // 기본 보기(정리 행 뺌)에는 이 행들이 없다.
+    await page.goto(`/admin/action-log?documentId=${token}`);
+    await expect(page.getByText("조건에 맞는 건이 없습니다")).toBeVisible();
+    console.log(`W13 행동 로그 렌더 시간(ms) goto → 내보내기 보임: ${JSON.stringify(timings)}`);
   });
 });

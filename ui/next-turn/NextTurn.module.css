@@ -115,7 +115,7 @@
 
   .why {
     grid-row: 2;
-    grid-column: 3;
+    grid-column: 3 / -1; /* 2행 4번째 칸(행동 칸 아래)은 비어 있다 — 이유가 거기까지 쓴다 */
     min-width: 0;
     font-size: var(--text-aux);
     /* 07.1-17 G10: 이유는 한 줄 말줄임 — 줄바꿈하면 폰 줄이 3줄이 된다. 전체 글자는 title로 남는다. */

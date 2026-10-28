@@ -3,13 +3,14 @@ import { can as defaultCan } from "@/domain/permissions/can";
 import { scopeFor } from "@/domain/permissions/scope-for";
 import { project, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { buildChanges } from "@/domain/action-log/changes";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertSeatsFree, newSeats } from "@/domain/people/seat-rules";
 import { assertNotRetiredInTx } from "@/domain/people/retired";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
-import { findUserById as repoFindUserById, type UserRow } from "@/repositories/users";
+import { findUserById as repoFindUserById, updateUserDivision as repoUpdateUserDivision, type UserRow } from "@/repositories/users";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { kstToday } from "@/lib/kst-date";
@@ -323,6 +324,22 @@ export async function assignTeam(
     const after = await listOccupiedTeams(viewer, input.userId, today, tx);
     await assertAssignmentSeatsFree(viewer, { person, before, after, today, showNames }, tx);
     await recordAction(viewer, { actionType: "document_create", entity: "team_membership", entityId: row.id }, { tx });
+    // 07.1-14(D-E2 · E-P2-43): 팀이 생기면 본부는 팀에서 나온다 — 팀 없는 사람용 본부 칸을 같은 tx에서 비운다. 남기면 팀 발령이 끝난 뒤
+    // 옛 본부 공개 증빙이 다시 보인다. 미래 발령도 비운다(시작일까지 좁아지는 쪽 · 그동안 본부 재입력은 setPersonDivision이 거부).
+    if (person?.divisionId) {
+      const division = await repoFindOrgUnitById(viewer, person.divisionId, tx);
+      await repoUpdateUserDivision(viewer, input.userId, null, tx);
+      await recordAction(
+        viewer,
+        {
+          actionType: "permission_change",
+          entity: "user",
+          entityId: input.userId,
+          detail: { changes: buildChanges({ division: division?.name ?? null }, { division: null }) },
+        },
+        { tx },
+      );
+    }
   });
 }
 

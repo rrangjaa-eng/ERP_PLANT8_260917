@@ -21,7 +21,7 @@ import {
   findRoleForShare,
   findRolesByIds as defaultFindRolesByIds,
 } from "@/repositories/roles";
-import { activeTeamMembers } from "@/repositories/team-memberships";
+import { activeTeamMembers, findMembershipAtDate, hasMembershipAfterDate } from "@/repositories/team-memberships";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
 import { findOrgUnitById as repoFindOrgUnitById } from "@/repositories/org-units";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -44,6 +44,7 @@ import {
   findUsersByLowerEmails as repoFindUsersByLowerEmails,
   findUserById as repoFindUserById,
   updateUserRole as repoUpdateUserRole,
+  updateUserDivision as repoUpdateUserDivision,
   updateUserHireDate as repoUpdateUserHireDate,
   updateUserResignationDate as repoUpdateUserResignationDate,
   setUserArchived as repoSetUserArchived,
@@ -94,6 +95,8 @@ export type PersonDto = {
   // 07-17 SC-11: 퇴직 낱말(isRetiredOn)과 로그인 잠김(로그인 거부와 같은 판정 — 창 안 열린 실패 수 ≥ 임계).
   resignationDate: string | null;
   locked: boolean;
+  // 07.1-14(D-7127): 팀 없는 사람의 본부 칸 — 상세가 본부 Select의 저장값으로 쓴다. users 칸이라 노출 항목은 person.value(목록 고정 조회 수 #56을 늘리지 않는다).
+  divisionId: string | null;
 };
 
 type PersonSource = UserRow & {
@@ -118,6 +121,7 @@ export const PERSON_DTO_SPEC: DtoSpec<PersonSource, PersonDto> = {
     { key: "passwordIsTemporary", from: "passwordIsTemporary", infoItem: "person.value" },
     { key: "resignationDate", from: "resignationDate", infoItem: "person.value" },
     { key: "locked", from: "locked", infoItem: "person.value" },
+    { key: "divisionId", from: "divisionId", infoItem: "person.value" },
   ],
 };
 
@@ -325,6 +329,8 @@ export type RegisterPersonInput = {
   effectiveFrom?: string;
   // 04.1-03(D-96): 선택 — 필수화는 04.1-06의 폼·액션이 한다(입사일 없는 기존 계정도 받는다).
   hireDate?: string;
+  // 07.1-14(D-7127): 팀 없는 사람만 — 팀과 함께 오면 거부한다.
+  divisionId?: string;
 };
 
 // 07.1 D-1(2026-10-27 사용자 결정): 입사일 전에 후임이 대표 · 시스템 관리자 권한을 쥐지 않게 — 회사 자리 계급인데 입사일이
@@ -387,6 +393,13 @@ export async function registerPerson(
 
   if (input.hireDate !== undefined && !isCalendarDate(input.hireDate)) {
     throw new ValidationError(HIRE_DATE_FORMAT_ERROR);
+  }
+
+  // 07.1-14(D-7127): 본부 칸은 팀 없는 사람만 — 계정 생성 전에 팀 · 보관 · 없는 본부를 거른다(저장 때 setPersonDivision이 잠금 뒤 다시 본다).
+  if (input.divisionId) {
+    if (input.teamId) throw new ValidationError(DIVISION_TEAM_HELD_MESSAGE);
+    const division = await repoFindOrgUnitById(viewer, input.divisionId);
+    if (!division || division.archivedAt) throw new ValidationError(DIVISION_ARCHIVED_MESSAGE);
   }
 
   // 상한 → 자리(Pitfall 2). 사람이 아직 없어 사람 키 없이 도착 팀 · 본부 키만 잡는다. 보관 본부는 위에서 거부했다.
@@ -526,6 +539,24 @@ export async function registerPerson(
     }
   }
 
+  if (input.divisionId) {
+    try {
+      await setPersonDivision(viewer, userId, input.divisionId, { can: deps?.can, recordAction: deps?.recordAction, now: deps?.now });
+    } catch (error) {
+      // (b) 잔여 창 — 입사일 저장 실패와 같은 보상(검사 뒤 본부가 보관되면 본부 없는 새 계정이 조용히 남지 않는다).
+      const archive = deps?.archive ?? defaultArchive;
+      await archive(SYSTEM_VIEWER, "user", userId, {
+        recordAction: async (v, entry, options) =>
+          (deps?.recordAction ?? defaultRecordAction)(
+            v,
+            { ...entry, detail: { reason: "register_person_rollback", requestedBy: viewer.id } },
+            options,
+          ),
+      });
+      throw error;
+    }
+  }
+
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_create", entity: "user", entityId: userId });
 
@@ -605,6 +636,51 @@ export async function changePersonRole(
         entity: "user",
         entityId: userId,
         detail: { changes: buildChanges({ roleId: row.roleId }, { roleId }) },
+      },
+      { tx },
+    );
+  });
+}
+
+export const DIVISION_TEAM_HELD_MESSAGE = "팀 있음 · 본부는 팀에서";
+export const DIVISION_TEAM_SCHEDULED_MESSAGE = "팀 발령 있음 · 본부는 팀에서";
+export const DIVISION_ARCHIVED_MESSAGE = "보관된 본부 · 다른 본부";
+
+// 07.1-14(D-7127 · E-P2-42 · N-P2-B): 팀 없는 사람의 본부 칸(증빙 범위 D-7122가 읽는 값). 팀이 있으면 본부는 팀에서 나오므로 받지 않고,
+// 예정 발령이 있어도 받지 않는다 — `assignTeam`이 발령 때 이 칸을 비우므로(D-E2) 시작일 전에 다시 넣으면 팀이 빠진 뒤 옛 본부가 되살아난다.
+// 팀 발령과 같은 사람 키를 먼저 잡고 판정은 전부 잠금 뒤 tx 재조회 — 본부 저장과 팀 발령이 엇갈려도 「팀 + 본부 칸」이 남지 않는다.
+// 로그는 범위를 바꾸는 쓰기라 계급 변경과 같은 always-on `permission_change`이고, id는 상세에서 `바뀜`으로 가려져 본부 이름을 담는다.
+export async function setPersonDivision(
+  viewer: Viewer,
+  userId: string,
+  divisionId: string | null,
+  deps?: Partial<Pick<ChangePersonRoleDeps, "can" | "recordAction" | "now">>,
+): Promise<void> {
+  if (!(await (deps?.can ?? defaultCan)(viewer, PEOPLE_MENU, "write"))) {
+    throw new ForbiddenError("본부 변경 권한 없음");
+  }
+  const today = seoulTodayOf(deps);
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await withTransaction(async (tx) => {
+    await lockSeatKeys(viewer, { personIds: [userId] }, tx);
+    await assertNotRetiredInTx(viewer, userId, today, tx);
+    const row = await repoFindUserById(viewer, userId, tx);
+    if (!row) throw new UserNotFoundError("사람 찾을 수 없음");
+    await assertCanGrantRoles(viewer, [row.roleId], tx);
+    if (await findMembershipAtDate(viewer, userId, today, tx)) throw new ValidationError(DIVISION_TEAM_HELD_MESSAGE);
+    if (await hasMembershipAfterDate(viewer, userId, today, tx)) throw new ValidationError(DIVISION_TEAM_SCHEDULED_MESSAGE);
+    const next = divisionId === null ? null : await repoFindOrgUnitById(viewer, divisionId, tx);
+    if (divisionId !== null && (!next || next.archivedAt)) throw new ValidationError(DIVISION_ARCHIVED_MESSAGE);
+    // 이전 본부는 그 뒤 보관됐어도 이름을 남긴다.
+    const before = row.divisionId === null ? null : await repoFindOrgUnitById(viewer, row.divisionId, tx);
+    await repoUpdateUserDivision(viewer, userId, divisionId, tx);
+    await recordAction(
+      viewer,
+      {
+        actionType: "permission_change",
+        entity: "user",
+        entityId: userId,
+        detail: { changes: buildChanges({ division: before?.name ?? null }, { division: next?.name ?? null }) },
       },
       { tx },
     );

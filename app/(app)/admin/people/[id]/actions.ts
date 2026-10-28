@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
 import { seoulToday } from "@/lib/dates";
-import { resetPersonPassword, setHireDate, setResignationDate } from "@/domain/people";
+import { resetPersonPassword, setHireDate, setPersonDivision, setResignationDate } from "@/domain/people";
 import { revealPersonAccountNumber, updatePersonPayoutAccount } from "@/domain/people/account";
 import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { addLeaveAdjustment, LeaveAdjustmentValidationError } from "@/domain/leave/balance-service";
@@ -30,6 +30,14 @@ export const setResignationDateAction = authedActionClient.schema(employmentDate
   // 06.4 D10: 퇴직일이 재직을 바꿔 조직 화면 중복 수가 바뀐다(입사일은 재직 판정에 안 든다)
   revalidatePath("/admin/people/org");
 });
+
+// 07.1-14(D-7127): 팀 없는 사람의 본부 즉시 저장 — 빈 값은 「본부 없음」. 팀 · 예정 발령 · 보관 · 권한 · 상한 · 퇴직 판정은 도메인이 잠금 뒤 한다.
+export const setPersonDivisionAction = authedActionClient
+  .schema(z.object({ userId: z.string().min(1).max(64), divisionId: z.string().max(64) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await setPersonDivision(ctx.viewer, parsedInput.userId, parsedInput.divisionId === "" ? null : parsedInput.divisionId);
+    revalidatePath(`/admin/people/${parsedInput.userId}`);
+  });
 
 // (S9-FY) 연차는 섹션이 보여 주는 회계연도를 fiscalYear로 — 정수 2000 ≤ y ≤ 올해(상한은 호출 때 seoulToday()로 계산,
 // C-12). 월차는 fiscalYear가 없어야 한다. bucket은 문자열 그대로 도메인에 넘긴다 — 목록 밖(빈 값 = Select `—`) 거부와

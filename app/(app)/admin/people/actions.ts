@@ -24,6 +24,8 @@ export const registerPersonAction = authedActionClient
       teamId: z.string().min(1).optional(),
       effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "발령일 형식 오류 · 2026-09-18처럼").optional(),
       hireDate: z.string().min(1, "입사일 비어 있음 · 입사일 적기"),
+      // 07.1-14(D-7127): 팀 없는 사람만 — 팀과 함께 오면 도메인이 거부한다.
+      divisionId: z.string().min(1).max(64).optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {

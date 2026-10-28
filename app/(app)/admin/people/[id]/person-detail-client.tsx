@@ -4,13 +4,13 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { changePersonRoleAction, assignTeamAction, cancelAssignmentAction, handOverSysadminAction, unlockPersonAction } from "../actions";
-import { resetPersonPasswordAction } from "./actions";
+import { resetPersonPasswordAction, setPersonDivisionAction } from "./actions";
 import { Button } from "@/ui/button/Button";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
 import { Form } from "@/ui/form/Form";
-import { Select } from "@/ui/select/Select";
+import { Select, type SelectOption } from "@/ui/select/Select";
 import styles from "../people.module.css";
 
 function errorMessageOf(result: { serverError?: unknown; validationErrors?: unknown }): string | null {
@@ -80,6 +80,39 @@ export function PersonRoleChange({
         </Form.Field>
       </div>
     </>
+  );
+}
+
+// 07.1-14(D-7127 · S6): 팀 없는 사람의 본부 — 계급 변경 칸과 같은 즉시 저장(저장 중 aria-busy · 저장 중 바꾸기 무시 · 거부되면 서버 문구가
+// 오류 줄에 서고 저장값으로 돌아온다). 선택지는 서버가 넘긴 것뿐이고, 보관된 저장값은 서버가 비활성 옵션으로 함께 넘긴다(R2-2).
+export function PersonDivisionChange({ userId, options, currentDivisionId }: { userId: string; options: SelectOption[]; currentDivisionId: string | null }) {
+  const savedRef = useRef(currentDivisionId ?? "");
+  const [value, setValue] = useState(currentDivisionId ?? "");
+  const { execute, result, isExecuting } = useAction(setPersonDivisionAction, {
+    onSuccess: ({ input }) => {
+      savedRef.current = input.divisionId;
+    },
+    onError: () => setValue(savedRef.current),
+  });
+
+  return (
+    <div className={styles.roleChange}>
+      <Form.Field id="person-division" label="본부" width="select">
+        <Select
+          id="person-division"
+          hideEmptyOption
+          value={value}
+          aria-busy={isExecuting || undefined}
+          error={errorMessageOf(result) ?? undefined}
+          options={[{ value: "", label: "본부 없음" }, ...options]}
+          onChange={(event) => {
+            if (isExecuting) return;
+            setValue(event.target.value);
+            execute({ userId, divisionId: event.target.value });
+          }}
+        />
+      </Form.Field>
+    </div>
   );
 }
 

@@ -5,6 +5,7 @@ import { actionLog, corpCards, corpCardUsages, evidenceRecords } from "@/db/sche
 import { archive, restore } from "@/domain/archive";
 import { createCorpCard, setCorpCardActive } from "@/domain/corp-cards";
 import { relinkUnknownCardRecords } from "@/domain/evidence-import/card-relink";
+import { setCorpCardActive as repoSetCorpCardActive } from "@/repositories/corp-cards";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { createIntakeViewer, registerFixtureFile } from "./fixtures/evidence";
@@ -175,4 +176,21 @@ describe("카드 미등록 줄 다시 잇기 (06.1-04 G11)", () => {
     expect(await recordByApproval("10000001")).toMatchObject({ corpCardId: cardId });
     expect(await recordByApproval("10000009")).toMatchObject({ corpCardId: cardId });
   });
+
+  it("(#318 P3) 보관된 카드는 켜지지 않는다 — 활성 그대로 · 미등록 줄 그대로 · 응답은 없는 카드와 같은 null", async () => {
+    const cardId = await addCard("롯데카드", "2222");
+    await setCorpCardActive(SYSTEM_VIEWER, cardId, false);
+    await archive(SYSTEM_VIEWER, "corp_card", cardId);
+    const viewer = await createIntakeViewer();
+    expect((await registerFixtureFile(viewer, lotteFixture([{ 승인번호: "10000001" }]))).cardUnknown).toBe(1);
+    const before = (await db.select().from(corpCards).where(eq(corpCards.id, cardId)))[0];
+
+    expect(await setCorpCardActive(SYSTEM_VIEWER, cardId, true)).toBeNull();
+    // 읽은 뒤 보관된 경합도 막는다 — 저장소 UPDATE 조건 자체가 보관 카드를 건드리지 않는다.
+    expect(await repoSetCorpCardActive(SYSTEM_VIEWER, cardId, true)).toBe(false);
+
+    expect((await db.select().from(corpCards).where(eq(corpCards.id, cardId)))[0]).toEqual(before);
+    expect(await recordByApproval("10000001")).toMatchObject({ corpCardId: null, version: 1 });
+  });
 });
+

@@ -818,7 +818,7 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
     expect(await needsCheckOf(originalId)).toBe(CANCEL_REGISTERED_CHECK);
     expect(await liveLinks(originalId)).toHaveLength(1);
     expect((await releaseLogsOf(doc.expenseId)).map((row) => row.detail)).toEqual([
-      { field: "evidenceReview", status: "released", reason: CANCEL_REGISTERED_CHECK, reviewReleased: null },
+      { field: "evidenceReview", status: "needs_check", reason: CANCEL_REGISTERED_CHECK, reviewReleased: null },
     ]);
   });
 
@@ -873,7 +873,7 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
     ]);
   });
 
-  it("(P2-2 ⑶) 작성 중 · 반려 문서에 붙은 원거래 → 사유만 서고 확인 기록 · 문서 version · 로그는 그대로", async () => {
+  it("(P2-2 ⑶ · D-7106) 작성 중 · 반려 문서에 붙은 원거래 → 사유가 서고 확인 기록 · 문서 version은 그대로 · 문서마다 확인 필요 로그 한 줄(needs_check · reviewReleased null)", async () => {
     const fx = await setupExpenseProject();
     const manager = await createIntakeManager();
     const [draftLine, returnedLine] = await extraLines(fx, 2);
@@ -898,8 +898,8 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
     expect(await moneyOf(draftId)).toEqual(before.draft);
     expect(await moneyOf(returned.expenseId)).toEqual(before.returned);
     expect(await reviewsOf(returned.expenseId)).toEqual(before.reviews);
-    // D-7106: 확인 기록이 풀리지 않아도 확인 필요가 선 문서마다 로그 한 줄(reviewReleased null).
-    const flaggedLog = [{ field: "evidenceReview", status: "released", reason: CANCEL_REGISTERED_CHECK, reviewReleased: null }];
+    // D-7106: 확인 기록이 풀리지 않아도 확인 필요가 선 문서마다 로그 한 줄 — 풀린 게 없으므로 status needs_check · reviewReleased null.
+    const flaggedLog = [{ field: "evidenceReview", status: "needs_check", reason: CANCEL_REGISTERED_CHECK, reviewReleased: null }];
     expect((await releaseLogsOf(draftId)).map((row) => row.detail)).toEqual(flaggedLog);
     expect((await releaseLogsOf(returned.expenseId)).map((row) => row.detail)).toEqual(flaggedLog);
   });
@@ -923,7 +923,7 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
     ]);
   });
 
-  it("(D-7106) 지급 완료 문서 → 확인 기록 그대로 · 로그 한 줄(reviewReleased null)", async () => {
+  it("(D-7106) 지급 완료 문서 → 확인 기록 그대로 · 로그 한 줄(needs_check · reviewReleased null)", async () => {
     const fx = await setupExpenseProject();
     const manager = await createIntakeManager();
     const payer = await makePayer();
@@ -935,11 +935,11 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
 
     expect((await reviewsOf(expenseId)).map((row) => row.status)).toEqual(["confirmed"]);
     expect((await releaseLogsOf(expenseId)).map((row) => row.detail)).toEqual([
-      { field: "evidenceReview", status: "released", reason: CANCEL_REGISTERED_CHECK, reviewReleased: null },
+      { field: "evidenceReview", status: "needs_check", reason: CANCEL_REGISTERED_CHECK, reviewReleased: null },
     ]);
   });
 
-  it("(D-7106) 확인 기록 없는 승인 문서 → 로그 한 줄(reviewReleased null)", async () => {
+  it("(D-7106) 확인 기록 없는 승인 문서 → 로그 한 줄(needs_check · reviewReleased null)", async () => {
     const fx = await setupExpenseProject();
     const manager = await createIntakeManager();
     const expenseId = await approvedExpense(fx);
@@ -949,7 +949,7 @@ describe("뒤 파일 취소 × 붙은 원거래 (PR-C 카드 결정)", () => {
     await laterCancelFile(manager);
 
     expect((await releaseLogsOf(expenseId)).map((row) => row.detail)).toEqual([
-      { field: "evidenceReview", status: "released", reason: CANCEL_REGISTERED_CHECK, reviewReleased: null },
+      { field: "evidenceReview", status: "needs_check", reason: CANCEL_REGISTERED_CHECK, reviewReleased: null },
     ]);
   });
 

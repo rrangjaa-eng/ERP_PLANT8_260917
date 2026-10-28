@@ -58,7 +58,7 @@ export type LinkedEvidence = {
   items: Partial<EvidenceLinkedItemDto>[];
   /** 섹션당 하나 이하 — 글자는 app(evidence-locked-lines)이 그린다. */
   lockLine: EvidenceRecordLockLine | null;
-  /** #324 P2: 살아 있는 붙임 수 — 보이는 행 수, 보이는 행이 0인데 숨긴 붙임이 있으면 1(숨긴 건수는 싣지 않는다 · G15).
+  /** #324 P2: 살아 있는 붙임 수 — 보이는 행 수 + 숨긴 붙임이 하나라도 있으면 1(`visibleCount + (liveCount > visibleCount ? 1 : 0)` · 숨긴 건수는 싣지 않는다 · G15).
    *  세금 증빙 기준일 · 증빙 있음은 보는 사람 거름 없이 붙임 전부로 정하므로 폼의 증빙일 칸 숨김이 이 값을 따른다. */
   linkCount: number;
 };

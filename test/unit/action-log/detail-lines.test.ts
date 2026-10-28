@@ -293,3 +293,85 @@ describe("입사일 · 퇴직일 줄 (07.1-13 S8)", () => {
     ]);
   });
 });
+
+// 07.1-13 S8(E-P2-40 · CG-09): 견적 · 매출 줄의 전후는 detail.lineChanges = [{ id, kind, no, name, changes }] 배열이다.
+describe("줄 전후 lineChanges (07.1-13 S8)", () => {
+  const LINE_ID = "3f0c3a7e-9b1d-4c55-8f0e-0a1b2c3d4e5f";
+  const VENDOR_A = "0f0c3a7e-9b1d-4c55-8f0e-0a1b2c3d4e51";
+  const VENDOR_B = "0f0c3a7e-9b1d-4c55-8f0e-0a1b2c3d4e52";
+
+  it("견적 줄 — {줄 종류} {순번} {항목명} {칸}", () => {
+    const detail = { lineIds: [LINE_ID], lineChanges: [{ id: LINE_ID, kind: "quote", no: 2, name: "무대", changes: { unitPrice: ["10,000원", "12,000원"] } }] };
+    expect(detailLines(detail)).toEqual([{ label: "견적 줄 2 무대 단가", before: "10,000원", after: "12,000원" }]);
+  });
+
+  it("발행 줄 · 입금 줄 — 항목명 없음 · 열 이름", () => {
+    const detail = {
+      lineChanges: [
+        { id: LINE_ID, kind: "issue", no: 1, name: null, changes: { amount: ["1,000,000원", "1,100,000원"] } },
+        { id: LINE_ID, kind: "payment", no: 1, name: null, changes: { entryDate: [null, "2026-10-01"] } },
+      ],
+    };
+    expect(detailLines(detail)).toEqual([
+      { label: "발행 줄 1 발행액", before: "1,000,000원", after: "1,100,000원" },
+      { label: "입금 줄 1 입금일", before: "없음", after: "2026-10-01" },
+    ]);
+  });
+
+  it("상태는 화면 낱말 · 거래처는 바뀜 · 칸 순서는 선언 순서", () => {
+    const detail = {
+      lineChanges: [
+        { id: LINE_ID, kind: "quote", no: 1, name: "조명", changes: { lineStatus: ["not_started", "cancelled"], vendorId: [VENDOR_A, VENDOR_B], quantity: ["1.00", "2.00"] } },
+      ],
+    };
+    expect(detailLines(detail)).toEqual([
+      { label: "견적 줄 1 조명 거래처", before: "바뀜", after: "바뀜" },
+      { label: "견적 줄 1 조명 수량", before: "1.00", after: "2.00" },
+      { label: "견적 줄 1 조명 상태", before: "미착수", after: "취소" },
+    ]);
+  });
+
+  it("모르는 kind · 모르는 칸 · 레코드 아닌 원소 · changes 아닌 원소는 줄을 만들지 않는다", () => {
+    const detail = {
+      lineChanges: [
+        { id: LINE_ID, kind: "mystery", no: 1, name: null, changes: { amount: [1, 2] } },
+        { id: LINE_ID, kind: "quote", no: 1, name: "무대", changes: { sortOrder: [1, 2], version: [1, 2] } },
+        "문자열",
+        null,
+        [1, 2],
+        { id: LINE_ID, kind: "quote", no: 1, name: "무대", changes: "바뀜" },
+      ],
+    };
+    expect(detailLines(detail)).toBeNull();
+  });
+
+  it("항목명이 비면 빼고 띄어쓰기 하나 · 둘 다 없음이면 뺀다", () => {
+    const detail = { lineChanges: [{ id: LINE_ID, kind: "quote", no: 3, name: "", changes: { note: [null, "메모"], subcategory: [null, ""] } }] };
+    expect(detailLines(detail)).toEqual([{ label: "견적 줄 3 비고", before: "없음", after: "메모" }]);
+  });
+
+  it("changes와 lineChanges가 함께면 changes 줄 먼저", () => {
+    const detail = {
+      changes: { preEstimate: ["1,000,000원", "1,200,000원"] },
+      lineChanges: [{ id: LINE_ID, kind: "issue", no: 2, name: null, changes: { note: ["가", "나"] } }],
+    };
+    expect(detailLines(detail)).toEqual([
+      { label: "사전 견적", before: "1,000,000원", after: "1,200,000원" },
+      { label: "발행 줄 2 메모", before: "가", after: "나" },
+    ]);
+  });
+
+  it("같은 항목명 줄 둘은 줄마다 따로 남는다(CG-09)", () => {
+    const detail = {
+      lineChanges: [
+        { id: LINE_ID, kind: "quote", no: 1, name: "무대", changes: { unitPrice: ["10,000원", "12,000원"] } },
+        { id: VENDOR_A, kind: "quote", no: 2, name: "무대", changes: { unitPrice: ["10,000원", "12,000원"] } },
+      ],
+    };
+    expect(detailLines(detail)?.map((line) => line.label)).toEqual(["견적 줄 1 무대 단가", "견적 줄 2 무대 단가"]);
+  });
+
+  it("lineChanges 없는 기존 견적 줄 로그(lineIds만)는 지금처럼 null", () => {
+    expect(detailLines({ lineIds: [LINE_ID], archivedLineIds: [VENDOR_A] })).toBeNull();
+  });
+});

@@ -159,6 +159,7 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/expenses.ts", fn: "listExpensePage", reason: "지출결의 목록 — scopeCondition(기안자 ∪ 결재 관련자 ∪ rowScopeCondition)이 행을 거른다(06.2-08)" },
   { file: "repositories/expenses.ts", fn: "listUnpaidApprovedScheduleSources", reason: "승인 묶음 사전 정렬 재료 — 목록과 같은 scopeCondition(07-06 AQ-01)" },
   { file: "repositories/expenses.ts", fn: "summarizeExpenseList", reason: "지출결의 합계 — 목록과 같은 scopeCondition(06.2-08)" },
+  { file: "repositories/expenses.ts", fn: "listExpenseMonths", reason: "지출결의 목록 월 select 옵션 — 목록과 같은 scopeCondition(07.1-09 PF4)" },
   { file: "repositories/expenses.ts", fn: "isExpenseInScope", reason: "지출결의 문서 하나(canSeeExpense) — 목록과 같은 scopeCondition(06.2-08)" },
   { file: "repositories/expenses.ts", fn: "listExpenseIdsInScope", reason: "지급 대상 id 묶음 — 문서 하나와 같은 scopeCondition을 한 질의로(06.2-08 검토 I-1)" },
   { file: "repositories/expenses.ts", fn: "listExpenseAttachCandidates", reason: "증빙 붙이기 후보 — 목록과 같은 scopeCondition(06.2-08 · 06.1-06)" },

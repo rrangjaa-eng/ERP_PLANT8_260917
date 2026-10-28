@@ -118,7 +118,10 @@
     grid-column: 3;
     min-width: 0;
     font-size: var(--text-aux);
-    white-space: normal; /* .grow(contents)의 nowrap을 물려받지 않는다 */
+    /* 07.1-17 G10: 이유는 한 줄 말줄임 — 줄바꿈하면 폰 줄이 3줄이 된다. 전체 글자는 title로 남는다. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* §10 터치 목표 44 — 글자 위치는 그대로 두고 닿는 영역만 위아래로 늘린다. */

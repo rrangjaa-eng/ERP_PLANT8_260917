@@ -140,6 +140,33 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
     }
   });
 
+  // 07.1-09 W11: 필터 줄(검색 · 상태 · 팀 · 월 · 내 것만)이 375 · 320에서 넘치지 않고 세 줄 안에 든다 — 체크박스 래퍼 터치 44는 07.1-18 몫이라 단언하지 않는다.
+  test("목록 필터 줄 — 팀 · 월 · 내 것만이 있어도 가로 넘침 0 · 세 줄 이하", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await submitLineExpense(browser, baseURL, fx, "phone");
+
+    for (const viewport of WIDTHS) {
+      const page = await phone(browser, baseURL, fx.ceo, viewport);
+      await page.goto("/expenses");
+      const form = page.getByRole("form", { name: "지출결의 보기" });
+      await expect(form.getByRole("checkbox", { name: "내 것만" })).toBeVisible();
+      await expect(form.getByRole("combobox", { name: "팀" })).toBeVisible();
+      await expect(form.getByRole("combobox", { name: "월" })).toBeVisible();
+      // CI 공용 DB의 긴 팀 이름을 흉내 낸다 — 네이티브 select는 가장 긴 옵션만큼 넓어져 상태 칸 옆에 못 들어가면 넷째 줄이 된다(PR #320 CI 실패 원인).
+      await form.getByRole("combobox", { name: "팀" }).evaluate((select) => {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "경영관리본부 영업기획팀 장기 프로젝트 지원 조직";
+        select.appendChild(option);
+      });
+      await expectNoOverflow(page, `필터 줄 ${viewport.width}`);
+      // 줄은 아래 변으로 센다 — 필터 줄이 flex-end 정렬이라 한 줄 안 칸은 높이가 달라도 아래 변이 같다(위 변은 칸마다 다르다).
+      const rows = await form.evaluate((element) => new Set(Array.from(element.children).map((child) => Math.round(child.getBoundingClientRect().bottom))).size);
+      expect(rows, `필터 줄 ${viewport.width} 줄 수`).toBeLessThanOrEqual(3);
+      await page.context().close();
+    }
+  });
+
   test("폰 행 시트 — 긴 항목 · 긴 비고에서 넘침 0, 본문 끝까지 스크롤하면 3차 `지출결의 올리기` 높이 ≥ 44", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     for (const viewport of WIDTHS) {

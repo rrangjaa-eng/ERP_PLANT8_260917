@@ -20,6 +20,17 @@
   color: var(--text-muted);
 }
 
+/* 07.1-09(#320 B-2) 내 것만 — 관리자 활동 기록 필터 `.checkboxLabel`과 같은 선언(다른 라우트 CSS 모듈 import 금지 · 라우트마다 같은 이름으로 둔다). */
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  min-height: var(--touch-min);
+}
+
 .select {
   height: var(--control-h);
   border: var(--line-w) solid var(--border-control);
@@ -72,6 +83,11 @@
   .searchLabel {
     flex: 1 1 100%;
     width: auto;
+  }
+
+  /* 폰 — 네이티브 select는 가장 긴 옵션(CI 공용 DB의 긴 팀 이름)만큼 넓어져 상태 칸 옆에 못 들어가면 줄이 늘어난다. 320에서 상태 칸 + 팀 칸이 한 줄에 드는 상한(데이터 길이와 무관하게 세 줄). */
+  .select {
+    max-width: calc(var(--field-w-select) - var(--s-4) - var(--s-1));
   }
 }
 

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { evidenceRecords, teams } from "@/db/schema";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
-import { countEvidencePool, evidencePickerMode, listEvidencePool } from "@/domain/evidence-records/pool";
+import { countEvidencePool, countRecommendedEvidence, evidencePickerMode, listEvidencePool } from "@/domain/evidence-records/pool";
 import { rankRecordsForDocument } from "@/domain/evidence-records/score";
 import { ATTACH_BATCH_MAX } from "@/domain/evidence-records/attach";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -34,6 +34,11 @@ beforeEach(async () => {
 async function publishTeam(recordId: string, teamId: string = team1): Promise<string> {
   await setRecordVisibilityFixture(recordId, { visibility: "team", teamId });
   return recordId;
+}
+
+// 07.1-09: 문서 증빙 종류를 정한다 — 종류 거름(검색어 없는 추천)이 걸리지 않게 하려면 null.
+async function setDocType(expenseId: string, evidenceType: string | null): Promise<void> {
+  await db.execute(sql`update expenses set evidence_type = ${evidenceType} where id = ${expenseId}`);
 }
 
 async function ids(viewer: Viewer, expenseId: string, q?: string): Promise<string[]> {
@@ -90,6 +95,7 @@ describe("listEvidencePool — 작성자 풀 (06.1-08 EVID-07 · D-6108)", () =>
 
   it("경영관리 풀(registrar) = 붙일 수 있는 증빙 전부 — 미공개 · G15 종류 · 음수 포함, 붙음 · 보관 · 확인 필요는 없음", async () => {
     const doc = await createInReviewExpenseFixture(fx);
+    await setDocType(doc.expenseId, null);
     const keyed = await createIntakeManager("키있음", { attach: true });
     const privateRow = await insertRecordFixture(keyed);
     const negative = await insertRecordFixture(keyed, { supplyKrw: -50_000 });
@@ -134,6 +140,7 @@ describe("listEvidencePool — 작성자 풀 (06.1-08 EVID-07 · D-6108)", () =>
 describe("listEvidencePool — 순위 (E34 · G3)", () => {
   it("공개 증빙 25건 → SQL 20행 · 순서가 순수 rankRecordsForDocument 상위 20과 같다 · truncated · limit 20", async () => {
     const draft = await createDraftExpenseFixture(fx);
+    await setDocType(draft, null);
     const intake = await createIntakeManager();
     const made: { id: string; supplyKrw: number; issuedOn: string; evidenceType: string }[] = [];
     for (let index = 0; index < 25; index += 1) {
@@ -161,6 +168,7 @@ describe("listEvidencePool — 순위 (E34 · G3)", () => {
 
   it("짝 아닌 종류는 막힌 행으로 뒤에 선다(G3) — 점수가 높아도 짝 맞는 1건이 첫 행이고 고를 수 있다 · 후보 수에서 빠진다", async () => {
     const draft = await createDraftExpenseFixture(fx);
+    await setDocType(draft, null);
     const intake = await createIntakeManager();
     // 문서 지급 방식 = bank_transfer 라고 두고, 짝 설정은 bank_transfer ↔ tax_invoice 하나뿐.
     await db.execute(sql`update expenses set payment_method = 'bank_transfer' where id = ${draft}`);
@@ -176,5 +184,94 @@ describe("listEvidencePool — 순위 (E34 · G3)", () => {
     expect(pool.preselect).toEqual([paired]);
     expect(await countEvidencePool(fx.pm, { kind: "expense", id: draft })).toBe(1);
     expect(mismatched).toHaveLength(22);
+  });
+});
+
+// 07.1-09 D-7124(C-92): 검색어 없는 추천은 문서 증빙 종류와 같은 증빙만(DB WHERE — 후보 집합), 검색어가 있으면 다른 종류도 나온다.
+describe("listEvidencePool — 같은 종류만 (07.1-09 D-7124 · C-92)", () => {
+  async function seedMixed(intake: Viewer): Promise<{ tax: string[]; card: string[] }> {
+    const tax = [await publishTeam(await insertRecordFixture(intake, { evidenceType: "tax_invoice", nameOnDocument: "세금상회A" })), await publishTeam(await insertRecordFixture(intake, { evidenceType: "tax_invoice", nameOnDocument: "세금상회B" }))];
+    const card = [
+      await publishTeam(await insertRecordFixture(intake, { evidenceType: "card_receipt", nameOnDocument: "카드상회A" })),
+      await publishTeam(await insertRecordFixture(intake, { evidenceType: "card_receipt", nameOnDocument: "카드상회B" })),
+      await publishTeam(await insertRecordFixture(intake, { evidenceType: "card_receipt", nameOnDocument: "카드상회C" })),
+    ];
+    return { tax, card };
+  }
+
+  it("검색어 없음 + 문서 종류 있음 → 같은 종류만 · 부제 건수 2 · 트리거 건수 5(모든 종류)", async () => {
+    const draft = await createDraftExpenseFixture(fx);
+    const intake = await createIntakeManager();
+    await setDocType(draft, "tax_invoice");
+    const { tax } = await seedMixed(intake);
+    expect(new Set(await ids(fx.pm, draft))).toEqual(new Set(tax));
+    const recommended = await countRecommendedEvidence(fx.pm, draft);
+    expect(recommended.count).toBe(2);
+    expect(recommended.typeLabel).toBeTruthy();
+    // 트리거를 보일지(모든 종류 수)는 같은 호출의 total — 별도 질의 없이 한 번에(07.1-09 #320 B-1 · P3).
+    expect(recommended.total).toBe(5);
+    expect(recommended.mode).toBe("author");
+    expect(await countEvidencePool(fx.pm, { kind: "expense", id: draft })).toBe(5);
+  });
+
+  it("검색어 있음 → 다른 종류도 나오고 줄 제목에 종류가 붙는다 · 부제 건수는 검색과 무관하게 2", async () => {
+    const draft = await createDraftExpenseFixture(fx);
+    const intake = await createIntakeManager();
+    await setDocType(draft, "tax_invoice");
+    const { card } = await seedMixed(intake);
+    expect(await ids(fx.pm, draft, "카드상회A")).toEqual([card[0]]);
+    const pool = await listEvidencePool(fx.pm, { owner: { kind: "expense", id: draft }, q: "카드상회A" });
+    const other = (await countRecommendedEvidence(fx.pm, draft)).typeLabel;
+    expect(pool.items[0]?.title).toMatch(/ · 카드상회A$/);
+    expect(pool.items[0]?.title).not.toBe("카드상회A");
+    expect(other).not.toBeNull();
+    expect((await countRecommendedEvidence(fx.pm, draft)).count).toBe(2);
+    const same = await listEvidencePool(fx.pm, { owner: { kind: "expense", id: draft }, q: "세금상회A" });
+    expect(same.items[0]?.title).toBe("세금상회A");
+  });
+
+  it("문서 종류 null → 거름 없음(목록 5 · 부제 건수 5 · 트리거 건수 5)", async () => {
+    const draft = await createDraftExpenseFixture(fx);
+    const intake = await createIntakeManager();
+    await setDocType(draft, null);
+    await seedMixed(intake);
+    expect((await ids(fx.pm, draft)).length).toBe(5);
+    expect(await countRecommendedEvidence(fx.pm, draft)).toEqual({ count: 5, total: 5, typeLabel: null, mode: "author" });
+    expect(await countEvidencePool(fx.pm, { kind: "expense", id: draft })).toBe(5);
+  });
+
+  it("다른 종류만 있는 문서 — 추천 0 · 트리거 건수 3 · 빈 목록 글자 · 검색으로 다른 종류에 닿는다", async () => {
+    const draft = await createDraftExpenseFixture(fx);
+    const intake = await createIntakeManager();
+    await setDocType(draft, "tax_invoice");
+    const card = [
+      await publishTeam(await insertRecordFixture(intake, { evidenceType: "card_receipt", nameOnDocument: "카드만A" })),
+      await publishTeam(await insertRecordFixture(intake, { evidenceType: "card_receipt", nameOnDocument: "카드만B" })),
+      await publishTeam(await insertRecordFixture(intake, { evidenceType: "card_receipt", nameOnDocument: "카드만C" })),
+    ];
+    const pool = await listEvidencePool(fx.pm, { owner: { kind: "expense", id: draft } });
+    expect(pool.items).toEqual([]);
+    const recommended = await countRecommendedEvidence(fx.pm, draft);
+    expect(recommended.count).toBe(0);
+    expect(recommended.total).toBe(3);
+    expect(pool.emptyDefault).toBe(`${recommended.typeLabel} 증빙이 없습니다`);
+    expect(await countEvidencePool(fx.pm, { kind: "expense", id: draft })).toBe(3);
+    expect(await ids(fx.pm, draft, "카드만B")).toEqual([card[1]]);
+    expect((await listEvidencePool(fx.pm, { owner: { kind: "expense", id: draft }, q: "없는이름" })).emptyDefault).toBeNull();
+  });
+
+  it("짝 맞지 않는 같은 종류는 부제 건수에서 빠진다(DB-16 그대로)", async () => {
+    const draft = await createDraftExpenseFixture(fx);
+    const intake = await createIntakeManager();
+    await setDocType(draft, "tax_invoice");
+    await db.execute(sql`update expenses set payment_method = 'bank_transfer' where id = ${draft}`);
+    await upsertSimpleValue(SYSTEM_VIEWER, PAYMENT_METHOD_EVIDENCE_PAIRS.key, [{ method: "bank_transfer", evidence: "cash_receipt" }], null);
+    await seedMixed(intake);
+    expect((await countRecommendedEvidence(fx.pm, draft)).count).toBe(0);
+  });
+
+  it("못 여는 문서(남의 팀 PM)는 mode none · 0 · 0", async () => {
+    const draft = await createDraftExpenseFixture(fx);
+    expect(await countRecommendedEvidence(fx.otherPm, draft)).toEqual({ count: 0, total: 0, typeLabel: null, mode: "none" });
   });
 });

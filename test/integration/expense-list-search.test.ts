@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { expenses, users } from "@/db/schema";
+import { expenses, teams, users } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createTeamExpenseDraft, createExpenseFromLines, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
@@ -17,7 +17,9 @@ import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
-import { makePerson } from "./approvals-fixtures";
+import { makePerson, orgUnitIdByName, teamIdByName } from "./approvals-fixtures";
+import { createTeam } from "@/domain/org";
+import { DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { setupExpenseProject, submitReadyDraft, testVendorAccount, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
 
@@ -334,4 +336,116 @@ describe("지급 대상 · 지급 완료 검색(06.5 D-6508 · Task 2)", () => {
     expect((await listPaidPayments(manager, {})).total?.count).toBe(1);
     await expect(listPaidPayments(w.fx.pm, { q: w.a.number })).rejects.toBeInstanceOf(ForbiddenError);
   }, 90_000);
+});
+
+// 07.1-09 PF4 · C-36(E-P1-08): 팀(docTeamId) · 월(등록 시각 서울 월) · 내 것만 — 목록 공용 조건 하나가 합계 · 쪽 · 승인 정렬에 같이 걸리고, 보는 범위 안에서만 줄인다.
+describe("지출결의 목록 거르개 — 팀 · 월 · 내 것만 (07.1-09)", () => {
+  async function filterWorld() {
+    const w = await world();
+    const planning = await orgUnitIdByName("기획본부");
+    const otherTeam = (await createTeam(SYSTEM_VIEWER, { orgUnitId: planning, name: `거름팀-${randomUUID().slice(0, 6)}` })).id;
+    // 팀 비용 문서(프로젝트 없음)는 귀속 팀이 문서의 팀이다 — vendorDoc만 다른 팀으로 옮긴다. 등록 시각: 서울 10-01 00:30(UTC 09-30) · 서울 09-30 23:30 · 11월.
+    await db.update(expenses).set({ attributedTeamId: otherTeam, createdAt: new Date("2025-09-30T15:30:00Z") }).where(eq(expenses.id, w.vendorDoc.expenseId));
+    await db.update(expenses).set({ createdAt: new Date("2025-09-30T14:30:00Z") }).where(eq(expenses.id, w.line.expenseId));
+    await db.update(expenses).set({ createdAt: new Date("2025-11-15T03:00:00Z") }).where(eq(expenses.id, w.payeeDoc.expenseId));
+    const viewer = await searcher({ value: true, amount: true, person: true });
+    return { w, otherTeam, viewer };
+  }
+
+  const mine = (list: Awaited<ReturnType<typeof search>>, w: World) => ids(list).filter((id) => [w.line.expenseId, w.vendorDoc.expenseId, w.payeeDoc.expenseId].includes(id));
+
+  it("팀 = 문서의 팀 — 팀 비용은 귀속 팀, 프로젝트 문서는 프로젝트 팀(기안자 발령 팀이 아니다)", async () => {
+    const { w, otherTeam, viewer } = await filterWorld();
+    expect(mine(await listExpenses(viewer, { status: "all", team: otherTeam }, { today: seoulToday() }), w)).toEqual([w.vendorDoc.expenseId]);
+    const plan1 = await teamIdByName("기획1팀");
+    expect(mine(await listExpenses(viewer, { status: "all", team: plan1 }, { today: seoulToday() }), w)).toEqual([w.line.expenseId, w.payeeDoc.expenseId].sort());
+  }, 60_000);
+
+  it("옵션에 없는 팀 값은 거름도 무시한다 — 팀 select가 있는 범위에서는 select 표시(팀 전체)와 결과가 같다", async () => {
+    const { w, viewer } = await filterWorld();
+    const all = await listExpenses(viewer, { status: "all" }, { today: seoulToday() });
+    expect(mine(all, w).length).toBe(3);
+    expect(mine(await listExpenses(viewer, { status: "all", team: randomUUID() }, { today: seoulToday() }), w)).toEqual(mine(all, w));
+    expect(mine(await listExpenses(viewer, { status: "all", team: "abc" }, { today: seoulToday() }), w)).toEqual(mine(all, w));
+  }, 60_000);
+
+  it("월 = 등록 시각의 서울 월 — 서울 10-01 00:30(UTC 09-30)은 10월, 진행 중 · 승인 문서도 들어간다", async () => {
+    const { w, viewer } = await filterWorld();
+    const inMonth = (month: string) => listExpenses(viewer, { status: "all", month }, { today: seoulToday() });
+    expect(mine(await inMonth("2025-10"), w)).toEqual([w.vendorDoc.expenseId]);
+    expect(mine(await inMonth("2025-09"), w)).toEqual([w.line.expenseId]);
+    expect(mine(await inMonth("2025-11"), w)).toEqual([w.payeeDoc.expenseId]);
+  }, 60_000);
+
+  it("옵션에 없는 월 값은 거름도 무시한다 — 월 select 표시(월 전체)와 결과가 같다", async () => {
+    const { w, viewer } = await filterWorld();
+    const all = await listExpenses(viewer, { status: "all" }, { today: seoulToday() });
+    expect(all.months).not.toContain("2020-01");
+    const offOption = await listExpenses(viewer, { status: "all", month: "2020-01" }, { today: seoulToday() });
+    expect(mine(offOption, w)).toEqual(mine(all, w));
+    expect(offOption.total?.count).toBe(all.total?.count);
+  }, 60_000);
+
+  it("내 것만 = 기안자가 나인 행 · 셋 조합 · 합계 줄이 거른 전체와 같다 · 거른 결과가 0이어도 hasAny는 참", async () => {
+    const { w, viewer } = await filterWorld();
+    await db.update(expenses).set({ drafterId: viewer.id }).where(eq(expenses.id, w.payeeDoc.expenseId));
+    const mineOnly = await listExpenses(viewer, { status: "all", mine: true }, { today: seoulToday() });
+    expect(mine(mineOnly, w)).toEqual([w.payeeDoc.expenseId]);
+    expect(mineOnly.total?.count).toBe(mineOnly.groups.reduce((sum, group) => sum + group.rows.length, 0));
+    const combined = await listExpenses(viewer, { status: "all", mine: true, month: "2025-11", team: await teamIdByName("기획1팀"), q: w.payeeDoc.number }, { today: seoulToday() });
+    expect(ids(combined)).toEqual([w.payeeDoc.expenseId]);
+    expect(combined.total?.count).toBe(1);
+    const none = await listExpenses(viewer, { status: "all", mine: true, month: "2025-10" }, { today: seoulToday() });
+    expect(ids(none)).toEqual([]);
+    expect(none.hasAny).toBe(true);
+    expect(none.total?.count).toBe(0);
+  }, 60_000);
+
+  it("승인 보기 예정일 정렬도 같은 거름 — 거른 밖 문서 id가 섞이지 않는다", async () => {
+    const { w, otherTeam, viewer } = await filterWorld();
+    const list = await listExpenses(viewer, { status: "approved", team: otherTeam, month: "2025-10" }, { today: seoulToday() });
+    expect(mine(list, w)).toEqual([]);
+    expect(list.total?.count).toBe(0);
+  }, 60_000);
+
+  it("보는 범위 밖 팀 id · 모르는 팀 · uuid 모양이 아닌 팀은 0건(오류 아님), 형식이 틀린 월은 거름 무시", async () => {
+    const { w } = await filterWorld();
+    const lead = await makePerson(`팀장-${randomUUID().slice(0, 4)}`, TEAM_LEAD_ROLE_ID, "기획1팀");
+    const outside = await teamIdByName("경영관리팀");
+    expect(ids(await listExpenses(lead, { status: "all", team: outside }, { today: seoulToday() }))).toEqual([]);
+    expect(ids(await listExpenses(lead, { status: "all", team: randomUUID() }, { today: seoulToday() }))).toEqual([]);
+    expect(ids(await listExpenses(lead, { status: "all", team: "abc" }, { today: seoulToday() }))).toEqual([]);
+    const all = await listExpenses(lead, { status: "all" }, { today: seoulToday() });
+    expect(ids(await listExpenses(lead, { status: "all", month: "2026-13" }, { today: seoulToday() }))).toEqual(ids(all));
+    expect(mine(all, w).length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it("팀 옵션 — 전사 범위는 보관 안 된 팀 전부, 팀장 · 본인 범위는 빈 목록, 본부 범위는 그 본부의 활성 팀(둘 미만이면 빈 목록)", async () => {
+    const { otherTeam, viewer } = await filterWorld();
+    const archived = (await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("기획본부"), name: `보관팀-${randomUUID().slice(0, 6)}` })).id;
+    await db.update(teams).set({ archivedAt: new Date() }).where(eq(teams.id, archived));
+    const company = (await listExpenses(viewer, { status: "all" }, { today: seoulToday() })).teams.map((option) => option.value);
+    expect(company).toContain(otherTeam);
+    expect(company).not.toContain(archived);
+    const lead = await makePerson(`팀장-${randomUUID().slice(0, 4)}`, TEAM_LEAD_ROLE_ID, "기획1팀");
+    expect((await listExpenses(lead, { status: "all" }, { today: seoulToday() })).teams).toEqual([]);
+    const own = await makePerson(`본인-${randomUUID().slice(0, 4)}`, DEFAULT_ROLE_ID, "기획1팀");
+    expect((await listExpenses(own, { status: "all" }, { today: seoulToday() })).teams).toEqual([]);
+    const head = await makePerson(`본부장-${randomUUID().slice(0, 4)}`, DIVISION_HEAD_ROLE_ID, "기획1팀");
+    const divisionTeams = (await listExpenses(head, { status: "all" }, { today: seoulToday() })).teams.map((option) => option.value);
+    expect(divisionTeams).toContain(otherTeam);
+    expect(divisionTeams).toContain(await teamIdByName("기획1팀"));
+    expect(divisionTeams).not.toContain(archived);
+    expect(divisionTeams).not.toContain(await teamIdByName("경영관리팀"));
+  }, 60_000);
+
+  it("월 옵션 — 보는 범위 안 문서의 등록 월만(서울), 최신 먼저", async () => {
+    const { viewer, w } = await filterWorld();
+    const months = (await listExpenses(viewer, { status: "all" }, { today: seoulToday() })).months;
+    expect(months).toEqual(expect.arrayContaining(["2025-11", "2025-10", "2025-09"]));
+    expect([...months].sort().reverse()).toEqual(months);
+    const outsider = await makePerson(`밖-${randomUUID().slice(0, 4)}`, DEFAULT_ROLE_ID, "경영관리팀");
+    expect((await listExpenses(outsider, { status: "all" }, { today: seoulToday() })).months).not.toContain("2025-11");
+    expect(w.line.expenseId).toBeTruthy();
+  }, 60_000);
 });

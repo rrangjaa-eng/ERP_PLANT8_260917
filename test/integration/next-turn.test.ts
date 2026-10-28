@@ -770,7 +770,7 @@ describe("「내 차례」 Phase 6 — 전표 대기 줄 (07.1-17 PD1)", () => {
     const manager = await makeFinanceManager();
     const before = await waitingCount(manager);
     // 서울 2020-01-01 01:30(UTC 2019-12-31 16:30) — 어느 시험의 구매 완료보다 오래돼 가장 오래된 날짜가 된다.
-    const waiting = await requestWithUsage({ completedAt: new Date("2019-12-31T16:30:00Z") });
+    await requestWithUsage({ completedAt: new Date("2019-12-31T16:30:00Z") });
     const withFile = await requestWithUsage();
     const withLink = await requestWithUsage();
     await insertFile(SYSTEM_VIEWER, { ownerKind: "corp_card_usage", ownerId: withFile.usageId, objectKey: `evidence/${randomUUID()}`, sha256: randomBytes(32).toString("hex"), sizeBytes: 10, contentType: "image/png", originalName: "전표.png", uploadedBy: withFile.holder.id, privateToOwner: false }, db);

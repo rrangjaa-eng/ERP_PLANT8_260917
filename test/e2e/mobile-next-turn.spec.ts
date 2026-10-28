@@ -1,11 +1,20 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
+import { db } from "@/db/client";
+import { purchaseRequests } from "@/db/schema";
+import { createOrgUnit, createTeam } from "@/domain/org";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { seoulToday } from "@/lib/dates";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { NextTurnItem } from "@/ui/next-turn/build-next-turn-view";
 import { buildNextTurnView } from "@/ui/next-turn/build-next-turn-view";
+import { loginPage, makePerson } from "./leave-org";
+import { archiveTempRoles, insertTempRole } from "./expense-fixture";
 
 // 02-VERIFICATION 사람 판정 5 해소: 「내 차례」 폰 두 줄 배치(§7-4)는 D-24로 홈이 항상
 // buildNextTurnView([])를 넘겨 실데이터가 생기는 Phase 4까지 한 번도 렌더된 적이 없었다.
@@ -242,3 +251,37 @@ for (const width of [375, 320]) {
     });
   });
 }
+
+// 07.1-17(PF1 · C-32): 레이아웃의 폰 탭 `내 차례 N`은 결재 시트 재료 없이 센다 — 홈 밖 화면의 N이 홈 목록의 건수(6줄 절단 전 전체)와 같다.
+test.describe("폰 탭 `내 차례 N` — 홈 밖과 홈의 건수 (07.1-17 PF1)", () => {
+  test.afterAll(async () => {
+    await archiveTempRoles();
+  });
+
+  test("구매 권한자 — /cards/purchases의 탭 N = 홈 「내 차례」 N", async ({ browser, baseURL }) => {
+    const suffix = randomUUID().slice(0, 8);
+    const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E폰건수-${suffix}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value", "team.value", "vendor.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E폰건수본부-${suffix}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E폰건수팀-${suffix}` });
+    const person = await makePerson("폰건수", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
+    await db.insert(purchaseRequests).values({ number: `E2E${suffix}`, linkKind: "team_cost", requestedBy: person.viewer.id, itemName: "폰 건수 물건", estimateAmountKrw: 10_000, status: "requested" });
+
+    const page = await loginPage(browser, baseURL, person, { width: 375, height: 800 });
+    const tab = page.getByRole("navigation", { name: "하단 탭" }).getByRole("link", { name: /^내 차례 \d+$/ });
+    await page.goto("/cards/purchases");
+    await expect(tab).toBeVisible();
+    const outside = Number(/(\d+)$/.exec((await tab.textContent()) ?? "")?.[1]);
+
+    await page.goto("/");
+    const heading = page.getByRole("heading", { level: 2, name: /^내 차례 \d+$/ });
+    await expect(heading).toBeVisible();
+    const home = Number(/(\d+)$/.exec((await heading.textContent()) ?? "")?.[1]);
+    expect(outside).toBeGreaterThanOrEqual(1);
+    expect(outside).toBe(home);
+    await expect(tab).toHaveText(`내 차례 ${home}`);
+    await page.context().close();
+  });
+});

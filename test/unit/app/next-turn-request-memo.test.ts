@@ -71,9 +71,9 @@ describe("countNextTurnItemsForRequest — 시트 재료 없이 · 목록이 있
     const count = await countNextTurnItemsForRequest(U1);
     expect(count).toBe(2);
     expect(listNextTurnItems).toHaveBeenCalledTimes(1);
-    const [, deps, options] = listNextTurnItems.mock.calls[0] ?? [];
-    expect(deps).toBeUndefined();
-    expect(options).toEqual({ phase6: expect.any(Function) });
+    const call = listNextTurnItems.mock.calls[0];
+    expect(call?.[1]).toBeUndefined();
+    expect(call?.[2]).toEqual({ phase6: expect.any(Function) as unknown });
   });
 
   it("같은 요청에서 건수 함수를 두 번 불러도 공급 함수는 한 번", async () => {

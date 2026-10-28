@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { approvalInstances, approvalRoutes, approvalSteps, expensePayments, expenses, vendors } from "@/db/schema";
 import { approveDocument } from "@/domain/approvals";
+import { detachOwnEvidence } from "@/domain/evidence-records/attach";
 import { createExpenseFromLines, getExpense, previewExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { computeExpenseTax } from "@/domain/expenses/tax";
 import { loadKindDetails } from "@/domain/approvals";
@@ -278,6 +279,63 @@ describe("07.1-16 Task 1 — 증빙 기준일 = 붙은 증빙 가장 이른 발�
       expect((await previewPayable(payer, { expenseId, payDate: seoulToday() })).payableKrw).toBe(earliestBased.payableKrw);
       const targets = await listPaymentTargets(payer, {}, { pageSize: 10_000 });
       expect(targets.groups.flatMap((group) => group.rows).find((row) => row.id === expenseId)?.payableKrw).toBe(earliestBased.payableKrw);
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, "2027-10-10");
+    }
+  }, 60_000);
+
+  // #324 P3 시험 공백 — 붙임 둘 · 수동 증빙일 하나인 작성 중 문서. 세율 경계 2027-10-10(17%)을 사이에 둔다.
+  async function draftWithTwoRecords(manual: string): Promise<{ fx: ExpenseFixture; expenseId: string; earliestLinkId: string }> {
+    const payer = await makePayer();
+    const evidenceType = `t0716_${randomUUID().slice(0, 8)}`;
+    await seedCodeItem(SYSTEM_VIEWER, {
+      tableKey: "evidence_type",
+      value: evidenceType,
+      label: `증빙일 부가세 ${evidenceType}`,
+      sortOrder: 99,
+      taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "evidence_date" },
+    });
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId;
+    if (!expenseId) throw new Error("작성 중 문서 없음");
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { evidenceType, evidenceDate: manual } });
+    const earliestLinkId = await insertLinkFixture({ recordId: await insertRecordFixture(payer, { issuedOn: "2027-10-05" }), ownerId: expenseId, attachMode: "author", attachedBy: fx.pm.id });
+    await insertLinkFixture({ recordId: await insertRecordFixture(payer, { issuedOn: "2027-10-15" }), ownerId: expenseId, attachMode: "author", attachedBy: fx.pm.id });
+    return { fx, expenseId, earliestLinkId };
+  }
+
+  it("가장 이른 기록(10-05) 하나만 떼면 기준일은 다음으로 이른 발행일(10-15)로 옮겨 간다 — 수동 증빙일(10-01)로 돌아가지 않는다", async () => {
+    const { fx, expenseId, earliestLinkId } = await draftWithTwoRecords("2027-10-01");
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2027-10-10", value: 0.17 });
+    try {
+      expect((await previewExpense(fx.pm, { expenseId, fields: {} })).taxLine?.text).not.toContain("17%");
+      await detachOwnEvidence(fx.pm, { linkId: earliestLinkId, reason: "다른 건 증빙" });
+
+      const submitted = await submitReadyDraft(fx.pm, expenseId);
+      if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+      const [snapshot] = await db.select().from(expenses).where(eq(expenses.id, expenseId));
+      expect(snapshot).toMatchObject({ taxBasisDate: "2027-10-15", taxRate: "0.170000", evidenceDate: "2027-10-01" });
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, "2027-10-10");
+    }
+  }, 60_000);
+
+  it("증빙이 붙은 채 증빙일 값(10-25)을 직접 실어 저장 · 제출해도 기준일은 가장 이른 발행일(10-05)이다", async () => {
+    const { fx, expenseId } = await draftWithTwoRecords("2027-10-01");
+    const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+    if (!row) throw new Error("행 없음");
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: row.version, fields: { evidenceDate: "2027-10-25" } });
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2027-10-10", value: 0.17 });
+    try {
+      const preview = await previewExpense(fx.pm, { expenseId, fields: { evidenceDate: "2027-10-25" } });
+      expect(preview.taxLine?.text).not.toContain("17%");
+
+      const submitted = await submitReadyDraft(fx.pm, expenseId);
+      if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+      const [snapshot] = await db.select().from(expenses).where(eq(expenses.id, expenseId));
+      expect(snapshot).toMatchObject({ taxBasisDate: "2027-10-05", evidenceDate: "2027-10-25" });
+      expect(snapshot?.taxRate).not.toBe("0.170000");
     } finally {
       await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, "2027-10-10");
     }

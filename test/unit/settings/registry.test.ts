@@ -15,9 +15,10 @@ import {
   FutureValueNotFoundError,
   type SettingDef,
 } from "@/domain/settings/registry";
-import { PAYMENT_TERM_DAYS, SETTING_DEFS, TAX_ROUNDING_VAT_UNIT, TAX_ROUNDING_WITHHOLDING_UNIT } from "@/domain/settings/keys";
+import { DOCUMENT_NUMBER_PURCHASE_REQUEST_PREFIX, DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_PREFIX, PAYMENT_TERM_DAYS, SETTING_DEFS, TAX_ROUNDING_VAT_UNIT, TAX_ROUNDING_WITHHOLDING_UNIT } from "@/domain/settings/keys";
 import type { Viewer } from "@/domain/viewer";
 import { log } from "@/lib/log";
+import { koreanZodErrorMessage } from "@/lib/actions/zod-error-message";
 
 const viewer: Viewer = { id: "u1", roleId: "role-sysadmin" };
 
@@ -455,6 +456,35 @@ describe("절사 단위 저장 값이 1 · 10 밖 — 설정 읽기가 ZodError"
       }
       const findSimpleValue = vi.fn().mockResolvedValue({ key: def.key, value: 10, updatedAt: new Date(), updatedBy: null });
       expect(await getSettingValue(def, undefined, { findSimpleValue })).toBe(10);
+    });
+  }
+});
+
+// 07.1-05 PJ4(260907 db/schema/020_functions.sql:3127-3137) — 구매요청 · 팀 구매요청 번호 접두가 카드 사용 표지(K)와 같으면 설정 저장이 거부된다.
+// 같음 비교만 한다(대소문자 무시 — 260907 규칙) — `K1`처럼 표지로 시작하는 값은 막지 않는다. refine은 읽기에도 걸리므로 두 키는 readInvalidAsDefault(저장돼 있어도 번호 매기기가 멈추지 않는다).
+describe("번호 접두 ↔ 카드 사용 표지 충돌 (07.1-05 PJ4)", () => {
+  const DEFS = [
+    [DOCUMENT_NUMBER_PURCHASE_REQUEST_PREFIX, "C"],
+    [DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_PREFIX, "TC"],
+  ] as const;
+
+  for (const [def, fallback] of DEFS) {
+    it(`${def.key} — 표지 K와 같으면 거부(명사형), PR · 빈 값 · K1은 받는다`, () => {
+      const rejected = def.schema.safeParse("K");
+      expect(rejected.success).toBe(false);
+      if (rejected.success) return;
+      expect(koreanZodErrorMessage(rejected.error)).toBe("카드 사용 표지와 같음 · 다른 글자");
+      // 260907은 대소문자 무시로 견준다(upper(mark) = upper(buy_mark)) — `k`도 같은 표지로 본다.
+      expect(def.schema.safeParse("k").success).toBe(false);
+      for (const ok of ["PR", "", "K1"]) expect(def.schema.safeParse(ok).success, ok).toBe(true);
+    });
+
+    it(`${def.key} — 이미 K로 저장돼 있어도 읽기는 ZodError가 아니라 기본값(${fallback})과 invalid_stored_value 로그`, async () => {
+      const spy = vi.spyOn(log, "error").mockImplementation(() => {});
+      const findSimpleValue = vi.fn().mockResolvedValue({ key: def.key, value: "K", updatedAt: new Date(), updatedBy: null });
+      expect(await getSettingValue(def, undefined, { findSimpleValue })).toBe(fallback);
+      expect(spy).toHaveBeenCalledWith("settings.invalid_stored_value", expect.objectContaining({ key: def.key }));
+      spy.mockRestore();
     });
   }
 });

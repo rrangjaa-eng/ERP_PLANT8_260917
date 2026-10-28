@@ -130,13 +130,13 @@ describe("buildIssueBundle — 매출 발행 요청 묶음", () => {
 });
 
 describe("buildPreSettleBlockedItems — PM 완료 전 점검 막힘", () => {
-  it("막힘 3 → [막힘] `{프로젝트} — 완료 전 점검 3건` · 숫자 `—` · 점검 보기 → 프로젝트 점검 섹션", () => {
+  it("막힘 3 → [막힘] label `{프로젝트}` · reason `완료 전 점검 3건` · 숫자 `—` · 점검 보기 → 프로젝트 점검 섹션", () => {
     expect(buildPreSettleBlockedItems([{ projectId: "p1", projectName: "아이오닉9", blockedCount: 3 }])).toEqual([
       {
         key: "phase6-presettle-p1",
         tag: "막힘",
-        label: "아이오닉9 — 완료 전 점검 3건",
-        reason: "",
+        label: "아이오닉9",
+        reason: "완료 전 점검 3건",
         measureText: "—",
         action: { label: "점검 보기", href: "/projects/p1#pre-settle-check" },
       },
@@ -153,7 +153,10 @@ describe("buildPreSettleBlockedItems — PM 완료 전 점검 막힘", () => {
       { projectId: "p2", projectName: "나", blockedCount: 0 },
       { projectId: "p3", projectName: "다", blockedCount: 2 },
     ]);
-    expect(items.map((item) => item.label)).toEqual(["가 — 완료 전 점검 1건", "다 — 완료 전 점검 2건"]);
+    expect(items.map((item) => [item.label, item.reason])).toEqual([
+      ["가", "완료 전 점검 1건"],
+      ["다", "완료 전 점검 2건"],
+    ]);
   });
 
   it("정산 프로젝트가 없으면 줄이 없다", () => {

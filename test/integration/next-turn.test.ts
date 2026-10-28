@@ -693,10 +693,11 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
       [first, second].map(async (id) => ({ id, blocked: (await getPreSettleCheck(pm, id)).blockedCount })),
     );
     expect(expected.every((entry) => entry.blocked > 0)).toBe(true);
-    expect(items.map((item) => [item.tag, item.label, item.measureText, item.action.href]).sort()).toEqual(
+    // 07.1-17 사용자 결정(10/28): label = 프로젝트 이름, 이유 칸 = `완료 전 점검 {n}건`.
+    expect(items.map((item) => [item.tag, item.label, item.reason, item.measureText, item.action.href]).sort()).toEqual(
       [
-        ["막힘", `정산 하나 — 완료 전 점검 ${expected[0]?.blocked}건`, "—", `/projects/${first}#pre-settle-check`],
-        ["막힘", `정산 둘 — 완료 전 점검 ${expected[1]?.blocked}건`, "—", `/projects/${second}#pre-settle-check`],
+        ["막힘", "정산 하나", `완료 전 점검 ${expected[0]?.blocked}건`, "—", `/projects/${first}#pre-settle-check`],
+        ["막힘", "정산 둘", `완료 전 점검 ${expected[1]?.blocked}건`, "—", `/projects/${second}#pre-settle-check`],
       ].sort(),
     );
   });

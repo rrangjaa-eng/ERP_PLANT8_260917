@@ -177,7 +177,7 @@ const PHASE6_ITEMS: NextTurnItem[] = [
   { tag: "대기", label: "구매 요청 51건", reason: "신청 · 가장 오래된 09-18", amount: 0, measureText: "57,000,000", action: { label: "구매 요청 보기", href: "/cards/purchases" } },
   { tag: "대기", label: "전표 대기 2건", reason: "결제 완료 · 가장 오래된 10-03", amount: 0, measureText: "", action: { label: "구매 요청 보기", href: "/cards/purchases" } },
   { tag: "오늘", label: "매출 발행 요청 12건", reason: "희망 09-30", amount: 0, measureText: "123,456,789", action: { label: "발행 요청 보기", href: "/projects/issue-requests" } },
-  { tag: "막힘", label: "정산 팝업 — 완료 전 점검 3건", reason: "", amount: 0, measureText: "—", action: { label: "점검 보기", href: "/projects/p1#pre-settle-check" } },
+  { tag: "막힘", label: "정산 팝업", reason: "완료 전 점검 3건", amount: 0, measureText: "—", action: { label: "점검 보기", href: "/projects/p1#pre-settle-check" } },
 ];
 
 type LineProbe = { labelLines: number; whyLines: number; whyClipped: boolean; whyTitle: string | null; whyText: string | null; labelClipped: boolean; labelText: string; overflowX: boolean };
@@ -220,7 +220,7 @@ for (const width of [375, 320]) {
       const rows = await probe(page);
       await testInfo.attach(`probe-${width}`, { body: JSON.stringify(rows, null, 2), contentType: "application/json" });
       console.log(`PROBE ${width} ${JSON.stringify(rows)}`);
-      // 줄은 태그 순(막힘 → 오늘 → 결재 → 대기)으로 놓이므로 label로 찾는다. 완료 전 점검 줄(이유 없음)은 실측 기록만(점검표).
+      // 줄은 태그 순(막힘 → 오늘 → 결재 → 대기)으로 놓이므로 label로 찾는다. 완료 전 점검 줄(label=프로젝트 이름 · 이유=`완료 전 점검 {n}건` — 사용자 결정 10/28)도 같은 단언을 받는다.
       const phase6 = rows.filter((row) => PHASE6_ITEMS.some((item) => item.label === row.labelText && item.reason !== ""));
       expect(phase6).toHaveLength(PHASE6_ITEMS.filter((item) => item.reason !== "").length);
       for (const row of phase6) {
@@ -230,6 +230,25 @@ for (const width of [375, 320]) {
         expect(row.overflowX).toBe(false);
         if (row.whyClipped) expect(row.whyTitle, row.labelText).toBe(row.whyText);
       }
+    });
+
+    // 사용자 결정(10/28): 완료 전 점검 줄의 label은 프로젝트 이름만 — 이름이 길면 06-23 D-1 clamp(2줄)가 받는다. 줄 수를 기록하고 2줄 이하만 단언한다(그 이상은 D-1 결정 몫).
+    test("완료 전 점검 줄 — 긴 프로젝트 이름은 label 2줄 이내 · 이유 1줄 · 넘침 0 (기록)", async ({ page }, testInfo) => {
+      const longName = { ...PHASE6_ITEMS[5], label: "아이오닉9 쇼케이스 행사 운영 정산" } as NextTurnItem;
+      await page.setContent(
+        `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width">
+<style>${css("docs/design/tokens.css")}</style>
+<style>${css("app/globals.css")}</style>
+<style>${css("ui/status-tag/StatusTag.module.css")}</style>
+<style>${css("ui/next-turn/NextTurn.module.css")}</style>
+</head><body><main style="padding: 0 var(--pad-page)">${await renderNextTurn([longName])}</main></body></html>`,
+      );
+      const rows = await probe(page);
+      await testInfo.attach(`probe-presettle-long-${width}`, { body: JSON.stringify(rows, null, 2), contentType: "application/json" });
+      console.log(`PROBE-LONG ${width} ${JSON.stringify(rows)}`);
+      expect(rows[0]?.labelLines).toBeLessThanOrEqual(2);
+      expect(rows[0]?.whyLines).toBe(1);
+      expect(rows[0]?.overflowX).toBe(false);
     });
 
     // P3 notes-C 07.1-17 #3: `.why` 말줄임은 공용 줄이라 결재 · 막힘 줄 이유(픽스처 ITEM `증빙 없음`)도 같은 값을 받는다 — 잘리는지 잰다.

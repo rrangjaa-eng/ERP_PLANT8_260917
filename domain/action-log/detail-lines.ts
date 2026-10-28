@@ -51,6 +51,8 @@ export const CHANGE_FIELD_LABELS: Record<string, string> = {
   supplyKrw: "공급가",
   vatKrw: "부가세",
   approvalNo: "승인번호",
+  hireDate: "입사일",
+  resignationDate: "퇴직일",
 };
 
 // 민감 칸 — 쓰는 쪽이 이미 가렸어도 렌더 쪽이 칸 이름으로 한 번 더 가린다(T-07-25-01).

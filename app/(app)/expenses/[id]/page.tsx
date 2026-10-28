@@ -201,9 +201,9 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     readEvidencePick(viewer, id),
   ]);
   const optionsOf = (items: { value: string; label: string; description: string | null }[], current: string | null | undefined, currentLabel: string | null | undefined): SelectOption[] => {
-    const options = items.map((item) => ({ value: item.value, label: item.label, description: item.description }));
-    // 이미 저장된 값이 비활성 · 보관된 코드면 목록에 없다 — 그 값을 이름으로 남겨 둔다.
-    if (current && !options.some((option) => option.value === current)) options.push({ value: current, label: currentLabel ?? current, description: null });
+    const options: SelectOption[] = items.map((item) => ({ value: item.value, label: item.label, description: item.description }));
+    // 이미 저장된 값이 비활성 · 보관된 코드면 목록에 없다 — 그 값을 이름으로 남겨 두되 다시 고를 수 없게 비활성(07.1-14 F5 · 서버도 거부).
+    if (current && !options.some((option) => option.value === current)) options.push({ value: current, label: currentLabel ?? current, description: null, disabled: true });
     return options;
   };
   const supply = expense.supply ?? null;

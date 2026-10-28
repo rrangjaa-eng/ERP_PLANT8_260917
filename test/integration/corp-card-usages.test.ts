@@ -8,7 +8,7 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import { db, pool } from "@/db/client";
-import { corpCards, corpCardUsages, expenses, projects, purchaseRequests, quoteLines, vendors } from "@/db/schema";
+import { actionLog, corpCards, corpCardUsages, expenses, projects, purchaseRequests, quoteLines, vendors } from "@/db/schema";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { createProject, CompletedProjectError } from "@/domain/projects";
 import { ProjectNotFoundError } from "@/domain/projects/status";
@@ -38,10 +38,14 @@ import {
   createCardUsage,
   listCardUsages,
   listProjectCardUsages,
+  loadCardUsageForEdit,
   precheckCardUsage,
+  precheckCardUsageUpdate,
   previewCardAmounts,
   searchMerchantsForCard,
+  updateCardUsage,
   type CardUsageInput,
+  type CardUsageUpdateInput,
 } from "@/domain/corp-card-usages";
 import { insertRole } from "@/repositories/roles";
 import { insertMembership } from "@/repositories/team-memberships";
@@ -1242,5 +1246,232 @@ describe("프로젝트 상세 「법인카드 사용」(S15)", () => {
     const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보기없음-${randomUUID().slice(0, 8)}`, workScope: "company" });
     const viewer = await makePerson("보기없음", role.id, null);
     await expect(listProjectCardUsages(viewer, fx.projectId)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+// ── 07.1-11 PC2: 저장된 새 건 다시 저장 — version · 견적 외 비용 줄(돈 경로: 줄이 늘면 실행가 합이 바뀐다) ──────
+
+async function outOfQuoteLines(revisionId: string): Promise<{ id: string; executionAmountKrw: number }[]> {
+  return db
+    .select({ id: quoteLines.id, executionAmountKrw: quoteLines.executionAmountKrw })
+    .from(quoteLines)
+    .where(and(eq(quoteLines.revisionId, revisionId), eq(quoteLines.lineKind, "out_of_quote")));
+}
+
+async function executionSum(revisionId: string): Promise<number> {
+  return (await db.select({ amount: quoteLines.executionAmountKrw }).from(quoteLines).where(eq(quoteLines.revisionId, revisionId))).reduce((sum, row) => sum + row.amount, 0);
+}
+
+// 폼 `resaveLink`가 같은 프로젝트 견적 외 비용에 보내는 모양 — 첫 저장이 만든 줄 id(연결 그대로).
+function resaveInput(fx: CardFx, id: string, version: number, lineId: string, amount: number, memo: string): CardUsageUpdateInput {
+  return { ...usageInput(fx.cardId), id, version, total: { currency: "KRW", amount, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "quote_line", lineId, memo };
+}
+
+describe("[07.1-11 PC2] 저장된 새 건 다시 저장 — version · 견적 외 비용 줄", () => {
+  it("같은 프로젝트 견적 외 비용을 version 1 → 2 → 3으로 두 번 다시 저장 → 견적 외 줄 1개 · 줄 수 · 실행가 합 불변 · 카드 사용 한 건", async () => {
+    const fx = await cardProject();
+    const input: CardUsageInput = { ...usageInput(fx.cardId), total: { currency: "KRW", amount: 50_000, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "out_of_quote", projectId: fx.projectId, itemName: "현장 다과" };
+    const created = await createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input));
+    const lineId = created.quoteLineId ?? "";
+    expect(created.version).toBe(1);
+    const linesBefore = await lineCount(fx.revisionId);
+    const sumBefore = await executionSum(fx.revisionId);
+
+    const first = resaveInput(fx, created.id, created.version, lineId, 45_000, "1차 다시 저장");
+    await updateCardUsage(fx.pm, first, await precheckCardUsageUpdate(fx.pm, first));
+    const second = resaveInput(fx, created.id, 2, lineId, 40_000, "2차 다시 저장");
+    await updateCardUsage(fx.pm, second, await precheckCardUsageUpdate(fx.pm, second));
+
+    const [usage] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, created.id));
+    expect(usage).toMatchObject({ version: 3, quoteLineId: lineId, totalAmountKrw: 40_000, memo: "2차 다시 저장" });
+    expect(await outOfQuoteLines(fx.revisionId)).toEqual([{ id: lineId, executionAmountKrw: 50_000 }]);
+    expect(await lineCount(fx.revisionId)).toBe(linesBefore);
+    expect(await executionSum(fx.revisionId)).toBe(sumBefore);
+    expect(await db.select({ id: corpCardUsages.id }).from(corpCardUsages).where(eq(corpCardUsages.corpCardId, fx.cardId))).toHaveLength(1);
+  });
+
+  it("첫 다시 저장 뒤 낡은 version(1)으로 다시 저장 → `다른 저장이 먼저 됨 · 새로 고침` · 새 견적 외 줄을 보내도 줄 · 실행가 합 · 카드 사용 그대로(한 트랜잭션)", async () => {
+    const fx = await cardProject();
+    const input: CardUsageInput = { ...usageInput(fx.cardId), total: { currency: "KRW", amount: 50_000, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "out_of_quote", projectId: fx.projectId, itemName: "현장 다과" };
+    const created = await createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input));
+    const lineId = created.quoteLineId ?? "";
+    const first = resaveInput(fx, created.id, created.version, lineId, 45_000, "1차 다시 저장");
+    await updateCardUsage(fx.pm, first, await precheckCardUsageUpdate(fx.pm, first));
+    const linesAfterFirst = await lineCount(fx.revisionId);
+    const sumAfterFirst = await executionSum(fx.revisionId);
+
+    // 낡은 기록(version 1) — 같은 줄 id로 보내도, 견적 외 비용 새 줄로 보내도 거부된다.
+    const staleLine = resaveInput(fx, created.id, 1, lineId, 40_000, "낡은 다시 저장");
+    const staleOut: CardUsageUpdateInput = { ...input, total: { currency: "KRW", amount: 40_000, fxRate: 1 }, id: created.id, version: 1 };
+    for (const stale of [staleLine, staleOut]) {
+      const error = await caught(updateCardUsage(fx.pm, stale, await precheckCardUsageUpdate(fx.pm, stale)));
+      expect(error).toBeInstanceOf(CardUsageRejectedError);
+      expect((error as Error).message).toBe("다른 저장이 먼저 됨 · 새로 고침");
+    }
+
+    const [usage] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, created.id));
+    expect(usage).toMatchObject({ version: 2, quoteLineId: lineId, totalAmountKrw: 45_000, memo: "1차 다시 저장" });
+    expect(await outOfQuoteLines(fx.revisionId)).toEqual([{ id: lineId, executionAmountKrw: 50_000 }]);
+    expect(await lineCount(fx.revisionId)).toBe(linesAfterFirst);
+    expect(await executionSum(fx.revisionId)).toBe(sumAfterFirst);
+  });
+});
+
+// ── 07.1-11 D-7112 · U-14 · W12: 보관된 카드 표시 `{이름} (보관) · {발급사} {뒤4자리}` · 카드 거르개 옵션 ─────────
+
+type ArchiveFx = { staff: Viewer; teamId: string; issuer: string; active: string; archived: string; emptyArchived: string };
+
+// 직원 한 명의 개인 카드 셋 — 법인1(활성) · 법인2(사용 뒤 보관) · 법인3(사용 없이 보관). 발급사는 전역 UNIQUE라 접미사.
+async function archiveFx(): Promise<ArchiveFx> {
+  const team = await makeTeam();
+  const staff = await makePerson("보관카드직원", DEFAULT_ROLE_ID, team.name);
+  const issuer = `신한-${randomUUID().slice(0, 8)}`;
+  const make = async (label: string, numberLast4: string) => {
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label, kind: "personal", holderUserId: staff.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    return card.id;
+  };
+  const active = await make("법인1", "1234");
+  const archived = await make("법인2", "5678");
+  const emptyArchived = await make("법인3", "9012");
+  return { staff, teamId: team.id, issuer, active, archived, emptyArchived };
+}
+
+async function usageOn(viewer: Viewer, corpCardId: string): Promise<string> {
+  const input = usageInput(corpCardId);
+  return (await createCardUsage(viewer, input, await precheckCardUsage(viewer, input))).id;
+}
+
+async function archiveCard(cardId: string): Promise<void> {
+  await db.update(corpCards).set({ archivedAt: new Date(), archivedBy: SYSTEM_VIEWER.id }).where(eq(corpCards.id, cardId));
+}
+
+function thisMonthList(viewer: Viewer) {
+  return listCardUsages(viewer, { month: seoulToday().slice(0, 7) }, seoulToday());
+}
+
+describe("[07.1-11 D-7112 · W12] 보관 카드 표시 · 거르개 옵션", () => {
+  it("보관된 카드의 사용 행 · 수정 `카드` 줄 = `법인2 (보관) · {발급사} 5678` · 보관 안 된 카드는 `법인1 · {발급사} 1234` 그대로", async () => {
+    const fx = await archiveFx();
+    const activeUsage = await usageOn(fx.staff, fx.active);
+    const archivedUsage = await usageOn(fx.staff, fx.archived);
+    await archiveCard(fx.archived);
+
+    const { rows } = await thisMonthList(fx.staff);
+    expect(rows.find((row) => row.id === activeUsage)?.cardLabel).toBe(`법인1 · ${fx.issuer} 1234`);
+    expect(rows.find((row) => row.id === archivedUsage)?.cardLabel).toBe(`법인2 (보관) · ${fx.issuer} 5678`);
+    expect((await loadCardUsageForEdit(fx.staff, archivedUsage))?.usage.cardText).toBe(`법인2 (보관) · ${fx.issuer} 5678`);
+    expect((await loadCardUsageForEdit(fx.staff, activeUsage))?.usage.cardText).toBe(`법인1 · ${fx.issuer} 1234`);
+  });
+
+  it("새 사용 등록 카드 고르기에는 보관 카드가 없다(지금 동작 회귀)", async () => {
+    const fx = await archiveFx();
+    await usageOn(fx.staff, fx.archived);
+    await archiveCard(fx.archived);
+    await archiveCard(fx.emptyArchived);
+    const ids = (await cardOptionsForUsage(fx.staff, seoulToday())).map((option) => option.id);
+    expect(ids).toContain(fx.active);
+    expect(ids).not.toContain(fx.archived);
+    expect(ids).not.toContain(fx.emptyArchived);
+  });
+
+  it("거르개 옵션 = 보관 안 된 카드 → 범위 안 살아 있는 사용이 있는 보관 카드(끝 · `(보관)`) — 사용 없는 보관 카드 옵션 0 · 사용이 보관된 것뿐이면 옵션 0", async () => {
+    const fx = await archiveFx();
+    await usageOn(fx.staff, fx.archived);
+    const onlyArchivedUsage = await usageOn(fx.staff, fx.emptyArchived);
+    await archiveUsage(onlyArchivedUsage, fx.staff.id);
+    await archiveCard(fx.archived);
+    await archiveCard(fx.emptyArchived);
+
+    const { cardChoices } = await thisMonthList(fx.staff);
+    expect(cardChoices.map((card) => card.label)).toEqual([`법인1 · ${fx.issuer} 1234`, `법인2 (보관) · ${fx.issuer} 5678`]);
+    expect(cardChoices.map((card) => card.id)).toEqual([fx.active, fx.archived]);
+  });
+
+  it("범위 own — 범위 밖(남의 카드 · 남의 등록) 보관 카드 옵션 0 · 내가 등록한 남의 보관 카드 사용은 목록 행과 같이 옵션에 든다", async () => {
+    const fx = await archiveFx();
+    const other = await archiveFx();
+    await usageOn(other.staff, other.archived);
+    await archiveCard(other.archived);
+    // 다른 사람 카드(other.active)에 내가 등록한 사용(경영관리 등록 꼴 — 저장소 직접) → 그 카드를 보관.
+    await insertCardUsage(
+      SYSTEM_VIEWER,
+      {
+        number: `K-${randomUUID()}`,
+        corpCardId: other.active,
+        usedOn: seoulToday(),
+        merchantVendorId: null,
+        totalCurrency: "KRW",
+        totalForeignAmount: null,
+        totalFxRate: "1",
+        totalAmountKrw: 10_000,
+        supplyKrw: 9_091,
+        vatKrw: 909,
+        evidenceTypeCode: "card_receipt",
+        linkKind: "team_cost",
+        quoteLineId: null,
+        teamId: other.teamId,
+        usedByUserId: other.staff.id,
+        registeredBy: fx.staff.id,
+        registeredVia: "proxy",
+        purchaseRequestId: null,
+        memo: null,
+      },
+      db,
+    );
+    await archiveCard(other.active);
+
+    const { rows, cardChoices } = await thisMonthList(fx.staff);
+    const ids = cardChoices.map((card) => card.id);
+    expect(ids).not.toContain(other.archived);
+    expect(rows.some((row) => row.cardId === other.active)).toBe(true);
+    expect(ids).toContain(other.active);
+    expect(cardChoices.find((card) => card.id === other.active)?.label).toBe(`법인1 (보관) · ${other.issuer} 1234`);
+  });
+
+  it("보관된 카드의 구매 완료 건 카드 고침 → 로그 요약 `카드 고침 · {이전} → {새}`의 이전 글자에 `(보관)`이 없다(E-P2-32 · 로그 글자 불변)", async () => {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `구매처리-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
+    for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value", "quote.amount", "card_usage.value", "card_usage.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    const team = await makeTeam();
+    const buyer = await makePerson("구매담당", role.id, team.name);
+    const oldCard = await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${randomUUID().slice(0, 6)}`, numberLast4: "1111", label: "공용 옛 카드", kind: "shared" });
+    const newCard = await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${randomUUID().slice(0, 6)}`, numberLast4: "2222", label: "공용 새 카드", kind: "shared" });
+    const [request] = await db
+      .insert(purchaseRequests)
+      .values({ number: `T-${randomUUID().slice(0, 12)}`, linkKind: "team_cost", requestedBy: buyer.id, itemName: "팀 비품", estimateCurrency: "KRW", estimateForeignAmount: null, estimateFxRate: "1", estimateAmountKrw: 10_000 })
+      .returning({ id: purchaseRequests.id });
+    const usage = await insertCardUsage(
+      SYSTEM_VIEWER,
+      {
+        number: `K-${randomUUID()}`,
+        corpCardId: oldCard.id ?? "",
+        usedOn: seoulToday(),
+        merchantVendorId: null,
+        totalCurrency: "KRW",
+        totalForeignAmount: null,
+        totalFxRate: "1",
+        totalAmountKrw: 10_000,
+        supplyKrw: 9_091,
+        vatKrw: 909,
+        evidenceTypeCode: "card_receipt",
+        linkKind: "team_cost",
+        quoteLineId: null,
+        teamId: team.id,
+        usedByUserId: buyer.id,
+        registeredBy: buyer.id,
+        registeredVia: "purchase",
+        purchaseRequestId: request?.id ?? null,
+        memo: null,
+      },
+      db,
+    );
+    await archiveCard(oldCard.id ?? "");
+
+    const input: CardUsageUpdateInput = { ...usageInput(newCard.id ?? ""), id: usage.id, version: usage.version };
+    await updateCardUsage(buyer, input, await precheckCardUsageUpdate(buyer, input));
+    const logs = await db.select().from(actionLog).where(and(eq(actionLog.entityId, usage.id), eq(actionLog.actionType, "document_update")));
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.detail).toMatchObject({ summary: `카드 고침 · 공용 옛 카드 · ${oldCard.issuer} 1111 → 공용 새 카드 · ${newCard.issuer} 2222` });
   });
 });

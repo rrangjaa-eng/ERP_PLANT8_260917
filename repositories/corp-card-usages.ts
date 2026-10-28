@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
@@ -48,6 +48,8 @@ export type CardUsageListRow = CardUsageRow & {
   cardLabel: string;
   cardIssuer: string;
   cardLast4: string;
+  /** 07.1-11 D-7112: 카드가 보관됐으면 그 시각 — 표시 이름에 `(보관)`을 붙인다. */
+  cardArchivedAt: Date | null;
   merchantName: string | null;
   teamName: string | null;
   registeredByName: string;
@@ -102,6 +104,7 @@ export async function listCardUsageRows(
       cardLabel: corpCards.label,
       cardIssuer: corpCards.issuer,
       cardLast4: corpCards.numberLast4,
+      cardArchivedAt: corpCards.archivedAt,
       merchantName: vendors.name,
       teamName: teams.name,
       registeredByName: users.name,
@@ -138,6 +141,7 @@ export async function listCardUsageRows(
     cardLabel: row.cardLabel,
     cardIssuer: row.cardIssuer,
     cardLast4: row.cardLast4,
+    cardArchivedAt: row.cardArchivedAt,
     merchantName: row.merchantName,
     teamName: row.teamName,
     registeredByName: row.registeredByName,
@@ -161,6 +165,25 @@ export async function isCardUsageInListScope(viewer: Viewer, input: { id: string
     .where(and(eq(corpCardUsages.id, input.id), scopeCondition(input.scope)))
     .limit(1);
   return row !== undefined;
+}
+
+// 07.1-11 W12(E-P2-33 · CG-06): 카드 거르개 끝에 붙일 보관 카드 — 그 카드의 살아 있는 사용이 목록 범위(scopeCondition) 안에 하나라도 있을 때만.
+// 행마다 질의하지 않고 EXISTS 하나 — 범위 판정은 목록 행과 같은 조건 함수(등록자 갈래 포함).
+export async function listArchivedCardsWithUsages(
+  viewer: Viewer,
+  scope: CardUsageScope,
+  tx: DbOrTx = db,
+): Promise<{ id: string; label: string; issuer: string; numberLast4: string }[]> {
+  void viewer;
+  const usedInScope = tx
+    .select({ id: corpCardUsages.id })
+    .from(corpCardUsages)
+    .where(and(eq(corpCardUsages.corpCardId, corpCards.id), isNull(corpCardUsages.archivedAt), scopeCondition(scope)));
+  return tx
+    .select({ id: corpCards.id, label: corpCards.label, issuer: corpCards.issuer, numberLast4: corpCards.numberLast4 })
+    .from(corpCards)
+    .where(and(isNotNull(corpCards.archivedAt), exists(usedInScope)))
+    .orderBy(asc(corpCards.issuer), asc(corpCards.numberLast4), asc(corpCards.id));
 }
 
 // 06-25: 카드 전표 완료 통보 · 삭제 · 되돌리기 트랜잭션이 카드 사용 행 하나를 잠근다(보관된 건도 — 파일은 건과 함께 남는다). 지출결의 행은 잠그지 않는다(X-2).
@@ -239,6 +262,7 @@ export type CardUsageForWrite = CardUsageRow & {
   cardLabel: string;
   cardIssuer: string;
   cardLast4: string;
+  cardArchivedAt: Date | null;
   cardKind: string;
   cardHolderUserId: string | null;
   cardTeamId: string | null;
@@ -258,6 +282,7 @@ export async function findCardUsageForWrite(viewer: Viewer, id: string, opts: { 
       cardLabel: corpCards.label,
       cardIssuer: corpCards.issuer,
       cardLast4: corpCards.numberLast4,
+      cardArchivedAt: corpCards.archivedAt,
       cardKind: corpCards.kind,
       cardHolderUserId: corpCards.holderUserId,
       cardTeamId: corpCards.teamId,

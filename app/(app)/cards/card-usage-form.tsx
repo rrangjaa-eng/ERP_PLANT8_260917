@@ -444,10 +444,14 @@ export function CardUsageForm({
   });
 
   // 파일 올리기가 실패해 열려 있는 저장된 새 건 — 첫 저장 뒤 고친 값을 그 건에 저장하고 수정 패널로 간다.
+  // 07.1-11 PC1: 옮겨 가는 동안은 처리 중으로 둔다 — 그사이 제출이 낡은 version으로 다시 저장하지 않고, 수정 패널이 서버 최신 값으로 그린다.
+  const [movingToEdit, setMovingToEdit] = useState(false);
   const resave = useAction(updateCardUsageAction, {
     onSuccess: () => {
       const savedId = savedSlipIdRef.current;
-      if (savedId && slipEditHref) router.replace(`${slipEditHref}${savedId}`, { scroll: false });
+      if (!savedId || !slipEditHref) return;
+      setMovingToEdit(true);
+      router.replace(`${slipEditHref}${savedId}`, { scroll: false });
     },
   });
   // 06.1-09 S8 — 성공하면 증빙 목록(짝 없는 카드 줄)으로 돌아가 토스트(그 줄은 빠진다).
@@ -459,7 +463,7 @@ export function CardUsageForm({
   const { execute: executeCreate, result: createResult, isExecuting: creating, reset: resetCreate } = create;
   const active = purchase ? complete : edit ? update : null;
   const result = active ? active.result : resave.result.serverError || resave.result.validationErrors ? resave.result : createResult;
-  const isExecuting = fromEvidence ? proxyCreate.isExecuting : active ? active.isExecuting : creating || resave.isExecuting;
+  const isExecuting = fromEvidence ? proxyCreate.isExecuting : active ? active.isExecuting : creating || resave.isExecuting || movingToEdit;
   const proxyError = fromEvidence ? proxyCreate.result.serverError : undefined;
   const { reset: resetProxy } = proxyCreate;
   const { reset: resetResave } = resave;

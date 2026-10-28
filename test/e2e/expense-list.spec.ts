@@ -441,6 +441,19 @@ test.describe("목록 팀 · 월 · 내 것만 (07.1-09 W11)", () => {
     await page.context().close();
   });
 
+  test("옵션에 없는 ?month=에 0건 — 걸린 필터가 없으니 `필터 지우기`가 아니라 기본 빈 상태가 나온다(#320 P2)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await submitTeamCost(fx.pm.viewer, `옵션밖월빈-${randomUUID().slice(0, 4)}`);
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/expenses?status=${encodeURIComponent("승인")}&month=2020-01`);
+    await waitForHydration(filterForm(page).getByRole("combobox", { name: "상태" }));
+    const empty = page.locator('[data-ui="empty-state"]');
+    await expect(empty).toContainText("승인된 지출결의가 없습니다");
+    await expect(empty).not.toContainText("조건에 맞는 건이 없습니다");
+    await expect(empty.getByRole("link", { name: "필터 지우기" })).toHaveCount(0);
+    await page.context().close();
+  });
+
   test("내 것만 — 기안자가 나인 행만 남는다(팀장은 자기 문서만, 팀원 문서는 빠진다)", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const pmDoc = await submitTeamCost(fx.pm.viewer, `팀원문서-${randomUUID().slice(0, 4)}`);

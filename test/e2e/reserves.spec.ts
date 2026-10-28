@@ -79,7 +79,9 @@ function ledger(page: Page): Locator {
 
 // 격자의 데이터 행(그룹 머리글 행·폰 접힌 줄 제외).
 function dataRows(page: Page): Locator {
-  return page.locator('tbody tr:has(> td[role="gridcell"])');
+  // CSS :has(> …)는 Playwright 선택기 엔진이 행마다 따로 풀어서 300줄에서 호출 한 번이 수 초~16초다(실측: 브라우저 querySelectorAll은 52ms).
+  // XPath는 브라우저가 한 번에 푼다 — 같은 집합(tbody의 직계 tr 중 직계 gridcell td가 있는 행).
+  return page.locator('xpath=//tbody/tr[./td[@role="gridcell"]]');
 }
 
 // 읽기 표의 데이터 행(그룹 머리글 행 제외) — 날짜로 찾는다.

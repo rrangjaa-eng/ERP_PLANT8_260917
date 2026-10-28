@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { users } from "@/db/schema";
+import { actionLog, users } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { recordAction } from "@/domain/action-log/record";
 import { queryActionLog, pruneActionLog, parseActionLogDateBoundary, ForbiddenError } from "@/domain/action-log";
-import { exportActionLog } from "@/domain/action-log/export";
+import { ActionLogExportTooManyError, exportActionLog } from "@/domain/action-log/export";
 import { createVendor } from "@/domain/vendors";
 
 function uniqueDocumentId(): string {
@@ -249,4 +249,28 @@ describe("action-log 조회·필터·정리 (ADMN-10·OPS-05, 실제 Postgres)",
     const second = await queryActionLog(SYSTEM_VIEWER, { documentId: doc });
     expect(second.map((row) => row.seq)).toEqual(first.map((row) => row.seq));
   });
+});
+
+// 07.1-05 D-7113 — 실제 DB에서 5,000건 상한. 개수는 queryActionLog 결과 길이(화면 page.tsx가 버튼에 넘기는 rows.length와 같은 집합).
+describe("exportActionLog — 5,000건 상한 (07.1-05, 실제 Postgres)", () => {
+  async function insertRows(documentId: string, count: number): Promise<void> {
+    const values = Array.from({ length: count }, () => ({ actionType: "settings_change", entity: "limit_fixture", entityId: documentId, documentId, detail: {} }));
+    for (let at = 0; at < values.length; at += 1000) await db.insert(actionLog).values(values.slice(at, at + 1000));
+  }
+
+  it("거른 결과 5,001건이면 거부 · excel_export 로그 0", async () => {
+    const doc = uniqueDocumentId();
+    await insertRows(doc, 5_001);
+    const before = await queryActionLog(SYSTEM_VIEWER, { actionType: "excel_export" });
+    await expect(exportActionLog(SYSTEM_VIEWER, { documentId: doc })).rejects.toBeInstanceOf(ActionLogExportTooManyError);
+    const after = await queryActionLog(SYSTEM_VIEWER, { actionType: "excel_export" });
+    expect(after.length).toBe(before.length);
+  }, 120_000);
+
+  it("거른 결과 5,000건은 받는다", async () => {
+    const doc = uniqueDocumentId();
+    await insertRows(doc, 5_000);
+    const file = await exportActionLog(SYSTEM_VIEWER, { documentId: doc });
+    expect(file.body.split("\r\n").length).toBe(5_002);
+  }, 120_000);
 });

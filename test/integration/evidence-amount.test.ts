@@ -8,6 +8,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { approveDocument } from "@/domain/approvals";
 import { attachEvidenceRecord, detachEvidenceRecord } from "@/domain/evidence-records/attach";
+import { queryActionLog } from "@/domain/action-log";
 import { getEvidenceDetail, getEvidenceRecord } from "@/domain/evidence-records";
 import {
   CARD_USAGE_AMOUNT_LOCKED,
@@ -399,8 +400,22 @@ describe("확인 필요 풀기 (RP-6 · DA-13)", () => {
     expect(await clearRecordNeedsCheck(manager, { id: recordId, version: 1 })).toEqual({ id: recordId, version: 2 });
     expect(await recordRow(recordId)).toMatchObject({ needsCheck: null, version: 2, supplyKrw: 1_000_000 });
     expect((await getEvidenceRecord(manager, recordId))?.statusWord).toBe("미공개");
-    expect(await logsOf(recordId, "document_update")).toHaveLength(1);
+    // 07.1-05 D-7115 — 풀기는 끌 수 없는 전용 종류로 남는다(document_update 아님). 무엇을 풀었는지는 detail.needsCheck.
+    expect(await logsOf(recordId, "document_update")).toHaveLength(0);
+    const cleared = await logsOf(recordId, "evidence_record_needs_check_clear");
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0]?.detail).toEqual({ needsCheck: "사업자번호 틀림 · 거래처 확인" });
     expect(await logsOf(recordId, "evidence_record_amount_change")).toHaveLength(0);
+  });
+
+  it("07.1-05 D-7115 이전에 document_update로 쌓인 풀기 행은 조회에서 그대로 보인다(옛 종류 이름 · 마이그레이션 없음)", async () => {
+    const manager = await createIntakeManager();
+    const recordId = await record(manager);
+    await db.insert(actionLog).values({ actorId: manager.id, actionType: "document_update", entity: "evidence_record", entityId: recordId, documentId: recordId, detail: { change: "evidence_record_needs_check_clear", needsCheck: "옛 사유" } });
+    const rows = await queryActionLog(SYSTEM_VIEWER, { documentId: recordId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.actionType).toBe("document_update");
+    expect(rows[0]?.actionTypeLabel).toBe("문서 수정");
   });
 
   it("공급가가 함께 오면 한 트랜잭션에서 확인 필요 null + 공급가 · 세액 + 기록 두 줄 · 붙은 문서가 잠겼으면 둘 다 안 바뀜", async () => {
@@ -409,7 +424,8 @@ describe("확인 필요 풀기 (RP-6 · DA-13)", () => {
     await setNeedsCheck(recordId, "사업자번호 틀림 · 거래처 확인");
     await clearRecordNeedsCheck(manager, { id: recordId, version: 1, supplyKrw: 1_050_000 });
     expect(await recordRow(recordId)).toMatchObject({ needsCheck: null, supplyKrw: 1_050_000, vatKrw: 50_000, version: 2 });
-    expect(await logsOf(recordId, "document_update")).toHaveLength(1);
+    expect(await logsOf(recordId, "document_update")).toHaveLength(0);
+    expect(await logsOf(recordId, "evidence_record_needs_check_clear")).toHaveLength(1);
     expect(await logsOf(recordId, "evidence_record_amount_change")).toHaveLength(1);
 
     const fx = await setupExpenseProject();

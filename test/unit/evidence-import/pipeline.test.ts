@@ -192,6 +192,17 @@ describe("롯데 트레이서 — xlsx · csv(E39)", () => {
 });
 
 describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는다(E9 · P2-A4)", () => {
+  // 07.1-12 D-7114(PF11 · W15): 0바이트는 형식 판정보다 먼저 「빈 파일」 — 확장자(CSV · xlsx)와 무관하게 바이트가 없다.
+  it("0바이트 → 빈 파일 · 내려받은 파일 그대로", () => {
+    expect(parseWorkbook(new Uint8Array(0))).toMatchObject({ ok: false, kind: "not-excel", headline: "빈 파일 · 내려받은 파일 그대로" });
+  });
+
+  it("내용 있는 PDF 바이트(머리에 이진 스트림) → 엑셀·CSV 파일 아님(지금 문구 그대로)", () => {
+    // 압축 스트림의 NUL 바이트가 머리 안에 있으면 sniff가 unknown으로 본다 — 0바이트 판정이 이 갈래를 바꾸지 않는다.
+    const pdf = Uint8Array.from(Buffer.from("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj << /Length 4 >> stream\n\x78\x9c\x00\x01\nendstream\n%%EOF\n", "latin1"));
+    expect(parseWorkbook(pdf)).toMatchObject({ ok: false, kind: "not-excel", headline: "엑셀·CSV 파일 아님 · 내려받은 파일 그대로" });
+  });
+
   it("앞 2KB로 자른 바이트 → 엑셀·CSV 파일 아님", () => {
     const bytes = lotteFixture(LOTTE_ROWS).subarray(0, 2048);
     expect(parseWorkbook(bytes)).toMatchObject({ ok: false, kind: "not-excel", headline: "엑셀·CSV 파일 아님 · 내려받은 파일 그대로" });

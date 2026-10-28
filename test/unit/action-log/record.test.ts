@@ -262,3 +262,18 @@ describe("예산 직접 수정 행동 유형 (07-24 D-729)", () => {
     expect((ACTION_TYPE_LABELS as Record<string, string>).budget_manual_change).toBe("예산 직접 수정");
   });
 });
+
+// 07.1-05(D-7115 · PX1): 「확인 필요」 풀기는 document_update(설정으로 끌 수 있음)가 아니라 끌 수 없는 전용 종류로 남는다.
+describe("evidence_record_needs_check_clear (07.1-05 D-7115)", () => {
+  it("세 배열에 함께 있고 라벨이 「증빙 기록 확인 필요 풀기」이다", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("evidence_record_needs_check_clear");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("evidence_record_needs_check_clear");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).evidence_record_needs_check_clear).toBe("증빙 기록 확인 필요 풀기");
+  });
+
+  it("행동 로그 설정이 꺼져 있어도 기록된다", async () => {
+    const appendActionLog = vi.fn().mockResolvedValue(undefined);
+    await recordAction(viewer, { actionType: "evidence_record_needs_check_clear", entity: "evidence_record", entityId: "r1" }, { appendActionLog, isActionTypeEnabled: () => Promise.resolve(false) });
+    expect(appendActionLog).toHaveBeenCalledTimes(1);
+  });
+});

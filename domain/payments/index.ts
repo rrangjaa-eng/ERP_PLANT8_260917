@@ -17,7 +17,7 @@ import { pickTaxDates, type PickedTaxDates, type TaxLinePart } from "@/domain/ex
 import { lineExecution, listNumberedByLineage, remainingText } from "@/domain/expenses";
 import { resolveLinkedDocumentsByLineage } from "@/domain/quotes/lineage";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
-import { hasEvidence } from "@/domain/evidence/has-evidence";
+import { evidenceSourcesOf, hasEvidence } from "@/domain/evidence/has-evidence";
 import {
   AMOUNT_HIDDEN,
   CANCEL_REASON_REQUIRED,
@@ -52,7 +52,7 @@ import { loadPayCalendar, loadPaySchedules } from "@/domain/payments/pay-schedul
 import { payOffWeekdayText, thisWeekPayDate } from "@/domain/payments/pay-schedule";
 import { evidenceGateInputs, evidenceStampOf, loadPrepaidDueDays, resolveEvidenceStatus, SupplyCorrectionCapError, correctedSupplyColumns, type EvidenceStatus } from "@/domain/evidence-reviews";
 import { prepaidDueInfo, type PrepaidDue } from "@/domain/evidence-reviews/prepaid";
-import { findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repositories/expense-evidence-reviews";
+import { deleteReviewByExpense, findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repositories/expense-evidence-reviews";
 import { listAliveByOwners } from "@/repositories/files";
 import { findLiveLineBySourceExpense, findQuoteLineById, listLineageLinesByProjects } from "@/repositories/quote-lines";
 import { findProjectById, lockProjectForWrite } from "@/repositories/projects";
@@ -640,6 +640,19 @@ export async function cancelExpensePayment(
     const version = await bumpExpenseVersion(viewer, { expenseId: locked.id, expectedVersion: locked.version, updatedBy: viewer.id }, tx);
     if (version === null) throw new PaymentConflictError(conflict);
     const adjustment = await releaseTaxAdjustmentLine(viewer, { liveLine: relinked && relinked.archivedAt === null ? relinked : null }, tx);
+    // D-7106(E-P2-36): 지급 뒤 확인 필요가 선 기록이 붙은 문서는 취소하면 확인 기록을 푼다(다시 확인해야 지급). 사유는 가리지 않는다 — 자동 확인 조건
+    // (autoConfirmEligible)과 같은 잣대 needsCheckCount. 승인 뒤 풀기 훅은 부르지 않는다 — 훅이 문서 version을 한 번 더 올리려다 위에서 이미 올린
+    // version과 어긋나 취소 전체가 되돌아간다. 문서 version은 위 한 번으로 끝난다.
+    if (((await evidenceSourcesOf(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [locked.id] }, tx)).get(locked.id)?.needsCheckCount ?? 0) > 0) {
+      const reviewReleased = await deleteReviewByExpense(viewer, locked.id, tx);
+      if (reviewReleased) {
+        await recordAction(
+          viewer,
+          { actionType: "document_update", entity: "expense", entityId: locked.id, documentId: locked.id, detail: { field: "evidenceReview", status: "released", reason: "payment_cancel", reviewReleased } },
+          { tx },
+        );
+      }
+    }
     await recordAction(
       viewer,
       {

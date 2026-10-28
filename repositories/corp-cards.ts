@@ -93,20 +93,27 @@ export async function updateCorpCardOwner(
     .where(eq(corpCards.id, id));
 }
 
-export async function setCorpCardActive(viewer: Viewer, id: string, active: boolean): Promise<void> {
-  await db.update(corpCards).set({ active, updatedAt: new Date() }).where(eq(corpCards.id, id));
+// 07.1-12(E-P2-37): tx를 주면 그 트랜잭션 안에서 — 카드 켜기 · 복원이 다시 잇기와 한 tx로 되거나 함께 안 된다(기본은 db).
+// 보관된 카드는 건드리지 않는다(#318 P3 — 읽은 뒤 보관된 경합 포함). 실제로 바꾼 행이 있으면 참.
+export async function setCorpCardActive(viewer: Viewer, id: string, active: boolean, tx: DbOrTx = db): Promise<boolean> {
+  const rows = await tx
+    .update(corpCards)
+    .set({ active, updatedAt: new Date() })
+    .where(and(eq(corpCards.id, id), isNull(corpCards.archivedAt)))
+    .returning({ id: corpCards.id });
+  return rows.length > 0;
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts와 같은 패턴).
-export async function setCorpCardArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+export async function setCorpCardArchived(viewer: Viewer, id: string, value: boolean, tx: DbOrTx = db): Promise<boolean> {
   // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
   const rows = value
-    ? await db
+    ? await tx
         .update(corpCards)
         .set({ archivedAt: new Date(), archivedBy: viewer.id })
         .where(and(eq(corpCards.id, id), isNull(corpCards.archivedAt)))
         .returning({ id: corpCards.id })
-    : await db
+    : await tx
         .update(corpCards)
         .set({ archivedAt: null, archivedBy: null })
         .where(and(eq(corpCards.id, id), isNotNull(corpCards.archivedAt)))

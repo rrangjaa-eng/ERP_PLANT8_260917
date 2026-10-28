@@ -1,5 +1,6 @@
 import { businessNoDigitsOf, cellDate, cellKrw, cellText, isBlankRow } from "@/domain/evidence-import/cells";
 import { columnIndex } from "@/domain/evidence-import/detect";
+import { companyNoOf, isHeaderRow } from "@/domain/evidence-import/formats/hometax-common";
 import { sumKrw } from "@/domain/money";
 import type { DetectResult, FormatReadResult, FormatRule, LineError, ParsedLine, Rows } from "@/domain/evidence-import/types";
 
@@ -15,17 +16,6 @@ const TOTAL_LABEL = "총 공급가액";
 const APPROVAL_NO = /^\d{8}-\d{8}-[0-9a-z]{8}$/;
 // 수정 계산서의 분류 낱말은 견본 구조에 적혀 있지 않다 — 음수 줄 비고 괄호 안의 26자 승인번호만 원 승인번호로 꺼낸다(PA-INV-ORIG).
 const ORIGINAL_APPROVAL_NO = /당초\s*승인번호\s*\((\d{8}-\d{8}-[0-9a-z]{8})\)/;
-
-// 0행 `사업자 등록번호` 다음 칸 — 내려받은 사람의 회사. 숫자 10자리가 아니면 null(E18 — 세금계산서 서식과 같은 규칙).
-function companyNoOf(rows: Rows): string | null {
-  const row = rows[0] ?? [];
-  const at = row.findIndex((cell) => cellText(cell).replaceAll(/\s/g, "") === "사업자등록번호");
-  return at < 0 ? null : businessNoDigitsOf(row[at + 1]);
-}
-
-function isHeaderRow(row: readonly unknown[]): boolean {
-  return cellText(row[0]) === "작성일자" && cellText(row[1]) === "승인번호";
-}
 
 // 띠가 계산서(세금계산서 아님) **그리고** `세액` 칸이 없을 때만 — 하나만 맞으면 모르는 서식이다. 세금계산서 서식은 거꾸로 둘 다를
 // 요구하므로 두 서식이 서로를 가로채지 않는다(세액 칸 오독 · 면세 오판 방지).

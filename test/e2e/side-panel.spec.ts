@@ -344,14 +344,24 @@ test.describe("거래처 옆 패널 — PC 1280 (04.6-04)", () => {
     const dialog = panel(page);
     const name = uniqueName("진행");
     await dialog.locator("#name").fill(name);
+    // 시간으로 붙들지 않는다 — 시험이 풀어 줄 때까지 POST를 쥔다(느린 러너에서도 「진행 중」 단언이 같은 창 안에 든다).
+    let releasePost!: () => void;
+    const postGate = new Promise<void>((resolve) => {
+      releasePost = resolve;
+    });
+    let postHeld = false;
     await page.route(
       (url) => url.pathname === "/admin/vendors",
       async (route) => {
-        if (route.request().method() === "POST") await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (route.request().method() === "POST") {
+          postHeld = true;
+          await postGate;
+        }
         await route.continue();
       },
     );
     await page.keyboard.press("Control+Enter");
+    await expect.poll(() => postHeld).toBe(true);
     const submit = dialog.getByRole("button", { name: "거래처 등록" });
     await expect(submit).toHaveAttribute("aria-disabled", "true");
     await expect(submit).toContainText("…");
@@ -362,7 +372,9 @@ test.describe("거래처 옆 패널 — PC 1280 (04.6-04)", () => {
     await expect(dialog).toBeVisible();
     await expect(dialog.locator("#name")).toHaveValue(name);
     await expect(page.getByRole("dialog", { name: "입력 버리기" })).toHaveCount(0);
-    await expect(dialog.getByRole("status")).toBeVisible();
+    // 결과 한 줄(status)은 응답이 온 뒤에야 생긴다 — 예전 단언은 1500ms가 지난 뒤에 우연히 맞았다. 이제 풀어 준 뒤 기다린다.
+    releasePost();
+    await expect(dialog.getByRole("status")).toHaveText("거래처 등록됨");
   });
 
   test("Ctrl+Enter를 연타해도 거래처가 하나만 생긴다(D7 · R15-ii)", async ({ page }) => {

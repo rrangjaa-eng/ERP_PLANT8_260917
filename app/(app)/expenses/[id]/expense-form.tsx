@@ -178,6 +178,15 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
   const [fxRaw, setFxRaw] = useState(String(data.fxRate));
   const hopeDateRef = useRef<HTMLInputElement>(null);
   const evidenceDateRef = useRef<HTMLInputElement>(null);
+  // 07.1-16(W10 C-91 · D-7123): 붙은 증빙 기록이 있으면 세금 증빙일은 서버가 가장 이른 발행일로 정한다 — 칸을 그리지 않고 저장에도 싣지 않는다
+  // (저장된 수동 값은 지우지 않는다 · 모두 떼면 그 값으로 칸이 다시 선다).
+  const evidenceDateShown = linkedEvidenceCount === 0;
+  const evidenceDateFocused = useRef(false);
+  useEffect(() => {
+    if (evidenceDateShown || !evidenceDateFocused.current) return;
+    evidenceDateFocused.current = false;
+    document.querySelector<HTMLElement>("[data-evidence-pick]")?.focus();
+  }, [evidenceDateShown]);
   const [prepaid, setPrepaid] = useState(data.prepaid);
   const [prepaidReason, setPrepaidReason] = useState(data.prepaidReason ?? "");
   const [evidenceDate, setEvidenceDate] = useState(data.evidenceDate ?? "");
@@ -483,7 +492,7 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
     return {
       prepaid,
       prepaidReason: prepaid ? prepaidReason.trim() || null : null,
-      evidenceDate: evidenceDateRef.current?.validity.badInput ? null : evidenceDate || null,
+      ...(evidenceDateShown ? { evidenceDate: evidenceDateRef.current?.validity.badInput ? null : evidenceDate || null } : {}),
     };
   }
 
@@ -1208,19 +1217,27 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
           </Form.Field>
         ) : null}
 
-        <Form.Field id="evidenceDate" label="증빙일" width="short">
-          <input
-            id="evidenceDate"
-            ref={evidenceDateRef}
-            type="date"
-            value={evidenceDate}
-            onChange={(event) => setEvidenceDate(event.target.value)}
-            className={styles.textInput}
-            aria-invalid={errors.evidenceDate ? true : undefined}
-            aria-describedby={errors.evidenceDate ? "evidenceDate-error" : undefined}
-          />
-          {errors.evidenceDate ? <Form.Error id="evidenceDate-error">{errors.evidenceDate}</Form.Error> : null}
-        </Form.Field>
+        {evidenceDateShown ? (
+          <Form.Field id="evidenceDate" label="증빙일" width="short">
+            <input
+              id="evidenceDate"
+              ref={evidenceDateRef}
+              type="date"
+              value={evidenceDate}
+              onChange={(event) => setEvidenceDate(event.target.value)}
+              onFocus={() => {
+                evidenceDateFocused.current = true;
+              }}
+              onBlur={() => {
+                evidenceDateFocused.current = false;
+              }}
+              className={styles.textInput}
+              aria-invalid={errors.evidenceDate ? true : undefined}
+              aria-describedby={errors.evidenceDate ? "evidenceDate-error" : undefined}
+            />
+            {errors.evidenceDate ? <Form.Error id="evidenceDate-error">{errors.evidenceDate}</Form.Error> : null}
+          </Form.Field>
+        ) : null}
 
         <KvList items={[{ label: "결재선", value: route }]} />
 

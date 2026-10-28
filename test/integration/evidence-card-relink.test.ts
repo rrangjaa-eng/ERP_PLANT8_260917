@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
-import { db } from "@/db/client";
-import { corpCards, corpCardUsages, evidenceRecords } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { db, pool } from "@/db/client";
+import { actionLog, corpCards, corpCardUsages, evidenceRecords } from "@/db/schema";
 import { archive, restore } from "@/domain/archive";
 import { createCorpCard, setCorpCardActive } from "@/domain/corp-cards";
 import { relinkUnknownCardRecords } from "@/domain/evidence-import/card-relink";
@@ -94,5 +94,85 @@ describe("카드 미등록 줄 다시 잇기 (06.1-04 G11)", () => {
 
     const card = await createCorpCard(SYSTEM_VIEWER, input);
     expect(await recordByApproval("66060001")).toMatchObject({ corpCardId: card.id, version: 2 });
+  });
+
+  it("(PE12) 카드 켜기 중 다시 잇기가 실패하면 켜기도 되돌아간다 · 정상이면 미등록 줄이 이어진다", async () => {
+    // 별칭이 맞는 카드 둘이 다 꺼져 있으면 미등록 — 하나를 켜면 활성 하나로 정해진다.
+    const cardId = await addCard("롯데카드", "2222");
+    const otherId = await addCard("롯데", "2222");
+    await setCorpCardActive(SYSTEM_VIEWER, cardId, false);
+    await setCorpCardActive(SYSTEM_VIEWER, otherId, false);
+    const viewer = await createIntakeViewer();
+    expect((await registerFixtureFile(viewer, lotteFixture([{ 승인번호: "10000001" }]))).cardUnknown).toBe(1);
+
+    await expect(setCorpCardActive(SYSTEM_VIEWER, cardId, true, { relinkUnknownCardRecords: () => Promise.reject(new Error("다시 잇기 실패")) })).rejects.toThrow("다시 잇기 실패");
+    expect((await db.select({ active: corpCards.active }).from(corpCards).where(eq(corpCards.id, cardId)))[0]?.active).toBe(false);
+    expect(await recordByApproval("10000001")).toMatchObject({ corpCardId: null, version: 1 });
+
+    await setCorpCardActive(SYSTEM_VIEWER, cardId, true);
+    expect(await recordByApproval("10000001")).toMatchObject({ corpCardId: cardId, version: 2 });
+  });
+
+  async function restoreLogsOf(cardId: string) {
+    return db
+      .select({ seq: actionLog.seq })
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "corp_card"), eq(actionLog.entityId, cardId), eq(actionLog.actionType, "restore")));
+  }
+
+  it("(PE12 · E-P2-37) 보관 복원 중 다시 잇기가 실패하면 복원도 되돌아간다(보관 그대로 · 복원 로그 0) · 정상이면 복원 · 이어짐 · 로그 1", async () => {
+    const cardId = await addCard("롯데카드", "2222");
+    await archive(SYSTEM_VIEWER, "corp_card", cardId);
+    const viewer = await createIntakeViewer();
+    expect((await registerFixtureFile(viewer, lotteFixture([{ 승인번호: "10000001" }]))).cardUnknown).toBe(1);
+
+    await expect(restore(SYSTEM_VIEWER, "corp_card", cardId, { relinkUnknownCardRecords: () => Promise.reject(new Error("다시 잇기 실패")) })).rejects.toThrow("다시 잇기 실패");
+    expect((await db.select({ archivedAt: corpCards.archivedAt }).from(corpCards).where(eq(corpCards.id, cardId)))[0]?.archivedAt).not.toBeNull();
+    expect(await restoreLogsOf(cardId)).toEqual([]);
+    expect(await recordByApproval("10000001")).toMatchObject({ corpCardId: null, version: 1 });
+
+    expect(await restore(SYSTEM_VIEWER, "corp_card", cardId)).toEqual({ restored: true });
+    expect((await db.select({ archivedAt: corpCards.archivedAt }).from(corpCards).where(eq(corpCards.id, cardId)))[0]?.archivedAt).toBeNull();
+    expect(await recordByApproval("10000001")).toMatchObject({ corpCardId: cardId, version: 2 });
+    expect(await restoreLogsOf(cardId)).toHaveLength(1);
+  });
+
+  it("(CG-07) 카드 명세 가져오기가 잠금을 쥐고 미등록 줄을 넣은 채 커밋 전이면 카드 켜기는 기다리고, 커밋 뒤 그 줄까지 잇는다", async () => {
+    // 별칭이 맞는 카드 둘이 다 꺼져 있으면 미등록 — 하나를 켜면 활성 하나로 정해진다.
+    const cardId = await addCard("롯데카드", "2222");
+    const otherId = await addCard("롯데", "2222");
+    await setCorpCardActive(SYSTEM_VIEWER, cardId, false);
+    await setCorpCardActive(SYSTEM_VIEWER, otherId, false);
+    const viewer = await createIntakeViewer();
+    expect((await registerFixtureFile(viewer, lotteFixture([{ 승인번호: "10000001" }]))).cardUnknown).toBe(1);
+    const seed = await recordByApproval("10000001");
+
+    // 가져오기 tx 흉내 — 같은 잠금을 잡고 같은 끝 4자리 「카드 미등록」 줄 하나를 더 넣은 채 커밋하지 않는다.
+    const holder = await pool.connect();
+    let settled = false;
+    let activation: Promise<unknown> = Promise.resolve();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT pg_advisory_xact_lock(hashtextextended('evidence_card_import', 0))");
+      await holder.query("CREATE TEMP TABLE relink_copy ON COMMIT DROP AS SELECT * FROM evidence_records WHERE id = $1", [seed.id]);
+      await holder.query("UPDATE relink_copy SET id = gen_random_uuid(), approval_no = '10000009', dedupe_key = dedupe_key || '#cg07'");
+      await holder.query("INSERT INTO evidence_records SELECT * FROM relink_copy");
+
+      activation = setCorpCardActive(SYSTEM_VIEWER, cardId, true).finally(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(settled, "켜기가 가져오기 잠금을 기다리지 않았다").toBe(false);
+      await holder.query("COMMIT");
+    } catch (error) {
+      await holder.query("ROLLBACK");
+      throw error;
+    } finally {
+      holder.release();
+    }
+    await activation;
+
+    expect(await recordByApproval("10000001")).toMatchObject({ corpCardId: cardId });
+    expect(await recordByApproval("10000009")).toMatchObject({ corpCardId: cardId });
   });
 });

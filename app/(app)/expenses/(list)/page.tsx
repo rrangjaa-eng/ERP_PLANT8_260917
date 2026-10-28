@@ -147,7 +147,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     ...(list.months.length > 0 ? [{ name: "month", label: "월", value: list.months.includes(filters.month) ? filters.month : "", options: [{ value: "", label: "월 전체" }, ...list.months.map((value) => ({ value, label: value }))] }] : []),
   ];
   const teamApplied = list.teams.length === 0 ? filters.team : list.teams.some((option) => option.value === filters.team) ? filters.team : "";
-  const filtered = Boolean(teamApplied || filters.month || filters.mine);
+  const filtered = Boolean(teamApplied || list.months.includes(filters.month) || filters.mine);
 
   const rows: ExpenseTableRow[] = list.groups.flatMap((group) =>
     group.rows.map((row) => ({ ...row, id: row.id ?? "", group: group.label, ...(group.tone ? { groupTone: group.tone } : {}) })),

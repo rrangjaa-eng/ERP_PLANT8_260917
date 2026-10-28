@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { serializeActionLogExportAsCsv, type ActionLogExportRow } from "@/domain/action-log/export";
+import { ActionLogExportTooManyError, exportActionLog, serializeActionLogExportAsCsv, type ActionLogExportRow } from "@/domain/action-log/export";
+import type { ActionLogDto } from "@/domain/action-log";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // RFC4180과 같은 결의 최소 파서 — 이 테스트 전용. 이스케이프된 값을 원래
 // 값으로 되돌려 왕복(직렬화 → 파싱)이 안전한지 확인한다.
@@ -160,5 +162,27 @@ describe("serializeActionLogExportAsCsv (Task 1 결정 A — UTF-8 BOM CSV)", ()
     const file = serializeActionLogExportAsCsv([baseRow({ actorName: "홍길동" })]);
     const parsed = parseCsv(file.body);
     expect(parsed[1]?.[1]).toBe("홍길동");
+  });
+});
+
+// 07.1-05 D-7113 — 행동 로그 `Excel 내보내기` 5,000건 상한. 판정은 직렬화 · 기록 전에 일어난다.
+describe("exportActionLog — 5,000건 상한 (07.1-05)", () => {
+  function rowsOf(count: number): ActionLogDto[] {
+    return Array.from({ length: count }, (_, index) => ({ seq: index, occurredAt: new Date("2026-09-20T14:00:00.000Z"), actionType: "document_create", actionTypeLabel: "문서 생성", detail: {}, actorName: null, actorRoleName: null, entityName: null, documentId: null, entity: null, entityId: null }) as unknown as ActionLogDto);
+  }
+
+  it("5,001행이면 거부 — 기록(recordAction) 0", async () => {
+    let recorded = 0;
+    const error = await exportActionLog(SYSTEM_VIEWER, {}, { queryActionLog: async () => rowsOf(5_001), recordAction: async () => void (recorded += 1) }).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(ActionLogExportTooManyError);
+    expect((error as Error).message).toBe("5,000건 넘음 · 기간이나 필터로 줄이기");
+    expect(recorded).toBe(0);
+  });
+
+  it("5,000행은 받는다 — 기록 한 번", async () => {
+    let recorded = 0;
+    const file = await exportActionLog(SYSTEM_VIEWER, {}, { queryActionLog: async () => rowsOf(5_000), recordAction: async () => void (recorded += 1) });
+    expect(file.body.split("\r\n").length).toBe(5_002);
+    expect(recorded).toBe(1);
   });
 });

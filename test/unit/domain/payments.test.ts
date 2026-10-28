@@ -261,11 +261,11 @@ const ROW: LockedExpense = {
 };
 
 // 사전 조회 결과(loadPaymentInputs와 같은 규칙 — 05 pickTaxDates · pickPaymentAmount).
-function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
+function preOf(row: LockedExpense, hasLiveEvidence: boolean, earliestEvidenceIssuedOn: string | null = null): PaymentInputs {
   const taxRule = SHARED.taxRuleOf(row.evidenceType);
   if (!taxRule || row.supplyAmountKrw === null) throw new Error("테스트 행에 규칙 · 공급가 필요");
   const dates = pickTaxDates(
-    { paidDate: PAY_DATE, scheduledPaymentDate: row.scheduledPaymentDate, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
+    { paidDate: PAY_DATE, scheduledPaymentDate: row.scheduledPaymentDate, evidenceDate: row.evidenceDate, earliestEvidenceIssuedOn, createdAt: row.createdAt },
     { ruleKind: taxRule.ruleKind, codeBasis: taxRule.basisDate, basisWithholding: "payment_date", basisVat: "evidence_date", todayKst: TODAY },
   );
   return {
@@ -279,6 +279,7 @@ function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
     hasLiveEvidence,
     drafterName: "박서연",
     projectCompleted: false,
+    earliestEvidenceIssuedOn,
     amount: pickPaymentAmount({ supplyAmountKrw: row.supplyAmountKrw }),
     tax: { taxRule, dates, recipientCount: row.recipientCount, rates: { ...RATES, asOf: dates.basisDate } },
   };
@@ -326,6 +327,15 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
 
   it("잠금 뒤 기준일 바뀜 → BasisChangedSignal(그날 세율은 트랜잭션 밖에서 읽어 PayableChangedError로 바꾼다)", async () => {
     await expect(judge({ locked: { ...ROW, evidenceDate: "2026-09-01" }, expectedPayableKrw: 1_100_000 })).rejects.toBeInstanceOf(BasisChangedSignal);
+  });
+
+  // 07.1-16(D-7123 · P3): 잠금 뒤 판정의 증빙 기준일은 사전 조회의 가장 이른 발행일 — 잠근 행의 수동 증빙일(09-22)로 셈하지 않는다.
+  // 그 사이 붙이기 · 떼기는 문서 version을 올려 잠금 뒤 version 검사가 거부한다(domain/evidence/index.ts · domain/payments/index.ts).
+  it("사전 조회에 붙은 증빙 가장 이른 발행일(09-05)이 있으면 잠금 뒤 기준일도 그 날이다(기준 바뀜 신호 없음)", async () => {
+    const pre = preOf(ROW, true, "2026-09-05");
+    expect(pre.tax?.dates.basisDate).toBe("2026-09-05");
+    const result = await judge({ pre, lockedHasEvidence: true, expectedPayableKrw: 1_100_000 });
+    expect(result.payable.payableKrw).toBe(1_100_000);
   });
 
   it("잠금 뒤 증빙이 무효가 되어도 금액은 공급가 그대로 — 증빙 금액이 남은 문서도 거부하지 않는다(D-6520)", async () => {

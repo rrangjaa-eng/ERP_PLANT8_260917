@@ -157,7 +157,7 @@ describe("07-06 Task 2 — 세금 기준일 · 홈 지급 묶음 = 유효 예정
       const [snapshot] = await db.select().from(expenses).where(eq(expenses.id, expenseId));
       expect(snapshot).toMatchObject({ taxRate: "0.170000", vatKrw: 2_108_000, payableKrw: 14_508_000, scheduledPaymentDate: null });
       if (!snapshot) throw new Error("행 없음");
-      const todayBased = await computeExpenseTax(fx.pm, { ...snapshot, scheduledPaymentDate: null });
+      const todayBased = await computeExpenseTax(fx.pm, { ...snapshot, scheduledPaymentDate: null, earliestEvidenceIssuedOn: null });
       if (todayBased.unavailable) throw new Error("오늘 기준 계산 불가");
       expect(todayBased.payableKrw).not.toBe(14_508_000);
 
@@ -222,5 +222,64 @@ describe("07-06 Task 2 — 세금 기준일 · 홈 지급 묶음 = 유효 예정
     const before = await count();
     await approved(payer, { issuedOn: "2026-06-08", actedAt: kst("2026-08-01T10:00") });
     expect(await count()).toBe(before + 1);
+  }, 60_000);
+});
+
+// 07.1-16(D-7123 · D-7129 · E-P1-11): 증빙일 = 붙은 증빙 기록 중 가장 이른 발행일. 일정 로더가 이미 읽는 그 값을 제출 스냅숏 · 미리보기 · 상세 ·
+// 지급 미리보기 · 지급 대상이 같이 쓴다 — 수동 증빙일로 셈하는 길이 하나라도 남으면 세율 경계(10-10)를 사이에 둔 이 픽스처에서 금액이 갈린다.
+// 이력 행은 미래(2027)에 둬 다른 시험의 오늘 세율을 건드리지 않고 끝에 취소한다.
+describe("07.1-16 Task 1 — 증빙 기준일 = 붙은 증빙 가장 이른 발행일 (E-P1-11)", () => {
+  it("기록 둘(10-05 · 10-12) · 수동 증빙일 10-20인 작성 중 문서 제출 → 스냅숏 basisDate 10-05 · 지급 payable = 스냅숏 · 세율 바뀜 없음", async () => {
+    const payer = await makePayer();
+    const evidenceType = `t0716_${randomUUID().slice(0, 8)}`;
+    await seedCodeItem(SYSTEM_VIEWER, {
+      tableKey: "evidence_type",
+      value: evidenceType,
+      label: `증빙일 부가세 ${evidenceType}`,
+      sortOrder: 99,
+      taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "evidence_date" },
+    });
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId;
+    if (!expenseId) throw new Error("작성 중 문서 없음");
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { evidenceType, evidenceDate: "2027-10-20" } });
+    for (const issuedOn of ["2027-10-12", "2027-10-05"]) {
+      await insertLinkFixture({ recordId: await insertRecordFixture(payer, { issuedOn }), ownerId: expenseId, attachedBy: fx.pm.id });
+    }
+
+    // 2027-10-10부터 17% — 수동 증빙일(10-20)로 셈하면 17%, 가장 이른 발행일(10-05)로 셈하면 그 전 세율.
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2027-10-10", value: 0.17 });
+    try {
+      const [draft] = await db.select().from(expenses).where(eq(expenses.id, expenseId));
+      if (!draft) throw new Error("행 없음");
+      const manualBased = await computeExpenseTax(fx.pm, { ...draft, earliestEvidenceIssuedOn: null });
+      const earliestBased = await computeExpenseTax(fx.pm, { ...draft, earliestEvidenceIssuedOn: "2027-10-05" });
+      if (manualBased.unavailable || earliestBased.unavailable) throw new Error("계산 불가");
+      expect(manualBased).toMatchObject({ rate: 0.17, basisDate: "2027-10-20" });
+      expect(earliestBased.basisDate).toBe("2027-10-05");
+      expect(earliestBased.payableKrw).not.toBe(manualBased.payableKrw);
+      const payable = earliestBased.payableKrw.toLocaleString("ko-KR");
+
+      const preview = await previewExpense(fx.pm, { expenseId, fields: {} });
+      expect(preview.taxLine?.text).toContain(`지급 총액 ${payable}`);
+
+      const submitted = await submitReadyDraft(fx.pm, expenseId);
+      if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+      const [snapshot] = await db.select().from(expenses).where(eq(expenses.id, expenseId));
+      expect(snapshot).toMatchObject({ taxBasisDate: "2027-10-05", payableKrw: earliestBased.payableKrw, evidenceDate: "2027-10-20" });
+      expect(snapshot?.taxRate).not.toBe("0.170000");
+
+      await approveAll(fx, submitted.instanceId);
+      const doc = await getExpense(payer, { expenseId });
+      expect(doc?.taxDrift).toBeNull();
+      expect(doc?.taxLine?.text).toContain(`지급 총액 ${payable}`);
+
+      expect((await previewPayable(payer, { expenseId, payDate: seoulToday() })).payableKrw).toBe(earliestBased.payableKrw);
+      const targets = await listPaymentTargets(payer, {}, { pageSize: 10_000 });
+      expect(targets.groups.flatMap((group) => group.rows).find((row) => row.id === expenseId)?.payableKrw).toBe(earliestBased.payableKrw);
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, "2027-10-10");
+    }
   }, 60_000);
 });

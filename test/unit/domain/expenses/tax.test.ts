@@ -71,6 +71,40 @@ describe("pickTaxDates (D-101)", () => {
   });
 });
 
+// 07.1-16(D-7123 · D-7129 · E-P1-11): 증빙일 = 붙은 증빙 기록 중 가장 이른 발행일 → 없으면 저장된 수동 증빙일 → 없으면 작성일.
+describe("pickTaxDates — 붙은 증빙 가장 이른 발행일 (07.1-16)", () => {
+  const createdAt = new Date("2026-09-30T14:30:00Z");
+  const vat = { ruleKind: "vat_surcharge", codeBasis: "evidence_date", basisWithholding: "payment_date", basisVat: "evidence_date", todayKst: "2026-10-28" } as const;
+
+  it("붙은 증빙이 있으면 수동 증빙일(10-20)보다 가장 이른 발행일(10-05)이 기준일이다", () => {
+    const picked = pickTaxDates({ scheduledPaymentDate: "2026-12-04", evidenceDate: "2026-10-20", earliestEvidenceIssuedOn: "2026-10-05", createdAt }, vat);
+    expect(picked.basisDate).toBe("2026-10-05");
+    expect(picked.applyOpts).toEqual({ paymentDate: "2026-10-05", evidenceDate: "2026-10-05" });
+  });
+
+  it("붙은 증빙이 없으면(null) 저장된 수동 증빙일이다", () => {
+    expect(pickTaxDates({ scheduledPaymentDate: null, evidenceDate: "2026-10-20", earliestEvidenceIssuedOn: null, createdAt }, vat).basisDate).toBe("2026-10-20");
+  });
+
+  it("증빙도 수동 값도 없으면 작성일(created_at의 서울 날짜)이다", () => {
+    expect(pickTaxDates({ scheduledPaymentDate: null, evidenceDate: null, earliestEvidenceIssuedOn: null, createdAt }, vat).basisDate).toBe("2026-09-30");
+  });
+
+  it("기준일 종류가 지급일 · 지급 예정일 · 작성일이면 가장 이른 발행일과 상관없이 지금 결과 그대로다", () => {
+    const base = { paidDate: "2026-11-06", scheduledPaymentDate: "2026-12-04", evidenceDate: "2026-10-20", createdAt };
+    for (const [codeBasis, expected] of [
+      ["payment_date", "2026-11-06"],
+      ["scheduled_payment_date", "2026-12-04"],
+      ["document_date", "2026-09-30"],
+    ] as const) {
+      const withEarliest = pickTaxDates({ ...base, earliestEvidenceIssuedOn: "2026-10-05" }, { ...vat, codeBasis });
+      const without = pickTaxDates({ ...base, earliestEvidenceIssuedOn: null }, { ...vat, codeBasis });
+      expect(withEarliest.basisDate).toBe(expected);
+      expect(without.basisDate).toBe(expected);
+    }
+  });
+});
+
 // ── computeExpenseTax — 설정 · 코드표를 주입해 applyTaxRule 한 번의 결과를 본다 ─────────────────────
 
 const RULE = { roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0 } as const;

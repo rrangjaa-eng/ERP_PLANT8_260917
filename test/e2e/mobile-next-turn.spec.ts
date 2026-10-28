@@ -186,7 +186,28 @@ function record(kind: string, width: number, rows: LineProbe[]): void {
   appendFileSync(path.join(ROOT, "test-results", "next-turn-probe.jsonl"), `${JSON.stringify({ kind, width, rows })}\n`);
 }
 
-type LineProbe = { labelLines: number; whyLines: number; whyClipped: boolean; whyTitle: string | null; whyText: string | null; labelClipped: boolean; labelText: string; overflowX: boolean };
+type Box = { x: number; y: number; w: number; h: number };
+type LineProbe = { rowHeight: number; amt: Box; action: Box; whyBox: Box | null; labelLines: number; whyLines: number; whyClipped: boolean; whyTitle: string | null; whyText: string | null; labelClipped: boolean; labelText: string; overflowX: boolean };
+
+// 이유 칸을 넓히기 전(`grid-column: 3`) 실측 — [x, y, w, h], 줄 위 기준 y.
+const LAYOUT_BASELINE: Record<number, Record<string, { rowHeight: number; amt: readonly number[]; action: readonly number[] }>> = {
+  375: {
+    "정산 팝업": { rowHeight: 67, amt: [60, 37, 13, 21], action: [296, 8, 63, 25] },
+    "지급 12건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [263, 8, 96, 25] },
+    "매출 발행 요청 12건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [263, 8, 96, 25] },
+    "지급 3건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [263, 8, 96, 25] },
+    "구매 요청 51건": { rowHeight: 67, amt: [60, 37, 67, 21], action: [263, 8, 96, 25] },
+    "전표 대기 2건": { rowHeight: 66, amt: [60, 52, 0, 0], action: [263, 8, 96, 25] },
+  },
+  320: {
+    "정산 팝업": { rowHeight: 67, amt: [60, 37, 13, 21], action: [241, 8, 63, 25] },
+    "지급 12건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [208, 8, 96, 25] },
+    "매출 발행 요청 12건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [208, 8, 96, 25] },
+    "지급 3건": { rowHeight: 67, amt: [60, 37, 73, 21], action: [208, 8, 96, 25] },
+    "구매 요청 51건": { rowHeight: 67, amt: [60, 37, 67, 21], action: [208, 8, 96, 25] },
+    "전표 대기 2건": { rowHeight: 66, amt: [60, 52, 0, 0], action: [208, 8, 96, 25] },
+  },
+};
 
 for (const width of [375, 320]) {
   test.describe(`폰 ${width} 「내 차례」 Phase 6 줄 (07.1-17 PA2)`, () => {
@@ -208,7 +229,18 @@ for (const width of [375, 320]) {
           const label = row.querySelector<HTMLElement>(".label");
           if (!label) throw new Error("label 없음");
           const why = row.querySelector<HTMLElement>(".why");
+          const box = (el: Element): Box => {
+            const b = el.getBoundingClientRect();
+            return { x: Math.round(b.x), y: Math.round(b.y - row.getBoundingClientRect().y), w: Math.round(b.width), h: Math.round(b.height) };
+          };
+          const amt = row.querySelector(".amt");
+          const action = row.querySelector(".action");
+          if (!amt || !action) throw new Error("금액 · 행동 칸 없음");
           return {
+            rowHeight: Math.round(row.getBoundingClientRect().height),
+            amt: box(amt),
+            action: box(action),
+            whyBox: why ? box(why) : null,
             labelLines: lines(label),
             whyLines: why ? lines(why) : 0,
             whyClipped: why ? why.scrollWidth > why.clientWidth || why.scrollHeight > why.clientHeight : false,
@@ -235,6 +267,24 @@ for (const width of [375, 320]) {
         expect(row.whyLines, `${row.labelText} 이유`).toBeLessThanOrEqual(1);
         expect(row.overflowX).toBe(false);
         if (row.whyClipped) expect(row.whyTitle, row.labelText).toBe(row.whyText);
+      }
+    });
+
+    // #321 화면 게이트: 폰 그리드 2행의 4번째 칸이 비어 이유 칸이 좁아진다 — 이유가 4번째 칸까지 쓰면 잘림 0이어야 하고, 줄 높이와 금액 · 행동 칸 자리는 그대로여야 한다.
+    // 기준값은 이유 칸을 넓히기 전(`grid-column: 3`)의 같은 픽스처 실측이다(x · y(줄 위 기준) · w · h).
+    test("이유 잘림 0(scrollWidth ≤ clientWidth) · 줄 높이와 금액 · 행동 칸 자리는 그대로", async ({ page }) => {
+      const rows = await probe(page);
+      record("phase6-layout", width, rows);
+      const phase6 = rows.filter((row) => PHASE6_ITEMS.some((item) => item.label === row.labelText && item.reason !== ""));
+      expect(phase6).toHaveLength(PHASE6_ITEMS.length);
+      for (const row of phase6) {
+        const base = LAYOUT_BASELINE[width]?.[row.labelText];
+        expect(base, `${width} ${row.labelText} 기준값`).toBeDefined();
+        expect(row.whyClipped, `${width} ${row.labelText} 이유 잘림`).toBe(false);
+        expect(Math.abs(row.rowHeight - (base?.rowHeight ?? -99)), `${row.labelText} 줄 높이`).toBeLessThanOrEqual(1);
+        const near = (box: Box, want: readonly number[] | undefined) => [box.x, box.y, box.w, box.h].every((value, i) => Math.abs(value - (want?.[i] ?? -99)) <= 1);
+        expect(near(row.amt, base?.amt), `${width} ${row.labelText} 금액 칸 ${JSON.stringify(row.amt)}`).toBe(true);
+        expect(near(row.action, base?.action), `${width} ${row.labelText} 행동 칸 ${JSON.stringify(row.action)}`).toBe(true);
       }
     });
 

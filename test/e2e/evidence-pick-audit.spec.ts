@@ -1040,7 +1040,9 @@ test.describe("P7 같은 종류만 추천 (07.1-09 C-92)", () => {
     await expect(dialog.getByRole("option")).toHaveCount(2);
     const subtitle = (await dialog.textContent()) ?? "";
     expect(subtitle).not.toContain("후보");
-    expect(subtitle).not.toMatch(/세금계산서|카드 전표/);
+    // 머리(제목 · 부제)만 본다 — 종류 낱말은 각 줄 부제에 원래 있다(문서 종류가 비면 줄마다 종류가 보인다).
+    const firstRow = ((await dialog.getByRole("option").first().textContent()) ?? "").trim();
+    expect(subtitle.slice(0, Math.max(0, subtitle.indexOf(firstRow)))).not.toMatch(/세금계산서|카드 전표/);
     await page.context().close();
   });
 });

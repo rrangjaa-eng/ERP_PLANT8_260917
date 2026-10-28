@@ -105,7 +105,18 @@ test.describe("07.1-09 디자인 검토 증거 캡처", () => {
       const form = page.getByRole("form", { name: "지출결의 보기" });
       await waitForHydration(form.getByRole("combobox", { name: "상태" }));
       await capture(page, "list-filter", viewport.width);
-      rows.push(await measureState(page, viewport.width, form, (surface) => surface.locator("label").first()));
+      // #320 B-2: 칸마다 래퍼 · 라벨 글자 · 조작 칸(select/체크박스)의 위·아래 변과 가운데 — `내 것만` 라벨이 이웃 칸과 어긋나는지 DOM 값으로 판정한다.
+      const cells = await form.evaluate((node) =>
+        [...node.children].map((cell) => {
+          const box = (el: Element | null) => {
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return { top: Math.round(r.top * 10) / 10, bottom: Math.round(r.bottom * 10) / 10, height: Math.round(r.height * 10) / 10, centerY: Math.round(((r.top + r.bottom) / 2) * 10) / 10 };
+          };
+          return { text: (cell.textContent ?? "").trim().slice(0, 12), wrapper: box(cell), control: box(cell.querySelector("select, input")) };
+        }),
+      );
+      rows.push({ ...(await measureState(page, viewport.width, form, (surface) => surface.locator("label").first())), cells });
     }
     save("list-filter", rows);
     await page.context().close();

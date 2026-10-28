@@ -361,6 +361,14 @@ describe("지출결의 목록 거르개 — 팀 · 월 · 내 것만 (07.1-09)",
     expect(mine(await listExpenses(viewer, { status: "all", team: plan1 }, { today: seoulToday() }), w)).toEqual([w.line.expenseId, w.payeeDoc.expenseId].sort());
   }, 60_000);
 
+  it("옵션에 없는 팀 값은 거름도 무시한다 — 팀 select가 있는 범위에서는 select 표시(팀 전체)와 결과가 같다", async () => {
+    const { w, viewer } = await filterWorld();
+    const all = await listExpenses(viewer, { status: "all" }, { today: seoulToday() });
+    expect(mine(all, w).length).toBe(3);
+    expect(mine(await listExpenses(viewer, { status: "all", team: randomUUID() }, { today: seoulToday() }), w)).toEqual(mine(all, w));
+    expect(mine(await listExpenses(viewer, { status: "all", team: "abc" }, { today: seoulToday() }), w)).toEqual(mine(all, w));
+  }, 60_000);
+
   it("월 = 등록 시각의 서울 월 — 서울 10-01 00:30(UTC 09-30)은 10월, 진행 중 · 승인 문서도 들어간다", async () => {
     const { w, viewer } = await filterWorld();
     const inMonth = (month: string) => listExpenses(viewer, { status: "all", month }, { today: seoulToday() });

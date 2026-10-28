@@ -208,6 +208,9 @@ describe("listEvidencePool — 같은 종류만 (07.1-09 D-7124 · C-92)", () =>
     const recommended = await countRecommendedEvidence(fx.pm, draft);
     expect(recommended.count).toBe(2);
     expect(recommended.typeLabel).toBeTruthy();
+    // 트리거를 보일지(모든 종류 수)는 같은 호출의 total — 별도 질의 없이 한 번에(07.1-09 #320 B-1 · P3).
+    expect(recommended.total).toBe(5);
+    expect(recommended.mode).toBe("author");
     expect(await countEvidencePool(fx.pm, { kind: "expense", id: draft })).toBe(5);
   });
 
@@ -233,7 +236,7 @@ describe("listEvidencePool — 같은 종류만 (07.1-09 D-7124 · C-92)", () =>
     await setDocType(draft, null);
     await seedMixed(intake);
     expect((await ids(fx.pm, draft)).length).toBe(5);
-    expect(await countRecommendedEvidence(fx.pm, draft)).toEqual({ count: 5, typeLabel: null });
+    expect(await countRecommendedEvidence(fx.pm, draft)).toEqual({ count: 5, total: 5, typeLabel: null, mode: "author" });
     expect(await countEvidencePool(fx.pm, { kind: "expense", id: draft })).toBe(5);
   });
 
@@ -250,6 +253,7 @@ describe("listEvidencePool — 같은 종류만 (07.1-09 D-7124 · C-92)", () =>
     expect(pool.items).toEqual([]);
     const recommended = await countRecommendedEvidence(fx.pm, draft);
     expect(recommended.count).toBe(0);
+    expect(recommended.total).toBe(3);
     expect(pool.emptyDefault).toBe(`${recommended.typeLabel} 증빙이 없습니다`);
     expect(await countEvidencePool(fx.pm, { kind: "expense", id: draft })).toBe(3);
     expect(await ids(fx.pm, draft, "카드만B")).toEqual([card[1]]);
@@ -264,5 +268,10 @@ describe("listEvidencePool — 같은 종류만 (07.1-09 D-7124 · C-92)", () =>
     await upsertSimpleValue(SYSTEM_VIEWER, PAYMENT_METHOD_EVIDENCE_PAIRS.key, [{ method: "bank_transfer", evidence: "cash_receipt" }], null);
     await seedMixed(intake);
     expect((await countRecommendedEvidence(fx.pm, draft)).count).toBe(0);
+  });
+
+  it("못 여는 문서(남의 팀 PM)는 mode none · 0 · 0", async () => {
+    const draft = await createDraftExpenseFixture(fx);
+    expect(await countRecommendedEvidence(fx.otherPm, draft)).toEqual({ count: 0, total: 0, typeLabel: null, mode: "none" });
   });
 });

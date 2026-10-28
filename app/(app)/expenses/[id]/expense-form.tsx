@@ -190,6 +190,11 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
   const [prepaid, setPrepaid] = useState(data.prepaid);
   const [prepaidReason, setPrepaidReason] = useState(data.prepaidReason ?? "");
   const [evidenceDate, setEvidenceDate] = useState(data.evidenceDate ?? "");
+  // #324 P2: 숨은 칸은 저장에 싣지 않으므로 숨는 순간 마지막 저장값으로 되돌린다 — 바뀜 판정이 저장값과 같아지고, 모두 떼면 DB 값으로 다시 선다.
+  const savedEvidenceDate = useRef(data.evidenceDate ?? "");
+  useEffect(() => {
+    if (!evidenceDateShown) setEvidenceDate(savedEvidenceDate.current);
+  }, [evidenceDateShown]);
   // 06.5 V15: 받는 인원 — 숫자 글자만 담는다(비우면 서버가 칸 오류). 증빙 종류를 바꿨다 되돌려도 적어 둔 값이 남는다.
   const [headcountRaw, setHeadcountRaw] = useState(String(data.recipientCount));
   const headcountShown = companyBorneEvidence.includes(evidenceType);
@@ -268,8 +273,7 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
     content,
     prepaid,
     prepaid ? prepaidReason : "",
-    // #324 P3: 숨은 증빙일은 저장에 싣지 않으므로 바뀜 판정에서도 뺀다 — 모두 떼어 칸이 다시 서면 저장 안 된 값이 바뀜으로 잡힌다.
-    evidenceDateShown ? evidenceDate : "",
+    evidenceDate,
     headcountShown ? headcountRaw : "",
   ]);
   const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
@@ -566,6 +570,7 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
     if (result?.data) {
       setVersion(result.data.version);
       setSavedSnapshot(snapshot);
+      if (evidenceDateShown) savedEvidenceDate.current = evidenceDate;
       setSavedAt(result.data.savedAt);
       return result.data.version;
     }
@@ -617,6 +622,7 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
     }
     if (result?.data) {
       setSavedSnapshot(snapshot);
+      if (evidenceDateShown) savedEvidenceDate.current = evidenceDate;
       router.replace(`/expenses/${result.data.expenseId}`);
       return result.data.version;
     }

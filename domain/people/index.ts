@@ -542,7 +542,7 @@ export async function registerPerson(
   if (input.divisionId) {
     try {
       await setPersonDivision(viewer, userId, input.divisionId, { can: deps?.can, recordAction: deps?.recordAction, now: deps?.now });
-    } catch (error) {
+    } catch {
       // (b) 잔여 창 — 입사일 저장 실패와 같은 보상(검사 뒤 본부가 보관되면 본부 없는 새 계정이 조용히 남지 않는다).
       const archive = deps?.archive ?? defaultArchive;
       await archive(SYSTEM_VIEWER, "user", userId, {
@@ -553,7 +553,10 @@ export async function registerPerson(
             options,
           ),
       });
-      throw error;
+      // 게이트 #323 P2-1: 원래 오류(「보관된 본부 · 다른 본부」)를 그대로 던지면 다시 등록할 때 이메일 중복에 걸려 이유를 모른다.
+      throw new UserFacingError(
+        "본부 저장 실패 · 계정은 발급됨 — 보관함에서 복원 후 사람 상세에서 본부 넣기",
+      );
     }
   }
 

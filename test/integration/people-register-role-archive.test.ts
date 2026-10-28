@@ -12,6 +12,7 @@ import { findUserById } from "@/repositories/users";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { setOrgUnitArchived } from "@/repositories/org-units";
 import { users } from "@/db/schema";
+import { recordAction } from "@/domain/action-log/record";
 import { NOW_2026 } from "./approvals-fixtures";
 import { makeAdmin, uniqueName } from "./admin-cap-fixtures";
 
@@ -177,5 +178,31 @@ describe("사람 등록 — 팀 없는 사람의 본부(07.1-14 D-7127)", () => 
       expect(error.message).toBe("보관된 본부 · 다른 본부");
     }
     expect(await userCount()).toBe(before);
+  });
+
+  // 게이트 #323 P2-1: 검사 뒤 본부 저장이 실패하면(그새 본부 보관 등) 발령 · 입사일 실패와 같은 꼴로 계정 보관을 알린다 — 원래 오류를
+  // 그대로 던지면 다른 본부로 다시 등록할 때 이메일 중복에 걸려 이유를 모른다.
+  it("본부 저장이 실패하면 계정을 보관하고 「본부 저장 실패 · 계정은 발급됨 — 보관함에서 복원 후 사람 상세에서 본부 넣기」", async () => {
+    const division = await newDivision();
+    const email = `${randomUUID()}@test.local`;
+    const failingDivisionLog: typeof recordAction = async (viewer, entry, options) => {
+      const changes = (entry.detail as { changes?: Record<string, unknown> } | undefined)?.changes;
+      if (entry.actionType === "permission_change" && changes?.division !== undefined) {
+        throw new ValidationError("보관된 본부 · 다른 본부");
+      }
+      return recordAction(viewer, entry, options);
+    };
+
+    await expect(
+      registerPerson(
+        SYSTEM_VIEWER,
+        { name: "등록본부실패", email, roleId: DEFAULT_ROLE_ID, divisionId: division },
+        { ...deps, recordAction: failingDivisionLog },
+      ),
+    ).rejects.toThrow("본부 저장 실패 · 계정은 발급됨 — 보관함에서 복원 후 사람 상세에서 본부 넣기");
+
+    const [row] = await db.select().from(users).where(eq(users.email, email));
+    expect(row?.archivedAt).not.toBeNull();
+    expect(row?.divisionId).toBeNull();
   });
 });

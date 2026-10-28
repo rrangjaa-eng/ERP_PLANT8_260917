@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
@@ -107,7 +107,9 @@ async function docOverflow(page: Page): Promise<[number, number]> {
         .slice(0, 40)
         .map(({ el, rect }) => ({ selector: describe(el), text: (el.textContent ?? "").trim().slice(0, 40), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width) }));
     }, cw);
-    await test.info().attach(`doc-overflow-${cw}.json`, { body: JSON.stringify({ url: page.url(), scrollWidth: sw, clientWidth: cw, offenders }, null, 2), contentType: "application/json" });
+    const diagPath = test.info().outputPath(`doc-overflow-${cw}.json`);
+    writeFileSync(diagPath, JSON.stringify({ url: page.url(), scrollWidth: sw, clientWidth: cw, offenders }, null, 2));
+    await test.info().attach(`doc-overflow-${cw}.json`, { path: diagPath, contentType: "application/json" });
   }
   return [sw, cw];
 }

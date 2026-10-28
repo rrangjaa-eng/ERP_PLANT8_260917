@@ -27,7 +27,7 @@ import { archiveTempRoles, insertTempRole } from "./expense-fixture";
 const HERE = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(HERE), "../..");
 
-async function renderNextTurn(items: NextTurnItem[]): Promise<string> {
+async function renderNextTurn(items: NextTurnItem[], actionSlots?: Record<string, React.ReactNode>): Promise<string> {
   // Playwright의 TS 변환은 .css import를 통째로 지운다(styles가 undefined가 된다).
   // 그래서 esbuild로 컴포넌트를 한 번 묶되, CSS 모듈만 "원문 클래스 이름 그대로"를
   // 돌려주는 스텁으로 바꿔 끼운다. 패키지(react 등)는 외부로 둬 이 프로세스의 것을 쓴다.
@@ -54,9 +54,9 @@ async function renderNextTurn(items: NextTurnItem[]): Promise<string> {
     ],
   });
   const { NextTurn } = (await import(`${outfile}?t=${Date.now()}`)) as {
-    NextTurn: (props: { view: ReturnType<typeof buildNextTurnView> }) => React.ReactElement;
+    NextTurn: (props: { view: ReturnType<typeof buildNextTurnView>; actionSlots?: Record<string, React.ReactNode> }) => React.ReactElement;
   };
-  return renderToStaticMarkup(createElement(NextTurn, { view: buildNextTurnView(items) }));
+  return renderToStaticMarkup(createElement(NextTurn, { view: buildNextTurnView(items), actionSlots }));
 }
 
 function css(relative: string): string {
@@ -66,7 +66,7 @@ function css(relative: string): string {
 // 앱과 같은 서체(Pretendard)로 재는 문서 — setContent는 about:blank라 /fonts를 못 받아 대체 서체로 그려지고, 대체 서체는 글자가 넓어
 // 잘림 크기가 실제 앱과 어긋난다(#321 재검토: 25px로 낸 것이 실제 앱에서는 4px). 숫자 모듈(Num — tabular-nums)도 얹는다: 빼면 금액 칸이 7~8px 좁아져
 // 이유 칸이 그만큼 넓게 재진다. 서체 조각이 실제로 받아졌는지까지 확인한다. 실제 앱 홈과의 대조는 next-turn-phase6.spec.ts의 폰 홈 시험이 한다.
-async function openPhoneDocument(page: Page, items: NextTurnItem[]): Promise<void> {
+async function openPhoneDocument(page: Page, items: NextTurnItem[], actionSlots?: Record<string, React.ReactNode>): Promise<void> {
   const html = `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width">
 <link rel="stylesheet" href="/fonts/pretendard/pretendard-dynamic-subset.css">
 <style>${css("docs/design/tokens.css")}</style>
@@ -74,7 +74,8 @@ async function openPhoneDocument(page: Page, items: NextTurnItem[]): Promise<voi
 <style>${css("ui/status-tag/StatusTag.module.css")}</style>
 <style>${css("ui/num/Num.module.css")}</style>
 <style>${css("ui/next-turn/NextTurn.module.css")}</style>
-</head><body><main style="padding: 0 var(--pad-page)">${await renderNextTurn(items)}</main></body></html>`;
+<style>${css("app/(app)/home-approval-actions.module.css")}</style>
+</head><body><main style="padding: 0 var(--pad-page)">${await renderNextTurn(items, actionSlots)}</main></body></html>`;
   await page.route("http://harness.local/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith("/fonts/")) await route.fulfill({ path: path.join(ROOT, "public", decodeURIComponent(url.pathname)) });
@@ -351,6 +352,41 @@ for (const width of [375, 320]) {
         }),
       );
       expect(crossings, `${width} 밑줄이 이유 글자와 겹친 줄`).toEqual([]);
+    });
+
+    // #321 재검토 2: 결재 줄의 열기 단추(.phoneTap)는 ::after로 자기 줄(li) 전체를 덮는다. 다음 줄 링크의 ::after가 위로 너무 늘어나면 그 위에 그려져
+    // 결재 줄 아래쪽을 눌러도 시트가 안 열리고 다음 줄로 이동한다. 줄 경계 위아래 5px를 1px씩 눌러, 닿은 행동(링크 · 단추)이 그 점이 속한 줄의 것이어야 한다.
+    test("줄 경계 위아래 5px를 누르면 그 줄의 행동이 잡힌다 (결재 줄 단추를 다음 줄 링크가 뺏지 않는다)", async ({ page }, testInfo) => {
+      const approval = { ...ITEM, key: "ap1", tag: "결재", label: "지출결의 · 아이오닉9 · 무대설치", reason: "", action: { label: "열기", href: "/approvals" } } as NextTurnItem;
+      const slots = { ap1: createElement("button", { type: "button", className: "tertiary phoneTap", "data-home-open": "" }, "열기") };
+      await openPhoneDocument(page, [...PHASE6_ITEMS.slice(1, 3), approval, { ...approval, key: "ap2" }], { ...slots, ap2: slots.ap1 });
+      const result = await page.locator(".item").evaluateAll((rows) => {
+        const stolen: string[] = [];
+        const table: string[] = [];
+        rows.forEach((row, index) => {
+          const next = rows[index + 1];
+          if (!next) return;
+          const boundary = row.getBoundingClientRect().bottom;
+          // 줄 사이 점선(border-bottom 1px)은 어느 줄의 닿는 영역도 아니다 — 소수 좌표에서 픽셀 맞춤으로 이웃 단추에 붙을 수 있어 재지 않는다.
+          const divider = parseFloat(getComputedStyle(row).borderBottomWidth);
+          const linkRect = (next.querySelector("a") ?? next).getBoundingClientRect();
+          // 아랫줄 링크 가운데 세로선(뺏김이 가장 잘 나는 곳)과 줄 가운데 두 곳을 잰다.
+          for (const x of [linkRect.left + linkRect.width / 2, window.innerWidth / 2]) {
+            for (let delta = -5; delta <= 5; delta += 1) {
+              const y = boundary + delta + 0.5;
+              if (delta < 0 && y > boundary - divider) continue;
+              const owner = delta < 0 ? row : next;
+              const action = document.elementFromPoint(x, y)?.closest("a, button");
+              const hitRow = action?.closest("li") ?? null;
+              table.push(`${index}->${index + 1} x${Math.round(x)} ${delta >= 0 ? "+" : ""}${delta}: ${action ? (hitRow === owner ? "그 줄" : "다른 줄") : "없음"}`);
+              if (action && hitRow !== owner) stolen.push(`줄 ${index}/${index + 1} x${Math.round(x)} 경계 ${delta >= 0 ? "+" : ""}${delta}px: ${action.tagName.toLowerCase()} "${(action.textContent ?? "").trim()}"가 ${hitRow === row ? "윗" : "아랫"}줄 행동을 잡음`);
+            }
+          }
+        });
+        return { stolen, table };
+      });
+      await testInfo.attach(`boundary-${width}`, { body: result.table.join("\n"), contentType: "text/plain" });
+      expect(result.stolen, `${width} 줄 경계에서 다른 줄 행동이 잡힌 점`).toEqual([]);
     });
 
     // 금액이 열 자리인 최악 — 잘림이 상한을 넘지 않는다(서체 Pretendard 실측).

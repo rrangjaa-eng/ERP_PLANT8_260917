@@ -22,6 +22,7 @@ export const cardShinhanAccounting: FormatRule = {
   createsVendor: false,
   issuerAliases: ["신한"],
   keyKind: "card",
+  dateIsUsage: true, // 승인일자
   keyPrefix: "card-shinhan",
   detect: (sheets) => findCardHeader(sheets, isHeader),
   read(rows, ctx) {

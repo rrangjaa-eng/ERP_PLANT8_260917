@@ -126,6 +126,31 @@ describe("detailLines (07-25 K16)", () => {
 // 07-25 고침 뒤(DOM 감사 P2-3): jsonb는 키를 길이 · 사전 순으로 저장해 Object.entries 순서가 쓰는 쪽의 순서와 무관하다.
 // 줄 순서는 칸 이름 표(CHANGE_FIELD_LABELS)가 선언된 순서(= 폼 순서) → 표에 없는 키는 키 글자 사전 순이다.
 // 오케스트레이터 결정으로 SC-08 계약 공백을 메운 것이다(되돌릴 수 있음).
+// 07.1-04 PE3 · PE2: 카드 사용 덮기 로그(evidence_record_amount_change)의 전후 줄.
+describe("카드 사용 덮기 줄 (07.1-04 PE3 · PE2)", () => {
+  it("사용일 · 결제 합계 — 라벨 표 선언 차례 · 숫자 쉼표", () => {
+    expect(detailLines({ changes: { totalKrw: [50000, 52000], usedOn: ["2026-10-01", "2026-10-03"] } })).toEqual([
+      { label: "사용일", before: "2026-10-01", after: "2026-10-03" },
+      { label: "결제 합계", before: "50,000", after: "52,000" },
+    ]);
+  });
+
+  // PR #305 검토 P2: 카드만 · 날짜만 바뀐 덮기도 줄이 남는다 — 카드 끝 4자리 · 공급가 · 부가세 라벨, 폼 차례(사용일 → 카드 → 합계 → 공급가 → 부가세 → 승인번호).
+  it("카드 · 공급가 · 부가세 — 라벨 · 차례", () => {
+    expect(detailLines({ changes: { approvalNo: [null, "A1"], vatKrw: [40000, 21818], supplyKrw: [200000, 218182], cardLast4: ["1111", "2222"], usedOn: ["2026-04-30", "2026-04-28"] } })).toEqual([
+      { label: "사용일", before: "2026-04-30", after: "2026-04-28" },
+      { label: "카드", before: "1111", after: "2222" },
+      { label: "공급가", before: "200,000", after: "218,182" },
+      { label: "부가세", before: "40,000", after: "21,818" },
+      { label: "승인번호", before: "없음", after: "A1" },
+    ]);
+  });
+
+  it("승인번호 채움 — 빈 이전 값은 `없음`", () => {
+    expect(detailLines({ changes: { approvalNo: [null, "A1"] } })).toEqual([{ label: "승인번호", before: "없음", after: "A1" }]);
+  });
+});
+
 describe("줄 순서 (07-25 DOM 감사 P2-3)", () => {
   const labelsOf = (changes: Record<string, unknown>) => detailLines({ changes })?.map((line) => line.label);
 

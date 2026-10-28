@@ -29,6 +29,7 @@ export const cardBc: FormatRule = {
   createsVendor: false,
   issuerAliases: ["비씨", "BC"],
   keyKind: "card",
+  dateIsUsage: true, // 승인일자
   detect: (sheets) => findCardHeader(sheets, isHeader),
   read(rows, ctx) {
     const header = rows[ctx.headerRow] ?? [];

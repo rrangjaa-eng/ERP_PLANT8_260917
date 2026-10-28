@@ -18,6 +18,7 @@ export const cardLotte: FormatRule = {
   createsVendor: false,
   issuerAliases: ["롯데"],
   keyKind: "card",
+  dateIsUsage: false, // 매입일자 — 사용일 뒤 며칠(해외는 더)
   detect: (sheets) => findCardHeader(sheets, (row) => rowHasAll(row, DETECT) && rowHasAll(row, COLUMNS)),
   read(rows, ctx) {
     const header = rows[ctx.headerRow] ?? [];

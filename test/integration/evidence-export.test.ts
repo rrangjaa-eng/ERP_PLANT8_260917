@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, evidenceImportBatches, evidenceRecords, teams } from "@/db/schema";
 import { ForbiddenError } from "@/domain/permissions/can";
-import { listEvidenceRecords } from "@/domain/evidence-records";
+import { listAllEvidenceRecords, listEvidenceRecords } from "@/domain/evidence-records";
 import { EvidenceExportTooManyError, exportEvidenceRecords } from "@/domain/evidence-records/export";
 import { createAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -232,9 +232,9 @@ describe("exportEvidenceRecords — 07.1-05 D-7113 5,000건 상한", () => {
     const batch = await insertBatchOf(intake, 5_001);
     let rowsRead = 0;
     const error = await exportEvidenceRecords(intake, { state: "all", batch }, {
-      listAllEvidenceRecords: async (...args) => {
+      listAllEvidenceRecords: async (...args: Parameters<typeof listAllEvidenceRecords>) => {
         rowsRead += 1;
-        return (await import("@/domain/evidence-records")).listAllEvidenceRecords(...args);
+        return listAllEvidenceRecords(...args);
       },
     }).catch((thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(EvidenceExportTooManyError);

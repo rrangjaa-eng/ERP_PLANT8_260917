@@ -294,25 +294,32 @@ export async function countEvidencePool(viewer: Viewer, owner: { kind: PoolOwner
 }
 
 // 지출결의 건수의 앞 단계(모드 · 문서 사실 · 짝 코드) 한 벌 — 트리거 판정(countEvidencePool)과 부제 건수(countRecommendedEvidence)가 같이 쓴다(같은 판정 두 벌 금지).
-async function expenseCountInput(viewer: Viewer, id: string): Promise<{ query: Pick<PoolQuery, "author" | "cardFormats" | "allowedTypes">; doc: PoolDocFacts } | null> {
+async function expenseCountInput(viewer: Viewer, id: string): Promise<{ mode: Exclude<EvidencePickerMode, "none">; query: Pick<PoolQuery, "author" | "cardFormats" | "allowedTypes">; doc: PoolDocFacts } | null> {
   const keys = await readKeys(viewer);
   const resolved = await expenseMode(viewer, keys, id);
   if (resolved.mode === "none") return null;
   const doc = await readPoolDocFacts(viewer, { kind: "expense", id });
   if (!doc) return null;
   const codes = await loadPairCodes(viewer);
-  return { query: { author: resolved.mode === "author", cardFormats: CARD_FORMATS, allowedTypes: allowedTypesOf(codes, doc.paymentMethod) }, doc };
+  return { mode: resolved.mode, query: { author: resolved.mode === "author", cardFormats: CARD_FORMATS, allowedTypes: allowedTypesOf(codes, doc.paymentMethod) }, doc };
 }
 
 /**
- * 07.1-09(D-7124 · E-P2-28): 증빙 고르기 부제 `후보 {N}`의 N — 검색어 없는 추천 목록과 같은 거름(문서 증빙 종류와 같은 종류 · 문서 종류가 비면 전부 ·
- * 붙일 수 있는 상태 · 범위 · 짝 막힌 행 제외). 검색어를 받지 않아 대화상자에서 검색어를 쳐도 바뀌지 않는다. `typeLabel`은 문서 증빙 종류의 기존 라벨(없으면 null).
- * 트리거 판정은 모든 종류를 세는 `countEvidencePool` — 추천이 0이어도 다른 종류가 있으면 트리거가 남아 검색으로 닿는다.
+ * 07.1-09(D-7124 · E-P2-28 · #320 B-1): 증빙 고르기의 두 수를 한 번에 — `count`는 트리거 글자 `증빙 고르기 {N}`의 N(검색어 없는 추천 목록과 같은 거름:
+ * 문서 증빙 종류와 같은 종류 · 문서 종류가 비면 전부 · 붙일 수 있는 상태 · 범위 · 짝 막힌 행 제외), `total`은 트리거를 보일지 정하는 모든 종류 후보 수(`countEvidencePool`과 같은 값).
+ * 추천이 0이어도 다른 종류가 있으면(total ≥ 1) 트리거가 남아 검색으로 닿는다. `typeLabel`은 문서 증빙 종류의 기존 라벨(없으면 null), `mode`는 고르기 모드(못 열면 none · 0 · 0).
  */
-export async function countRecommendedEvidence(viewer: Viewer, expenseId: string): Promise<{ count: number; typeLabel: string | null }> {
+export async function countRecommendedEvidence(
+  viewer: Viewer,
+  expenseId: string,
+): Promise<{ count: number; total: number; typeLabel: string | null; mode: EvidencePickerMode }> {
   const counted = await expenseCountInput(viewer, expenseId);
-  if (!counted) return { count: 0, typeLabel: null };
-  const count = await countPoolForScope(viewer, await evidenceScopeFor(viewer), { ...counted.query, docEvidenceType: counted.doc.evidenceType });
-  const typeLabel = counted.doc.evidenceType === null ? null : ((await codeLabelsOf(viewer, "evidence_type")).get(counted.doc.evidenceType) ?? null);
-  return { count, typeLabel };
+  if (!counted) return { count: 0, total: 0, typeLabel: null, mode: "none" };
+  const scope = await evidenceScopeFor(viewer);
+  const [count, total, labels] = await Promise.all([
+    countPoolForScope(viewer, scope, { ...counted.query, docEvidenceType: counted.doc.evidenceType }),
+    countPoolForScope(viewer, scope, { ...counted.query, docEvidenceType: null }),
+    counted.doc.evidenceType === null ? null : codeLabelsOf(viewer, "evidence_type"),
+  ]);
+  return { count, total, typeLabel: labels?.get(counted.doc.evidenceType ?? "") ?? null, mode: counted.mode };
 }

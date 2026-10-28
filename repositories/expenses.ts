@@ -611,12 +611,25 @@ export type ExpenseListFilter = { teamId: string | null; month: string | null; d
 // created_at은 시간대 없는 UTC 값 — UTC로 읽은 뒤 서울로 한 번 더 바꿔야 서울 날짜다(`at time zone 'Asia/Seoul'` 한 번이면 9시간 틀린다 · projects.ts CREATED_ON_KST 선례).
 const createdMonthKst = sql`to_char((${expenses.createdAt} at time zone 'UTC') at time zone 'Asia/Seoul', 'YYYY-MM')`;
 
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function expenseListFilterCondition(viewer: Viewer, filter: ExpenseListFilter): SQL | null {
   void viewer; // 4계층 규약 자리 — 범위 판정은 호출 쪽 scopeCondition이 한다.
   const parts: SQL[] = [];
-  // 글자로 비교한다 — 바인딩 글자를 uuid 칸과 바로 견주면 uuid 모양이 아닌 값에서 Postgres가 형식 오류를 던져 500이 된다.
-  if (filter.teamId !== null) parts.push(sql`(${docTeamId})::text = ${filter.teamId}`);
-  if (filter.month !== null) parts.push(sql`${createdMonthKst} = ${filter.month}`);
+  // 팀 — 문서의 팀(프로젝트가 있으면 프로젝트 팀, 없으면 귀속 팀)을 칸 그대로 비교한다(칸에 ::text 를 씌우면 인덱스를 못 탄다). uuid 모양이 아닌 값은 Postgres 형식 오류(500) 대신 결과 0.
+  if (filter.teamId !== null) {
+    parts.push(
+      UUID_SHAPE.test(filter.teamId)
+        ? sql`((${expenses.projectId} is not null and ${projects.teamId} = ${filter.teamId}::uuid) or (${expenses.projectId} is null and ${expenses.attributedTeamId} = ${filter.teamId}::uuid))`
+        : sql`false`,
+    );
+  }
+  // 월 — 서울 월의 시작·끝을 UTC 값으로 한 번 바꿔 칸에는 범위 비교만 건다(월 글자를 칸마다 만들지 않는다 · domain이 YYYY-MM 모양을 이미 거른다).
+  if (filter.month !== null) {
+    const startUtc = sql`(((${filter.month}::text || '-01')::timestamp) at time zone 'Asia/Seoul') at time zone 'UTC'`;
+    const endUtc = sql`(((${filter.month}::text || '-01')::timestamp + interval '1 month') at time zone 'Asia/Seoul') at time zone 'UTC'`;
+    parts.push(sql`(${expenses.createdAt} >= ${startUtc} and ${expenses.createdAt} < ${endUtc})`);
+  }
   if (filter.drafterId !== null) parts.push(sql`${expenses.drafterId} = ${filter.drafterId}`);
   return parts.length === 0 ? null : sql`(${sql.join(parts, sql` and `)})`;
 }

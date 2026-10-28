@@ -222,8 +222,10 @@ export async function listExpenses(
     visible(viewer, "expense.amount"),
     buildExpenseSearch(viewer, "list", input.q),
   ]);
-  // 07.1-09: 모르는 팀 · 모양이 틀린 팀 값은 저장소 글자 비교로 결과 0(범위 AND라 넓어지지 않는다) · 틀린 월은 거름 무시.
-  const team = input.team?.trim() ? input.team.trim() : null;
+  // 07.1-09: 팀 select가 있는 범위에서는 옵션에 없는 팀 값을 거름에서 뺀다(select는 「팀 전체」로 보이는데 결과만 0인 어긋남 방지 · #320 P3) · select가 없는 범위의 모르는 팀 값은 저장소가 결과 0(범위 AND라 넓어지지 않는다) · 틀린 월은 거름 무시.
+  const teamOptions = await teamOptionsFor(viewer, scope.rowScope);
+  const rawTeam = input.team?.trim() ? input.team.trim() : null;
+  const team = rawTeam !== null && teamOptions.length > 0 && !teamOptions.some((option) => option.value === rawTeam) ? null : rawTeam;
   const month = input.month && FILTER_MONTH_SHAPE.test(input.month) ? input.month : null;
   const filter: ExpenseListFilter | undefined = team || month || input.mine ? { teamId: team, month, drafterId: input.mine ? viewer.id : null } : undefined;
   const summary = await summarizeExpenseList(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, ...(search ? { search } : {}), ...(filter ? { filter } : {}) });
@@ -244,10 +246,9 @@ export async function listExpenses(
       : [];
   const drafterColumn =
     scope.rowScope.rows === "all" || (scope.rowScope.rows === "limited" && scope.rowScope.by.kind !== "own") || summary.othersCount > 0;
-  const [payments, loaded, teamOptions, months] = await Promise.all([
+  const [payments, loaded, months] = await Promise.all([
     paymentStatuses(viewer, rows, today),
     loadExpenseSchedules(viewer, rows),
-    teamOptionsFor(viewer, scope.rowScope),
     listExpenseMonths(viewer, { scope, documentKind: EXPENSE_DOCUMENT_KIND }),
   ]);
   const projected = await projectMany(

@@ -1453,6 +1453,19 @@ describe("견적 줄 저장 로그의 줄 전후(07.1-13 S8)", () => {
     expect(after).toMatch(/^USD 200\.00 @.+ · 260,000원$/);
   });
 
+  it("순번은 화면 번호 열과 같다 — 종류 그룹(견적 줄 → 조정) 순서라 맨 뒤 조정 줄보다 새 견적 줄이 앞이다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "무대" });
+    const adjustment = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: "조정" });
+    await db.update(quoteLines).set({ lineKind: "adjustment", subcategory: "adjustment" }).where(eq(quoteLines.id, adjustment.id));
+    const added = newRow(subcategoryValue, { itemName: "새 견적 줄" });
+
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [added] });
+
+    const [element] = (await lastLineLog(revision.id)).lineChanges as Array<{ id: string; no: number }>;
+    expect(element).toMatchObject({ id: added.id, no: 2 });
+  });
+
   it("순서만 바꾼 저장은 로그 행은 남고 lineChanges 칸이 없다", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const first = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "하나" });

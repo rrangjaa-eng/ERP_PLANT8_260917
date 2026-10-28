@@ -10,6 +10,11 @@ import { insertTempRole } from "./temp-roles";
 import { upsertPermission } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { teams } from "@/db/schema";
+import { createTeam } from "@/domain/org";
+import { orgUnitIdByName } from "../integration/approvals-fixtures";
 import { submitReadyDraft, testVendorAccount } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, setupLeaveOrg, waitForHydration } from "./leave-org";
 import { setupExpenseE2E, type ExpenseE2E } from "./expense-fixture";
@@ -375,4 +380,93 @@ test.describe("목록 검색 (06.5 D-6508)", () => {
       await page.context().close();
     }
   });
+});
+
+// 07.1-09 W11(PF4 · U-7): 메인 목록 필터 줄 — 검색 → 상태 → 팀 → 월 → 내 것만, 바꾸면 URL 반영 · 쪽 1, 팀 select는 범위 안 팀이 둘 이상일 때만, 0건이면 `필터 지우기`가 셋을 모두 지운다.
+test.describe("목록 팀 · 월 · 내 것만 (07.1-09 W11)", () => {
+  const filterForm = (page: Page) => page.getByRole("form", { name: "지출결의 보기" });
+  const thisMonth = () => seoulToday().slice(0, 7);
+
+  // 필터 칸 다섯의 래퍼 아래 변(flex-end 정렬이라 한 줄이면 같다 — 래퍼 높이는 칸 종류마다 달라 위 변은 다르다)과 이름 순서.
+  async function filterLine(page: Page) {
+    return filterForm(page).evaluate((form) => {
+      const controls = Array.from(form.querySelectorAll<HTMLElement>("input[name], select[name]"));
+      return controls.map((control) => ({ name: control.getAttribute("name") ?? "", bottom: Math.round((control.closest("div")?.getBoundingClientRect().bottom ?? 0) * 10) / 10 }));
+    });
+  }
+
+  test("전사 범위(대표) 1280 — 칸 순서 q → status → team → month → mine, 보관 팀은 옵션에 없고, 고르면 URL에 team · month · mine=1이 실리며 page는 없다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const archived = await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("기획본부"), name: `보관거름-${randomUUID().slice(0, 6)}` });
+    await db.update(teams).set({ archivedAt: new Date() }).where(eq(teams.id, archived.id));
+    const doc = await submitTeamCost(fx.pm.viewer, `거름대상-${randomUUID().slice(0, 4)}`);
+    const page = await loginPage(browser, baseURL, fx.ceo, DESKTOP);
+    await page.goto("/expenses?page=2");
+    const form = filterForm(page);
+    await waitForHydration(form.getByRole("combobox", { name: "상태" }));
+    expect((await filterLine(page)).map((item) => item.name)).toEqual(["q", "status", "team", "month", "mine"]);
+    const teamOptions = await form.getByRole("combobox", { name: "팀" }).locator("option").allTextContents();
+    expect(teamOptions[0]).toBe("팀 전체");
+    expect(teamOptions).toContain(fx.teamName);
+    expect(teamOptions).not.toContain(archived.name);
+    expect(await form.getByRole("combobox", { name: "월" }).locator("option").first().textContent()).toBe("월 전체");
+    expect(await form.getByRole("checkbox", { name: "내 것만" }).isChecked()).toBe(false);
+
+    await form.getByRole("combobox", { name: "팀" }).selectOption({ label: fx.teamName });
+    await expect(page).toHaveURL((url) => url.searchParams.get("team") === fx.teamId && !url.searchParams.has("page"));
+    await form.getByRole("combobox", { name: "월" }).selectOption(thisMonth());
+    await expect(page).toHaveURL((url) => url.searchParams.get("month") === thisMonth());
+    // 진행 중(지급일 없는) 문서가 이번 달 거름에 남는다 — 0건이 아니다.
+    await expect(rowOf(page, doc.expenseId)).toHaveCount(1);
+    await form.getByRole("checkbox", { name: "내 것만" }).check();
+    await expect(page).toHaveURL((url) => url.searchParams.get("mine") === "1" && url.searchParams.get("team") === fx.teamId && url.searchParams.get("month") === thisMonth());
+    // 대표는 기안자가 아니라 내 것만이면 0건 — 필터 줄이 남고 빈 결과 문구가 선다.
+    await expect(page.locator('[data-ui="empty-state"]')).toContainText("조건에 맞는 건이 없습니다");
+    await expect(form.getByRole("checkbox", { name: "내 것만" })).toBeChecked();
+    await page.locator('[data-ui="empty-state"]').getByRole("link", { name: "필터 지우기" }).click();
+    await expect(page).toHaveURL((url) => !url.searchParams.has("team") && !url.searchParams.has("month") && !url.searchParams.has("mine"));
+    await expect(rowOf(page, doc.expenseId)).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("내 것만 — 기안자가 나인 행만 남는다(팀장은 자기 문서만, 팀원 문서는 빠진다)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const pmDoc = await submitTeamCost(fx.pm.viewer, `팀원문서-${randomUUID().slice(0, 4)}`);
+    const leadDoc = await submitTeamCost(fx.lead.viewer, `팀장문서-${randomUUID().slice(0, 4)}`);
+    const page = await loginPage(browser, baseURL, fx.lead, DESKTOP);
+    await page.goto("/expenses?status=전체");
+    await expect(rowOf(page, pmDoc.expenseId)).toHaveCount(1);
+    await expect(rowOf(page, leadDoc.expenseId)).toHaveCount(1);
+    await filterForm(page).getByRole("checkbox", { name: "내 것만" }).check();
+    await expect(page).toHaveURL((url) => url.searchParams.get("mine") === "1");
+    await expect(rowOf(page, leadDoc.expenseId)).toHaveCount(1);
+    await expect(rowOf(page, pmDoc.expenseId)).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("팀장(범위가 팀 하나) — 팀 select는 DOM 0, 월 · 내 것만은 있다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await submitTeamCost(fx.pm.viewer, `팀장범위-${randomUUID().slice(0, 4)}`);
+    const page = await loginPage(browser, baseURL, fx.lead, DESKTOP);
+    await page.goto("/expenses");
+    const form = filterForm(page);
+    await expect(form.getByRole("combobox", { name: "월" })).toBeVisible();
+    await expect(form.getByRole("checkbox", { name: "내 것만" })).toBeVisible();
+    await expect(form.locator('select[name="team"]')).toHaveCount(0);
+    await page.context().close();
+  });
+
+  for (const width of [1280, 1024]) {
+    test(`${width} — 필터 칸 다섯(검색 · 상태 · 팀 · 월 · 내 것만)이 한 줄이다`, async ({ browser, baseURL }) => {
+      const fx = await setupExpenseE2E();
+      await submitTeamCost(fx.pm.viewer, `한줄-${randomUUID().slice(0, 4)}`);
+      const page = await loginPage(browser, baseURL, fx.ceo, { width, height: 800 });
+      await page.goto("/expenses");
+      await waitForHydration(filterForm(page).getByRole("combobox", { name: "상태" }));
+      const line = await filterLine(page);
+      expect(line.map((item) => item.name)).toEqual(["q", "status", "team", "month", "mine"]);
+      expect(new Set(line.map((item) => item.bottom)).size, JSON.stringify(line)).toBe(1);
+      await page.context().close();
+    });
+  }
 });

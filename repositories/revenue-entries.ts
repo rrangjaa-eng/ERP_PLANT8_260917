@@ -74,6 +74,14 @@ export async function findRevenueEntryById(viewer: Viewer, id: string, tx: DbOrT
   return row ?? null;
 }
 
+// 07.1-13 S8(E-P2-39) — 매출 줄 저장 로그의 이전 값. 고치는 줄 id들을 쓰기 전 같은 tx로 한 질의에 읽는다(잠금 없음 —
+// 쓰기는 조건 UPDATE가 version으로 지킨다). id가 없으면 질의하지 않는다.
+export async function findRevenueEntriesByIds(viewer: Viewer, ids: readonly string[], tx: DbOrTx = db): Promise<RevenueEntryRow[]> {
+  void viewer;
+  if (ids.length === 0) return [];
+  return tx.select().from(revenueEntries).where(inArray(revenueEntries.id, [...ids]));
+}
+
 // 07-22(W7) — 계산서 파일 붙이기 · 교체가 매출 줄 한 행을 잠근다(같은 줄의 교체 두 건이 차례로 — 살아 있는 파일 하나).
 export async function lockRevenueEntryForUpdate(viewer: Viewer, id: string, tx: DbOrTx): Promise<RevenueEntryRow | null> {
   void viewer;

@@ -93,15 +93,23 @@ export function cardHitFilter(viewer: Viewer, cardId: string, usage: { approvalN
   return usage.approvalNo === null ? sql`${card} and ${sameDay}` : sql`${card} and (${evidenceRecords.approvalNo} = ${usage.approvalNo} or (${sameDay}))`;
 }
 
+// 07.1-09(D-7124 · C-92): 같은 종류 조각 — 문서 증빙 종류가 비면 조건 없음. 정렬 점수가 아니라 후보 집합을 줄인다(검색어 없는 추천 · 부제 건수가 같이 쓴다).
+function sameKindWhere(docEvidenceType: string | null): SQL {
+  return docEvidenceType === null ? sql`true` : sql`${evidenceRecords.evidenceType} = ${docEvidenceType}::text`;
+}
+
 function ownerWhere(ownerFilter: SQL | null | undefined): SQL {
   return ownerFilter ? sql`(${ownerFilter})` : sql`true`;
 }
 
-/** 후보 수(DB-16) — 막힌 행(짝 아님)은 센 수에서 뺀다. 목록과 같은 범위 · 상태 조각. */
+/**
+ * 후보 수(DB-16) — 막힌 행(짝 아님)은 센 수에서 뺀다. 목록과 같은 범위 · 상태 조각.
+ * `docEvidenceType`(07.1-09 E-P2-28): 문서 증빙 종류와 같은 종류만 센다(검색어 없는 추천 목록과 같은 거름) — null이면 모든 종류(트리거 판정).
+ */
 export async function countPoolForScope(
   viewer: Viewer,
   scope: EvidenceScope,
-  query: Pick<PoolQuery, "author" | "cardFormats" | "allowedTypes" | "ownerFilter">,
+  query: Pick<PoolQuery, "author" | "cardFormats" | "allowedTypes" | "ownerFilter"> & { docEvidenceType: string | null },
   tx: DbOrTx = db,
 ): Promise<number> {
   if (scope.rows === "none") return 0;
@@ -109,7 +117,7 @@ export async function countPoolForScope(
   const [row] = await tx
     .select({ count: sql<number>`count(*)::int` })
     .from(evidenceRecords)
-    .where(and(sql`(${evidenceScopeCondition(viewer, scope, query.cardFormats)})`, attachableState(query), pair, ownerWhere(query.ownerFilter)));
+    .where(and(sql`(${evidenceScopeCondition(viewer, scope, query.cardFormats)})`, attachableState(query), pair, sameKindWhere(query.docEvidenceType), ownerWhere(query.ownerFilter)));
   return row?.count ?? 0;
 }
 
@@ -130,7 +138,9 @@ export async function listPoolForScope(viewer: Viewer, scope: EvidenceScope, que
   const dayGap = doc.date === null ? sql`null::int` : sql`abs(${evidenceRecords.issuedOn} - ${doc.date}::date)`;
   const conditions: SQL[] = [sql`(${evidenceScopeCondition(viewer, scope, query.cardFormats)})`, attachableState(query), ownerWhere(query.ownerFilter)];
   const search = searchWhere(query.q);
+  // 검색어가 없을 때만 문서 종류와 같은 증빙으로 후보를 줄인다 — 검색어가 있으면 다른 종류도 나온다(정렬 점수 kindScore는 검색 결과 순서에 그대로).
   if (search) conditions.push(search);
+  else conditions.push(sameKindWhere(doc.evidenceType));
   const rows = await tx
     .select({
       id: evidenceRecords.id,

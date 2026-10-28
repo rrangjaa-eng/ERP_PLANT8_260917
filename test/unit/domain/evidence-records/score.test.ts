@@ -92,4 +92,15 @@ describe("rankRecordsForDocument (06.1-08 E34 · G3)", () => {
     const other = record({ id: "00000000-0000-4000-8000-000000000010", totalKrw: 1 });
     expect(rankRecordsForDocument(request, [other, match]).map((row) => [row.id, row.score])).toEqual([[match.id, 1], [other.id, 0]]);
   });
+
+  // 07.1-09(D-7124): 같은 종류 거름은 저장소 WHERE(후보 집합)가 하고 점수는 검색 결과 순서만 정한다 — 검색에서 같은 종류가 위, 거른 뒤 순서는 그대로.
+  it("검색 결과 정렬 — 같은 종류가 다른 종류 위 · 같은 종류만 남겨도 상대 순서는 같다", () => {
+    const same = record({ id: "00000000-0000-4000-8000-000000000011", businessNoDigits: null, supplyKrw: 1 });
+    const other = record({ id: "00000000-0000-4000-8000-000000000012", evidenceType: "card_receipt", businessNoDigits: "1234567890", supplyKrw: 1_000_000 });
+    const sameLater = record({ id: "00000000-0000-4000-8000-000000000013", businessNoDigits: null, supplyKrw: 1, issuedOn: "2026-09-01" });
+    const all = rankRecordsForDocument(doc, [other, sameLater, same]);
+    expect(all.map((row) => row.id)).toEqual([same.id, sameLater.id, other.id]);
+    const filtered = rankRecordsForDocument(doc, [sameLater, same]);
+    expect(filtered.map((row) => row.id)).toEqual(all.filter((row) => row.id !== other.id).map((row) => row.id));
+  });
 });

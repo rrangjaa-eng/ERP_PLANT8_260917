@@ -36,6 +36,11 @@ async function publishTeam(recordId: string, teamId: string = team1): Promise<st
   return recordId;
 }
 
+// 07.1-09: 문서 증빙 종류를 정한다 — 종류 거름(검색어 없는 추천)이 걸리지 않게 하려면 null.
+async function setDocType(expenseId: string, evidenceType: string | null): Promise<void> {
+  await db.execute(sql`update expenses set evidence_type = ${evidenceType} where id = ${expenseId}`);
+}
+
 async function ids(viewer: Viewer, expenseId: string, q?: string): Promise<string[]> {
   const pool = await listEvidencePool(viewer, { owner: { kind: "expense", id: expenseId }, q });
   return pool.items.flatMap((item) => (item.id ? [item.id] : []));
@@ -90,6 +95,7 @@ describe("listEvidencePool — 작성자 풀 (06.1-08 EVID-07 · D-6108)", () =>
 
   it("경영관리 풀(registrar) = 붙일 수 있는 증빙 전부 — 미공개 · G15 종류 · 음수 포함, 붙음 · 보관 · 확인 필요는 없음", async () => {
     const doc = await createInReviewExpenseFixture(fx);
+    await setDocType(doc.expenseId, null);
     const keyed = await createIntakeManager("키있음", { attach: true });
     const privateRow = await insertRecordFixture(keyed);
     const negative = await insertRecordFixture(keyed, { supplyKrw: -50_000 });
@@ -134,6 +140,7 @@ describe("listEvidencePool — 작성자 풀 (06.1-08 EVID-07 · D-6108)", () =>
 describe("listEvidencePool — 순위 (E34 · G3)", () => {
   it("공개 증빙 25건 → SQL 20행 · 순서가 순수 rankRecordsForDocument 상위 20과 같다 · truncated · limit 20", async () => {
     const draft = await createDraftExpenseFixture(fx);
+    await setDocType(draft, null);
     const intake = await createIntakeManager();
     const made: { id: string; supplyKrw: number; issuedOn: string; evidenceType: string }[] = [];
     for (let index = 0; index < 25; index += 1) {
@@ -161,6 +168,7 @@ describe("listEvidencePool — 순위 (E34 · G3)", () => {
 
   it("짝 아닌 종류는 막힌 행으로 뒤에 선다(G3) — 점수가 높아도 짝 맞는 1건이 첫 행이고 고를 수 있다 · 후보 수에서 빠진다", async () => {
     const draft = await createDraftExpenseFixture(fx);
+    await setDocType(draft, null);
     const intake = await createIntakeManager();
     // 문서 지급 방식 = bank_transfer 라고 두고, 짝 설정은 bank_transfer ↔ tax_invoice 하나뿐.
     await db.execute(sql`update expenses set payment_method = 'bank_transfer' where id = ${draft}`);
@@ -181,10 +189,6 @@ describe("listEvidencePool — 순위 (E34 · G3)", () => {
 
 // 07.1-09 D-7124(C-92): 검색어 없는 추천은 문서 증빙 종류와 같은 증빙만(DB WHERE — 후보 집합), 검색어가 있으면 다른 종류도 나온다.
 describe("listEvidencePool — 같은 종류만 (07.1-09 D-7124 · C-92)", () => {
-  async function setDocType(expenseId: string, evidenceType: string | null): Promise<void> {
-    await db.execute(sql`update expenses set evidence_type = ${evidenceType} where id = ${expenseId}`);
-  }
-
   async function seedMixed(intake: Viewer): Promise<{ tax: string[]; card: string[] }> {
     const tax = [await publishTeam(await insertRecordFixture(intake, { evidenceType: "tax_invoice", nameOnDocument: "세금상회A" })), await publishTeam(await insertRecordFixture(intake, { evidenceType: "tax_invoice", nameOnDocument: "세금상회B" }))];
     const card = [

@@ -48,7 +48,7 @@ export function NextTurn({ view, moreHref, actionSlots }: NextTurnProps) {
               <span className={styles.label} title={item.label} id={item.key ? nextTurnLabelId(item.key) : undefined} tabIndex={item.key && actionSlots?.[item.key] ? -1 : undefined}>
                 {item.label}
               </span>
-              {item.reason ? <span className={styles.why}> · {item.reason}</span> : null}
+              {item.reason ? <span className={styles.why} title={item.reason}> · {item.reason}</span> : null}
             </span>
             <span className={styles.amt}>
               <Num value={item.measureText ?? item.amount} />

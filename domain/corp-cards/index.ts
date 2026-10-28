@@ -10,6 +10,7 @@ import { isUniqueViolation } from "@/lib/pg-errors";
 import { withTransaction } from "@/lib/db-transaction";
 import { findUserById as defaultFindUserById } from "@/repositories/users";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
+import { lockEvidenceCardImport } from "@/repositories/evidence-import-batches";
 import {
   listCorpCards as repoListCorpCards,
   insertCorpCard as repoInsertCorpCard,
@@ -174,6 +175,8 @@ export async function createCorpCard(
   // 카드 등록 · 행동 로그 · 다시 잇기를 한 트랜잭션으로 — 다시 잇기가 실패하면 카드도 남지 않아, 다시 저장할 때
   // 「이미 등록된 카드」로 막히지 않는다(/review P3-6).
   const row = await withTransaction(async (tx) => {
+    // CG-07: 카드 명세 가져오기와 같은 잠금이 첫 줄 — 가져오기가 아직 커밋하지 않은 「카드 미등록」 줄을 못 본 채 지나가지 않는다.
+    await lockEvidenceCardImport(viewer, tx);
     let inserted: CorpCardRow;
     try {
       inserted = await repoInsertCorpCard(viewer, { ...owner, kind }, tx);
@@ -249,15 +252,23 @@ export async function setCorpCardActive(
   }
 
   const current = await repoFindCorpCardById(viewer, id);
-  if (!current) return null;
+  // 보관된 카드는 없는 카드와 같은 응답(null) — 켜고 끄는 것은 살아 있는 카드만(#318 P3).
+  if (!current || current.archivedAt !== null) return null;
 
   if (current.active === active) {
     return (await project(viewer, current, CORP_CARD_DTO_SPEC)) as CorpCardDto;
   }
 
-  await repoSetCorpCardActive(viewer, id, active);
   // 06.1-04 G11: 활성이 바뀌면 같은 끝 4자리 카드 중 활성 하나가 정해질 수 있다 — 카드 미등록 기록을 다시 잇는다.
-  await (deps?.relinkUnknownCardRecords ?? defaultRelinkUnknownCardRecords)(viewer, id);
+  // PE12(E-P2-37): 활성 쓰기와 다시 잇기를 한 트랜잭션으로 — 다시 잇기가 실패하면 켜기도 되돌아간다. CG-07: 가져오기와 같은 잠금이 첫 줄.
+  const relink = deps?.relinkUnknownCardRecords ?? defaultRelinkUnknownCardRecords;
+  const changed = await withTransaction(async (tx) => {
+    await lockEvidenceCardImport(viewer, tx);
+    if (!(await repoSetCorpCardActive(viewer, id, active, tx))) return false;
+    await relink(viewer, id, tx);
+    return true;
+  });
+  if (!changed) return null;
   const updated = await repoFindCorpCardById(viewer, id);
   return updated ? ((await project(viewer, updated, CORP_CARD_DTO_SPEC)) as CorpCardDto) : null;
 }

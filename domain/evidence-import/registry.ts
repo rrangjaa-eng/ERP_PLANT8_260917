@@ -36,6 +36,8 @@ export type ParseResult = ParseSuccess | Refusal;
 
 // 거절 문구는 06.1-UI-SPEC Copywriting 「거절 —」 행 글자 그대로.
 const NOT_EXCEL = "엑셀·CSV 파일 아님 · 내려받은 파일 그대로";
+// 07.1-12 D-7114(PF11 · W15): 0바이트는 형식 판정보다 먼저 — 「엑셀·CSV 아님」이 아니라 바이트가 없다.
+const EMPTY_FILE = "빈 파일 · 내려받은 파일 그대로";
 const ENCRYPTED = "암호 걸린 파일 · 암호 풀고 다시 저장";
 const UNKNOWN_FORMAT = "모르는 서식 · 홈택스·카드사 내려받기 파일로 다시";
 const SALES_LIST = "매출 목록 · 매입 목록으로 다시 내려받기";
@@ -71,6 +73,7 @@ export function parseWorkbook(bytes: Uint8Array, options: ParseOptions = {}): Pa
   const formats = options.formats ?? EVIDENCE_FORMATS;
   const deps: WorkbookDeps = { ...DEFAULT_WORKBOOK_DEPS, ...options.deps };
   if (bytes.length > EVIDENCE_IMPORT_MAX_BYTES) return refuse("size", sizeRefusalHeadline(bytes.length));
+  if (bytes.length === 0) return refuse("not-excel", EMPTY_FILE);
 
   const shape = sniff(bytes);
   if (shape === "html" || shape === "unknown") return refuse("not-excel", NOT_EXCEL);

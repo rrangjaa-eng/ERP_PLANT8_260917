@@ -38,6 +38,7 @@ import {
   restoreCardUsageRow,
   type CardUsageForWrite,
   type CardUsageRow,
+  listArchivedCardsWithUsages,
   listCardUsageRows,
   listProjectCardUsageRows,
   type CardUsageFilter,
@@ -159,8 +160,9 @@ export type CardUsagePre = {
 
 // ── 카드 자격 ──────────────────────────────────────────────────────────────
 
-function cardLabel(card: Pick<CorpCardRow, "label" | "issuer" | "numberLast4">): string {
-  return `${card.label} · ${card.issuer} ${card.numberLast4}`;
+// 07.1-11 D-7112: 보관된 카드는 이름 바로 뒤에 `(보관)` — 목록 · 수정 · 거르개만 넘긴다(행동 로그 카드 글자는 넘기지 않아 그대로).
+function cardLabel(card: Pick<CorpCardRow, "label" | "issuer" | "numberLast4">, opts?: { archived?: boolean }): string {
+  return `${card.label}${opts?.archived ? " (보관)" : ""} · ${card.issuer} ${card.numberLast4}`;
 }
 
 /** `proxyHint` — 남의 개인 · 팀 카드(대리 등록)면 `경영관리 등록 · 카드 소지자 {이름 | 팀}`, 본인 자격 · 공용 카드는 null(서버가 정한다). */
@@ -1130,7 +1132,7 @@ export async function loadCardUsageForEdit(viewer: Viewer, id: string): Promise<
     version: stored.version,
     number: stored.number,
     cardId: stored.corpCardId,
-    cardText: cardLabel({ label: stored.cardLabel, issuer: stored.cardIssuer, numberLast4: stored.cardLast4 }),
+    cardText: cardLabel({ label: stored.cardLabel, issuer: stored.cardIssuer, numberLast4: stored.cardLast4 }, { archived: stored.cardArchivedAt !== null }),
     proxyHint,
     cardKind: stored.cardKind,
     registeredVia: stored.registeredVia,
@@ -1462,7 +1464,7 @@ function toProjectable(row: CardUsageListRow, lineNo: Map<string, number>, right
   return {
     id: row.id,
     cardId: row.corpCardId,
-    cardLabel: cardLabel({ label: row.cardLabel, issuer: row.cardIssuer, numberLast4: row.cardLast4 }),
+    cardLabel: cardLabel({ label: row.cardLabel, issuer: row.cardIssuer, numberLast4: row.cardLast4 }, { archived: row.cardArchivedAt !== null }),
     usedOn: row.usedOn,
     merchantName: row.merchantName,
     linkKind: row.linkKind,
@@ -1534,7 +1536,13 @@ async function cardChoicesFor(viewer: Viewer, scope: CardUsageScope): Promise<Pa
   const cards = await listCorpCards(viewer, { scope: { rows: "all", includeArchived: false }, includeInactive: true });
   const inScope =
     scope.kind === "all" ? cards : cards.filter((card) => card.holderUserId === scope.userId || (scope.teamId !== null && card.teamId === scope.teamId));
-  return projectMany(viewer, inScope.map((card) => ({ id: card.id, label: cardLabel(card), proxyHint: null, choosesUser: false })), CARD_OPTION_SPEC);
+  // W12: 보관 카드는 끝에 — 범위 안 살아 있는 사용이 있을 때만(옛 내역을 거를 수 있게 · 새 등록 고르기에는 없다).
+  const archived = await listArchivedCardsWithUsages(viewer, scope);
+  const choices = [
+    ...inScope.map((card) => ({ id: card.id, label: cardLabel(card) })),
+    ...archived.map((card) => ({ id: card.id, label: cardLabel(card, { archived: true }) })),
+  ];
+  return projectMany(viewer, choices.map((card) => ({ ...card, proxyHint: null, choosesUser: false })), CARD_OPTION_SPEC);
 }
 
 export async function listCardUsages(viewer: Viewer, filters: CardUsageListFilters, today: string): Promise<CardUsageList> {

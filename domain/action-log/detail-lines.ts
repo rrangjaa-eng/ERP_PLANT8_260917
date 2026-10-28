@@ -21,6 +21,8 @@ function isInternalId(value: unknown): boolean {
 const SCOPE_LABELS: Record<string, Record<string, string>> = {
   workScope: { team: "자기 팀", company: "전사" },
   viewScope: { company: "전사", org_unit: "본부", team: "팀", own: "본인" },
+  // 07.1-13: 견적 줄 상태 — 견적 표(app/(app)/projects/[id]/quote-table.tsx)의 LINE_STATUS_LABELS와 같은 글자(같은 까닭으로 같은 값을 둔다).
+  lineStatus: { not_started: "미착수", cancelled: "취소" },
 };
 
 // 칸 이름 표 — 설정 키는 레지스트리 라벨, 권한 칸은 메뉴 라벨 + 동작 낱말을 쓰므로 여기엔 나머지가 든다.
@@ -51,6 +53,29 @@ export const CHANGE_FIELD_LABELS: Record<string, string> = {
   supplyKrw: "공급가",
   vatKrw: "부가세",
   approvalNo: "승인번호",
+  hireDate: "입사일",
+  resignationDate: "퇴직일",
+  preEstimate: "사전 견적",
+};
+
+// 07.1-13 S8(E-P2-40): detail.lineChanges 원소의 줄 종류별 제목과 칸 이름 — 견적 줄은 domain/quotes/lines.ts CELL_LABELS,
+// 발행 · 입금 줄은 매출 표(app/(app)/projects/[id]/revenue-section.tsx) 열 이름과 같은 글자. 줄 안 칸 순서는 이 선언 순서.
+export const LINE_CHANGE_LABELS: Record<string, { title: string; fields: Record<string, string> }> = {
+  quote: {
+    title: "견적 줄",
+    fields: {
+      subcategory: "소분류",
+      itemName: "항목",
+      vendorId: "거래처",
+      quantity: "수량",
+      unitPrice: "단가",
+      execution: "실행가",
+      lineStatus: "상태",
+      note: "비고",
+    },
+  },
+  issue: { title: "발행 줄", fields: { entryDate: "발행일", amount: "발행액", note: "메모" } },
+  payment: { title: "입금 줄", fields: { entryDate: "입금일", amount: "입금액", note: "메모" } },
 };
 
 // 민감 칸 — 쓰는 쪽이 이미 가렸어도 렌더 쪽이 칸 이름으로 한 번 더 가린다(T-07-25-01).
@@ -173,17 +198,45 @@ function fallbackLines(detail: Record<string, unknown>): DetailLine[] | null {
   return lines.length > 0 ? lines : null;
 }
 
+// 07.1-13 S8: 줄 원소 하나를 `{제목} {순번} {항목명} {칸}` 라벨 줄들로. 모르는 종류 · 모르는 칸은 줄을 만들지 않는다(영문 키 노출 금지).
+function lineChangeLines(lineChanges: unknown): DetailLine[] {
+  if (!Array.isArray(lineChanges)) return [];
+  const lines: DetailLine[] = [];
+  for (const element of lineChanges) {
+    if (!isRecord(element) || typeof element.kind !== "string" || !isRecord(element.changes)) continue;
+    const labels = LINE_CHANGE_LABELS[element.kind];
+    if (!labels) continue;
+    const prefix = [labels.title, typeof element.no === "number" ? String(element.no) : "", typeof element.name === "string" ? element.name : ""]
+      .filter((part) => part !== "")
+      .join(" ");
+    for (const [field, fieldLabel] of Object.entries(labels.fields)) {
+      if (!(field in element.changes)) continue;
+      const pair = element.changes[field];
+      const values: unknown[] = Array.isArray(pair) ? pair : [null, pair];
+      const before = formatValue(field, values[0]);
+      const after = formatValue(field, values[1]);
+      if (before === NONE && after === NONE) continue;
+      lines.push({ label: `${prefix} ${fieldLabel}`, before, after });
+    }
+  }
+  return lines;
+}
+
 export function detailLines(detail: Record<string, unknown> | null | undefined, kind?: DetailKind): DetailLine[] | null {
   if (!detail) return null;
-  if (!isRecord(detail.changes)) return hasFallback(kind, detail) ? fallbackLines(detail) : null;
   const lines: DetailLine[] = [];
-  for (const [field, pair] of Object.entries(detail.changes).sort(([a], [b]) => compareFields(a, b))) {
-    const values: unknown[] = Array.isArray(pair) ? pair : [null, pair];
-    const before = formatValue(field, values[0]);
-    const after = formatValue(field, values[1]);
-    // 이전 · 이후가 둘 다 「없음」인 줄은 바뀐 것이 없다 — 표 칸 · 시트 · `외 N칸` 개수에서 함께 뺀다(DOM 감사 P3).
-    if (before === NONE && after === NONE) continue;
-    lines.push({ label: labelFor(field, detail), before, after });
+  if (isRecord(detail.changes)) {
+    for (const [field, pair] of Object.entries(detail.changes).sort(([a], [b]) => compareFields(a, b))) {
+      const values: unknown[] = Array.isArray(pair) ? pair : [null, pair];
+      const before = formatValue(field, values[0]);
+      const after = formatValue(field, values[1]);
+      // 이전 · 이후가 둘 다 「없음」인 줄은 바뀐 것이 없다 — 표 칸 · 시트 · `외 N칸` 개수에서 함께 뺀다(DOM 감사 P3).
+      if (before === NONE && after === NONE) continue;
+      lines.push({ label: labelFor(field, detail), before, after });
+    }
   }
+  // 줄 전후(lineChanges)는 문서 칸(changes) 줄 뒤에 둔다. lineChanges 없는 기존 기록은 지금 결과 그대로다.
+  lines.push(...lineChangeLines(detail.lineChanges));
+  if (!isRecord(detail.changes) && lines.length === 0) return hasFallback(kind, detail) ? fallbackLines(detail) : null;
   return lines.length > 0 ? lines : null;
 }

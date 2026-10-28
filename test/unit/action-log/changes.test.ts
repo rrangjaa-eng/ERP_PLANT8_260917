@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildChanges, maskLast4 } from "@/domain/action-log/changes";
+import { buildChanges, maskLast4, moneyChangeText } from "@/domain/action-log/changes";
+import { formatForeignLine } from "@/lib/format-number";
 
 describe("buildChanges (07-04 R5)", () => {
   it("바뀐 칸만 [이전, 이후]로 돌려준다", () => {
@@ -54,5 +55,22 @@ describe("maskLast4", () => {
   it("네 자리 미만이면 바뀜", () => {
     expect(maskLast4("12-3")).toBe("바뀜");
     expect(maskLast4("")).toBe("바뀜");
+  });
+});
+
+// 07.1-13 S8(E-P2-40): 단가 · 실행가 · 매출 금액 · 사전 견적의 로그 값은 Money 한 줄 글자다.
+describe("moneyChangeText (07.1-13 S8)", () => {
+  it("원화는 쉼표 + 원", () => {
+    expect(moneyChangeText({ currency: "KRW", foreignAmount: null, fxRate: 1, amountKrw: 1000000 })).toBe("1,000,000원");
+  });
+
+  it("외화는 견적 줄 2행 글자 + · 원화", () => {
+    const foreign = formatForeignLine({ currency: "USD", amount: 1000, fxRate: 1350 });
+    expect(moneyChangeText({ currency: "USD", foreignAmount: "1000.00", fxRate: "1350.0000", amountKrw: 1350000 })).toBe(`${foreign} · 1,350,000원`);
+    expect(moneyChangeText({ currency: "USD", foreignAmount: 1000, fxRate: 1350, amountKrw: 1350000 })).toBe(`${foreign} · 1,350,000원`);
+  });
+
+  it("외화인데 외화 금액이 비면 원화만", () => {
+    expect(moneyChangeText({ currency: "USD", foreignAmount: null, fxRate: "1350", amountKrw: 0 })).toBe("0원");
   });
 });

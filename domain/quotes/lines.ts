@@ -4,6 +4,7 @@ import { can as defaultCan } from "@/domain/permissions/can";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { buildChanges, moneyChangeText, type LineChange } from "@/domain/action-log/changes";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fields/build-schema";
@@ -907,6 +908,47 @@ const FIELD_COLUMNS: Record<QuoteLineField, readonly (keyof QuoteLineWritePayloa
   note: ["note"],
 };
 
+// 07.1-13 S8: 로그 줄 전후 보기 — 비교 칸(QUOTE_LINE_FIELDS)만 싣고 sortOrder · version · id는 넣지 않는다. 단가 · 실행가는
+// 네 열을 Money 글자 한 줄로, 거래처는 내부 id 그대로(상세가 「바뀜」 — 이름을 싣지 않는다).
+function lineChangeView(source: QuoteLineRow | QuoteLineWritePayload, fields: readonly QuoteLineField[]): Record<string, unknown> {
+  const view: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (field === "unitPrice") {
+      view[field] = moneyChangeText({
+        currency: source.unitPriceCurrency,
+        foreignAmount: source.unitPriceForeignAmount,
+        fxRate: source.unitPriceFxRate,
+        amountKrw: source.unitPriceAmountKrw,
+      });
+    } else if (field === "execution") {
+      view[field] = moneyChangeText({
+        currency: source.executionCurrency,
+        foreignAmount: source.executionForeignAmount,
+        fxRate: source.executionFxRate,
+        amountKrw: source.executionAmountKrw,
+      });
+    } else {
+      view[field] = source[FIELD_COLUMNS[field][0]!];
+    }
+  }
+  return view;
+}
+
+// 07.1-13 S8: 로그 줄 순번 = 견적 표 번호 열(app/(app)/projects/[id]/quote-table.tsx `displayOrder` — 클라이언트 파일이라 가져올 수 없어
+// 같은 규칙을 둔다): 종류(견적 줄 → 견적 외 비용 → 조정) 안정 정렬 뒤, 견적 줄은 소분류 · 나머지는 종류로 처음 나온 차례대로 묶는다.
+const DISPLAY_KIND_ORDER: Record<QuoteLineKind, number> = { quote: 0, out_of_quote: 1, adjustment: 2 };
+
+function displayNumbers(rows: readonly QuoteLineRow[]): Map<string, number> {
+  const groups = new Map<string, QuoteLineRow[]>();
+  for (const row of [...rows].sort((a, b) => DISPLAY_KIND_ORDER[lineKindOf(a)] - DISPLAY_KIND_ORDER[lineKindOf(b)])) {
+    const key = lineKindOf(row) === "quote" ? `quote:${row.subcategory}` : lineKindOf(row);
+    const group = groups.get(key);
+    if (group) group.push(row);
+    else groups.set(key, [row]);
+  }
+  return new Map([...groups.values()].flat().map((row, index) => [row.id, index + 1] as const));
+}
+
 // A-21 — DB 현재 값과 정규화된 쓰기 페이로드를 같은 표현끼리 비교한다(클라이언트 baseline을 믿지 않는다).
 function changedFields(current: QuoteLineRow, payload: QuoteLineWritePayload): QuoteLineField[] {
   return QUOTE_LINE_FIELDS.filter((field) => FIELD_COLUMNS[field].some((column) => current[column] !== payload[column]));
@@ -1102,6 +1144,9 @@ export async function writeQuoteLinesInTx(
     payload: QuoteLineWritePayload;
     customFields: Record<string, unknown>;
     unchanged: boolean;
+    // 07.1-13 S8: 로그 줄 전후용 — 잠금 뒤 읽은 현재 행과 그 행 대비 바뀐 칸.
+    current: QuoteLineRow | undefined;
+    changed: QuoteLineField[];
   }[] = [];
 
   if (!denial) {
@@ -1171,7 +1216,7 @@ export async function writeQuoteLinesInTx(
       const row = money.row;
       const payload = writePayload(row);
       const customFields = customFieldsSchema.parse(row.customFields ?? {}) as Record<string, unknown>;
-      const entry = { input: row, kind, payload, customFields, unchanged: false };
+      const entry = { input: row, kind, payload, customFields, unchanged: false, current, changed: [] as QuoteLineField[] };
       planned.push(entry);
 
       if (row.isNew) {
@@ -1193,6 +1238,7 @@ export async function writeQuoteLinesInTx(
       // 바뀐 칸마다 판정해 칸 오류로 싣는다(이유 = 표 위 한 줄과 같은 문자열). 바뀐 칸이 없으면 게이트를 부르지 않는다.
       const changed = changedFields(current, payload);
       entry.unchanged = changed.length === 0;
+      entry.changed = changed;
       // 04-40(GAP 1) — 기준은 잠금 뒤 같은 tx로 읽은 행의 견적가(페이로드 baseline이 아니다).
       const quoteAmountUnchanged = payload.quoteAmountKrw === current.quoteAmountKrw;
       for (const field of changed) {
@@ -1222,8 +1268,10 @@ export async function writeQuoteLinesInTx(
   const fxToRemember: FxToRemember[] = [];
   // 실제로 쓴 것(삽입·갱신·순서·보관)이 없으면 로그도 남기지 않는다 — 재전송 no-op은 아무것도 하지 않는다.
   let wrote = false;
+  // 07.1-13 S8: 실제로 쓴 줄의 전후(새 줄 · 고친 줄 · 보관한 줄). 순번은 쓰기가 끝난 뒤 표시 순서로 붙인다.
+  const writtenChanges: { id: string; name: string; archived: boolean; changes: Record<string, [unknown, unknown]> }[] = [];
 
-  for (const { input: row, kind, payload, customFields, unchanged } of planned) {
+  for (const { input: row, kind, payload, customFields, unchanged, current, changed } of planned) {
     // D-71 — 환율 칸을 실제로 고친 저장에서만 그 통화의 최근 환율을 기억한다(커밋 뒤 — 트랜잭션을 연 쪽이).
     if (payload.unitPriceCurrency !== "KRW" && row.unitPriceFxRateTouched) {
       fxToRemember.push({ currency: payload.unitPriceCurrency, rate: Number(payload.unitPriceFxRate) });
@@ -1234,6 +1282,7 @@ export async function writeQuoteLinesInTx(
       const inserted = await repoInsertQuoteLineIfAbsent(viewer, { id: row.id, revisionId, sortOrder, ...payload, lineKind: kind, customFields }, tx);
       if (inserted) {
         wrote = true;
+        writtenChanges.push({ id: row.id, name: payload.itemName, archived: false, changes: buildChanges({}, lineChangeView(payload, QUOTE_LINE_FIELDS)) });
         if (!position) nextSortOrder += 1;
         continue;
       }
@@ -1261,6 +1310,10 @@ export async function writeQuoteLinesInTx(
       throw new SaveRejectedError(raceConflicts.length > 0 ? raceConflicts : cellConflictsFor(row.id, undefined, current, HIDDEN_CONFLICT_VALUE), []);
     }
     wrote = true;
+    // 조건 UPDATE가 성공했으면 잠금 뒤 읽은 current가 덮인 값 그대로다(version이 같았다).
+    if (current) {
+      writtenChanges.push({ id: row.id, name: payload.itemName, archived: false, changes: buildChanges(lineChangeView(current, changed), lineChangeView(payload, changed)) });
+    }
   }
 
   if (position) {
@@ -1273,6 +1326,29 @@ export async function writeQuoteLinesInTx(
   const archivedCount = await repoArchiveQuoteLines(viewer, { ids: archivedIds, revisionId, archivedBy: viewer.id, archivedAt: new Date() }, tx);
   if (archivedCount !== archivedIds.length) throw new UserFacingError(ARCHIVED_LINE);
   if (archivedCount > 0) wrote = true;
+  for (const id of archivedIds) {
+    const archived = currentById.get(id);
+    if (archived) writtenChanges.push({ id, name: archived.itemName, archived: true, changes: buildChanges(lineChangeView(archived, QUOTE_LINE_FIELDS), {}) });
+  }
+
+  // (g) 엔지 리뷰 A §2 P2 — 결과는 차수의 활성 줄 전체(표시 순서). 07.1-13: 로그 줄 순번이 이 줄들로 정해지므로 로그 앞에서 읽는다(같은 tx).
+  const activeRows = await repoListQuoteLinesByRevision(viewer, revisionId, tx);
+  // 07.1-13 S8: 순번 = 저장 뒤 화면 번호(보관한 줄은 저장 전 화면 번호). 줄 하나 = 원소 하나, 바뀐 칸이 없으면 원소가 없다.
+  const activeNo = displayNumbers(activeRows);
+  const beforeNo = displayNumbers(activeBefore);
+  // 원소 차례: 남은 줄(순번 순) → 보관한 줄(순번 순).
+  const lineChanges: LineChange[] = [false, true].flatMap((archived) =>
+    writtenChanges
+      .filter((line) => line.archived === archived && Object.keys(line.changes).length > 0)
+      .map((line) => ({
+        id: line.id,
+        kind: "quote" as const,
+        no: (archived ? beforeNo : activeNo).get(line.id) ?? 0,
+        name: line.name === "" ? null : line.name,
+        changes: line.changes,
+      }))
+      .sort((a, b) => a.no - b.no),
+  );
 
   // (f) 엔지 리뷰 A §1 P2 — 같은 tx(합성 저장이 뒤에서 거부되면 이 로그도 되돌아간다).
   if (wrote) await recordAction(
@@ -1281,18 +1357,20 @@ export async function writeQuoteLinesInTx(
       actionType: "document_update",
       entity: QUOTE_LINE_ENTITY,
       entityId: revisionId,
-      detail: archivedIds.length > 0 ? { lineIds, archivedLineIds: archivedIds } : { lineIds },
+      detail: {
+        ...(archivedIds.length > 0 ? { lineIds, archivedLineIds: archivedIds } : { lineIds }),
+        ...(lineChanges.length > 0 ? { lineChanges } : {}),
+      },
     },
     { tx },
   );
 
-  // (g) 엔지 리뷰 A §2 P2 — 결과는 차수의 활성 줄 전체(표시 순서).
   return {
     projectStatus: status,
     approvedSeq,
     canWrite,
     canAdjust,
-    activeRows: await repoListQuoteLinesByRevision(viewer, revisionId, tx),
+    activeRows,
     linkedDocuments,
     fxToRemember,
   };

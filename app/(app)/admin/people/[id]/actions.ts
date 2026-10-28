@@ -33,7 +33,7 @@ export const setResignationDateAction = authedActionClient.schema(employmentDate
 
 // 07.1-14(D-7127): 팀 없는 사람의 본부 즉시 저장 — 빈 값은 「본부 없음」. 팀 · 예정 발령 · 보관 · 권한 · 상한 · 퇴직 판정은 도메인이 잠금 뒤 한다.
 export const setPersonDivisionAction = authedActionClient
-  .schema(z.object({ userId: z.string().min(1).max(64), divisionId: z.string().max(64) }))
+  .schema(z.object({ userId: z.string().min(1).max(64), divisionId: z.union([z.literal(""), z.string().uuid()]) }))
   .action(async ({ parsedInput, ctx }) => {
     await setPersonDivision(ctx.viewer, parsedInput.userId, parsedInput.divisionId === "" ? null : parsedInput.divisionId);
     revalidatePath(`/admin/people/${parsedInput.userId}`);

@@ -5,11 +5,11 @@ import { visible } from "@/domain/permissions/visible";
 import { sumKrw } from "@/domain/money";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { payWeekIndex } from "@/domain/payments/pay-schedule";
-import { listPurchaseRequests } from "@/domain/purchase-requests";
 import { summarizeOpenIssueRequests, type OpenIssueRequestSummary } from "@/domain/issue-requests";
 import { computePreSettleCheck, loadPreSettleInputs } from "@/domain/pre-settle-check";
 import { projectRowScope } from "@/domain/projects/visibility";
-import { findOldestRequestedPurchaseAt, listSettlingProjectsOfPm } from "@/repositories/next-turn";
+import { findCardSlipWaiting, findOldestRequestedPurchaseAt, listSettlingProjectsOfPm } from "@/repositories/next-turn";
+import { listPurchaseRequestEstimates } from "@/repositories/purchase-requests";
 import { seoulToday } from "@/lib/dates";
 import { formatKrw } from "@/lib/format-number";
 
@@ -36,7 +36,7 @@ export function buildPaymentBundle(targets: readonly PaymentBundleTarget[], toda
   return { key: "phase6-payment", tag: "대기", label: `지급 ${week.length}건`, reason: "이번 주", measureText: measure(week), action: PAYMENT_ACTION };
 }
 
-// 구매 요청 — 건수 · 합계는 06-14 목록의 서버 합계(필터 전체), 가장 오래된 날짜는 서버 집계의 서울 날짜(E-54).
+// 구매 요청 — 건수 · 합계는 06-14 목록 합계가 쓰는 견적 질의(필터 전체), 가장 오래된 날짜는 서버 집계의 서울 날짜(E-54).
 export function buildPurchaseBundle(input: { count: number; estimateKrw: number | null; oldestRequestedOn: string | null }): NextTurnEntry | null {
   if (input.count === 0 || input.oldestRequestedOn === null) return null;
   return {
@@ -45,6 +45,19 @@ export function buildPurchaseBundle(input: { count: number; estimateKrw: number 
     label: `구매 요청 ${input.count}건`,
     reason: `신청 · 가장 오래된 ${input.oldestRequestedOn.slice(5)}`,
     measureText: input.estimateKrw === null ? "" : formatKrw(input.estimateKrw),
+    action: { label: "구매 요청 보기", href: "/cards/purchases" },
+  };
+}
+
+// 전표 대기(07.1-17 PD1 · U-11) — 법인카드로 먼저 결제했고 전표가 아직 안 붙은 구매 완료. 금액 칸은 비운다. 0건이면 줄이 없다.
+export function buildCardSlipWaitingBundle(input: { count: number; oldestCompletedOn: string | null }): NextTurnEntry | null {
+  if (input.count === 0 || input.oldestCompletedOn === null) return null;
+  return {
+    key: "phase6-card-slip",
+    tag: "대기",
+    label: `전표 대기 ${input.count}건`,
+    reason: `결제 완료 · 가장 오래된 ${input.oldestCompletedOn.slice(5)}`,
+    measureText: "",
     action: { label: "구매 요청 보기", href: "/cards/purchases" },
   };
 }
@@ -90,10 +103,19 @@ export async function listPhase6NextTurnItems(viewer: Viewer, today: string): Pr
     if (bundle) entries.push(bundle);
   }
   if (await can(viewer, "cards.purchases", "write")) {
-    const list = await listPurchaseRequests(viewer, { status: "requested" }, today);
+    // 07.1-17(PF2): 목록 전체(행 · 줄 번호 · 붙임 수 · 투영)를 읽지 않는다 — 목록 합계(`listPurchaseRequests` totals)와 같은 견적 질의.
+    // 이 갈래는 `cards.purchases` write 안이라 범위가 전부다(`listAccess`와 같은 판단). 금액 가림은 목록과 같다.
+    const estimates = await listPurchaseRequestEstimates(viewer, { scope: { kind: "all" }, filter: { status: "requested" } });
     const oldest = await findOldestRequestedPurchaseAt(viewer);
-    const bundle = buildPurchaseBundle({ count: list.totals.count, estimateKrw: list.totals.estimateKrw, oldestRequestedOn: oldest ? seoulToday(oldest) : null });
+    const bundle = buildPurchaseBundle({
+      count: estimates.length,
+      estimateKrw: (await visible(viewer, "purchase_request.amount")) ? sumKrw(estimates) : null,
+      oldestRequestedOn: oldest ? seoulToday(oldest) : null,
+    });
     if (bundle) entries.push(bundle);
+    const waiting = await findCardSlipWaiting(viewer);
+    const slip = buildCardSlipWaitingBundle({ count: waiting.count, oldestCompletedOn: waiting.oldestCompletedAt ? seoulToday(waiting.oldestCompletedAt) : null });
+    if (slip) entries.push(slip);
   }
   if (await can(viewer, "projects.revenue", "write")) {
     const bundle = buildIssueBundle(await summarizeOpenIssueRequests(viewer), today);

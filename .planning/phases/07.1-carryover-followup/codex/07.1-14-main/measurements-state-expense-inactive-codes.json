@@ -1,0 +1,70 @@
+[
+  {
+    "width": 375,
+    "innerWidth": 375,
+    "innerHeight": 800,
+    "scrollWidth": 375,
+    "surface": {
+      "absent": false,
+      "box": {
+        "x": 16,
+        "y": 678.5625,
+        "width": 343,
+        "height": 40
+      },
+      "labelLines": 1
+    },
+    "fieldGaps": []
+  },
+  {
+    "width": 320,
+    "innerWidth": 320,
+    "innerHeight": 800,
+    "scrollWidth": 320,
+    "surface": {
+      "absent": false,
+      "box": {
+        "x": 16,
+        "y": 386.15625,
+        "width": 288,
+        "height": 40
+      },
+      "labelLines": 1
+    },
+    "fieldGaps": []
+  },
+  {
+    "width": 768,
+    "innerWidth": 768,
+    "innerHeight": 1024,
+    "scrollWidth": 768,
+    "surface": {
+      "absent": false,
+      "box": {
+        "x": 124,
+        "y": 448,
+        "width": 200,
+        "height": 32
+      },
+      "labelLines": 1
+    },
+    "fieldGaps": []
+  },
+  {
+    "width": 1280,
+    "innerWidth": 1280,
+    "innerHeight": 800,
+    "scrollWidth": 1280,
+    "surface": {
+      "absent": false,
+      "box": {
+        "x": 300,
+        "y": 400,
+        "width": 200,
+        "height": 32
+      },
+      "labelLines": 1
+    },
+    "fieldGaps": []
+  }
+]

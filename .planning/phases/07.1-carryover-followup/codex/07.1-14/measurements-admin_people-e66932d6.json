@@ -1,0 +1,1166 @@
+[
+  {
+    "route": "/admin/people",
+    "width": 375,
+    "screenshot": "admin_people-e66932d6-375.png",
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table",
+        "gap": 12
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > div.ListScreen-module__ciqCrG__filters",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > a.Button-module__TNl3Yq__btn",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1)",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr.Table-module__ikVkKa__collapsedRow:nth-of-type(2)",
+        "gap": 0
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 57,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "E2E Admin",
+        "width": 61,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "kind": "heading",
+        "text": "사람",
+        "width": 343,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > div.ListScreen-module__ciqCrG__filters > form.people-module__nODLsG__filterForm > div.people-module__nODLsG__searchLabel > label",
+        "kind": "label",
+        "text": "검색",
+        "width": 305,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#people-search",
+        "kind": "input",
+        "text": "",
+        "width": 305,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "사람 등록",
+        "width": 80,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(5) > span.RowActions-module__pGoC0a__row > a.RowActions-module__pGoC0a__action",
+        "kind": "link",
+        "text": "상세",
+        "width": 44,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(1)",
+        "kind": "nav",
+        "text": "내 차례",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(2)",
+        "kind": "nav",
+        "text": "결재",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(3)",
+        "kind": "nav",
+        "text": "손익",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > button.BottomTabs-module__PJycjq__tab",
+        "kind": "button",
+        "text": "더보기",
+        "width": 103,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "이름이메일계급현재 소속상태동작",
+        "width": 341,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(1)",
+        "kind": "cell",
+        "text": "이름",
+        "width": 120,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(5)",
+        "kind": "cell",
+        "text": "상태",
+        "width": 135,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(6)",
+        "kind": "cell",
+        "text": "동작",
+        "width": 86,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "E2E Admine2e-d8b7fd26-b358-4b30-b3df-ec3",
+        "width": 341,
+        "height": 68,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#people-row-0-name",
+        "kind": "cell",
+        "text": "E2E Admin",
+        "width": 120,
+        "height": 68,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(4)",
+        "kind": "cell",
+        "text": "임시 비밀번호 사용 중",
+        "width": 135,
+        "height": 68,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(5)",
+        "kind": "cell",
+        "text": "상세",
+        "width": 86,
+        "height": 68,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr.Table-module__ikVkKa__collapsedRow:nth-of-type(2)",
+        "kind": "row",
+        "text": "이메일 e2e-d8b7fd26-b358-4b30-b3df-ec3a2c4c",
+        "width": 341,
+        "height": 51,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr.Table-module__ikVkKa__collapsedRow:nth-of-type(2) > td.Table-module__ikVkKa__collapsedCell",
+        "kind": "cell",
+        "text": "이메일 e2e-d8b7fd26-b358-4b30-b3df-ec3a2c4c",
+        "width": 341,
+        "height": 51,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      }
+    ]
+  },
+  {
+    "route": "/admin/people",
+    "width": 320,
+    "screenshot": "admin_people-e66932d6-320.png",
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table",
+        "gap": 12
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > div.ListScreen-module__ciqCrG__filters",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > a.Button-module__TNl3Yq__btn",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1)",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr.Table-module__ikVkKa__collapsedRow:nth-of-type(2)",
+        "gap": 0
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 57,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "E2E Admin",
+        "width": 61,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "kind": "heading",
+        "text": "사람",
+        "width": 288,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > div.ListScreen-module__ciqCrG__filters > form.people-module__nODLsG__filterForm > div.people-module__nODLsG__searchLabel > label",
+        "kind": "label",
+        "text": "검색",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#people-search",
+        "kind": "input",
+        "text": "",
+        "width": 288,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "사람 등록",
+        "width": 80,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(5) > span.RowActions-module__pGoC0a__row > a.RowActions-module__pGoC0a__action",
+        "kind": "link",
+        "text": "상세",
+        "width": 44,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(1)",
+        "kind": "nav",
+        "text": "내 차례",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(2)",
+        "kind": "nav",
+        "text": "결재",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(3)",
+        "kind": "nav",
+        "text": "손익",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > button.BottomTabs-module__PJycjq__tab",
+        "kind": "button",
+        "text": "더보기",
+        "width": 89,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "이름이메일계급현재 소속상태동작",
+        "width": 286,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(1)",
+        "kind": "cell",
+        "text": "이름",
+        "width": 101,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(5)",
+        "kind": "cell",
+        "text": "상태",
+        "width": 113,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(6)",
+        "kind": "cell",
+        "text": "동작",
+        "width": 72,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "E2E Admine2e-d8b7fd26-b358-4b30-b3df-ec3",
+        "width": 286,
+        "height": 68,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#people-row-0-name",
+        "kind": "cell",
+        "text": "E2E Admin",
+        "width": 101,
+        "height": 68,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(4)",
+        "kind": "cell",
+        "text": "임시 비밀번호 사용 중",
+        "width": 113,
+        "height": 68,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(5)",
+        "kind": "cell",
+        "text": "상세",
+        "width": 72,
+        "height": 68,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr.Table-module__ikVkKa__collapsedRow:nth-of-type(2)",
+        "kind": "row",
+        "text": "이메일 e2e-d8b7fd26-b358-4b30-b3df-ec3a2c4c",
+        "width": 286,
+        "height": 71,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 3
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr.Table-module__ikVkKa__collapsedRow:nth-of-type(2) > td.Table-module__ikVkKa__collapsedCell",
+        "kind": "cell",
+        "text": "이메일 e2e-d8b7fd26-b358-4b30-b3df-ec3a2c4c",
+        "width": 286,
+        "height": 71,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 3
+      }
+    ]
+  },
+  {
+    "route": "/admin/people",
+    "width": 768,
+    "screenshot": "admin_people-e66932d6-768.png",
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table",
+        "gap": 12
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody",
+        "gap": 0
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > button.RailSheet-module__plcX-q__trigger",
+        "kind": "button",
+        "text": "≡메뉴",
+        "width": 44,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 54,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "E2E Admin",
+        "width": 61,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "kind": "heading",
+        "text": "사람",
+        "width": 728,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > div.ListScreen-module__ciqCrG__filters > form.people-module__nODLsG__filterForm > div.people-module__nODLsG__searchLabel > label",
+        "kind": "label",
+        "text": "검색",
+        "width": 280,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#people-search",
+        "kind": "input",
+        "text": "",
+        "width": 280,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "사람 등록",
+        "width": 77,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(5) > span.RowActions-module__pGoC0a__row > a.RowActions-module__pGoC0a__action",
+        "kind": "link",
+        "text": "상세",
+        "width": 22,
+        "height": 20,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "이름이메일계급현재 소속상태동작",
+        "width": 726,
+        "height": 67,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 3
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(1)",
+        "kind": "cell",
+        "text": "이름",
+        "width": 91,
+        "height": 67,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(2)",
+        "kind": "cell",
+        "text": "이메일",
+        "width": 342,
+        "height": 67,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(3)",
+        "kind": "cell",
+        "text": "계급",
+        "width": 81,
+        "height": 67,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(4)",
+        "kind": "cell",
+        "text": "현재 소속",
+        "width": 59,
+        "height": 67,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(5)",
+        "kind": "cell",
+        "text": "상태",
+        "width": 107,
+        "height": 67,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(6)",
+        "kind": "cell",
+        "text": "동작",
+        "width": 46,
+        "height": 67,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "E2E Admine2e-d8b7fd26-b358-4b30-b3df-ec3",
+        "width": 726,
+        "height": 50,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#people-row-0-name",
+        "kind": "cell",
+        "text": "E2E Admin",
+        "width": 91,
+        "height": 50,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(1)",
+        "kind": "cell",
+        "text": "e2e-d8b7fd26-b358-4b30-b3df-ec3a2c4c188a",
+        "width": 342,
+        "height": 50,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(2)",
+        "kind": "cell",
+        "text": "시스템 관리자",
+        "width": 81,
+        "height": 50,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(3)",
+        "kind": "cell",
+        "text": "—",
+        "width": 59,
+        "height": 50,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(4)",
+        "kind": "cell",
+        "text": "임시 비밀번호 사용 중",
+        "width": 107,
+        "height": 50,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(5)",
+        "kind": "cell",
+        "text": "상세",
+        "width": 46,
+        "height": 50,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/admin/people",
+    "width": 1280,
+    "screenshot": "admin_people-e66932d6-1280.png",
+    "scrollWidth": 1280,
+    "clientWidth": 1280,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table",
+        "gap": 12
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody",
+        "gap": 0
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 176,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(1)",
+        "kind": "nav",
+        "text": "프로젝트",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(2)",
+        "kind": "nav",
+        "text": "지출결의",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(3)",
+        "kind": "nav",
+        "text": "증빙",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(4)",
+        "kind": "nav",
+        "text": "법인카드",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(5)",
+        "kind": "nav",
+        "text": "결재",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(6)",
+        "kind": "nav",
+        "text": "손익",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__railOnly > a.SideRail-module__Q65iMa__link",
+        "kind": "link",
+        "text": "관리",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "E2E Admin",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "kind": "heading",
+        "text": "사람",
+        "width": 1064,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > div.ListScreen-module__ciqCrG__filters > form.people-module__nODLsG__filterForm > div.people-module__nODLsG__searchLabel > label",
+        "kind": "label",
+        "text": "검색",
+        "width": 280,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#people-search",
+        "kind": "input",
+        "text": "",
+        "width": 280,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > div.ListScreen-module__ciqCrG__bar > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "사람 등록",
+        "width": 77,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(5) > span.RowActions-module__pGoC0a__row > a.RowActions-module__pGoC0a__action",
+        "kind": "link",
+        "text": "상세",
+        "width": 22,
+        "height": 20,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "이름이메일계급현재 소속상태동작",
+        "width": 1062,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(1)",
+        "kind": "cell",
+        "text": "이름",
+        "width": 120,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(2)",
+        "kind": "cell",
+        "text": "이메일",
+        "width": 536,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(3)",
+        "kind": "cell",
+        "text": "계급",
+        "width": 120,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(4)",
+        "kind": "cell",
+        "text": "현재 소속",
+        "width": 83,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(5)",
+        "kind": "cell",
+        "text": "상태",
+        "width": 142,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > thead > tr:nth-of-type(1) > th.Table-module__ikVkKa__headerCell:nth-of-type(6)",
+        "kind": "cell",
+        "text": "동작",
+        "width": 61,
+        "height": 46,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "E2E Admine2e-d8b7fd26-b358-4b30-b3df-ec3",
+        "width": 1062,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#people-row-0-name",
+        "kind": "cell",
+        "text": "E2E Admin",
+        "width": 120,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(1)",
+        "kind": "cell",
+        "text": "e2e-d8b7fd26-b358-4b30-b3df-ec3a2c4c188a",
+        "width": 536,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(2)",
+        "kind": "cell",
+        "text": "시스템 관리자",
+        "width": 120,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(3)",
+        "kind": "cell",
+        "text": "—",
+        "width": 83,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(4)",
+        "kind": "cell",
+        "text": "임시 비밀번호 사용 중",
+        "width": 142,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > table.Table-module__ikVkKa__table > tbody > tr:nth-of-type(1) > td.Table-module__ikVkKa__cell:nth-of-type(5)",
+        "kind": "cell",
+        "text": "상세",
+        "width": 61,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  }
+]

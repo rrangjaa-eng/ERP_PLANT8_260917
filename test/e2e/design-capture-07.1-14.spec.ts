@@ -40,7 +40,27 @@ async function measureState(page: Page, width: number, surface: Locator) {
     });
     found = box ? { absent: false, box, labelLines: countLines(rects) } : { absent: true };
   }
-  return { width, ...page_, surface: found };
+  return { width, ...page_, surface: found, fieldGaps: await fieldGaps(page.locator("dialog form")) };
+}
+
+// Codex 지적(등록 패널 팀 → 본부 간격) 판정용: 패널 폼의 보이는 라벨 차례대로 「앞 칸 입력 아래 → 다음 칸 라벨 상자 위」 세로 간격(px).
+// main · 이 브랜치를 같은 잣대로 견주려고 라벨 상자(getBoundingClientRect)를 쓴다 — 글자 윤곽이 아니다.
+async function fieldGaps(form: Locator) {
+  if ((await form.count()) === 0) return [];
+  return form.first().evaluate((node) => {
+    const rows = [...node.querySelectorAll("label[for]")]
+      .filter((label) => label.getBoundingClientRect().height > 0)
+      .map((label) => {
+        const id = label.getAttribute("for") ?? "";
+        const control = document.getElementById(id);
+        return { id, labelTop: label.getBoundingClientRect().top, controlBottom: control ? control.getBoundingClientRect().bottom : null };
+      });
+    return rows.slice(1).flatMap((row, index) => {
+      const prev = rows[index];
+      if (!prev) return [];
+      return [{ from: prev.id, to: row.id, gap: prev.controlBottom === null ? null : Math.round(row.labelTop - prev.controlBottom) }];
+    });
+  });
 }
 
 async function captureAll(page: Page, name: string, open: () => Promise<void>, surfaceOf: (page: Page) => Locator): Promise<void> {

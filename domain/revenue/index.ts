@@ -473,16 +473,15 @@ async function saveEntries(
   entries: PreparedEntry[],
   priorById: ReadonlyMap<string, RevenueEntryRow>,
   tx: DbOrTx,
-): Promise<{ written: number; fxToRemember: FxToRemember[]; lineChanges: LineChange[] }> {
+): Promise<{ written: number; fxToRemember: FxToRemember[]; lineChanges: Omit<LineChange, "no">[] }> {
   let written = 0;
   const fxToRemember: FxToRemember[] = [];
-  // 07.1-13 S8: 실제로 쓴 줄의 전후. no = 이 종류 입력 배열의 1부터 순번, 매출 줄은 항목명이 없다(name null).
-  const lineChanges: LineChange[] = [];
-  const pushChange = (id: string, no: number, changes: Record<string, [unknown, unknown]>) => {
-    if (Object.keys(changes).length > 0) lineChanges.push({ id, kind, no, name: null, changes });
+  // 07.1-13 S8: 실제로 쓴 줄의 전후. 순번(no)은 saveRevenueInTx가 쓰기 뒤 표 순서로 붙인다. 매출 줄은 항목명이 없다(name null).
+  const lineChanges: Omit<LineChange, "no">[] = [];
+  const pushChange = (id: string, changes: Record<string, [unknown, unknown]>) => {
+    if (Object.keys(changes).length > 0) lineChanges.push({ id, kind, name: null, changes });
   };
-  for (const [index, { input, payload }] of entries.entries()) {
-    const no = index + 1;
+  for (const { input, payload } of entries) {
     if (input.id && input.isNew) {
       const inserted = await repoInsertRevenueEntry(viewer, { id: input.id, projectId, kind, ...payload }, tx);
       if (!inserted) {
@@ -492,7 +491,7 @@ async function saveEntries(
         }
         continue;
       }
-      pushChange(inserted.id, no, buildChanges({}, entryChangeView(payload)));
+      pushChange(inserted.id, buildChanges({}, entryChangeView(payload)));
     } else if (input.id) {
       if (input.version === undefined) {
         throw new UserFacingError("버전 정보 필요 · 새로 고침");
@@ -509,10 +508,10 @@ async function saveEntries(
       }
       // 이전 값은 묶음 읽기 행이 입력 version과 같을 때만 — 조건 UPDATE가 성공했으니 그 행이 덮인 값이다(이전 값을 지어내지 않는다).
       const prior = priorById.get(input.id);
-      if (prior && prior.version === input.version) pushChange(input.id, no, buildChanges(entryChangeView(prior), entryChangeView(payload)));
+      if (prior && prior.version === input.version) pushChange(input.id, buildChanges(entryChangeView(prior), entryChangeView(payload)));
     } else {
       const inserted = await repoInsertRevenueEntry(viewer, { projectId, kind, ...payload }, tx);
-      if (inserted) pushChange(inserted.id, no, buildChanges({}, entryChangeView(payload)));
+      if (inserted) pushChange(inserted.id, buildChanges({}, entryChangeView(payload)));
     }
     written += 1;
     if (payload.amountCurrency !== "KRW" && input.fxRateTouched) {
@@ -520,6 +519,21 @@ async function saveEntries(
     }
   }
   return { written, fxToRemember, lineChanges };
+}
+
+// 07.1-13(#316 P2): 순번 = 쓰기 뒤 매출 표의 그 줄 자리(1부터). 화면은 고친 줄만 보내므로 요청 배열 순서가 아니라 listRevenue와
+// 같은 목록(listRevenueEntriesByProject — 종류별 날짜 순)을 같은 tx로 읽고, 화면이 그 순서 그대로 발행 · 입금 표를 그린다
+// (app/(app)/projects/[id]/quote-table.tsx entriesFromDto → revenue-section.tsx Table rows). 바뀐 줄이 없으면 읽지 않는다.
+async function numberEntryChanges(viewer: Viewer, projectId: string, changes: Omit<LineChange, "no">[], tx: DbOrTx): Promise<LineChange[]> {
+  if (changes.length === 0) return [];
+  const rows = await repoListRevenueEntriesByProject(viewer, projectId, tx);
+  const numbers = new Map<string, number>();
+  for (const kind of ["issue", "payment"] as const) {
+    rows.filter((row) => row.kind === kind).forEach((row, index) => numbers.set(row.id, index + 1));
+  }
+  return changes
+    .map((change) => ({ ...change, no: numbers.get(change.id) ?? 0 }))
+    .sort((a, b) => (a.kind === b.kind ? a.no - b.no : a.kind === "issue" ? -1 : 1));
 }
 
 // 04-41(B §1) — 트랜잭션을 여는 쪽(원장 합성 저장)이 잠그기 전에 읽는 매출 줄 쓰기 권한.
@@ -558,7 +572,7 @@ export async function saveRevenueInTx(
   // 04-12(엔지 리뷰 A §1 P2) — 같은 tx로 남긴다(합성 저장이 뒤에서 거부되면 로그도 되돌아간다). 재전송 no-op은 남기지 않는다.
   if (issuedResult.written + paidResult.written > 0) {
     const recordAction = deps.recordAction ?? defaultRecordAction;
-    const lineChanges = [...issuedResult.lineChanges, ...paidResult.lineChanges];
+    const lineChanges = await numberEntryChanges(viewer, projectId, [...issuedResult.lineChanges, ...paidResult.lineChanges], tx);
     await recordAction(
       viewer,
       { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId, ...(lineChanges.length > 0 ? { detail: { lineChanges } } : {}) },

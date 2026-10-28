@@ -11,9 +11,10 @@ export type RevenueEntryRow = InferSelectModel<typeof revenueEntries>;
 // 04-02 Task 2 ② — repositories/vendors.ts 형태를 복제한다(viewer 첫 인자,
 // 보관 조건부 UPDATE, InferSelectModel 행 타입 export). 프로젝트별 목록은
 // kind·entry_date 순으로 정렬한다.
-export async function listRevenueEntriesByProject(viewer: Viewer, projectId: string): Promise<RevenueEntryRow[]> {
+// 07.1-13(#316 P2): 매출 줄 저장 로그 순번이 같은 tx에서 이 순서(= 매출 표 순서)를 읽는다 — tx를 받는다.
+export async function listRevenueEntriesByProject(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<RevenueEntryRow[]> {
   void viewer;
-  return db
+  return tx
     .select()
     .from(revenueEntries)
     .where(and(eq(revenueEntries.projectId, projectId)))

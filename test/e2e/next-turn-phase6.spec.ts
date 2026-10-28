@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses, files, projects } from "@/db/schema";
+import { corpCardUsages, expenses, files, projects, purchaseRequests } from "@/db/schema";
+import { createCorpCard } from "@/domain/corp-cards";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -10,6 +12,7 @@ import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertApprovalInstance } from "@/repositories/approvals";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
+import { createCardUsageFixture } from "../integration/fixtures/evidence";
 import { loginPage, makePerson, setupLeaveOrg, waitForHydration, type Person } from "./leave-org";
 import { archiveTempRoles, insertTempRole, setupExpenseE2E, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
@@ -122,6 +125,76 @@ test.describe("「내 차례」 Phase 6 — 기안자 증빙 · 공급 실패 (0
     await waitForHydration(retry);
     await expect(retry).toBeVisible();
     await expect(page.getByText("표시할 항목이 없습니다")).toHaveCount(0);
+  });
+});
+
+// 07.1-17(PD1 · C-01 · U-11): 전표 대기 줄 — 구매 처리 권한자 홈에만. E2E DB는 공유라 건수는 상대값으로 본다(E-28).
+test.describe("「내 차례」 전표 대기 (07.1-17 PD1)", () => {
+  const SLIP_LABEL = /전표 대기 (\d+)건/;
+
+  async function slipCount(page: Page): Promise<number> {
+    const row = page.getByRole("listitem").filter({ hasText: SLIP_LABEL });
+    if ((await row.count()) === 0) return 0;
+    return Number(SLIP_LABEL.exec((await row.first().textContent()) ?? "")?.[1] ?? 0);
+  }
+
+  async function makePurchaser(fx: ExpenseE2E): Promise<Person> {
+    const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E전표대기구매-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    for (const infoItem of [...INFO_ITEMS, "purchase_request.value", "purchase_request.amount", "card_usage.value", "card_usage.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    return makePerson("구매처리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+  }
+
+  // 구매 완료 요청 + 그 요청에 딸린 카드 사용(구매 경로 고리) — 전표 없음.
+  async function purchasedWithoutSlip(fx: ExpenseE2E): Promise<string> {
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `카드사-${randomUUID().slice(0, 6)}`, numberLast4: String(1000 + Math.floor(Math.random() * 9000)), label: "전표 대기 E2E", kind: "personal", holderUserId: fx.pm.viewer.id });
+    if (!card.id) throw new Error("카드 없음");
+    const [request] = await db
+      .insert(purchaseRequests)
+      .values({ number: `E2E${randomUUID().slice(0, 8)}`, linkKind: "team_cost", requestedBy: fx.pm.viewer.id, itemName: "전표 대기 물건", estimateAmountKrw: 33_000, status: "purchased", completedBy: fx.pm.viewer.id, completedAt: new Date() })
+      .returning({ id: purchaseRequests.id });
+    if (!request) throw new Error("구매 요청 없음");
+    const usage = await createCardUsageFixture(fx.pm.viewer, { corpCardId: card.id, usedOn: seoulToday(), totalKrw: 33_000 });
+    await db.update(corpCardUsages).set({ registeredVia: "purchase", purchaseRequestId: request.id }).where(eq(corpCardUsages.id, usage.id));
+    return usage.id;
+  }
+
+  test("구매 권한자 홈 — 전표 대기 줄이 구매 요청 줄 다음에 서고 `구매 요청 보기`가 /cards/purchases로 간다 · 전표가 붙으면 줄이 줄어든다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const purchaser = await makePurchaser(fx);
+    const page = await loginPage(browser, baseURL, purchaser, DESKTOP);
+    await page.goto("/");
+    const before = await slipCount(page);
+    if (before === 0) await expect(page.getByRole("listitem").filter({ hasText: SLIP_LABEL })).toHaveCount(0);
+
+    const usageId = await purchasedWithoutSlip(fx);
+    await page.goto("/");
+    const row = page.getByRole("listitem").filter({ hasText: SLIP_LABEL });
+    await expect(row).toHaveCount(1);
+    expect(await slipCount(page)).toBe(before + 1);
+    await expect(row.getByText("대기", { exact: true })).toBeVisible();
+    await expect(row).toContainText("결제 완료 · 가장 오래된");
+
+    await row.getByRole("link", { name: "구매 요청 보기" }).click();
+    await expect.poll(() => new URL(page.url()).pathname).toBe("/cards/purchases");
+
+    // 전표 파일이 붙으면 다음 렌더에서 줄어든다(0건이면 줄 DOM 0).
+    await db.insert(files).values({ ownerKind: "corp_card_usage", ownerId: usageId, objectKey: `evidence/${randomUUID()}`, sha256: "a".repeat(64), sizeBytes: 10, contentType: "image/png", originalName: "전표.png", uploadedBy: fx.pm.viewer.id });
+    await page.goto("/");
+    expect(await slipCount(page)).toBe(before);
+    if (before === 0) await expect(page.getByRole("listitem").filter({ hasText: SLIP_LABEL })).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("구매 처리 권한이 없는 사람 홈 — 전표 대기 줄 DOM 0(서버가 안 보낸다)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await purchasedWithoutSlip(fx);
+    const person = await makePerson("기안직원", DEFAULT_ROLE_ID, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+    const page = await loginPage(browser, baseURL, person, DESKTOP);
+    await page.goto("/");
+    await expect(page.getByRole("listitem").filter({ hasText: SLIP_LABEL })).toHaveCount(0);
+    await page.context().close();
   });
 });
 

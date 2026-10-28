@@ -446,6 +446,24 @@ describe("「내 차례」 Phase 6 — 지급 묶음 (06-23)", () => {
     ]);
   });
 
+  it("세 번째 인자 `phase6`(E-P2-45) — 넘긴 함수가 한 번 불리고 그 결과가 결재 · 막힘 뒤에 붙는다(지금 호출은 하지 않는다) · 안 넘기면 지금처럼 Phase 6를 계산", async () => {
+    const { payer } = await payerWithTarget();
+    const sentinel = { key: "phase6-sentinel", tag: "대기" as const, label: "시험 줄", reason: "", measureText: "", action: { label: "열기", href: "/x" } };
+    const phase6 = vi.fn(() => Promise.resolve([sentinel]));
+    vi.mocked(listAllPaymentTargets).mockClear();
+
+    const items = await listNextTurnItems(payer, undefined, { today, phase6 });
+
+    expect(phase6).toHaveBeenCalledTimes(1);
+    expect(items.at(-1)).toEqual(sentinel);
+    expect(items.filter((item) => item.key === "phase6-payment")).toEqual([]);
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
+
+    const plain = await listNextTurnItems(payer, undefined, { today });
+    expect(plain.filter((item) => item.key === "phase6-payment")).toHaveLength(1);
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(1);
+  });
+
   it("대표 · 기안 직원 · 팀장 — 지급 줄이 없고 지급 대상 원천을 부르지 않는다", async () => {
     const { fx } = await payerWithTarget();
     vi.mocked(listAllPaymentTargets).mockClear();

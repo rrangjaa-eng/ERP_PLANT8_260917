@@ -13,6 +13,7 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
+import { setCorpCardArchived } from "@/repositories/corp-cards";
 import { insertTempRole } from "./temp-roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -887,4 +888,206 @@ test("[06.5 D-6509] 같은 등록 패널에서 두 건 연이어 → 행 둘 · 
   expect(new Set(numbers).size).toBe(2);
   for (const number of numbers) expect(number).toMatch(/^\d{2}T-K\d{4}$/);
   await page.context().close();
+});
+
+// 07.1-11 PC1 · PC3: 파일 올리기가 실패해 열려 있는 저장된 새 건을 두 번 고쳐 다시 저장한다 — 낡은 version 충돌 문구 없이 한 건.
+const SLIP_WAIT = 20_000;
+const STALE_TEXT = "다른 저장이 먼저 됨";
+
+// 05 테스트 모드 업로드가 해시로 중복을 가르므로 부를 때마다 다른 그림(card-usage-evidence.spec.ts `uniqueImage` 꼴).
+async function slipImage(page: Page): Promise<{ name: string; mimeType: string; buffer: Buffer }> {
+  const tag = randomUUID();
+  const base64 = await page.evaluate(async (label) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 600;
+    canvas.height = 400;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("캔버스를 만들 수 없다");
+    ctx.fillStyle = "#eef2f1";
+    ctx.fillRect(0, 0, 600, 400);
+    ctx.fillStyle = "#1f2d29";
+    ctx.font = "bold 40px sans-serif";
+    ctx.fillText(label, 20, 80);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("PNG를 만들 수 없다");
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+  }, tag);
+  return { name: `slip-${tag.slice(0, 8)}.png`, mimeType: "image/png", buffer: Buffer.from(base64, "base64") };
+}
+
+async function holderUsages(holder: CardHolder): Promise<{ id: string; total: number; version: number }[]> {
+  return db
+    .select({ id: corpCardUsages.id, total: corpCardUsages.totalAmountKrw, version: corpCardUsages.version })
+    .from(corpCardUsages)
+    .where(eq(corpCardUsages.registeredBy, holder.person.viewer.id));
+}
+
+// 새 건 · 팀 비용 88,000 → 서명 PUT 실패 → 건은 저장됐고 새 건 패널이 그대로 열려 있다.
+async function openSavedNewAfterFailedUpload(page: Page, holder: CardHolder) {
+  await page.goto("/cards?new=1");
+  const sheet = panel(page);
+  const amount = sheet.getByLabel("결제 합계");
+  await waitForHydration(amount);
+  await amount.fill("88000");
+  await sheet.getByRole("radio", { name: "팀 비용" }).check();
+  await page.route("**/api/storage-local/**", (route) => route.abort());
+  await sheet.getByTestId("attachments-input").setInputFiles(await slipImage(page));
+  await expect(sheet.locator('[data-ui="attachments"] li').filter({ hasText: /slip-.*\.jpg/ })).toBeVisible({ timeout: SLIP_WAIT });
+  await expect.poll(async () => (await holderUsages(holder)).length).toBe(1);
+  return { sheet, amount };
+}
+
+test.describe("[07.1-11 PC1 · PC3] 저장된 새 건 다시 저장", () => {
+  test("PC1 재현 — 첫 다시 저장 성공 뒤 · 수정 패널 이동이 끝나기 전 두 번째 제출 → 낡은 version 다시 저장 요청 0 · 충돌 문구 없음 · 한 건 · 이어서 수정 저장", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const page = await loginPage(browser, baseURL, holder.person);
+    const { sheet, amount } = await openSavedNewAfterFailedUpload(page, holder);
+    const [saved] = await holderUsages(holder);
+    const savedId = saved?.id ?? "";
+
+    // 그 건에 version 1을 실은 다시 저장 요청(서버 액션 본문) — 첫 다시 저장 하나만 있어야 한다.
+    const staleResaves: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() !== "POST" || !request.headers()["next-action"]) return;
+      const body = request.postData() ?? "";
+      if (body.includes(savedId) && /"version":1(?!\d)/.test(body)) staleResaves.push(body);
+    });
+
+    // 첫 다시 저장 성공 뒤의 수정 패널 이동(`?editId=`)을 붙잡아 둔다 — 그사이 새 건 폼이 그대로 남는다.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let reached: () => void = () => {};
+    const navigating = new Promise<void>((resolve) => (reached = resolve));
+    await page.route(/\/cards\?(?:[^#]*&)?editId=/, async (route) => {
+      reached();
+      await held;
+      await route.continue().catch(() => undefined);
+    });
+
+    await amount.fill("99000");
+    await sheet.getByRole("button", { name: /^카드 사용 등록/ }).click();
+    await expect.poll(async () => (await holderUsages(holder))[0]?.total).toBe(99_000);
+    await navigating;
+    await expect(sheet).toBeVisible();
+
+    // 이동 중 두 번째 제출(Ctrl+Enter) — 낡은 version(1)으로 다시 저장하지 않는다.
+    await amount.fill("77000");
+    await amount.press("Control+Enter");
+    await expect(page.getByText(STALE_TEXT)).toHaveCount(0);
+
+    release();
+    const edit = page.getByRole("dialog", { name: "카드 사용 수정" });
+    await expect(edit).toBeVisible({ timeout: SLIP_WAIT });
+    await page.waitForLoadState("networkidle");
+    expect(staleResaves).toHaveLength(1);
+    await expect(page.getByText(STALE_TEXT)).toHaveCount(0);
+    expect(await holderUsages(holder)).toMatchObject([{ total: 99_000, version: 2 }]);
+
+    // 수정 패널은 서버 최신 version으로 그려졌다 — 이어서 저장해도 충돌 없이 한 건.
+    await saveEditPanel(page, "66000");
+    await expect(page.getByText(STALE_TEXT)).toHaveCount(0);
+    expect(await holderUsages(holder)).toMatchObject([{ total: 66_000, version: 3 }]);
+    await page.context().close();
+  });
+
+  test("PC1 회귀 — 이동이 끝난 뒤 수정 패널에서 두 번째 저장 → 충돌 문구 없음 · 한 건", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const page = await loginPage(browser, baseURL, holder.person);
+    const { sheet, amount } = await openSavedNewAfterFailedUpload(page, holder);
+    await amount.fill("99000");
+    await sheet.getByRole("button", { name: /^카드 사용 등록/ }).click();
+    await expect(page).toHaveURL(/editId=/, { timeout: SLIP_WAIT });
+    await expect(page.getByRole("dialog", { name: "카드 사용 수정" })).toBeVisible();
+
+    await saveEditPanel(page, "66000");
+    await expect(page.getByText(STALE_TEXT)).toHaveCount(0);
+    const rows = await holderUsages(holder);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.total).toBe(66_000);
+    await page.context().close();
+  });
+
+  test("PC3 — 올리기 성공 뒤(수정 패널로 바뀜) 금액 고침 · 저장 → 충돌 문구 없음 · 한 건", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    const amount = sheet.getByLabel("결제 합계");
+    await waitForHydration(amount);
+    await amount.fill("88000");
+    await sheet.getByRole("radio", { name: "팀 비용" }).check();
+    await sheet.getByTestId("attachments-input").setInputFiles(await slipImage(page));
+    const edit = page.getByRole("dialog", { name: "카드 사용 수정" });
+    await expect(edit).toBeVisible({ timeout: SLIP_WAIT });
+    await expect(edit.locator('[data-ui="attachments"] li').filter({ hasText: /slip-.*\.jpg/ })).toBeVisible({ timeout: SLIP_WAIT });
+
+    await saveEditPanel(page, "55000");
+    await expect(page.getByText(STALE_TEXT)).toHaveCount(0);
+    const rows = await holderUsages(holder);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.total).toBe(55_000);
+    await page.context().close();
+  });
+});
+
+// 07.1-11 D-7112 · U-14 · W12: 보관된 카드는 `{이름} (보관) · {발급사} {뒤4자리}` — 목록 묶음 머리 · 수정 패널 `카드` 줄 · 카드 거르개 옵션(끝 · 사용 있는 것만).
+async function seedUsageOn(holder: CardHolder, cardId: string, amount: number): Promise<string> {
+  const input = {
+    corpCardId: cardId,
+    usedOn: seoulToday(),
+    merchantVendorId: null,
+    total: { currency: "KRW" as const, amount, fxRate: 1 },
+    evidenceTypeCode: "card_receipt",
+    linkKind: "team_cost" as const,
+    memo: null,
+  };
+  return (await createCardUsage(holder.person.viewer, input, await precheckCardUsage(holder.person.viewer, input))).id;
+}
+
+test.describe("[07.1-11 W12] 보관 카드 표시", () => {
+  test("묶음 머리 · 수정 패널 `카드` 줄 `(보관)` · 거르개 옵션 = 전체 → 활성 → 사용 있는 보관 카드(끝) · 사용 없는 보관 카드 0", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder(3);
+    const [activeId = "", archivedId = "", emptyArchivedId = ""] = holder.cardIds;
+    await seedUsageOn(holder, activeId, 11_000);
+    const archivedUsage = await seedUsageOn(holder, archivedId, 22_000);
+    await setCorpCardArchived(SYSTEM_VIEWER, archivedId, true);
+    await setCorpCardArchived(SYSTEM_VIEWER, emptyArchivedId, true);
+    const activeText = `${holder.cardLabel} · ${holder.issuer} 4321`;
+    const archivedText = `${holder.cardLabel}-2 (보관) · ${holder.issuer} 4322`;
+
+    const page = await loginPage(browser, baseURL, holder.person, { width: 1280, height: 800 });
+    await page.goto("/cards");
+    const groups = page.locator("tbody tr[class*='groupRow']");
+    await expect(groups).toHaveText([activeText, archivedText]);
+    const options = page.getByLabel("카드", { exact: true }).locator("option");
+    await expect(options).toHaveText(["전체", activeText, archivedText]);
+
+    await page.goto(`/cards?editId=${archivedUsage}`);
+    await expect(page.getByRole("dialog", { name: "카드 사용 수정" }).getByText(archivedText, { exact: true })).toBeVisible();
+
+    // 375 — `(보관)`은 이름 바로 뒤라 말줄임에 잘리지 않는다(그 글자 상자가 묶음 머리 칸 안).
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto("/cards");
+    const header = page.locator("tbody tr[class*='groupRow']").filter({ hasText: "(보관)" }).locator("th, td").first();
+    await expect(header).toBeVisible();
+    const clipped = await header.evaluate((cell) => {
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const at = node.textContent?.indexOf("(보관)") ?? -1;
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + "(보관)".length);
+        const mark = range.getBoundingClientRect();
+        const box = cell.getBoundingClientRect();
+        return mark.right > box.right + 0.5 || mark.left < box.left - 0.5;
+      }
+      return true;
+    });
+    expect(clipped).toBe(false);
+    await page.context().close();
+  });
 });

@@ -1392,3 +1392,91 @@ describe("소분류 서버 검증(quick 261002-3mx)", () => {
     expect((await reloadLine(line.id)).subcategory).toBe(lineKind);
   });
 });
+
+// 07.1-13 S8(E-P2-40 · CG-09): 견적 줄 저장 로그는 줄 id 목록에 더해 바뀐 줄마다 바뀐 칸 전후를 lineChanges 원소 하나로 남긴다.
+describe("견적 줄 저장 로그의 줄 전후(07.1-13 S8)", () => {
+  async function lastLineLog(revisionId: string): Promise<Record<string, unknown>> {
+    const rows = await db
+      .select({ detail: actionLog.detail })
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, QUOTE_LINE_ENTITY), eq(actionLog.entityId, revisionId), eq(actionLog.actionType, "document_update")))
+      .orderBy(asc(actionLog.seq));
+    const detail = rows.at(-1)?.detail;
+    if (!detail || typeof detail !== "object") throw new Error("견적 줄 로그가 없습니다");
+    return detail as Record<string, unknown>;
+  }
+
+  it("같은 항목명 두 줄 · 새 줄 · 지운 줄 — 줄마다 원소 하나, 새 줄은 이후만 · 지운 줄은 이전만, 그대로인 줄은 없다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const stageA = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "무대", unitPrice: { currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: 10_000 } });
+    const stageB = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: "무대", unitPrice: { currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: 10_000 } });
+    const light = await seedLine(revision.id, subcategoryValue, { sortOrder: 2, itemName: "조명", note: "지울 줄" });
+    const sound = await seedLine(revision.id, subcategoryValue, { sortOrder: 3, itemName: "음향" });
+    const added = newRow(subcategoryValue, { itemName: "새 영상", unitPrice: krw(30_000), note: "새 비고" });
+
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [asInput(stageA, { unitPrice: krw(12_000) }), asInput(stageB, { quantity: 2 }), asInput(sound), added],
+      archivedLineIds: [light.id],
+    });
+
+    const detail = await lastLineLog(revision.id);
+    expect(detail.lineIds).toEqual([stageA.id, stageB.id, sound.id, added.id]);
+    expect(detail.archivedLineIds).toEqual([light.id]);
+    const elements = detail.lineChanges as Array<{ id: string; kind: string; no: number; name: string | null; changes: Record<string, [unknown, unknown]> }>;
+    expect(elements).toHaveLength(4);
+    const byId = new Map(elements.map((element) => [element.id, element] as const));
+    expect(byId.has(sound.id)).toBe(false);
+    expect(byId.get(stageA.id)).toEqual({ id: stageA.id, kind: "quote", no: 1, name: "무대", changes: { unitPrice: ["10,000원", "12,000원"] } });
+    expect(byId.get(stageB.id)).toEqual({ id: stageB.id, kind: "quote", no: 2, name: "무대", changes: { quantity: ["1.00", "2.00"] } });
+
+    const created = byId.get(added.id)!;
+    expect(created).toMatchObject({ kind: "quote", no: 4, name: "새 영상" });
+    expect(created.changes).toMatchObject({ itemName: [null, "새 영상"], unitPrice: [null, "30,000원"], execution: [null, "10,000원"], note: [null, "새 비고"] });
+    for (const pair of Object.values(created.changes)) expect(pair[0]).toBeNull();
+    for (const key of Object.keys(created.changes)) expect(["subcategory", "itemName", "vendorId", "quantity", "unitPrice", "execution", "lineStatus", "note"]).toContain(key);
+
+    const removed = byId.get(light.id)!;
+    expect(removed).toMatchObject({ kind: "quote", no: 3, name: "조명" });
+    expect(removed.changes).toMatchObject({ itemName: ["조명", null], unitPrice: ["100,000원", null], execution: ["50,000원", null], note: ["지울 줄", null] });
+    for (const pair of Object.values(removed.changes)) expect(pair[1]).toBeNull();
+  });
+
+  it("외화 단가 변경은 외화 글자 + 원화로 남는다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "장비", unitPrice: { currency: "USD", foreignAmount: "100.00", fxRate: "1300.0000", amountKrw: 130_000 } });
+
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(line, { unitPrice: { currency: "USD", amount: 200, fxRate: 1300 } })] });
+
+    const [element] = (await lastLineLog(revision.id)).lineChanges as Array<{ changes: Record<string, [string, string]> }>;
+    const [before, after] = element!.changes.unitPrice!;
+    expect(before).toMatch(/^USD 100\.00 @.+ · 130,000원$/);
+    expect(after).toMatch(/^USD 200\.00 @.+ · 260,000원$/);
+  });
+
+  it("순번은 화면 번호 열과 같다 — 종류 그룹(견적 줄 → 조정) 순서라 맨 뒤 조정 줄보다 새 견적 줄이 앞이다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "무대" });
+    const adjustment = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: "조정" });
+    await db.update(quoteLines).set({ lineKind: "adjustment", subcategory: "adjustment" }).where(eq(quoteLines.id, adjustment.id));
+    const added = newRow(subcategoryValue, { itemName: "새 견적 줄" });
+
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [added] });
+
+    const [element] = (await lastLineLog(revision.id)).lineChanges as Array<{ id: string; no: number }>;
+    expect(element).toMatchObject({ id: added.id, no: 2 });
+  });
+
+  it("순서만 바꾼 저장은 로그 행은 남고 lineChanges 칸이 없다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const first = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "하나" });
+    const second = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: "둘" });
+    const logsBefore = await actionCount(QUOTE_LINE_ENTITY, revision.id, "document_update");
+
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [], order: [second.id, first.id] });
+
+    expect(await actionCount(QUOTE_LINE_ENTITY, revision.id, "document_update")).toBe(logsBefore + 1);
+    const detail = await lastLineLog(revision.id);
+    expect(detail.lineIds).toEqual([]);
+    expect(detail).not.toHaveProperty("lineChanges");
+  });
+});

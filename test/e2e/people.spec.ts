@@ -345,6 +345,17 @@ test.describe("사람 · 조직 · 계급 옆 패널 (04.6-14)", () => {
     await expect(panel).toBeVisible();
   });
 
+  test("S2(07.1-02): 사람 등록 패널을 빈 칸으로 제출하면 포커스가 첫 aria-invalid 칸(이름)으로 간다", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto("/admin/people?new=1");
+    const panel = sidePanel(page);
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+    await panel.locator("#person-form button[type=submit]").click();
+    await expect(panel.locator("#name")).toHaveAttribute("aria-invalid", "true");
+    await expect(panel.locator("#person-form [aria-invalid=true]").first()).toBeFocused();
+    await expect(panel.locator("#name")).toBeFocused();
+  });
+
   test("UQ-8 B · R9 D: 본부 · 팀 · 계급 등록 성공 → 패널이 열린 채 칸이 비고 첫 칸 포커스 · 상태 한 줄 · 목록에 새 줄", async ({ page }) => {
     await loginAsAdmin(page);
     const stamp = Date.now();
@@ -745,5 +756,32 @@ test.describe("삭제 · 퇴직일 칸 상태와 삭제 사유 (06.4 D-6417 · D
     await field.blur();
     await expect(page.locator("#resignationDate-error")).toHaveText("계급 지정 권한 없음 · 시스템 관리자");
     await expect(field).toHaveValue("");
+  });
+});
+
+// 07.1 D-2(2026-10-27 사용자 결정): 시스템 관리자가 다른 사람에게 자리를 넘기는 화면 — 대상 상세의 3차 하나 → 확인 모달.
+// 게이트 N-1: 나 말고 시스템 관리자가 또 있으면 넘기기는 회사 자리 검사가 늘 거부하므로 버튼이 없다. CI의 erp_test에는 다른 스펙이 만든
+// 시스템 관리자 계정이 늘 여럿이라 이 스펙은 「다른 시스템 관리자가 있으면 없음」을 잰다(다른 관리자를 하나 만들어 상태를 고정한다).
+// 다른 관리자 유무 판정(hasOtherSysadmin) · 대표 · 퇴직 예정 · 성공 · 한 tx 원자성 · 동시 실행은 통합 sysadmin-handover.test.ts가 잰다.
+test.describe("시스템 관리자 넘기기 (07.1 D-2)", () => {
+  const HANDOVER = "시스템 관리자 넘기기";
+
+  test("다른 시스템 관리자가 있으면 넘길 수 있는 대상에도 버튼이 없다 · 위임 계정도 없다", async ({ page, browser, baseURL }) => {
+    await loginAsAdmin(page);
+    await makeAccount("E2E넘기기관리자", SYSADMIN_ROLE_ID);
+    const pm = await makeAccount("E2E넘기기대상", DEFAULT_ROLE_ID);
+
+    await page.goto(`/admin/people/${pm}`);
+    await expect(page.locator("#person-role-change")).toBeVisible();
+    await expect(page.getByRole("button", { name: HANDOVER })).toHaveCount(0);
+
+    const delegate = await createDelegatedAccount();
+    const context = await browser.newContext({ baseURL });
+    const delegatePage = await context.newPage();
+    await loginWith(delegatePage, delegate);
+    await delegatePage.goto(`/admin/people/${pm}`);
+    await expect(delegatePage.locator("#person-role-change")).toBeVisible();
+    await expect(delegatePage.getByRole("button", { name: HANDOVER })).toHaveCount(0);
+    await context.close();
   });
 });

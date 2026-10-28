@@ -1,11 +1,12 @@
 "use client";
 
-import { startTransition, useMemo, useOptimistic, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { startTransition, useEffect, useMemo, useOptimistic, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import type { RuleRoleView, RuleRowView } from "@/domain/notify/rule-admin";
 import { formReason } from "@/lib/actions/form-reason";
 import { Button } from "@/ui/button/Button";
+import { focusFirstInvalid } from "@/ui/form/focus-first-invalid";
 import { TextField } from "@/ui/input/TextField";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
@@ -178,6 +179,11 @@ function RuleForm({ row, roles }: { row: RuleRowView; roles: RuleRoleView[] }) {
   const daysError = rangeError ?? (serverError?.startsWith("일수 범위") ? serverError : undefined);
   const conflict = serverError?.startsWith("다른 사람이 먼저 수정") === true;
 
+  // 일수 오류가 서면 포커스를 일수 칸으로(07.1-02 S3 · E-P2-05) — 칸의 aria-invalid는 오류를 받은 다음 렌더에 붙으므로 effect에서 부른다.
+  useEffect(() => {
+    if (daysError) focusFirstInvalid("rule-form");
+  }, [daysError, result]);
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setRangeError(null);
@@ -188,6 +194,8 @@ function RuleForm({ row, roles }: { row: RuleRowView; roles: RuleRoleView[] }) {
       const raw = typeof field === "string" ? field.trim() : "";
       days = raw === "" ? Number.NaN : Number(raw);
       if (!Number.isInteger(days) || days < range.min || days > range.max) {
+        // 같은 잘못된 값으로 다시 제출하면 오류 글자가 그대로라 위 effect가 다시 돌지 않는다 — 칸이 이미 aria-invalid이니 여기서 부른다.
+        if (rangeError !== null) focusFirstInvalid("rule-form");
         setRangeError(rangeMessage);
         return;
       }
@@ -215,7 +223,13 @@ function RuleForm({ row, roles }: { row: RuleRowView; roles: RuleRoleView[] }) {
       </Button>
     </>
   ) : daysError ? (
-    daysError
+    // 범위는 칸 오류가 한 번만 말한다 — 요약은 칸 수 · 다음 행동만(클라이언트 막힘 · 서버가 돌려준 범위 오류 모두 daysError 하나에서 갈린다 — E-P2-06).
+    <>
+      저장할 수 없음 — 일수 1칸 ·{" "}
+      <Button variant="tertiary" onClick={() => document.getElementById("days")?.focus()}>
+        일수 고치기
+      </Button>
+    </>
   ) : serverError ? (
     formReason("저장", serverError).text
   ) : undefined;
@@ -225,14 +239,16 @@ function RuleForm({ row, roles }: { row: RuleRowView; roles: RuleRoleView[] }) {
       {range ? (
         <div className={styles.daysField}>
           <div className={styles.withUnit}>
-            <TextField id="days" name="days" label="일수" inputMode="numeric" defaultValue={row.days ?? ""} error={daysError} hintId="days-unit days-range" />
+            <TextField id="days" name="days" label="일수" inputMode="numeric" defaultValue={row.days ?? ""} error={daysError} hintId={daysError ? "days-unit" : "days-unit days-range"} />
             <span id="days-unit" className={styles.unit}>
               {row.dateUnit === "business" ? "영업일" : "일"}
             </span>
           </div>
-          <p id="days-range" className={styles.aux}>
-            {rangeText}
-          </p>
+          {daysError ? null : (
+            <p id="days-range" className={styles.aux}>
+              {rangeText}
+            </p>
+          )}
         </div>
       ) : null}
       <p className={styles.readLine}>기본 받는 사람 · {row.defaultRecipientLabel}</p>

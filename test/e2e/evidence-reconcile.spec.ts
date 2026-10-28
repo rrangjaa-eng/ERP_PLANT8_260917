@@ -117,7 +117,8 @@ test.describe("S8 대리 등록 · S2 행 행동 배타(06.1-09 Task 3)", () => 
     const lonely = await line(manager, last4, { total: t, date: "2026.03.17" });
     const approvalNo = String(20_000_000 + Math.floor(Math.random() * 79_999_999));
     await cardUsage(holder, last4, 10_000, approvalNo);
-    await line(manager, last4, { total: total(), approvalNo, date: "2026.03.18" });
+    // D-E1: 카드 사용 사용일(04-30)에서 31일 안이어야 고를 수 있는 후보다(넘으면 `날짜 다름 · N일` 막힌 행).
+    await line(manager, last4, { total: total(), approvalNo, date: "2026.04.18" });
 
     await page.goto("/expenses/evidence?state=unmatched");
     await expect(evidenceRows(page)).toHaveCount(2);

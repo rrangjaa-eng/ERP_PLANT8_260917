@@ -45,6 +45,12 @@ export const CHANGE_FIELD_LABELS: Record<string, string> = {
   residentNumber: "주민등록번호",
   password: "비밀번호",
   tempPassword: "비밀번호",
+  usedOn: "사용일",
+  cardLast4: "카드",
+  totalKrw: "결제 합계",
+  supplyKrw: "공급가",
+  vatKrw: "부가세",
+  approvalNo: "승인번호",
 };
 
 // 민감 칸 — 쓰는 쪽이 이미 가렸어도 렌더 쪽이 칸 이름으로 한 번 더 가린다(T-07-25-01).

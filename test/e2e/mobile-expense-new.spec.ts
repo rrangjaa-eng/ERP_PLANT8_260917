@@ -58,7 +58,7 @@ test.describe("폰 골라내기 시트 (R6-04)", () => {
     await expect(trigger).toBeFocused();
   });
 
-  test("웨이브 9 D3 · D4 — 시트 높이는 고정이고 시트와 증빙 올리기에 kbd를 그리지 않는다", async ({ browser, baseURL }) => {
+  test("웨이브 9 D3 · D4 · 07.1-02 U-5 — 시트 높이는 내용 따라 최대 --sheet-max-h이고 시트와 증빙 올리기에 kbd를 그리지 않는다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm, PHONE);
     await page.goto("/expenses/new");
@@ -69,9 +69,19 @@ test.describe("폰 골라내기 시트 (R6-04)", () => {
     const sheet = page.getByRole("dialog", { name: "지급처 고르기" });
     await expect(sheet.getByRole("option").first()).toBeVisible();
     await expect(sheet.locator("kbd:visible")).toHaveCount(0);
+    // 07.1-02 PX2(U-5): 높이는 고정이 아니라 내용 따라 — 후보가 많으면 --sheet-max-h까지, 결과가 줄면 낮아진다(검색 칸이 내려오는 것은 허용). 계약은 최대 높이 이하 · 아래에 붙음 · 가로 넘침 0이다.
+    const sheetMax = await tokenPx(page, "--sheet-max-h");
     const full = (await sheet.boundingBox())?.height ?? 0;
+    expect(full).toBeLessThanOrEqual(sheetMax + 1);
     await sheet.getByRole("textbox", { name: "지급처 이름 검색" }).fill("없는거래처-zzzz");
     await expect(sheet.getByText("조건에 맞는 지급처가 없습니다 ·")).toBeVisible();
-    expect((await sheet.boundingBox())?.height ?? 0).toBeCloseTo(full, 0);
+    const empty = await sheet.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return { height: box.height, bottom: box.bottom, innerHeight: window.innerHeight, scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth };
+    });
+    expect(empty.height).toBeLessThanOrEqual(full + 1);
+    expect(empty.height).toBeLessThan(sheetMax);
+    expect(empty.bottom).toBeCloseTo(empty.innerHeight, 0);
+    expect(empty.scrollWidth).toBeLessThanOrEqual(empty.innerWidth);
   });
 });

@@ -7,7 +7,8 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, deleteCardUsage, precheckCardUsage, precheckCardUsageRemoval, type CardUsageInput } from "@/domain/corp-card-usages";
-import { attachEvidenceRecord, detachEvidenceRecord, listAttachCandidates, previewDetach } from "@/domain/evidence-records/attach";
+import { attachEvidenceRecord, canSeeLinkOwner, detachEvidenceRecord, listAttachCandidates, previewDetach, takenMessage } from "@/domain/evidence-records/attach";
+import { listLiveLinkOwnersByRecords } from "@/repositories/evidence-record-links";
 import { closeExpense, deleteExpenseDraft } from "@/domain/expenses";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { cancelPurchaseRequest, precheckPurchaseCancel } from "@/domain/purchase-requests";
@@ -18,7 +19,7 @@ import { insertRole } from "@/repositories/roles";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { makePerson } from "./approvals-fixtures";
 import { setupExpenseProject } from "./fixtures/expenses";
-import { createDraftExpenseFixture, createInReviewExpenseFixture, createIntakeManager, createReturnedExpenseFixture, insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
+import { createCardUsageFixture, createDraftExpenseFixture, createInReviewExpenseFixture, createIntakeManager, createReturnedExpenseFixture, insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 import { setEvidenceRequired } from "./fixtures/payments";
 import { purchaseProject, request as createRequest } from "./fixtures/purchase-requests";
 
@@ -133,6 +134,32 @@ describe("P3-2 경합 거부의 문서 번호", () => {
     if (!manager.roleId) throw new Error("계급 없음");
     await upsertPermission(SYSTEM_VIEWER, { roleId: manager.roleId, menu: "projects", action: "view", allowed: true });
     expect(await messageOf(attachEvidenceRecord(manager, { recordId, owner: { kind: "purchase_request", id: created.id } }))).toBe(`다른 사람이 먼저 붙임 · ${doc.number} · 새로 고침`);
+  });
+});
+
+// 07.1-04 PE9: 카드 사용에 붙은 기록의 점유 문구 — 그 카드 사용을 볼 수 있는 사람에게만 K 번호.
+describe("PE9 카드 사용 붙은 곳 보기", () => {
+  it("카드 사용 목록 범위 안 → canSeeLinkOwner 참 · 문구에 K 번호 / 범위 밖 → 거짓 · 번호 없는 문구", async () => {
+    const pm = await makePerson("붙은곳PM", DEFAULT_ROLE_ID, "기획1팀");
+    const wide = await createIntakeManager("경영관리", { payments: true });
+    const narrow = await createIntakeManager("범위 좁음");
+    const last4 = String(4000 + Math.floor(Math.random() * 4000));
+    // 발급사를 시험마다 새로 — 고정 발급사 + 끝 4자리 4000개는 corp_cards 유일 인덱스에 가끔 부딪힌다(main 꼴).
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `카드사-${randomUUID()}`, numberLast4: last4, label: `붙은곳 ${last4}`, kind: "personal", holderUserId: pm.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const usage = await createCardUsageFixture(pm, { corpCardId: card.id, usedOn: "2026-04-30", totalKrw: 200_000 });
+    const recordId = await insertRecordFixture(wide, { evidenceType: "card_receipt", supplyKrw: 181_818, vatKrw: 18_182, issuedOn: "2026-04-30" });
+    await insertLinkFixture({ recordId, ownerKind: "corp_card_usage", ownerId: usage.id, attachedBy: wide.id });
+    const [owner] = await listLiveLinkOwnersByRecords(SYSTEM_VIEWER, [recordId]);
+    if (!owner) throw new Error("붙은 곳 없음");
+    expect(owner.ownerNumber).toBe(usage.number);
+
+    expect(await canSeeLinkOwner(wide, owner)).toBe(true);
+    expect(await takenMessage(wide, owner)).toBe(`다른 사람이 먼저 붙임 · ${usage.number} · 새로 고침`);
+    expect(await canSeeLinkOwner(narrow, owner)).toBe(false);
+    const hidden = await takenMessage(narrow, owner);
+    expect(hidden).toBe("다른 사람이 먼저 붙임 · 새로 고침");
+    expect(hidden).not.toContain(usage.number);
   });
 });
 

@@ -62,7 +62,7 @@ test.describe("MAST-05 지급 방식 코드표 (06-02)", () => {
       await expect(methodOptions.filter({ hasText: finalLabel })).toHaveCount(1);
 
       // 설정 화면 짝 격자 행에도 있다.
-      await page.goto("/admin/settings");
+      await page.goto(`/admin/settings?group=${encodeURIComponent("지급")}`);
       const grid = page.getByRole("table", { name: "지급 방식 · 증빙 종류 짝" });
       await expect(grid.getByRole("rowheader", { name: new RegExp(finalLabel) })).toBeVisible();
 
@@ -75,7 +75,7 @@ test.describe("MAST-05 지급 방식 코드표 (06-02)", () => {
       await waitForHydration(pmPage.getByRole("button", { name: /^임시 저장/ }));
       await expect(pmPage.getByLabel("지급 방식").locator("option").filter({ hasText: finalLabel })).toHaveCount(0);
 
-      await page.goto("/admin/settings");
+      await page.goto(`/admin/settings?group=${encodeURIComponent("지급")}`);
       await expect(page.getByRole("table", { name: "지급 방식 · 증빙 종류 짝" }).getByRole("rowheader", { name: new RegExp(finalLabel) })).toHaveCount(0);
       await pmPage.context().close();
     } finally {

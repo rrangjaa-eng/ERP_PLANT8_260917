@@ -66,6 +66,18 @@ function selectedLabel(select: Locator): Locator {
   return select.locator("option:checked");
 }
 
+test.describe("계급 추가 빈 제출 포커스 (07.1-02 S2)", () => {
+  test("계급 추가 패널을 빈 칸으로 제출하면 포커스가 이름 칸(첫 aria-invalid)으로 간다", async ({ page }) => {
+    await loginAs(page);
+    await page.goto("/admin/people/roles?new=1");
+    const form = page.locator("#role-form");
+    await expect(form).toBeVisible({ timeout: 15_000 });
+    await form.locator("button[type=submit]").click();
+    await expect(form.locator("#role-name")).toHaveAttribute("aria-invalid", "true");
+    await expect(form.locator("#role-name")).toBeFocused();
+  });
+});
+
 test.describe("계급 업무 범위 칸 (04-27 · D11·D20)", () => {
   const tempRoleName = `E2E 업무범위 ${Date.now()}`;
   let tempRoleId = "";

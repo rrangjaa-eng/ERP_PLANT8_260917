@@ -58,6 +58,37 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
     await expect(lead.getByRole("button", { name: /^승인/ })).toHaveCount(0);
   });
 
+  test("PC5(07.1-02): 폰 「더보기」 시트 안 Ctrl+Enter는 `승인`을 보내지 않고, 시트를 닫은 뒤 Ctrl+Enter는 승인한다", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 5, weekdays: 2 });
+    const org = await setupLeaveOrg(today);
+    const doc = await submit(org, range);
+
+    const lead = await loginPage(browser, baseURL, org.teamLead);
+    await lead.goto(`/leave/${doc.leaveId}`);
+    const approve = lead.getByRole("button", { name: /^승인/ });
+    await waitForHydration(approve);
+    await lead.setViewportSize({ width: 375, height: 800 });
+    let actionPosts = 0;
+    lead.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"] !== undefined) actionPosts += 1;
+    });
+    await lead.getByRole("navigation", { name: "하단 탭" }).getByRole("button", { name: "더보기" }).click();
+    const sheet = lead.getByRole("dialog", { name: "더보기" });
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole("heading", { name: "더보기" }).dispatchEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true });
+    await lead.waitForTimeout(1_000);
+    expect(actionPosts).toBe(0);
+    await expect(lead.getByRole("status").filter({ hasText: "승인 · " })).toHaveCount(0);
+    await expect(sheet).toBeVisible();
+
+    await sheet.getByRole("button", { name: "닫기" }).click();
+    await expect(sheet).toBeHidden();
+    await lead.keyboard.press("Control+Enter");
+    await expect(lead.getByRole("status").filter({ hasText: "승인 · " })).toHaveText(`승인 · 결재 요청됨 → ${org.divisionHead.name}`);
+    await lead.context().close();
+  });
+
   test("반려 모달 — 사유 칸 첫 포커스 · 빈 사유 막힘 · Ctrl+Enter 반려 → 기안자 고쳐 쓰는 폼으로 다시 신청(번호 유지 · 새 차수)", async ({ browser, baseURL }) => {
     const today = seoulToday();
     const range = leaveWeekdayRange(today, { week: 5, weekdays: 3 });

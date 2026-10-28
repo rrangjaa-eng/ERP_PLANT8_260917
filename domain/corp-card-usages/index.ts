@@ -17,7 +17,7 @@ import { seoulToday } from "@/lib/dates";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCorpCardById, listCorpCards, type CorpCardRow } from "@/repositories/corp-cards";
 import { findLiveShaConflicts } from "@/repositories/files";
-import { findUserNamesByIds, listUsers } from "@/repositories/users";
+import { findUserById, findUserNamesByIds, listUsers } from "@/repositories/users";
 import { findMembershipAtDate, findMembershipsAtDate } from "@/repositories/team-memberships";
 import { findTeamsByIds } from "@/repositories/teams";
 import { listVendorsForPick } from "@/repositories/vendors";
@@ -325,6 +325,28 @@ async function purchaseUsedBy(
     throw new CardUsageRejectedError(`요청자 ${name} ${mmdd(input.usedOn)} 소속 없음 · 소속 발령은 관리자`);
   }
   return { usedByUserId: input.stored, teamId };
+}
+
+// 07.1-04 PR #305 검토 P2: 카드 명세 붙임이 사용일만 옮길 때(D-7104 — 파일이 사용일을 정한다) 수정 경로의 날짜 판정을 같은 날짜로 다시 본다 —
+// 미래 날짜(assertUsageBasics) · 팀 카드는 사용한 사람이 그날 재직 ∧ 카드 팀 소속(usedByCandidates) · 팀 비용은 그날 소속 팀(resolveUsedBy, 없으면 거부).
+// 개인 카드의 재직 · 카드 자격 · 본인/대리 경로는 수정 경로도 날짜로 다시 가르지 않으므로(사용한 사람 그대로면 경로 그대로) 여기서도 보지 않는다.
+// 돌려주는 teamId = 팀 비용의 새 팀(그 밖 null = 그대로). 트랜잭션 밖에서만(전역 풀 조회).
+export async function precheckUsedOnMove(
+  viewer: Viewer,
+  usage: Pick<CardUsageForWrite, "usedByUserId" | "linkKind" | "cardKind" | "cardTeamId">,
+  usedOn: string,
+): Promise<{ teamId: string | null }> {
+  const futureError = cardUsedOnError(usedOn, seoulToday());
+  if (futureError) throw new CardUsageRejectedError(futureError);
+  const teamCost = usage.linkKind === "team_cost";
+  if (usage.cardKind === "personal" && !teamCost) return { teamId: null };
+  const [user, membership] = await Promise.all([findUserById(viewer, usage.usedByUserId), findMembershipAtDate(viewer, usage.usedByUserId, usedOn)]);
+  const name = user?.name ?? "";
+  if (usage.cardKind !== "personal" && (!user || !employedOn(user, usedOn))) throw new CardUsageRejectedError(`${name} ${mmdd(usedOn)} 재직 아님`);
+  if (usage.cardKind === "team" && membership?.teamId !== usage.cardTeamId) throw new CardUsageRejectedError(`${name} ${mmdd(usedOn)} 카드 팀 소속 아님`);
+  if (!teamCost) return { teamId: null };
+  if (!membership) throw new CardUsageRejectedError(`${name} ${mmdd(usedOn)} 소속 없음 · 소속 발령은 관리자`);
+  return { teamId: membership.teamId };
 }
 
 // ── 증빙 종류(코드표) ──────────────────────────────────────────────────────
@@ -1730,8 +1752,24 @@ export function cardOverwriteSplit(basis: CardOverwriteBasis, input: { evidenceT
   return splitCardTotal({ money: { currency: "KRW", amount: input.totalKrw, fxRate: 1 }, rule: basis.rules.get(input.evidenceTypeCode) ?? { ruleKind: "none" } }, rates);
 }
 
-/** 덮을 값 — null은 그대로(합계 · 카드). domain/evidence-records를 import하지 않으려고 평범한 값만 받는다(C-F14). */
-export type CardOverwritePatch = { usageId: string; totalKrw: number | null; corpCardId: string | null };
+/**
+ * 덮을 때 돈 칸을 다시 쓸 합계 — 파일 합계, 또는 날짜만 옮기는 원화 건을 새 사용일 세율로 다시 나눈 공급가 · 세액이 저장값과 다를 때의 저장 합계
+ * (PR #305 검토 P2). null = 돈 칸 그대로(실행가 판정도 없다). 외화 건은 외화 칸을 보존해야 해서 다시 나누지 않는다(cardOverwriteSplit은 원화만).
+ * 붙이기(planCardAttach) · S4 후보(judgeCardCandidates) · S5 풀이 같은 값으로 실행가를 판정한다(PR #305 재검토).
+ */
+export function cardOverwriteTotal(
+  basis: CardOverwriteBasis,
+  usage: Pick<CardUsageRow, "evidenceTypeCode" | "totalAmountKrw" | "supplyKrw" | "vatKrw" | "totalForeignAmount">,
+  patch: { totalKrw: number | null; usedOn: string | null },
+): number | null {
+  if (patch.totalKrw !== null) return patch.totalKrw;
+  if (patch.usedOn === null || usage.totalForeignAmount !== null) return null;
+  const split = cardOverwriteSplit(basis, { evidenceTypeCode: usage.evidenceTypeCode, usedOn: patch.usedOn, totalKrw: usage.totalAmountKrw });
+  return split.supplyKrw !== usage.supplyKrw || split.vatKrw !== usage.vatKrw ? usage.totalAmountKrw : null;
+}
+
+/** 덮을 값 — null은 그대로(합계 · 카드 · 사용일). domain/evidence-records를 import하지 않으려고 평범한 값만 받는다(C-F14). */
+export type CardOverwritePatch = { usageId: string; totalKrw: number | null; corpCardId: string | null; usedOn: string | null };
 export type CardOverwriteBlock = "holder" | "fixed" | "completed" | "cap";
 
 function holderDiffers(before: { kind: string; holderUserId: string | null; teamId: string | null }, after: { kind: string; holderUserId: string | null; teamId: string | null }): boolean {
@@ -1750,29 +1788,49 @@ export async function cardUsageOverwriteBlocks(
   // 트랜잭션 밖(S4 후보 판정 — 06-03)이면 비운다 — 리포지토리가 풀로 읽는다.
   tx?: DbOrTx,
 ): Promise<Map<string, CardOverwriteBlock>> {
-  const blocks = new Map<string, CardOverwriteBlock>();
-  const changed = patches.filter((patch) => patch.totalKrw !== null || patch.corpCardId !== null);
-  if (changed.length === 0) return blocks;
+  return (await cardUsageOverwriteBlocksByGroup(viewer, [patches], basis, tx))[0] ?? new Map();
+}
+
+/**
+ * 07.1-04 PE6: 묶음(증빙 줄 하나의 후보들)마다 따로 판정하되 재료(카드 사용 · 카드 · 견적 줄) 읽기는 한 번 — 쪽 단위 후보 판정이 줄마다 질의하지 않게.
+ * 실행가 누적(앞서 통과한 덮기의 새 공급가)은 묶음 안에서만 센다 — 줄마다 하나를 고르므로 다른 줄의 덮기와 합치지 않는다.
+ */
+export async function cardUsageOverwriteBlocksByGroup(
+  viewer: Viewer,
+  groups: readonly (readonly CardOverwritePatch[])[],
+  basis: CardOverwriteBasis,
+  tx?: DbOrTx,
+): Promise<Map<string, CardOverwriteBlock>[]> {
+  const result = groups.map(() => new Map<string, CardOverwriteBlock>());
+  // 07.1-04 E-P2-17: 날짜만 바뀌는 덮기도 고정 연결 · 완료 프로젝트 판정을 받는다.
+  const changedGroups = groups.map((patches) => patches.filter((patch) => patch.totalKrw !== null || patch.corpCardId !== null || patch.usedOn !== null));
+  const changed = changedGroups.flat();
+  if (changed.length === 0) return result;
   const facts = await findCardUsageOverwriteFacts(
     viewer,
-    { usageIds: changed.map((patch) => patch.usageId), cardIds: [...new Set(changed.flatMap((patch) => (patch.corpCardId ? [patch.corpCardId] : [])))] },
+    { usageIds: [...new Set(changed.map((patch) => patch.usageId))], cardIds: [...new Set(changed.flatMap((patch) => (patch.corpCardId ? [patch.corpCardId] : [])))] },
     tx,
   );
   const usageOf = new Map(facts.usages.map((row) => [row.id, row]));
   const cardOf = new Map(facts.cards.map((row) => [row.id, row]));
-  const capChecks: { patch: CardOverwritePatch & { totalKrw: number }; fact: (typeof facts.usages)[number] & { quoteLineId: string } }[] = [];
-  for (const patch of changed) {
-    const fact = usageOf.get(patch.usageId);
-    if (!fact) continue;
-    const newCard = patch.corpCardId ? cardOf.get(patch.corpCardId) : undefined;
-    if (newCard && holderDiffers({ kind: fact.cardKind, holderUserId: fact.cardHolderUserId, teamId: fact.cardTeamId }, newCard)) blocks.set(patch.usageId, "holder");
-    else if (fact.registeredVia === "purchase" || fact.lineKind === "out_of_quote") blocks.set(patch.usageId, "fixed");
-    else if (fact.projectStatus === "completed") blocks.set(patch.usageId, "completed");
-    else if (patch.totalKrw !== null && fact.quoteLineId !== null) capChecks.push({ patch: { ...patch, totalKrw: patch.totalKrw }, fact: { ...fact, quoteLineId: fact.quoteLineId } });
-  }
-  if (capChecks.length === 0) return blocks;
+  type CapCheck = { patch: CardOverwritePatch & { totalKrw: number }; fact: (typeof facts.usages)[number] & { quoteLineId: string } };
+  const capGroups: CapCheck[][] = changedGroups.map((patches, index) => {
+    const blocks = result[index] ?? new Map<string, CardOverwriteBlock>();
+    const capChecks: CapCheck[] = [];
+    for (const patch of patches) {
+      const fact = usageOf.get(patch.usageId);
+      if (!fact) continue;
+      const newCard = patch.corpCardId ? cardOf.get(patch.corpCardId) : undefined;
+      if (newCard && holderDiffers({ kind: fact.cardKind, holderUserId: fact.cardHolderUserId, teamId: fact.cardTeamId }, newCard)) blocks.set(patch.usageId, "holder");
+      else if (fact.registeredVia === "purchase" || fact.lineKind === "out_of_quote") blocks.set(patch.usageId, "fixed");
+      else if (fact.projectStatus === "completed") blocks.set(patch.usageId, "completed");
+      else if (patch.totalKrw !== null && fact.quoteLineId !== null) capChecks.push({ patch: { ...patch, totalKrw: patch.totalKrw }, fact: { ...fact, quoteLineId: fact.quoteLineId } });
+    }
+    return capChecks;
+  });
+  const lineIds = [...new Set(capGroups.flat().map((check) => check.fact.quoteLineId))];
+  if (lineIds.length === 0) return result;
 
-  const lineIds = [...new Set(capChecks.map((check) => check.fact.quoteLineId))];
   const links = await findLineLinks(viewer, lineIds, tx);
   const vendorTypes = await listLineVendorEvidenceTypes(viewer, lineIds, tx);
   const roomBasis: LineRoomBasis = {
@@ -1780,21 +1838,25 @@ export async function cardUsageOverwriteBlocks(
     rules: Object.fromEntries(lineIds.map((lineId) => [lineId, basis.lineRules.get(vendorTypes.get(lineId) ?? "") ?? basis.lineDefaultRule])),
     defaultRule: basis.lineDefaultRule,
   };
-  const raised = new Map<string, number>();
-  for (const { patch, fact } of [...capChecks].sort((a, b) => a.patch.usageId.localeCompare(b.patch.usageId))) {
-    const lineLinks = links.get(fact.quoteLineId);
-    // 현재 줄이 없으면(빠진 줄 · 보관된 현재 줄) 실행가를 잴 수 없다 — 덮지 않는다.
-    if (!lineLinks?.currentExecution) {
-      blocks.set(patch.usageId, "cap");
-      continue;
+  capGroups.forEach((capChecks, index) => {
+    const blocks = result[index];
+    if (!blocks) return;
+    const raised = new Map<string, number>();
+    for (const { patch, fact } of [...capChecks].sort((a, b) => a.patch.usageId.localeCompare(b.patch.usageId))) {
+      const lineLinks = links.get(fact.quoteLineId);
+      // 현재 줄이 없으면(빠진 줄 · 보관된 현재 줄) 실행가를 잴 수 없다 — 덮지 않는다.
+      if (!lineLinks?.currentExecution) {
+        blocks.set(patch.usageId, "cap");
+        continue;
+      }
+      const adjusted = new Map(links);
+      adjusted.set(fact.quoteLineId, { ...lineLinks, cardUsages: lineLinks.cardUsages.map((usage) => ({ ...usage, supplyKrw: raised.get(usage.id) ?? usage.supplyKrw })) });
+      const room = lineRoom({ links: adjusted, basis: roomBasis, lineId: fact.quoteLineId, exclude: { usageId: patch.usageId } });
+      const supplyKrw = cardOverwriteSplit(basis, { evidenceTypeCode: fact.evidenceTypeCode, usedOn: patch.usedOn ?? fact.usedOn, totalKrw: patch.totalKrw }).supplyKrw;
+      const cap = cardExecutionCap({ execution: lineLinks.currentExecution, otherSupplies: room.otherSupplies, supply: { currency: "KRW", amount: supplyKrw, fxRate: 1 }, source: "reconciliation" });
+      if (cap.exceeds) blocks.set(patch.usageId, "cap");
+      else raised.set(patch.usageId, supplyKrw);
     }
-    const adjusted = new Map(links);
-    adjusted.set(fact.quoteLineId, { ...lineLinks, cardUsages: lineLinks.cardUsages.map((usage) => ({ ...usage, supplyKrw: raised.get(usage.id) ?? usage.supplyKrw })) });
-    const room = lineRoom({ links: adjusted, basis: roomBasis, lineId: fact.quoteLineId, exclude: { usageId: patch.usageId } });
-    const supplyKrw = cardOverwriteSplit(basis, { evidenceTypeCode: fact.evidenceTypeCode, usedOn: fact.usedOn, totalKrw: patch.totalKrw }).supplyKrw;
-    const cap = cardExecutionCap({ execution: lineLinks.currentExecution, otherSupplies: room.otherSupplies, supply: { currency: "KRW", amount: supplyKrw, fxRate: 1 }, source: "reconciliation" });
-    if (cap.exceeds) blocks.set(patch.usageId, "cap");
-    else raised.set(patch.usageId, supplyKrw);
-  }
-  return blocks;
+  });
+  return result;
 }

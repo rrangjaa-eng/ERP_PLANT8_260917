@@ -22,6 +22,7 @@ export const cardShinhan: FormatRule = {
   createsVendor: false,
   issuerAliases: ["신한"],
   keyKind: "card",
+  dateIsUsage: true, // 이용일시
   detect: (sheets) => findCardHeader(sheets, isHeader),
   read(rows, ctx) {
     const header = rows[ctx.headerRow] ?? [];

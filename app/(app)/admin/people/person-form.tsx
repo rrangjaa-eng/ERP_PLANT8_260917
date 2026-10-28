@@ -6,6 +6,7 @@ import { registerPersonAction, archivePersonAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
+import { focusFirstInvalid } from "@/ui/form/focus-first-invalid";
 import { Select } from "@/ui/select/Select";
 import { kstToday } from "@/lib/kst-date";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
@@ -59,6 +60,11 @@ export function PersonForm({
     continueRef.current = false;
     document.getElementById("name")?.focus();
   }, [registered]);
+
+  // 서버 검증 오류가 돌아오면 포커스를 오류 난 첫 칸으로(07.1-02 S2 — 카드 폼과 같은 꼴). 클라이언트 검증이 없어 제출 처리기 안에서는 부르지 않는다.
+  useEffect(() => {
+    if (result.validationErrors !== undefined) focusFirstInvalid("person-form");
+  }, [result]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

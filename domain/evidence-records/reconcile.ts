@@ -115,18 +115,41 @@ export type FileWinsPatch = {
   approvalNo: string | null;
   total: { before: number; after: number } | null;
   card: { before: CardRef; after: CardRef } | null;
+  usedOn: { before: string; after: string } | null;
 };
 
-// D-6111: 파일이 카드 사용 합계 · 카드를 정한다. 번호는 그대로(호출자가 손대지 않는다).
+// D-6111 · 07.1-04 D-7104: 파일이 카드 사용 합계 · 카드 · 사용일을 정한다. 번호는 그대로(호출자가 손대지 않는다).
+// 사용일 · 저장된 승인번호는 선택 칸 — 사용일을 덮지 않는 작성자 갈래 호출부는 넘기지 않는다(DB-8). 승인번호가 이미 있으면 다른 값으로 바꾸지 않는다(PE2).
 export function fileWinsPatch(
-  stored: { totalKrw: number; corpCardId: string; cardLast4: string },
-  line: { totalKrw: number; corpCardId: string; cardLast4: string; approvalNo: string | null },
+  stored: { totalKrw: number; corpCardId: string; cardLast4: string; usedOn?: string; approvalNo?: string | null },
+  line: { totalKrw: number; corpCardId: string; cardLast4: string; approvalNo: string | null; usedOn?: string },
 ): FileWinsPatch {
   return {
-    approvalNo: line.approvalNo,
+    approvalNo: typeof stored.approvalNo === "string" ? null : line.approvalNo,
     total: stored.totalKrw === line.totalKrw ? null : { before: stored.totalKrw, after: line.totalKrw },
     card: stored.corpCardId === line.corpCardId ? null : { before: { id: stored.corpCardId, last4: stored.cardLast4 }, after: { id: line.corpCardId, last4: line.cardLast4 } },
+    usedOn: stored.usedOn !== undefined && line.usedOn !== undefined && stored.usedOn !== line.usedOn ? { before: stored.usedOn, after: line.usedOn } : null,
   };
+}
+
+/** D-E1(2026-10-27 사용자 결정): 승인번호가 같아도 사용일이 이만큼보다 더 떨어지면 덮지 않는다 — 다시 쓰인 승인번호로 먼 카드 사용을 덮지 않게. */
+export const USED_ON_GAP_MAX_DAYS = 31;
+
+// 달력 일 수 — score.ts dayNumber와 같은 식(그 파일은 다른 플랜 몫이라 여기 둔다).
+function dayNumber(date: string): number {
+  const [year, month, day] = date.split("-").map(Number);
+  return Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1) / 86_400_000;
+}
+
+/** 사용일 차가 한도를 넘으면 막힌 후보 · 서버 거부 글자, 아니면 null. */
+export function usedOnGapReason(patch: FileWinsPatch): string | null {
+  return patch.usedOn ? usedOnGapOf(patch.usedOn.before, patch.usedOn.after) : null;
+}
+
+/** 저장된 사용일과 줄 날짜의 차 판정 — 사용일을 덮지 않는 서식(롯데 매입일자)도 다시 쓰인 승인번호를 막으려고 같은 한도로 잰다(PR #305 검토 P1). */
+export function usedOnGapOf(storedUsedOn: string, lineDate: string): string | null {
+  const gap = Math.abs(dayNumber(lineDate) - dayNumber(storedUsedOn));
+  return gap > USED_ON_GAP_MAX_DAYS ? `날짜 다름 · ${gap}일` : null;
 }
 
 export type OverwriteBlockKind = "holder" | "fixed" | "completed" | "cap";
@@ -138,12 +161,13 @@ const BLOCK_WORD: Record<OverwriteBlockKind, string> = {
   cap: "실행가 초과",
 };
 
-// 바뀐 값 한 조각. 보유자 다름은 카드 쪽 사유라 카드 조각을 앞세운다.
+// 바뀐 값 한 조각. 보유자 다름은 카드 쪽 사유라 카드 조각을 앞세운다. 사용일 조각은 맨 뒤(날짜만 바뀐 막힘이 빈 사유로 떨어지지 않게 — E-P2-17).
 function changePiece(patch: FileWinsPatch, kind: OverwriteBlockKind): string | null {
   const card = patch.card ? `카드 ${patch.card.before.last4} → ${patch.card.after.last4}` : null;
   const total = patch.total ? `합계 ${formatKrw(patch.total.before)} → ${formatKrw(patch.total.after)}` : null;
-  if (kind === "holder") return card ?? total;
-  return total ?? card;
+  const usedOn = patch.usedOn ? `사용일 ${patch.usedOn.before.slice(5)} → ${patch.usedOn.after.slice(5)}` : null;
+  if (kind === "holder") return card ?? total ?? usedOn;
+  return total ?? card ?? usedOn;
 }
 
 // 카드 R3 · P2-C4: 덮기가 막힌 줄의 한 줄 사유. 덮을 값이 없으면(승인번호만) 막을 것도 없다.
@@ -156,7 +180,8 @@ export function overwriteBlockReason(patch: FileWinsPatch, kind: OverwriteBlockK
 // 완화 후보 = (같은 승인번호 — 사용일 무관, 카드사가 다르면 막힌 행) 또는 (같은 사용일 ∧ 같은 합계 — 카드 무관). 막힘 판정은 1단계와 같은
 // 「카드 명세 붙음」(영수증 · 05 전표 파일은 막지 않는다) → 다른 카드사 → 덮기 막힘(호출자가 06 cardUsageOverwriteBlocks로 구한 종류) 차례.
 
-export type RelaxedLine = { corpCardId: string; cardLast4: string; approvalNo: string | null; usedOn: string; totalKrw: number };
+// dateIsUsage: 줄 서식의 날짜 칸이 사용(승인)일인가 — 거짓(롯데 매입일자)이면 사용일을 덮지 않는다(PR #305 검토 P1 · formatDateIsUsage).
+export type RelaxedLine = { corpCardId: string; cardLast4: string; approvalNo: string | null; usedOn: string; totalKrw: number; dateIsUsage: boolean };
 export type RelaxedCandidateInput = {
   id: string;
   number: string | null;
@@ -171,14 +196,20 @@ export type RelaxedCandidateInput = {
 };
 export type RelaxedCandidate = { id: string; patch: FileWinsPatch; blockedReason: string | null };
 
-export function isRelaxedHit(line: Pick<RelaxedLine, "approvalNo" | "usedOn" | "totalKrw">, candidate: Pick<RelaxedCandidateInput, "approvalNo" | "usedOn" | "totalKrw">): boolean {
-  if (line.approvalNo !== null && candidate.approvalNo === line.approvalNo) return true;
+// 같은 승인번호 갈래는 같은 카드만(PR #305 검토 F2 — 승인번호는 카드사 안에서 되풀이된다). 재발급(E28)은 가져오기 1단계 · 같은 사용일 ∧ 합계 갈래가 맡는다.
+export function isRelaxedHit(
+  line: Pick<RelaxedLine, "corpCardId" | "approvalNo" | "usedOn" | "totalKrw">,
+  candidate: Pick<RelaxedCandidateInput, "corpCardId" | "approvalNo" | "usedOn" | "totalKrw">,
+): boolean {
+  if (line.approvalNo !== null && candidate.approvalNo === line.approvalNo && candidate.corpCardId === line.corpCardId) return true;
   return candidate.usedOn === line.usedOn && candidate.totalKrw === line.totalKrw;
 }
 
-function relaxedBlock(candidate: RelaxedCandidateInput, patch: FileWinsPatch): string | null {
+function relaxedBlock(candidate: RelaxedCandidateInput, line: RelaxedLine, patch: FileWinsPatch): string | null {
   if (candidate.cardStatementAttached) return `증빙 있음 · ${candidate.number ?? "—"}`;
   if (!candidate.sameIssuer) return `카드 다름 · ${candidate.cardLast4}`;
+  const gap = usedOnGapOf(candidate.usedOn, line.usedOn);
+  if (gap) return gap;
   return candidate.overwriteBlock ? overwriteBlockReason(patch, candidate.overwriteBlock) : null;
 }
 
@@ -188,10 +219,10 @@ export function relaxedCandidatesOf(line: RelaxedLine, candidates: readonly Rela
     .filter((candidate) => isRelaxedHit(line, candidate))
     .map((candidate) => {
       const patch = fileWinsPatch(
-        { totalKrw: candidate.totalKrw, corpCardId: candidate.corpCardId, cardLast4: candidate.cardLast4 },
-        { totalKrw: line.totalKrw, corpCardId: line.corpCardId, cardLast4: line.cardLast4, approvalNo: line.approvalNo },
+        { totalKrw: candidate.totalKrw, corpCardId: candidate.corpCardId, cardLast4: candidate.cardLast4, usedOn: candidate.usedOn, approvalNo: candidate.approvalNo },
+        { totalKrw: line.totalKrw, corpCardId: line.corpCardId, cardLast4: line.cardLast4, approvalNo: line.approvalNo, usedOn: line.dateIsUsage ? line.usedOn : undefined },
       );
-      return { id: candidate.id, patch, blockedReason: relaxedBlock(candidate, patch) };
+      return { id: candidate.id, patch, blockedReason: relaxedBlock(candidate, line, patch) };
     });
   return [...items.filter((item) => item.blockedReason === null), ...items.filter((item) => item.blockedReason !== null)];
 }

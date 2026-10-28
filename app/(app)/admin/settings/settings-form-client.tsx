@@ -23,6 +23,7 @@ import {
   exportSettingsAction,
 } from "./actions";
 import { pairGridId, pairGridValue } from "./pair-grid-axes";
+import { resolveSettingsGroup } from "./group-param";
 import styles from "./settings.module.css";
 
 // ADMN-05: 레지스트리에서 파생된 계산된 뷰모델만 받는다 — 이 파일도
@@ -653,7 +654,13 @@ function renderFields(
 
 // 저장하지 않은 단계가 있으면 앱 안 링크로 떠날 때 확인한다 — next/link는 beforeunload 없이 이동한다(Codex P2
 // r4140619759). 연차 신청 폼과 같은 `입력 버리기` 확인. 새로 고침 · 창 닫기는 각 단계의 브라우저 이탈 경고.
-function useLeaveGuard(dirtySteps: number[]) {
+// 설정 화면 주소가 여는 묶음 — 묶음이 없거나 잘못된 주소는 첫 묶음(page.tsx와 같은 규칙). 다른 화면이면 null.
+function settingsGroupOf(url: URL, groups: string[]): string | null {
+  if (url.pathname !== window.location.pathname) return null;
+  return resolveSettingsGroup(groups, url.searchParams.get("group") ?? undefined);
+}
+
+function useLeaveGuard(dirtySteps: number[], currentGroup: string, groups: string[]) {
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const dirty = dirtySteps.length > 0;
 
@@ -668,13 +675,15 @@ function useLeaveGuard(dirtySteps: number[]) {
       const url = new URL(anchor.href, window.location.href);
       if (url.origin !== window.location.origin) return;
       if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      // 이미 보는 묶음으로 가는 링크는 버릴 것이 없다 — 확인 없이 그대로 이동한다.
+      if (settingsGroupOf(url, groups) === currentGroup) return;
       event.preventDefault();
       event.stopPropagation();
       setLeaveHref(url.pathname + url.search + url.hash);
     }
     document.addEventListener("click", handleClick, true);
     return () => document.removeEventListener("click", handleClick, true);
-  }, [dirty]);
+  }, [dirty, currentGroup, groups]);
 
   return { leaveHref, setLeaveHref };
 }
@@ -741,7 +750,11 @@ function sanitizeDraft(draft: StepValues, fields: SettingsFieldViewModel[]): Ste
   );
 }
 
-export function SettingsFormClient({ sections, viewerId }: { sections: SettingsSection[]; viewerId: string }) {
+function groupHref(namespace: string): string {
+  return `?group=${encodeURIComponent(namespace)}`;
+}
+
+export function SettingsFormClient({ sections, currentGroup, viewerId }: { sections: SettingsSection[]; currentGroup: string; viewerId: string }) {
   const router = useRouter();
   const scope = viewerDirtyScope(viewerId, "settings");
   // 지난번 보관본 — 연 때 한 번 읽는다(아래 stash가 지금도 맞는 것만 남긴다).
@@ -759,7 +772,8 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
     });
   }, []);
   const dirtySteps = Object.values(drafts).map((draft) => draft.stepIndex);
-  const { leaveHref, setLeaveHref } = useLeaveGuard(dirtySteps);
+  const groups = useMemo(() => sections.map((section) => section.namespace), [sections]);
+  const { leaveHref, setLeaveHref } = useLeaveGuard(dirtySteps, currentGroup, groups);
 
   const fieldsByStep = useMemo(() => {
     const groups = new Map<string, SettingsFieldViewModel[]>();
@@ -807,6 +821,17 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
   });
   const [discarded, setDiscarded] = useState<Record<string, StepDraft> | null>(null);
 
+  // 묶음을 옮기면 그 묶음의 단계가 사라지며 초안도 지워진다(뒤로 · 앞으로도 같다) — 입력 버리기로 떠난 때가 아니면 보관본으로 넘겨
+  // 돌아오면 복원 줄로 되살리고, 되살린 초안은 비워 돌아와 단계가 다시 생길 때 옛 초안이 되살아나지 않게 한다.
+  const [seenGroup, setSeenGroup] = useState(currentGroup);
+  const [discardTo, setDiscardTo] = useState<string | null>(null);
+  if (seenGroup !== currentGroup) {
+    setSeenGroup(currentGroup);
+    setDiscardTo(null);
+    if (discardTo !== currentGroup && Object.keys(drafts).length > 0) setStored((current) => ({ ...current, ...drafts }));
+    setRestored((current) => (Object.keys(current.drafts).length === 0 ? current : { ...current, drafts: {} }));
+  }
+
   function restore(entries: Record<string, StepDraft>) {
     const keys = Object.keys(entries);
     if (keys.length === 0) return;
@@ -837,20 +862,64 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
       if (fields.length === 0 || !sameValues(entry.base, saved) || !sameValues(saved, entry.base)) continue;
       current[key] = { ...entry, draft: sanitizeDraft(entry.draft, fields) };
     }
-    restore(current);
+    // 지금 묶음에 없는 단계는 받을 칸이 없다 — 보관본으로 돌려 그 묶음에 돌아오면 복원 줄로 뜨게 한다.
+    const shown = new Set(
+      sections
+        .filter((section) => section.namespace === currentGroup)
+        .flatMap((section) => section.fields.flatMap((field) => (field.step ? [`${field.step.kind}-${field.step.stepIndex}`] : []))),
+    );
+    const hidden = Object.fromEntries(Object.entries(current).filter(([key]) => !shown.has(key)));
+    if (Object.keys(hidden).length > 0) setStored((stored) => ({ ...stored, ...hidden }));
+    restore(withoutKeys(current, hidden));
   }
 
   // `입력 버리기` — 이번에 고친 단계만 버린다. 아직 복원하지 않은 보관본은 남긴다.
   function leave() {
     if (!leaveHref) return;
+    const target = new URL(leaveHref, window.location.href);
+    const targetGroup = settingsGroupOf(target, groups);
+    const sameGroupPage = targetGroup !== null;
+    setDiscardTo(targetGroup);
     writeStoredDrafts(scope, withoutKeys(stash, drafts));
-    router.push(leaveHref);
+    setLeaveHref(null);
+    router.push(leaveHref, sameGroupPage ? { scroll: false } : undefined);
+  }
+
+  // 묶음 select의 이동도 링크와 같은 입력 버리기 확인을 거친다 — select는 앱 안 링크 가드(클릭 캡처)가 못 잡는다.
+  function selectGroup(href: string) {
+    if (dirtySteps.length > 0 && new URLSearchParams(href).get("group") !== currentGroup) setLeaveHref(href);
+    else router.push(href, { scroll: false });
   }
 
   return (
     <div>
+      <nav aria-label="설정 묶음" className={styles.groupNav}>
+        {sections.map((section) => (
+          <Link
+            key={section.namespace}
+            href={groupHref(section.namespace)}
+            scroll={false}
+            prefetch={false}
+            className={styles.groupLink}
+            aria-current={section.namespace === currentGroup ? "page" : undefined}
+          >
+            {section.namespace}
+          </Link>
+        ))}
+      </nav>
+      <div className={styles.groupSelect}>
+        <Form.Field id="settings-group" label="묶음" width="select">
+          <Select
+            id="settings-group"
+            value={currentGroup}
+            hideEmptyOption
+            options={sections.map((section) => ({ value: section.namespace, label: section.namespace }))}
+            onChange={(event) => selectGroup(groupHref(event.target.value))}
+          />
+        </Form.Field>
+      </div>
       <ExportButton />
-      {sections.map((section) => {
+      {sections.filter((section) => section.namespace === currentGroup).map((section) => {
         const sectionRestorable = restorableIn(section);
         const restorableSteps = Object.values(sectionRestorable).map((entry) => entry.stepIndex);
         return (

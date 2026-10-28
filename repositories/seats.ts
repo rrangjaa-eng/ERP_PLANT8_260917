@@ -168,7 +168,7 @@ export type CompanySeatHolderRow = { userId: string; name: string; from: string;
 export async function listCompanySeatHolders(
   viewer: Viewer,
   input: { roleId: string; today: string; excludeUserId?: string },
-  tx: DbOrTx,
+  tx: DbOrTx = db,
 ): Promise<CompanySeatHolderRow[]> {
   void viewer;
   return tx

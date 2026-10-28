@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { deleteHolidayAction } from "./actions";
@@ -35,10 +35,16 @@ export function DeleteHoliday({ id, date }: { id: string; date: string }) {
   const [failure, setFailure] = useState<{ text: string; retry: boolean } | null>(null);
   const [restored] = useState(() => focusDate === date);
 
-  // 되돌린 행이 포커스를 받았으면 표식을 지운다(다른 행이 다시 받지 않게).
+  const wrapperRef = useRef<HTMLSpanElement>(null);
+
+  // 되돌린 행이 포커스를 받았으면 표식을 지운다(다른 행이 다시 받지 않게). 새로고침이 끝나기 전에 되돌려
+  // 같은 행이 그대로 남은 경우(`restored`는 처음 한 번만 정해진다)는 `autoFocus`가 일어나지 않으므로
+  // 눌려 있던 `되돌리기`가 사라져 BODY로 떨어진 포커스를 이 행의 `삭제`가 받는다(07.1-02 P3).
   useEffect(() => {
-    if (restored) clearFocus();
-  }, [restored, clearFocus]);
+    if (focusDate !== date) return;
+    if (!restored) wrapperRef.current?.querySelector("button")?.focus();
+    clearFocus();
+  }, [focusDate, date, restored, clearFocus]);
 
   async function handleDelete() {
     setPending(true);
@@ -50,6 +56,8 @@ export function DeleteHoliday({ id, date }: { id: string; date: string }) {
         if (result.data.deleted) {
           show({ id: result.data.id, date: result.data.date, name: result.data.name, kind: result.data.kind });
         }
+        // 새로고침이 끝나기 전에 되돌리면 이 줄이 빠지지 않고 되살아난 줄이 되므로 대기를 성공 경로에서도 푼다(07.1-02 PC7).
+        setPending(false);
         router.refresh();
         return;
       }
@@ -65,7 +73,7 @@ export function DeleteHoliday({ id, date }: { id: string; date: string }) {
   const rejectedText = failure?.retry === false ? failure.text : null;
 
   return (
-    <span className={styles.rowAction}>
+    <span ref={wrapperRef} className={styles.rowAction}>
       <RowActions>
         {rejectedText !== null ? (
           <RowAction danger disabled disabledReason={rejectedText} autoFocus onClick={() => void handleDelete()}>

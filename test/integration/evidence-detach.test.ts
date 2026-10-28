@@ -1,8 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db, pool } from "@/db/client";
-import { actionLog, approvalInstances, evidenceRecordLinks, evidenceRecords, expenses } from "@/db/schema";
+import { actionLog, approvalInstances, corpCardUsages, evidenceRecordLinks, evidenceRecords, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { createCorpCard } from "@/domain/corp-cards";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { approveDocument } from "@/domain/approvals";
 import { attachEvidenceRecord, detachEvidenceRecord, previewDetach } from "@/domain/evidence-records/attach";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
@@ -11,7 +14,8 @@ import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { makePerson } from "./approvals-fixtures";
 import { setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
-import { createInReviewExpenseFixture, createIntakeManager, createReturnedExpenseFixture, insertRecordFixture } from "./fixtures/evidence";
+import { createCardUsageFixture, createInReviewExpenseFixture, createIntakeManager, createReturnedExpenseFixture, insertLinkFixture, insertRecordFixture, registerFixtureFile } from "./fixtures/evidence";
+import { bcFixture } from "@/test/fixtures/evidence-import/build";
 import { setEvidenceRequired } from "./fixtures/payments";
 import { deferred, waitForLockWaiter } from "./lock-race";
 
@@ -183,5 +187,116 @@ describe("previewDetach (PA-PREVIEW)", () => {
     const [link] = await db.select({ id: evidenceRecordLinks.id }).from(evidenceRecordLinks).where(eq(evidenceRecordLinks.ownerId, doc.expenseId));
     if (!link) throw new Error("붙임 없음");
     expect(await previewDetach(manager, { linkId: link.id })).toEqual({ result: null, amountKrw: null });
+  });
+});
+
+// 07.1-04 PE1 · E-P2-16 · CG-03: 카드 사용에 붙은 증빙도 서버에서 뗀다 — 권한은 붙이기와 같은 키(경영관리 = 등록 ∧ 범위 안 ∧ 보관 아님),
+// 트랜잭션 안에서 카드 사용 행을 잠근 뒤 다시 판정한다. 카드 사용 금액 · 사용일은 되돌리지 않고(덮은 기록은 로그에 있다), 그 붙임이 채운 승인번호만 비운다(PR #305 검토 P1-2).
+describe("카드 사용 증빙 떼기 (07.1-04 PE1)", () => {
+  async function cardUsageWithRecord(): Promise<{ manager: Viewer; pm: Viewer; usageId: string; recordId: string; linkId: string }> {
+    const pm = await makePerson("떼기PM", DEFAULT_ROLE_ID, "기획1팀");
+    const manager = await createIntakeManager("경영관리", { payments: true });
+    const last4 = String(4000 + Math.floor(Math.random() * 4000));
+    // 발급사를 시험마다 새로 — 고정 발급사 + 끝 4자리 4000개는 corp_cards 유일 인덱스에 가끔 부딪힌다(main 꼴).
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `카드사-${randomUUID()}`, numberLast4: last4, label: `떼기 ${last4}`, kind: "personal", holderUserId: pm.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const usage = await createCardUsageFixture(pm, { corpCardId: card.id, usedOn: "2026-04-30", totalKrw: 200_000, approvalNo: "55500011" });
+    const recordId = await insertRecordFixture(manager, { evidenceType: "card_receipt", supplyKrw: 181_818, vatKrw: 18_182, issuedOn: "2026-04-30" });
+    const linkId = await insertLinkFixture({ recordId, ownerKind: "corp_card_usage", ownerId: usage.id, attachedBy: manager.id });
+    return { manager, pm, usageId: usage.id, recordId, linkId };
+  }
+
+  async function usageValues(id: string) {
+    const [row] = await db.select({ usedOn: corpCardUsages.usedOn, totalAmountKrw: corpCardUsages.totalAmountKrw, approvalNo: corpCardUsages.approvalNo }).from(corpCardUsages).where(eq(corpCardUsages.id, id));
+    return row;
+  }
+
+  async function cardDetachLogs(recordId: string) {
+    const rows = await db
+      .select({ detail: actionLog.detail })
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "evidence_record"), eq(actionLog.entityId, recordId), eq(actionLog.actionType, "document_update")));
+    return rows.filter((row) => (row.detail as { change?: string } | null)?.change === "evidence_record_detach");
+  }
+
+  it("경영관리가 떼면 detached · 카드 사용 값 그대로 · 떼기 로그 한 행(ownerKind corp_card_usage · 사유 길이) · 다시 떼면 detached 거짓 · 로그 그대로", async () => {
+    const fx = await cardUsageWithRecord();
+    const before = await usageValues(fx.usageId);
+    expect(await detachEvidenceRecord(fx.manager, { linkId: fx.linkId, reason: "다른 건 증빙" })).toEqual({ detached: true });
+    expect((await linkOf(fx.recordId)).detachedAt).not.toBeNull();
+    expect(await usageValues(fx.usageId)).toEqual(before);
+    const logs = await cardDetachLogs(fx.recordId);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.detail).toMatchObject({ ownerKind: "corp_card_usage", ownerId: fx.usageId, linkId: fx.linkId, reasonLength: "다른 건 증빙".length });
+
+    expect(await detachEvidenceRecord(fx.manager, { linkId: fx.linkId, reason: "다른 건 증빙" })).toEqual({ detached: false });
+    expect(await cardDetachLogs(fx.recordId)).toHaveLength(1);
+  });
+
+  it("붙이기 권한 없는 사람(등록 키 없음 · 범위 밖) → `없는 붙임 · 새로 고침` · 붙임 그대로", async () => {
+    const fx = await cardUsageWithRecord();
+    const narrow = await createIntakeManager("범위 좁음");
+    for (const who of [fx.pm, narrow]) {
+      expect(await messageOf(detachEvidenceRecord(who, { linkId: fx.linkId, reason: "다른 건 증빙" }))).toBe("없는 붙임 · 새로 고침");
+      expect(await messageOf(previewDetach(who, { linkId: fx.linkId }))).toBe("없는 붙임 · 새로 고침");
+    }
+    expect((await linkOf(fx.recordId)).detachedAt).toBeNull();
+  });
+
+  it("(E-P2-16) 사전 판독 뒤 카드 사용이 보관되면 잠금 뒤 재판정으로 거부 · 붙임 살아 있음 · 떼기 로그 0", async () => {
+    const fx = await cardUsageWithRecord();
+    const message = await messageOf(
+      detachEvidenceRecord(fx.manager, { linkId: fx.linkId, reason: "다른 건 증빙" }, {
+        afterPreRead: async () => {
+          await db.update(corpCardUsages).set({ archivedAt: new Date(), archivedBy: fx.pm.id }).where(eq(corpCardUsages.id, fx.usageId));
+        },
+      }),
+    );
+    expect(message).toBe("없는 붙임 · 새로 고침");
+    expect((await linkOf(fx.recordId)).detachedAt).toBeNull();
+    expect(await cardDetachLogs(fx.recordId)).toHaveLength(0);
+  });
+
+  // 07.1-04 PR #305 검토 P1-2: 붙임이 채운 승인번호를 떼기가 그대로 두면 다음 대사(1 · 2단계)와 붙이기(있는 승인번호는 덮지 않음)가 그 카드 사용을
+  // 영영 못 맞춘다 — 그 붙임의 금액 변경 로그가 비어 있던 승인번호를 채웠고 지금도 그 값이면 비운다. 원래 있던 승인번호는 그대로.
+  it("(검토 P1-2) 붙임이 채운 승인번호는 떼면 비운다 · 금액 변경 로그 changes = approvalNo [채운 값, null] / 원래 있던 승인번호는 그대로", async () => {
+    const pm = await makePerson("떼기PM", DEFAULT_ROLE_ID, "기획1팀");
+    const manager = await createIntakeManager("경영관리", { payments: true });
+    const last4 = String(4000 + Math.floor(Math.random() * 4000));
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "비씨카드", numberLast4: last4, label: `떼기 ${last4}`, kind: "personal", holderUserId: pm.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const statement = async (approvalNo: string): Promise<string> => {
+      // 등록 대사(2단계 같은 날 · 합계)가 먼저 붙이지 않게 다른 날로 올린 뒤 같은 날로 맞춘다 — 사람이 고르는 길(3단계).
+      const result = await registerFixtureFile(manager, bcFixture([{ 카드번호: `9430-0000-0000-${last4}`, 승인번호: approvalNo, 승인일자: "2026-04-29", "거래금액(원화)": "200,000", 부가세: "18,182" }]), "비씨.xls");
+      const [row] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.batchId, result.batchId));
+      if (!row) throw new Error("기록 없음");
+      await db.update(evidenceRecords).set({ issuedOn: "2026-04-30" }).where(eq(evidenceRecords.id, row.id));
+      return row.id;
+    };
+    const linkIdOf = async (recordId: string): Promise<string> => {
+      const [row] = await db.select({ id: evidenceRecordLinks.id }).from(evidenceRecordLinks).where(eq(evidenceRecordLinks.evidenceRecordId, recordId));
+      if (!row) throw new Error("붙임 없음");
+      return row.id;
+    };
+
+    const blank = await createCardUsageFixture(pm, { corpCardId: card.id, usedOn: "2026-04-30", totalKrw: 200_000 });
+    const stamped = await statement("77700011");
+    await attachEvidenceRecord(manager, { recordId: stamped, owner: { kind: "corp_card_usage", id: blank.id } });
+    expect((await usageValues(blank.id))?.approvalNo).toBe("77700011");
+    expect(await detachEvidenceRecord(manager, { linkId: await linkIdOf(stamped), reason: "다른 건 증빙" })).toEqual({ detached: true });
+    expect(await usageValues(blank.id)).toEqual({ usedOn: "2026-04-30", totalAmountKrw: 200_000, approvalNo: null });
+    const logs = await db.select({ detail: actionLog.detail }).from(actionLog).where(and(eq(actionLog.entityId, blank.id), eq(actionLog.actionType, "evidence_record_amount_change")));
+    expect(logs.map((row) => (row.detail as { changes?: unknown }).changes)).toEqual([{ approvalNo: [null, "77700011"] }, { approvalNo: ["77700011", null] }]);
+
+    const kept = await createCardUsageFixture(pm, { corpCardId: card.id, usedOn: "2026-04-30", totalKrw: 200_000, approvalNo: "77700022" });
+    const same = await statement("77700022");
+    await attachEvidenceRecord(manager, { recordId: same, owner: { kind: "corp_card_usage", id: kept.id } });
+    expect(await detachEvidenceRecord(manager, { linkId: await linkIdOf(same), reason: "다른 건 증빙" })).toEqual({ detached: true });
+    expect((await usageValues(kept.id))?.approvalNo).toBe("77700022");
+  });
+
+  it("previewDetach — 권한 있으면 빈 미리 보기(결과 없음)", async () => {
+    const fx = await cardUsageWithRecord();
+    expect(await previewDetach(fx.manager, { linkId: fx.linkId })).toEqual({ result: null, amountKrw: null });
   });
 });

@@ -138,10 +138,21 @@ describe("카드 파일 등록 → 대사(06.1-09 트레이서)", () => {
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({ entity: "corp_card_usage" });
     expect(logs[0]?.detail).toMatchObject({ cardLast4Before: fx.cardA.last4, cardLast4After: fx.cardB.last4, evidenceRecordId: r1, before: { totalKrw: 200_000 }, after: { totalKrw: 204_100 } });
+    // 07.1-04 PE3 · E-P2-15: 수동 붙임과 같은 changes 모양 — 1단계는 구조상 같은 사용일이라 usedOn 칸이 없다.
+    // PR #305 검토 P2: 카드 끝 4자리 · 공급가 · 부가세도 바뀐 칸이면 남는다.
+    expect((logs[0]?.detail as { changes?: unknown }).changes).toEqual({
+      cardLast4: [fx.cardA.last4, fx.cardB.last4],
+      totalKrw: [200_000, 204_100],
+      supplyKrw: [181_818, split.supplyKrw],
+      vatKrw: [18_182, split.vatKrw],
+    });
 
     const row2 = await usageRow(u2.id);
-    expect(row2).toMatchObject({ approvalNo: a2, totalAmountKrw: 50_000, corpCardId: fx.cardB.id, number: u2.number });
-    expect(await amountLogs(u2.id)).toHaveLength(0);
+    expect(row2).toMatchObject({ approvalNo: a2, totalAmountKrw: 50_000, usedOn: USED_ON, corpCardId: fx.cardB.id, number: u2.number });
+    // 07.1-04 PE2: 2단계 승인번호만 채운 짝도 같은 종류 로그 한 행 — changes는 승인번호 한 칸.
+    const fillLogs = await amountLogs(u2.id);
+    expect(fillLogs).toHaveLength(1);
+    expect((fillLogs[0]?.detail as { changes?: unknown }).changes).toEqual({ approvalNo: [null, a2] });
   });
 
   it("보관된 카드 사용은 후보가 아니다 → 그 줄은 짝 없음", async () => {

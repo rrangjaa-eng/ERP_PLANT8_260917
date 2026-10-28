@@ -27,6 +27,11 @@ export { EVIDENCE_IMPORT_MAX_BYTES, EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/ev
 // 판별 낱말이 서로 겹치지 않아 차례는 결과를 바꾸지 않는다(서식 교차 표 단위 테스트가 고정한다).
 export const EVIDENCE_FORMATS: readonly FormatRule[] = [cardLotte, cardShinhan, cardShinhanAccounting, cardBc, hometaxTaxInvoice, hometaxInvoice, hometaxCashReceipt];
 
+/** 그 서식의 날짜 칸이 카드 사용일(승인일)인가 — 붙임이 카드 사용 사용일을 덮어도 되는 서식(07.1-04 PR #305 검토 P1). 모르는 서식은 거짓. */
+export function formatDateIsUsage(format: string): boolean {
+  return EVIDENCE_FORMATS.find((rule) => rule.key === format)?.dateIsUsage === true;
+}
+
 export type ParseResult = ParseSuccess | Refusal;
 
 // 거절 문구는 06.1-UI-SPEC Copywriting 「거절 —」 행 글자 그대로.

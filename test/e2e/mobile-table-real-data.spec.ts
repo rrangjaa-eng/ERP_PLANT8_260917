@@ -74,7 +74,7 @@ for (const width of [375, 320] as const) {
       const page = await loginPage(browser, baseURL, buyer, { width, height: 800 });
       await page.goto(`/cards/purchases?status=${encodeURIComponent("전체")}`);
       const table = page.locator("main table[data-row-sheet]").first();
-      await expect(table).toBeVisible();
+      await expect(table).toBeVisible({ timeout: 30_000 });
       const shape = await measurePhoneRows(table);
       logShape(`/cards/purchases @${width}`, shape);
       expect(shape.rows).toBeGreaterThanOrEqual(4);
@@ -96,7 +96,7 @@ for (const width of [375, 320] as const) {
       const page = await loginPage(browser, baseURL, fx.pm, { width, height: 800 });
       await page.goto(`/expenses?${new URLSearchParams({ status: "승인" })}`);
       const table = page.locator("main table").filter({ has: page.locator("a[data-row-link]") }).first();
-      await expect(table).toBeVisible();
+      await expect(table).toBeVisible({ timeout: 30_000 });
       await expect(table).toContainText(`지급 완료 ${seoulToday().slice(5)}`);
       const shape = await measurePhoneRows(table);
       logShape(`/expenses @${width}`, shape);

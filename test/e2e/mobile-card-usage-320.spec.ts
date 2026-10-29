@@ -53,17 +53,25 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
     for (const secondary of await table.locator("[class*='cellSecondary']").all()) await expect(secondary).toBeHidden();
     const folded = table.locator("tr[class*='collapsedRow'] td").first();
     for (const segment of ["USD 900.00", "@1,474.89", "공급가 1,327,401"]) await expect(folded).toContainText(segment);
-    const tops = await folded.evaluate((cell) => {
+    // 한 줄 말줄임 감싸개(`-webkit-line-clamp: 1`) 밖으로 잘려 나간 줄의 글자는 보이지 않는다 — 보이는 줄 수와 잘려 나간 글자를 따로 잰다.
+    const { tops, hidden } = await folded.evaluate((cell) => {
       const set = new Set<number>();
+      const hiddenParts: string[] = [];
+      const clip = cell.querySelector("[data-cell-text]")?.getBoundingClientRect();
       const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
         if (!(node.textContent ?? "").trim()) continue;
         const range = document.createRange();
         range.selectNodeContents(node);
-        for (const rect of Array.from(range.getClientRects())) if (rect.width > 1) set.add(Math.round(rect.top / 4));
+        for (const rect of Array.from(range.getClientRects())) {
+          if (rect.width <= 1) continue;
+          if (clip && rect.top >= clip.bottom - 1) hiddenParts.push(node.textContent ?? "");
+          else set.add(Math.round(rect.top / 4));
+        }
       }
-      return set.size;
+      return { tops: set.size, hidden: hiddenParts.join("|") };
     });
+    for (const segment of ["USD 900.00", "@1,474.89", "공급가 1,327,401"]) expect(hidden, `잘려 나간 글자에 ${segment} 없음`).not.toContain(segment);
     expect(tops, "접힌 줄 글자는 한 줄").toBe(1);
     await page.context().close();
   });

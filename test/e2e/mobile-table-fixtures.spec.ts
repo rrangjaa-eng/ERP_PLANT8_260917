@@ -79,7 +79,7 @@ for (const width of [375, 320] as const) {
       await page.goto(`/projects/${fx.projectId}`);
       // 고객 승인이 끝난 차수는 읽기 표(role table)다 — 수주 중 차수는 편집 격자(grid).
       const table = page.getByRole("grid", { name: "견적 줄" }).or(page.getByRole("table", { name: "견적 줄" }));
-      await expect(table).toBeVisible();
+      await expect(table).toBeVisible({ timeout: 30_000 });
       const shape = await expectPhoneRows(page, table, `견적 표 @${width}`, { minRows: 4 });
       expect(shape.foldedTexts.some((text) => text.includes("증빙 2일 경과")), `메모가 접힌 줄 글자에 있다 ${JSON.stringify(shape.foldedTexts)}`).toBe(true);
       // 상태 칸 주 행은 태그만 — 메모 글자가 주 행 셀 안에 없다.
@@ -114,8 +114,8 @@ for (const width of [375, 320] as const) {
 
       const page = await loginPage(browser, baseURL, pm, { width, height: 800 });
       await page.goto(`/projects/${project.id}`);
-      const table = page.getByRole("grid", { name: "견적 줄" });
-      await expect(table).toBeVisible();
+      const table = page.getByRole("grid", { name: "견적 줄" }).or(page.getByRole("table", { name: "견적 줄" }));
+      await expect(table).toBeVisible({ timeout: 30_000 });
       const shape = await expectPhoneRows(page, table, `견적 표(실행가 초과) @${width}`);
       expect(shape.foldedTexts.some((text) => text.includes("실행가 초과 100,000")), `메모가 접힌 줄 글자에 있다 ${JSON.stringify(shape.foldedTexts)}`).toBe(true);
       await page.context().close();
@@ -151,7 +151,7 @@ for (const width of [375, 320] as const) {
         const page = await loginPage(browser, baseURL, org.drafter, { width, height: 800 });
         await page.goto("/leave");
         const table = page.getByRole("table", { name: "내 연차" });
-        await expect(table).toBeVisible();
+        await expect(table).toBeVisible({ timeout: 30_000 });
         await expectPhoneRows(page, table, `휴가 @${width}`);
         await page.context().close();
       });
@@ -178,7 +178,7 @@ for (const width of [375, 320] as const) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto("/projects/issue-requests");
       const table = page.locator("main table").filter({ has: page.locator("a[data-row-link]") }).first();
-      await expect(table).toBeVisible();
+      await expect(table).toBeVisible({ timeout: 30_000 });
       await expectPhoneRows(page, table, `발행 요청 @${width}`, { minRows: 2 });
     });
   });

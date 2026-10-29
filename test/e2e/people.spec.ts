@@ -916,4 +916,23 @@ test.describe("사람 본부 칸 (07.1-14 D-7127)", () => {
     const [row] = await db.select({ divisionId: users.divisionId }).from(users).where(eq(users.email, email));
     expect(row?.divisionId).toBe(division.id);
   });
+
+  test("새로 만들기: 팀을 배정해 등록한 뒤 결과의 「사람 등록」으로 돌아오면 본부 칸이 다시 보인다", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto("/admin/people?new=1");
+    const email = `e2e-teamthen-${randomUUID()}@example.test`;
+    await page.getByLabel("이름").fill("E2E팀등록사람");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
+    await page.locator("#teamId").selectOption({ index: 1 });
+    await expect(page.locator("#divisionId")).toHaveCount(0);
+    await page.locator("#effectiveFrom").fill("2026-01-01");
+    await page.getByLabel("입사일").fill("2026-01-01");
+    await page.getByRole("button", { name: "사람 등록" }).click();
+    await expect(page.getByText(`초기 비밀번호 — ${email}`)).toBeVisible({ timeout: 20_000 });
+
+    await page.getByRole("button", { name: "사람 등록" }).click();
+    await expect(page.locator("#teamId")).toHaveValue("");
+    await expect(page.locator("#divisionId")).toBeVisible();
+  });
 });

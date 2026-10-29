@@ -50,6 +50,8 @@ export function PersonForm({
       if (!data) return;
       // 칸 비움 · 바뀐 칸 수 0 — 결과 화면에서 Esc가 「입력 버리기」를 묻지 않는다.
       panelRef.current?.succeed();
+      // 결과의 「사람 등록」은 팀 「배정 없음」인 빈 폼으로 돌아온다 — 본부 칸도 다시 서야 한다.
+      setTeamChosen(false);
       setRegistered({ email: input.email, tempPassword: data.tempPassword });
     },
   });

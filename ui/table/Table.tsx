@@ -962,7 +962,7 @@ export function Table<Row>({
               const secondaryTexts = columns
                 .filter((column) => column.priority === "p1")
                 .map((column) => column.secondaryText?.(row))
-                .filter((value): value is string => typeof value === "string" && value !== "");
+                .filter((value): value is NonNullable<ReactNode> => value !== null && value !== undefined && value !== false && value !== "");
               const foldedValues: ReactNode[] = [...secondaryTexts, ...p2Values];
 
               // 06-29(SP-1) — 고른 행 = selectedIds에 있고 지금 고를 수 있는 행. 막힌 행은 배경 칠 없이 이유 글자만.

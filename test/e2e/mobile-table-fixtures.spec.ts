@@ -29,6 +29,26 @@ import { loginAsSysadmin } from "./row-actions-helpers";
 // 07.1-18 게이트 반영(#326 review ③ · 플랜 :187 · :188) — 빠진 폰 픽스처 스펙. 7자리 금액 · 긴 이름 · 긴 상태 글자 같은 실제 길이 데이터로
 // 행 시트 표(/pnl/reserves · 견적 표)와 행 링크 표(휴가 · 발행 요청 · 지급 완료 · 지급 대상), 접힌 줄 탭 칸의 :active 면을 375 · 320에서 DOM으로 잰다.
 
+// 07.1-18 게이트 3차 — 날짜 nowrap은 폰에서만 건다. PC(768 · 1024)의 열 폭은 main과 같아야 한다(768 넘침 43 → 95 회귀).
+for (const width of [1024, 768] as const) {
+  test(`/pnl/reserves — PC ${width}: 날짜 칸은 nowrap이 아니다 (열 폭은 main 그대로)`, async ({ page }) => {
+    test.setTimeout(180_000);
+    const name = `E2E리저브PC-${randomUUID().slice(0, 6)}`;
+    const client = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase() });
+    await db.insert(reserveEntries).values({ clientId: client.id, entryDate: seoulToday(), direction: "deposit", amountCurrency: "KRW", amountForeignAmount: null, amountFxRate: "1", amountAmountKrw: 1_234_567, note: null });
+    await loginAsSysadmin(page);
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/pnl/reserves");
+    const table = page.locator("main table[data-row-sheet]").first();
+    await expect(table).toBeVisible({ timeout: 30_000 });
+    const whiteSpaces = await table.evaluate((node) =>
+      Array.from(node.querySelectorAll("td span")).filter((el) => /^\d{4}-\d{2}-\d{2}$/.test((el.textContent ?? "").trim())).map((el) => getComputedStyle(el).whiteSpace),
+    );
+    expect(whiteSpaces.length).toBeGreaterThan(0);
+    expect(whiteSpaces.filter((v) => v === "nowrap"), `PC에서 날짜 nowrap ${width}`).toEqual([]);
+  });
+}
+
 for (const width of [375, 320] as const) {
   test.describe(`폰 ${width} 픽스처`, () => {
     test(`/pnl/reserves — 외화 · 7자리 원화 · 긴 클라이언트 · 긴 메모 줄: 행 두 줄 · 접힌 줄 한 줄 (${width})`, async ({ page }) => {

@@ -55,9 +55,11 @@
   color: var(--text-strong);
 }
 
-/* 07.1-18 — 날짜는 말줄임하지 않는다. 한 덩이로 두어 칸 최소 폭이 날짜 전체가 된다. */
-.dateText {
-  white-space: nowrap;
+/* 07.1-18 — 폰에서 날짜는 말줄임하지 않는다. 한 덩이로 두어 칸 최소 폭이 날짜 전체가 된다(PC 열 폭은 main 그대로). */
+@media (max-width: 699.98px) {
+  .dateText {
+    white-space: nowrap;
+  }
 }
 
 /* S9 long-text — 메모는 긴 칸 규칙 아래 PC에서 한 줄 말줄임(행 높이를 늘리지 않는다). */

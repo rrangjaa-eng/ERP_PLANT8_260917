@@ -172,7 +172,7 @@ export function ProjectsTable({
       key: "status",
       header: PROJECT_COLUMN_LABELS.status,
       priority: "p1",
-      secondaryText: (row) => (row.endDatePassed ? "종료일 지남" : row.collectionOverdue ? "수금 지연" : ""),
+      secondaryText: (row) => secondLine(row),
       cell: (row) => (
         <>
           <StatusTag status={PROJECT_STATUS_WORD[row.status as ProjectStatus] ?? "수주중"} variant="text" />

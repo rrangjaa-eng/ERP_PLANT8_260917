@@ -2490,3 +2490,8 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정**: ① 경고 글자(`종료일 지남` · `수금 지연`)는 접힌 줄 맨 앞(`secondaryText`)에 둔다 — 한 줄 말줄임이 줄 끝을 자르므로 긴 클라이언트 이름 뒤에 두면 320에서 잘린다. ② 날짜 칸은 `white-space: nowrap`으로 한 덩이를 지킨다(`/pnl/reserves` `.dateText`) — 날짜는 말줄임하지 않는다.
 **이유**: 게이트 2차 실측 — `/projects` 320에서 종료일 지남이 접힌 줄 끝에서 잘려 title도 없었고, `/pnl/reserves` 320에서 날짜가 `2026-10-…`로 보였다.
 **근거**: PR #326 게이트 2차 지시 1 · 2. **범위**: `projects-table.tsx` · `reserves-table.tsx` · `reserves.module.css`. 새 색 · 서체 · radius · 토큰 0.
+
+### 정정 2026-10-29 (PR #326 게이트 3차): 경고 색 유지 · 날짜 nowrap은 폰만
+**결정**: ① 공용 Table `secondaryText`는 글자(string)뿐 아니라 ReactNode를 받는다 — `/projects` 접힌 줄 맨 앞 경고가 기존 `.endDatePassed` · StatusTag를 그대로 써 `--status-warning` 색을 잃지 않는다(textContent는 그대로 글자를 싣는다). ② `/pnl/reserves` `.dateText` nowrap은 `max-width: 699.98px`(Table 폰 규칙과 같은 분기점) 안에서만 건다 — PC 열 폭은 main과 같다.
+**이유**: 3차 실측 — 폰 경고 색이 본문색(82,97,92)으로 바뀌었고(main 138,90,0), nowrap이 PC 768 넘침 43→95 · 1024 행 높이 71→92로 번졌다.
+**범위**: `ui/table/types.ts` · `Table.tsx` 필터 · `projects-table.tsx` · `reserves.module.css`. 새 색 · 서체 · radius · 토큰 0.

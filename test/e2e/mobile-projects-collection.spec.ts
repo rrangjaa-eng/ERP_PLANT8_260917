@@ -110,6 +110,16 @@ for (const width of [375, 320] as const) {
     expect(box.bottom).toBeLessThanOrEqual(box.clipBottom + 1);
     expect(box.right).toBeLessThanOrEqual(box.clipRight + 0.5);
     await expect(folded).toContainText(/^종료일 지남 · /);
+    // 경고 색 — 접힌 줄 맨 앞 글자도 PC 상태 칸과 같은 --status-warning을 쓴다(색은 잃지 않는다).
+    const colors = await warning.evaluate((el) => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--status-warning)";
+      document.body.appendChild(probe);
+      const expected = getComputedStyle(probe).color;
+      probe.remove();
+      return { actual: getComputedStyle(el).color, expected };
+    });
+    expect(colors.actual, "경고 색 = --status-warning").toBe(colors.expected);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 }

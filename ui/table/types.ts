@@ -42,7 +42,7 @@ export type TableColumn<Row> = {
    */
   secondaryLine?: (row: Row) => ReactNode;
   /** 07.1-18 — 폰에서 주 행 아래 줄이 숨는 표(행 시트 표 · 행 링크 표)의 P1 열이 접힌 줄 맨 앞에 싣는 글자. 없으면 그 줄은 시트 · 상세 화면에만 남는다. */
-  secondaryText?: (row: Row) => string;
+  secondaryText?: (row: Row) => ReactNode;
   /**
    * 04-49(DR-14) — 좁은 PC 열 접기. 그 폭 **미만**에서 숨는다(1024 미만은 1280 열도 숨는다). 숨은 열은 방향키가
    * 건너뛰고, 붙여넣기의 논리 열 순서에는 남는다. 폰(<700)은 priority 규칙이 따로 접는다.

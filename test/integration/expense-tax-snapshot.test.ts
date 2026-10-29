@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { approveDocument } from "@/domain/approvals";
 import { insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 import { and, eq } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { expenses, settingsHistorized } from "@/db/schema";
-import { createExpenseFromLines, ExpenseNotFoundError, getExpense, listExpenseFormOptions, previewExpense, saveExpenseDraft } from "@/domain/expenses";
+import { createExpenseFromLines, ExpenseConflictError, ExpenseNotFoundError, getExpense, listExpenseFormOptions, previewExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { computeExpenseTax } from "@/domain/expenses/tax";
 import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
 import { TAX_VAT_RATE } from "@/domain/settings/keys";
@@ -12,10 +12,12 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { seoulToday } from "@/lib/dates";
 import { addDays } from "@/lib/kst-date";
-import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { attachEvidence, ensureDetail, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, makePaymentManager } from "./fixtures/payments";
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { upsertVisibility } from "@/repositories/permissions";
+import { detachOwnEvidence } from "@/domain/evidence-records/attach";
+import { waitForLockWaiter } from "./lock-race";
 
 // 05-06 Task 1(기준 7 · Eng OV-5 · B1 Round 2) — 제출 때 세율 스냅숏(세율 · 이력 행 id · 그 행의 적용일 — 값 복사, 외래 키 없음)을
 // 저장하고, 문서는 저장값 한 줄을 보이며, 지금 기준 재계산이 다르면 `세율 바뀜` 한 줄이 선다. 판정은 스냅숏 값 대 재계산 값 —
@@ -224,6 +226,51 @@ describe("07.1-16 — 승인 스냅숏 불변", () => {
       expect(doc?.taxLine?.text).toContain("지급 총액 14,508,000");
       expect(doc?.taxDrift?.text).toContain("17% →");
     } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, "2027-10-10");
+    }
+  }, 60_000);
+});
+
+// 07.1-16 Codex 검토(PR #324): 제출은 세금을 트랜잭션 전에 붙은 증빙 가장 이른 발행일로 셈한다. 그 사이 가장 이른 기록을 떼면(편집 가능 상태 —
+// 문서 version 그대로) 뗀 기록의 날로 셈한 스냅숏이 저장됐다. 별도 연결이 프로젝트 행을 쥐어 제출을 트랜잭션 첫 잠금에서 세우고, 그동안 떼기를 커밋한다.
+describe("07.1-16 — 제출 중 가장 이른 증빙 떼기", () => {
+  it("사전 판독 뒤 · 잠금 전에 가장 이른 기록(10-05)을 떼면 제출은 충돌로 막히고, 다시 제출하면 남은 기록(10-15) 기준 세율로 찍힌다", async () => {
+    await seedCodeItem(SYSTEM_VIEWER, {
+      tableKey: "evidence_type",
+      value: "test_vat_evidence_0716_race",
+      label: "증빙일 부가세 07.1-16 경합",
+      sortOrder: 99,
+      taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "evidence_date" },
+    });
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOnStageLine(fx);
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { evidenceType: "test_vat_evidence_0716_race", evidenceDate: "2027-10-20" } });
+    const earlyLink = await insertLinkFixture({ recordId: await insertRecordFixture(fx.pm, { issuedOn: "2027-10-05" }), ownerId: expenseId, attachMode: "author", attachedBy: fx.pm.id });
+    await insertLinkFixture({ recordId: await insertRecordFixture(fx.pm, { issuedOn: "2027-10-15" }), ownerId: expenseId, attachMode: "author", attachedBy: fx.pm.id });
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2027-10-10", value: 0.17 });
+    // 붙이기 · 상세 저장은 제출 전에 끝낸다 — 잠금 대기 연결이 제출 하나뿐이게.
+    await attachEvidence(fx.pm, expenseId);
+    await ensureDetail(fx.pm, expenseId);
+    const { version } = await expenseRow(expenseId);
+    const holder = await pool.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+      const submitting = submitExpense(fx.pm, { expenseId, expectedVersion: version });
+      try {
+        await waitForLockWaiter(pool);
+        expect(await detachOwnEvidence(fx.pm, { linkId: earlyLink, reason: "잘못 붙임" })).toEqual({ detached: true });
+      } finally {
+        await holder.query("COMMIT");
+      }
+      await expect(submitting).rejects.toBeInstanceOf(ExpenseConflictError);
+      expect(await expenseRow(expenseId)).toMatchObject({ number: null, taxBasisDate: null });
+
+      const again = await submitReadyDraft(fx.pm, expenseId);
+      expect(again.kind).toBe("submitted");
+      expect(await expenseRow(expenseId)).toMatchObject({ taxBasisDate: "2027-10-15", taxRate: "0.170000" });
+    } finally {
+      holder.release();
       await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, "2027-10-10");
     }
   }, 60_000);

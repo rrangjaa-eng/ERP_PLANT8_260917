@@ -2485,3 +2485,8 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **같이 바뀐 것**: `/expenses` 상태 칸 둘째 줄 `증빙 N일 경과`는 폰에서 숨고 같은 글자가 `secondaryText`로 접힌 줄 앞에 선다(셀 안에서 직접 두 줄을 그리던 P1 셀 — 플랜 :73). `/cards` `.linkCell`은 폰에서 `inline-grid`(접힌 줄 ` · ` 이음 흐름 한가운데 block 격자가 줄을 갈라 3줄이 되던 것).
 **근거**: PR #326 게이트 보고서(`pr-gate/326/review.md`) P1 셋 · 실행자 판정 ①.
 **범위**: `ui/table` 폰 규칙 · `expenses` · `cards` 화면 CSS. 새 색 · 서체 · radius · 토큰 0. 앞 항목의 3em 문장은 이 정정으로 대체된다.
+
+### 정정 2026-10-29 (PR #326 게이트 2차): 접힌 줄 경고는 맨 앞 · 날짜는 말줄임 없음
+**결정**: ① 경고 글자(`종료일 지남` · `수금 지연`)는 접힌 줄 맨 앞(`secondaryText`)에 둔다 — 한 줄 말줄임이 줄 끝을 자르므로 긴 클라이언트 이름 뒤에 두면 320에서 잘린다. ② 날짜 칸은 `white-space: nowrap`으로 한 덩이를 지킨다(`/pnl/reserves` `.dateText`) — 날짜는 말줄임하지 않는다.
+**이유**: 게이트 2차 실측 — `/projects` 320에서 종료일 지남이 접힌 줄 끝에서 잘려 title도 없었고, `/pnl/reserves` 320에서 날짜가 `2026-10-…`로 보였다.
+**근거**: PR #326 게이트 2차 지시 1 · 2. **범위**: `projects-table.tsx` · `reserves-table.tsx` · `reserves.module.css`. 새 색 · 서체 · radius · 토큰 0.

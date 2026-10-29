@@ -37,7 +37,7 @@ export function ProjectsTable({
   profitRateThreshold: number;
 }) {
   const nowrap = (text: string) => <span className={styles.nowrap}>{text}</span>;
-  // 07-22(U15 · SC-20) — 상태 칸 둘째 줄은 한 값: 종료일 지남 > 수금 지연 > 없음(첫 줄 상태 낱말은 그대로). 폰은 같은 값을 접힌 줄 기간 뒤에.
+  // 07-22(U15 · SC-20) — 상태 칸 둘째 줄은 한 값: 종료일 지남 > 수금 지연 > 없음(첫 줄 상태 낱말은 그대로). 폰은 같은 값을 접힌 줄 맨 앞에(secondaryText — 한 줄 말줄임에 잘리지 않게).
   const secondLine = (row: ProjectListItemWithGroup) =>
     row.endDatePassed ? (
       <span className={styles.endDatePassed}>종료일 지남</span>
@@ -154,7 +154,7 @@ export function ProjectsTable({
       cell: (row) => <span className={styles.periodCell}>{period(row)}</span>,
       // 04-17(D-90) — 보기 범위 밖에서 끝나는 행만 2행에 귀속(`2027 귀속`).
       secondaryLine: (row) => (row.attributionLabel ? <span className={styles.attribution}>{row.attributionLabel}</span> : null),
-      // 폰 접힌 줄(S1 폰 열 우선순위) — 기간 뒤 같은 줄 끝에 귀속 · 상태 2행 한 값(상태 칸 2행은 폰에서 숨는다).
+      // 폰 접힌 줄(S1 폰 열 우선순위) — 기간 뒤 같은 줄 끝에 귀속(상태 2행 한 값은 상태 열 secondaryText로 맨 앞).
       summary: (row) => (
         <>
           <span className={styles.periodCell}>{period(row)}</span>
@@ -162,12 +162,6 @@ export function ProjectsTable({
             <>
               {" · "}
               <span className={styles.attribution}>{row.attributionLabel}</span>
-            </>
-          ) : null}
-          {secondLine(row) ? (
-            <>
-              {" · "}
-              {secondLine(row)}
             </>
           ) : null}
         </>
@@ -178,6 +172,7 @@ export function ProjectsTable({
       key: "status",
       header: PROJECT_COLUMN_LABELS.status,
       priority: "p1",
+      secondaryText: (row) => (row.endDatePassed ? "종료일 지남" : row.collectionOverdue ? "수금 지연" : ""),
       cell: (row) => (
         <>
           <StatusTag status={PROJECT_STATUS_WORD[row.status as ProjectStatus] ?? "수주중"} variant="text" />

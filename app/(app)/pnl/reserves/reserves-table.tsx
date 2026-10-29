@@ -997,7 +997,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       header: "날짜",
       priority: "p1",
       editability: (row) => editability(row, "entryDate"),
-      cell: (row) => row.entryDate || "—",
+      cell: (row) => <span className={styles.dateText}>{row.entryDate || "—"}</span>,
       copyText: (row) => row.entryDate,
       editCell: (row, ctx) => <TextEditCell ariaLabel="날짜" type="date" initialValue={row.entryDate} onCommit={ctx.onCommit} />,
     },

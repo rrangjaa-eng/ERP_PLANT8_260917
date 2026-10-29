@@ -48,6 +48,14 @@ for (const width of [375, 320] as const) {
       const table = page.locator("main table[data-row-sheet]").first();
       await expect(table).toBeVisible({ timeout: 30_000 });
       const shape = await expectPhoneRows(page, table, `/pnl/reserves @${width}`, { minRows: 3 });
+      // 날짜는 말줄임하지 않는다 — 날짜 글자 칸이 글자 전체를 담는다.
+      const dates = await table.evaluate((node) =>
+        Array.from(node.querySelectorAll<HTMLElement>("[data-cell-text]"))
+          .filter((box) => /^\d{4}-\d{2}-\d{2}$/.test((box.textContent ?? "").trim()))
+          .map((box) => ({ text: box.textContent, fits: box.scrollWidth <= box.clientWidth && box.scrollHeight <= box.clientHeight })),
+      );
+      expect(dates.length, "날짜 칸이 있다").toBeGreaterThanOrEqual(3);
+      expect(dates.filter((d) => !d.fits), `날짜가 잘렸다 ${JSON.stringify(dates)}`).toEqual([]);
       expect(shape.foldedTexts.some((text) => text.includes("USD")), `외화 줄이 접힌 줄 글자로 간다 ${JSON.stringify(shape.foldedTexts)}`).toBe(true);
     });
 

@@ -429,7 +429,7 @@ test.describe("프로젝트 목록 — 열 · 폭별 접기 · 종료일 지남 
     }
   });
 
-  test("(04-17 DOM 감사) 375 접힌 줄은 「클라이언트 · 담당 PM · 기간」 끝에 귀속 · 종료일 지남을 잇고 상태 칸에는 두 번 보이지 않는다", async ({ page }) => {
+  test("(04-17 DOM 감사) 375 접힌 줄은 「클라이언트 · 담당 PM · 기간」 끝에 귀속 · 종료일 지남은 맨 앞이고 상태 칸에는 두 번 보이지 않는다", async ({ page }) => {
     const now = new Date();
     const today = kstToday(now);
     const nextYear = kstYear(now) + 1;
@@ -447,7 +447,7 @@ test.describe("프로젝트 목록 — 열 · 폭별 접기 · 종료일 지남 
 
     const passedLine = collapsedLine(`${marker}-지남`);
     await expect(passedLine).toBeVisible();
-    await expect(passedLine).toHaveText(/^[^·]+ · [^·]+ · [^·]+ · 종료일 지남$/);
+    await expect(passedLine).toHaveText(/^종료일 지남 · [^·]+ · [^·]+ · [^·]+$/);
     await expect(passedLine.getByText("종료일 지남", { exact: true })).toBeVisible();
     await expect(page.locator(`${LIST_TABLE} tbody`, { has: page.getByRole("link", { name: `${marker}-지남`, exact: true }) }).getByText("종료일 지남", { exact: true }).filter({ visible: true })).toHaveCount(1);
 

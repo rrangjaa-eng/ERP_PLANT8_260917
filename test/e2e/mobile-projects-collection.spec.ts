@@ -27,13 +27,14 @@ async function makeManager(): Promise<{ email: string; password: string }> {
   return { email, password: tempPassword };
 }
 
-async function seedLate(name: string, opts: { startDate?: string; endDate?: string } = {}): Promise<void> {
+async function seedLate(name: string, opts: { startDate?: string; endDate?: string; clientName?: string } = {}): Promise<void> {
   const today = kstToday(new Date());
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E폰수금거래처-${randomUUID()}`, normalizedName: `e2e폰수금거래처-${randomUUID()}` });
+  const { clientName, ...projectOpts } = opts;
+  const client = await insertVendor(SYSTEM_VIEWER, { name: clientName ?? `E2E폰수금거래처-${randomUUID()}`, normalizedName: (clientName ?? `e2e폰수금거래처-${randomUUID()}`).toLowerCase() });
   const pm = await createAccount(SYSTEM_VIEWER, { email: `e2e-mobile-collect-pm-${randomUUID()}@example.test`, name: "E2E 폰 PM", roleId: DEFAULT_ROLE_ID });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.userId, name, ...opts });
+  const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.userId, name, ...projectOpts });
   await db.update(projects).set({ status: "bidding" }).where(eq(projects.id, project.id));
   await db.insert(revenueEntries).values({
     projectId: project.id,
@@ -69,7 +70,7 @@ test("폰 접힌 줄 기간 뒤에 상태 2행 한 값 — 지연이면 수금 �
   const late = rowGroup(page, `${marker}-지연`);
   await expect(late).toHaveCount(1);
   const lateCollapsed = late.locator("tr").nth(1);
-  await expect(lateCollapsed).toContainText(/ · 수금 지연$/);
+  await expect(lateCollapsed).toContainText(/^수금 지연 · /);
   await expect(lateCollapsed.getByText("수금 지연", { exact: true })).toHaveCount(1);
   // 상태 칸 2행은 폰에서 숨는다 — 보이는 수금 지연은 접힌 줄 하나뿐.
   await expect(late.locator("tr").first().getByText("수금 지연", { exact: true })).toBeHidden();
@@ -83,3 +84,32 @@ test("폰 접힌 줄 기간 뒤에 상태 2행 한 값 — 지연이면 수금 �
   // 가로 넘침 없음.
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+// 07.1-18 게이트 2차 — 접힌 줄은 한 줄로 잘리므로 경고(종료일 지남 · 수금 지연)는 줄 맨 앞에 와야 긴 클라이언트 이름에 밀려 잘리지 않는다.
+for (const width of [375, 320] as const) {
+  test(`폰 접힌 줄 경고는 긴 클라이언트 이름에도 잘리지 않는다 (${width})`, async ({ page }) => {
+    test.setTimeout(180_000);
+    const today = kstToday(new Date());
+    const marker = `E2E폰경고-${randomUUID().slice(0, 8)}`;
+    const clientName = `E2E 아주 아주 긴 클라이언트 이름 대행사 주식회사 ${randomUUID().slice(0, 6)}`;
+    await seedLate(`${marker}-종료지남`, { startDate: addDays(today, -80), endDate: addDays(today, -1), clientName });
+    await login(page, await makeManager());
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+    const group = rowGroup(page, `${marker}-종료지남`);
+    await expect(group).toHaveCount(1);
+    const folded = group.locator("tr").nth(1);
+    const warning = folded.getByText("종료일 지남", { exact: true });
+    await expect(warning).toBeVisible();
+    const box = await warning.evaluate((el) => {
+      const clip = el.closest("[data-cell-text]")!.getBoundingClientRect();
+      const rect = el.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, right: rect.right, clipTop: clip.top, clipBottom: clip.bottom, clipRight: clip.right, text: el.textContent };
+    });
+    expect(box.top, `경고가 클램프 첫 줄 안 ${JSON.stringify(box)}`).toBeLessThan(box.clipBottom - 1);
+    expect(box.bottom).toBeLessThanOrEqual(box.clipBottom + 1);
+    expect(box.right).toBeLessThanOrEqual(box.clipRight + 0.5);
+    await expect(folded).toContainText(/^종료일 지남 · /);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+}

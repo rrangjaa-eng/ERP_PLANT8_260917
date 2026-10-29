@@ -35,6 +35,14 @@
   max-width: 16em;
 }
 
+/* 07.1-18 — 폰 접힌 줄은 ` · ` 이음 글자 한 흐름이다. block 격자가 흐름 한가운데 서면 줄이 갈라져 접힌 줄이 세 줄이 된다 → 폰에서만 줄 안 상자로. */
+@media (max-width: 699.98px) {
+  .linkCell {
+    display: inline-grid;
+    vertical-align: bottom;
+  }
+}
+
 .linkText {
   overflow: hidden;
   text-overflow: ellipsis;

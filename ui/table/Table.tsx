@@ -815,10 +815,13 @@ export function Table<Row>({
 
     const primary = numericNode(column, column.cell(row));
     const secondary = column.secondaryLine?.(row);
-    if (secondary === null || secondary === undefined || secondary === "") return primary;
+    // 폰 한 줄 말줄임(07.1-18 · B-R3) — 글자 칸의 주 내용은 block 감싸개 하나에 담는다(폭 규칙 · 말줄임은 td가 아니라 이 감싸개에 건다).
+    // 숫자 칸(금액이 …으로 잘리면 안 된다)과 머리글을 숨긴 행동 열은 그대로다.
+    const wrapped = column.align === "right" || column.headerHidden ? primary : <div data-cell-text="">{primary}</div>;
+    if (secondary === null || secondary === undefined || secondary === "") return wrapped;
     return (
       <>
-        <div>{primary}</div>
+        {column.align === "right" || column.headerHidden ? <div>{primary}</div> : wrapped}
         <div className={styles.cellSecondary}>{secondary}</div>
       </>
     );
@@ -874,6 +877,7 @@ export function Table<Row>({
         className={[styles.table, hasEditableCell ? styles.editable : styles.readonly, collapseEarly ? styles.collapseEarly : ""].join(" ")}
         role={hasEditableCell ? "grid" : undefined}
         aria-busy={saveLocked ? true : undefined}
+        data-row-sheet={onRowTap ? "" : undefined}
         onPaste={enableGridKeyboard ? handleTablePaste : undefined}
       >
         <caption
@@ -954,6 +958,12 @@ export function Table<Row>({
                 .filter((column) => cellEditability(column, row) !== "edit" || column.summary)
                 .map((column) => numericNode(column, column.summary ? column.summary(row) : column.cell(row)))
                 .filter((value): value is ReactNode => value !== null && value !== undefined && value !== "");
+              // 07.1-18 (U-1 option-a) — 폰에서 주 행 셀 아래 줄이 숨는 표의 P1 열이 주는 글자: 접힌 줄 맨 앞(열 순서) → P2 값. 글자만 싣는다(링크 · 버튼 없음).
+              const secondaryTexts = columns
+                .filter((column) => column.priority === "p1")
+                .map((column) => column.secondaryText?.(row))
+                .filter((value): value is string => typeof value === "string" && value !== "");
+              const foldedValues: ReactNode[] = [...secondaryTexts, ...p2Values];
 
               // 06-29(SP-1) — 고른 행 = selectedIds에 있고 지금 고를 수 있는 행. 막힌 행은 배경 칠 없이 이유 글자만.
               const gate = selection?.selectable(row);
@@ -1162,10 +1172,10 @@ export function Table<Row>({
                       </td>
                     </tr>
                   ) : null}
-                  {p2Values.length > 0 ? (
+                  {foldedValues.length > 0 ? (
                     <tr
                       className={styles.collapsedRow}
-                      aria-hidden={onRowTap ? undefined : "true"}
+                      aria-hidden={onRowTap || secondaryTexts.length > 0 ? undefined : "true"}
                     >
                       {onRowTap ? (
                         <td
@@ -1174,6 +1184,10 @@ export function Table<Row>({
                           role="button"
                           tabIndex={0}
                           aria-label={`${rowLabel ? rowLabel(row) : rowId} 상세 보기`}
+                          // aria-label이 칸 내용을 덮어 판독기가 글자를 읽지 않는다 — 같은 글자는 주 행 셀 · 행 시트에 있다. 말줄임에 잘린 글자는 title로 본다.
+                          ref={(node) => {
+                            if (node) node.title = node.textContent ?? "";
+                          }}
                           onClick={() => onRowTap(row)}
                           onKeyDown={(event) => {
                             if (event.key === "Enter" || event.key === " ") {
@@ -1182,15 +1196,19 @@ export function Table<Row>({
                             }
                           }}
                         >
-                          {p2Values.map((value, index) => (
-                            <span key={index}>{index > 0 ? " · " : ""}{value}</span>
-                          ))}
+                          <div data-cell-text="">
+                            {foldedValues.map((value, index) => (
+                              <span key={index}>{index > 0 ? " · " : ""}{value}</span>
+                            ))}
+                          </div>
                         </td>
                       ) : (
                         <td colSpan={columns.length + (selection ? 1 : 0)} className={styles.collapsedCell}>
-                          {p2Values.map((value, index) => (
-                            <span key={index}>{index > 0 ? " · " : ""}{value}</span>
-                          ))}
+                          <div data-cell-text="">
+                            {foldedValues.map((value, index) => (
+                              <span key={index}>{index > 0 ? " · " : ""}{value}</span>
+                            ))}
+                          </div>
                         </td>
                       )}
                     </tr>

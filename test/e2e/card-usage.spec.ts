@@ -435,7 +435,8 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 1,327,401");
     const table = page.getByRole("table");
     await expect(table.getByText("1,327,401", { exact: true })).toHaveCount(1);
-    await expect(table.getByText("USD 900.00 @1,474.89 · 공급가 1,206,728", { exact: true })).toHaveCount(1);
+    // 07.1-18 — 같은 글자가 접힌 줄(`secondaryText`)에도 있다(PC에서는 접힌 줄이 숨는다) — 보이는 것만 센다.
+    await expect(table.getByText("USD 900.00 @1,474.89 · 공급가 1,206,728", { exact: true }).filter({ visible: true })).toHaveCount(1);
     await page.context().close();
   });
 

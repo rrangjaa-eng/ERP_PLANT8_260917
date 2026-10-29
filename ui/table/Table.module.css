@@ -270,6 +270,11 @@ th.groupHeader {
   accent-color: var(--native-accent);
 }
 
+/* 머리글 높이는 글자가 정한다 — 머리글 선택 라벨은 본문 칸 최소 높이를 받지 않아 선택 열 유무로 머리글이 커지지 않는다(07.1-18 · W1). */
+thead .selectLabel {
+  min-height: 0;
+}
+
 .selectedRow {
   background: var(--surface-selected);
   /* 07-12 D1 — 고른 행 면(n-100) 위에서 4.5 미만인 글자 역할을 같은 뜻의 더 진한 역할로 다시 가리킨다(§1-4 금지 쌍).
@@ -472,6 +477,28 @@ th.groupHeader {
     content: "";
     position: absolute;
     inset: 0;
+  }
+
+  /* 폰 행은 두 줄(주 행 한 줄 + 접힌 줄 한 줄) — 행 시트 표(`data-row-sheet`)와 행 링크 표(`a[data-row-link]`, D-E7)는 상세 화면 · 행 시트가 전체 글자를 맡는다.
+     글자 칸의 폭 규칙 · 말줄임은 td가 아니라 안쪽 block 감싸개 `[data-cell-text]`에 건다(td에 걸면 자동 표 배치가 nowrap 글자 폭을 깎지 못해 320에서 넘친다).
+     `width: 0` + `min-width: max(100%, 5em)` — 다른 열이 쓰고 남은 폭만 쓰고 3em 바닥은 남긴다(320에서 글자 칸 둘 + 숫자 칸 + 동작 칸 표가 288 안에 들도록 5em에서 낮췄다 — 카드 사용 목록 실측: 5em 바닥이면 표 354)(원형 expenses.module.css `.titleCell`). 버튼을 든 감싸개는 자기 화면 CSS가 한 줄을 맡는다.
+     숫자 칸 · 그룹 머리글 · 합계 · EMPTY/ERROR는 감싸개가 없어 줄바꿈 그대로다. */
+  .table:is([data-row-sheet], :has([data-row-link])) [data-cell-text]:not(:has(button)) {
+    width: 0;
+    min-width: max(100%, 3em);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 주 행 셀 아래 줄은 폰에서 접힌 줄 맨 앞 글자(`secondaryText`) · 행 시트 · 상세 화면으로 간다. */
+  .table:is([data-row-sheet], :has([data-row-link])) .cellSecondary {
+    display: none;
+  }
+
+  /* 행 탭 → 시트 행은 폰 :active에 hover와 같은 면이다(U-12). */
+  .collapsedCellTap:active {
+    background: var(--surface-muted);
   }
 
   /* 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다. */

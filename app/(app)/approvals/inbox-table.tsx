@@ -123,13 +123,14 @@ export function InboxTable({
             <button
               type="button"
               className={styles.rowTap}
+              data-row-link=""
               aria-haspopup="dialog"
               onClick={() => setSheetItem(row.sheet)}
             >
               {row.document}
             </button>
           ) : row.href ? (
-            <Link href={row.href} className={[leaveStyles.link, styles.rowLink].join(" ")}>
+            <Link href={row.href} className={[leaveStyles.link, styles.rowLink].join(" ")} data-row-link="">
               {row.document}
             </Link>
           ) : (

@@ -217,6 +217,13 @@ function attachedShown(attached: NonNullable<Row["attached"]>): boolean {
   return attached.pending || (attached.id !== null && attached.number !== null);
 }
 
+// 07.1-18 — 폰 접힌 줄 앞 글자(`secondaryText`): 상태 칸 아래 줄(붙은 번호 · 사유)의 글자만. 링크는 행 시트 `붙은 문서` 줄에 있다.
+function attachedPlainText(attached: NonNullable<Row["attached"]>): string | null {
+  if (attached.pending) return COPY.draftOwner;
+  if (attached.id === null || attached.number === null) return null;
+  return `${attached.number}${attached.cardReplaced ? COPY.cardReplaced : ""}`;
+}
+
 function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
   if (attached.pending) return <span>{COPY.draftOwner}</span>;
   if (attached.id === null || attached.number === null) return null;
@@ -779,6 +786,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         );
       },
       secondaryLine: (row) => row.kindLine,
+      secondaryText: (row) => row.kindLine ?? "",
       copyText: (row) => row.counterparty ?? "",
     },
     { key: "supplyKrw", header: "공급가", priority: "p3", collapseBelow: 1280, align: "right", cell: (row) => <Num value={row.supplyKrw} />, copyText: (row) => amountText(row.supplyKrw) },
@@ -821,6 +829,10 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           </>
         );
       },
+      secondaryText: (row) =>
+        [row.attached && attachedShown(row.attached) ? attachedPlainText(row.attached) : null, row.statusDetail]
+          .filter((part): part is string => Boolean(part))
+          .join(" · "),
       copyText: (row) => row.statusWord,
     },
     // §7-3 (차) 행 행동 열 — 머리글 숨김 · P1 밖 · 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 거래처 칸을 가리킨다. 키보드 경로는 Ctrl+E다(runKeyAction).

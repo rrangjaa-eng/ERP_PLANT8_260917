@@ -49,13 +49,22 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
     const table = page.getByRole("table");
     await expect(table.getByText("1,327,401", { exact: true })).toHaveCount(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
-    // 묶음 안에서는 꺾이지 않는다 — 각 묶음은 한 줄 높이다.
-    for (const segment of ["USD 900.00", "@1,474.89", "공급가 1,327,401"]) {
-      const box = table.getByText(segment, { exact: true });
-      await expect(box).toHaveCount(1);
-      const lines = await box.evaluate((element) => element.getClientRects().length);
-      expect(lines, segment).toBe(1);
-    }
+    // 07.1-18 — 주 행 셀 아래 줄(.cellSecondary)은 폰에서 숨고, 같은 글자(`secondaryText`)가 접힌 줄 앞에 한 줄로 선다.
+    for (const secondary of await table.locator("[class*='cellSecondary']").all()) await expect(secondary).toBeHidden();
+    const folded = table.locator("tr[class*='collapsedRow'] td").first();
+    for (const segment of ["USD 900.00", "@1,474.89", "공급가 1,327,401"]) await expect(folded).toContainText(segment);
+    const tops = await folded.evaluate((cell) => {
+      const set = new Set<number>();
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!(node.textContent ?? "").trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const rect of Array.from(range.getClientRects())) if (rect.width > 1) set.add(Math.round(rect.top / 4));
+      }
+      return set.size;
+    });
+    expect(tops, "접힌 줄 글자는 한 줄").toBe(1);
     await page.context().close();
   });
 

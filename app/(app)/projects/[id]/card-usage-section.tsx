@@ -61,7 +61,7 @@ function columnsFor(rows: Row[]): TableColumn<Row>[] {
           } satisfies TableColumn<Row>,
         ]
       : []),
-    { key: "registered", header: "등록", priority: "p1", cell: registeredText, secondaryLine: registeredSecond },
+    { key: "registered", header: "등록", priority: "p1", cell: registeredText, secondaryLine: registeredSecond, secondaryText: (row) => registeredSecond(row) ?? "" },
   ];
 }
 

@@ -1020,6 +1020,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       editability: (row) => editability(row, "amount"),
       cell: (row) => <Num value={row.isNew && row.money.amount === 0 ? null : row.amountKrw} />,
       secondaryLine: (row) => formatForeignLine(row.money),
+      secondaryText: (row) => formatForeignLine(row.money) ?? "",
       copyText: (row) => String(row.amountKrw),
       editCell: (row, ctx) => <MoneyEditCell rowKey={row.id} initial={row.money} usdDefaultFxRate={usdDefaultFxRate} onCommit={ctx.onCommit} />,
     },

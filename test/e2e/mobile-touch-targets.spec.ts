@@ -350,3 +350,121 @@ test.describe("PR #104 후속 — 폰 복원 줄 44 (DR-104-01) · 머리 줄 Ta
     }
   });
 });
+
+// 07.1-18 Task 3 (W19 · E-P2-49) — 폰 체크박스 래퍼(`label`)는 44×44 이상이고 안 `input` 상자는 그대로이며 서로 겹치지 않는다.
+// 시스템 요소 규칙(globals.css `:where(label:has(> input[type="checkbox"]))`)이 모든 화면에 걸리는지 대표 화면으로 잰다.
+const CHECKBOX_ROUTES = [["admin", "/admin/action-log"], ["lead", "/expenses"], ["admin", "/admin/vendors/new"]] as const;
+
+type CheckboxAudit = { total: number; small: string[]; overlaps: string[]; inputSizes: number[] };
+
+async function auditCheckboxLabels(page: Page): Promise<CheckboxAudit> {
+  return page.evaluate((): CheckboxAudit => {
+    const labels = Array.from(document.querySelectorAll<HTMLLabelElement>('label:has(> input[type="checkbox"])')).filter(
+      (label) => label.getClientRects().length > 0 && !label.closest("thead"),
+    );
+    const boxes = labels.map((label) => ({ label, rect: label.getBoundingClientRect() }));
+    const small = boxes
+      .filter(({ rect }) => rect.width < 43.5 || rect.height < 43.5)
+      .map(({ label, rect }) => `${(label.textContent ?? "").trim().slice(0, 20) || label.className} ${Math.round(rect.width)}x${Math.round(rect.height)}`);
+    const overlaps: string[] = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!.rect;
+        const b = boxes[j]!.rect;
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w > 1 && h > 1) overlaps.push(`${i}/${j} ${Math.round(w)}x${Math.round(h)}`);
+      }
+    }
+    const inputSizes = labels.map((label) => {
+      const input = label.querySelector<HTMLInputElement>(':scope > input[type="checkbox"]')!;
+      return Math.round(input.getBoundingClientRect().width);
+    });
+    return { total: labels.length, small, overlaps, inputSizes };
+  });
+}
+
+test.describe("폰 체크박스 래퍼 44 (07.1-18 W19)", () => {
+  for (const width of WIDTHS_PHONE) {
+    test(`대표 화면의 체크박스 래퍼는 ${width}에서 44×44 이상이고 겹치지 않고 입력 상자는 20 이하다`, async ({ page }) => {
+      test.setTimeout(180_000);
+      await page.setViewportSize({ width, height: 800 });
+      let total = 0;
+      for (const [who, route] of CHECKBOX_ROUTES) {
+        await login(page, seed[who]);
+        await page.goto(route);
+        await page.waitForLoadState("networkidle");
+        const audit = await auditCheckboxLabels(page);
+        total += audit.total;
+        expect(audit.small, `${route} @${width} 44 미만 래퍼`).toEqual([]);
+        expect(audit.overlaps, `${route} @${width} 래퍼 겹침`).toEqual([]);
+        expect(Math.max(0, ...audit.inputSizes), `${route} @${width} 입력 상자 폭`).toBeLessThanOrEqual(20);
+        await expectNoOverflow(page, `${route} @${width}`);
+      }
+      expect(total, "점검한 체크박스 래퍼 수").toBeGreaterThan(0);
+    });
+
+    test(`스타일 없는 label>checkbox도 ${width}에서 44×44이고 입력 상자 크기는 그대로다(시스템 요소 규칙 · 특이도 0)`, async ({ page }) => {
+      await login(page, seed.admin);
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/account");
+      const measured = await page.evaluate(() => {
+        const label = document.createElement("label");
+        label.innerHTML = '<input type="checkbox"> 임시 체크';
+        document.querySelector("main")!.appendChild(label);
+        const input = label.querySelector("input")!;
+        const before = input.getBoundingClientRect();
+        const rect = label.getBoundingClientRect();
+        const inputBox = { width: before.width, height: before.height };
+        label.remove();
+        return { width: rect.width, height: rect.height, input: inputBox };
+      });
+      expect(measured.width, `래퍼 폭 @${width}`).toBeGreaterThanOrEqual(44);
+      expect(measured.height, `래퍼 높이 @${width}`).toBeGreaterThanOrEqual(44);
+      expect(measured.input.width, `입력 상자 폭 @${width}`).toBeLessThanOrEqual(20);
+    });
+  }
+
+  test(`PC 1280에서 스타일 없는 label>checkbox 래퍼는 44로 커지지 않는다`, async ({ page }) => {
+    await login(page, seed.admin);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/account");
+    const height = await page.evaluate(() => {
+      const label = document.createElement("label");
+      label.innerHTML = '<input type="checkbox"> 임시 체크';
+      document.querySelector("main")!.appendChild(label);
+      const h = label.getBoundingClientRect().height;
+      label.remove();
+      return h;
+    });
+    expect(height, "PC 래퍼 높이").toBeLessThan(44);
+  });
+
+  test("링크 눌림 면 ::after 규칙(KvList 값 칸 · Banner · 표 막힘 이유)이 폰 미디어 안에만 있고 행 링크를 제외한다", async ({ page }) => {
+    await login(page, seed.admin);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`/projects/${seed.projectId}`);
+    const found = await page.evaluate(() => {
+      const hits: Array<{ selector: string; inPhoneMedia: boolean }> = [];
+      const visit = (rules: CSSRuleList, phone: boolean) => {
+        for (const rule of Array.from(rules)) {
+          if (rule instanceof CSSMediaRule) visit(rule.cssRules, /699\.98px/.test(rule.conditionText));
+          else if (rule instanceof CSSStyleRule && rule.selectorText.includes("::after") && /(dd > a|\.banner a|selectBlocked a)/.test(rule.selectorText)) {
+            hits.push({ selector: rule.selectorText, inPhoneMedia: phone });
+          }
+        }
+      };
+      for (const sheet of Array.from(document.styleSheets)) {
+        try {
+          visit(sheet.cssRules, false);
+        } catch {
+          // 다른 출처 시트는 읽지 못한다.
+        }
+      }
+      return hits;
+    });
+    expect(found.some((hit) => hit.selector.includes("dd > a")), "KvList 값 칸 링크 ::after").toBe(true);
+    expect(found.every((hit) => hit.inPhoneMedia), `폰 미디어 밖으로 새지 않음 ${JSON.stringify(found)}`).toBe(true);
+    expect(found.filter((hit) => hit.selector.includes("dd > a")).every((hit) => hit.selector.includes("data-row-link")), "행 링크 제외").toBe(true);
+  });
+});

@@ -96,3 +96,15 @@ select {
     scroll-padding-bottom: var(--fixed-bar-inset, calc(var(--touch-min) * 4 + var(--line-w) + var(--s-4)));
   }
 }
+
+/* 07.1-18 W19(E-P2-49) — 폰 체크박스 래퍼 눌림 면 44×44. 체크박스를 직접 품은 label은 어느 화면이든 같은 요소 규칙을 받는다.
+   :where()로 특이도 0 — 모듈 클래스가 display · 크기를 이미 정한 곳(`.checkboxLabel` 등)은 그대로 이기고, 머리글(thead)은 높이를 키우지 않으므로 뺀다(표 모듈이 ::after로 넓힌다).
+   입력 상자 크기는 건드리지 않는다. */
+@media (max-width: 699.98px) {
+  :where(label:has(> input[type="checkbox"]):not(thead *)) {
+    display: inline-flex;
+    align-items: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}

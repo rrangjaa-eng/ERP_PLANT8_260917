@@ -23,3 +23,17 @@
   background: var(--status-warning-weak);
   border-color: var(--status-warning);
 }
+
+/* 07.1-18 W19 — 배너 안 링크의 눌림 면을 폰에서 44×44로 넓힌다(글자 상자 · 줄 높이는 그대로 — 투명 ::after). */
+@media (max-width: 699.98px) {
+  .banner a {
+    position: relative;
+  }
+
+  .banner a::after {
+    content: "";
+    position: absolute;
+    inset-block: calc((1lh - var(--touch-min)) / 2);
+    inset-inline: min(0%, calc((100% - var(--touch-min)) / 2));
+  }
+}

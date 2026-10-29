@@ -21,5 +21,13 @@ export default defineConfig({
   outputDir: `${reviewDir}/pw-output`,
   // 프로덕션 빌드는 기본 60초를 넘길 수 있다.
   webServer: { ...base.webServer, timeout: 600_000 },
-  projects: [{ name: "capture" }],
+  // CODEX_REVIEW_CERT=1이면 확인증 기능을 켜는 준비(test/e2e/cert.setup.ts:18 — 설정 cert.enabled · 담당자 · 권한)를 먼저 돈다.
+  // 기본(미설정)은 종전 그대로 capture 하나다.
+  projects:
+    process.env.CODEX_REVIEW_CERT === "1"
+      ? [
+          { name: "cert-setup", testDir: "test/e2e", testMatch: "cert.setup.ts" },
+          { name: "capture", dependencies: ["cert-setup"] },
+        ]
+      : [{ name: "capture" }],
 });

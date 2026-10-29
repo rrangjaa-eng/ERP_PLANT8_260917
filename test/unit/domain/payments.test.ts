@@ -87,7 +87,7 @@ describe("decidePayable", () => {
   ];
   for (const [label, rule, evidenceType] of SAME_AS_05) {
     it(`같은 입력의 05 computeExpenseTax payable과 같다 — ${label}`, async () => {
-      const doc = { evidenceType, supplyAmountKrw: 712_500, scheduledPaymentDate: "2026-09-22", evidenceDate: "2026-09-22", createdAt: new Date("2026-09-01T00:00:00Z") };
+      const doc = { evidenceType, supplyAmountKrw: 712_500, scheduledPaymentDate: "2026-09-22", evidenceDate: "2026-09-22", earliestEvidenceIssuedOn: null, createdAt: new Date("2026-09-01T00:00:00Z") };
       const tax = await computeExpenseTax({ id: "u1" } as never, doc, {
         listCodeItems: vi.fn(() => Promise.resolve([{ value: evidenceType, taxRule: rule }])) as never,
         getSettingValue: vi.fn((def: { key: string }) => Promise.resolve(SETTING_VALUES[def.key])) as never,
@@ -137,7 +137,7 @@ describe("decidePayable", () => {
 describe("미래 지급일 (RS-11 · Q6)", () => {
   it("pickTaxDates의 payment_date 기준일은 미래 지급일 그대로다", () => {
     const dates = pickTaxDates(
-      { paidDate: "2027-03-02", scheduledPaymentDate: "2026-09-30", createdAt: new Date("2026-09-01T00:00:00Z") },
+      { paidDate: "2027-03-02", scheduledPaymentDate: "2026-09-30", earliestEvidenceIssuedOn: null, createdAt: new Date("2026-09-01T00:00:00Z") },
       { ruleKind: "withholding", codeBasis: "payment_date", basisWithholding: "payment_date", basisVat: "evidence_date", todayKst: "2026-09-22" },
     );
     expect(dates.basisDate).toBe("2027-03-02");
@@ -261,11 +261,11 @@ const ROW: LockedExpense = {
 };
 
 // 사전 조회 결과(loadPaymentInputs와 같은 규칙 — 05 pickTaxDates · pickPaymentAmount).
-function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
+function preOf(row: LockedExpense, hasLiveEvidence: boolean, earliestEvidenceIssuedOn: string | null = null): PaymentInputs {
   const taxRule = SHARED.taxRuleOf(row.evidenceType);
   if (!taxRule || row.supplyAmountKrw === null) throw new Error("테스트 행에 규칙 · 공급가 필요");
   const dates = pickTaxDates(
-    { paidDate: PAY_DATE, scheduledPaymentDate: row.scheduledPaymentDate, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
+    { paidDate: PAY_DATE, scheduledPaymentDate: row.scheduledPaymentDate, evidenceDate: row.evidenceDate, earliestEvidenceIssuedOn, createdAt: row.createdAt },
     { ruleKind: taxRule.ruleKind, codeBasis: taxRule.basisDate, basisWithholding: "payment_date", basisVat: "evidence_date", todayKst: TODAY },
   );
   return {
@@ -279,6 +279,7 @@ function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
     hasLiveEvidence,
     drafterName: "박서연",
     projectCompleted: false,
+    earliestEvidenceIssuedOn,
     amount: pickPaymentAmount({ supplyAmountKrw: row.supplyAmountKrw }),
     tax: { taxRule, dates, recipientCount: row.recipientCount, rates: { ...RATES, asOf: dates.basisDate } },
   };
@@ -328,6 +329,15 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
     await expect(judge({ locked: { ...ROW, evidenceDate: "2026-09-01" }, expectedPayableKrw: 1_100_000 })).rejects.toBeInstanceOf(BasisChangedSignal);
   });
 
+  // 07.1-16(D-7123 · P3): 잠금 뒤 판정의 증빙 기준일은 사전 조회의 가장 이른 발행일 — 잠근 행의 수동 증빙일(09-22)로 셈하지 않는다.
+  // 그 사이 붙이기 · 떼기는 문서 version을 올려 잠금 뒤 version 검사가 거부한다(domain/evidence/index.ts · domain/payments/index.ts).
+  it("사전 조회에 붙은 증빙 가장 이른 발행일(09-05)이 있으면 잠금 뒤 기준일도 그 날이다(기준 바뀜 신호 없음)", async () => {
+    const pre = preOf(ROW, true, "2026-09-05");
+    expect(pre.tax?.dates.basisDate).toBe("2026-09-05");
+    const result = await judge({ pre, expectedPayableKrw: 1_100_000 });
+    expect(result.payable.payableKrw).toBe(1_100_000);
+  });
+
   it("잠금 뒤 증빙이 무효가 되어도 금액은 공급가 그대로 — 증빙 금액이 남은 문서도 거부하지 않는다(D-6520)", async () => {
     const pre = preOf(ROW, true);
     expect(pre.amount).toEqual({ source: "supply", amountKrw: 1_000_000 });
@@ -347,7 +357,7 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
     const future = "2027-03-02";
     const row: LockedExpense = { ...ROW, evidenceType: "business_income" };
     const dates = pickTaxDates(
-      { paidDate: future, scheduledPaymentDate: null, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
+      { paidDate: future, scheduledPaymentDate: null, evidenceDate: row.evidenceDate, earliestEvidenceIssuedOn: null, createdAt: row.createdAt },
       { ruleKind: "withholding", codeBasis: "payment_date", basisWithholding: "payment_date", basisVat: "evidence_date", todayKst: TODAY },
     );
     const pre: PaymentInputs = {

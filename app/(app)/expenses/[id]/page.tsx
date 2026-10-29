@@ -116,7 +116,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           })
         : null,
       expense.projectId ? canOpenProject(viewer, expense.projectId) : false,
-      listLinkedEvidence(viewer, { kind: "expense", id }).catch(() => ({ items: [], lockLine: null })),
+      listLinkedEvidence(viewer, { kind: "expense", id }).catch(() => ({ items: [], lockLine: null, linkCount: 0 })),
       readEvidencePick(viewer, id),
       privateEvidenceNotice(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id }),
     ]);
@@ -197,7 +197,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
       },
     ),
     // 06.1-08(S5): 작성 중 · 반려 · 회수 폼도 붙은 증빙 읽기 행과 증빙 고르기 트리거를 폼 안 「증빙」 칸(05 첨부 바로 아래)에 그린다 — §6-3 칸 순서.
-    listLinkedEvidence(viewer, { kind: "expense", id }).catch(() => ({ items: [], lockLine: null })),
+    listLinkedEvidence(viewer, { kind: "expense", id }).catch(() => ({ items: [], lockLine: null, linkCount: 0 })),
     readEvidencePick(viewer, id),
   ]);
   const optionsOf = (items: { value: string; label: string; description: string | null }[], current: string | null | undefined, currentLabel: string | null | undefined): SelectOption[] => {
@@ -311,7 +311,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           currencies={currencies}
           files={files}
           maxMb={maxMb}
-          linkedEvidenceCount={formLinked.items.length}
+          linkedEvidenceCount={formLinked.linkCount}
           evidenceRecords={<EvidenceRecordsSection items={linkedItemsOf(formLinked)} lockLine={formLinked.lockLine} number={expense.number ?? null} lockLineShownAbove={false} pick={formPick} />}
           route={
             route ? (

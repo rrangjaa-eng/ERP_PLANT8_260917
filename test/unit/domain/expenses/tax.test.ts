@@ -16,7 +16,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("코드 항목 기준일 payment_date · 지급 예정일 없음 → 서울 오늘이고 지급 슬롯에 들어간다", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: null, createdAt },
+      { scheduledPaymentDate: null, earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "withholding", codeBasis: "payment_date", ...settings, todayKst: "2026-09-26" },
     );
     expect(picked.basisKind).toBe("payment_date");
@@ -26,7 +26,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("코드 항목 기준일 payment_date · 지급 예정일 있음 → 지급 예정일", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: "2026-10-05", createdAt },
+      { scheduledPaymentDate: "2026-10-05", earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "withholding", codeBasis: "payment_date", ...settings, todayKst: "2026-09-26" },
     );
     expect(picked.basisDate).toBe("2026-10-05");
@@ -34,7 +34,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("코드 항목에 기준일이 없고 부가세 규칙 · 설정 evidence_date → 작성일(created_at의 서울 날짜)이고 증빙 슬롯에 들어간다", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: "2026-10-05", createdAt },
+      { scheduledPaymentDate: "2026-10-05", earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "vat_surcharge", codeBasis: undefined, ...settings, todayKst: "2026-10-04" },
     );
     expect(picked.basisKind).toBe("evidence_date");
@@ -44,7 +44,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("설정을 document_date로 바꿔도 작성일이다", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: "2026-10-05", createdAt },
+      { scheduledPaymentDate: "2026-10-05", earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "vat_surcharge", codeBasis: undefined, basisWithholding: "payment_date", basisVat: "document_date", todayKst: "2026-10-04" },
     );
     expect(picked.basisKind).toBe("document_date");
@@ -53,7 +53,7 @@ describe("pickTaxDates (D-101)", () => {
 
   it("코드 항목 scheduled_payment_date + 지급 예정일 2026-10-05 → 2026-10-05(부가세 규칙이어도 코드 항목이 설정보다 먼저)", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: "2026-10-05", createdAt },
+      { scheduledPaymentDate: "2026-10-05", earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "vat_surcharge", codeBasis: "scheduled_payment_date", ...settings, todayKst: "2026-10-04" },
     );
     expect(picked.basisKind).toBe("scheduled_payment_date");
@@ -63,11 +63,45 @@ describe("pickTaxDates (D-101)", () => {
 
   it("회사 대납은 원천징수 설정(지급 쪽)을 따른다", () => {
     const picked = pickTaxDates(
-      { scheduledPaymentDate: "2026-10-05", createdAt },
+      { scheduledPaymentDate: "2026-10-05", earliestEvidenceIssuedOn: null, createdAt },
       { ruleKind: "company_borne", codeBasis: undefined, ...settings, todayKst: "2026-10-04" },
     );
     expect(picked.basisKind).toBe("payment_date");
     expect(picked.basisDate).toBe("2026-10-05");
+  });
+});
+
+// 07.1-16(D-7123 · D-7129 · E-P1-11): 증빙일 = 붙은 증빙 기록 중 가장 이른 발행일 → 없으면 저장된 수동 증빙일 → 없으면 작성일.
+describe("pickTaxDates — 붙은 증빙 가장 이른 발행일 (07.1-16)", () => {
+  const createdAt = new Date("2026-09-30T14:30:00Z");
+  const vat = { ruleKind: "vat_surcharge", codeBasis: "evidence_date", basisWithholding: "payment_date", basisVat: "evidence_date", todayKst: "2026-10-28" } as const;
+
+  it("붙은 증빙이 있으면 수동 증빙일(10-20)보다 가장 이른 발행일(10-05)이 기준일이다", () => {
+    const picked = pickTaxDates({ scheduledPaymentDate: "2026-12-04", evidenceDate: "2026-10-20", earliestEvidenceIssuedOn: "2026-10-05", createdAt }, vat);
+    expect(picked.basisDate).toBe("2026-10-05");
+    expect(picked.applyOpts).toEqual({ paymentDate: "2026-10-05", evidenceDate: "2026-10-05" });
+  });
+
+  it("붙은 증빙이 없으면(null) 저장된 수동 증빙일이다", () => {
+    expect(pickTaxDates({ scheduledPaymentDate: null, evidenceDate: "2026-10-20", earliestEvidenceIssuedOn: null, createdAt }, vat).basisDate).toBe("2026-10-20");
+  });
+
+  it("증빙도 수동 값도 없으면 작성일(created_at의 서울 날짜)이다", () => {
+    expect(pickTaxDates({ scheduledPaymentDate: null, evidenceDate: null, earliestEvidenceIssuedOn: null, createdAt }, vat).basisDate).toBe("2026-09-30");
+  });
+
+  it("기준일 종류가 지급일 · 지급 예정일 · 작성일이면 가장 이른 발행일과 상관없이 지금 결과 그대로다", () => {
+    const base = { paidDate: "2026-11-06", scheduledPaymentDate: "2026-12-04", evidenceDate: "2026-10-20", createdAt };
+    for (const [codeBasis, expected] of [
+      ["payment_date", "2026-11-06"],
+      ["scheduled_payment_date", "2026-12-04"],
+      ["document_date", "2026-09-30"],
+    ] as const) {
+      const withEarliest = pickTaxDates({ ...base, earliestEvidenceIssuedOn: "2026-10-05" }, { ...vat, codeBasis });
+      const without = pickTaxDates({ ...base, earliestEvidenceIssuedOn: null }, { ...vat, codeBasis });
+      expect(withEarliest.basisDate).toBe(expected);
+      expect(without.basisDate).toBe(expected);
+    }
   });
 });
 
@@ -97,6 +131,7 @@ const doc = (evidenceType: string, supplyAmountKrw: number, recipientCount?: num
   supplyAmountKrw,
   ...(recipientCount === undefined ? {} : { recipientCount }),
   scheduledPaymentDate: null,
+  earliestEvidenceIssuedOn: null,
   createdAt: new Date("2026-10-01T03:00:00Z"),
 });
 

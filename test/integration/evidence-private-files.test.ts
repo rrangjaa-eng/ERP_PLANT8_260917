@@ -19,7 +19,7 @@ import { makePerson } from "./approvals-fixtures";
 import { purchaseProject, request as createPurchaseRequestFixture } from "./fixtures/purchase-requests";
 import { addApprovedRevision, attachEvidence, setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
 import { createMemoryStorage } from "./fakes/memory-storage";
-import { createInReviewExpenseFixture, createIntakeManager, insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
+import { createInReviewExpenseFixture, createIntakeManager, createReturnedExpenseFixture, insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 
 // 06.1-14(G15 · RP-15 ⑵ · T-061-142 · T-061-147 · T-061-148): 「올린 사람 · 경영관리만 보기」 증빙 종류(개인카드 전표 — 06.1-01 시드,
 // 카드 R6로 사용은 꺼져 있다)를 문서 증빙 종류로 가진 지출결의의 05 파일은 올린 사람과 전사 보는 범위만 본다 — 목록 · 보기 주소 ·
@@ -218,6 +218,47 @@ describe("G15 붙은 증빙 기록(PA-G15-LINKED)", () => {
     expect(managed.items.map((item) => item.recordId).sort()).toEqual([privateRecord, publicRecord].sort());
 
     expect(await privateEvidenceNotice(fx.lead, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: expenseId })).toBe(`${PRIVATE_LABEL} · 경영관리만`);
+  });
+
+  // #324 P2: 폼의 「붙은 증빙 있음」(증빙일 칸 숨김)은 서버가 세금 증빙 기준일에 쓰는 살아 있는 붙임 전부를 따른다 — 보는 사람 거름 뒤 행 수가 아니다.
+  // 숨긴 건수는 싣지 않는다(G15 — 보이는 행이 0이면 있음 1).
+  it("기안자가 못 보는 G15 기록만 붙은 반려 문서 — 행은 0이고 linkCount는 1(증빙일 칸이 숨는다)", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const privateRecord = await insertRecordFixture(manager, { evidenceType: PRIVATE_TYPE, nameOnDocument: "개인카드사" });
+    const hiddenRecord = await insertRecordFixture(manager, { evidenceType: PRIVATE_TYPE, nameOnDocument: "개인카드사 둘" });
+    const { expenseId } = await createReturnedExpenseFixture(fx, { linkRecordId: privateRecord, linkedBy: manager.id });
+    await insertLinkFixture({ recordId: hiddenRecord, ownerId: expenseId, attachedBy: manager.id });
+
+    const drafter = await listLinkedEvidence(fx.pm, { kind: "expense", id: expenseId });
+    expect(drafter.items).toEqual([]);
+    expect(drafter.linkCount).toBe(1);
+
+    const managed = await listLinkedEvidence(manager, { kind: "expense", id: expenseId });
+    expect(managed.items).toHaveLength(2);
+    expect(managed.linkCount).toBe(2);
+  });
+
+  // #324 P3: 보이는 붙임이 늘거나 줄어도 폼의 미리보기 키(linkCount)가 바뀌어야 한다 — 숨긴 쪽은 「있음」만 1로 더한다.
+  it("보이는 기록 + 숨긴 기록 — 숨긴 쪽은 1만 더해 보이는 건수가 늘면 linkCount도 는다", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const { expenseId } = await createInReviewExpenseFixture(fx);
+    await setEvidenceType(expenseId, "card_receipt");
+    const hiddenOne = await insertRecordFixture(manager, { evidenceType: PRIVATE_TYPE, nameOnDocument: "개인카드사" });
+    const hiddenTwo = await insertRecordFixture(manager, { evidenceType: PRIVATE_TYPE, nameOnDocument: "개인카드사 둘" });
+    const publicOne = await insertRecordFixture(manager, { evidenceType: "card_receipt", nameOnDocument: "스테이지원" });
+    await insertLinkFixture({ recordId: hiddenOne, ownerId: expenseId, attachedBy: manager.id });
+    await insertLinkFixture({ recordId: publicOne, ownerId: expenseId, attachedBy: manager.id });
+
+    const oneAndOne = await listLinkedEvidence(fx.lead, { kind: "expense", id: expenseId });
+    expect(oneAndOne.items).toHaveLength(1);
+    expect(oneAndOne.linkCount).toBe(2);
+
+    await insertLinkFixture({ recordId: hiddenTwo, ownerId: expenseId, attachedBy: manager.id });
+    const twoAndOne = await listLinkedEvidence(fx.lead, { kind: "expense", id: expenseId });
+    expect(twoAndOne.items).toHaveLength(1);
+    expect(twoAndOne.linkCount).toBe(2);
   });
 });
 

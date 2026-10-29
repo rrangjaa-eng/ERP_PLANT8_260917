@@ -1,0 +1,1958 @@
+[
+  {
+    "route": "/expenses/{expenseId}",
+    "width": 375,
+    "screenshot": "expenses_expenseId_-4a480844-375.png",
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head",
+        "after": "#expense-form",
+        "gap": 12
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(1)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7)",
+        "after": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(1)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(1)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12)",
+        "after": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(2)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.expense-module__kx56Zq__formBar",
+        "after": "#expense-form > div.expense-module__kx56Zq__formBarSpacer",
+        "gap": 94
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 57,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "기안df67",
+        "width": 48,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__heading > h1.DetailScreen-module__0yNRdq__title",
+        "kind": "heading",
+        "text": "지출결의 — 캡처증빙-7b5c54 · 무대 제작-7b5c54",
+        "width": 343,
+        "height": 57,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(1) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "견적 줄",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#line-pick",
+        "kind": "button",
+        "text": "바꾸기",
+        "width": 54,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "지급처",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#vendor-pick",
+        "kind": "button",
+        "text": "바꾸기",
+        "width": 54,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙 종류",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidenceType",
+        "kind": "input",
+        "text": "—세금계산서계산서카드 전표현금영수증기타소득사업소득해외 인보이스",
+        "width": 343,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "통화",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#currency",
+        "kind": "input",
+        "text": "—KRWUSD",
+        "width": 343,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "공급가액",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#supplyAmount",
+        "kind": "input",
+        "text": "",
+        "width": 343,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "분할 지급",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#installment",
+        "kind": "input",
+        "text": "",
+        "width": 44,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "희망 지급일",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#requestedPaymentDate",
+        "kind": "input",
+        "text": "",
+        "width": 343,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "지급 방식",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#paymentMethod",
+        "kind": "input",
+        "text": "—계좌이체법인카드현금",
+        "width": 343,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "상세",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#note",
+        "kind": "input",
+        "text": "",
+        "width": 343,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence-picker",
+        "kind": "button",
+        "text": "파일을 끌어 놓거나 Ctrl+U · 이미지·PDF 10MB사진·파일 올리",
+        "width": 343,
+        "height": 72,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence > div.expense-module__kx56Zq__evidenceRecords > span.Button-module__TNl3Yq__wrap > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "증빙 고르기 2",
+        "width": 95,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "선결제",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#prepaid",
+        "kind": "input",
+        "text": "",
+        "width": 44,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙일",
+        "width": 343,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidenceDate",
+        "kind": "input",
+        "text": "",
+        "width": 343,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-next-step",
+        "kind": "button",
+        "text": "상세 입력",
+        "width": 70,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.expense-module__kx56Zq__formBar > div.Form-module__qIqsGG__actions > span.expense-module__kx56Zq__saveWrap > span.Button-module__TNl3Yq__wrap > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "임시 저장",
+        "width": 110,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-submit",
+        "kind": "button",
+        "text": "지출결의 제출Ctrl+Enter",
+        "width": 221,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(1)",
+        "kind": "nav",
+        "text": "내 차례",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(2)",
+        "kind": "nav",
+        "text": "프로젝트",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(3)",
+        "kind": "nav",
+        "text": "지출결의",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > button.BottomTabs-module__PJycjq__tab",
+        "kind": "button",
+        "text": "더보기",
+        "width": 103,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/expenses/{expenseId}",
+    "width": 320,
+    "screenshot": "expenses_expenseId_-4a480844-320.png",
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head",
+        "after": "#expense-form",
+        "gap": 12
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(1)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7)",
+        "after": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(1)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(1)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12)",
+        "after": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(2)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.expense-module__kx56Zq__formBar",
+        "after": "#expense-form > div.expense-module__kx56Zq__formBarSpacer",
+        "gap": 95
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 57,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "기안df67",
+        "width": 48,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__heading > h1.DetailScreen-module__0yNRdq__title",
+        "kind": "heading",
+        "text": "지출결의 — 캡처증빙-7b5c54 · 무대 제작-7b5c54",
+        "width": 288,
+        "height": 57,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(1) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "견적 줄",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#line-pick",
+        "kind": "button",
+        "text": "바꾸기",
+        "width": 54,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "지급처",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#vendor-pick",
+        "kind": "button",
+        "text": "바꾸기",
+        "width": 54,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙 종류",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidenceType",
+        "kind": "input",
+        "text": "—세금계산서계산서카드 전표현금영수증기타소득사업소득해외 인보이스",
+        "width": 288,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "통화",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#currency",
+        "kind": "input",
+        "text": "—KRWUSD",
+        "width": 288,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "공급가액",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#supplyAmount",
+        "kind": "input",
+        "text": "",
+        "width": 288,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "분할 지급",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#installment",
+        "kind": "input",
+        "text": "",
+        "width": 44,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "희망 지급일",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#requestedPaymentDate",
+        "kind": "input",
+        "text": "",
+        "width": 288,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "지급 방식",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#paymentMethod",
+        "kind": "input",
+        "text": "—계좌이체법인카드현금",
+        "width": 288,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "상세",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#note",
+        "kind": "input",
+        "text": "",
+        "width": 288,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence-picker",
+        "kind": "button",
+        "text": "파일을 끌어 놓거나 Ctrl+U · 이미지·PDF 10MB사진·파일 올리",
+        "width": 288,
+        "height": 72,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence > div.expense-module__kx56Zq__evidenceRecords > span.Button-module__TNl3Yq__wrap > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "증빙 고르기 2",
+        "width": 95,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "선결제",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#prepaid",
+        "kind": "input",
+        "text": "",
+        "width": 44,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙일",
+        "width": 288,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidenceDate",
+        "kind": "input",
+        "text": "",
+        "width": 288,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-next-step",
+        "kind": "button",
+        "text": "상세 입력",
+        "width": 70,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.expense-module__kx56Zq__formBar > div.Form-module__qIqsGG__actions > span.expense-module__kx56Zq__saveWrap > span.Button-module__TNl3Yq__wrap > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "임시 저장",
+        "width": 92,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-submit",
+        "kind": "button",
+        "text": "지출결의 제출Ctrl+Enter",
+        "width": 184,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(1)",
+        "kind": "nav",
+        "text": "내 차례",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(2)",
+        "kind": "nav",
+        "text": "프로젝트",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(3)",
+        "kind": "nav",
+        "text": "지출결의",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > button.BottomTabs-module__PJycjq__tab",
+        "kind": "button",
+        "text": "더보기",
+        "width": 89,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/expenses/{expenseId}",
+    "width": 768,
+    "screenshot": "expenses_expenseId_-4a480844-768.png",
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head",
+        "after": "#expense-form",
+        "gap": 12
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(1)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7)",
+        "after": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(1)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(1)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12)",
+        "after": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(2)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(2)",
+        "after": "#expense-form > div.expense-module__kx56Zq__formBar",
+        "gap": 48
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > button.RailSheet-module__plcX-q__trigger",
+        "kind": "button",
+        "text": "≡메뉴",
+        "width": 44,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 54,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "기안df67",
+        "width": 48,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__heading > h1.DetailScreen-module__0yNRdq__title",
+        "kind": "heading",
+        "text": "지출결의 — 캡처증빙-7b5c54 · 무대 제작-7b5c54",
+        "width": 446,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__actions > span.expense-module__kx56Zq__headDelete > span.Button-module__TNl3Yq__wrap > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "지출결의 삭제",
+        "width": 100,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(1) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "견적 줄",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#line-pick",
+        "kind": "button",
+        "text": "바꾸기",
+        "width": 36,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "지급처",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#vendor-pick",
+        "kind": "button",
+        "text": "바꾸기",
+        "width": 36,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙 종류",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidenceType",
+        "kind": "input",
+        "text": "—세금계산서계산서카드 전표현금영수증기타소득사업소득해외 인보이스",
+        "width": 200,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "통화",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#currency",
+        "kind": "input",
+        "text": "—KRWUSD",
+        "width": 200,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "공급가액",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#supplyAmount",
+        "kind": "input",
+        "text": "",
+        "width": 280,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "분할 지급",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#installment",
+        "kind": "input",
+        "text": "",
+        "width": 13,
+        "height": 13,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "희망 지급일",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#requestedPaymentDate",
+        "kind": "input",
+        "text": "",
+        "width": 280,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "지급 방식",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#paymentMethod",
+        "kind": "input",
+        "text": "—계좌이체법인카드현금",
+        "width": 200,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "상세",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#note",
+        "kind": "input",
+        "text": "",
+        "width": 480,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence-picker",
+        "kind": "button",
+        "text": "파일을 끌어 놓거나 Ctrl+U · 이미지·PDF 10MB사진·파일 올리",
+        "width": 480,
+        "height": 96,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence > div.expense-module__kx56Zq__evidenceRecords > span.Button-module__TNl3Yq__wrap > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "증빙 고르기 2",
+        "width": 74,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "선결제",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#prepaid",
+        "kind": "input",
+        "text": "",
+        "width": 13,
+        "height": 13,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙일",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidenceDate",
+        "kind": "input",
+        "text": "",
+        "width": 280,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-submit",
+        "kind": "button",
+        "text": "지출결의 제출Ctrl+Enter",
+        "width": 169,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-next-step",
+        "kind": "button",
+        "text": "상세 입력",
+        "width": 51,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.expense-module__kx56Zq__formBar > div.Form-module__qIqsGG__actions > span.expense-module__kx56Zq__saveWrap > span.Button-module__TNl3Yq__wrap > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "임시 저장",
+        "width": 77,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/expenses/{expenseId}",
+    "width": 1280,
+    "screenshot": "expenses_expenseId_-4a480844-1280.png",
+    "scrollWidth": 1280,
+    "clientWidth": 1280,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head",
+        "after": "#expense-form",
+        "gap": 12
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(1)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7)",
+        "after": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(1)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(1)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11)",
+        "after": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12)",
+        "after": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(2)",
+        "gap": 24
+      },
+      {
+        "parent": "#expense-form",
+        "before": "#expense-form > dl.KvList-module__PA6jsG__kv:nth-of-type(2)",
+        "after": "#expense-form > div.expense-module__kx56Zq__formBar",
+        "gap": 48
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 176,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(1)",
+        "kind": "nav",
+        "text": "프로젝트",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(2)",
+        "kind": "nav",
+        "text": "지출결의",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(3)",
+        "kind": "nav",
+        "text": "법인카드",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(4)",
+        "kind": "nav",
+        "text": "결재",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(5)",
+        "kind": "nav",
+        "text": "손익",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "기안df67",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__heading > h1.DetailScreen-module__0yNRdq__title",
+        "kind": "heading",
+        "text": "지출결의 — 캡처증빙-7b5c54 · 무대 제작-7b5c54",
+        "width": 446,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__actions > span.expense-module__kx56Zq__headDelete > span.Button-module__TNl3Yq__wrap > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "지출결의 삭제",
+        "width": 100,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(1) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "견적 줄",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#line-pick",
+        "kind": "button",
+        "text": "바꾸기",
+        "width": 36,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(2) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "지급처",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#vendor-pick",
+        "kind": "button",
+        "text": "바꾸기",
+        "width": 36,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(3) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙 종류",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidenceType",
+        "kind": "input",
+        "text": "—세금계산서계산서카드 전표현금영수증기타소득사업소득해외 인보이스",
+        "width": 200,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(4) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "통화",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#currency",
+        "kind": "input",
+        "text": "—KRWUSD",
+        "width": 200,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(5) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "공급가액",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#supplyAmount",
+        "kind": "input",
+        "text": "",
+        "width": 280,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(6) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "분할 지급",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#installment",
+        "kind": "input",
+        "text": "",
+        "width": 13,
+        "height": 13,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(7) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "희망 지급일",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#requestedPaymentDate",
+        "kind": "input",
+        "text": "",
+        "width": 280,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(8) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "지급 방식",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#paymentMethod",
+        "kind": "input",
+        "text": "—계좌이체법인카드현금",
+        "width": 200,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(9) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "상세",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#note",
+        "kind": "input",
+        "text": "",
+        "width": 480,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(10) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence-picker",
+        "kind": "button",
+        "text": "파일을 끌어 놓거나 Ctrl+U · 이미지·PDF 10MB사진·파일 올리",
+        "width": 480,
+        "height": 96,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence > div.expense-module__kx56Zq__evidenceRecords > span.Button-module__TNl3Yq__wrap > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "증빙 고르기 2",
+        "width": 74,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(11) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "선결제",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#prepaid",
+        "kind": "input",
+        "text": "",
+        "width": 13,
+        "height": 13,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-form > div.Form-module__qIqsGG__row:nth-of-type(12) > label.Form-module__qIqsGG__label",
+        "kind": "label",
+        "text": "증빙일",
+        "width": 96,
+        "height": 25,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidenceDate",
+        "kind": "input",
+        "text": "",
+        "width": 280,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "#expense-submit",
+        "kind": "button",
+        "text": "지출결의 제출Ctrl+Enter",
+        "width": 169,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-next-step",
+        "kind": "button",
+        "text": "상세 입력",
+        "width": 51,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#expense-form > div.expense-module__kx56Zq__formBar > div.Form-module__qIqsGG__actions > span.expense-module__kx56Zq__saveWrap > span.Button-module__TNl3Yq__wrap > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "임시 저장",
+        "width": 77,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  }
+]

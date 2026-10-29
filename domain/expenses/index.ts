@@ -104,7 +104,7 @@ import {
   type ExpensePreviewDto,
 } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
-import { AUTO_DETACH_REASONS, countLiveLinksByOwners, detachLiveLinksForOwner, listLiveLinksWithRecords } from "@/repositories/evidence-record-links";
+import { AUTO_DETACH_REASONS, countLiveLinksByOwners, detachLiveLinksForOwner, listEarliestIssuedOnForExpenses, listLiveLinksWithRecords } from "@/repositories/evidence-record-links";
 import { listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
 import { findProjectById, findProjectInScope, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { listLiveMemberProjectIds } from "@/repositories/project-members";
@@ -333,8 +333,13 @@ export function scheduleOf(loaded: ExpenseSchedules, id: string): LoadedPaySched
 
 // 07 P1 · B-P1-3: 세금 기준일 사슬의 「지급 예정일」 자리 = 유효 예정일 — computeExpenseTax 호출처 넷(목록 차이 · 제출 스냅숏 · 미리보기 · 상세 차이)이
 // 같은 로더 값을 넘겨 승인 스냅숏 세액 = 지급 때 세액이 된다(domain/expenses/tax.ts는 그대로).
-function withEffectiveDate<Row extends { id: string; scheduledPaymentDate: string | null }>(row: Row, loaded: ExpenseSchedules): Row {
-  return { ...row, scheduledPaymentDate: scheduleOf(loaded, row.id).payDate };
+// 07.1-16(E-P1-11): 「증빙일」 자리도 같은 로더가 읽은 붙은 증빙 가장 이른 발행일을 함께 얹는다.
+function withEffectiveDate<Row extends { id: string; scheduledPaymentDate: string | null }>(
+  row: Row,
+  loaded: ExpenseSchedules,
+): Row & { earliestEvidenceIssuedOn: string | null } {
+  const schedule = scheduleOf(loaded, row.id);
+  return { ...row, scheduledPaymentDate: schedule.payDate, earliestEvidenceIssuedOn: schedule.earliestEvidenceIssuedOn };
 }
 
 type PaymentFields = Pick<
@@ -1166,7 +1171,9 @@ export async function submitExpense(
   // 07-16(SC-02): 저장된 희망 지급일 · 사유가 짝 · 오늘 이후를 지켜야 제출된다(임시 저장과 같은 판정 — 지났으면 `희망일 지남`).
   assertRequestedPayment(row, seoulToday(deps?.now), { on: "submit" });
 
-  const tax = await computeExpenseTax(viewer, withEffectiveDate(row, await loadExpenseSchedules(viewer, [row], deps?.now)));
+  const schedules = await loadExpenseSchedules(viewer, [row], deps?.now);
+  const tax = await computeExpenseTax(viewer, withEffectiveDate(row, schedules));
+  const earliestIssuedOn = scheduleOf(schedules, row.id).earliestEvidenceIssuedOn;
   const pre = projectRow ? await loadSubmitPre(viewer, projectRow) : null;
   const codes = await loadSubmitCodes(viewer);
   const prepared = await prepareSubmission(viewer, {
@@ -1212,6 +1219,11 @@ export async function submitExpense(
       if (!canWriteExpenseOnProject(lockedProject, { viewerId: viewer.id, teamScope, memberProjectIds })) throw new ForbiddenError("지출결의 작성 권한 없음");
     }
     if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
+    // 07.1-16(PR #324 Codex): 편집 가능 상태의 증빙 붙이기 · 떼기는 문서 version을 올리지 않는다 — 세금을 셈한 가장 이른 발행일이
+    // 잠근 뒤 다르면 그 세금으로 찍지 않고 충돌로 막는다(다시 제출하면 지금 붙임으로 셈한다).
+    if (((await listEarliestIssuedOnForExpenses(viewer, [locked.id], tx)).get(locked.id) ?? null) !== earliestIssuedOn) {
+      throw new ExpenseConflictError(locked.updatedAt);
+    }
 
     // 잠근 프로젝트 행 · tx로 읽은 차수 · 줄 · 문 · 증빙 수로 같은 규칙을 다시 판정한다(T-05-601).
     const { facts, line, numbered, door, closedInstallments } = await loadSubmitFacts(viewer, locked, lockedProject ?? projectRow, pre, tax, codes, tx);

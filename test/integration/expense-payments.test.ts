@@ -26,12 +26,14 @@ import {
   FuturePayDateError,
 } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { approveDocument } from "@/domain/approvals";
+import { approveDocument, rejectDocument } from "@/domain/approvals";
+import { kstDateOf } from "@/lib/kst-date";
 import { AMOUNT_HIDDEN, TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, getExpense, saveExpenseDraft } from "@/domain/expenses";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, getExpense, previewExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { detachEvidenceRecord, detachOwnEvidence } from "@/domain/evidence-records/attach";
 import { ACTION_LOG_OPTIONAL_TYPES, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_ROUNDING_MIN_WITHHOLDING, TAX_VAT_RATE } from "@/domain/settings/keys";
-import { addHistorizedValue } from "@/domain/settings/registry";
+import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { markVoided } from "@/repositories/files";
@@ -41,7 +43,8 @@ import { seoulToday } from "@/lib/dates";
 import { loadHolidayLookup } from "@/domain/holidays/calendar";
 import { isBusinessDay } from "@/domain/holidays/business-day";
 import { cancelExpensePaymentAction, completeExpensePaymentAction, previewPayableAction, saveScheduledPayDateAction } from "@/app/(app)/expenses/[id]/actions";
-import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { ensureDetail, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { createIntakeManager, insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 import { deferred, waitForLockWaiter } from "./lock-race";
 
@@ -957,4 +960,137 @@ describe("지급 세금 줄 면제 표시 (07.1-03 PA10)", () => {
     const borne = await approvedWith({ evidenceType: "other_income", supplyKrw: 150_000, recipientCount: 1 });
     expect((await paymentTaxLine(payer, borne.expenseId)).text).toBe("회사 대납 세금 42,300 · 지급 총액 150,000 · 기타소득 규칙");
   });
+});
+
+// 07.1-16(D-7123 · D-E4 · E-P2-44): 지급 세금의 증빙 기준일 = 붙은 증빙 기록 가장 이른 발행일 → 없으면 수동 증빙일 → 없으면 작성일.
+// 세율 경계 2027-10-10(17%)을 사이에 둔다 — 수동 증빙일 10-20으로 셈하면 17%(지급 총액 14,508,000), 10-05로 셈하면 그 전 세율이다.
+// 이력 행은 미래(2027)라 다른 시험의 오늘 세율을 건드리지 않고 끝에 취소한다.
+const RATE_FROM = "2027-10-10";
+const MANUAL_EVIDENCE_DATE = "2027-10-20";
+const PAYABLE_AT_17 = 14_508_000;
+
+async function seedEvidenceDateVat(): Promise<string> {
+  const evidenceType = `t0716_${randomUUID().slice(0, 8)}`;
+  await seedCodeItem(SYSTEM_VIEWER, {
+    tableKey: "evidence_type",
+    value: evidenceType,
+    label: `증빙일 부가세 ${evidenceType}`,
+    sortOrder: 99,
+    taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "evidence_date" },
+  });
+  return evidenceType;
+}
+
+// 작성 중 문서 — 증빙 종류 · 수동 증빙일을 저장하고 발행일마다 기록 하나를 경영관리 붙임으로 붙인다(05 파일 0).
+// author — 작성자 붙임(작성 중 문서는 작성자가 붙이고 뗀다 · 경영관리 떼기는 반려 · 회수 · 승인 문서 갈래).
+async function draftWithRecords(
+  fx: ExpenseFixture,
+  by: Viewer,
+  input: { evidenceType: string; issuedOns: readonly string[]; attachMode?: "registrar" | "author" },
+): Promise<{ expenseId: string; linkIds: string[] }> {
+  const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서 없음");
+  await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { evidenceType: input.evidenceType, evidenceDate: MANUAL_EVIDENCE_DATE } });
+  const linkIds: string[] = [];
+  for (const issuedOn of input.issuedOns) linkIds.push(await insertLinkFixture({ recordId: await insertRecordFixture(by, { issuedOn }), ownerId: expenseId, attachedBy: by.id, attachMode: input.attachMode }));
+  await ensureDetail(fx.pm, expenseId);
+  return { expenseId, linkIds };
+}
+
+async function submitAndApprove(fx: ExpenseFixture, expenseId: string): Promise<void> {
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  const submitted = await submitExpense(fx.pm, { expenseId, expectedVersion: row?.version ?? 0 });
+  if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+  const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+  const final = await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
+  if (final.status !== "approved") throw new Error(`결재 통과 안 됨: ${final.status}`);
+}
+
+async function evidenceDateOf(expenseId: string): Promise<string | null> {
+  const [row] = await db.select({ evidenceDate: expenses.evidenceDate }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row) throw new Error("지출결의 없음");
+  return row.evidenceDate;
+}
+
+describe("07.1-16 — 지급 증빙 기준일 = 붙은 증빙 가장 이른 발행일 (D-7123 · D-E4)", () => {
+  it("발행일 10-05 · 10-12 증빙 둘 · 수동 증빙일 10-20인 승인 문서 → 지급 세금 기준일 10-05 · 지급 기록 = 승인 스냅숏", async () => {
+    const payer = await makePayer();
+    const evidenceType = await seedEvidenceDateVat();
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: RATE_FROM, value: 0.17 });
+    try {
+      const fx = await setupExpenseProject();
+      const { expenseId } = await draftWithRecords(fx, payer, { evidenceType, issuedOns: ["2027-10-12", "2027-10-05"] });
+      await submitAndApprove(fx, expenseId);
+      const [snapshot] = await db.select({ payableKrw: expenses.payableKrw, taxBasisDate: expenses.taxBasisDate }).from(expenses).where(eq(expenses.id, expenseId));
+      expect(snapshot?.taxBasisDate).toBe("2027-10-05");
+
+      const pre = await loadPaymentInputs(payer, { expenseId, payDate: seoulToday() });
+      expect(pre.earliestEvidenceIssuedOn).toBe("2027-10-05");
+      expect(pre.tax?.dates).toMatchObject({ basisKind: "evidence_date", basisDate: "2027-10-05" });
+      const preview = await previewPayable(payer, { expenseId, payDate: seoulToday() });
+      expect(preview.payableKrw).toBe(snapshot?.payableKrw);
+      expect(preview.payableKrw).not.toBe(PAYABLE_AT_17);
+      if (typeof preview.payableKrw !== "number") throw new Error("지급 총액을 셈할 수 없는 문서");
+
+      const confirmed = await confirmEvidence(payer, { expenseId, version: (await db.select({ v: expenses.version }).from(expenses).where(eq(expenses.id, expenseId)))[0]?.v ?? 0 });
+      await completeExpensePayment(payer, { expenseId, expectedPayableKrw: preview.payableKrw, version: confirmed.version });
+      const [payment] = await db.select({ payableKrw: expensePayments.payableKrw }).from(expensePayments).where(eq(expensePayments.expenseId, expenseId));
+      expect(payment?.payableKrw).toBe(snapshot?.payableKrw);
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, RATE_FROM);
+    }
+  }, 60_000);
+
+  it("D-E4 작성 중: 기록을 모두 떼면 수동 증빙일 10-20이 칸에 그대로 남고 기준일도 10-20으로 돌아간다", async () => {
+    const evidenceType = await seedEvidenceDateVat();
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: RATE_FROM, value: 0.17 });
+    try {
+      const fx = await setupExpenseProject();
+      const { expenseId, linkIds } = await draftWithRecords(fx, fx.pm, { evidenceType, issuedOns: ["2027-10-05"], attachMode: "author" });
+      expect((await previewExpense(fx.pm, { expenseId, fields: {} })).taxLine?.text).not.toContain(formatKrw(PAYABLE_AT_17));
+      for (const linkId of linkIds) expect(await detachOwnEvidence(fx.pm, { linkId, reason: "다른 건 증빙" })).toEqual({ detached: true });
+      expect(await evidenceDateOf(expenseId)).toBe(MANUAL_EVIDENCE_DATE);
+      expect((await previewExpense(fx.pm, { expenseId, fields: {} })).taxLine?.text).toContain(`지급 총액 ${formatKrw(PAYABLE_AT_17)}`);
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, RATE_FROM);
+    }
+  }, 60_000);
+
+  it("D-E4 반려: 기록을 모두 떼면 수동 증빙일 10-20이 그대로 남고 다시 고칠 때 기준일이 10-20이다", async () => {
+    const manager = await createIntakeManager();
+    const evidenceType = await seedEvidenceDateVat();
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: RATE_FROM, value: 0.17 });
+    try {
+      const fx = await setupExpenseProject();
+      const { expenseId, linkIds } = await draftWithRecords(fx, manager, { evidenceType, issuedOns: ["2027-10-05"] });
+      const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+      const submitted = await submitExpense(fx.pm, { expenseId, expectedVersion: row?.version ?? 0 });
+      if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+      await rejectDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version, reason: "증빙 다시" });
+      for (const linkId of linkIds) await detachEvidenceRecord(manager, { linkId, reason: "다른 건 증빙" });
+      expect(await evidenceDateOf(expenseId)).toBe(MANUAL_EVIDENCE_DATE);
+      expect((await previewExpense(fx.pm, { expenseId, fields: {} })).taxLine?.text).toContain(`지급 총액 ${formatKrw(PAYABLE_AT_17)}`);
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, RATE_FROM);
+    }
+  }, 60_000);
+
+  it("D-E4 승인 EVID-04: 수동 증빙일 10-20인 승인 문서에서 마지막 기록을 떼면(무효) 증빙일이 지워지고 지급 세금 기준일은 문서 날짜다", async () => {
+    const payer = await makePayer();
+    const voider = await createIntakeManager("무효담당", { attach: false, void: true });
+    const evidenceType = await seedEvidenceDateVat();
+    const fx = await setupExpenseProject();
+    const { expenseId, linkIds } = await draftWithRecords(fx, voider, { evidenceType, issuedOns: ["2027-10-05"] });
+    await submitAndApprove(fx, expenseId);
+    expect(await evidenceDateOf(expenseId)).toBe(MANUAL_EVIDENCE_DATE);
+    for (const linkId of linkIds) await detachEvidenceRecord(voider, { linkId, reason: "다른 건 증빙" });
+
+    expect(await evidenceDateOf(expenseId)).toBeNull();
+    const pre = await loadPaymentInputs(payer, { expenseId, payDate: seoulToday() });
+    expect(pre.earliestEvidenceIssuedOn).toBeNull();
+    const [created] = await db.select({ createdAt: expenses.createdAt }).from(expenses).where(eq(expenses.id, expenseId));
+    if (!created) throw new Error("지출결의 없음");
+    expect(pre.tax?.dates).toMatchObject({ basisKind: "evidence_date", basisDate: kstDateOf(created.createdAt) });
+  }, 60_000);
 });

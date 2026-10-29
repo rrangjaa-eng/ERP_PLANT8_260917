@@ -29,7 +29,7 @@ test("폰 375 — `마감 지나 밀림`이 P2 접힌 줄 맨 앞 · 행 두 줄
   const shape = await rowGroup.evaluate((tbody) => {
     const visible = [...tbody.querySelectorAll(":scope > tr")].filter((tr) => tr instanceof HTMLElement && tr.offsetParent !== null);
     const collapsed = visible.at(-1)?.querySelector("td");
-    const first = collapsed?.querySelector("[data-cell-text] > span");
+    const first = collapsed?.querySelector("[data-cell-text] > div > span");
     const lineHeight = (cell: Element | null | undefined) => (cell ? parseFloat(getComputedStyle(cell).lineHeight) : 0);
     const textHeight = (cell: HTMLElement | null | undefined) => {
       if (!cell) return 0;

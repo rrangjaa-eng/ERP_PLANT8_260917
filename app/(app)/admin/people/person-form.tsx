@@ -16,6 +16,7 @@ import styles from "./people.module.css";
 
 export type RoleOption = { id: string; name: string };
 export type TeamOption = { id: string; name: string; orgUnitName: string };
+export type DivisionOption = { id: string; name: string };
 
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -29,21 +30,28 @@ function getStringField(formData: FormData, key: string): string {
 export function PersonForm({
   roles,
   teams,
+  divisions,
   noRoleReason,
 }: {
   roles: RoleOption[];
   teams: TeamOption[];
+  // 07.1-14(D-7127): 보관 안 된 본부 — 팀을 고르지 않았을 때만 본부 칸이 선다.
+  divisions: DivisionOption[];
   noRoleReason?: string | null;
 }) {
   const panel = usePanel();
   const panelRef = useRef<PanelFormHandle>(null);
   const continueRef = useRef(false);
   const [registered, setRegistered] = useState<{ email: string; tempPassword: string } | null>(null);
+  // 07.1-14(D-7127): 팀이 있으면 본부는 팀에서 나온다 — 팀을 고르면 본부 칸을 그리지 않고(DOM 0), 다시 비우면 빈 값으로 다시 선다.
+  const [teamChosen, setTeamChosen] = useState(false);
   const { execute, result, isExecuting } = useAction(registerPersonAction, {
     onSuccess: ({ data, input }) => {
       if (!data) return;
       // 칸 비움 · 바뀐 칸 수 0 — 결과 화면에서 Esc가 「입력 버리기」를 묻지 않는다.
       panelRef.current?.succeed();
+      // 결과의 「사람 등록」은 팀 「배정 없음」인 빈 폼으로 돌아온다 — 본부 칸도 다시 서야 한다.
+      setTeamChosen(false);
       setRegistered({ email: input.email, tempPassword: data.tempPassword });
     },
   });
@@ -70,6 +78,7 @@ export function PersonForm({
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const teamId = getStringField(formData, "teamId");
+    const divisionId = teamId ? "" : getStringField(formData, "divisionId");
     execute({
       name: getStringField(formData, "name"),
       email: getStringField(formData, "email"),
@@ -77,6 +86,7 @@ export function PersonForm({
       teamId: teamId || undefined,
       effectiveFrom: teamId ? getStringField(formData, "effectiveFrom") : undefined,
       hireDate: getStringField(formData, "hireDate"),
+      divisionId: divisionId || undefined,
     });
   }
 
@@ -150,6 +160,7 @@ export function PersonForm({
             ]}
             // 사용자 카드 2026-10-13 「오늘로 채우기」: 팀을 고르면 비어 있는 발령일만 오늘(KST)로 채운다 — 입력한 날짜는 덮지 않는다.
             onChange={(event) => {
+              setTeamChosen(event.currentTarget.value !== "");
               const effectiveFrom = event.currentTarget.form?.elements.namedItem("effectiveFrom");
               if (event.currentTarget.value && effectiveFrom instanceof HTMLInputElement && !effectiveFrom.value) {
                 effectiveFrom.value = kstToday(new Date());
@@ -158,6 +169,19 @@ export function PersonForm({
           />
         </Form.Field>
       </div>
+      {teamChosen ? null : (
+        <div className={styles.panelField}>
+          <Form.Field id="divisionId" label="본부">
+            <Select
+              id="divisionId"
+              name="divisionId"
+              hideEmptyOption
+              defaultValue=""
+              options={[{ value: "", label: "본부 없음" }, ...divisions.map((division) => ({ value: division.id, label: division.name }))]}
+            />
+          </Form.Field>
+        </div>
+      )}
       <TextField id="effectiveFrom" name="effectiveFrom" label="발령일" type="date" error={effectiveFromError} />
       {/* 04.1-06(D-96): 입사일 필수 — 네이티브 필수 속성은 두지 않는다(브라우저 말풍선이 서버 문구를 가린다, §7-15 · C-13). */}
       <TextField id="hireDate" name="hireDate" label="입사일" type="date" error={hireDateError} />

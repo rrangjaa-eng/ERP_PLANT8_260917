@@ -130,6 +130,11 @@ export async function updateUserRole(viewer: Viewer, userId: string, roleId: str
   await tx.update(users).set({ roleId, updatedAt: new Date() }).where(eq(users.id, userId));
 }
 
+// 07.1-14(D-7127): 팀 없는 사람의 본부 칸 — 판정(팀 없음 · 보관 아님)은 도메인이 잠금 뒤 tx로 한다.
+export async function updateUserDivision(viewer: Viewer, userId: string, divisionId: string | null, tx: DbOrTx = db): Promise<void> {
+  await tx.update(users).set({ divisionId, updatedAt: new Date() }).where(eq(users.id, userId));
+}
+
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts와 같은 패턴).
 export async function setUserArchived(viewer: Viewer, userId: string, value: boolean, tx: DbOrTx = db): Promise<boolean> {
   // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).

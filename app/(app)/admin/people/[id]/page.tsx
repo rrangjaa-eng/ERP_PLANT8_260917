@@ -10,7 +10,7 @@ import { KvList } from "@/ui/kv-list/KvList";
 import { Form } from "@/ui/form/Form";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
-import { PersonLoginActions, PersonRoleChange, PersonHistorySection, PersonSysadminHandover } from "./person-detail-client";
+import { PersonDivisionChange, PersonLoginActions, PersonRoleChange, PersonHistorySection, PersonSysadminHandover } from "./person-detail-client";
 import { personLoginStatus, personLoginWord } from "../person-status";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { seoulToday } from "@/lib/dates";
@@ -131,6 +131,24 @@ export default async function PersonDetailPage({
     retiredDate === null &&
     (!current.hireDate || current.hireDate <= today) &&
     !(await hasOtherSysadmin(session.viewer, today));
+  // 07.1-14(D-7127 · N-P2-B): 본부 칸은 오늘 팀도 예정 발령도 없는 사람에게만 — 팀이 있으면 본부는 팀에서 나온다(발령 이력의 예정 줄이 까닭을
+  // 보인다). 쓰기 · 퇴직 · 상한은 계급 변경 줄과 같은 판정이고, 상한 밖이면 그 줄이 이미 이유 한 줄을 보이므로 여기서 되풀이하지 않는다.
+  // 선택지는 보관 안 된 본부뿐이고, 저장된 본부가 보관됐으면 그 하나만 `{이름} (보관)` 비활성 옵션으로 남긴다(R2-2). 보관함 보기가 없으면
+  // 목록에 보관 본부가 오지 않아 이름을 모른다 — 그때는 `본부 (보관)`.
+  const divisionId = "divisionId" in detail.person ? detail.person.divisionId : undefined;
+  const showDivision =
+    canWrite &&
+    divisionId !== undefined &&
+    !retired &&
+    !targetOutOfCeiling &&
+    detail.person.currentTeamId === null &&
+    !entries.some((entry) => entry.status === "scheduled");
+  const savedDivision = divisionId ? orgUnits.find((org) => org.id === divisionId) : undefined;
+  const divisionOptions = [
+    ...orgUnits.filter((org) => !org.archivedAt).map((org) => ({ value: org.id, label: org.name })),
+    ...(divisionId && !savedDivision ? [{ value: divisionId, label: "본부 (보관)", disabled: true }] : []),
+    ...(savedDivision?.archivedAt ? [{ value: savedDivision.id, label: `${savedDivision.name} (보관)`, disabled: true }] : []),
+  ];
   const balanceLines = balance.annual
     ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null, resignation: balance.resignation ?? null }).map((line) => line.text)
     : [];
@@ -170,6 +188,7 @@ export default async function PersonDetailPage({
         {showRoleChange && !retired ? (
           <PersonRoleChange userId={id} roles={roles} currentRoleId={currentRoleId} lockedReason={lockedReason} />
         ) : null}
+        {showDivision ? <PersonDivisionChange userId={id} options={divisionOptions} currentDivisionId={divisionId ?? null} /> : null}
         {canHandOver && nextRoleName !== null && sysadminRoleName !== null ? (
           <PersonSysadminHandover
             userId={id}

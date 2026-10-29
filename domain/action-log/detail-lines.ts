@@ -34,6 +34,8 @@ export const CHANGE_FIELD_LABELS: Record<string, string> = {
   workScope: "업무 범위",
   viewScope: "보는 범위",
   roleId: "계급",
+  // 07.1-14(E-P2-41): 사람 본부 칸 — 쓰는 쪽이 id가 아니라 본부 이름 글자를 담는다.
+  division: "본부",
   scheduledPaymentDate: "지급 예정일",
   budgetKrw: "예산",
   enabled: "켬",

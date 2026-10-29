@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { createAccount } from "@/domain/auth/accounts";
+import { createOrgUnit } from "@/domain/org";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import {
@@ -172,4 +173,41 @@ test.describe("폰 사람 목록 로그인 배지 · 칸 접기 (04.4-05, D8-07)
       await expectTouchTarget(page, row.getByRole("button", { name: "삭제" }));
     });
   });
+});
+
+// 07.1-14(D-7127): 본부 칸 — 폰 375 · 320에서 새로 만들기 · 상세 둘 다 가로 넘침 0 · 입력 높이 40 · 라벨-칸 간격은 옆 칸(팀 · 계급 변경)과 같다.
+test.describe("폰 375 · 320 본부 칸 (07.1-14 D-7127)", () => {
+  async function labelGap(page: Page, id: string): Promise<{ height: number; gap: number }> {
+    return page.evaluate((fieldId) => {
+      const control = document.getElementById(fieldId)!;
+      const label = document.querySelector(`label[for="${fieldId}"]`)!;
+      const controlBox = control.getBoundingClientRect();
+      return { height: controlBox.height, gap: controlBox.top - label.getBoundingClientRect().bottom };
+    }, id);
+  }
+
+  for (const width of [375, 320]) {
+    test(`${width}: 새로 만들기 · 상세의 본부 칸 — 넘침 0 · 높이 40 · 라벨 간격이 옆 칸과 같다`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await loginAs(page);
+      await createOrgUnit(SYSTEM_VIEWER, { name: `폰본부칸-${randomUUID().slice(0, 8)}` });
+
+      await page.goto("/admin/people?new=1");
+      await expect(page.locator("#divisionId")).toBeVisible();
+      expect((await noHorizontalOverflow(page)).doc).toBe(true);
+      const created = await labelGap(page, "divisionId");
+      const team = await labelGap(page, "teamId");
+      expect(created.height).toBe(40);
+      expect(created.gap).toBe(team.gap);
+
+      const { userId } = await createAccount(SYSTEM_VIEWER, { email: `e2e-mobile-division-${randomUUID()}@example.test`, name: "폰본부칸", roleId: DEFAULT_ROLE_ID });
+      await page.goto(`/admin/people/${userId}`);
+      await expect(page.locator("#person-division")).toBeVisible();
+      expect((await noHorizontalOverflow(page)).doc).toBe(true);
+      const detail = await labelGap(page, "person-division");
+      const role = await labelGap(page, "person-role-change");
+      expect(detail.height).toBe(40);
+      expect(detail.gap).toBe(role.gap);
+    });
+  }
 });

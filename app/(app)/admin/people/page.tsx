@@ -203,6 +203,7 @@ export default async function PeoplePage({
             <PersonForm
               roles={roles}
               teams={teamOptions}
+              divisions={orgUnits.filter((org) => !org.archivedAt).map((org) => ({ id: org.id, name: org.name }))}
               noRoleReason={roles.length === 0 ? GRANT_FORBIDDEN_MESSAGE : null}
             />
           </SidePanel>

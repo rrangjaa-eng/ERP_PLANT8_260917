@@ -9,18 +9,30 @@ export type TeamMembershipRow = InferSelectModel<typeof teamMemberships>;
 
 // MAST-02: 발령일이 조회 날짜 이하인 행 중 가장 늦은 한 행(경계 포함) —
 // domain/org/index.ts의 teamAtDate가 그대로 쓰는 시점 소속 조회.
+// 07.1-14(E-P2-42): 사람 본부 저장이 사람 잠금 뒤 같은 tx로 다시 읽도록 tx를 받는다(기본은 풀).
 export async function findMembershipAtDate(
   viewer: Viewer,
   userId: string,
   date: string,
+  tx: DbOrTx = db,
 ): Promise<TeamMembershipRow | null> {
-  const [row] = await db
+  const [row] = await tx
     .select()
     .from(teamMemberships)
     .where(and(eq(teamMemberships.userId, userId), lte(teamMemberships.effectiveFrom, date)))
     .orderBy(desc(teamMemberships.effectiveFrom))
     .limit(1);
   return row ?? null;
+}
+
+// 07.1-14(N-P2-B): 날짜 뒤에 시작하는 발령(예정 발령)이 하나라도 있나 — 예정 발령이 있는 동안 사람 본부를 다시 넣지 못하게 한다.
+export async function hasMembershipAfterDate(viewer: Viewer, userId: string, date: string, tx: DbOrTx = db): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: teamMemberships.id })
+    .from(teamMemberships)
+    .where(and(eq(teamMemberships.userId, userId), gt(teamMemberships.effectiveFrom, date)))
+    .limit(1);
+  return row !== undefined;
 }
 
 // 사람별로 발령일 ≤ date 중 가장 늦은 한 행을 한 번에 가져온다(목록 N+1

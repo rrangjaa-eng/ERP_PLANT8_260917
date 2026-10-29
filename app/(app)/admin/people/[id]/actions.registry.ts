@@ -17,6 +17,13 @@ registerAction({
 });
 
 registerAction({
+  name: "setPersonDivisionAction",
+  menu: "admin.people",
+  action: "write",
+  dtoName: null,
+});
+
+registerAction({
   name: "addLeaveAdjustmentAction",
   menu: "admin.people",
   action: "write",

@@ -10,7 +10,8 @@ import styles from "./Select.module.css";
 // 점프로 성립한다(⑨의 계획 단계 판단, 새 컴포넌트를 만들지 않는다).
 // 04-25(D-93 · S14): 코드표 값이면 옵션이 설명을 싣고 온다 — 고른 값의
 // 설명을 컨트롤 바로 아래 한 줄로 보인다. `<option>` 안에는 넣지 않는다.
-export type SelectOption = { value: string; label: string; description?: string | null };
+// 07.1-14(R2-2): `disabled` — 저장된 값이 보관 · 비활성이라 다시 고를 수 없는 선택지(선택된 채 보이고 다른 값으로만 바꾼다).
+export type SelectOption = { value: string; label: string; description?: string | null; disabled?: boolean };
 
 // 06.1-05(PA-OPTGROUP) — 평 `options` 뒤에 네이티브 `<optgroup label>`으로 그리는 묶음 선택지(증빙 공개 칸 「다른 팀」).
 export type SelectOptionGroup = { label: string; options: SelectOption[] };
@@ -59,14 +60,14 @@ export function Select({ id, options, groups, error, hideEmptyOption, className,
       >
         {hideEmptyOption ? null : <option value="">—</option>}
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}
           </option>
         ))}
         {groups?.map((group) => (
           <optgroup key={group.label} label={group.label}>
             {group.options.map((option) => (
-              <option key={option.value} value={option.value}>
+              <option key={option.value} value={option.value} disabled={option.disabled}>
                 {option.label}
               </option>
             ))}

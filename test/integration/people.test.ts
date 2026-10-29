@@ -12,12 +12,21 @@ import {
   changePersonRole,
   setHireDate,
   setResignationDate,
+  setPersonDivision,
   ForbiddenError,
   SelfRoleChangeError,
   ValidationError,
 } from "@/domain/people";
-import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { assignTeam, cancelFutureAssignment, createOrgUnit, createTeam } from "@/domain/org";
 import { queryActionLog } from "@/repositories/action-log";
+import { setOrgUnitArchived } from "@/repositories/org-units";
+import { evidenceScopeFor } from "@/domain/permissions/scope-for";
+import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
+import { RETIRED_EDIT_MESSAGE } from "@/domain/people/retired";
+import { seoulToday } from "@/lib/dates";
+import { addDays } from "@/lib/kst-date";
+import { makePerson } from "./approvals-fixtures";
+import { makeDelegatedRole } from "./admin-cap-fixtures";
 
 async function makeTestTeam(): Promise<string> {
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `본부-${randomUUID()}` });
@@ -427,5 +436,107 @@ describe("입사일·퇴직일 — 권한 · 역전 · 로그 · DB CHECK(A-04 �
       const row = await datesOf(userId);
       expect(row?.hireDate && row.resignationDate ? row.resignationDate >= row.hireDate : false).toBe(true);
     }
+  });
+});
+
+// 07.1-14(D-7127 · D-7122 · E-P2-41 · E-P2-42 · N-P2-B): 팀 없는 사람의 본부 칸 쓰기 — 사람 잠금 뒤 tx 재조회 · 로그는 이름 글자.
+describe("setPersonDivision — 팀 없는 사람의 본부(07.1-14)", () => {
+  async function newDivision(prefix: string): Promise<{ id: string; name: string }> {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `${prefix}-${randomUUID().slice(0, 8)}` });
+    return { id: orgUnit.id, name: orgUnit.name };
+  }
+
+  async function divisionOf(userId: string): Promise<string | null> {
+    const [row] = await db.select({ divisionId: users.divisionId }).from(users).where(eq(users.id, userId));
+    return row?.divisionId ?? null;
+  }
+
+  async function divisionLogs(userId: string): Promise<unknown[]> {
+    const rows = await queryActionLog(SYSTEM_VIEWER, { actionType: "permission_change" });
+    return rows
+      .filter((row) => row.entity === "user" && row.entityId === userId)
+      .map((row) => (row.detail as { changes?: Record<string, unknown> } | null)?.changes?.division)
+      .filter((value) => value !== undefined);
+  }
+
+  it("팀 없는 P에게 본부를 넣으면 칸에 저장 · 로그 changes.division = [null, 이름] · P의 증빙 범위가 그 본부다(D-7122)", async () => {
+    const division = await newDivision("본부칸B");
+    const p = await makePerson("본부칸P", DEFAULT_ROLE_ID, null);
+
+    await setPersonDivision(SYSTEM_VIEWER, p.id, division.id);
+
+    expect(await divisionOf(p.id)).toBe(division.id);
+    expect(await divisionLogs(p.id)).toEqual([[null, division.name]]);
+    expect(await evidenceScopeFor(p)).toEqual({ rows: "published", teamId: null, orgUnitId: division.id });
+  });
+
+  it("B → C로 바꾸면 [B 이름, C 이름] · 본부 없음(null)이면 [C 이름, null] · 칸 null", async () => {
+    const b = await newDivision("본부칸B");
+    const c = await newDivision("본부칸C");
+    const p = await makePerson("본부칸바꿈", DEFAULT_ROLE_ID, null);
+
+    await setPersonDivision(SYSTEM_VIEWER, p.id, b.id);
+    await setPersonDivision(SYSTEM_VIEWER, p.id, c.id);
+    await setPersonDivision(SYSTEM_VIEWER, p.id, null);
+
+    expect(await divisionOf(p.id)).toBeNull();
+    expect(await divisionLogs(p.id)).toEqual([[null, b.name], [b.name, c.name], [c.name, null]]);
+  });
+
+  it("오늘 팀이 있는 Q에게는 거부 「팀 있음 · 본부는 팀에서」 · 칸 그대로", async () => {
+    const division = await newDivision("본부칸팀있음");
+    const q = await makePerson("본부칸Q", DEFAULT_ROLE_ID, null);
+    await assignTeam(SYSTEM_VIEWER, { userId: q.id, teamId: await makeTestTeam(), effectiveFrom: seoulToday() });
+
+    await expect(setPersonDivision(SYSTEM_VIEWER, q.id, division.id)).rejects.toThrow("팀 있음 · 본부는 팀에서");
+    expect(await divisionOf(q.id)).toBeNull();
+  });
+
+  it("미래 팀 발령만 있는 R에게는 거부 「팀 발령 있음 · 본부는 팀에서」 · 그 발령을 취소하면 저장된다(N-P2-B)", async () => {
+    const division = await newDivision("본부칸미래");
+    const r = await makePerson("본부칸R", DEFAULT_ROLE_ID, null);
+    const future = addDays(seoulToday(), 7);
+    await assignTeam(SYSTEM_VIEWER, { userId: r.id, teamId: await makeTestTeam(), effectiveFrom: future });
+
+    await expect(setPersonDivision(SYSTEM_VIEWER, r.id, division.id)).rejects.toThrow("팀 발령 있음 · 본부는 팀에서");
+    expect(await divisionOf(r.id)).toBeNull();
+    expect(await divisionLogs(r.id)).toEqual([]);
+
+    await cancelFutureAssignment(SYSTEM_VIEWER, { userId: r.id, effectiveFrom: future });
+    await setPersonDivision(SYSTEM_VIEWER, r.id, division.id);
+    expect(await divisionOf(r.id)).toBe(division.id);
+  });
+
+  it("보관된 본부 · 없는 본부 id는 거부 「보관된 본부 · 다른 본부」 · 칸 그대로", async () => {
+    const division = await newDivision("본부칸보관");
+    await setOrgUnitArchived(SYSTEM_VIEWER, division.id, true);
+    const p = await makePerson("본부칸보관대상", DEFAULT_ROLE_ID, null);
+
+    await expect(setPersonDivision(SYSTEM_VIEWER, p.id, division.id)).rejects.toThrow("보관된 본부 · 다른 본부");
+    await expect(setPersonDivision(SYSTEM_VIEWER, p.id, randomUUID())).rejects.toThrow("보관된 본부 · 다른 본부");
+    expect(await divisionOf(p.id)).toBeNull();
+  });
+
+  it("사람 쓰기 권한이 없으면 ForbiddenError · 칸 그대로", async () => {
+    const division = await newDivision("본부칸권한");
+    const p = await makePerson("본부칸권한대상", DEFAULT_ROLE_ID, null);
+    const pm = await makePerson("본부칸PM", DEFAULT_ROLE_ID, null);
+
+    await expect(setPersonDivision(pm, p.id, division.id)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await divisionOf(p.id)).toBeNull();
+  });
+
+  it("대상 계급이 내 상한 밖이면 계급 지정 거부 · 퇴직한 사람이면 퇴직 거부(다른 사람 쓰기와 같은 판정)", async () => {
+    const division = await newDivision("본부칸상한");
+    const delegatedRole = await makeDelegatedRole({ copyFrom: [DEFAULT_ROLE_ID] });
+    const delegate = await makePerson("본부칸위임", delegatedRole, null);
+    const admin = await makePerson("본부칸관리자", SYSADMIN_ROLE_ID, null);
+    await expect(setPersonDivision(delegate, admin.id, division.id)).rejects.toBeInstanceOf(RoleGrantForbiddenError);
+    expect(await divisionOf(admin.id)).toBeNull();
+
+    const retired = await makePerson("본부칸퇴직", DEFAULT_ROLE_ID, null);
+    await setResignationDate(SYSTEM_VIEWER, retired.id, addDays(seoulToday(), -1));
+    await expect(setPersonDivision(SYSTEM_VIEWER, retired.id, division.id)).rejects.toThrow(RETIRED_EDIT_MESSAGE);
+    expect(await divisionOf(retired.id)).toBeNull();
   });
 });

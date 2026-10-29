@@ -211,3 +211,63 @@ test.describe("폰 375 · 320 본부 칸 (07.1-14 D-7127)", () => {
     });
   }
 });
+
+// 07.1-18 C-93 · D-7125 · W2 — 320 사람 목록 표가 검색 입력 오른쪽 끝을 넘지 않는다(표 폭 ≤ 288, 이름 칸 바닥 8ch는 그대로, 가리지 않는다, `Employee` 한 줄).
+for (const width of [320, 375, 700, 768, 1024, 1280] as const) {
+  test.describe(`/admin/people 표 폭 ${width} (07.1-18 C-93)`, () => {
+    test.use({ viewport: { width, height: 800 } });
+
+    test(`표가 콘텐츠 상자 안에 맞고 이름이 쪼개지지 않는다 (${width})`, async ({ page }) => {
+      await loginAs(page);
+      // 이름 칸 바닥 8ch가 「Employee」(65.4px)를 지키나 — 그 이름의 사람을 하나 둔다.
+      await createAccount(SYSTEM_VIEWER, { email: `e2e-employee-${randomUUID()}@example.test`, name: "Employee", roleId: DEFAULT_ROLE_ID });
+      await page.goto("/admin/people?q=Employee");
+      const table = page.locator("table").first();
+      await expect(table).toBeVisible();
+      const measured = await page.evaluate(() => {
+        const t = document.querySelector("table") as HTMLElement;
+        const input = document.querySelector("input[type='search'], input[name='q']");
+        const tableBox = t.getBoundingClientRect();
+        const parentBox = (t.parentElement ?? t).getBoundingClientRect();
+        // 행 머리글(이름) 칸이 낱말 안에서 줄바꿈하나: 글자 노드 줄 상자 수
+        const th = t.querySelector("tbody th[scope='row']");
+        let nameLines = 0;
+        if (th) {
+          const tops = new Set<number>();
+          const walker = document.createTreeWalker(th, NodeFilter.SHOW_TEXT);
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            for (const rect of Array.from(range.getClientRects())) if (rect.width > 1) tops.add(Math.round(rect.top / 4));
+          }
+          nameLines = tops.size;
+        }
+        return {
+          tableRight: tableBox.right,
+          tableWidth: tableBox.width,
+          parentRight: parentBox.right,
+          inputRight: input ? input.getBoundingClientRect().right : null,
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          nameLines,
+          employeeLines: (() => {
+            const cell = Array.from(t.querySelectorAll("tbody th[scope='row']")).find((c) => (c.textContent ?? "").trim() === "Employee") as HTMLElement | undefined;
+            if (!cell) return null;
+            const tops = new Set<number>();
+            const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+              const range = document.createRange();
+              range.selectNodeContents(node);
+              for (const rect of Array.from(range.getClientRects())) if (rect.width > 1) tops.add(Math.round(rect.top / 4));
+            }
+            return tops.size;
+          })(),
+        };
+      });
+      expect(measured.overflow, `${width} 문서 가로 넘침`).toBeLessThanOrEqual(0);
+      expect(measured.tableRight, `${width} 표 오른쪽 끝 ≤ 표를 담은 상자 오른쪽 끝`).toBeLessThanOrEqual(measured.parentRight + 0.5);
+      if (measured.inputRight !== null && width <= 375) expect(measured.tableRight, `${width} 표 오른쪽 끝 ≤ 검색 입력 오른쪽 끝`).toBeLessThanOrEqual(measured.inputRight + 0.5);
+      if (width === 320) expect(measured.tableWidth, "320 표 폭").toBeLessThanOrEqual(288.5);
+      expect(measured.employeeLines, `${width} Employee 한 줄`).toBe(1);
+    });
+  });
+}

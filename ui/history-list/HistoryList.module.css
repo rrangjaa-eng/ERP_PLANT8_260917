@@ -5,9 +5,17 @@
   width: 100%;
 }
 
+/* §7-14 · SP-71-6 — 이력 목록의 표도 §7-3 표 면을 받는다(흰 면 한 장 · 1px 선 · r8 · 옅은 그림자). 모서리는 overflow: clip으로 자른다(표 `Table.module.css`와 같은 꼴 —
+   칸 선은 칸에 긋는 방식이라 separate 모델이다). */
 .table {
   width: 100%;
-  border-collapse: collapse;
+  border: var(--line-w) solid var(--border-surface);
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--radius-surface);
+  background: var(--surface-base);
+  box-shadow: var(--shadow-surface);
+  overflow: clip;
 }
 
 .table th {
@@ -27,6 +35,11 @@
   padding: var(--cell-pad-y) var(--cell-pad-x);
   font-size: var(--text-body);
   border-bottom: var(--line-w) solid var(--border-row);
+}
+
+/* 마지막 행 아래 선은 없다 — 표 면 테두리가 닫는다. */
+.table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 /* §2-4: 날짜 칸(적용 시작일)은 숫자 칸처럼 nowrap — 줄바꿈은 값 칸이 맡는다. */

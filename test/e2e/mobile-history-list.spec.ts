@@ -161,3 +161,41 @@ test.describe("§7-14 이력 목록 — 폰 320 긴 팀 이름에서도 날짜 �
     });
   }
 });
+
+// 07.1-18 PA8 (C-39 · SP-71-6) — `/admin/settings` 이력 표 전부가 §7-3 표 면을 받는다: 1px 선 · `--radius-surface` · 배경 `--surface-base` · 320에서 가로 넘침 0.
+test.describe("§7-14 이력 목록 — 표 면 (07.1-18 PA8)", () => {
+  for (const width of [375, 320] as const) {
+    test(`/admin/settings 이력 표는 표 면(선 · 모서리 · 배경)을 받고 가로로 넘치지 않는다 (${width})`, async ({ page }) => {
+      await loginAsAdmin(page);
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/admin/settings?group=${encodeURIComponent("세율")}`);
+      const tables = page.locator("table[class*='HistoryList']");
+      await expect(tables.first()).toBeVisible();
+      const surfaces = await page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.cssText = "background: var(--surface-base); border-radius: var(--radius-surface);";
+        document.body.append(probe);
+        const expected = { background: getComputedStyle(probe).backgroundColor, radius: getComputedStyle(probe).borderTopLeftRadius };
+        probe.remove();
+        return {
+          expected,
+          tables: Array.from(document.querySelectorAll("table[class*='HistoryList']")).map((table) => {
+            const style = getComputedStyle(table);
+            return { border: style.borderTopWidth, borderStyle: style.borderTopStyle, radius: style.borderTopLeftRadius, background: style.backgroundColor, right: table.getBoundingClientRect().right };
+          }),
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          clientWidth: document.documentElement.clientWidth,
+        };
+      });
+      expect(surfaces.tables.length).toBeGreaterThan(0);
+      for (const table of surfaces.tables) {
+        expect(table.border).toBe("1px");
+        expect(table.borderStyle).toBe("solid");
+        expect(table.radius).toBe(surfaces.expected.radius);
+        expect(table.background).toBe(surfaces.expected.background);
+        expect(table.right).toBeLessThanOrEqual(surfaces.clientWidth + 0.5);
+      }
+      expect(surfaces.overflow).toBeLessThanOrEqual(0);
+    });
+  }
+});

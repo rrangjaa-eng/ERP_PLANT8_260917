@@ -310,6 +310,9 @@
 @media (max-width: 699.98px) {
   .nameCell {
     min-width: 5em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

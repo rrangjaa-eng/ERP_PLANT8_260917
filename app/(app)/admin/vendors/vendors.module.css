@@ -38,6 +38,14 @@
     flex: 1 1 100%;
   }
 
+  /* PA9 — 갈래 링크가 넷 이상이면 2열 격자(왼쪽 정렬 · 줄 44 고정 — SYSTEM §3 그리드 예외). 셋 이하는 한 줄 흐름 그대로. */
+  .kindNav:has(> :nth-child(4)) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-items: start;
+    gap: 0 var(--s-4);
+  }
+
   .toggle {
     display: inline-flex;
     align-items: center;

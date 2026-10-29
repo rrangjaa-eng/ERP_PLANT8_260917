@@ -1,6 +1,8 @@
 import { test, expect, type Browser, type Page, type Route } from "@playwright/test";
 import { getApprovalView, rejectDocument } from "@/domain/approvals";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
+import { detachOwnEvidence } from "@/domain/evidence-records/attach";
+import { createIntakeManager, insertLinkFixture, insertRecordFixture } from "@/test/integration/fixtures/evidence";
 import { loginPage, waitForHydration } from "./leave-org";
 import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
@@ -375,4 +377,34 @@ test.describe("폰 — 반려된 번호 있는 문서의 견적 줄 바꾸기 (0
     await expect(page.getByRole("heading", { level: 1 })).toContainText(fx.lines.hold.itemName);
     await page.context().close();
   });
+});
+
+// 07.1-16(W10 C-91): 폰(375 · 320)에서도 증빙 기록이 붙으면 `증빙일` 칸이 없고, 모두 떼면 저장값으로 다시 선다 — 어느 상태든 가로 넘침 0.
+test.describe("증빙일 칸 숨김 · 다시 (07.1-16 C-91 폰)", () => {
+  for (const width of [375, 320]) {
+    test(`${width}: 붙은 증빙이 있으면 칸 DOM 0 · 떼면 저장값으로 다시 · 가로 넘침 0`, async ({ browser, baseURL }) => {
+      const fx = await setupExpenseE2E();
+      const manager = await createIntakeManager();
+      const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id], fields: { note: "행사 운영비" } });
+      const expenseId = created.created[0]?.expenseId;
+      if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+      await saveExpenseDraft(fx.pm.viewer, { expenseId, expectedVersion: 1, fields: { evidenceDate: "2026-10-20" } });
+      const linkId = await insertLinkFixture({ recordId: await insertRecordFixture(manager, { issuedOn: "2026-10-05" }), ownerId: expenseId, attachMode: "author", attachedBy: fx.pm.viewer.id });
+
+      const page = await loginPage(browser, baseURL, fx.pm);
+      await page.setViewportSize({ width, height: PHONE.height });
+      const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      await page.goto(`/expenses/${expenseId}`);
+      await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+      await expect(page.locator("#evidenceDate")).toHaveCount(0);
+      expect(await overflow()).toBeLessThanOrEqual(0);
+
+      await detachOwnEvidence(fx.pm.viewer, { linkId, reason: "다른 건 증빙" });
+      await page.reload();
+      await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+      await expect(page.locator("#evidenceDate")).toHaveValue("2026-10-20");
+      expect(await overflow()).toBeLessThanOrEqual(0);
+      await page.context().close();
+    });
+  }
 });

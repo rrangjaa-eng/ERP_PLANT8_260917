@@ -16,10 +16,12 @@ import { confirmEvidence, loadPrepaidDueDays } from "@/domain/evidence-reviews";
 import { voidEvidence } from "@/domain/evidence";
 import { approveDocument } from "@/domain/approvals";
 import { listExpenses } from "@/domain/expenses/list";
-import { changeExpensePayeeUser, createExpenseFromLines } from "@/domain/expenses";
+import { changeExpensePayeeUser, createExpenseFromLines, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { listEarliestIssuedOnForExpenses } from "@/repositories/evidence-record-links";
+import { insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { loadTaxRates } from "@/domain/money/tax";
-import { addHistorizedValue } from "@/domain/settings/registry";
+import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertSimpleValue } from "@/repositories/settings";
@@ -34,7 +36,7 @@ import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatchAction } from "@/app/(app)/expenses/actions";
 import { confirmEvidenceAction } from "@/app/(app)/expenses/[id]/actions";
 import { makePerson } from "./approvals-fixtures";
-import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture, testVendorAccount } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, ensureDetail, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture, testVendorAccount } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06-15(EXP-09 · EXP-06 · AS1 · D-604) — 지급 대상 목록(S1)과 건별 트랜잭션 일괄 지급(S2). 통과를 기대하는 문서는 06-03 · 06-04처럼
@@ -45,6 +47,11 @@ vi.mock("@/lib/viewer", () => ({
   getSession: () => Promise.resolve(session.viewer ? { viewer: session.viewer, user: { id: session.viewer.id } } : null),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
+// 07.1-16(T-07.1-16-04): 가장 이른 발행일 묶음 읽기가 목록 한 번에 몇 번 도는지 센다 — 동작은 그대로(원래 함수를 부른다).
+vi.mock("@/repositories/evidence-record-links", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/repositories/evidence-record-links")>();
+  return { ...actual, listEarliestIssuedOnForExpenses: vi.fn(actual.listEarliestIssuedOnForExpenses) };
+});
 
 beforeEach(async () => {
   await setEvidenceRequired(false);
@@ -1231,4 +1238,59 @@ describe("지급일 오늘까지 — 일괄 (06.5 D-6518)", () => {
     expect(await livePayments(a.expenseId)).toHaveLength(0);
     expect(await livePayments(b.expenseId)).toHaveLength(0);
   });
+});
+
+// 07.1-16(D-7123 · T-07.1-16-03 · -04): 지급 대상 목록의 세금 = 단건 지급과 같은 증빙 기준일(붙은 증빙 가장 이른 발행일 ?? 수동 증빙일).
+// 세율 경계 2027-10-10(17%)을 사이에 둔 문서 셋 — 10-05 기록(그 전 세율) · 10-12 기록(17%) · 기록 없음 + 수동 10-20(17%).
+describe("07.1-16 — 목록 세금 = 단건 증빙 기준일 · 가장 이른 발행일 묶음 한 번", () => {
+  it("목록 행 지급 총액이 단건 미리보기와 같고, 가장 이른 발행일 읽기는 목록 한 번에 묶음 하나다", async () => {
+    const payer = await makePayer();
+    const evidenceType = `t0716_${randomUUID().slice(0, 8)}`;
+    await seedCodeItem(SYSTEM_VIEWER, {
+      tableKey: "evidence_type",
+      value: evidenceType,
+      label: `증빙일 부가세 ${evidenceType}`,
+      sortOrder: 99,
+      taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "evidence_date" },
+    });
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2027-10-10", value: 0.17 });
+    try {
+      const approvedDoc = async (issuedOn: string | null): Promise<string> => {
+        const fx = await setupExpenseProject();
+        const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+        const expenseId = created.created[0]?.expenseId;
+        if (!expenseId) throw new Error("작성 중 문서 없음");
+        await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { evidenceType, evidenceDate: "2027-10-20" } });
+        if (issuedOn) await insertLinkFixture({ recordId: await insertRecordFixture(payer, { issuedOn }), ownerId: expenseId, attachedBy: payer.id });
+        else await attachEvidence(fx.pm, expenseId);
+        await ensureDetail(fx.pm, expenseId);
+        const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+        const submitted = await submitExpense(fx.pm, { expenseId, expectedVersion: row?.version ?? 0 });
+        if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+        const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+        await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
+        return expenseId;
+      };
+      const early = await approvedDoc("2027-10-05");
+      const late = await approvedDoc("2027-10-12");
+      const manual = await approvedDoc(null);
+      const mine = new Set([early, late, manual]);
+
+      const spy = vi.mocked(listEarliestIssuedOnForExpenses);
+      spy.mockClear();
+      const rows = rowsOf(await listPaymentTargets(payer, {}, { pageSize: 10_000 })).filter((row) => row.id !== undefined && mine.has(row.id));
+      expect(rows).toHaveLength(3);
+      const reads = spy.mock.calls.filter(([, ids]) => ids.some((id) => mine.has(id)));
+      expect(reads).toHaveLength(1);
+      for (const id of mine) expect(reads[0]?.[1]).toContain(id);
+
+      const listed = new Map(rows.map((row) => [row.id, row.payableKrw]));
+      for (const id of mine) expect(listed.get(id)).toBe((await previewPayable(payer, { expenseId: id, payDate: seoulToday() })).payableKrw);
+      expect(listed.get(late)).toBe(14_508_000);
+      expect(listed.get(manual)).toBe(14_508_000);
+      expect(listed.get(early)).not.toBe(14_508_000);
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, "2027-10-10");
+    }
+  }, 120_000);
 });

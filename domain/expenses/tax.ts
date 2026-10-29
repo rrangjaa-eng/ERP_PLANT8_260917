@@ -31,10 +31,13 @@ import { formatRatePercent, type Money } from "@/domain/money";
 // 지급일(Phase 6 전에는 없음) → 지급 예정일 → 서울 오늘 / 증빙일 · 발행일(이 페이즈에 칸 없음) → 작성일(created_at의 서울 날짜).
 // 고른 날짜는 applyTaxRule이 그 규칙에서 읽는 슬롯(원천징수 · 회사 대납 = paymentDate, 부가세 = evidenceDate — domain/money/tax.ts
 // 규약)에 들어간다 — 두 슬롯에 같은 날짜를 넣으므로 규칙이 어느 슬롯을 읽어도 같은 기준일이다.
+// 07.1-16(D-7123 · D-7129): 증빙일 = 붙은 증빙 기록의 가장 이른 발행일(서버가 읽은 값 — 일정 로더) ?? 저장된 수동 증빙일 ?? 작성일.
+// 필수 칸이다 — 세금 경로 하나가 이 값을 빠뜨려 수동 날짜로 셈하면 결재 금액과 지급 총액이 갈린다(E-P1-11 — typecheck가 막는다).
 export type TaxDateSource = {
   paidDate?: string | null;
   scheduledPaymentDate: string | null;
   evidenceDate?: string | null;
+  earliestEvidenceIssuedOn: string | null;
   createdAt: Date;
 };
 
@@ -52,7 +55,7 @@ export function pickTaxDates(
   const byKind: Record<TaxBasisKind, string> = {
     payment_date: doc.paidDate ?? scheduled,
     scheduled_payment_date: scheduled,
-    evidence_date: doc.evidenceDate ?? documentDate,
+    evidence_date: doc.earliestEvidenceIssuedOn ?? doc.evidenceDate ?? documentDate,
     issue_date: documentDate,
     document_date: documentDate,
   };

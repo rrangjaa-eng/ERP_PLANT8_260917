@@ -22,7 +22,8 @@ export type PayScheduleSource = {
 };
 
 // 그 문서에 쓴 기한 일수(거래처 기한 ?? 회사 기본) — 규칙 줄 `기한 {N}일`이 같은 값을 쓴다.
-export type LoadedPaySchedule = PaySchedule & { termDays: number };
+// earliestEvidenceIssuedOn — 기준일을 셀 때 읽은 붙은 증빙 가장 이른 발행일(붙임 없음 = null). 세금 증빙 기준일이 같은 값을 쓴다(07.1-16).
+export type LoadedPaySchedule = PaySchedule & { termDays: number; earliestEvidenceIssuedOn: string | null };
 
 const NO_DATES: ReadonlySet<string> = new Set();
 
@@ -77,7 +78,7 @@ export async function loadPaySchedules(
       cfg,
     });
     if (schedule.failed) log.error("payment.schedule_failed", { expenseId: row.id });
-    schedules.set(row.id, { ...schedule, termDays });
+    schedules.set(row.id, { ...schedule, termDays, earliestEvidenceIssuedOn: issuedOn.get(row.id) ?? null });
   }
   return schedules;
 }

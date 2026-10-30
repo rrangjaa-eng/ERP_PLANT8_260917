@@ -345,7 +345,7 @@ export function Table<Row>({
   const pageIds = pages ? new Set(pages[page - 1]) : null;
   const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy, groupHeader) : allGroups;
   // phoneRowLink — 그룹 하나 = <tbody> 하나 대신, 그룹 머리글과 행(주 행 + 접힌 줄)마다 제 <tbody>다.
-  // 폰 말줄임 감싸개는 서버 HTML부터 항상 그린다(수화 전후 DOM이 같고 행 수 · 폭에 따라 달라지지 않는다). PC에서는 `display: contents`라 상자가 없다.
+  // 폰 말줄임 감싸개는 폰에서 보이는 P1 글자 칸(접힌 줄 포함)에만 서버 HTML부터 그린다(수화 전후 DOM이 같고 행 수 · 폭에 따라 달라지지 않는다). PC 감싸개는 `display: inline`이라 상자가 줄 수를 바꾸지 않는다.
   const foldedBody = (values: ReactNode[]) => (
     <div data-cell-text="">
       <div>{values.map((value, index) => <span key={index}>{index > 0 ? " · " : ""}{value}</span>)}</div>

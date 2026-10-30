@@ -217,11 +217,24 @@ function attachedShown(attached: NonNullable<Row["attached"]>): boolean {
   return attached.pending || (attached.id !== null && attached.number !== null);
 }
 
-// 07.1-18 — 폰 접힌 줄 앞 글자(`secondaryText`): 상태 칸 아래 줄(붙은 번호 · 사유)의 글자만. 링크는 행 시트 `붙은 문서` 줄에 있다.
+// 07.1-18 — 폰 접힌 줄 앞 글자(`secondaryText`): 상태 칸 아래 줄(작성 중 문서 · 사유)의 글자만. 붙은 번호 링크는 폰에서 주 행 상태 칸 안(`PhoneAttachedLink`)에 있다.
 function attachedPlainText(attached: NonNullable<Row["attached"]>): string | null {
   if (attached.pending) return COPY.draftOwner;
-  if (attached.id === null || attached.number === null) return null;
-  return `${attached.number}${attached.cardReplaced ? COPY.cardReplaced : ""}`;
+  return null;
+}
+
+// 07.1-18 — 폰은 상태 칸 아래 줄이 숨는다. 붙은 문서 번호 링크(감사: 붙은 행 상태 2행 문서 번호 링크 href @375)는 주 행 상태 글자 뒤 같은 줄에 둔다(PC에서는 숨김 — 2행 링크가 그 몫).
+function PhoneAttachedLink({ attached }: { attached: NonNullable<Row["attached"]> }) {
+  if (attached.pending || attached.id === null || attached.number === null) return null;
+  const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : attached.kind === "corp_card_usage" ? `/cards?editId=${attached.id}` : "/cards/purchases";
+  return (
+    <span className={styles.phoneAttachedLink}>
+      {" "}
+      <Link href={href} className={expenseStyles.link} tabIndex={-1}>
+        {attached.number}
+      </Link>
+    </span>
+  );
 }
 
 function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
@@ -817,7 +830,12 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       key: "status",
       header: "상태",
       priority: "p1",
-      cell: (row) => <StatusTag status={row.statusWord} variant="text" />,
+      cell: (row) => (
+        <>
+          <StatusTag status={row.statusWord} variant="text" />
+          {row.attached && attachedShown(row.attached) ? <PhoneAttachedLink attached={row.attached} /> : null}
+        </>
+      ),
       // PR-D D-2 — 붙은 기록도 확인 필요 · 카드 미등록이면 사유가 번호 링크 뒤에 남는다(문서 증빙 줄과 같은 사유 · 공개 칸 aria-describedby가 가리키는 id).
       secondaryLine: (row) => {
         const detail = row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null;

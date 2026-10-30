@@ -2500,3 +2500,8 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정**: `[data-cell-text]`(와 안쪽 div)는 `min-width: 700px`에서 `display: contents` — 폰 한 줄 말줄임 전용이다. PC 셀 글자는 감싸개 이전(main)과 같은 줄 상자로 그려진다.
 **이유**: `cert-events.spec.ts` 「1024 — 긴 경품명…(A-L3)」가 CI에서 빨갰다. 감싸개 block 상자(높이 21)가 글자 줄 상자(높이 16)와 윗선이 달라 셀 안 상자 윗선 개수 감사가 한 줄 칸을 두 줄로 셌다(main 3/3 통과 · 우리 head 3/3 실패 → 수정 뒤 3/3 통과). 단언은 그대로.
 **범위**: `ui/table/Table.module.css`. 새 색 · 서체 · radius · 토큰 0. 폰 규칙 불변.
+
+### 정정 2026-10-30 (PR #326 CI 2차): 폰 감싸개는 폰에서만 그린다 · 폰 상태 칸에 붙은 문서 링크
+**결정**: ① 앞 항목의 `display: contents`는 걷는다. 대신 `[data-cell-text]` 감싸개는 `usePhoneLayout()`(`(max-width: 699.98px)` · 서버·수화 중 거짓 — `useMinWidth`와 같은 PC 기본)이 참일 때만 그린다. PC DOM은 main과 같다. ② 증빙 목록 폰 주 행 상태 칸에 붙은 문서 번호 링크(`PhoneAttachedLink`)를 둔다(700 이상에서는 숨김 — 2행 링크가 맡는다). 접힌 줄 앞 글자에서는 번호를 뺀다(작성 중 문서 · 사유만).
+**이유**: ① 5,000행 행동 로그 표에서 감싸개가 DOM 노드를 90,205 → 170,205로 늘려 클릭 뒤 판정이 3.5s → 10.5s로 느려졌다(CI `action-log.spec.ts:536` 실패). React 재렌더가 아니라 노드 수에 비례하는 브라우저 일이었다(CDP: 스크립트 0.6s · 스타일 0.05s · 레이아웃 0.001s인데 태스크 11.9s). 감싸개를 걷으면 3.7s. 수정 뒤 90,205 · 3.5~4.0s. ② `evidence-attach-audit.spec.ts` ① 경영관리 @375가 주 행 안 붙은 문서 링크 href를 요구한다(폰에서 `.cellSecondary`가 숨어 null).
+**범위**: `ui/table/Table.tsx` · `use-editable-width.ts` · `Table.module.css`(contents 규칙 제거) · `evidence-table.tsx/.module.css`. 새 색 · 서체 · radius · 토큰 0.

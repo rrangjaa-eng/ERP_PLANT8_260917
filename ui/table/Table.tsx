@@ -13,7 +13,7 @@ import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, pinNewRow
 import { toTsv } from "./parse-tsv";
 import { isGridActionAllowed } from "./save-lock";
 import { APP_CLIPBOARD_FORMAT, readPasteClipboard } from "./use-clipboard-paste";
-import { useMinWidth } from "./use-editable-width";
+import { useMinWidth, usePhoneLayout } from "./use-editable-width";
 import type { CellEditability, CellIssue, TableColumn } from "./types";
 import { conflictFocusTransition, useGridKeyboard, type ConflictFocusState, type GridPosition } from "./use-grid-keyboard";
 
@@ -345,6 +345,11 @@ export function Table<Row>({
   const pageIds = pages ? new Set(pages[page - 1]) : null;
   const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy, groupHeader) : allGroups;
   // phoneRowLink — 그룹 하나 = <tbody> 하나 대신, 그룹 머리글과 행(주 행 + 접힌 줄)마다 제 <tbody>다.
+  const phone = usePhoneLayout();
+  const foldedBody = (values: ReactNode[]) => {
+    const spans = values.map((value, index) => <span key={index}>{index > 0 ? " · " : ""}{value}</span>);
+    return phone ? <div data-cell-text=""><div>{spans}</div></div> : spans;
+  };
   const GroupBody: ElementType = phoneRowLink ? Fragment : "tbody";
   const RowBody: ElementType = phoneRowLink ? "tbody" : Fragment;
   // 그룹 머리글 칸 — 기본 `<td>`, `groupHeaderScope="rowgroup"`이면 `<th scope="rowgroup">`.
@@ -817,11 +822,11 @@ export function Table<Row>({
     const secondary = column.secondaryLine?.(row);
     // 폰 한 줄 말줄임(07.1-18 · B-R3) — 글자 칸의 주 내용은 block 감싸개 하나에 담는다(폭 규칙 · 말줄임은 td가 아니라 이 감싸개에 건다).
     // 숫자 칸(금액이 …으로 잘리면 안 된다)과 머리글을 숨긴 행동 열은 그대로다.
-    const wrapped = column.align === "right" || column.headerHidden ? primary : <div data-cell-text=""><div>{primary}</div></div>;
+    const wrapped = !phone || column.align === "right" || column.headerHidden ? primary : <div data-cell-text=""><div>{primary}</div></div>;
     if (secondary === null || secondary === undefined || secondary === "") return wrapped;
     return (
       <>
-        {column.align === "right" || column.headerHidden ? <div>{primary}</div> : wrapped}
+        {wrapped === primary ? <div>{primary}</div> : wrapped}
         <div className={styles.cellSecondary}>{secondary}</div>
       </>
     );
@@ -1196,23 +1201,11 @@ export function Table<Row>({
                             }
                           }}
                         >
-                          <div data-cell-text="">
-                            <div>
-                              {foldedValues.map((value, index) => (
-                                <span key={index}>{index > 0 ? " · " : ""}{value}</span>
-                              ))}
-                            </div>
-                          </div>
+                          {foldedBody(foldedValues)}
                         </td>
                       ) : (
                         <td colSpan={columns.length + (selection ? 1 : 0)} className={styles.collapsedCell}>
-                          <div data-cell-text="">
-                            <div>
-                              {foldedValues.map((value, index) => (
-                                <span key={index}>{index > 0 ? " · " : ""}{value}</span>
-                              ))}
-                            </div>
-                          </div>
+                          {foldedBody(foldedValues)}
                         </td>
                       )}
                     </tr>

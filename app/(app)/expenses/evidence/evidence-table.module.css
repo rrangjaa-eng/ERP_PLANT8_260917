@@ -163,3 +163,14 @@
 .undoFailed {
   color: var(--status-danger);
 }
+
+/* 07.1-18 — 폰 주 행 상태 칸의 붙은 문서 번호 링크. 700 이상에서는 상태 2행 링크가 맡는다. */
+.phoneAttachedLink {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .phoneAttachedLink {
+    display: inline;
+  }
+}

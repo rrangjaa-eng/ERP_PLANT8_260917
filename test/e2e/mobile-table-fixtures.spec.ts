@@ -58,7 +58,7 @@ for (const width of [1024, 768] as const) {
     });
     await page.setViewportSize({ width: 375, height: 800 });
     await page.setViewportSize({ width, height: 800 });
-    const kept = await table.evaluate((node) => (node.querySelector("td [data-cell-text]") as (HTMLElement & { __kept?: boolean }) | null)?.__kept === true);
+    const kept = await table.evaluate((node) => node.querySelector<HTMLElement & { __kept?: boolean }>("td [data-cell-text]")?.__kept === true);
     expect(kept, `PC ${width} → 375 → ${width} 감싸개 노드 유지`).toBe(true);
   });
 }

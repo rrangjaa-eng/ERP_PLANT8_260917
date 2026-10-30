@@ -235,12 +235,12 @@ test.describe("폰 320 /admin/code-tables 동작 칸 줄바꿈 (W7 O1)", () => {
   }
 
   for (const width of [320, 375]) {
-    test(`긴 이름 항목이 있어도 CLS < 0.1 이고 가로 넘침이 없다 (${width})`, async ({ page, browser }) => {
+    test(`긴 이름 항목이 있어도 CLS < 0.1 이고 가로 넘침이 없다 (${width})`, async ({ page, browser, baseURL }) => {
       await loginAsSysadmin(page);
       const stamp = Date.now();
       const label = "고객 확인 대기 중 견적 재협의 및 일정 조율 필요";
       await insertCodeItem(SYSTEM_VIEWER, { tableKey: "project_status", value: `m-long-${width}-${stamp}`, label, sortOrder: 99 });
-      const context = await browser.newContext({ baseURL: "http://127.0.0.1:3100", storageState: await page.context().storageState(), viewport: { width, height: 800 } });
+      const context = await browser.newContext({ baseURL, storageState: await page.context().storageState(), viewport: { width, height: 800 } });
       const fresh = await context.newPage();
       await fresh.addInitScript(CLS_INIT);
       await fresh.goto("/admin/code-tables?tableKey=project_status");

@@ -2495,3 +2495,8 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정**: ① 공용 Table `secondaryText`는 글자(string)뿐 아니라 ReactNode를 받는다 — `/projects` 접힌 줄 맨 앞 경고가 기존 `.endDatePassed` · StatusTag를 그대로 써 `--status-warning` 색을 잃지 않는다(textContent는 그대로 글자를 싣는다). ② `/pnl/reserves` `.dateText` nowrap은 `max-width: 699.98px`(Table 폰 규칙과 같은 분기점) 안에서만 건다 — PC 열 폭은 main과 같다.
 **이유**: 3차 실측 — 폰 경고 색이 본문색(82,97,92)으로 바뀌었고(main 138,90,0), nowrap이 PC 768 넘침 43→95 · 1024 행 높이 71→92로 번졌다.
 **범위**: `ui/table/types.ts` · `Table.tsx` 필터 · `projects-table.tsx` · `reserves.module.css`. 새 색 · 서체 · radius · 토큰 0.
+
+### 정정 2026-10-30 (PR #326 CI certs): 글자 칸 감싸개는 PC에서 상자를 만들지 않는다
+**결정**: `[data-cell-text]`(와 안쪽 div)는 `min-width: 700px`에서 `display: contents` — 폰 한 줄 말줄임 전용이다. PC 셀 글자는 감싸개 이전(main)과 같은 줄 상자로 그려진다.
+**이유**: `cert-events.spec.ts` 「1024 — 긴 경품명…(A-L3)」가 CI에서 빨갰다. 감싸개 block 상자(높이 21)가 글자 줄 상자(높이 16)와 윗선이 달라 셀 안 상자 윗선 개수 감사가 한 줄 칸을 두 줄로 셌다(main 3/3 통과 · 우리 head 3/3 실패 → 수정 뒤 3/3 통과). 단언은 그대로.
+**범위**: `ui/table/Table.module.css`. 새 색 · 서체 · radius · 토큰 0. 폰 규칙 불변.

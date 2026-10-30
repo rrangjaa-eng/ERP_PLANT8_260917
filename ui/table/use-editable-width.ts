@@ -32,17 +32,3 @@ export function useMinWidth(breakpoint: TableBreakpoint): boolean {
 export function useEditableWidth(): boolean {
   return useMinWidth(1024);
 }
-
-const PHONE_QUERY = "(max-width: 699.98px)";
-
-/**
- * 폰(<700)인가. 서버·수화 중에는 거짓 — PC 렌더가 기본이다(위 `useMinWidth`와 같은 규칙). 폰 한 줄 말줄임 감싸개(`[data-cell-text]`)는 폰에서만
- * 그린다: 5,000행 표에서 감싸개가 DOM 노드를 두 배로 만들어 PC 클릭 뒤 판정이 3배 느려지던 회귀를 막는다.
- */
-export function usePhoneLayout(): boolean {
-  return useSyncExternalStore(
-    subscribeTo(PHONE_QUERY),
-    () => window.matchMedia(PHONE_QUERY).matches,
-    () => false,
-  );
-}

@@ -2510,3 +2510,8 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정**: `[data-cell-text]` 감싸개는 행 500 이하 표에서는 서버 HTML부터 항상 그린다(PC는 `display: contents`로 상자 없음). 행이 500을 넘는 표(5,000행 행동 로그)만 `usePhoneLayout()`이 참일 때 그린다.
 **이유**: 폰만 그리게 하자 수화 뒤 감싸개가 붙으며 DOM이 갈아끼워져, 막 잰 노드가 떨어지는 경쟁이 생겼다(`issue-requests.spec.ts:274` D-1 폰 375 · 320: `isConnected=false` 계산 스타일 빈 값 — 5회 중 2~3회 실패 → 수정 뒤 5/5 통과). 작은 표는 수화 전후 DOM이 같아 경쟁이 없다. 큰 표는 노드 수가 비용이라 PC에서 감싸개를 안 그린다(앞 항목).
 **범위**: `ui/table/Table.tsx`(WRAP_ALWAYS_ROW_LIMIT) · `Table.module.css`(contents 규칙 복원). 앞 항목의 「contents 걷기」는 이 항목으로 대체된다.
+
+### 정정 2026-10-30 (PR #326 CI 4차): 감싸개는 항상 · 서버 HTML부터 · 행 수와 폭에 따라 달라지지 않는다
+**결정**: ① `usePhoneLayout` · 행 500 문턱을 걷는다 — 수화 전후 DOM이 같고 데이터 양 · 뷰포트에 따라 달라지지 않는다(폰 CLS = main, 폭을 넘나들어도 칸 내용 유지). ② 비용을 줄인다: 폰 주 행에 남는 P1 글자 칸만 감싼다(P2 · P3는 폰에서 숨김), 숫자 칸 `Num` · 오른쪽 정렬 · 머리글 숨김 열은 감싸지 않고, 글자 · 요소 하나는 감싸개 하나(안쪽 div 없음). PC는 `display: inline`(`contents`는 알림함 더 보기 뒤 `focus()`를 어긋나게 해 쓰지 않는다 — notify-inbox 51건 3/3 실패 → inline 통과). ③ 증빙 목록 상태 열은 붙은 문서 번호 링크가 있는 줄만 `keepSecondaryOnPhone` — 폰에서도 상태 2행(번호 링크 · 사유 · `등록한 카드와 다름`)을 숨기지 않는다(링크가 거기 있고 두 감사가 그 줄을 요구한다). `PhoneAttachedLink`는 걷는다(1줄 말줄임에 번호가 잘렸다).
+**이유**: 5,000행 행동 로그 노드 90,205(main) → 감싸개 전부 170,205(클릭 판정 10.5s) → 이 방식 105,205(같은 시기 측정 3.8~4.6s, 감싸개 없음 3.6~4.3s). 행 수 문턱은 기본 행동 로그(~4,400행)가 수화 교체 경로로 들어가 폰 CLS 0.03~0.12를 냈다.
+**범위**: `ui/table/Table.tsx`(+`types.ts` keepSecondaryOnPhone) · `Table.module.css` · `use-editable-width.ts`(훅 제거) · `evidence-table.tsx`(붙은 문서 링크 줄만 폰 2행 유지 — `keepSecondaryOnPhone(row)`). 앞 두 정정(폰만 / 500 문턱)은 이 항목으로 대체된다.

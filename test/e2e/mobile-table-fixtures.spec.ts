@@ -46,11 +46,20 @@ for (const width of [1024, 768] as const) {
     );
     expect(whiteSpaces.length).toBeGreaterThan(0);
     expect(whiteSpaces.filter((v) => v === "nowrap"), `PC에서 날짜 nowrap ${width}`).toEqual([]);
-    // 폰 말줄임 감싸개는 PC에서 상자를 만들지 않는다(display: contents) — 셀 글자는 감싸개 이전(main)과 같은 줄 상자로 그려진다.
+    // 폰 말줄임 감싸개는 PC에서 block 상자를 만들지 않는다(display: inline) — 셀 글자는 감싸개 이전(main)과 같은 줄 상자로 그려진다.
     const boxed = await table.evaluate((node) =>
-      Array.from(node.querySelectorAll<HTMLElement>("[data-cell-text], [data-cell-text] > div")).filter((el) => getComputedStyle(el).display !== "contents").length,
+      Array.from(node.querySelectorAll<HTMLElement>("[data-cell-text], [data-cell-text] > div")).filter((el) => getComputedStyle(el).display !== "inline").length,
     );
     expect(boxed, `PC ${width} 감싸개 상자`).toBe(0);
+    // 폭이 폰 경계(700)를 넘나들어도 칸 내용을 갈아끼우지 않는다(DOM이 폭에 따라 달라지지 않음 — 포커스 · 측정 중 노드를 잃지 않는다).
+    await table.evaluate((node) => {
+      const first = node.querySelector("td [data-cell-text]");
+      if (first) (first as HTMLElement & { __kept?: boolean }).__kept = true;
+    });
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.setViewportSize({ width, height: 800 });
+    const kept = await table.evaluate((node) => (node.querySelector("td [data-cell-text]") as (HTMLElement & { __kept?: boolean }) | null)?.__kept === true);
+    expect(kept, `PC ${width} → 375 → ${width} 감싸개 노드 유지`).toBe(true);
   });
 }
 

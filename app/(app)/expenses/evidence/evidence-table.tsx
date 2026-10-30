@@ -217,24 +217,8 @@ function attachedShown(attached: NonNullable<Row["attached"]>): boolean {
   return attached.pending || (attached.id !== null && attached.number !== null);
 }
 
-// 07.1-18 — 폰 접힌 줄 앞 글자(`secondaryText`): 상태 칸 아래 줄(작성 중 문서 · 사유)의 글자만. 붙은 번호 링크는 폰에서 주 행 상태 칸 안(`PhoneAttachedLink`)에 있다.
-function attachedPlainText(attached: NonNullable<Row["attached"]>): string | null {
-  if (attached.pending) return COPY.draftOwner;
-  return null;
-}
-
-// 07.1-18 — 폰은 상태 칸 아래 줄이 숨는다. 붙은 문서 번호 링크(감사: 붙은 행 상태 2행 문서 번호 링크 href @375)는 주 행 상태 글자 뒤 같은 줄에 둔다(PC에서는 숨김 — 2행 링크가 그 몫).
-function PhoneAttachedLink({ attached }: { attached: NonNullable<Row["attached"]> }) {
-  if (attached.pending || attached.id === null || attached.number === null) return null;
-  const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : attached.kind === "corp_card_usage" ? `/cards?editId=${attached.id}` : "/cards/purchases";
-  return (
-    <span className={styles.phoneAttachedLink}>
-      {" "}
-      <Link href={href} className={expenseStyles.link} tabIndex={-1}>
-        {attached.number}
-      </Link>
-    </span>
-  );
+function hasAttachedLink(row: Row): boolean {
+  return Boolean(row.attached && attachedShown(row.attached) && !row.attached.pending && row.attached.id !== null && row.attached.number !== null);
 }
 
 function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
@@ -830,12 +814,12 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       key: "status",
       header: "상태",
       priority: "p1",
-      cell: (row) => (
-        <>
-          <StatusTag status={row.statusWord} variant="text" />
-          {row.attached && attachedShown(row.attached) ? <PhoneAttachedLink attached={row.attached} /> : null}
-        </>
-      ),
+      cell: (row) => <StatusTag status={row.statusWord} variant="text" />,
+      // 붙은 문서 번호 링크가 있는 줄은 상태 2행(번호 링크 · 사유)을 폰에서도 보인다 — 링크가 거기 있고 감사(evidence-attach-audit · evidence-reconcile-audit)가 그 줄을 요구한다.
+      // 그 밖의 줄(작성 중 문서 · 사유만)은 접힌 줄 앞 글자로 간다.
+      keepSecondaryOnPhone: (row) => hasAttachedLink(row),
+      secondaryText: (row) =>
+        hasAttachedLink(row) ? "" : [row.attached?.pending ? COPY.draftOwner : null, row.statusDetail].filter((part): part is string => Boolean(part)).join(" · "),
       // PR-D D-2 — 붙은 기록도 확인 필요 · 카드 미등록이면 사유가 번호 링크 뒤에 남는다(문서 증빙 줄과 같은 사유 · 공개 칸 aria-describedby가 가리키는 id).
       secondaryLine: (row) => {
         const detail = row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null;
@@ -847,10 +831,6 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           </>
         );
       },
-      secondaryText: (row) =>
-        [row.attached && attachedShown(row.attached) ? attachedPlainText(row.attached) : null, row.statusDetail]
-          .filter((part): part is string => Boolean(part))
-          .join(" · "),
       copyText: (row) => row.statusWord,
     },
     // §7-3 (차) 행 행동 열 — 머리글 숨김 · P1 밖 · 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 거래처 칸을 가리킨다. 키보드 경로는 Ctrl+E다(runKeyAction).

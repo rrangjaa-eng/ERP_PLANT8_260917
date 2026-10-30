@@ -487,12 +487,12 @@ thead .selectLabel {
   }
 }
 
-/* 07.1-18 — 글자 칸 감싸개 `[data-cell-text]`(와 안쪽 div)는 폰 한 줄 말줄임 전용이다. 행이 적은 표는 PC에서도 서버 HTML부터 감싸개를 그리므로(Table.tsx
-   WRAP_ALWAYS_ROW_LIMIT) PC에서는 상자를 만들지 않는다(`display: contents`) — 셀 글자가 감싸개 이전(main)과 같은 줄 상자로 그려진다.
-   감싸개 block 상자가 줄 높이만큼 따로 잡히면 DOM 줄 수 감사(셀 안 상자 윗선 개수)가 한 줄 칸을 두 줄로 센다. */
+/* 07.1-18 — 글자 칸 감싸개 `[data-cell-text]`(와 안쪽 div)는 폰 한 줄 말줄임 전용이다. 서버 HTML부터 항상 그리므로(수화 전후 DOM 동일) PC에서는 `display: inline` —
+   셀 글자가 감싸개 이전(main)과 같은 줄 상자로 그려진다. block 상자면 줄 높이만큼 따로 잡혀 DOM 줄 수 감사(셀 안 상자 윗선 개수)가 한 줄 칸을 두 줄로 세고,
+   `display: contents`면 안의 행 요소 `focus()`가 어긋난다(알림함 더 보기 뒤 포커스). */
 @media (min-width: 700px) {
   .table :where([data-cell-text], [data-cell-text] > div) {
-    display: contents;
+    display: inline;
   }
 }
 
@@ -536,7 +536,7 @@ thead .selectLabel {
   }
 
   /* 주 행 셀 아래 줄은 폰에서 접힌 줄 맨 앞 글자(`secondaryText`) · 행 시트 · 상세 화면으로 간다. */
-  .table:is([data-row-sheet], :has([data-row-link])) .cellSecondary {
+  .table:is([data-row-sheet], :has([data-row-link])) .cellSecondary:not([data-keep-phone]) {
     display: none;
   }
 

@@ -2505,3 +2505,8 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정**: ① 앞 항목의 `display: contents`는 걷는다. 대신 `[data-cell-text]` 감싸개는 `usePhoneLayout()`(`(max-width: 699.98px)` · 서버·수화 중 거짓 — `useMinWidth`와 같은 PC 기본)이 참일 때만 그린다. PC DOM은 main과 같다. ② 증빙 목록 폰 주 행 상태 칸에 붙은 문서 번호 링크(`PhoneAttachedLink`)를 둔다(700 이상에서는 숨김 — 2행 링크가 맡는다). 접힌 줄 앞 글자에서는 번호를 뺀다(작성 중 문서 · 사유만).
 **이유**: ① 5,000행 행동 로그 표에서 감싸개가 DOM 노드를 90,205 → 170,205로 늘려 클릭 뒤 판정이 3.5s → 10.5s로 느려졌다(CI `action-log.spec.ts:536` 실패). React 재렌더가 아니라 노드 수에 비례하는 브라우저 일이었다(CDP: 스크립트 0.6s · 스타일 0.05s · 레이아웃 0.001s인데 태스크 11.9s). 감싸개를 걷으면 3.7s. 수정 뒤 90,205 · 3.5~4.0s. ② `evidence-attach-audit.spec.ts` ① 경영관리 @375가 주 행 안 붙은 문서 링크 href를 요구한다(폰에서 `.cellSecondary`가 숨어 null).
 **범위**: `ui/table/Table.tsx` · `use-editable-width.ts` · `Table.module.css`(contents 규칙 제거) · `evidence-table.tsx/.module.css`. 새 색 · 서체 · radius · 토큰 0.
+
+### 정정 2026-10-30 (PR #326 CI 3차): 감싸개는 행이 적은 표에서 항상 · 많은 표만 폰에서
+**결정**: `[data-cell-text]` 감싸개는 행 500 이하 표에서는 서버 HTML부터 항상 그린다(PC는 `display: contents`로 상자 없음). 행이 500을 넘는 표(5,000행 행동 로그)만 `usePhoneLayout()`이 참일 때 그린다.
+**이유**: 폰만 그리게 하자 수화 뒤 감싸개가 붙으며 DOM이 갈아끼워져, 막 잰 노드가 떨어지는 경쟁이 생겼다(`issue-requests.spec.ts:274` D-1 폰 375 · 320: `isConnected=false` 계산 스타일 빈 값 — 5회 중 2~3회 실패 → 수정 뒤 5/5 통과). 작은 표는 수화 전후 DOM이 같아 경쟁이 없다. 큰 표는 노드 수가 비용이라 PC에서 감싸개를 안 그린다(앞 항목).
+**범위**: `ui/table/Table.tsx`(WRAP_ALWAYS_ROW_LIMIT) · `Table.module.css`(contents 규칙 복원). 앞 항목의 「contents 걷기」는 이 항목으로 대체된다.

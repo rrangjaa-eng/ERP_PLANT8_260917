@@ -46,8 +46,11 @@ for (const width of [1024, 768] as const) {
     );
     expect(whiteSpaces.length).toBeGreaterThan(0);
     expect(whiteSpaces.filter((v) => v === "nowrap"), `PC에서 날짜 nowrap ${width}`).toEqual([]);
-    // 폰 말줄임 감싸개는 PC에서 DOM에 없다(수화 뒤 걷힌다) — 5,000행 표의 노드가 두 배가 되어 클릭 뒤 판정이 3배 느려지던 회귀.
-    await expect.poll(() => table.locator("[data-cell-text]").count(), { message: `PC ${width} 감싸개 없음` }).toBe(0);
+    // 폰 말줄임 감싸개는 PC에서 상자를 만들지 않는다(display: contents) — 셀 글자는 감싸개 이전(main)과 같은 줄 상자로 그려진다.
+    const boxed = await table.evaluate((node) =>
+      Array.from(node.querySelectorAll<HTMLElement>("[data-cell-text], [data-cell-text] > div")).filter((el) => getComputedStyle(el).display !== "contents").length,
+    );
+    expect(boxed, `PC ${width} 감싸개 상자`).toBe(0);
   });
 }
 

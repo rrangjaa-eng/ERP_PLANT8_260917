@@ -214,6 +214,9 @@ function groupRows<Row>(rows: Row[], groupBy?: (row: Row) => string, groupHeader
   return groups;
 }
 
+/** 이 행 수 이하의 표는 PC에서도 폰 말줄임 감싸개를 그린다(PC는 `display: contents`라 모양 같음). */
+const WRAP_ALWAYS_ROW_LIMIT = 500;
+
 export function Table<Row>({
   caption,
   columns,
@@ -345,7 +348,10 @@ export function Table<Row>({
   const pageIds = pages ? new Set(pages[page - 1]) : null;
   const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy, groupHeader) : allGroups;
   // phoneRowLink — 그룹 하나 = <tbody> 하나 대신, 그룹 머리글과 행(주 행 + 접힌 줄)마다 제 <tbody>다.
-  const phone = usePhoneLayout();
+  // 감싸개는 행이 적은 표에서는 서버 HTML부터 항상 그린다(수화 뒤 폰 전환이 DOM을 갈아끼우지 않는다 — 측정 중인 노드가 떨어지는 경쟁 없음).
+  // 행이 많은 표(5,000행 행동 로그: 감싸개가 DOM 노드를 90k → 170k로 늘려 클릭 뒤 판정이 3.5s → 10.5s)만 폰에서 그린다.
+  const isPhone = usePhoneLayout();
+  const phone = rows.length <= WRAP_ALWAYS_ROW_LIMIT || isPhone;
   const foldedBody = (values: ReactNode[]) => {
     const spans = values.map((value, index) => <span key={index}>{index > 0 ? " · " : ""}{value}</span>);
     return phone ? <div data-cell-text=""><div>{spans}</div></div> : spans;

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { quoteLines } from "@/db/schema";
+import { corpCardUsages, purchaseRequests, quoteLines } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
@@ -193,5 +193,204 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       expect(clipped, `${width} 포커스 링`).toEqual([]);
       await page.context().close();
     }
+  });
+
+  // 07.1-19 PA3(C-43 · E-P2-53 · U-1 option-a): 폰 P1 = 연결 · 결제 합계 · 행동 — `등록`은 P2(접힌 줄 = 사용일 · 가맹점 · 등록).
+  // 행 줄 수는 상한으로 잰다(주 행 셀 각 ≤ 1줄 + 접힌 줄 1줄 = ≤ 2). 대리 등록 · 구매 완료 건은 접힌 줄에 행 시트 `등록` 줄과 같은 글자가 있다.
+  test("[07.1-19 PA3] 375 · 320 — P1 셋 · 접힌 줄에 등록 값 · 행 ≤ 2줄 · 말줄임 셀 전체 글자 · 대리 · 구매 완료 등록 글자 · 권리 없는 계급 시트에 같은 글자", async ({ browser, baseURL }) => {
+    const { person, cardId, teamId } = await makeHolder();
+    const suffix = randomUUID().slice(0, 8);
+    const year = seoulToday().slice(0, 4);
+    const proxyPerson = await makePerson("대리등록", DEFAULT_ROLE_ID, teamId, `${year}-01-01`);
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E폰등록클라이언트-${suffix}`, normalizedName: `e2e폰등록클라이언트-${suffix}` });
+    const project = await createProject(person.viewer, { clientId: client.id, teamId, pmUserId: person.viewer.id, name: `E2E폰등록 긴 프로젝트 이름 가을 브랜드 팝업스토어 운영-${suffix}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수 없음");
+    const itemName = `현장 소모품 및 운영 인력 식대 · 다과 · 음료 일체-${suffix}`;
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [
+        {
+          id: randomUUID(),
+          isNew: true as const,
+          subcategory: (await firstSelectableSubcategory()).value,
+          itemName,
+          vendorId: null,
+          unitPrice: { currency: "KRW" as const, amount: 2_500_000, fxRate: 1 },
+          execution: { currency: "KRW" as const, amount: 2_000_000, fxRate: 1 },
+        },
+      ],
+    });
+    const [line] = await db.select({ id: quoteLines.id }).from(quoteLines).where(eq(quoteLines.revisionId, revision.id));
+    if (!line) throw new Error("견적 줄 없음");
+    const longMerchant = `가맹점이름이아주길게이어지는곳-${suffix}-` + "가".repeat(20);
+
+    // ① 본인 등록 — 긴 가맹점(외화 아님).
+    const longVendor = await insertVendor(SYSTEM_VIEWER, { name: longMerchant, normalizedName: `${longMerchant}-${randomUUID()}` });
+    const own: CardUsageInput = {
+      corpCardId: cardId,
+      usedOn: seoulToday(),
+      merchantVendorId: longVendor.id,
+      total: { currency: "KRW", amount: 30_000, fxRate: 1 },
+      evidenceTypeCode: "invoice",
+      linkKind: "team_cost",
+      memo: null,
+    };
+    await createCardUsage(person.viewer, own, await precheckCardUsage(person.viewer, own));
+
+    // ② 대리 등록(남이 등록 → 이 카드 주인은 권리 없음) — 외화 · 부가세가 있어 접힌 줄 앞이 길다.
+    const proxyVendorName = `가맹대리-${suffix}`;
+    const proxyVendor = await insertVendor(SYSTEM_VIEWER, { name: proxyVendorName, normalizedName: `${proxyVendorName}-${randomUUID()}` });
+    await db.insert(corpCardUsages).values({
+      corpCardId: cardId,
+      usedOn: seoulToday(),
+      merchantVendorId: proxyVendor.id,
+      totalCurrency: "USD",
+      totalForeignAmount: "900",
+      totalFxRate: "1474.89",
+      totalAmountKrw: 1_327_401,
+      supplyKrw: 1_206_728,
+      vatKrw: 120_673,
+      evidenceTypeCode: "invoice",
+      linkKind: "team_cost",
+      quoteLineId: null,
+      teamId,
+      usedByUserId: person.viewer.id,
+      registeredBy: proxyPerson.viewer.id,
+      registeredVia: "proxy",
+      memo: null,
+    });
+
+    // ③ 구매 완료로 생긴 건(남이 등록) — 긴 견적 줄 연결.
+    const purchaseNumber = `26001-C${randomUUID().slice(0, 8)}`;
+    const [request] = await db
+      .insert(purchaseRequests)
+      .values({ number: purchaseNumber, linkKind: "quote_line", projectId: project.id, quoteLineId: line.id, requestedBy: proxyPerson.viewer.id, itemName: "현수막", estimateAmountKrw: 40_000 })
+      .returning({ id: purchaseRequests.id });
+    const purchaseVendorName = `가맹구매-${suffix}`;
+    const purchaseVendor = await insertVendor(SYSTEM_VIEWER, { name: purchaseVendorName, normalizedName: `${purchaseVendorName}-${randomUUID()}` });
+    await db.insert(corpCardUsages).values({
+      corpCardId: cardId,
+      usedOn: seoulToday(),
+      merchantVendorId: purchaseVendor.id,
+      totalCurrency: "KRW",
+      totalForeignAmount: null,
+      totalFxRate: "1",
+      totalAmountKrw: 40_000,
+      supplyKrw: 40_000,
+      vatKrw: 0,
+      evidenceTypeCode: "invoice",
+      linkKind: "quote_line",
+      quoteLineId: line.id,
+      teamId: null,
+      usedByUserId: person.viewer.id,
+      registeredBy: proxyPerson.viewer.id,
+      registeredVia: "purchase",
+      purchaseRequestId: request?.id ?? null,
+      memo: null,
+    });
+
+    for (const width of [375, 320]) {
+      const page = await loginPage(browser, baseURL, person, { width, height: 800 });
+      await page.goto("/cards");
+      const table = page.getByRole("table");
+      await expect(table.locator("tbody tr").first()).toBeVisible();
+
+      // 보이는 머리글 = 연결 · 결제 합계 · 행동(머리글 숨김) 셋 — `등록`은 폰에서 접힌다.
+      const shown = await table.locator("thead th").evaluateAll((cells) => cells.filter((cell) => getComputedStyle(cell).display !== "none").map((cell) => (cell.textContent ?? "").trim()));
+      expect(shown, `${width} 보이는 th`).toEqual(["연결", "결제 합계", "행동"]);
+
+      const facts = await table.evaluate((root, names) => {
+        const rows: { name: string; mainCells: number; mainLinesMax: number; foldedLines: number; foldedText: string; foldedTitle: string; linkCellWidth: number; clippedFullText: boolean; foldedRegisteredRight: number; foldedContentRight: number; registeredClipped: boolean; actionWidth: number }[] = [];
+        const linesOf = (cell: Element): number => {
+          const set = new Set<number>();
+          const clipBox = (cell.querySelector("[data-cell-text]") ?? cell).getBoundingClientRect();
+          const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (!(node.textContent ?? "").trim()) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            for (const rect of Array.from(range.getClientRects())) {
+              if (rect.width <= 1) continue;
+              if (rect.top >= clipBox.bottom - 1) continue;
+              set.add(Math.round(rect.top / 4));
+            }
+          }
+          return set.size;
+        };
+        for (const name of names) {
+          const folded = [...root.querySelectorAll("tr[class*='collapsedRow']")].find((tr) => (tr.textContent ?? "").includes(name) || (tr.previousElementSibling?.textContent ?? "").includes(name));
+          const main = folded?.previousElementSibling;
+          if (!folded || !main) continue;
+          const cells = [...main.querySelectorAll("td")].filter((cell) => getComputedStyle(cell).display !== "none");
+          const dataCells = cells.slice(0, -1);
+          const foldedCell = folded.querySelector("td") as HTMLElement;
+          const clamp = foldedCell.querySelector("[data-cell-text]") as HTMLElement;
+          const clipRight = clamp.getBoundingClientRect().right;
+          const spans = [...clamp.querySelectorAll("div > span")];
+          const last = spans[spans.length - 1];
+          const clipBottom = clamp.getBoundingClientRect().bottom;
+          const lastRects = last ? Array.from((() => { const r = document.createRange(); r.selectNodeContents(last); return r.getClientRects(); })()) : [];
+          const registeredClipped = lastRects.length > 0 && lastRects.every((rect) => rect.top >= clipBottom - 1);
+          const lastRight = last ? Math.max(...Array.from((() => { const r = document.createRange(); r.selectNodeContents(last); return r.getClientRects(); })()).map((rect) => rect.right)) : 0;
+          const linkCell = dataCells[0] as HTMLElement;
+          const linkText = linkCell.querySelector<HTMLElement>("[title]");
+          rows.push({
+            name,
+            mainCells: cells.length,
+            mainLinesMax: Math.max(...dataCells.map(linesOf)),
+            foldedLines: linesOf(foldedCell),
+            foldedText: (foldedCell.textContent ?? "").replace(/\s+/g, " ").trim(),
+            foldedTitle: foldedCell.title,
+            linkCellWidth: Math.round(linkCell.getBoundingClientRect().width),
+            clippedFullText: linkText ? (linkText.textContent ?? "") === (linkText.getAttribute("title") ?? "") : true,
+            foldedRegisteredRight: Math.round(lastRight),
+            foldedContentRight: Math.round(clipRight),
+            registeredClipped,
+            actionWidth: Math.round(cells[cells.length - 1]?.getBoundingClientRect().width ?? 0),
+          });
+        }
+        return rows;
+      }, [longMerchant, proxyVendorName, purchaseVendorName]);
+      expect(facts.length, `${width} 행 수`).toBe(3);
+      for (const fact of facts) {
+        expect(fact.mainCells, `${width} ${fact.name} 주 행 보이는 칸(연결 · 합계 · 행동)`).toBe(3);
+        expect(fact.mainLinesMax, `${width} ${fact.name} 주 행 셀 줄 수`).toBeLessThanOrEqual(1);
+        expect(fact.foldedLines, `${width} ${fact.name} 접힌 줄 줄 수`).toBeLessThanOrEqual(1);
+        expect(fact.mainLinesMax + fact.foldedLines, `${width} ${fact.name} 행 줄 수(U-1 option-a ≤ 2)`).toBeLessThanOrEqual(2);
+        expect(fact.foldedTitle, `${width} ${fact.name} 접힌 줄 title = 칸 글자`).toBe(fact.foldedText);
+        expect(fact.clippedFullText, `${width} ${fact.name} 연결 칸 title = 전체 글자`).toBe(true);
+      }
+      const byName = (name: string) => facts.find((fact) => fact.name === name);
+      // 접힌 줄 글자(textContent — CSS 말줄임은 자르지 않는다): 본인 등록은 이름 · 대리 = 경영관리 등록 · {등록자} {MM-DD} · 구매 완료 = 구매 요청 {번호} · {등록자} {MM-DD}.
+      expect(byName(longMerchant)?.foldedText).toContain(person.name);
+      expect(byName(proxyVendorName)?.foldedText).toMatch(new RegExp(`경영관리 등록 · ${proxyPerson.name} \\d{2}-\\d{2}`));
+      expect(byName(purchaseVendorName)?.foldedText).toMatch(new RegExp(`구매 요청 ${purchaseNumber} · ${proxyPerson.name} \\d{2}-\\d{2}`));
+      // 점검표용 실측(잘림 여부 · 두 값 — `등록` 글자 Range 오른쪽 / 칸 내용 오른쪽 · 연결 칸 폭 F-21).
+      console.log(`PA3 ${width} ${JSON.stringify(facts.map((fact) => ({ n: fact.name.slice(0, 8), reg: [fact.foldedRegisteredRight, fact.foldedContentRight], clipped: fact.registeredClipped, link: fact.linkCellWidth, action: fact.actionWidth })))}`);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${width} 문서 넘침`).toBe(0);
+
+      // 권리 없는 계급(주인 — 남이 등록한 줄): 행을 탭하면 행 시트 `등록` 줄에 같은 글자가 있다(정보가 남는 길).
+      for (const [vendorName, expected] of [
+        [proxyVendorName, new RegExp(`^경영관리 등록 · ${proxyPerson.name} \\d{2}-\\d{2}$`)],
+        [purchaseVendorName, new RegExp(`^구매 요청 ${purchaseNumber} · ${proxyPerson.name} \\d{2}-\\d{2}$`)],
+      ] as const) {
+        const tap = page.getByRole("row").filter({ hasText: vendorName }).getByRole("button", { name: /상세 보기$/ });
+        await waitForHydration(tap);
+        await tap.click();
+        const sheet = page.getByRole("dialog").filter({ hasText: vendorName });
+        await expect(sheet).toBeVisible();
+        const registered = sheet.locator("dt", { hasText: /^등록$/ }).locator("xpath=following-sibling::dd[1]");
+        await expect(registered).toHaveText(expected);
+        await sheet.getByRole("button", { name: "닫기" }).click();
+        await expect(sheet).toBeHidden();
+      }
+      await page.context().close();
+    }
+
+    // 700 이상은 `등록` 열이 머리글 · 칸으로 있다(699 이하는 접힌 줄).
+    const wide = await loginPage(browser, baseURL, person, { width: 700, height: 800 });
+    await wide.goto("/cards");
+    await expect(wide.getByRole("table").locator("thead th", { hasText: /^등록$/ })).toBeVisible();
+    await wide.context().close();
   });
 });

@@ -119,6 +119,11 @@
   font-weight: var(--fw-bold);
 }
 
+/* 07.1-19 PA5 — 폰 합계 행의 실행가 합 칸은 실행가 열 아래 오른쪽 끝에 선다. */
+.footerCell[data-footer-sum] {
+  text-align: right;
+}
+
 .savedTag {
   margin-left: var(--s-3);
   color: var(--status-success);
@@ -148,6 +153,7 @@
 
 /* 04-16(D-84) — 파생 계약 금액 한 줄(KvList). 값은 --text-body 700 숫자(Num), 2행은 --text-aux --text-muted. */
 .contractSummary {
+  max-width: var(--form-max); /* 07.1-19 PA6 — dl은 단일 기둥(SYSTEM §3 · app/globals.css `.single-column`과 같은 값) */
   margin-bottom: var(--s-6);
 }
 
@@ -351,6 +357,15 @@ td:has(> .rowNumber) {
 }
 
 @media (max-width: 699.98px) {
+  /* 07.1-19 PA5 — 폰 합계 행: 부제 `(공급가액 · N줄)`는 보이지 않고, 첫 칸 안 바닥 알림은 좁은 칸 안에서 줄바꿈한다(가로 넘침 0). */
+  .footerCell [data-footer-subtitle] {
+    display: none;
+  }
+
+  .footerCell [data-tone] {
+    white-space: normal;
+  }
+
   /* 04-49(S18) — 폰에서 복원·버림은 터치 최소 높이. */
   .restoreAction {
     min-height: var(--touch-min);

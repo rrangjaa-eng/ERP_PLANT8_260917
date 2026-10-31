@@ -120,6 +120,25 @@ function registeredSecond(row: CardUsageListRowView): string | null {
   return row.registeredVia === "proxy" || (row.registeredVia === "purchase" && row.purchaseNumber) ? `${row.registeredByName} ${row.registeredOn?.slice(5) ?? ""}`.trim() : null;
 }
 
+// 등록 글자 한 줄 — 행 시트 `등록` 줄(문자열)과 폰 접힌 줄 `summary`(같은 글자 · 대리 등록은 기존 강조 꼴)가 쓴다.
+function registeredText(row: CardUsageListRowView): string {
+  const second = registeredSecond(row);
+  if (second === null) return row.registeredByName;
+  return `${row.registeredVia === "proxy" ? "경영관리 등록" : `구매 요청 ${row.purchaseNumber}`} · ${second}`;
+}
+
+function registeredSummary(row: CardUsageListRowView): ReactNode {
+  const second = registeredSecond(row);
+  if (second === null) return registeredFirst(row);
+  return (
+    <>
+      {registeredFirst(row)}
+      {" · "}
+      {second}
+    </>
+  );
+}
+
 // 접근 이름 `{사용일} {가맹점} 수정` / `… 삭제` — 보이는 글자는 `수정` · `삭제` 그대로(줄마다 같은 이름을 사용일 · 가맹점으로 가른다).
 function actionName(row: CardUsageListRowView): string {
   return `${row.usedOn.slice(5)}${row.merchantName ? ` ${row.merchantName}` : ""} `;
@@ -168,10 +187,11 @@ const COLUMNS: TableColumn<CardUsageListRowView>[] = [
   {
     key: "registered",
     header: "등록",
-    priority: "p1",
+    priority: "p2",
     cell: registeredFirst,
     secondaryLine: registeredSecond,
-    secondaryText: (row) => registeredSecond(row) ?? "",
+    // 07.1-19 PA3(E-P2-53): 폰은 이 열이 P2라 접힌 줄이 `summary`를 쓴다 — 행 시트 `등록` 줄과 같은 글자(수정 패널에는 등록 정보가 없다).
+    summary: registeredSummary,
   },
 ];
 
@@ -203,15 +223,7 @@ export function CardUsageList({ rows, listHref }: { rows: CardUsageListRowView[]
                 { label: "카드", value: sheet.cardLabel },
                 { label: "증빙", value: slipText(sheet) },
                 ...(sheet.totalKrw !== null ? [{ label: "결제 합계", value: <Num value={sheet.totalKrw} /> }] : []),
-                {
-                  label: "등록",
-                  value:
-                    sheet.registeredVia === "proxy"
-                      ? `경영관리 등록 · ${registeredSecond(sheet) ?? ""}`
-                      : sheet.registeredVia === "purchase" && sheet.purchaseNumber
-                        ? `구매 요청 ${sheet.purchaseNumber} · ${registeredSecond(sheet) ?? ""}`
-                        : sheet.registeredByName,
-                },
+                { label: "등록", value: registeredText(sheet) },
               ]
             : []
         }

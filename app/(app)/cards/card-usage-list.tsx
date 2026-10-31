@@ -14,6 +14,7 @@ import { formatForeignLine, formatKrw } from "@/lib/format-number";
 import styles from "@/app/(app)/projects/projects.module.css";
 import cardStyles from "./cards.module.css";
 import { CardUsageDeleteButton, CardUsageEditAction } from "./delete-undo";
+import { registeredSecond, registeredText } from "./registered-text";
 
 // 06-05(UI-SPEC S8): 카드 사용 읽기 표 — 그룹 머리글 = 카드, 그룹 안 사용일 오름차순(서버 정렬). 카드 열은 그룹이 말하므로 두지 않는다.
 // 06-09: 행동 칸 — 그 건의 권리(O-11, 서버 `rights`)가 있을 때만 `수정`(→ `?editId=` 옆 패널) · `삭제`(= 보관, 구매 완료 건은 없음),
@@ -113,18 +114,6 @@ function registeredFirst(row: CardUsageListRowView): ReactNode {
   if (row.registeredVia === "proxy") return <span style={PROXY_STYLE}>경영관리 등록</span>;
   if (row.registeredVia === "purchase" && row.purchaseNumber) return `구매 요청 ${row.purchaseNumber}`;
   return row.registeredByName;
-}
-
-// 등록 칸 2행 `{등록자} {MM-DD}` — 대리 등록 · 구매 완료 건만.
-function registeredSecond(row: CardUsageListRowView): string | null {
-  return row.registeredVia === "proxy" || (row.registeredVia === "purchase" && row.purchaseNumber) ? `${row.registeredByName} ${row.registeredOn?.slice(5) ?? ""}`.trim() : null;
-}
-
-// 등록 글자 한 줄 — 행 시트 `등록` 줄과 폰 접힌 줄 `summary`가 같은 글자를 쓴다(문자열 하나 — 접힌 줄은 강조 없이 글자만).
-function registeredText(row: CardUsageListRowView): string {
-  const second = registeredSecond(row);
-  if (second === null) return row.registeredByName;
-  return `${row.registeredVia === "proxy" ? "경영관리 등록" : `구매 요청 ${row.purchaseNumber}`} · ${second}`;
 }
 
 // 접근 이름 `{사용일} {가맹점} 수정` / `… 삭제` — 보이는 글자는 `수정` · `삭제` 그대로(줄마다 같은 이름을 사용일 · 가맹점으로 가른다).

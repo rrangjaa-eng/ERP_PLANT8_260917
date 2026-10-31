@@ -10,7 +10,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
 import { createOrgUnit, createTeam } from "@/domain/org";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
@@ -392,5 +392,118 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
     await wide.goto("/cards");
     await expect(wide.getByRole("table").locator("thead th", { hasText: /^등록$/ })).toBeVisible();
     await wide.context().close();
+  });
+
+  // 07.1-19 게이트 P2: 폰에서 접힌 줄 `등록`이 잘리면(375 9/50 · 320 11/50) 등록자를 볼 곳이 없었다 — 수정 패널(?editId=)에 읽기 `등록` 줄을 둔다.
+  // 행 시트 `등록` 줄 · 접힌 줄과 같은 글자(registeredText) · 패널 본문 안에서 말줄임 없이 다 보인다. 관리자(대리 등록 권리)로 연다.
+  test("[07.1-19 PA3] 375 · 320 — 관리자: 대리 · 구매 완료 건 수정 패널에 읽기 `등록` 줄(전체 글자 · 잘리지 않음) · 본인 등록 건은 등록자 이름", async ({ browser, baseURL }) => {
+    const { person, cardId, teamId } = await makeHolder();
+    const suffix = randomUUID().slice(0, 8);
+    const year = seoulToday().slice(0, 4);
+    const proxyPerson = await makePerson("대리등록", DEFAULT_ROLE_ID, teamId, `${year}-01-01`);
+    const admin = await makePerson("관리자", SYSADMIN_ROLE_ID, teamId, `${year}-01-01`);
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E패널등록클라이언트-${suffix}`, normalizedName: `e2e패널등록클라이언트-${suffix}` });
+    const project = await createProject(person.viewer, { clientId: client.id, teamId, pmUserId: person.viewer.id, name: `E2E패널등록-${suffix}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수 없음");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [
+        {
+          id: randomUUID(),
+          isNew: true as const,
+          subcategory: (await firstSelectableSubcategory()).value,
+          itemName: `패널 등록 줄-${suffix}`,
+          vendorId: null,
+          unitPrice: { currency: "KRW" as const, amount: 2_500_000, fxRate: 1 },
+          execution: { currency: "KRW" as const, amount: 2_000_000, fxRate: 1 },
+        },
+      ],
+    });
+    const [line] = await db.select({ id: quoteLines.id }).from(quoteLines).where(eq(quoteLines.revisionId, revision.id));
+    if (!line) throw new Error("견적 줄 없음");
+
+    const ownVendor = await insertVendor(SYSTEM_VIEWER, { name: `패널본인-${suffix}`, normalizedName: `패널본인-${suffix}-${randomUUID()}` });
+    const own: CardUsageInput = { corpCardId: cardId, usedOn: seoulToday(), merchantVendorId: ownVendor.id, total: { currency: "KRW", amount: 30_000, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "team_cost", memo: null };
+    await createCardUsage(person.viewer, own, await precheckCardUsage(person.viewer, own));
+
+    const proxyVendor = await insertVendor(SYSTEM_VIEWER, { name: `패널대리-${suffix}`, normalizedName: `패널대리-${suffix}-${randomUUID()}` });
+    await db.insert(corpCardUsages).values({
+      corpCardId: cardId,
+      usedOn: seoulToday(),
+      merchantVendorId: proxyVendor.id,
+      totalCurrency: "KRW",
+      totalForeignAmount: null,
+      totalFxRate: "1",
+      totalAmountKrw: 55_000,
+      supplyKrw: 50_000,
+      vatKrw: 5_000,
+      evidenceTypeCode: "invoice",
+      linkKind: "team_cost",
+      quoteLineId: null,
+      teamId,
+      usedByUserId: person.viewer.id,
+      registeredBy: proxyPerson.viewer.id,
+      registeredVia: "proxy",
+      memo: null,
+    });
+
+    const purchaseNumber = `26001-C${randomUUID().slice(0, 8)}`;
+    const [request] = await db
+      .insert(purchaseRequests)
+      .values({ number: purchaseNumber, linkKind: "quote_line", projectId: project.id, quoteLineId: line.id, requestedBy: proxyPerson.viewer.id, itemName: "현수막", estimateAmountKrw: 40_000 })
+      .returning({ id: purchaseRequests.id });
+    const purchaseVendor = await insertVendor(SYSTEM_VIEWER, { name: `패널구매-${suffix}`, normalizedName: `패널구매-${suffix}-${randomUUID()}` });
+    await db.insert(corpCardUsages).values({
+      corpCardId: cardId,
+      usedOn: seoulToday(),
+      merchantVendorId: purchaseVendor.id,
+      totalCurrency: "KRW",
+      totalForeignAmount: null,
+      totalFxRate: "1",
+      totalAmountKrw: 40_000,
+      supplyKrw: 40_000,
+      vatKrw: 0,
+      evidenceTypeCode: "invoice",
+      linkKind: "quote_line",
+      quoteLineId: line.id,
+      teamId: null,
+      usedByUserId: person.viewer.id,
+      registeredBy: proxyPerson.viewer.id,
+      registeredVia: "purchase",
+      purchaseRequestId: request?.id ?? null,
+      memo: null,
+    });
+    const idOf = async (vendorId: string): Promise<string> => {
+      const [row] = await db.select({ id: corpCardUsages.id }).from(corpCardUsages).where(eq(corpCardUsages.merchantVendorId, vendorId));
+      if (!row) throw new Error("카드 사용 건 없음");
+      return row.id;
+    };
+    const today = seoulToday().slice(5);
+    const cases = [
+      { id: await idOf(proxyVendor.id), expected: `경영관리 등록 · ${proxyPerson.name} ${today}` },
+      { id: await idOf(purchaseVendor.id), expected: `구매 요청 ${purchaseNumber} · ${proxyPerson.name} ${today}` },
+      { id: await idOf(ownVendor.id), expected: person.name },
+    ];
+
+    for (const width of [375, 320]) {
+      const page = await loginPage(browser, baseURL, admin, { width, height: 800 });
+      for (const { id, expected } of cases) {
+        await page.goto(`/cards?editId=${id}`);
+        const panel = page.getByRole("dialog", { name: "카드 사용 수정" });
+        await expect(panel).toBeVisible();
+        const row = panel.locator('[data-ui="field-row"]').filter({ has: page.getByText("등록", { exact: true }) });
+        await expect(row, `${width} 등록 줄`).toHaveCount(1);
+        const value = row.locator("span").nth(1);
+        await expect(value, `${width} 등록 글자`).toHaveText(expected);
+        // 말줄임으로 잘리지 않는다 — 글자 너비가 칸 안에 다 들어오고 패널 본문 오른쪽 끝을 넘지 않는다.
+        const fit = await value.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const body = element.closest("dialog")?.getBoundingClientRect();
+          return { clipped: element.scrollWidth > element.clientWidth + 1, overRight: body ? box.right > body.right + 1 : true };
+        });
+        expect(fit, `${width} ${expected} 잘림`).toEqual({ clipped: false, overRight: false });
+      }
+      await page.context().close();
+    }
   });
 });

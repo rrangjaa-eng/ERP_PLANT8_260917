@@ -272,6 +272,9 @@ export type CardUsageForWrite = CardUsageRow & {
   lineRevisionId: string | null;
   projectId: string | null;
   projectStatus: string | null;
+  /** 07.1-19: 수정 패널 읽기 `등록` 줄 재료 — 등록자 이름 · 구매 완료 건의 구매 요청 번호. */
+  registeredByName: string;
+  purchaseNumber: string | null;
 };
 
 export async function findCardUsageForWrite(viewer: Viewer, id: string, opts: { includeArchived: boolean }): Promise<CardUsageForWrite | null> {
@@ -292,9 +295,13 @@ export async function findCardUsageForWrite(viewer: Viewer, id: string, opts: { 
       lineRevisionId: quoteLines.revisionId,
       projectId: quoteRevisions.projectId,
       projectStatus: projects.status,
+      registeredByName: users.name,
+      purchaseNumber: purchaseRequests.number,
     })
     .from(corpCardUsages)
     .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))
+    .innerJoin(users, eq(users.id, corpCardUsages.registeredBy))
+    .leftJoin(purchaseRequests, eq(purchaseRequests.id, corpCardUsages.purchaseRequestId))
     .leftJoin(vendors, eq(vendors.id, corpCardUsages.merchantVendorId))
     .leftJoin(quoteLines, eq(quoteLines.id, corpCardUsages.quoteLineId))
     .leftJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))

@@ -179,12 +179,13 @@ test.describe("로그인한 뒤", () => {
   });
 
   // 06.1-13 Task 1 — SP-6104 select 셀 붙여넣기 결과 표본(화면보다 먼저). 모르는 값 오류 셀 하나 · 합계 행 붙여넣기 요약 조각 둘.
-  test("표 편집 — select 붙여넣기 표본: 모르는 값 오류 셀 하나 · 합계 행 `붙여넣기 3줄 · 공개 칸 1개 모르는 값 · 잠긴 줄 1칸 건너뜀`", async ({ page }) => {
+  test("표 편집 — select 붙여넣기 표본: 모르는 값 오류 셀 하나 · 합계 행 `붙여넣기 3줄 · 아래 3줄 버림 · 공개 칸 1개 모르는 값 · 잠긴 줄 1칸 건너뜀`(PJ9 — SYSTEM §7-3 (다) 낱말 `아래 3줄 버림`)", async ({ page }) => {
     const sample = page.locator('[data-gallery="table-select-paste"]');
     await expect(sample.locator('[role="grid"]')).toHaveCount(1);
     await expect(sample.locator('[aria-invalid="true"]')).toHaveCount(1);
     await expect(sample).toContainText("목록에 없는 값 · 전체 공개");
-    await expect(sample.locator("tfoot")).toContainText("붙여넣기 3줄 · 공개 칸 1개 모르는 값 · 잠긴 줄 1칸 건너뜀");
+    await expect(sample.locator("tfoot")).toContainText("붙여넣기 3줄 · 아래 3줄 버림 · 공개 칸 1개 모르는 값 · 잠긴 줄 1칸 건너뜀");
+    await expect(sample.locator("tfoot")).toContainText("아래 3줄 버림");
   });
 
   // DOM 감사 D2 — 표본 공개 열은 실제 증빙 표처럼 P2다. 폰(<700)에서는 주 행이 항목 + 상태 둘이고, 잠긴 줄의 공개 글자는 접힌 줄로 간다

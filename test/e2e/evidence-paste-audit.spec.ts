@@ -530,7 +530,7 @@ test("쇼케이스 select 붙여넣기 표본 — 오류 셀 · 이유 · 요약
     const reason = invalidCount === 1 ? await describedText(invalid.first()) : null;
     record("S 오류 셀 aria-describedby 이유 = `목록에 없는 값 · 전체 공개`", width, "role-pm", url, reason, "목록에 없는 값 · 전체 공개", reason === "목록에 없는 값 · 전체 공개");
     const foot = ((await sample.locator("tfoot").textContent()) ?? "").replace(/\s+/g, " ").trim();
-    const expected = "붙여넣기 3줄 · 공개 칸 1개 모르는 값 · 잠긴 줄 1칸 건너뜀";
+    const expected = "붙여넣기 3줄 · 아래 3줄 버림 · 공개 칸 1개 모르는 값 · 잠긴 줄 1칸 건너뜀";
     record("S 합계 행 요약 글자", width, "role-pm", url, foot, expected, foot.includes(expected));
     const dirty = await sample.locator("td[class*='dirtyCell']").count();
     record("S dirty 칸 1", width, "role-pm", url, dirty, 1, dirty === 1);

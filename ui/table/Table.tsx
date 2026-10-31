@@ -833,7 +833,7 @@ export function Table<Row>({
     return (
       <>
         {wrapped === primary ? <div>{primary}</div> : wrapped}
-        <div className={styles.cellSecondary} {...(column.keepSecondaryOnPhone?.(row) ? { "data-keep-phone": "" } : {})}>{secondary}</div>
+        <div className={styles.cellSecondary}>{secondary}</div>
       </>
     );
   }

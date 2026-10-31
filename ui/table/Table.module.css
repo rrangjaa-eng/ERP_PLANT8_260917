@@ -536,7 +536,7 @@ thead .selectLabel {
   }
 
   /* 주 행 셀 아래 줄은 폰에서 접힌 줄 맨 앞 글자(`secondaryText`) · 행 시트 · 상세 화면으로 간다. */
-  .table:is([data-row-sheet], :has([data-row-link])) .cellSecondary:not([data-keep-phone]) {
+  .table:is([data-row-sheet], :has([data-row-link])) .cellSecondary {
     display: none;
   }
 

@@ -619,10 +619,31 @@ test("M10 `등록한 카드와 다름` — 2행 안 글자 · 색 = 2행 색 · 
         scroll: parent ? [parent.scrollWidth, parent.clientWidth] : null,
       };
     });
-    record("M10 2행 글자 ` · 등록한 카드와 다름`", width, "경영관리", url, facts.parentText, "<K번호> · 등록한 카드와 다름", !!facts.parentText && /-K\d{4} · 등록한 카드와 다름$/.test(facts.parentText));
-    record("M10 표식 = 2행 텍스트 노드(자기 요소 · 색 0)", width, "경영관리", url, { textNode: facts.markerInParentTextNode, ownElements: facts.ownElements }, { textNode: true, ownElements: 0 }, facts.markerInParentTextNode && facts.ownElements === 0);
-    record("M10 링크 href /cards?editId=", width, "경영관리", url, facts.linkHref, "/cards?editId=<uuid>", /^\/cards\?editId=[0-9a-f-]{36}$/.test(facts.linkHref ?? ""));
-    record("M10 보임", width, "경영관리", url, facts.visible, PHONE(width) ? "정보(폰 상태 열)" : true, PHONE(width) ? null : facts.visible);
+    if (PHONE(width)) {
+      // 07.1-18 사용자 결정(2026-10-31 「두 줄 지키기」) — 폰 주 행 상태 2행은 숨고(링크 안 보임), 접힌 줄 맨 앞에 번호 · 표식이 글자로 서며, 링크 · 표식은 행 시트에 있다.
+      record("M10 폰 주 행에 보이는 링크 0", width, "경영관리", url, facts.visible, false, facts.visible === false);
+      const folded = page.locator("td[role='button']:visible").filter({ hasText: "등록한 카드와 다름" }).first();
+      const foldedText = ((await folded.textContent()) ?? "").replace(/\s+/g, " ").trim();
+      record("M10 폰 접힌 줄에 <K번호> · 등록한 카드와 다름이 글자로(링크 0)", width, "경영관리", url, foldedText, "…-K#### · 등록한 카드와 다름…", /-K\d{4} · 등록한 카드와 다름/.test(foldedText) && (await folded.locator("a").count()) === 0);
+      const warning = await tokenColor(page, "--status-warning");
+      const markerColor = await folded.getByText("등록한 카드와 다름").evaluate((el) => getComputedStyle(el).color);
+      record("M10 폰 접힌 줄 표식 색 = --status-warning", width, "경영관리", url, markerColor, warning, markerColor === warning);
+      await folded.click();
+      const sheet = page.getByRole("dialog").filter({ has: page.getByText("붙은 문서", { exact: true }) }).first();
+      await expect(sheet).toBeVisible();
+      const sheetLink = sheet.getByRole("link", { name: /-K\d{4}$/ });
+      const sheetHref = await sheetLink.getAttribute("href").catch(() => null);
+      record("M10 폰 행 시트 링크 href /cards?editId=", width, "경영관리", url, sheetHref, "/cards?editId=<uuid>", /^\/cards\?editId=[0-9a-f-]{36}$/.test(sheetHref ?? ""));
+      const sheetWarning = await sheet.getByText("등록한 카드와 다름").first().evaluate((el) => getComputedStyle(el).color).catch(() => null);
+      record("M10 폰 행 시트 표식 색 = --status-warning", width, "경영관리", url, sheetWarning, warning, sheetWarning === warning);
+      await page.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
+    } else {
+      record("M10 2행 글자 ` · 등록한 카드와 다름`", width, "경영관리", url, facts.parentText, "<K번호> · 등록한 카드와 다름", !!facts.parentText && /-K\d{4} · 등록한 카드와 다름$/.test(facts.parentText));
+      record("M10 표식 = 2행 텍스트 노드(자기 요소 · 색 0)", width, "경영관리", url, { textNode: facts.markerInParentTextNode, ownElements: facts.ownElements }, { textNode: true, ownElements: 0 }, facts.markerInParentTextNode && facts.ownElements === 0);
+      record("M10 링크 href /cards?editId=", width, "경영관리", url, facts.linkHref, "/cards?editId=<uuid>", /^\/cards\?editId=[0-9a-f-]{36}$/.test(facts.linkHref ?? ""));
+      record("M10 보임", width, "경영관리", url, facts.visible, true, facts.visible);
+    }
     const [sw, cw] = await docOverflow(page);
     record("M10 문서 가로 넘침 없음", width, "경영관리", url, [sw, cw], "≤", sw <= cw);
   }

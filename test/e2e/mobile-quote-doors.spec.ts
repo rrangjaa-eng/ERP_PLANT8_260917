@@ -105,3 +105,80 @@ test.describe("폰 견적 표 문 칸 (07-18)", () => {
     });
   }
 });
+
+// 07.1-19 PA5(C-22 · C-41 · E-P2-52 · Codex PR #301 P2): 폰 견적 표 합계 행 — `합계` · 실행가 열 아래 실행가 합 · 부제 `(공급가액 · N줄)` 안 보임.
+// 합계 행은 `<tr>` 하나이고 칸만 나눈다(수화 뒤 폰에서만 · 칸 span은 폰에 보이는 열로 센다). 바닥 알림은 첫 칸 한 곳에서만 그린다.
+test.describe("폰 견적 표 합계 행 (07.1-19 PA5)", () => {
+  for (const width of [375, 320]) {
+    test(`${width} — 합계 · 실행가 합 = 전체 줄 합 · 부제 안 보임 · 한 행 · 칸 span 합 = 보이는 th 수 · 실행가 열 오른쪽 끝에 맞음 · 표 넘침 0 · 알림 칸 줄바꿈`, async ({ browser, baseURL }) => {
+      const fx = await seed();
+      const page = await loginPage(browser, baseURL, fx.pm, { width, height: 800 });
+      await page.goto(`/projects/${fx.projectId}`);
+      await waitForHydration(page.getByRole("button", { name: `${fx.items.buy} 상세 보기` }));
+      const table = page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) });
+      const foot = table.locator("tfoot");
+      // 서버 · 수화 중 첫 그림은 PC 한 칸 — 수화 뒤 세 칸이 되기를 기다린 뒤 잰다.
+      await expect(foot.locator("tr")).toHaveCount(1);
+      await expect(foot.locator("td")).toHaveCount(3);
+
+      expect(await foot.innerText()).not.toContain("공급가액");
+      const facts = await table.evaluate((root) => {
+        const shown = [...root.querySelectorAll("thead th")].filter((th) => getComputedStyle(th).display !== "none");
+        const executionHead = shown.find((th) => (th.textContent ?? "").trim() === "실행가") as HTMLElement | undefined;
+        const cells = [...root.querySelectorAll("tfoot td")] as HTMLTableCellElement[];
+        const bodyExecution = [...root.querySelectorAll("tbody tr")].flatMap((row) => {
+          const tds = [...row.querySelectorAll("td")].filter((td) => getComputedStyle(td).display !== "none");
+          const headIndex = shown.indexOf(executionHead as Element);
+          const cell = tds.length === shown.length ? tds[headIndex] : undefined;
+          return cell && /^[\d,]+$/.test((cell.textContent ?? "").trim()) ? [Number((cell.textContent ?? "").replace(/,/g, ""))] : [];
+        });
+        return {
+          shownCount: shown.length,
+          spanSum: cells.reduce((sum, cell) => sum + cell.colSpan, 0),
+          cellTexts: cells.map((cell) => cell.innerText.trim()),
+          executionRight: Math.round(((executionHead as HTMLElement).getBoundingClientRect().right) * 10) / 10,
+          sumRight: Math.round((cells[1]?.getBoundingClientRect().right ?? 0) * 10) / 10,
+          sumBold: cells[1] ? getComputedStyle(cells[1]).fontWeight : "",
+          sumAlign: cells[1] ? getComputedStyle(cells[1]).textAlign : "",
+          bodySum: bodyExecution.reduce((sum, value) => sum + value, 0),
+          bodyCount: bodyExecution.length,
+          tableRight: root.getBoundingClientRect().right,
+          innerWidth: window.innerWidth,
+          rowHeight: (root.querySelector("tfoot tr") as HTMLElement).getBoundingClientRect().height,
+        };
+      });
+      expect(facts.spanSum, "칸 span 합 = 폰에 보이는 th 수").toBe(facts.shownCount);
+      expect(facts.cellTexts[0], "첫 칸 글자").toBe("합계");
+      expect(facts.cellTexts[1], "실행가 합 = 전체 줄 합").toBe("4,000,000");
+      expect(facts.bodyCount).toBe(4);
+      expect(facts.bodySum).toBe(4_000_000);
+      expect(Math.abs(facts.sumRight - facts.executionRight), "합 오른쪽 끝 = 실행가 열 오른쪽 끝").toBeLessThanOrEqual(1);
+      expect(facts.sumAlign).toBe("right");
+      expect(Number(facts.sumBold)).toBeGreaterThanOrEqual(600);
+      expect(facts.tableRight, "표 끝 빈 열 0").toBeLessThanOrEqual(facts.innerWidth + 0.5);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+      expect(facts.rowHeight, "알림 없는 합계 행은 한 줄").toBeLessThan(80);
+
+      // 바닥 알림(저장 결과 · 붙여넣기 · 오류 칸 수)은 첫 칸 안에서 줄바꿈하고 가로로 넘치지 않는다 — 폰에서는 붙여넣기가 없어 같은 마크업의 알림 조각을 직접 넣어 규칙을 잰다.
+      const overflow = await foot.locator("td").first().evaluate((cell) => {
+        const piece = document.createElement("span");
+        piece.setAttribute("data-tone", "danger");
+        piece.textContent = "오류 1칸 · 전부 거부 · 지출결의 만들기 실패 · 다시 시도";
+        cell.append(piece);
+        const result = {
+          whiteSpace: getComputedStyle(piece).whiteSpace,
+          cellOverflow: cell.scrollWidth - cell.clientWidth,
+          docOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+        piece.remove();
+        return result;
+      });
+      expect(overflow.whiteSpace).toBe("normal");
+      expect(overflow.cellOverflow).toBeLessThanOrEqual(0);
+      expect(overflow.docOverflow).toBeLessThanOrEqual(0);
+      console.log(`PA5 ${width} ${JSON.stringify({ rowHeight: facts.rowHeight, spans: facts.spanSum, sumRight: facts.sumRight, executionRight: facts.executionRight })}`);
+      await page.context().close();
+    });
+  }
+});
+

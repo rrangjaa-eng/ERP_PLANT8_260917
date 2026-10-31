@@ -6,10 +6,11 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { corpCards, corpCardUsages, evidenceImportBatches, evidenceRecords, orgUnits, teams } from "@/db/schema";
 import { createTeamExpenseDraft } from "@/domain/expenses";
+import { setupExpenseE2E, submitLineExpense } from "./expense-fixture";
 import { seoulToday } from "@/lib/dates";
 import type { Viewer } from "@/domain/viewer";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
-import { createCardUsageFixture, createPmInTeam, insertLinkFixture } from "@/test/integration/fixtures/evidence";
+import { createCardUsageFixture, createIntakeManager, createPmInTeam, insertLinkFixture, insertRecordFixture } from "@/test/integration/fixtures/evidence";
 import {
   addLotteCard,
   attachRecordFixture,
@@ -1294,3 +1295,85 @@ test("W13 증빙 파일 받기 — 단추 글자 한 줄 · 단추 안 (1024 · 
     await db.delete(evidenceImportBatches).where(eq(evidenceImportBatches.id, batchId));
   }
 });
+
+// 07.1-19 PC6(C-16 · SP-71-4): `Ctrl+E`는 포커스 행의 첫 행동 하나뿐이고 힌트 줄 낱말은 그 행동 낱말이다 — 포커스 행이 없으면 행동이 있는 첫 행의 낱말(지금 동작),
+// 포커스 행에 행동이 없으면 힌트에 `Ctrl+E`를 싣지 않는다. 보관은 키가 없다.
+async function rowKeyWord(row: Locator): Promise<string | null> {
+  const labels = await row.locator(":scope > td").last().locator("button, a").evaluateAll((elements) =>
+    elements.filter((element) => element.getAttribute("aria-disabled") !== "true").map((element) => (element.textContent ?? "").trim()),
+  );
+  if (labels.includes("붙이기")) return "붙이기";
+  if (labels.includes("대리 등록")) return "대리 등록";
+  if (labels.includes("되살리기")) return "되살리기";
+  return null;
+}
+
+test("⑰ PC6 1280 — 섞인 목록: 힌트 줄 `Ctrl+E` 낱말 = 포커스 행의 행동(없으면 행동이 있는 첫 행 · 행동 없는 행이면 항목 없음) · 행동 없는 행 Ctrl+E 무동작 · 붙이기 행 한 창", async ({ page, browser, baseURL }) => {
+  test.setTimeout(600_000);
+  await clearEvidence();
+  const fx = await setupExpenseE2E();
+  const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
+  const manager = await createIntakeManager();
+  if (!manager.roleId) throw new Error("계급 없음");
+  // 가장 최근 날짜(맨 위 행)는 이미 붙은 줄이라 행동이 없고, 아래 두 줄은 붙일 수 있다 — 「첫 행」과 「행동이 있는 첫 행」이 갈린다.
+  const attached = await insertRecordFixture(manager, { issuedOn: "2026-09-25", nameOnDocument: "붙은줄" });
+  await insertRecordFixture(manager, { issuedOn: "2026-09-21", nameOnDocument: "붙일줄A" });
+  await insertRecordFixture(manager, { issuedOn: "2026-09-20", nameOnDocument: "붙일줄B" });
+  await insertLinkFixture({ recordId: attached, ownerKind: "expense", ownerId: expenseId, attachedBy: manager.id });
+  await loginAs(page, manager.roleId);
+  await goto(page, 1280, "/expenses/evidence?state=all");
+  const rows = evidenceRows(page);
+  await expect(rows).toHaveCount(3);
+  const words: (string | null)[] = [];
+  for (let index = 0; index < 3; index += 1) words.push(await rowKeyWord(rows.nth(index)));
+  expect(words).toEqual([null, "붙이기", "붙이기"]);
+  const hint = hintRow(page);
+  const hintHas = async (word: string | null) => {
+    const text = (await hint.innerText()).replace(/\s+/g, " ");
+    return word === null ? !text.includes("Ctrl+E") : text.includes(`${word} Ctrl+E`);
+  };
+
+  // 포커스 행이 없을 때 — 행동이 있는 첫 행의 낱말(지금 동작 그대로).
+  expect(await hintHas("붙이기"), "포커스 없음").toBe(true);
+
+  // 행동 없는 행에 포커스 → 힌트에 Ctrl+E 항목이 없고 Ctrl+E는 무동작.
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.date));
+  await expect.poll(() => hintHas(null), { message: "행동 없는 행 포커스" }).toBe(true);
+  await page.keyboard.press("Control+e");
+  await page.waitForTimeout(400);
+  expect(await page.locator("dialog[open], [role=dialog]").count()).toBe(0);
+  expect(new URL(page.url()).pathname).toBe("/expenses/evidence");
+
+  // 붙이기 행에 포커스 → 힌트 `붙이기 Ctrl+E`, Ctrl+E 한 번 = 붙일 문서 고르기 한 창.
+  await focusGridCell(evidenceCell(page, 1, EVIDENCE_COL.date));
+  await expect.poll(() => hintHas("붙이기"), { message: "붙이기 행 포커스" }).toBe(true);
+  await page.keyboard.press("Control+e");
+  await expect(page.locator("dialog[open], [role=dialog]")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog[open], [role=dialog]")).toHaveCount(0);
+
+  // 행동 없는 행으로 다시 → 항목이 다시 사라진다.
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.date));
+  await expect.poll(() => hintHas(null), { message: "다시 행동 없는 행" }).toBe(true);
+});
+
+test("⑱ PE1 입구 없음(사용자 카드 1) — 1280 · 1024 · 768 · 375 · 320 어느 폭에도 `증빙 떼기` 컨트롤 DOM 0 (표 · 행 시트)", async ({ page }) => {
+  test.setTimeout(600_000);
+  const viewer = await loginIntake(page, { expenses: "write" }, await teamIdByName("기획1팀"));
+  await seedRich(viewer);
+  for (const width of [1280, 1024, 768, 375, 320] as const) {
+    await goto(page, width, "/expenses/evidence?state=all");
+    await expect(evidenceTable(page)).toBeVisible();
+    expect(await page.locator("button, a, [role=button]").filter({ hasText: "증빙 떼기" }).count(), `${width} 표`).toBe(0);
+    if (width < 1024) {
+      const opener = width >= 700 ? evidenceTable(page).locator('[role="button"][aria-haspopup="dialog"]').first() : page.getByRole("button", { name: /상세 보기$/ }).first();
+      await opener.click();
+      const sheet = page.locator("dialog[open]");
+      await expect(sheet).toBeVisible();
+      expect(await sheet.locator("button, a, [role=button]").filter({ hasText: "증빙 떼기" }).count(), `${width} 시트`).toBe(0);
+      await page.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
+    }
+  }
+});
+

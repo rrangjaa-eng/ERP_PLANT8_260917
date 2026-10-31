@@ -493,6 +493,23 @@ test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 
     await expect(section.locator("kbd")).toHaveCount(0);
   });
 
+  // 07.1-19 PA6(C-23 · U-9): 매출 섹션 `dl`(계약 금액 줄) 폭 ≤ 720 — 단일 기둥(§3). 실측으로 이미 맞으면 회귀 시험으로 고정한다.
+  for (const width of [1280, 1024] as const) {
+    test(`(07.1-19 PA6) ${width} — 매출 섹션 계약 금액 dl 폭 ≤ 720`, async ({ page }) => {
+      const seeded = await seedRevenueProject({ issued: [{ entryDate: "2026-09-01", amount: krw(12_000_000) }] });
+      await grantFinanceRole();
+      const finance = await createFixtureUser({ roleId: "role-ceo" });
+      await page.setViewportSize({ width, height: 800 });
+      await login(page, finance.email, finance.password);
+      await page.goto(seeded.projectUrl);
+      const dl = revenueSection(page).locator("dl").first();
+      await expect(dl).toBeVisible();
+      const measured = await dl.evaluate((element) => Math.round(element.getBoundingClientRect().width));
+      console.log(`PA6 ${width} dl width ${measured}`);
+      expect(measured).toBeLessThanOrEqual(720);
+    });
+  }
+
   test("경영관리 1000 — 두 표가 읽기 표 · 추가 버튼 없음 · 0줄 EMPTY는 사실만(버튼 없음)", async ({ page }) => {
     const seeded = await seedRevenueProject({});
     await grantFinanceRole();

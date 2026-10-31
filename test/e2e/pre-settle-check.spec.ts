@@ -484,6 +484,32 @@ test.describe("완료 전 점검 — 정산 결재 문서(O-16 · PS-4)", () => 
     await expect(preSettleSection(page).getByRole("row").filter({ hasText: fx.itemName })).toBeVisible();
   });
 
+  // 07.1-19 PC4(SP-71-5) — 정산 결재 문서의 `점검 보기`(다른 화면의 해시 링크)로 도착해도 포커스는 `완료 전 점검` 섹션 제목이고 고정 바에 안 가린다. 320도 같은 규칙.
+  for (const width of [1280, 375, 320] as const) {
+    test(`${width} — 점검 보기 → 프로젝트 상세 도착: 포커스 = #pre-settle-check 제목 · 바에 안 가림`, async ({ browser, baseURL }) => {
+      const fx = await setupRejectedSettling(browser, baseURL);
+      await draftWithOpenAllowed(fx);
+      const page = await loginPage(browser, baseURL, fx.org.ceo, { width, height: 800 });
+      await page.goto(`/projects/${fx.projectId}/settlement`);
+      const link = page.getByRole("link", { name: "점검 보기", exact: true });
+      await waitForHydration(page.getByRole("button", { name: /^승인/ }));
+      await link.click();
+      await expect(page).toHaveURL(new RegExp(`/projects/${fx.projectId}#pre-settle-check$`));
+      const heading = page.locator("#pre-settle-check");
+      await expect(heading).toBeFocused();
+      const bar = await page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.cssText = "height:var(--shell-top);position:absolute;visibility:hidden;width:1px";
+        document.body.append(probe);
+        const height = probe.getBoundingClientRect().height;
+        probe.remove();
+        return height;
+      });
+      expect((await heading.boundingBox())?.y ?? Number.NEGATIVE_INFINITY).toBeGreaterThanOrEqual(bar - 0.5);
+      await page.context().close();
+    });
+  }
+
   // Task 2(PS-4) — 강행 허용 그룹만 남은 정산 결재 문서: 행동 줄 위 결과 줄(지금 판정), `승인`은 산다.
   test("강행 결과 줄 — 강행 허용 그룹만 남은 문서에 `강행 · 미결 지출결의 1건`", async ({ browser, baseURL }) => {
     const fx = await setupRejectedSettling(browser, baseURL);

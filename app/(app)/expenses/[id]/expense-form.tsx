@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type Keyboard
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Form } from "@/ui/form/Form";
+import { HashFocus } from "@/ui/detail-screen/HashFocus";
 import { Select, type SelectOption } from "@/ui/select/Select";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { KvList } from "@/ui/kv-list/KvList";
@@ -1167,7 +1168,8 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
         </Form.Field>
 
         <Form.Field id="evidence-picker" label="증빙" width="long">
-          <div id="evidence" className={styles.evidencePick}>
+          <div id="evidence" tabIndex={-1} className={styles.evidencePick}>
+            <HashFocus targetId="evidence" />
             {newDoc ? (
               <Button id="evidence-picker" variant="secondary" shortcut="Ctrl+U" pending={saving} onClick={openPicker}>
                 증빙 올리기

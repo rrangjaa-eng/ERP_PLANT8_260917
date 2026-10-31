@@ -8,7 +8,6 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // 04.6 웨이브 5 디자인 검토 결함 고침의 DOM 실측 — 폰 375 · 320. 판정은 계산값으로만 한다(스크린샷 육안 없음).
 
-const BASE_URL = "http://127.0.0.1:3100";
 const D1_PATHS = [
   "/admin/people/roles",
   "/admin/code-tables?tableKey=project_status",
@@ -27,10 +26,10 @@ for (const width of [375, 320]) {
     test.use({ viewport: { width, height: 800 } });
 
     // D-1 — 폰 읽기 전용이 서버 렌더부터 적용된다(CSS 미디어쿼리). JS를 끄면 수화가 없으니 첫 렌더 그대로다.
-    test(`D-1 첫 렌더(JS 끔)부터 폰에서 보이는 입력 0 · 읽기 글자 보임 (${width})`, async ({ browser, page }) => {
+    test(`D-1 첫 렌더(JS 끔)부터 폰에서 보이는 입력 0 · 읽기 글자 보임 (${width})`, async ({ browser, page, baseURL }) => {
       await loginAsSysadmin(page);
       const state = await page.context().storageState();
-      const context = await browser.newContext({ baseURL: BASE_URL, storageState: state, javaScriptEnabled: false, viewport: { width, height: 800 } });
+      const context = await browser.newContext({ baseURL, storageState: state, javaScriptEnabled: false, viewport: { width, height: 800 } });
       const noJs = await context.newPage();
       for (const path of D1_PATHS) {
         await noJs.goto(path);
@@ -44,8 +43,8 @@ for (const width of [375, 320]) {
       await context.close();
     });
 
-    test(`D-1 수화 뒤에도 보이는 입력 0 · 레이아웃 이동(CLS) 0.1 미만 (${width})`, async ({ browser }) => {
-      const context = await browser.newContext({ baseURL: BASE_URL, viewport: { width, height: 800 } });
+    test(`D-1 수화 뒤에도 보이는 입력 0 · 레이아웃 이동(CLS) 0.1 미만 (${width})`, async ({ browser, baseURL }) => {
+      const context = await browser.newContext({ baseURL, viewport: { width, height: 800 } });
       const adminPage = await context.newPage();
       await loginAsSysadmin(adminPage);
       for (const path of D1_PATHS) {
@@ -127,8 +126,8 @@ for (const width of [375, 320]) {
 }
 
 // 연차 잔고 — 폰에서도 면 없이 텍스트 한 줄.
-async function loginDrafter(browser: Browser, creds: { email: string; password: string }): Promise<Page> {
-  const context = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 375, height: 800 } });
+async function loginDrafter(browser: Browser, baseURL: string | undefined, creds: { email: string; password: string }): Promise<Page> {
+  const context = await browser.newContext({ baseURL, viewport: { width: 375, height: 800 } });
   const page = await context.newPage();
   await page.goto("/login");
   await page.getByLabel("이메일").fill(creds.email);
@@ -138,10 +137,10 @@ async function loginDrafter(browser: Browser, creds: { email: string; password: 
   return page;
 }
 
-test("연차 /leave 잔고가 면 없이 텍스트 한 줄이다 (375)", async ({ browser }) => {
+test("연차 /leave 잔고가 면 없이 텍스트 한 줄이다 (375)", async ({ browser, baseURL }) => {
   await onStableSeoulDay(async (today) => {
     const org = await setupLeaveOrg(today);
-    const page = await loginDrafter(browser, org.drafter);
+    const page = await loginDrafter(browser, baseURL, org.drafter);
     await page.goto("/leave");
     const balance = page.getByTestId("leave-balance");
     await expect(balance).toBeVisible();

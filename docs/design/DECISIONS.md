@@ -2469,3 +2469,55 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: option-b 「두 목록 유지」(07.1-18 · 19가 후퇴안 line-clamp 2를 써야 함).
 **범위**: SYSTEM.md §7-3 폰 전략 문단. 새 색 · 서체 · radius · 토큰 0.
 **적용: 07.1-18 · 19**(그 두 플랜 머지 전 다른 묶음의 /design-review는 이 줄을 판정 대상에서 뺀다 — CG-14)
+
+---
+
+## 2026-10-27 플래너 결정: 폰 접힌 줄 `secondaryText`는 색 없는 글자 (07.1-18 · SP-71-1)
+**결정**: 폰 표에서 주 행 셀 아래 줄(`.cellSecondary`)이 접힌 줄 앞으로 옮겨 갈 때 그 글자(`TableColumn.secondaryText`)는 색 없는 일반 글자다 — 접힌 줄의 다른 값과 같은 `·` 이음 글자 한 줄이며 상태 색 · 배지를 옮기지 않는다(태그는 주 행 셀에 남는다).
+**이유**: 접힌 줄은 한 줄 글자 칸이라 아래 줄의 색 요소(태그 · 경고색)를 싣지 못한다. 색이 필요한 정보(`증빙 N일 경과` 등)는 주 행 상태 태그와 행 시트가 맡는다(B-R1).
+**근거**: `07.1-18-PLAN.md` Task 1 · U-1 option-a(2026-10-29 사용자 카드).
+**버린 대안**: 접힌 줄에 색 있는 글자 요소를 옮김(한 줄 · 말줄임 규칙과 맞지 않음).
+**범위**: `ui/table` 폰 접힌 줄. 새 색 · 서체 · radius · 토큰 0.
+
+### 정정 2026-10-29 (PR #326 게이트): 폰 말줄임 감싸개 폭 규칙 — 3em 바닥을 버리고 첫 줄 자르기로
+**결정**: 폰 글자 칸 감싸개 `[data-cell-text]`는 `width: 0` · `min-width` 바닥을 두지 않는다. 글자는 줄바꿈 가능한 채 두고 첫 줄만 보인다(`-webkit-line-clamp: 1` + 안쪽 div 하나). 열 폭은 줄바꿈하던 때(main)와 같은 방식으로 정해진다: 짧은 칸(상태 · 날짜)은 자기 글자 폭을 지키고 긴 글자 칸이 부족분을 진다. 선택자는 `:where()`(특이도 0)라 화면 CSS가 좁은 폭에서 줄 수를 늘릴 수 있다(`/expenses` 320 상태 칸 2줄).
+**이유**: 3em 바닥(앞 항목의 「폰 말줄임 감싸개 바닥은 3em」)은 게이트 실측에서 기각됐다 — `/cards` 320에서 7자리 결제 합계 + 수정 · 삭제 행의 표가 305 > 288로 넘쳤고, `/expenses` 상태 칸이 123 → 89px로 깎여 3 · 4줄로 꺾였으며, 다른 화면 칸이 2~3자로 깎였다. 바닥 숫자를 낮추는 쪽이 아니라 숫자 자체를 없앤다.
+**같이 바뀐 것**: `/expenses` 상태 칸 둘째 줄 `증빙 N일 경과`는 폰에서 숨고 같은 글자가 `secondaryText`로 접힌 줄 앞에 선다(셀 안에서 직접 두 줄을 그리던 P1 셀 — 플랜 :73). `/cards` `.linkCell`은 폰에서 `inline-grid`(접힌 줄 ` · ` 이음 흐름 한가운데 block 격자가 줄을 갈라 3줄이 되던 것).
+**근거**: PR #326 게이트 보고서(`pr-gate/326/review.md`) P1 셋 · 실행자 판정 ①.
+**범위**: `ui/table` 폰 규칙 · `expenses` · `cards` 화면 CSS. 새 색 · 서체 · radius · 토큰 0. 앞 항목의 3em 문장은 이 정정으로 대체된다.
+
+### 정정 2026-10-29 (PR #326 게이트 2차): 접힌 줄 경고는 맨 앞 · 날짜는 말줄임 없음
+**결정**: ① 경고 글자(`종료일 지남` · `수금 지연`)는 접힌 줄 맨 앞(`secondaryText`)에 둔다 — 한 줄 말줄임이 줄 끝을 자르므로 긴 클라이언트 이름 뒤에 두면 320에서 잘린다. ② 날짜 칸은 `white-space: nowrap`으로 한 덩이를 지킨다(`/pnl/reserves` `.dateText`) — 날짜는 말줄임하지 않는다.
+**이유**: 게이트 2차 실측 — `/projects` 320에서 종료일 지남이 접힌 줄 끝에서 잘려 title도 없었고, `/pnl/reserves` 320에서 날짜가 `2026-10-…`로 보였다.
+**근거**: PR #326 게이트 2차 지시 1 · 2. **범위**: `projects-table.tsx` · `reserves-table.tsx` · `reserves.module.css`. 새 색 · 서체 · radius · 토큰 0.
+
+### 정정 2026-10-29 (PR #326 게이트 3차): 경고 색 유지 · 날짜 nowrap은 폰만
+**결정**: ① 공용 Table `secondaryText`는 글자(string)뿐 아니라 ReactNode를 받는다 — `/projects` 접힌 줄 맨 앞 경고가 기존 `.endDatePassed` · StatusTag를 그대로 써 `--status-warning` 색을 잃지 않는다(textContent는 그대로 글자를 싣는다). ② `/pnl/reserves` `.dateText` nowrap은 `max-width: 699.98px`(Table 폰 규칙과 같은 분기점) 안에서만 건다 — PC 열 폭은 main과 같다.
+**이유**: 3차 실측 — 폰 경고 색이 본문색(82,97,92)으로 바뀌었고(main 138,90,0), nowrap이 PC 768 넘침 43→95 · 1024 행 높이 71→92로 번졌다.
+**범위**: `ui/table/types.ts` · `Table.tsx` 필터 · `projects-table.tsx` · `reserves.module.css`. 새 색 · 서체 · radius · 토큰 0.
+
+### 정정 2026-10-30 (PR #326 CI certs): 글자 칸 감싸개는 PC에서 상자를 만들지 않는다
+**결정**: `[data-cell-text]`(와 안쪽 div)는 `min-width: 700px`에서 `display: contents` — 폰 한 줄 말줄임 전용이다. PC 셀 글자는 감싸개 이전(main)과 같은 줄 상자로 그려진다.
+**이유**: `cert-events.spec.ts` 「1024 — 긴 경품명…(A-L3)」가 CI에서 빨갰다. 감싸개 block 상자(높이 21)가 글자 줄 상자(높이 16)와 윗선이 달라 셀 안 상자 윗선 개수 감사가 한 줄 칸을 두 줄로 셌다(main 3/3 통과 · 우리 head 3/3 실패 → 수정 뒤 3/3 통과). 단언은 그대로.
+**범위**: `ui/table/Table.module.css`. 새 색 · 서체 · radius · 토큰 0. 폰 규칙 불변.
+
+### 정정 2026-10-30 (PR #326 CI 2차): 폰 감싸개는 폰에서만 그린다 · 폰 상태 칸에 붙은 문서 링크
+**결정**: ① 앞 항목의 `display: contents`는 걷는다. 대신 `[data-cell-text]` 감싸개는 `usePhoneLayout()`(`(max-width: 699.98px)` · 서버·수화 중 거짓 — `useMinWidth`와 같은 PC 기본)이 참일 때만 그린다. PC DOM은 main과 같다. ② 증빙 목록 폰 주 행 상태 칸에 붙은 문서 번호 링크(`PhoneAttachedLink`)를 둔다(700 이상에서는 숨김 — 2행 링크가 맡는다). 접힌 줄 앞 글자에서는 번호를 뺀다(작성 중 문서 · 사유만).
+**이유**: ① 5,000행 행동 로그 표에서 감싸개가 DOM 노드를 90,205 → 170,205로 늘려 클릭 뒤 판정이 3.5s → 10.5s로 느려졌다(CI `action-log.spec.ts:536` 실패). React 재렌더가 아니라 노드 수에 비례하는 브라우저 일이었다(CDP: 스크립트 0.6s · 스타일 0.05s · 레이아웃 0.001s인데 태스크 11.9s). 감싸개를 걷으면 3.7s. 수정 뒤 90,205 · 3.5~4.0s. ② `evidence-attach-audit.spec.ts` ① 경영관리 @375가 주 행 안 붙은 문서 링크 href를 요구한다(폰에서 `.cellSecondary`가 숨어 null).
+**범위**: `ui/table/Table.tsx` · `use-editable-width.ts` · `Table.module.css`(contents 규칙 제거) · `evidence-table.tsx/.module.css`. 새 색 · 서체 · radius · 토큰 0.
+
+### 정정 2026-10-30 (PR #326 CI 3차): 감싸개는 행이 적은 표에서 항상 · 많은 표만 폰에서
+**결정**: `[data-cell-text]` 감싸개는 행 500 이하 표에서는 서버 HTML부터 항상 그린다(PC는 `display: contents`로 상자 없음). 행이 500을 넘는 표(5,000행 행동 로그)만 `usePhoneLayout()`이 참일 때 그린다.
+**이유**: 폰만 그리게 하자 수화 뒤 감싸개가 붙으며 DOM이 갈아끼워져, 막 잰 노드가 떨어지는 경쟁이 생겼다(`issue-requests.spec.ts:274` D-1 폰 375 · 320: `isConnected=false` 계산 스타일 빈 값 — 5회 중 2~3회 실패 → 수정 뒤 5/5 통과). 작은 표는 수화 전후 DOM이 같아 경쟁이 없다. 큰 표는 노드 수가 비용이라 PC에서 감싸개를 안 그린다(앞 항목).
+**범위**: `ui/table/Table.tsx`(WRAP_ALWAYS_ROW_LIMIT) · `Table.module.css`(contents 규칙 복원). 앞 항목의 「contents 걷기」는 이 항목으로 대체된다.
+
+### 정정 2026-10-30 (PR #326 CI 4차): 감싸개는 항상 · 서버 HTML부터 · 행 수와 폭에 따라 달라지지 않는다
+**결정**: ① `usePhoneLayout` · 행 500 문턱을 걷는다 — 수화 전후 DOM이 같고 데이터 양 · 뷰포트에 따라 달라지지 않는다(폰 CLS = main, 폭을 넘나들어도 칸 내용 유지). ② 비용을 줄인다: 폰 주 행에 남는 P1 글자 칸만 감싼다(P2 · P3는 폰에서 숨김), 숫자 칸 `Num` · 오른쪽 정렬 · 머리글 숨김 열은 감싸지 않고, 글자 · 요소 하나는 감싸개 하나(안쪽 div 없음). PC는 `display: inline`(`contents`는 알림함 더 보기 뒤 `focus()`를 어긋나게 해 쓰지 않는다 — notify-inbox 51건 3/3 실패 → inline 통과). ③ 증빙 목록 상태 열은 붙은 문서 번호 링크가 있는 줄만 `keepSecondaryOnPhone` — 폰에서도 상태 2행(번호 링크 · 사유 · `등록한 카드와 다름`)을 숨기지 않는다(링크가 거기 있고 두 감사가 그 줄을 요구한다). `PhoneAttachedLink`는 걷는다(1줄 말줄임에 번호가 잘렸다).
+**이유**: 5,000행 행동 로그 노드 90,205(main) → 감싸개 전부 170,205(클릭 판정 10.5s) → 이 방식 105,205(같은 시기 측정 3.8~4.6s, 감싸개 없음 3.6~4.3s). 행 수 문턱은 기본 행동 로그(~4,400행)가 수화 교체 경로로 들어가 폰 CLS 0.03~0.12를 냈다.
+**범위**: `ui/table/Table.tsx`(+`types.ts` keepSecondaryOnPhone) · `Table.module.css` · `use-editable-width.ts`(훅 제거) · `evidence-table.tsx`(붙은 문서 링크 줄만 폰 2행 유지 — `keepSecondaryOnPhone(row)`). 앞 두 정정(폰만 / 500 문턱)은 이 항목으로 대체된다.
+
+### 정정 2026-10-31 (PR #326 사용자 카드): 증빙 붙은 행도 폰 두 줄 — 번호 · 사유 · 표식은 접힌 줄, 링크는 시트로
+**결정**: 앞 항목(CI 4차) ③의 `keepSecondaryOnPhone` 예외를 걷는다(`ui/table/types.ts` · `Table.tsx` · `Table.module.css` 예외 선택자 · `evidence-table.tsx`). 붙은 문서가 있는 증빙 행도 폰(375 · 320)에서 다른 행처럼 주 행 + 접힌 줄 두 줄이다(SYSTEM.md §7-3). 붙은 문서 번호 · 사유 · `등록한 카드와 다름`은 접힌 줄 맨 앞 글자로 서고(링크 아님 · 표식은 기존 `tone-warning` 경고 색 글자 — 새 색 · 클래스 없음), 번호 링크와 표식은 행 시트 `붙은 문서` 줄에 선다. 시트는 지출결의 · 카드 사용 · 구매 요청 세 종류 모두 링크를 보이고 불일치 표식을 단다(전엔 카드 사용 · 구매 요청이 `—`이었다).
+**이유**: 사용자가 「두 줄 지키기(링크는 시트로)」를 골랐다(2026-10-31 카드). 한 행만 세 줄이면 목록 높이가 들쭉날쭉하고, 링크는 주 행 탭이 여는 시트에서 44px 줄로 누르는 편이 폰에서 정확하다. 앞 항목 ③은 이 항목으로 대체된다.
+**범위**: `ui/table/types.ts` · `Table.tsx` · `Table.module.css` · `evidence-table.tsx`(`attachedFoldedText` · `withAttachedItem`). PC(1024 이상)는 상태 2행 번호 링크 그대로. 감사: `evidence-attach-audit` ① · `evidence-reconcile-audit` M10이 폰에서 「주 행 링크 0 · 접힌 줄 맨 앞 글자 · 시트 링크 href · 표식 색」을 잰다.
+**보정 (같은 날 게이트 P2)**: ① 붙임도 사유도 없는 줄은 접힌 줄 조각을 `null`로 돌려 빈 조각 · 겹 구분자(`세금계산서 · · 10-30`)가 없다. ② `등록한 카드와 다름`은 320에서 한 줄 말줄임에 잘려, 폰(접힌 줄은 폰 전용)에서 표식이 있는 줄만 거래 종류 글자 앞에 세운다(거래 종류 쪽이 말줄임 대상). 기존 `tone-warning` 색 글자 · PC 불변.

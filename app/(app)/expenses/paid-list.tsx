@@ -152,6 +152,8 @@ export function PaidList({ rows, amountColumn, canConfirm }: { rows: PaidScreenR
                   <SignedNum value={row.diffKrw} />
                 </span>
               ) : null,
+            // 폰에서는 셀 아래 줄이 숨는다 — 접힌 줄 앞 글자(`차이 {부호 붙은 금액}`).
+            secondaryText: (row) => (row.diffKrw ? `차이 ${row.diffKrw > 0 ? `+${formatKrw(row.diffKrw)}` : formatKrw(row.diffKrw)}` : ""),
           },
         ] satisfies TableColumn<PaidScreenRow>[])
       : []),

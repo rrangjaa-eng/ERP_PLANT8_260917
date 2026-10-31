@@ -66,6 +66,16 @@ function totalSecondLine(row: CardUsageListRowView): ReactNode {
   return row.vatKrw ? supply : null;
 }
 
+// 07.1-18 — 폰 접힌 줄 앞 글자: 위 2행과 같은 조건 · 같은 글자의 문자열 판(셀 아래 줄은 폰에서 숨는다).
+function totalSecondText(row: CardUsageListRowView): string {
+  if (row.supplyKrw === null) return "";
+  const supply = `공급가 ${formatKrw(row.supplyKrw)}`;
+  const foreign =
+    row.currency && row.foreignAmount !== null && row.fxRate !== null ? formatForeignLine({ currency: row.currency, amount: row.foreignAmount, fxRate: row.fxRate }) : null;
+  if (foreign) return `${foreign} · ${supply}`;
+  return row.vatKrw ? supply : "";
+}
+
 function linkText(row: CardUsageListRowView): string {
   if (row.linkKind === "team_cost") return `팀 비용 · ${row.teamName ?? "—"}`;
   return row.linkLabel ?? "—";
@@ -152,6 +162,7 @@ const COLUMNS: TableColumn<CardUsageListRowView>[] = [
     align: "right",
     cell: (row) => <Num value={row.totalKrw} />,
     secondaryLine: totalSecondLine,
+    secondaryText: totalSecondText,
   },
   { key: "evidence", header: "증빙", priority: "p3", collapseBelow: 1024, cell: slipText },
   {
@@ -160,6 +171,7 @@ const COLUMNS: TableColumn<CardUsageListRowView>[] = [
     priority: "p1",
     cell: registeredFirst,
     secondaryLine: registeredSecond,
+    secondaryText: (row) => registeredSecond(row) ?? "",
   },
 ];
 

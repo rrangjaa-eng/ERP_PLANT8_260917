@@ -119,7 +119,7 @@ export function ExpensesTable({ rows, drafterColumn, amountColumn }: { rows: Exp
       priority: "p1",
       cell: (row) =>
         row.statusWord ? (
-          <span className={row.statusWord === "지급 완료" ? `${styles.statusCell} ${styles.statusPaid}` : styles.statusCell}>
+          <span className={styles.statusCell}>
             <StatusTag status={row.statusWord as StatusWord} variant="text" />
             {row.statusDate ? (
               <>
@@ -127,10 +127,11 @@ export function ExpensesTable({ rows, drafterColumn, amountColumn }: { rows: Exp
                 <Num value={row.statusDate} />
               </>
             ) : null}
-            {/* 06-20(UA-605) — 기한 지난 선결제 둘째 줄(경고 색 · 태그 크기). 열을 새로 만들지 않는다. */}
+            {/* 06-20(UA-605) — 기한 지난 선결제 둘째 줄(경고 색 · 태그 크기). 열을 새로 만들지 않는다. 폰에서는 주 행이 한 줄이라 이 줄은 숨고(expenses.module.css) 같은 글자가 접힌 줄 앞에 선다(07.1-18). */}
             {row.statusNote ? <span className={styles.statusNote}>{row.statusNote}</span> : null}
           </span>
         ) : null,
+      secondaryText: (row) => row.statusNote ?? "",
     },
   ];
 

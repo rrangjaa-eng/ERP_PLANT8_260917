@@ -146,19 +146,34 @@ function statusSecondLine(row: PurchaseListRowView): ReactNode {
   );
 }
 
+// 07.1-18 — 폰 접힌 줄 앞 글자: 위 두 줄 함수와 같은 조건 · 같은 글자의 문자열 판(셀 아래 줄은 폰에서 숨는다). `실행가 초과` 낱말은 남고 경고색은 PC 셀 아래 줄에만 남는다.
+function estimateSecondText(row: PurchaseListRowView): string {
+  if (!row.currency || row.currency === "KRW" || row.foreignAmount === null || row.fxRate === null) return "";
+  return formatForeignLine({ currency: row.currency, amount: row.foreignAmount, fxRate: row.fxRate }) ?? "";
+}
+
+function statusSecondText(row: PurchaseListRowView): string {
+  if (row.status === "cancelled") return cancelledSecondLine(row) ?? "";
+  if (row.status !== "purchased" || !row.usageUsedOn) return "";
+  const head = `카드 사용 ${row.usageUsedOn.slice(5)}${row.usageTotalKrw === null ? "" : ` · ${formatKrw(row.usageTotalKrw)}`}`;
+  const over = lastDone?.id === row.id ? lastDone.capOver : null;
+  return over === null ? head : `${head} · 실행가 초과 ${formatKrw(over)}`;
+}
+
 const COLUMNS: TableColumn<PurchaseListRowView>[] = [
   { key: "number", header: "번호", priority: "p2", cell: (row) => <Num value={row.number} /> },
   { key: "requestedOn", header: "요청일", priority: "p2", cell: (row) => <Num value={row.requestedOn.slice(5)} /> },
-  { key: "item", header: "품목", priority: "p1", cell: itemCell, secondaryLine: (row) => row.evidenceLine },
+  { key: "item", header: "품목", priority: "p1", cell: itemCell, secondaryLine: (row) => row.evidenceLine, secondaryText: (row) => row.evidenceLine ?? "" },
   { key: "link", header: "연결", priority: "p2", cell: linkCell },
   { key: "requester", header: "요청자", priority: "p2", cell: (row) => row.requestedByName },
-  { key: "estimate", header: "예상 금액", priority: "p1", align: "right", cell: (row) => <Num value={row.estimateKrw} />, secondaryLine: estimateSecondLine },
+  { key: "estimate", header: "예상 금액", priority: "p1", align: "right", cell: (row) => <Num value={row.estimateKrw} />, secondaryLine: estimateSecondLine, secondaryText: estimateSecondText },
   {
     key: "status",
     header: "상태",
     priority: "p1",
     cell: (row) => <StatusTag variant="text" status={purchaseStatusWord(row.status)} />,
     secondaryLine: statusSecondLine,
+    secondaryText: statusSecondText,
   },
 ];
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useId, useRef, useState, type ElementType, type ReactNode } from "react";
+import { Fragment, isValidElement, useEffect, useId, useRef, useState, type ElementType, type ReactNode } from "react";
 import Link from "next/link";
 import { clampPage } from "@/lib/paging";
 import { isCtrlCombo } from "@/lib/shortcut";
@@ -345,6 +345,12 @@ export function Table<Row>({
   const pageIds = pages ? new Set(pages[page - 1]) : null;
   const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy, groupHeader) : allGroups;
   // phoneRowLink — 그룹 하나 = <tbody> 하나 대신, 그룹 머리글과 행(주 행 + 접힌 줄)마다 제 <tbody>다.
+  // 폰 말줄임 감싸개는 폰에서 보이는 P1 글자 칸(접힌 줄 포함)에만 서버 HTML부터 그린다(수화 전후 DOM이 같고 행 수 · 폭에 따라 달라지지 않는다). PC 감싸개는 `display: inline`이라 상자가 줄 수를 바꾸지 않는다.
+  const foldedBody = (values: ReactNode[]) => (
+    <div data-cell-text="">
+      <div>{values.map((value, index) => <span key={index}>{index > 0 ? " · " : ""}{value}</span>)}</div>
+    </div>
+  );
   const GroupBody: ElementType = phoneRowLink ? Fragment : "tbody";
   const RowBody: ElementType = phoneRowLink ? "tbody" : Fragment;
   // 그룹 머리글 칸 — 기본 `<td>`, `groupHeaderScope="rowgroup"`이면 `<th scope="rowgroup">`.
@@ -815,10 +821,18 @@ export function Table<Row>({
 
     const primary = numericNode(column, column.cell(row));
     const secondary = column.secondaryLine?.(row);
-    if (secondary === null || secondary === undefined || secondary === "") return primary;
+    // 폰 한 줄 말줄임(07.1-18 · B-R3) — 글자 칸의 주 내용은 block 감싸개 하나에 담는다(폭 규칙 · 말줄임은 td가 아니라 이 감싸개에 건다).
+    // 숫자 칸(금액이 …으로 잘리면 안 된다)과 머리글을 숨긴 행동 열은 그대로다.
+    // 폰 주 행에 남는 P1 글자 칸만 감싼다(P2 · P3 칸은 폰에서 숨는다). 숫자 칸(금액 · 날짜 `Num`)은 …으로 잘리면 안 되니 감싸지 않는다.
+    // 안쪽 div는 여러 조각(Fragment · 배열)이 -webkit-box 안에서 줄을 가르지 않게 하는 것이다 — 글자 · 요소 하나는 감싸개 하나로 충분하다.
+    const clampable =
+      column.priority === "p1" && column.align !== "right" && !column.headerHidden && !(isValidElement(primary) && primary.type === Num);
+    const oneChild = typeof primary === "string" || typeof primary === "number" || (isValidElement(primary) && primary.type !== Fragment);
+    const wrapped = !clampable ? primary : oneChild ? <div data-cell-text="">{primary}</div> : <div data-cell-text=""><div>{primary}</div></div>;
+    if (secondary === null || secondary === undefined || secondary === "") return wrapped;
     return (
       <>
-        <div>{primary}</div>
+        {wrapped === primary ? <div>{primary}</div> : wrapped}
         <div className={styles.cellSecondary}>{secondary}</div>
       </>
     );
@@ -874,6 +888,7 @@ export function Table<Row>({
         className={[styles.table, hasEditableCell ? styles.editable : styles.readonly, collapseEarly ? styles.collapseEarly : ""].join(" ")}
         role={hasEditableCell ? "grid" : undefined}
         aria-busy={saveLocked ? true : undefined}
+        data-row-sheet={onRowTap ? "" : undefined}
         onPaste={enableGridKeyboard ? handleTablePaste : undefined}
       >
         <caption
@@ -954,6 +969,12 @@ export function Table<Row>({
                 .filter((column) => cellEditability(column, row) !== "edit" || column.summary)
                 .map((column) => numericNode(column, column.summary ? column.summary(row) : column.cell(row)))
                 .filter((value): value is ReactNode => value !== null && value !== undefined && value !== "");
+              // 07.1-18 (U-1 option-a) — 폰에서 주 행 셀 아래 줄이 숨는 표의 P1 열이 주는 글자: 접힌 줄 맨 앞(열 순서) → P2 값. 글자만 싣는다(링크 · 버튼 없음).
+              const secondaryTexts = columns
+                .filter((column) => column.priority === "p1")
+                .map((column) => column.secondaryText?.(row))
+                .filter((value): value is NonNullable<ReactNode> => value !== null && value !== undefined && value !== false && value !== "");
+              const foldedValues: ReactNode[] = [...secondaryTexts, ...p2Values];
 
               // 06-29(SP-1) — 고른 행 = selectedIds에 있고 지금 고를 수 있는 행. 막힌 행은 배경 칠 없이 이유 글자만.
               const gate = selection?.selectable(row);
@@ -1162,10 +1183,10 @@ export function Table<Row>({
                       </td>
                     </tr>
                   ) : null}
-                  {p2Values.length > 0 ? (
+                  {foldedValues.length > 0 ? (
                     <tr
                       className={styles.collapsedRow}
-                      aria-hidden={onRowTap ? undefined : "true"}
+                      aria-hidden={onRowTap || secondaryTexts.length > 0 ? undefined : "true"}
                     >
                       {onRowTap ? (
                         <td
@@ -1174,6 +1195,10 @@ export function Table<Row>({
                           role="button"
                           tabIndex={0}
                           aria-label={`${rowLabel ? rowLabel(row) : rowId} 상세 보기`}
+                          // aria-label이 칸 내용을 덮어 판독기가 글자를 읽지 않는다 — 같은 글자는 주 행 셀 · 행 시트에 있다. 말줄임에 잘린 글자는 title로 본다.
+                          ref={(node) => {
+                            if (node) node.title = node.textContent ?? "";
+                          }}
                           onClick={() => onRowTap(row)}
                           onKeyDown={(event) => {
                             if (event.key === "Enter" || event.key === " ") {
@@ -1182,15 +1207,11 @@ export function Table<Row>({
                             }
                           }}
                         >
-                          {p2Values.map((value, index) => (
-                            <span key={index}>{index > 0 ? " · " : ""}{value}</span>
-                          ))}
+                          {foldedBody(foldedValues)}
                         </td>
                       ) : (
                         <td colSpan={columns.length + (selection ? 1 : 0)} className={styles.collapsedCell}>
-                          {p2Values.map((value, index) => (
-                            <span key={index}>{index > 0 ? " · " : ""}{value}</span>
-                          ))}
+                          {foldedBody(foldedValues)}
                         </td>
                       )}
                     </tr>

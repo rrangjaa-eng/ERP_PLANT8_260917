@@ -28,6 +28,18 @@
   .kv {
     grid-template-columns: calc(var(--label-w) - var(--s-3)) 1fr;
   }
+
+  /* 07.1-18 W19 — 값 칸 링크의 눌림 면을 44×44로 넓힌다(글자 상자 · 줄 높이는 그대로 — 투명 ::after). 행 링크(`data-row-link`)는 행 전체가 이미 눌림 면이다. */
+  .kv dd > a:not([data-row-link]) {
+    position: relative;
+  }
+
+  .kv dd > a:not([data-row-link])::after {
+    content: "";
+    position: absolute;
+    inset-block: calc((1lh - var(--touch-min)) / 2);
+    inset-inline: min(0%, calc((100% - var(--touch-min)) / 2));
+  }
 }
 
 /* 06.2 PR-6 /design-review DOM 감사 — 값 칸의 링크(3차 버튼 · nowrap)가 실제 길이 행사 이름에서 값 칸을 넘어

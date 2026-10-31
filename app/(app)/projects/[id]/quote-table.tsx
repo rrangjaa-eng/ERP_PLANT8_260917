@@ -152,6 +152,15 @@ const KIND_GROUP_LABELS: Record<Exclude<QuoteLineKind, "quote">, string> = { out
 
 // 07-18(SC-22 · S4) — 문 칸에 버튼이 서지 않는 줄의 이유 낱말. `expenseLineDoor` 사유(none · closed)를 표(UI-SPEC SC-22 고정)의 낱말로 옮긴다 — 표에 없는 사유는 null(빈 칸)이고 새 낱말을 짓지 않는다.
 // 문 열 권한이 없는 계급은 열 자체가 없다(showColumn) — 여기까지 오지 않는다. 표 전체 게이트(고객 승인 전 · 완료)는 표 위 한 줄이 맡는다.
+// 06-13(S14 · N-3) · 07.1-18 — 상태 메모는 서버 값 그대로(기한 경과 · 실행가 초과), 둘 다면 ` · `로 한 줄. 조정 줄은 없다.
+function lineStatusNotes(row: { lineKind: QuoteLineKind; prepaidOverdueDays?: number | null; executionOverKrw?: number | null }): string[] {
+  if (row.lineKind === "adjustment") return [];
+  return [
+    ...(typeof row.prepaidOverdueDays === "number" ? [`증빙 ${row.prepaidOverdueDays}일 경과`] : []),
+    ...(typeof row.executionOverKrw === "number" ? [`실행가 초과 ${formatKrw(row.executionOverKrw)}`] : []),
+  ];
+}
+
 function doorReasonWord(row: { lineKind: QuoteLineKind; lineStatus: string }, door: LineDoorCell): string | null {
   if (door.state === "none") {
     if (row.lineKind === "out_of_quote") return "견적 외 비용";
@@ -2320,22 +2329,13 @@ export function QuoteLedger({
       header: "상태",
       priority: "p1",
       pasteRole: "computed",
-      cell: (row) => {
-        if (row.lineKind === "adjustment") return "—";
-        // 06-13(S14 · N-3) — 2행은 서버 값 그대로(기한 경과 · 실행가 초과), 둘 다면 ` · `로 한 줄.
-        const notes = [
-          ...(typeof row.prepaidOverdueDays === "number" ? [`증빙 ${row.prepaidOverdueDays}일 경과`] : []),
-          ...(typeof row.executionOverKrw === "number" ? [`실행가 초과 ${formatKrw(row.executionOverKrw)}`] : []),
-        ];
-        const tag = <StatusTag variant="text" status={lineStatusWord(row)} />;
-        if (notes.length === 0) return tag;
-        return (
-          <span className={styles.statusLine}>
-            {tag}
-            <span className={styles.lineStatusNote}>{notes.join(" · ")}</span>
-          </span>
-        );
+      // 07.1-18 (B-R1) — 셀은 태그만, 메모는 셀 아래 줄(PC)·접힌 줄 앞 글자(폰)·행 시트 `상태` 줄에 있다 — 폰 주 행은 늘 한 줄.
+      cell: (row) => (row.lineKind === "adjustment" ? "—" : <StatusTag variant="text" status={lineStatusWord(row)} />),
+      secondaryLine: (row) => {
+        const notes = lineStatusNotes(row);
+        return notes.length === 0 ? null : <span className={styles.lineStatusNote}>{notes.join(" · ")}</span>;
       },
+      secondaryText: (row) => lineStatusNotes(row).join(" · "),
     },
     {
       key: "note",
@@ -3268,7 +3268,18 @@ export function QuoteLedger({
                 }) ?? "—",
             },
             { label: "비고", value: openSheetRow.note ?? "—" },
-            { label: "상태", value: <StatusTag variant="text" status={lineStatusWord(openSheetRow)} /> },
+            {
+              label: "상태",
+              value:
+                lineStatusNotes(openSheetRow).length === 0 ? (
+                  <StatusTag variant="text" status={lineStatusWord(openSheetRow)} />
+                ) : (
+                  <span className={styles.statusLine}>
+                    <StatusTag variant="text" status={lineStatusWord(openSheetRow)} />
+                    <span className={styles.lineStatusNote}>{lineStatusNotes(openSheetRow).join(" · ")}</span>
+                  </span>
+                ),
+            },
           ]}
           action={sheetDoorAction(openSheetRow)}
         />

@@ -19,6 +19,7 @@ import { createIntakeManager, insertLinkFixture, insertRecordFixture } from "@/t
 import { archiveTempRoles, insertTempRole, setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { clearEvidence, createIntakeRole, loginAs } from "./helpers/evidence";
+import { measurePhoneRows } from "./helpers/phone-rows";
 
 // 06.1-06 독립 DOM 감사(실행자가 아닌 별도 에이전트). 판정은 CI=true 프로덕션 빌드의 DOM 실측값으로만 한다(스크린샷 육안 금지).
 // 자격(실제 권한으로 로그인 · 관리자 아님): ① 경영관리 두 키(createIntakeManager) ② ①+expenses.payments ③ 기안 PM ④ evidence.intake만
@@ -292,10 +293,37 @@ test("A 증빙 목록 · PickDialog — ① 경영관리(두 키)", async ({ bro
     const attachButtons = await page.locator("main table tbody tr:visible").getByRole("button", { name: /^붙이기/ }).count();
     record("행 `붙이기` 버튼 수(1024 이상만)", width, role, URL_ALL, attachButtons, width >= 1024 ? "≥ 3(열린 2 · 막힌 2 중 그려진 것)" : 0, width >= 1024 ? attachButtons >= 3 : attachButtons === 0);
     const linkRow = rowOf(page, names.linked);
-    const link = linkRow.getByRole("link", { name: seed.returned.number });
-    const href = await link.getAttribute("href").catch(() => null);
-    record("붙은 행 상태 2행 문서 번호 링크 href", width, role, URL_ALL, href, `/expenses/${seed.returned.expenseId}#evidence`, href === `/expenses/${seed.returned.expenseId}#evidence`);
-    if (PHONE(width)) record("상태 2행 링크 박스(참고 · 표 안 글 링크)", width, role, URL_ALL, await box(link), "—", null);
+    if (PHONE(width)) {
+      // 07.1-18 사용자 결정(2026-10-31 「두 줄 지키기」) — 폰 주 행에는 링크가 없고(상태 2행 숨김), 번호는 접힌 줄 맨 앞 글자, 링크는 행 시트로 간다.
+      const shape = await measurePhoneRows(page.locator("main table[data-row-sheet]").first());
+      record("폰 붙은 행 포함 표 줄 수(주 행 ≤1 · 접힌 줄 ≤1 · 보이는 2행 0 = 행당 2줄)", width, role, URL_ALL, { main: shape.maxMainCellLines, folded: shape.maxFoldedLines, visibleSecondary: shape.visibleSecondary }, "main ≤1 · folded ≤1 · visibleSecondary 0", shape.maxMainCellLines <= 1 && shape.maxFoldedLines <= 1 && shape.visibleSecondary === 0);
+      // 붙임도 사유도 없는 줄은 접힌 줄에 빈 조각이 없다(`세금계산서 · · 10-30` 같은 겹 구분자 · 맨 앞/끝 구분자 없음).
+      const foldedAll = await page.locator("td[role='button']:visible").evaluateAll((nodes) => nodes.map((node) => (node.textContent ?? "").replace(/\s+/g, " ").trim()));
+      const brokenFolded = foldedAll.filter((text) => /·\s*·/.test(text) || /^·|·$/.test(text));
+      record("폰 접힌 줄 빈 조각 · 겹 구분자 0", width, role, URL_ALL, brokenFolded, [], foldedAll.length > 0 && brokenFolded.length === 0);
+      const rowLinks = await linkRow.locator("a:visible").count();
+      record("폰 붙은 행 주 행에 보이는 링크 0", width, role, URL_ALL, rowLinks, 0, rowLinks === 0);
+      for (const [label, number, expected] of [
+        ["지출결의", seed.returned.number, `/expenses/${seed.returned.expenseId}#evidence`],
+        ["구매 요청", seed.purchase.number, "/cards/purchases"],
+      ] as const) {
+        const folded = page.locator("td[role='button']:visible").filter({ hasText: number }).first();
+        const foldedText = ((await folded.textContent().catch(() => null)) ?? "").trim();
+        record(`폰 접힌 줄에 ${label} 번호가 글자로(링크 아님)`, width, role, URL_ALL, foldedText, `…${number}…`, foldedText.includes(number) && (await folded.locator("a").count()) === 0);
+        await folded.click();
+        const sheet = page.getByRole("dialog").filter({ has: page.getByText("붙은 문서", { exact: true }) }).first();
+        await expect(sheet).toBeVisible();
+        const sheetLink = sheet.getByRole("link", { name: number });
+        const sheetHref = await sheetLink.getAttribute("href").catch(() => null);
+        record(`폰 행 시트 ${label} 번호 링크 href`, width, role, URL_ALL, sheetHref, expected, sheetHref === expected);
+        await page.keyboard.press("Escape");
+        await expect(sheet).toBeHidden();
+      }
+    } else {
+      const link = linkRow.getByRole("link", { name: seed.returned.number });
+      const href = await link.getAttribute("href").catch(() => null);
+      record("붙은 행 상태 2행 문서 번호 링크 href", width, role, URL_ALL, href, `/expenses/${seed.returned.expenseId}#evidence`, href === `/expenses/${seed.returned.expenseId}#evidence`);
+    }
     const draftRow = rowOf(page, names.draft);
     const draftText = ((await draftRow.textContent()) ?? "").includes("작성 중 문서");
     const draftLinks = await draftRow.locator("a").count();

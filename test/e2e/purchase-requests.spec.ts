@@ -568,7 +568,8 @@ test.describe("구매 완료 (06-12)", () => {
       for (const width of [375, 320]) {
         await page.setViewportSize({ width, height: 800 });
         await page.goto(path);
-        await expect(page.getByText("USD 100.00", { exact: false }).first()).toBeVisible();
+        // 07.1-18 — 폰에서는 주 행 셀 아래 줄이 숨고 같은 글자가 접힌 줄에 선다 — 보이는 첫 글자를 본다.
+        await expect(page.getByText("USD 100.00", { exact: false }).filter({ visible: true }).first()).toBeVisible();
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(overflow, `scrollWidth 초과 ${path} @${width}`).toBeLessThanOrEqual(0);
       }

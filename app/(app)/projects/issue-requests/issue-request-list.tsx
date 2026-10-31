@@ -74,6 +74,8 @@ function columns(showAmount: boolean, canLink: boolean): TableColumn<IssueReques
                   <span>합계</span> <span>{formatKrw(row.totalKrw)}</span>
                 </span>
               ),
+            // 폰에서는 셀 아래 줄이 숨는다 — 접힌 줄 앞 글자(`합계 {금액}`).
+            secondaryText: (row: IssueRequestListRowView) => (row.totalKrw === null ? "" : `합계 ${formatKrw(row.totalKrw)}`),
           },
         ]
       : []),

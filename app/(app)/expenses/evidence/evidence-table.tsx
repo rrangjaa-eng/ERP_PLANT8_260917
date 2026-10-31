@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useEffectEvent, useId, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useEffectEvent, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { evidenceReturnHref } from "@/lib/evidence-return";
 import { formatCount, formatKrw } from "@/lib/format-number";
-import { Button } from "@/ui/button/Button";
+import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { ListEmpty, type ListEmptyAction } from "@/ui/list-empty/ListEmpty";
 import { Num } from "@/ui/num/Num";
 import { Pagination } from "@/ui/pagination/Pagination";
@@ -96,6 +96,7 @@ const COPY = {
   emptyTodo: "할 일 증빙이 없습니다",
   emptyUnmatched: "짝 없는 카드 줄이 없습니다",
   cardReplaced: " · 등록한 카드와 다름",
+  cardMismatch: "등록한 카드와 다름",
   emptyFiltered: "조건에 맞는 증빙이 없습니다",
   showAll: "전체 보기",
   clearFilters: "필터 지우기",
@@ -217,10 +218,63 @@ function attachedShown(attached: NonNullable<Row["attached"]>): boolean {
   return attached.pending || (attached.id !== null && attached.number !== null);
 }
 
+function hasAttachedLink(row: Row): boolean {
+  return Boolean(row.attached && attachedShown(row.attached) && !row.attached.pending && row.attached.id !== null && row.attached.number !== null);
+}
+
+function attachedHref(attached: NonNullable<Row["attached"]>): string {
+  return attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : attached.kind === "corp_card_usage" ? `/cards?editId=${attached.id}` : "/cards/purchases";
+}
+
+// 07.1-18 사용자 결정(2026-10-31) — 폰 접힌 줄 글자: 붙은 문서 번호(링크 아님) · 사유. 링크는 행 시트로 간다. 붙임도 사유도 없으면 null(빈 조각 · 겹 구분자 없음).
+// `등록한 카드와 다름`은 한 줄 말줄임에 잘리지 않게 거래 종류 글자 앞에 선다(`counterpartyFoldedText`).
+function cardMismatchShown(row: Row): boolean {
+  return Boolean(row.attached?.cardReplaced) && hasAttachedLink(row);
+}
+
+function counterpartyFoldedText(row: Row): ReactNode {
+  if (!cardMismatchShown(row)) return row.kindLine ?? "";
+  return (
+    <>
+      <span className={tableStyles["tone-warning"]}>{COPY.cardMismatch}</span>
+      {row.kindLine ? ` · ${row.kindLine}` : null}
+    </>
+  );
+}
+
+function attachedFoldedText(row: Row): ReactNode {
+  const attached = row.attached;
+  const parts: ReactNode[] = [];
+  if (attached?.pending) parts.push(COPY.draftOwner);
+  else if (hasAttachedLink(row) && attached?.number) parts.push(attached.number);
+  if (row.statusDetail) parts.push(row.statusDetail);
+  if (parts.length === 0) return null;
+  return parts.map((part, index) => <Fragment key={index}>{index > 0 ? " · " : ""}{part}</Fragment>);
+}
+
+// 행 시트 `붙은 문서` 줄 — 세 종류(지출결의 · 카드 사용 · 구매 요청) 모두 번호 링크 + 불일치 경고. 상세(`evidenceReadItems`)는 카드 사용 붙임을 싣지 않아 표 행 값으로 덮는다.
+function withAttachedItem(items: KvItem[], row: Row): KvItem[] {
+  const attached = row.attached;
+  if (!attached || !attachedShown(attached)) return items;
+  const value: ReactNode = attached.pending ? (
+    COPY.draftOwner
+  ) : (
+    <>
+      <Link href={attachedHref(attached)} className={buttonLinkClassName("tertiary")}>
+        {attached.number}
+      </Link>
+      {attached.cardReplaced ? <> <span className={tableStyles["tone-warning"]}>{COPY.cardMismatch}</span></> : null}
+    </>
+  );
+  const item: KvItem = { label: "붙은 문서", value };
+  const at = items.findIndex((existing) => existing.label === "붙은 문서");
+  return at >= 0 ? items.map((existing, index) => (index === at ? item : existing)) : [...items, item];
+}
+
 function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
   if (attached.pending) return <span>{COPY.draftOwner}</span>;
   if (attached.id === null || attached.number === null) return null;
-  const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : attached.kind === "corp_card_usage" ? `/cards?editId=${attached.id}` : "/cards/purchases";
+  const href = attachedHref(attached);
   // 링크 모양은 지출결의 목록 번호 링크(`expenseStyles.link` — `--text-link`)와 같다. 격자 로빙 밖(tabIndex -1 — §7-3 (아) 탭 정지 1개)이고
   // 키보드 경로는 그 칸 Enter(`pressCellAction` — 지급 대상 · 리저브 대장 선례)다.
   return (
@@ -779,6 +833,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         );
       },
       secondaryLine: (row) => row.kindLine,
+      secondaryText: counterpartyFoldedText,
       copyText: (row) => row.counterparty ?? "",
     },
     { key: "supplyKrw", header: "공급가", priority: "p3", collapseBelow: 1280, align: "right", cell: (row) => <Num value={row.supplyKrw} />, copyText: (row) => amountText(row.supplyKrw) },
@@ -810,6 +865,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       header: "상태",
       priority: "p1",
       cell: (row) => <StatusTag status={row.statusWord} variant="text" />,
+      // 폰은 상태 2행을 숨긴다(다른 표와 같은 행당 2줄). 번호 · 사유 · 표식은 접힌 줄 맨 앞 글자로, 링크는 행 시트로 간다.
+      secondaryText: attachedFoldedText,
       // PR-D D-2 — 붙은 기록도 확인 필요 · 카드 미등록이면 사유가 번호 링크 뒤에 남는다(문서 증빙 줄과 같은 사유 · 공개 칸 aria-describedby가 가리키는 id).
       secondaryLine: (row) => {
         const detail = row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null;
@@ -1098,16 +1155,16 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         subtitle={sheetRow ? [sheetRow.issuedOn, sheetRow.kindLine].filter((part): part is string => Boolean(part)).join(" · ") : ""}
         items={
           sheetRow && sheetItems?.id === sheetRow.id
-            ? sheetItems.items
+            ? withAttachedItem(sheetItems.items, sheetRow)
             : sheetRow
-            ? [
+            ? withAttachedItem([
                 { label: "날짜", value: <Num value={sheetRow.issuedOn} /> },
                 { label: "공급가", value: <Num value={sheetRow.supplyKrw} /> },
                 { label: "세액", value: <Num value={sheetRow.vatKrw} /> },
                 { label: "합계", value: <Num value={sheetRow.totalKrw} /> },
                 { label: "공개", value: visibilityText(sheetRow) },
                 { label: "상태", value: sheetRow.statusDetail ? `${sheetRow.statusWord} · ${sheetRow.statusDetail}` : sheetRow.statusWord },
-              ]
+              ], sheetRow)
             : []
         }
         action={

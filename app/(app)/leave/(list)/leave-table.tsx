@@ -50,7 +50,7 @@ const COLUMNS: TableColumn<LeaveListRow>[] = [
     header: LEAVE_LIST_COLUMN_LABELS.period,
     priority: "p1",
     cell: (row) => (
-      <Link href={`/leave/${row.id}`} className={`${styles.link} ${styles.rowLink}`}>
+      <Link href={`/leave/${row.id}`} className={`${styles.link} ${styles.rowLink}`} data-row-link="">
         {row.period}
       </Link>
     ),

@@ -173,3 +173,39 @@ test.describe("폰 375 /admin/vendors 파일 받기 없음 · 검색칸 (07-20 K
     expect(overflow).toBeLessThanOrEqual(0);
   });
 });
+
+// 07.1-18 PA9 (C-48) — 폰(<700) 갈래 링크가 넷 이상이면 2열 격자, 셋 이하와 PC는 한 줄 흐름. 링크 높이 ≥ 44.
+test.describe("/admin/vendors 갈래 링크 줄 (07.1-18 PA9)", () => {
+  for (const width of [375, 320] as const) {
+    test(`폰 ${width} — 링크 높이 ≥ 44 · 넷 이상이면 2열 · 셋 이하는 한 줄 흐름`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto("/admin/vendors");
+      const nav = page.getByRole("navigation", { name: "갈래" });
+      await expect(nav).toBeVisible();
+      const links = nav.getByRole("link");
+      const count = await links.count();
+      for (let i = 0; i < count; i += 1) expect((await links.nth(i).boundingBox())?.height ?? 0, `링크 ${i} 높이`).toBeGreaterThanOrEqual(44);
+      // 셋 이하: 한 줄 흐름(flex) — 격자 아님.
+      expect(await nav.evaluate((el) => getComputedStyle(el).display)).not.toBe("grid");
+      // 넷째 링크를 더한 상태(같은 CSS 규칙을 받는다): 2열 격자.
+      await nav.evaluate((el) => {
+        const extra = el.lastElementChild?.cloneNode(true) as HTMLElement;
+        el.append(extra);
+      });
+      const grid = await nav.evaluate((el) => ({ display: getComputedStyle(el).display, columns: getComputedStyle(el).gridTemplateColumns.split(" ").length }));
+      expect(grid.display).toBe("grid");
+      expect(grid.columns).toBe(2);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    });
+  }
+
+  test("PC 1280 — 갈래 링크는 한 줄이다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await loginAsSysadmin(page);
+    await page.goto("/admin/vendors");
+    const nav = page.getByRole("navigation", { name: "갈래" });
+    const tops = await nav.getByRole("link").evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size);
+    expect(tops).toBe(1);
+  });
+});

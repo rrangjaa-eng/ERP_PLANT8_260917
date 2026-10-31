@@ -618,7 +618,7 @@ test.describe("구매 완료 (06-12)", () => {
 
     await expect(sheet).toHaveCount(0);
     const groups = page.getByRole("table").getByRole("rowgroup");
-    await expect(groups.filter({ hasText: `고친카드-${suffix}` }).getByText(`구매 요청 ${number}`)).toBeVisible();
+    await expect(groups.filter({ hasText: `고친카드-${suffix}` }).getByText(`구매 요청 ${number}`, { exact: true })).toBeVisible();
     await expect(groups.filter({ hasText: `처음카드-${suffix}` })).toHaveCount(0);
     const [stored] = await db.select({ corpCardId: corpCardUsages.corpCardId }).from(corpCardUsages).where(eq(corpCardUsages.id, done.usageId));
     expect(stored?.corpCardId).not.toBe(first.id);

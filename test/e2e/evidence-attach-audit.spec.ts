@@ -297,6 +297,10 @@ test("A 증빙 목록 · PickDialog — ① 경영관리(두 키)", async ({ bro
       // 07.1-18 사용자 결정(2026-10-31 「두 줄 지키기」) — 폰 주 행에는 링크가 없고(상태 2행 숨김), 번호는 접힌 줄 맨 앞 글자, 링크는 행 시트로 간다.
       const shape = await measurePhoneRows(page.locator("main table[data-row-sheet]").first());
       record("폰 붙은 행 포함 표 줄 수(주 행 ≤1 · 접힌 줄 ≤1 · 보이는 2행 0 = 행당 2줄)", width, role, URL_ALL, { main: shape.maxMainCellLines, folded: shape.maxFoldedLines, visibleSecondary: shape.visibleSecondary }, "main ≤1 · folded ≤1 · visibleSecondary 0", shape.maxMainCellLines <= 1 && shape.maxFoldedLines <= 1 && shape.visibleSecondary === 0);
+      // 붙임도 사유도 없는 줄은 접힌 줄에 빈 조각이 없다(`세금계산서 · · 10-30` 같은 겹 구분자 · 맨 앞/끝 구분자 없음).
+      const foldedAll = await page.locator("td[role='button']:visible").evaluateAll((nodes) => nodes.map((node) => (node.textContent ?? "").replace(/\s+/g, " ").trim()));
+      const brokenFolded = foldedAll.filter((text) => /·\s*·/.test(text) || /^·|·$/.test(text));
+      record("폰 접힌 줄 빈 조각 · 겹 구분자 0", width, role, URL_ALL, brokenFolded, [], foldedAll.length > 0 && brokenFolded.length === 0);
       const rowLinks = await linkRow.locator("a:visible").count();
       record("폰 붙은 행 주 행에 보이는 링크 0", width, role, URL_ALL, rowLinks, 0, rowLinks === 0);
       for (const [label, number, expected] of [

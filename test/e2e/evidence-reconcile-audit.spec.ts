@@ -17,6 +17,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { insertLinkFixture, setRecordVisibilityFixture } from "@/test/integration/fixtures/evidence";
+import { measurePhoneRows } from "./helpers/phone-rows";
 import { addBcCard, addLotteCard, clearEvidence, createIntakeRole, EVIDENCE_COL, evidenceCell, evidenceRows, focusGridCell, registerFile, teamIdByName, uploadFixture } from "./helpers/evidence";
 import { waitForHydration } from "./leave-org";
 
@@ -624,7 +625,17 @@ test("M10 `등록한 카드와 다름` — 2행 안 글자 · 색 = 2행 색 · 
       record("M10 폰 주 행에 보이는 링크 0", width, "경영관리", url, facts.visible, false, facts.visible === false);
       const folded = page.locator("td[role='button']:visible").filter({ hasText: "등록한 카드와 다름" }).first();
       const foldedText = ((await folded.textContent()) ?? "").replace(/\s+/g, " ").trim();
-      record("M10 폰 접힌 줄에 <K번호> · 등록한 카드와 다름이 글자로(링크 0)", width, "경영관리", url, foldedText, "…-K#### · 등록한 카드와 다름…", /-K\d{4} · 등록한 카드와 다름/.test(foldedText) && (await folded.locator("a").count()) === 0);
+      record("M10 폰 접힌 줄에 <K번호> · 등록한 카드와 다름이 글자로(링크 0)", width, "경영관리", url, foldedText, "…-K#### · 등록한 카드와 다름…", /-K\d{4}/.test(foldedText) && foldedText.includes("등록한 카드와 다름") && (await folded.locator("a").count()) === 0);
+      // 표식은 거래 종류 글자보다 앞에 서서 한 줄 말줄임에 잘리지 않는다(320에서 「등록한 카드와」까지만 보이던 결함) — 자기 상자가 한 줄이고 감싸개 안쪽에 온전히 든다.
+      const clip = await folded.getByText("등록한 카드와 다름").first().evaluate((el) => {
+        const wrapper = el.closest("[data-cell-text]");
+        const r = el.getBoundingClientRect();
+        const w = wrapper?.getBoundingClientRect() ?? null;
+        return { rects: el.getClientRects().length, inside: w !== null && r.right <= w.right + 0.5 && r.bottom <= w.bottom + 0.5, order: (wrapper?.textContent ?? "").replace(/\s+/g, " ").trim().indexOf("등록한 카드와 다름") };
+      });
+      record("M10 폰 표식 온전히 보임(한 줄 · 감싸개 안 · 맨 앞)", width, "경영관리", url, clip, { rects: 1, inside: true, order: 0 }, clip.rects === 1 && clip.inside && clip.order === 0);
+      const shape = await measurePhoneRows(page.locator("main table[data-row-sheet]").first());
+      record("M10 폰 행당 2줄(주 행 ≤1 · 접힌 줄 ≤1 · 보이는 2행 0)", width, "경영관리", url, { main: shape.maxMainCellLines, folded: shape.maxFoldedLines, visibleSecondary: shape.visibleSecondary }, "main ≤1 · folded ≤1 · visibleSecondary 0", shape.maxMainCellLines <= 1 && shape.maxFoldedLines <= 1 && shape.visibleSecondary === 0);
       const warning = await tokenColor(page, "--status-warning");
       const markerColor = await folded.getByText("등록한 카드와 다름").evaluate((el) => getComputedStyle(el).color);
       record("M10 폰 접힌 줄 표식 색 = --status-warning", width, "경영관리", url, markerColor, warning, markerColor === warning);

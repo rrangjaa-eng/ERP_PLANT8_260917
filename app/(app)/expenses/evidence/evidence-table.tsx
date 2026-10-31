@@ -226,14 +226,29 @@ function attachedHref(attached: NonNullable<Row["attached"]>): string {
   return attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : attached.kind === "corp_card_usage" ? `/cards?editId=${attached.id}` : "/cards/purchases";
 }
 
-// 07.1-18 사용자 결정(2026-10-31) — 폰 접힌 줄 맨 앞 글자: 붙은 문서 번호(링크 아님) · 사유 · `등록한 카드와 다름`(경고 색 글자). 링크는 행 시트로 간다.
+// 07.1-18 사용자 결정(2026-10-31) — 폰 접힌 줄 글자: 붙은 문서 번호(링크 아님) · 사유. 링크는 행 시트로 간다. 붙임도 사유도 없으면 null(빈 조각 · 겹 구분자 없음).
+// `등록한 카드와 다름`은 한 줄 말줄임에 잘리지 않게 거래 종류 글자 앞에 선다(`counterpartyFoldedText`).
+function cardMismatchShown(row: Row): boolean {
+  return Boolean(row.attached?.cardReplaced) && hasAttachedLink(row);
+}
+
+function counterpartyFoldedText(row: Row): ReactNode {
+  if (!cardMismatchShown(row)) return row.kindLine ?? "";
+  return (
+    <>
+      <span className={tableStyles["tone-warning"]}>{COPY.cardMismatch}</span>
+      {row.kindLine ? ` · ${row.kindLine}` : null}
+    </>
+  );
+}
+
 function attachedFoldedText(row: Row): ReactNode {
   const attached = row.attached;
   const parts: ReactNode[] = [];
   if (attached?.pending) parts.push(COPY.draftOwner);
   else if (hasAttachedLink(row) && attached?.number) parts.push(attached.number);
   if (row.statusDetail) parts.push(row.statusDetail);
-  if (attached?.cardReplaced && hasAttachedLink(row)) parts.push(<span className={tableStyles["tone-warning"]}>{COPY.cardMismatch}</span>);
+  if (parts.length === 0) return null;
   return parts.map((part, index) => <Fragment key={index}>{index > 0 ? " · " : ""}{part}</Fragment>);
 }
 
@@ -818,7 +833,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         );
       },
       secondaryLine: (row) => row.kindLine,
-      secondaryText: (row) => row.kindLine ?? "",
+      secondaryText: counterpartyFoldedText,
       copyText: (row) => row.counterparty ?? "",
     },
     { key: "supplyKrw", header: "공급가", priority: "p3", collapseBelow: 1280, align: "right", cell: (row) => <Num value={row.supplyKrw} />, copyText: (row) => amountText(row.supplyKrw) },

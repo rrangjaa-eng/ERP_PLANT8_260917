@@ -17,6 +17,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson } from "./approvals-fixtures";
+import { placeInFundDivision } from "./fixtures/fund-scope";
 import { purchaseProject, request } from "./fixtures/purchase-requests";
 
 // 06.5 D-6503: 카드 사용 K 번호 — 프로젝트 `{프로젝트 번호}-K0001`(카운터 card_usage · period = 프로젝트 번호),
@@ -110,7 +111,10 @@ async function purchaser(): Promise<Viewer> {
   }
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `처리본부-${randomUUID()}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `처리팀-${randomUUID()}` });
-  return makePerson("구매담당", role.id, team.name);
+  const person = await makePerson("구매담당", role.id, team.name);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.id);
+  return person;
 }
 
 const KST_2026 = new Date("2026-06-01T03:00:00Z");

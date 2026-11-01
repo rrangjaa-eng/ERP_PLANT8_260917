@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { projectBudgetEntries, projects, quoteLines, settingsSimple } from "@/db/schema";
 import { createFixtureUser } from "./fixtures";
+import { teamIdByName } from "./helpers/evidence";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
@@ -53,7 +54,8 @@ async function makeTeam(): Promise<Team> {
 
 // 팀 범위 경영관리 계정 — write가 거짓이면 보기만(「예산 바꾸기」 없음 — 배포 직후 쓰기 칸이 꺼진 상태와 같다).
 // settings가 참이면 시스템 설정 보기 · 쓰기도(원가율 잠김 줄의 3차 · 첫 저장 결과 줄 시험). budget이 거짓이면 예산 현황 메뉴 없이 설정만.
-async function budgetUser(teamId: string, opts: { write?: boolean; settings?: boolean; budget?: boolean } = {}) {
+// 07.3-01: 예산 키(자금 키)를 받으면 경영관리팀 발령(D-7301 — 프로젝트 범위는 전사로 넓어진다 D-7314). fundDivision이 거짓이면 받은 팀 그대로(본부 밖 → 막힘).
+async function budgetUser(teamId: string, opts: { write?: boolean; settings?: boolean; budget?: boolean; fundDivision?: boolean } = {}) {
   const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, viewScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   if (opts.budget !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.budget", action: "view", allowed: true });
@@ -62,7 +64,8 @@ async function budgetUser(teamId: string, opts: { write?: boolean; settings?: bo
     for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.settings", action, allowed: true });
   }
   for (const infoItem of ["budget.amount", "quote.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-  return createFixtureUser({ roleId: role.id, teamId });
+  const inFund = opts.budget !== false && opts.fundDivision !== false;
+  return createFixtureUser({ roleId: role.id, teamId: inFund ? await teamIdByName("경영관리팀") : teamId });
 }
 
 async function makeProject(team: Team, name: string, poKrw: number | null): Promise<string> {
@@ -290,7 +293,7 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     await context.close();
   });
 
-  test("원가율 비움 → 잠김 줄 + 설정으로 · 0 → 잠기지 않고 예산 0 행(이력 없음) · 대상 없음 → EMPTY", async ({ browser }) => {
+  test("원가율 비움 → 잠김 줄 + 설정으로 · 0 → 잠기지 않고 예산 0 행(이력 없음) · 본부 밖 예산 키 → 404", async ({ browser }) => {
     const team = await makeTeam();
     const name = `E2E영-${randomUUID().slice(0, 8)}`;
     await setCostRate(null);
@@ -312,11 +315,12 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     await expect(historyPanel(page).getByText("이력 없음", { exact: true })).toBeVisible();
     await context.close();
 
-    const emptyTeam = await makeTeam();
-    const emptyUser = await budgetUser(emptyTeam.teamId);
-    const empty = await openAs(browser, emptyUser, "/projects/budget");
-    await expect(empty.page.getByText("예산이 있는 진행 프로젝트가 없습니다", { exact: true })).toBeVisible();
-    await empty.context.close();
+    // 07.3-01: 예산 보기는 자금 키라 본부 안 사람의 범위가 전사다(D-7314) — 공유 E2E DB에서 「대상 없음」은 더 만들 수 없다. 본부 밖이면 막힌다(D-7301).
+    const outsider = await budgetUser(team.teamId, { fundDivision: false });
+    const denied = await openAs(browser, outsider, "/projects/budget");
+    await expect(denied.page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
+    await expect(budgetTable(denied.page)).toHaveCount(0);
+    await denied.context.close();
   });
 
   test("원가율 첫 저장 결과 줄(U3) — `예산 N건 생성` + `예산 현황` · 다시 저장하면 없음 · 예산 권한 없으면 링크 없음", async ({ browser }) => {

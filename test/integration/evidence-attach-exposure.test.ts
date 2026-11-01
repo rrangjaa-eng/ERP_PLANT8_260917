@@ -18,6 +18,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { makePerson } from "./approvals-fixtures";
+import { placeInFundDivision } from "./fixtures/fund-scope";
 import { setupExpenseProject } from "./fixtures/expenses";
 import { createCardUsageFixture, createDraftExpenseFixture, createInReviewExpenseFixture, createIntakeManager, createReturnedExpenseFixture, insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 import { setEvidenceRequired } from "./fixtures/payments";
@@ -112,18 +113,19 @@ describe("P3-2 경합 거부의 문서 번호", () => {
     const doc = await createReturnedExpenseFixture(fx, { linkRecordId: recordId, linkedBy: manager.id });
 
     // 지출결의는 본인 것만 보는 계급 — 구매 요청은 구매 권한으로 전부 본다.
+    // 07.3-01: 자금 키 보유자는 경영관리본부 소속(D-7301) · expenses.evidence_attach 쓰기는 지출결의 범위를 전사로 넓혀(D-7314) 「좁은」 계급에서 뺀다(구매 요청 붙이기에는 쓰지 않는 키).
     const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `좁은등록-${randomUUID().slice(0, 8)}`, viewScope: "own" });
     for (const [menu, action] of [
       ["evidence.intake", "write"],
       ["evidence", "view"],
       ["expenses", "view"],
-      ["expenses.evidence_attach", "write"],
       ["cards.purchases", "write"],
     ] as const) {
       await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
     }
     for (const infoItem of ["evidence.value", "evidence.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
     const narrow = await makePerson("좁은등록", role.id, null);
+    await placeInFundDivision(narrow.id);
     const pfx = await purchaseProject();
     const created = await createRequest(pfx, pfx.onlineLine, 110_000);
 

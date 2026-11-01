@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { users } from "@/db/schema";
+import { teamMemberships, users } from "@/db/schema";
 import { FUND_SCOPED_MENUS } from "@/domain/permissions/fund-scope";
 import type { PermissionAction } from "@/domain/permissions/menus";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
-import { insertMembership, listMemberships } from "@/repositories/team-memberships";
+import { listMemberships } from "@/repositories/team-memberships";
 import { makePerson, orgUnitIdByName, teamIdByName } from "../approvals-fixtures";
 
 // 07.3-01 자금 게이트 통합 픽스처 — 시험 DB는 매번 seedMasterData로 경영관리본부 · 경영관리팀 · 자금 본부 설정이 선다.
@@ -71,7 +71,7 @@ export async function buildFundWorld(): Promise<FundWorld> {
 
 /**
  * 기존 시험 보정용 — 이 사람을 경영관리본부 소속으로 만든다. 발령이 없으면 본부 칸 = 경영관리본부,
- * 있으면 마지막 발령 다음 날 경영관리팀 발령(팀이 이기므로 칸으로는 못 바꾼다).
+ * 있으면 그 발령 줄의 팀을 경영관리팀으로 바꾼다(발령일은 그대로 — 시험이 주입한 오늘 · 과거 날짜에서도 같은 답. 팀이 이기므로 칸으로는 못 바꾼다).
  */
 export async function placeInFundDivision(userId: string): Promise<void> {
   const memberships = await listMemberships(SYSTEM_VIEWER, userId);
@@ -79,8 +79,5 @@ export async function placeInFundDivision(userId: string): Promise<void> {
     await setDivisionColumn(userId, await orgUnitIdByName("경영관리본부"));
     return;
   }
-  const latest = memberships.map((row) => row.effectiveFrom).sort().at(-1) ?? "2020-01-01";
-  const next = new Date(`${latest}T00:00:00Z`);
-  next.setUTCDate(next.getUTCDate() + 1);
-  await insertMembership(SYSTEM_VIEWER, { userId, teamId: await teamIdByName("경영관리팀"), effectiveFrom: next.toISOString().slice(0, 10) });
+  await db.update(teamMemberships).set({ teamId: await teamIdByName("경영관리팀") }).where(eq(teamMemberships.userId, userId));
 }

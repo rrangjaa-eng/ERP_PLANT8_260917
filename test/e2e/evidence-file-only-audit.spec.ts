@@ -1,4 +1,5 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { dirname } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
@@ -40,7 +41,10 @@ async function payer(fx: ExpenseE2E, scope: "company" | "team", prefix: string):
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const [project] = await db.select({ teamId: projects.teamId }).from(projects).where(eq(projects.id, fx.projectId));
   if (!project?.teamId) throw new Error("프로젝트 팀 없음");
-  return makePerson(prefix, role.id, project.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson(prefix, role.id, project.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  if (scope === "team") await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 async function insertLink(ownerId: string, by: string): Promise<void> {
@@ -164,7 +168,8 @@ async function measureRole(page: Page, role: "wide" | "narrow", width: number): 
   await waitForHydration(select);
   const noneRows = await dataRows(page);
   record("필터 없음 행에 A · B · C", width, role, PAY_URL, { A: has(noneRows, A), B: has(noneRows, B), C: has(noneRows, C) }, "모두 true", has(noneRows, A) && has(noneRows, B) && has(noneRows, C));
-  record("필터 없음 행에 A2(다른 팀)", width, role, PAY_URL, has(noneRows, A2), role === "wide" ? true : false, has(noneRows, A2) === (role === "wide"));
+  // 07.3-01: narrow(팀 범위 지급 계급)도 경영관리본부 안이라 지출결의 범위가 전사다(D-7314) — A2가 둘 다에게 선다.
+  record("필터 없음 행에 A2(다른 팀)", width, role, PAY_URL, has(noneRows, A2), true, has(noneRows, A2));
   const labels = (await select.locator("option").allTextContents()).map((t) => t.trim());
   record("선택지 순서", width, role, PAY_URL, labels, EXPECTED_OPTIONS, JSON.stringify(labels) === JSON.stringify(EXPECTED_OPTIONS));
   record("마지막 선택지 글자", width, role, PAY_URL, labels.at(-1), "파일만 있음", labels.at(-1) === "파일만 있음");
@@ -189,8 +194,8 @@ async function measureRole(page: Page, role: "wide" | "narrow", width: number): 
   record("키보드 고름 뒤 URL evidence", width, role, "keyboard", url.searchParams.get("evidence"), "file-only", url.searchParams.get("evidence") === "file-only");
   await waitForHydration(page.getByLabel("증빙", { exact: true }));
   const fileRows = await dataRows(page);
-  const expectA2 = role === "wide";
-  record("file-only 행 = A(+wide면 A2)", width, role, FILE_ONLY_URL, { A: has(fileRows, A), B: has(fileRows, B), C: has(fileRows, C), A2: has(fileRows, A2) }, { A: true, B: false, C: false, A2: expectA2 }, has(fileRows, A) && !has(fileRows, B) && !has(fileRows, C) && has(fileRows, A2) === expectA2);
+  const expectA2 = true;
+  record("file-only 행 = A + A2", width, role, FILE_ONLY_URL, { A: has(fileRows, A), B: has(fileRows, B), C: has(fileRows, C), A2: has(fileRows, A2) }, { A: true, B: false, C: false, A2: expectA2 }, has(fileRows, A) && !has(fileRows, B) && !has(fileRows, C) && has(fileRows, A2) === expectA2);
   const totalText = (await page.locator("main section[aria-label='합계'] p").first().textContent())?.trim() ?? "";
   const n = Number(/· (\d+)건\)/.exec(totalText)?.[1] ?? NaN);
   record("합계 줄 건수 = 보이는 행 수", width, role, FILE_ONLY_URL, `${totalText} / 행 ${fileRows.length}`, "같음", n === fileRows.length);

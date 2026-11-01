@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -50,7 +51,10 @@ async function makeTeamPayer(fx: ExpenseE2E, opts: { amountHidden?: boolean } = 
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.team", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: !(opts.amountHidden && infoItem === "expense.amount") });
-  return makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 // 줄 하나 → 증빙 붙여 제출 → 결재선 넷 승인 → (payable이면) 지급 권한자가 확인 = P4 · (unreviewed면) 확인 전 = P2. 문서 id를 돌려준다.

@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -25,7 +26,10 @@ async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const [project] = await db.select({ teamId: projects.teamId }).from(projects).where(eq(projects.id, fx.projectId));
   if (!project?.teamId) throw new Error("프로젝트 팀 없음");
-  return makePerson("경영관리", role.id, project.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("경영관리", role.id, project.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 async function insertLink(ownerId: string, by: string): Promise<void> {

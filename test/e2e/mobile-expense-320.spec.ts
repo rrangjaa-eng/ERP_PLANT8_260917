@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -98,7 +99,10 @@ async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
   for (const infoItem of ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   }
-  return makePerson("경영관리", role.id, team.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("경영관리", role.id, team.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 // 회사 대납 규칙 증빙 종류(시드에 없다 — 이 스펙만 쓰고 끝에서 끈다). 이름이 길수록 `… 규칙` 조각이 길다.

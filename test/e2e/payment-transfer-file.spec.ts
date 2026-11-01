@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { readFile } from "node:fs/promises";
 import { test, expect, type Locator, type Page, type Request } from "@playwright/test";
 import { eq } from "drizzle-orm";
@@ -53,7 +54,10 @@ async function makeTransferPayer(fx: ExpenseE2E, opts: { hidden?: readonly strin
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.vendors", action: "write", allowed: true });
   }
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: !opts.hidden?.includes(infoItem) });
-  return makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 // 줄 하나 → 제출 → 결재선 넷 승인 → 지급 권한자가 증빙 확인 = P4(지급 대상 · 고를 수 있음). 픽스처 거래처는 신한 계좌가 있다.

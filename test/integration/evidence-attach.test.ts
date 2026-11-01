@@ -237,7 +237,8 @@ describe("붙일 문서 후보 (E34 · RP-5 · G3)", () => {
     expect(result.limit).toBe(CANDIDATE_LIMIT);
 
     // 범위 밖 — 팀 범위 계급(다른 팀 발령)은 기획1팀 문서를 보지 못한다(06.2 scopeCondition 그대로).
-    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("기획본부"), name: `붙이기범위-${randomUUID().slice(0, 6)}` });
+    // 07.3-01: 증빙 등록(자금 키) 보유자는 경영관리본부 소속이어야 한다(D-7301) — 다른 팀을 경영관리본부 아래에 둔다.
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("경영관리본부"), name: `붙이기범위-${randomUUID().slice(0, 6)}` });
     const roleId = `role-${randomUUID()}`;
     await insertRole(SYSTEM_VIEWER, { id: roleId, name: `팀 등록-${roleId.slice(-6)}`, workScope: "team", viewScope: "team" });
     for (const menu of ["expenses"]) await upsertPermission(SYSTEM_VIEWER, { roleId, menu, action: "view", allowed: true });

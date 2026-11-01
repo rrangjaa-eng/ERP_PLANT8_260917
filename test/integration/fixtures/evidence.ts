@@ -14,6 +14,7 @@ import { rejectDocument } from "@/domain/approvals";
 import { createExpenseFromLines, submitExpense } from "@/domain/expenses";
 import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
 import { attachEvidence, ensureDetail, makeEvidenceManager, type ExpenseFixture } from "./expenses";
+import { placeInFundDivision } from "./fund-scope";
 
 // 06.1-04: 증빙 등록 권한 계급 · 등록 도우미 — 06.1-05 · 06 · 09 · 11이 다시 쓴다.
 // 계급은 새로 만든다 — 시드 계급의 권한을 바꾸면 누수 스캔 · 권한표 단언이 흔들린다(시드는 어느 계급에도 등록을 켜지 않는다).
@@ -25,6 +26,8 @@ export async function createIntakeViewer(): Promise<Viewer> {
   await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "evidence.value", visible: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "evidence.amount", visible: true });
   const { userId } = await createAccount(SYSTEM_VIEWER, { email: `intake-${randomUUID()}@example.test`, name: "증빙 등록자", roleId });
+  // 07.3-01: 증빙 등록은 자금 키 — 등록자는 경영관리본부 소속이다(팀 없이 본부 칸).
+  await placeInFundDivision(userId);
   return { id: userId, roleId };
 }
 

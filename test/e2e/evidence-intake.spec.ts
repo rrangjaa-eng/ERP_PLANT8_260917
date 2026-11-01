@@ -148,7 +148,8 @@ test("기획 PM은 주소를 쳐도 /expenses/evidence가 404다(등록 권한 �
 });
 
 test("(P-3 · DA-10) 지출결의 목록 필터 줄 끝 `증빙 {N}` — N은 할 일(확인 필요 포함), 누르면 증빙 목록", async ({ page }) => {
-  const viewer = await loginIntake(page, { viewScope: "own", expenses: "write" }, await teamIdByName("기획1팀"));
+  // 07.3-01: 증빙 등록(자금 키) 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  const viewer = await loginIntake(page, { viewScope: "own", expenses: "write" }, await teamIdByName("경영관리팀"));
   await createTeamExpenseDraft(viewer, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: seoulToday(), content: "증빙 진입 링크 E2E" } });
   const card = await addLotteCard({ kind: "shared" });
   // 미공개 2줄 + 해외 이용(확인 필요) 1줄 = 할 일 3.
@@ -172,7 +173,7 @@ test("기획 PM의 지출결의 목록에는 증빙 진입 링크가 없다(등�
 });
 
 test("(G8) 보이는 지출결의가 0건인 등록 계급(보는 범위 본인)도 빈 목록에 `증빙` 링크가 있다", async ({ page }) => {
-  await loginIntake(page, { viewScope: "own", expenses: "view" });
+  await loginIntake(page, { viewScope: "own", expenses: "view" }, await teamIdByName("경영관리팀"));
   await page.goto("/expenses");
   await expect(page.getByText("등록된 지출결의가 없습니다", { exact: true })).toBeVisible();
   await expect(page.getByRole("main").getByRole("link", { name: "증빙", exact: true })).toHaveAttribute("href", "/expenses/evidence");

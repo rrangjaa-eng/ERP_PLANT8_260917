@@ -1,4 +1,5 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
@@ -705,7 +706,10 @@ async function makePurchaser(teamId: string): Promise<Person> {
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of PURCHASER_VISIBLE) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-  return makePerson("감사8처리", role.id, teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("감사8처리", role.id, teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 async function ownRequest(requestedBy: string, itemName: string, status: "requested" | "purchased"): Promise<string> {

@@ -814,14 +814,15 @@ describe("문서 보임 범위(CSO-1) — 지급 · 증빙 확인 서버 경로"
     return makePerson("팀지급", role.id, teamName);
   }
 
-  it("다른 팀 지출결의 → 지급 완료 · 취소 · 예정일 · 미리보기 · 증빙 확인 모두 「없는 지출결의」이고 문서가 그대로다", async () => {
+  // 07.3-01: 지급 처리는 자금 키 — 경영관리본부 안 팀 범위 지급 권한자는 다른 팀 문서도 보고(D-7314),
+  // 본부 밖(문서와 같은 기획1팀)이면 다섯 경로가 모두 막힌다(D-7301 — 거부는 팀 범위가 아니라 자금 게이트).
+  it("본부 밖 지급 권한자 → 지급 완료 · 취소 · 예정일 · 미리보기 · 증빙 확인 모두 막히고 문서가 그대로다", async () => {
     const fx = await setupExpenseProject();
     const doc = await approvedExpenseWithEvidence(fx);
-    // 같은 팀(기획1팀) 팀 범위 지급 권한자는 본다 — 아래 거부가 팀 범위 판정 때문임을 보인다.
-    const sameTeam = await teamPayer("기획1팀");
-    expect((await previewPayable(sameTeam, { expenseId: doc.expenseId, payDate: seoulToday() })).payDate).toBe(seoulToday());
+    const mgmtTeam = await teamPayer("경영관리팀");
+    expect((await previewPayable(mgmtTeam, { expenseId: doc.expenseId, payDate: seoulToday() })).payDate).toBe(seoulToday());
 
-    const outsider = await teamPayer("경영관리팀");
+    const outsider = await teamPayer("기획1팀");
     const before = await snapshot(doc.expenseId);
     const errors = [
       await caught(completeExpensePayment(outsider, { expenseId: doc.expenseId, expectedPayableKrw: 1, version: doc.version })),
@@ -830,10 +831,7 @@ describe("문서 보임 범위(CSO-1) — 지급 · 증빙 확인 서버 경로"
       await caught(previewPayable(outsider, { expenseId: doc.expenseId, payDate: seoulToday() })),
       await caught(confirmEvidence(outsider, { expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 1_000 })),
     ];
-    for (const error of errors) {
-      expect(error).toBeInstanceOf(UserFacingError);
-      expect((error as Error).message).toBe("없는 지출결의 · 새로 고침");
-    }
+    for (const error of errors) expect(error).toBeInstanceOf(ForbiddenError);
     const after = await snapshot(doc.expenseId);
     expect(after).toEqual(before);
     expect(await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, doc.expenseId))).toHaveLength(0);

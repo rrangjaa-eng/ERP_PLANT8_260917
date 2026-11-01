@@ -11,6 +11,7 @@ import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
 import { makeAdmin, makeDelegatedRole } from "./admin-cap-fixtures";
 import { makePerson } from "./approvals-fixtures";
+import { placeInFundDivision } from "./fixtures/fund-scope";
 
 async function makeEmployee(): Promise<string> {
   const id = `payout-${randomUUID()}`;
@@ -235,7 +236,10 @@ describe("지급 계좌 변경의 대상 상한(사용자 결정 2026-10-23)", (
       ],
       infoItems: ["person.value"],
     });
-    return makePerson("지급 담당", roleId, null);
+    // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 본부 칸 = 경영관리본부.
+    const staff = await makePerson("지급 담당", roleId, null);
+    await placeInFundDivision(staff.id);
+    return staff;
   }
 
   it("지급 담당이 상한 밖(시스템 관리자) 대상의 계좌를 바꾸면 거부 · 계좌 · 기록 그대로", async () => {

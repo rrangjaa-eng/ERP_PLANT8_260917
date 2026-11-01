@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { and, count, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -262,6 +263,8 @@ test.describe("카드 전표 (06-25 Task 2 — 새 건 첫 저장 · S13 · 폰)
       await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
     }
     const buyer = await makePerson("구매처리", role.id, team.id, `${year}-01-01`);
+    // 07.3-01: 구매 처리는 자금 키 — 처리자는 경영관리팀 발령(D-7301).
+    await placeInFundDivision(buyer.viewer.id);
     await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${suffix}`, numberLast4: "7790", label: `공용카드-${suffix}`, kind: "shared" });
 
     const page = await loginPage(browser, baseURL, buyer);

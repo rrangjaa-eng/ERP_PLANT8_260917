@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { projects, settingsSimple } from "@/db/schema";
 import { createFixtureUser } from "./fixtures";
+import { teamIdByName } from "./helpers/evidence";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
@@ -57,7 +58,8 @@ test("폰 375 — P1 세 열 · 행 탭 → 이력 시트(예산 바꾸기) · �
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.budget", action, allowed: true });
   for (const infoItem of ["budget.amount", "quote.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-  const user = await createFixtureUser({ roleId: role.id, teamId: team.id });
+  // 07.3-01: 예산 키(자금 키) 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령(프로젝트 범위는 전사 D-7314).
+  const user = await createFixtureUser({ roleId: role.id, teamId: await teamIdByName("경영관리팀") });
 
   await login(page, user);
   await page.goto("/projects/budget");

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { can } from "@/domain/permissions/can";
 import { fundGate, memoizeFundGateForRequest, readFundDivision } from "@/domain/permissions/fund-gate";
 import { FUND_DIVISION_SETTING_KEY } from "@/domain/permissions/fund-scope";
+import { memoizeRowScopeForRequest } from "@/domain/permissions/scope-for";
 import type { Viewer } from "@/domain/viewer";
 import { log } from "@/lib/log";
 
@@ -131,9 +132,15 @@ describe("fundGate (07.3-01)", () => {
   it.each([
     ["설정 행이 없다", undefined],
     ["값이 uuid가 아니다", "not-a-uuid"],
-    ["설정 본부가 보관됐다", ARCHIVED_DIVISION],
   ])("%s → 소속이 같아 보여도 거짓이다(fail-closed)", async (_label, setting) => {
     world({ setting, teamId: null, divisionId: typeof setting === "string" ? setting : FUND_DIVISION });
+    expect(await fundGate(viewer())).toBe(false);
+  });
+
+  // 팀 경로는 본부 보관을 보지 않는다 — 소속 본부가 보관 본부 id로 나오므로 readFundDivision의 보관 검사만 거짓을 만든다.
+  it("설정 본부가 보관됐다 → 오늘 팀의 본부가 그 본부여도 거짓이다(fail-closed)", async () => {
+    world({ setting: ARCHIVED_DIVISION, teamId: MGMT_TEAM, teamOrgUnit: ARCHIVED_DIVISION });
+    vi.spyOn(log, "warn").mockImplementation(() => undefined);
     expect(await fundGate(viewer())).toBe(false);
   });
 
@@ -178,6 +185,16 @@ describe("fundGate 요청 memo", () => {
     }
     expect(repo.findSimpleValue).toHaveBeenCalledTimes(1);
     expect(repo.findMembershipAtDate).toHaveBeenCalledTimes(1);
+  });
+
+  it("getSession의 memoizeRowScopeForRequest로 등록해도 자금 키 can() 여러 번에 설정 읽기는 한 번이다", async () => {
+    world({ setting: FUND_DIVISION, teamId: MGMT_TEAM });
+    const v = viewer();
+    memoizeRowScopeForRequest(v);
+    for (const menu of ["expenses.payments", "evidence.intake", "projects.budget"]) {
+      expect(await can(v, menu, "write", paymentsRow)).toBe(true);
+    }
+    expect(repo.findSimpleValue).toHaveBeenCalledTimes(1);
   });
 
   it("등록하지 않은 viewer는 매번 계산한다", async () => {

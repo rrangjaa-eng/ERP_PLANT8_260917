@@ -1,12 +1,12 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { memoizeFundGateForRequest } from "@/domain/permissions/fund-gate";
+import { viewerDivision, type ViewerDivisionDeps } from "@/domain/permissions/viewer-division";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulToday } from "@/lib/dates";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
 import { findMembershipAtDate as defaultFindMembershipAtDate } from "@/repositories/team-memberships";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
-import { findUserDivision as defaultFindUserDivision } from "@/repositories/users";
-import { findOrgUnitById as defaultFindOrgUnitById } from "@/repositories/org-units";
 
 // ADMN-01·ADMN-12: 행 필터 서술자 — repositories가 where절로 번역한다. Drizzle
 // SQL 조각을 돌려주지 않는다 — boundaries/element-types가 domain에서 db 계층
@@ -96,6 +96,8 @@ const requestMemo = new WeakMap<Viewer, Map<RowScopeEntity, Promise<RowScope>>>(
 
 export function memoizeRowScopeForRequest(viewer: Viewer): void {
   requestMemo.set(viewer, new Map());
+  // 07.3-01: 자금 게이트도 같은 viewer 객체로 요청 memo를 건다(getSession은 이 함수 하나만 부른다).
+  memoizeFundGateForRequest(viewer);
 }
 
 export async function rowScopeFor(viewer: Viewer, entity: RowScopeEntity, deps?: Partial<RowScopeDeps>): Promise<RowScope> {
@@ -164,11 +166,7 @@ export type EvidenceScope =
   | { rows: "published"; teamId: string | null; orgUnitId: string | null }
   | { rows: "none" };
 
-type EvidenceScopeDeps = ScopeForDeps &
-  Pick<RowScopeDeps, "findMembershipAtDate" | "findTeamById" | "today"> & {
-    findUserDivision: (viewer: Viewer, id: string) => Promise<{ divisionId: string | null } | null>;
-    findOrgUnitById: (viewer: Viewer, id: string) => Promise<{ archivedAt: Date | null } | null>;
-  };
+type EvidenceScopeDeps = ScopeForDeps & ViewerDivisionDeps;
 
 export async function evidenceScopeFor(viewer: Viewer, deps?: Partial<EvidenceScopeDeps>): Promise<EvidenceScope> {
   const canFn = deps?.can ?? defaultCan;
@@ -176,14 +174,5 @@ export async function evidenceScopeFor(viewer: Viewer, deps?: Partial<EvidenceSc
   if (!(await canFn(viewer, "evidence", "view"))) return { rows: "none" };
   if (await canFn(viewer, "evidence.intake", "write")) return { rows: "all" };
 
-  const findMembershipAtDate = deps?.findMembershipAtDate ?? defaultFindMembershipAtDate;
-  const membership = await findMembershipAtDate(viewer, viewer.id, (deps?.today ?? seoulToday)());
-  const teamId = membership?.teamId ?? null;
-  if (teamId) {
-    const team = await (deps?.findTeamById ?? defaultFindTeamById)(viewer, teamId);
-    return { rows: "published", teamId, orgUnitId: team?.orgUnitId ?? null };
-  }
-  const divisionId = (await (deps?.findUserDivision ?? defaultFindUserDivision)(viewer, viewer.id))?.divisionId ?? null;
-  const division = divisionId ? await (deps?.findOrgUnitById ?? defaultFindOrgUnitById)(viewer, divisionId) : null;
-  return { rows: "published", teamId: null, orgUnitId: division && division.archivedAt === null ? divisionId : null };
+  return { rows: "published", ...(await viewerDivision(viewer, deps)) };
 }

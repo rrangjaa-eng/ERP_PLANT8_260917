@@ -17,6 +17,7 @@ import { PickDialog, type PickResult, type PickRow } from "@/ui/pick-dialog/Pick
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { CARD_RECEIPT_CODE, cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
 import { formatKrw } from "@/lib/format-number";
+import { registeredText } from "./registered-text";
 import type { NumberInputKind } from "@/lib/format-number";
 import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
@@ -63,6 +64,11 @@ export type CardUsageEdit = {
   cardId: string;
   cardText: string;
   proxyHint: string | null;
+  /** 07.1-19: 읽기 `등록` 줄 재료 — 목록 행 시트 `등록` 줄과 같은 글자(registeredText). */
+  registeredVia: string;
+  registeredByName: string;
+  registeredOn: string | null;
+  purchaseNumber: string | null;
   usedOn: string;
   merchant: Merchant | null;
   evidenceTypeCode: string;
@@ -880,6 +886,13 @@ export function CardUsageForm({
             <div data-ui="field-row" className={rowStyles.row}>
               <span className={rowStyles.label}>번호</span>
               <span className={cardStyles.valueText}>{edit.number ?? "—"}</span>
+            </div>
+          ) : null}
+          {edit ? (
+            // 07.1-19 게이트 P2: 폰 목록 접힌 줄 `등록`이 잘려도 등록자를 볼 곳 — 행 시트와 같은 글자, 읽기 줄(말줄임 없이 접힌다).
+            <div data-ui="field-row" className={rowStyles.row}>
+              <span className={rowStyles.label}>등록</span>
+              <span>{registeredText(edit)}</span>
             </div>
           ) : null}
           {fromEvidence ? (

@@ -1,0 +1,424 @@
+[
+  {
+    "route": "/cards",
+    "width": 375,
+    "screenshot": "cards-d96428f1-375.png",
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen > div > p.ListEmpty-module__LT6Aja__row",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > div > p.ListEmpty-module__LT6Aja__row > span.ListEmpty-module__LT6Aja__message",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div > p.ListEmpty-module__LT6Aja__row > a.Button-module__TNl3Yq__btn",
+        "gap": 12
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 57,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "기안aad0",
+        "width": 50,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "kind": "heading",
+        "text": "카드 사용",
+        "width": 343,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > div > p.ListEmpty-module__LT6Aja__row > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "구매 요청",
+        "width": 80,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(1)",
+        "kind": "nav",
+        "text": "내 차례 1",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(2)",
+        "kind": "nav",
+        "text": "프로젝트",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(3)",
+        "kind": "nav",
+        "text": "지출결의",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > button.BottomTabs-module__PJycjq__tab",
+        "kind": "button",
+        "text": "더보기",
+        "width": 103,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/cards",
+    "width": 320,
+    "screenshot": "cards-d96428f1-320.png",
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen > div > p.ListEmpty-module__LT6Aja__row",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > div > p.ListEmpty-module__LT6Aja__row > span.ListEmpty-module__LT6Aja__message",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div > p.ListEmpty-module__LT6Aja__row > a.Button-module__TNl3Yq__btn",
+        "gap": 12
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 57,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "기안aad0",
+        "width": 50,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "kind": "heading",
+        "text": "카드 사용",
+        "width": 288,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > div > p.ListEmpty-module__LT6Aja__row > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "구매 요청",
+        "width": 80,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(1)",
+        "kind": "nav",
+        "text": "내 차례 1",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(2)",
+        "kind": "nav",
+        "text": "프로젝트",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(3)",
+        "kind": "nav",
+        "text": "지출결의",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > button.BottomTabs-module__PJycjq__tab",
+        "kind": "button",
+        "text": "더보기",
+        "width": 89,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/cards",
+    "width": 768,
+    "screenshot": "cards-d96428f1-768.png",
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div",
+        "gap": 16
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > button.RailSheet-module__plcX-q__trigger",
+        "kind": "button",
+        "text": "≡메뉴",
+        "width": 44,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 54,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "기안aad0",
+        "width": 51,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "kind": "heading",
+        "text": "카드 사용",
+        "width": 728,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > div > p.ListEmpty-module__LT6Aja__row > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "구매 요청",
+        "width": 77,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/cards",
+    "width": 1280,
+    "screenshot": "cards-d96428f1-1280.png",
+    "scrollWidth": 1280,
+    "clientWidth": 1280,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.ListScreen-module__ciqCrG__screen",
+        "before": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "after": "#main-content > div.ListScreen-module__ciqCrG__screen > div",
+        "gap": 16
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 176,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(1)",
+        "kind": "nav",
+        "text": "프로젝트",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(2)",
+        "kind": "nav",
+        "text": "지출결의",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(3)",
+        "kind": "nav",
+        "text": "법인카드",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(4)",
+        "kind": "nav",
+        "text": "결재",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(5)",
+        "kind": "nav",
+        "text": "손익",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "기안aad0",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > h1.ListScreen-module__ciqCrG__title",
+        "kind": "heading",
+        "text": "카드 사용",
+        "width": 1064,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.ListScreen-module__ciqCrG__screen > div > p.ListEmpty-module__LT6Aja__row > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "구매 요청",
+        "width": 77,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  }
+]

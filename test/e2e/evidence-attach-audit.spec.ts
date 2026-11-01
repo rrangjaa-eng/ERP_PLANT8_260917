@@ -124,7 +124,7 @@ async function activeDescription(page: Page): Promise<string> {
   });
 }
 
-// 「증빙」 섹션 = div#evidence의 부모(DetailScreen.Section). 잠김 줄 = 알려진 잠김 글자와 같은 잎 요소.
+// 「증빙」 섹션 = #evidence(섹션 제목 h2)의 부모(DetailScreen.Section). 잠김 줄 = 알려진 잠김 글자와 같은 잎 요소.
 async function sectionLockLines(page: Page): Promise<string[]> {
   return page.evaluate((source) => {
     const re = new RegExp(source);
@@ -145,7 +145,7 @@ async function linkSnapshot(stage: string): Promise<void> {
 }
 
 function block(page: Page): Locator {
-  return page.locator("#evidence + div");
+  return page.locator("#evidence + div + div");
 }
 
 function rowOf(page: Page, text: string): Locator {
@@ -613,7 +613,7 @@ test("B 문서 화면 「증빙」 섹션 — ① 반려 · 결재 중 · 승인
     record("화면 1차 버튼 ≤ 1(반려)", width, role, url, primary, "≤ 1", primary <= 1);
     const violations = await axe(page);
     record("axe 위반(반려 문서)", width, role, url, violations, "[]", violations.length === 0);
-    const off = await offTokens(page, "#evidence + div");
+    const off = await offTokens(page, "#evidence + div + div");
     record("토큰 밖 색 · 서체 · radius(붙은 증빙 블록)", width, role, url, off, "[]", off.length === 0);
     await shot(page, `doc-returned-${width}`);
     await linkSnapshot(`B ${width} 시작`);

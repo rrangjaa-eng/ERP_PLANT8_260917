@@ -148,6 +148,7 @@ const PASTE_COLUMNS: TableColumn<PasteSampleRow>[] = [
 
 const PASTE_NOTICES: FooterNoticeItem[] = [
   { tone: "muted", text: "붙여넣기 3줄", paste: "head" },
+  { tone: "warning", text: "아래 3줄 버림", paste: "piece" },
   { tone: "warning", text: "공개 칸 1개 모르는 값", paste: "piece" },
   { tone: "muted", text: "잠긴 줄 1칸 건너뜀", paste: "piece" },
 ];

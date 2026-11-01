@@ -272,6 +272,11 @@
   }
 }
 
+/* 해시(#evidence) 도착 자리 — 스크롤해 오면 고정 상단 바 아래에 선다(DetailScreen.module.css `.sectionTitle[id]`와 같은 값). */
+.evidencePick {
+  scroll-margin-top: calc(var(--shell-top) + var(--s-4));
+}
+
 /* 문서 화면 — 증빙 섹션 안 첨부 래퍼. */
 .evidence {
   max-width: var(--field-w-long);

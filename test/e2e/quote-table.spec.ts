@@ -1282,6 +1282,38 @@ async function saveAndWait(page: Page) {
 const invalidCells = (page: Page) => quoteTable(page).locator('td[aria-invalid="true"]');
 
 test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 한 줄(04-47 Task 1)", () => {
+  // 07.1-19 PA5(E-P2-52): PC 합계 행은 지금 그대로 — 한 행 · 한 칸 · 글자 `합계 (공급가액 · N줄)` · 부제 보임 · 바닥 알림은 이 칸 안에 한 번만.
+  for (const width of [1280, 1024] as const) {
+    test(`(07.1-19 PA5) ${width} — 합계 행 PC 그대로: tfoot tr 1 · td 1 · 부제 보임 · 알림(오류 1칸) 요소 1 · 라벨과 같은 줄`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openProjectWithSavedLines(page, [
+        { subcategory: "stage_construction", itemName: "합계 행 줄1", amount: 1000, execution: 800 },
+        { subcategory: "stage_construction", itemName: "합계 행 줄2", amount: 2000, execution: 900 },
+      ]);
+      const foot = quoteTable(page).locator("tfoot");
+      await expect(foot.locator("tr")).toHaveCount(1);
+      await expect(foot.locator("td")).toHaveCount(1);
+      await expect(foot.locator("td")).toContainText("합계 (공급가액 · 2줄)");
+      await expect(foot.getByText(/공급가액/)).toBeVisible();
+      const quiet = await foot.locator("tr").evaluate((row) => row.getBoundingClientRect().height);
+
+      await quoteCell(page, 0, 5).focus();
+      await pasteIntoFocusedCell(page, quoteCell(page, 0, 5), "숫자아님");
+      await expect(foot).toContainText("오류 1칸");
+      await expect(foot.locator("[data-tone]")).toHaveCount(1);
+      await expect(foot.locator("td")).toHaveCount(1);
+      const label = await foot.locator("td").evaluate((cell) => {
+        const range = document.createRange();
+        range.selectNodeContents(cell.firstChild as Node);
+        return Math.round(range.getBoundingClientRect().top);
+      });
+      const notice = await foot.locator("[data-tone]").evaluate((element) => Math.round(element.getBoundingClientRect().top));
+      expect(Math.abs(notice - label), "알림은 라벨 뒤 같은 줄").toBeLessThanOrEqual(6);
+      const loud = await foot.locator("tr").evaluate((row) => row.getBoundingClientRect().height);
+      console.log(`PA5 ${width} tfoot tr height quiet=${quiet} withNotice=${loud}`);
+    });
+  }
+
   test("(ENG-D5) 앱 형식 없는 엑셀 6열을 소분류 칸에 → 실행가 값이 떨어진 견적가 칸 둘이 오류 · 합계 행 `오류 2칸` · `계산 열` 조각 없음", async ({ page }) => {
     const stamp = randomUUID().slice(0, 8);
     const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E엑셀거래처-${stamp}`, normalizedName: `e2e엑셀거래처-${stamp}` });

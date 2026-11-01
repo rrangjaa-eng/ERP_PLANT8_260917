@@ -73,7 +73,19 @@ async function preSettleEvidencePending(browser: Browser, baseURL: string | unde
     ceo: await makePerson("대표", "role-ceo", team.id, yearStart),
   };
   const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처클라이언트-${suffix}`, normalizedName: `캡처클라이언트-${suffix}` });
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `캡처거래처-${suffix}`, normalizedName: `캡처거래처-${suffix}`, defaultEvidenceType: "tax_invoice" });
+  // 새 초안의 지급 방식 기본값이 계좌이체라 거래처에 쓸 수 있는 계좌가 있고 확인된 거래처여야 제출 버튼이 열린다.
+  const account = planAccountNumberUpdate("110-123-456789");
+  if (account.kind !== "set") throw new Error("계좌번호 암호화 계획 없음");
+  const vendor = await insertVendor(SYSTEM_VIEWER, {
+    name: `캡처거래처-${suffix}`,
+    normalizedName: `캡처거래처-${suffix}`,
+    defaultEvidenceType: "tax_invoice",
+    accountBank: "신한은행",
+    accountHolder: "테스트 예금주",
+    accountNumberEncrypted: account.accountNumberEncrypted,
+    accountNumberLast4: account.accountNumberLast4,
+    confirmedAt: new Date(),
+  });
   const project = await createProject(org.drafter.viewer, {
     clientId: client.id,
     teamId: org.teamId,
@@ -134,7 +146,27 @@ async function preSettleEvidencePending(browser: Browser, baseURL: string | unde
     await expect
       .poll(() => page.getByRole("button", { name: /^임시 저장/ }).evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
       .toBe(true);
-    await page.getByTestId("attachments-input").setInputFiles("test/e2e/assets/receipt-3000x2000.jpg");
+    // 같은 파일 내용은 이미 첨부된 파일로 걸러지므로(캡처 안에서 시드가 여러 번 돈다) 매번 다른 내용의 영수증 사진을 화면에서 만든다.
+    const tag = randomUUID();
+    const base64 = await page.evaluate(async (label) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 3000;
+      canvas.height = 2000;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("캔버스를 만들 수 없다");
+      ctx.fillStyle = "#eef2f1";
+      ctx.fillRect(0, 0, 3000, 2000);
+      ctx.fillStyle = "#1f2d29";
+      ctx.font = "bold 90px sans-serif";
+      ctx.fillText(label, 100, 300);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
+      if (!blob) throw new Error("JPEG를 만들 수 없다");
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary);
+    }, tag);
+    await page.getByTestId("attachments-input").setInputFiles({ name: `receipt-${tag.slice(0, 8)}.jpg`, mimeType: "image/jpeg", buffer: Buffer.from(base64, "base64") });
     await expect(page.locator('[data-ui="attachments"] li').getByText(/^\d+KB · \d{2}-\d{2}$/)).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: /^지출결의 제출/ }).click();
     await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
@@ -821,7 +853,27 @@ async function evidencePrivateType(browser: Browser, baseURL: string | undefined
     await expect
       .poll(() => page.getByRole("button", { name: /^임시 저장/ }).evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
       .toBe(true);
-    await page.getByTestId("attachments-input").setInputFiles("test/e2e/assets/receipt-3000x2000.jpg");
+    // 같은 파일 내용은 이미 첨부된 파일로 걸러지므로(캡처 안에서 시드가 여러 번 돈다) 매번 다른 내용의 영수증 사진을 화면에서 만든다.
+    const tag = randomUUID();
+    const base64 = await page.evaluate(async (label) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 3000;
+      canvas.height = 2000;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("캔버스를 만들 수 없다");
+      ctx.fillStyle = "#eef2f1";
+      ctx.fillRect(0, 0, 3000, 2000);
+      ctx.fillStyle = "#1f2d29";
+      ctx.font = "bold 90px sans-serif";
+      ctx.fillText(label, 100, 300);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
+      if (!blob) throw new Error("JPEG를 만들 수 없다");
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary);
+    }, tag);
+    await page.getByTestId("attachments-input").setInputFiles({ name: `receipt-${tag.slice(0, 8)}.jpg`, mimeType: "image/jpeg", buffer: Buffer.from(base64, "base64") });
     await expect(page.locator('[data-ui="attachments"] li').getByText(/^\d+KB · \d{2}-\d{2}$/)).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: /^지출결의 제출/ }).click();
     await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));

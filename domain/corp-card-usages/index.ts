@@ -1033,6 +1033,10 @@ export type CardUsageEditDto = {
   proxyHint: string | null;
   cardKind: string;
   registeredVia: string;
+  /** 07.1-19: 수정 패널 읽기 `등록` 줄 — 목록 행 시트 `등록` 줄과 같은 재료(등록자 · 등록한 날 서울 날짜 · 구매 요청 번호). */
+  registeredByName: string;
+  registeredOn: string;
+  purchaseNumber: string | null;
   usedOn: string;
   merchantId: string | null;
   merchantName: string | null;
@@ -1066,6 +1070,9 @@ const EDIT_VALUE_KEYS = [
   "proxyHint",
   "cardKind",
   "registeredVia",
+  "registeredByName",
+  "registeredOn",
+  "purchaseNumber",
   "usedOn",
   "merchantId",
   "merchantName",
@@ -1136,6 +1143,9 @@ export async function loadCardUsageForEdit(viewer: Viewer, id: string): Promise<
     proxyHint,
     cardKind: stored.cardKind,
     registeredVia: stored.registeredVia,
+    registeredByName: stored.registeredByName,
+    registeredOn: seoulToday(stored.createdAt),
+    purchaseNumber: stored.purchaseNumber,
     usedOn: stored.usedOn,
     merchantId: stored.merchantVendorId,
     merchantName: stored.merchantName,

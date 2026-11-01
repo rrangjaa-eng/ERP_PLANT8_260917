@@ -78,7 +78,7 @@ test("S7 행 1 반려 지출결의 × 경영관리(두 키): 행 붙이기 → �
   await status.press("Enter");
 
   await expect(page).toHaveURL(new RegExp(`/expenses/${doc.expenseId}#evidence$`));
-  const section = page.locator("#evidence + div").getByRole("table", { name: "붙은 증빙" });
+  const section = page.locator("#evidence + div + div").getByRole("table", { name: "붙은 증빙" });
   await expect(section.locator("tbody tr:visible")).toHaveCount(1);
   await expect(section.locator("tbody tr:visible").first()).toContainText(fx.vendorName);
 });
@@ -225,7 +225,7 @@ async function approveAll(fx: ExpenseE2E, expenseId: string): Promise<void> {
 }
 
 function linkedSection(page: Page) {
-  return page.locator("#evidence + div");
+  return page.locator("#evidence + div + div");
 }
 
 test("S7 행 4 반려 지출결의 종결 확인 창: 붙은 증빙 1건이면 결과 줄 끝 `붙은 증빙 1건은 증빙 목록으로` → 종결 뒤 그 기록은 목록에서 붙음 아님", async ({ page, browser, baseURL }) => {

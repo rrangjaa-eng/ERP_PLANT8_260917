@@ -400,6 +400,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const filters = list.filters;
   const defaults = filterOptions.defaults;
   const [sheetRowId, setSheetRowId] = useState<string | null>(null);
+  // 07.1-19 PC6 — 키보드 포커스가 서 있는 행(힌트 줄 `Ctrl+E` 낱말의 기준). 표 밖으로 나가면 비운다.
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
   const sheetRow = rows.find((row) => row.id === sheetRowId);
   // 06.1-07 S3 — 1024 이상은 옆 패널(공급가 고침 · 확인 필요 풀기), 미만은 행 시트에 같은 읽기 줄(이력 포함). 둘 다 상세를 서버에서 한 번 받는다.
   const [panelDetail, setPanelDetail] = useState<{ detail: EvidenceDetailView; Panel: EvidencePanelComponent } | null>(null);
@@ -957,8 +959,20 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
     else if (action === "proxy") router.push(proxyHref(row.id));
     else if (action === "restore") void runRowAction(row);
   }
+  function trackFocusedRow(event: React.FocusEvent<HTMLDivElement>) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const nameId = target.closest("tr")?.querySelector<HTMLElement>("[data-cell-action][id]")?.id;
+    setFocusedRowId(nameId ? (rows.find((row) => counterpartyId(row.id) === nameId)?.id ?? null) : null);
+  }
+  function releaseFocusedRow(event: React.FocusEvent<HTMLDivElement>) {
+    if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setFocusedRowId(null);
+  }
   const shownKeyAction = rows.map(keyActionOf).find((action) => action !== null) ?? null;
-  const hintItems = shownKeyAction ? [...HINT_ITEMS, { label: shownKeyAction === "restore" ? ROW_ACTION_LABEL.restore : COPY[shownKeyAction], keys: "Ctrl+E" }] : HINT_ITEMS;
+  // 07.1-19 PC6(SP-71-4): 힌트 낱말 = 포커스 행의 행동 — 포커스 행이 없으면 행동이 있는 첫 행(위), 포커스 행에 행동이 없으면 `Ctrl+E` 항목도 없다.
+  const focusedRow = focusedRowId === null ? undefined : rows.find((row) => row.id === focusedRowId);
+  const hintKeyAction = focusedRow ? keyActionOf(focusedRow) : shownKeyAction;
+  const hintItems = hintKeyAction ? [...HINT_ITEMS, { label: hintKeyAction === "restore" ? ROW_ACTION_LABEL.restore : COPY[hintKeyAction], keys: "Ctrl+E" }] : HINT_ITEMS;
 
   // 쿼리 링크 갈래 — 클라이언트 이동이라 표가 다시 마운트되지 않고 편집 맵이 남는다(리저브 대장 · 카드 사용 필터 선례). 쪽은 1로 돌아간다.
   function go(key: "state" | "type" | "period", value: string) {
@@ -1090,7 +1104,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           <ListEmpty message={emptyState.message} action={emptyState.action} />
         </div>
       ) : (
-        <div onKeyDownCapture={pressCellAction}>
+        <div onKeyDownCapture={pressCellAction} onFocus={trackFocusedRow} onBlur={releaseFocusedRow}>
         <Table
           caption={COPY.caption}
           columns={columns}

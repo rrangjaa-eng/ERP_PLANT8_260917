@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import styles from "./DetailScreen.module.css";
+import { HashFocus } from "./HashFocus";
 
 // UI-SPEC 「화면 틀 계약」 DetailScreen — 상세 화면 틀(폼 화면은 이 틀 + `Form layout="page"`). 제목·섹션 제목 크기는 이 틀만 정한다.
 // 부제 prop은 없다. 컨테이너 폭·좌우 안쪽 여백은 셸 main이 가진다(ListScreen과 같다).
@@ -56,6 +57,7 @@ function Section({ title, headingId, children }: { title: string; headingId?: st
       <h2 id={headingId} tabIndex={headingId ? -1 : undefined} className={styles.sectionTitle}>
         {title}
       </h2>
+      {headingId ? <HashFocus targetId={headingId} /> : null}
       {children}
     </section>
   );

@@ -254,7 +254,8 @@ test.describe("제출 뒤 증빙", () => {
     await expect(row.getByRole("button", { name: "무효 처리" })).toHaveCount(0);
     await expect(page.getByRole("status").filter({ hasText: /무효/ })).toHaveCount(0);
     // 웨이브 11 D4 — 확인 뒤 누른 버튼이 사라져도 포커스는 BODY가 아니라 증빙 영역에 있다.
-    await expect.poll(() => page.evaluate(() => document.activeElement?.closest("#evidence") !== null)).toBe(true);
+    // 07.1-19: `#evidence`는 증빙 섹션 제목(h2)으로 옮겼다 — 증빙 영역 = 그 제목을 가진 section.
+    await expect.poll(() => page.evaluate(() => document.getElementById("evidence")?.closest("section")?.contains(document.activeElement) === true)).toBe(true);
     await page.context().close();
   });
 

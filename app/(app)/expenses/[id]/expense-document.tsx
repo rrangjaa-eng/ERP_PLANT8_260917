@@ -212,8 +212,8 @@ export function ExpenseDocument({
   );
   const reasonMessages = { empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX };
   const evidenceSection = (review: ReactNode) => (
-    <DetailScreen.Section title="증빙">
-      <div id="evidence" className={styles.evidence}>
+    <DetailScreen.Section title="증빙" headingId="evidence">
+      <div className={styles.evidence}>
         <EvidenceAttachments
           expenseId={id}
           files={files}

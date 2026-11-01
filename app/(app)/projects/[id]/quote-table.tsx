@@ -3173,17 +3173,32 @@ export function QuoteLedger({
         ]}
         footerSuccess={savedAt ? savedNoticeText(sentChangedLines, savedAt) : null}
         revealRowId={revealRowId}
-        footer={(notice) => (
-          <tr>
-            <td colSpan={columns.length} className={styles.footerCell}>
-              {`합계 (공급가액 · ${lines.length}줄)`}
-              {/* 04-49(DR-14) — 숨은 금액 열의 합계는 그 폭에서만 라벨 뒤에(1024~1279 차익, 700~1023 견적 · 차익). */}
-              <span className={styles.footerQuoteSum}> {`견적 ${formatKrw(lines.reduce((sum, line) => sum + line.quoteAmountKrw, 0))} ·`}</span>
-              <span className={styles.footerProfitSum}> {`차익 ${formatKrw(lines.reduce((sum, line) => sum + line.profitKrw, 0))}`}</span>
-              {notice}
-            </td>
-          </tr>
-        )}
+        footer={(notice) => {
+          // 07.1-19 PA5(E-P2-52 · Codex PR #301 P2): 폰(수화 뒤)은 합계 행을 `<tr>` 하나 그대로 칸만 나눈다 — 칸 A = 실행가 앞 P1 열 · 칸 B = 실행가 합 · 칸 C = 그 뒤 P1 열.
+          // 폰은 P2 · P3 열이 표 격자에서 빠지므로 span은 `columns` 전체가 아니라 폰에 보이는 P1 열로 센다. PC · 서버 렌더 · 수화 중은 지금 한 칸이다.
+          const executionIndex = columns.findIndex((column) => column.key === "execution");
+          const phoneBefore = executionIndex < 0 ? 0 : columns.slice(0, executionIndex).filter((column) => column.priority === "p1").length;
+          const phoneAfter = executionIndex < 0 ? 0 : columns.slice(executionIndex + 1).filter((column) => column.priority === "p1").length;
+          const splitFooter = phone && phoneBefore > 0;
+          return (
+            <tr>
+              <td colSpan={splitFooter ? phoneBefore : columns.length} className={styles.footerCell}>
+                {"합계"}
+                <span data-footer-subtitle="">{` (공급가액 · ${lines.length}줄)`}</span>
+                {/* 04-49(DR-14) — 숨은 금액 열의 합계는 그 폭에서만 라벨 뒤에(1024~1279 차익, 700~1023 견적 · 차익). */}
+                <span className={styles.footerQuoteSum}> {`견적 ${formatKrw(lines.reduce((sum, line) => sum + line.quoteAmountKrw, 0))} ·`}</span>
+                <span className={styles.footerProfitSum}> {`차익 ${formatKrw(lines.reduce((sum, line) => sum + line.profitKrw, 0))}`}</span>
+                {notice}
+              </td>
+              {splitFooter ? (
+                <td className={styles.footerCell} data-footer-sum="">
+                  <Num value={formatKrw(lines.reduce((sum, line) => sum + line.executionAmount, 0))} />
+                </td>
+              ) : null}
+              {splitFooter && phoneAfter > 0 ? <td colSpan={phoneAfter} className={styles.footerCell} /> : null}
+            </tr>
+          );
+        }}
       />
 
       {(structural.insert || adjustmentStructural.insert) && editableWidth && lines.length > 0 ? (

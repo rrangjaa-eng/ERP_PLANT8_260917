@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
-import { test, expect, type Browser, type Page } from "@playwright/test";
+import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
@@ -408,18 +408,10 @@ function sundayOf(today: string): string {
   return addDays(today, (7 - new Date(`${today}T00:00:00Z`).getUTCDay()) % 7);
 }
 
-// 07.3-01(D-7314): 보는 범위가 전사라 공유 E2E DB의 다른 스펙 요청이 합계에 섞인다 — 합계는 이 시험이 더하기 전 값을 먼저 읽고 더한 뒤 차이(건수 · 금액)로 견준다.
-// 발행 요청 데이터를 만드는 desktop 스펙은 이 파일 하나(직렬)라 읽는 사이에 값이 흔들리지 않는다.
-async function issueTotals(page: Page, status: "requested" | "cancelled" | "all"): Promise<{ count: number; amount: number }> {
-  await page.goto(`/projects/issue-requests?status=${status}`);
-  await expect(page.locator("#issue-request-filter-status")).toHaveValue(status);
-  const region = page.getByRole("region", { name: "합계" });
-  if ((await region.count()) === 0) return { count: 0, amount: 0 };
-  const text = (await region.textContent()) ?? "";
-  const count = Number(/· (\d+)건\)/.exec(text)?.[1] ?? Number.NaN);
-  const amount = Number((/금액\s*([\d,]+)/.exec(text)?.[1] ?? "").replaceAll(",", ""));
-  if (Number.isNaN(count) || Number.isNaN(amount)) throw new Error(`합계 줄을 읽지 못했다: ${text}`);
-  return { count, amount };
+// 07.3-01(D-7314): 보는 범위가 전사라 공유 E2E DB의 다른 스펙(pm-settlement-flow 등 병렬 desktop) 요청이 목록 · 합계에 섞인다.
+// 목록에는 프로젝트 필터가 없으므로 이 시험의 프로젝트 행(프로젝트 칸 링크 `{번호} · {이름}`)만 골라 견준다.
+function ownRows(list: Locator, projectNumber: string): Locator {
+  return list.locator("tr").filter({ has: list.page().getByRole("link", { name: `${projectNumber} · ` }) });
 }
 
 test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
@@ -442,7 +434,7 @@ test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
     await expect(page.locator("#issue-request-filter-status")).toHaveValue("all");
     await expect(list.getByText("전체 보기 신청됨", { exact: true }).filter({ visible: true })).toBeVisible();
     await expect(list.getByText("전체 보기 취소", { exact: true }).filter({ visible: true })).toBeVisible();
-    expect(projectNumber).toBeTruthy();
+    await expect(ownRows(list, projectNumber)).toHaveCount(2);
     await context.close();
   });
 
@@ -458,10 +450,6 @@ test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
   test("그룹은 희망일 지남(경고 색) → 이번 주 → 다음 주 → 그 뒤, 합계 줄 · 행 3차 `발행 줄 입력` / `요청 보기`", async ({ browser }) => {
     const { user, roleId, projectId, projectNumber, today } = await setupBoard({ write: false });
     const sunday = sundayOf(today);
-    const baseline = await openAs(browser, user, "/projects/issue-requests");
-    const requested0 = await issueTotals(baseline.page, "requested");
-    const cancelled0 = await issueTotals(baseline.page, "cancelled");
-    await baseline.context.close();
     const later = await seedRequest(projectId, user.userId, { desiredIssueDate: addDays(sunday, 8), amount: 1_000_000 });
     const nextWeek = await seedRequest(projectId, user.userId, { desiredIssueDate: addDays(sunday, 1), amount: 2_000_000 });
     const overdue = await seedRequest(projectId, user.userId, { desiredIssueDate: addDays(today, -1), amount: 3_000_000 });
@@ -476,11 +464,10 @@ test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
     await expect(groups).toHaveText(["희망일 지남", "이번 주", "다음 주", "그 뒤"]);
     const overdueHeader = groups.first().getByText("희망일 지남", { exact: true });
     expect(await overdueHeader.evaluate((node) => getComputedStyle(node).color)).toBe(await cssColor(page, "--status-warning"));
-    // 합계 줄 — 기본 보기(신청됨) 4건 · 공급가 합(취소 건 제외). 07.3-01: 범위가 전사라(D-7314) 더하기 전 값에서 이 시험이 더한 만큼(차이)으로 견준다.
+    // 합계 줄은 전사 값이라(D-7314) 모양만 보고, 이 프로젝트의 신청됨 4행 · 희망일 순 공급가(취소 건 제외)로 견준다.
     await expect(page.getByText(/^합계 \(신청됨 · \d+건\)$/)).toBeVisible();
-    const requested1 = await issueTotals(page, "requested");
-    expect(requested1.count - requested0.count).toBe(4);
-    expect(requested1.amount - requested0.amount).toBe(10_000_000);
+    await expect(ownRows(list, projectNumber)).toHaveCount(4);
+    await expect(ownRows(list, projectNumber)).toContainText(["3,000,000", "4,000,000", "2,000,000", "1,000,000"]);
     // 금액 2행 합계(서버 부가세).
     await expect(list).toContainText("합계 3,300,000");
 
@@ -488,9 +475,8 @@ test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
     await page.locator("#issue-request-filter-status").selectOption("cancelled");
     await expect(page).toHaveURL(/status=cancelled/);
     await expect(page.getByText(/^합계 \(취소 · \d+건\)$/)).toBeVisible();
-    const cancelled1 = await issueTotals(page, "cancelled");
-    expect(cancelled1.count - cancelled0.count).toBe(1);
-    expect(cancelled1.amount - cancelled0.amount).toBe(5_000_000);
+    await expect(ownRows(list, projectNumber)).toHaveCount(1);
+    await expect(ownRows(list, projectNumber)).toContainText(["5,000,000"]);
 
     // 발행 처리 권한 — 행 3차 접근 이름 `{번호} 희망 {MM-DD} 발행 줄 입력` → `?issueRequest={id}`, 취소 행은 `요청 보기`.
     await grantWrite(roleId);

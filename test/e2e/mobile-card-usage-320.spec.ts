@@ -506,4 +506,127 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       await page.context().close();
     }
   });
+
+  // 07.1-20 G-07.1-68: 권리(수정 · 삭제)가 있는 줄의 행동 칸(81px · 69px)에서 두 버튼이 세로로 쌓여 주 행이 128px(한 건 172px)이 됐다.
+  // 07.1-19 PA3 스펙은 행동 칸을 줄 수 판정에서 뺐다(`slice(0, -1)`) — 여기는 보이는 모든 칸을 센다. 폰 행동 열은 숨고(p3) 삭제는 수정 패널 `번호` 줄 끝.
+  test("[07.1-20 G-07.1-68] 375 · 320 — 권리 있는 줄도 주 행 두 줄 · 행동이 쌓이지 않음 · 폰 삭제는 수정 패널 → 되돌리기", async ({ browser, baseURL }) => {
+    const { person, cardId, teamId } = await makeHolder();
+    const suffix = randomUUID().slice(0, 8);
+    const year = seoulToday().slice(0, 4);
+    const proxyPerson = await makePerson("G68대리", DEFAULT_ROLE_ID, teamId, `${year}-01-01`);
+    const ownName = `G68본인-${suffix}`;
+    const refName = `G68기준-${suffix}`;
+    const ownVendor = await insertVendor(SYSTEM_VIEWER, { name: ownName, normalizedName: `${ownName}-${randomUUID()}` });
+    const own: CardUsageInput = { corpCardId: cardId, usedOn: seoulToday(), merchantVendorId: ownVendor.id, total: { currency: "KRW", amount: 1_234_567, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "team_cost", memo: null };
+    await createCardUsage(person.viewer, own, await precheckCardUsage(person.viewer, own));
+    // 기준 줄 — 남이 대리 등록한 건이라 이 주인은 권리가 없다(행동 칸이 빈다).
+    const refVendor = await insertVendor(SYSTEM_VIEWER, { name: refName, normalizedName: `${refName}-${randomUUID()}` });
+    await db.insert(corpCardUsages).values({
+      corpCardId: cardId,
+      usedOn: seoulToday(),
+      merchantVendorId: refVendor.id,
+      totalCurrency: "KRW",
+      totalForeignAmount: null,
+      totalFxRate: "1",
+      totalAmountKrw: 1_234_567,
+      supplyKrw: 1_234_567,
+      vatKrw: 0,
+      evidenceTypeCode: "invoice",
+      linkKind: "team_cost",
+      quoteLineId: null,
+      teamId,
+      usedByUserId: person.viewer.id,
+      registeredBy: proxyPerson.viewer.id,
+      registeredVia: "proxy",
+      memo: null,
+    });
+    const md = seoulToday().slice(5);
+    const deleteName = `${md} ${ownName} 삭제`;
+
+    for (const width of [375, 320]) {
+      const page = await loginPage(browser, baseURL, person, { width, height: 800 });
+      await page.goto("/cards");
+      const table = page.getByRole("table");
+      await expect(table.locator("tbody tr").first()).toBeVisible();
+
+      const shape = await table.evaluate((root, names) => {
+        const linesOf = (cell: Element): number => {
+          const set = new Set<number>();
+          const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (!(node.textContent ?? "").trim()) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            for (const rect of Array.from(range.getClientRects())) {
+              if (rect.width <= 1) continue;
+              set.add(Math.round(rect.top / 4));
+            }
+          }
+          return set.size;
+        };
+        const measure = (name: string) => {
+          const folded = [...root.querySelectorAll("tr[class*='collapsedRow']")].find((tr) => (tr.previousElementSibling?.textContent ?? "").includes(name));
+          const main = folded?.previousElementSibling;
+          if (!folded || !main) return null;
+          const cells = [...main.querySelectorAll("td")].filter((cell) => getComputedStyle(cell).display !== "none");
+          const actions = [...main.querySelectorAll("a, button")].filter((element) => element.getClientRects().length > 0).map((element) => element.getBoundingClientRect());
+          return {
+            mainHeight: main.getBoundingClientRect().height,
+            foldedHeight: folded.getBoundingClientRect().height,
+            cellLines: cells.map(linesOf),
+            linkWidth: cells[0]?.getBoundingClientRect().width ?? 0,
+            actions: actions.map((box) => ({ top: box.top, width: box.width, height: box.height })),
+          };
+        };
+        const box = root.getBoundingClientRect();
+        const parent = root.parentElement?.getBoundingClientRect();
+        return { own: measure(names[0] ?? ""), ref: measure(names[1] ?? ""), tableOverRight: parent ? box.right - parent.right : 0 };
+      }, [ownName, refName]);
+      console.log(`G68 ${width} ${JSON.stringify(shape)}`);
+      expect(shape.own, `${width} 본인 줄`).not.toBeNull();
+      expect(shape.ref, `${width} 기준 줄`).not.toBeNull();
+      if (!shape.own || !shape.ref) return;
+      expect(shape.own.mainHeight - shape.ref.mainHeight, `${width} 주 행 높이 − 기준`).toBeLessThanOrEqual(1);
+      expect(shape.own.mainHeight + shape.own.foldedHeight, `${width} 한 건 높이`).toBeLessThanOrEqual(shape.ref.mainHeight + 44 + 1);
+      expect(Math.max(...shape.own.cellLines), `${width} 주 행 보이는 모든 칸 줄 수(행동 칸 포함)`).toBeLessThanOrEqual(1);
+      const tops = shape.own.actions.map((action) => action.top);
+      if (tops.length > 0) {
+        expect(Math.max(...tops) - Math.min(...tops), `${width} 주 행 행동 윗변 차`).toBeLessThanOrEqual(1);
+        for (const action of shape.own.actions) {
+          expect(action.width, `${width} 행동 너비`).toBeGreaterThanOrEqual(44);
+          expect(action.height, `${width} 행동 높이`).toBeGreaterThanOrEqual(44);
+        }
+      }
+      expect(shape.own.linkWidth, `${width} 연결 칸 폭`).toBeGreaterThanOrEqual(width === 320 ? 98 : 138);
+      expect(shape.tableOverRight, `${width} 표 오른쪽`).toBeLessThanOrEqual(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${width} 문서 넘침`).toBe(0);
+
+      // 폰 수정 = 행 탭 → 수정 패널, 삭제 = 그 패널 `번호` 줄 끝 `삭제` → 확인 없이 보관 → 표 위 결과 줄 `되돌리기`.
+      const tap = page.getByRole("row").filter({ hasText: ownName }).getByRole("button", { name: /상세 보기$/ });
+      await waitForHydration(tap);
+      await tap.click();
+      await expect(page).toHaveURL(/editId=/);
+      const panel = page.getByRole("dialog", { name: "카드 사용 수정" });
+      await expect(panel).toBeVisible();
+      const panelDelete = panel.getByRole("button", { name: deleteName, exact: true });
+      await expect(panelDelete, `${width} 패널 삭제`).toBeVisible();
+      const panelBox = await panelDelete.boundingBox();
+      expect(panelBox?.width ?? 0, `${width} 패널 삭제 너비`).toBeGreaterThanOrEqual(44);
+      expect(panelBox?.height ?? 0, `${width} 패널 삭제 높이`).toBeGreaterThanOrEqual(44);
+      expect(await panel.evaluate((element) => element.scrollWidth - element.clientWidth), `${width} 패널 넘침`).toBeLessThanOrEqual(0);
+      await waitForHydration(panelDelete);
+      await panelDelete.click();
+      await expect(page.getByRole("dialog", { name: "카드 사용 수정" })).toHaveCount(0);
+      await expect(page).not.toHaveURL(/editId=/);
+      const result = page.locator("p[role='status']").filter({ hasText: "카드 사용 삭제됨" });
+      await expect(result).toBeVisible();
+      const undo = result.getByRole("button", { name: "되돌리기" });
+      await expect(undo, `${width} 삭제 뒤 포커스`).toBeFocused();
+      await undo.click();
+      await expect(table.getByText(ownName).first()).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "카드 사용 수정" }), `${width} 되돌린 뒤 패널 재오픈`).toHaveCount(0);
+      await expect(page).not.toHaveURL(/editId=/);
+      await page.context().close();
+    }
+  });
 });

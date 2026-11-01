@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 current_phase: "07.1"
-current_phase_name: carryover-followup
-current_plan: 37
+current_phase_name: 후속 (carryover-followup) (INSERTED)
+current_plan: 2
 status: executing
-stopped_at: Phase 07.1 UI-SPEC approved
-last_updated: "2026-11-01T06:07:11.423Z"
-last_activity: 2026-10-26
-last_activity_desc: Phase 06 execution started
-state_head: 47391d4dae27b39ab91dab76066880332c8da346
+stopped_at: Completed 07.1-20-PLAN.md
+last_updated: "2026-11-01T12:28:25.237Z"
+last_activity: 2026-11-01
+last_activity_desc: Phase 07.1 execution started
+state_head: d1fea642cbf634fed86ee90368f15b94782274a8
 progress:
   total_phases: 25
   completed_phases: 7
   total_plans: 303
-  completed_plans: 283
+  completed_plans: 303
   percent: 28
 ---
 
@@ -24,15 +24,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-30)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 06 — 지급·증빙·법인카드·구매 요청 (경영관리)
+**Current focus:** Phase 07.1 — 후속 (carryover-followup) (INSERTED)
 
 ## Current Position
 
-Phase: 07.1 (carryover-followup) — READY TO EXECUTE
-Current Plan: 37
+Phase: 07.1 (후속 (carryover-followup) (INSERTED)) — EXECUTING
+Current Plan: 2
 Total Plans in Phase: 20
 Status: Ready to execute
-Last activity: 2026-10-26 - Completed quick task 261026-4xy: C-86 실물 견본 서식 인식 고침
+Last activity: 2026-11-01 — Phase 07.1 execution started
 
 Progress: [███░░░░░░░] 28%
 
@@ -151,6 +151,7 @@ Progress: [███░░░░░░░] 28%
 | Phase 06 P34 | 30min | 2 tasks | 4 files |
 | Phase 06 P35 | 40min | 2 tasks | 6 files |
 | Phase 06 P39 | n/a | 3 tasks | 8 files |
+| Phase 07.1 P20 | 47 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -392,6 +393,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-36: 카드 ② 「경고만」 — 결재 통과 · 증빙 없음은 완료 전 점검의 막힘이 아니라 증빙 대기 경고 그룹(D-611 결재 통과 갈래 대체) — 연말 행사처럼 세금계산서가 다음 달에 오는 건이 프로젝트 완료를 막지 않게 하되 점검 섹션에서는 계속 보인다. 결재 중 · 반려는 그대로 막는다
 - [Phase 06]: 06-34: 카드 ① 「구매 요청만」 -> 구매 요청 고객 승인 게이트(서버: quote.customer-approval 재사용, 잠긴 tx 최신 차수)
 - [Phase 06]: 06-35: 구매 요청 문도 표 전체 게이트(tableGateReason)를 따르고 줄 고르기 바닥 줄은 서버 projectBlockedReason 우선 (카드 ① 2026-10-14)
+- [Phase 07.1]: 07.1-20: 폰 /cards 행동 열 p3로 숨김 + 삭제는 수정 패널 번호 줄 끝(폰 전용) — 공용 파일 0 변경, 06-14 D-1 선례
 
 ### Pending Todos
 
@@ -504,6 +506,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-26T07:57:32.247Z
-Stopped at: Phase 07.1 UI-SPEC approved
-Resume file: .planning/phases/07.1-carryover-followup/07.1-UI-SPEC.md
+Last session: 2026-11-01T12:28:24.574Z
+Stopped at: Completed 07.1-20-PLAN.md
+Resume file: None

@@ -44,4 +44,20 @@ describe("seedFundScope (07.3-01)", () => {
     expect(warnings).toHaveLength(1);
     expect(JSON.parse(warnings[0] ?? "{}")).toMatchObject({ severity: "WARNING" });
   });
+
+  it("경영관리본부가 보관됐으면 설정 행을 만들지 않고 같은 경고 한 줄을 남긴다", async () => {
+    await db.delete(settingsSimple).where(eq(settingsSimple.key, FUND_DIVISION_ORG_UNIT.key));
+    await db.update(orgUnits).set({ archivedAt: new Date() }).where(eq(orgUnits.name, "경영관리본부"));
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+
+    await seedFundScope(SYSTEM_VIEWER);
+
+    expect(await storedValue()).toBeUndefined();
+    const warnings = lines.filter((line) => line.includes("seed.fund_division_missing"));
+    expect(warnings).toHaveLength(1);
+    expect(JSON.parse(warnings[0] ?? "{}")).toMatchObject({ severity: "WARNING", key: FUND_DIVISION_ORG_UNIT.key });
+  });
 });

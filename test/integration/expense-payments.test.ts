@@ -832,6 +832,14 @@ describe("문서 보임 범위(CSO-1) — 지급 · 증빙 확인 서버 경로"
       await caught(confirmEvidence(outsider, { expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 1_000 })),
     ];
     for (const error of errors) expect(error).toBeInstanceOf(ForbiddenError);
+    // 거부 글자도 지급 키가 없는 사람과 같다(fund-scope-gate denial() — 자금 게이트 거부를 따로 드러내지 않는다).
+    expect(errors.map((error) => (error as Error).message)).toEqual([
+      "지급 처리 권한 없음",
+      "지급 처리 권한 없음",
+      "지급 처리 권한 없음",
+      "지급 처리 권한 없음",
+      "증빙 확인 권한 없음",
+    ]);
     const after = await snapshot(doc.expenseId);
     expect(after).toEqual(before);
     expect(await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, doc.expenseId))).toHaveLength(0);

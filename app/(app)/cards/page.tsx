@@ -26,7 +26,7 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 // 합계 면 한 줄 배치는 프로젝트 목록 합계 줄과 같은 클래스(새 CSS 없음).
 import styles from "@/app/(app)/projects/projects.module.css";
 import { CardUsageFilters, CardUsageList, CardUsageLoadError, type CardUsageListRowView } from "./card-usage-list";
-import { CardUsageDeleteUndo, CardUsageUndoLine } from "./delete-undo";
+import { CardUsageDeletePanelAction, CardUsageDeleteUndo, CardUsageUndoLine } from "./delete-undo";
 import { CardUsageEditPanel, CardUsageForm, CardUsageFromEvidencePanel, type CardEvidencePick, type CardSlipArea, type CardUsageEdit, type CardUsageFromEvidence } from "./card-usage-form";
 import { countEvidencePool, evidencePickerMode } from "@/domain/evidence-records/pool";
 import { cardUsagePrefillFromEvidence } from "@/domain/evidence-records/attach";
@@ -218,6 +218,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             evidenceTypeCode: edit.evidenceTypeCode,
           }}
           edit={edit}
+          editDelete={editing?.rights.delete ? <CardUsageDeletePanelAction id={edit.id} version={edit.version} name={`${edit.usedOn.slice(5)}${edit.merchant ? ` ${edit.merchant.name}` : ""} `} /> : null}
           slip={editSlip}
           evidencePick={editPick}
         />

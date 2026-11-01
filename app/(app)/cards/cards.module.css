@@ -95,3 +95,18 @@
 .valueLine > :not(.valueText) {
   flex: none;
 }
+
+/* 07.1-20 G-07.1-68 — 폰 수정 패널 `번호` 줄 끝의 `삭제`. 폰(<700)에서만 선다: PC · 태블릿은 행 행동 칸이 삭제를 맡는다(06-14 D-1 구매 요청 `.panelCancel`과 같은 값). */
+.panelDelete {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .panelDelete {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 100%;
+    margin-inline-start: auto;
+  }
+}

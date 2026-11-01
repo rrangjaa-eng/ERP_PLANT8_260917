@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { RowAction } from "@/ui/row-actions/RowActions";
+import { usePanel } from "@/ui/side-panel/SidePanel";
 import { formatKrw } from "@/lib/format-number";
 import { deleteCardUsageAction, restoreCardUsageAction } from "./actions";
 import styles from "./cards.module.css";
@@ -31,8 +32,12 @@ type DeleteUndoValue = {
   /** 되돌린 행 — 다시 그려지면 그 행 `삭제`가 포커스를 받는다(04.2 공휴일 `focusDate` 선례, DOM D-4). */
   focusId: string | null;
   clearFocus: () => void;
-  remove: (target: { id: string; version: number }) => void;
+  /** 성공이면 null, 거부 · 실패면 그 글자. `opts.panel`이면 실패를 표 위 결과 줄에 쓰지 않고 글자만 돌려준다(패널은 호출부가 보인다). */
+  remove: (target: { id: string; version: number }, opts?: { panel?: boolean }) => Promise<string | null>;
   undo: (removed: Removed) => void;
+  /** 표 위 결과 줄의 `되돌리기`로 포커스 — 폰 수정 패널에서 지운 뒤 패널이 사라지면 부른다(구매 요청 S13 `focusUndo` 선례). */
+  focusUndo: () => void;
+  lineRef: RefObject<HTMLParagraphElement | null>;
 };
 
 const DeleteUndoContext = createContext<DeleteUndoValue | null>(null);
@@ -59,8 +64,10 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
   const [shown, setShown] = useState(0);
   const [focusId, setFocusId] = useState<string | null>(null);
   const clearFocus = useCallback(() => setFocusId(null), []);
+  const lineRef = useRef<HTMLParagraphElement>(null);
+  const focusUndo = useCallback(() => lineRef.current?.querySelector<HTMLElement>("button")?.focus(), []);
 
-  async function remove(target: { id: string; version: number }) {
+  async function remove(target: { id: string; version: number }, opts?: { panel?: boolean }): Promise<string | null> {
     setPendingId(target.id);
     const outcome = await run(() => deleteCardUsageAction(target));
     setPendingId(null);
@@ -68,9 +75,11 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
       setLine({ kind: "removed", removed: { id: target.id, version: outcome.data.version, totalKrw: outcome.data.totalKrw }, retryText: null });
       setShown((count) => count + 1);
       router.refresh();
-      return;
+      return null;
     }
-    setLine({ kind: "failed", text: outcome?.serverError ?? FAILED_REQUEST, focus: false });
+    const text = outcome?.serverError ?? FAILED_REQUEST;
+    if (!opts?.panel) setLine({ kind: "failed", text, focus: false });
+    return text;
   }
 
   async function undo(removed: Removed) {
@@ -93,7 +102,7 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
   }
 
   return (
-    <DeleteUndoContext.Provider value={{ pendingId, line, shown, focusId, clearFocus, remove: (target) => void remove(target), undo: (removed) => void undo(removed) }}>
+    <DeleteUndoContext.Provider value={{ pendingId, line, shown, focusId, clearFocus, remove, undo: (removed) => void undo(removed), focusUndo, lineRef }}>
       {children}
     </DeleteUndoContext.Provider>
   );
@@ -101,7 +110,7 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
 
 // 표 위 결과 줄 — 마지막으로 지운 한 건(또는 막힘 문구). 포커스 → `되돌리기`, 되돌리기 거부면 → 줄 글자(DOM D-4).
 export function CardUsageUndoLine() {
-  const { line, shown, pendingId, undo } = useDeleteUndo();
+  const { line, shown, pendingId, undo, lineRef } = useDeleteUndo();
   const failedRef = useRef<HTMLSpanElement>(null);
   const focusFailed = line?.kind === "failed" && line.focus;
   useEffect(() => {
@@ -109,7 +118,7 @@ export function CardUsageUndoLine() {
   }, [focusFailed, line]);
   if (!line) return null;
   return (
-    <p role="status" className={styles.undoLine}>
+    <p ref={lineRef} role="status" className={styles.undoLine}>
       {line.kind === "failed" ? (
         <span ref={failedRef} tabIndex={line.focus ? -1 : undefined} className={styles.undoFailed}>
           {line.text}
@@ -153,7 +162,8 @@ export function CardUsageEditAction({ id, href, name }: { id: string; href: stri
 }
 
 // 행 `삭제`(RowAction danger — 맨 끝 · 위험 색). 접근 이름 `{사용일} {가맹점} 삭제`.
-export function CardUsageDeleteButton({ id, version, name }: { id: string; version: number; name: string }) {
+// `onDone`은 삭제가 성공했을 때만 호출부가 그 자리의 패널을 닫는 데 쓴다.
+export function CardUsageDeleteButton({ id, version, name, onDone }: { id: string; version: number; name: string; onDone?: () => void }) {
   const { pendingId, remove, focusId, clearFocus } = useDeleteUndo();
   // 되돌려 다시 그려진 행이면 이 `삭제`가 포커스를 받고 표식을 지운다(다른 행이 다시 받지 않게).
   const [restored] = useState(() => focusId === id);
@@ -161,8 +171,42 @@ export function CardUsageDeleteButton({ id, version, name }: { id: string; versi
     if (restored) clearFocus();
   }, [restored, clearFocus]);
   return (
-    <RowAction danger pending={pendingId === id} autoFocus={restored} onClick={() => remove({ id, version })}>
+    <RowAction
+      danger
+      pending={pendingId === id}
+      autoFocus={restored}
+      onClick={() => {
+        void remove({ id, version }).then((failed) => {
+          if (failed === null) onDone?.();
+        });
+      }}
+    >
       <span className="sr-only">{name}</span>삭제
     </RowAction>
+  );
+}
+
+// 07.1-20(G-07.1-68) 폰 수정 패널 안 `삭제` — 폰은 행동 열이 숨어 삭제 길이 여기뿐이다(06-14 D-1 `PurchaseCancelPanelAction`과 같은 꼴).
+// 성공하면 패널을 닫고(연 요소로 포커스를 돌리지 않는다) 패널이 사라진 뒤 표 위 결과 줄 `되돌리기`로 포커스를 준다.
+export function CardUsageDeletePanelAction({ id, version, name }: { id: string; version: number; name: string }) {
+  const panel = usePanel();
+  const { focusUndo } = useDeleteUndo();
+  const focusUndoOnExitRef = useRef(false);
+  useEffect(
+    () => () => {
+      if (focusUndoOnExitRef.current) window.setTimeout(focusUndo, 0);
+    },
+    [focusUndo],
+  );
+  return (
+    <CardUsageDeleteButton
+      id={id}
+      version={version}
+      name={name}
+      onDone={() => {
+        focusUndoOnExitRef.current = true;
+        panel?.requestClose("success", { returnFocus: false });
+      }}
+    />
   );
 }

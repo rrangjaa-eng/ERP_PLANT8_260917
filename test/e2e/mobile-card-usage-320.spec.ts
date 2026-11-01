@@ -195,7 +195,7 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
     }
   });
 
-  // 07.1-19 PA3(C-43 · E-P2-53 · U-1 option-a): 폰 P1 = 연결 · 결제 합계 · 행동 — `등록`은 P2(접힌 줄 = 사용일 · 가맹점 · 등록).
+  // 07.1-19 PA3(C-43 · E-P2-53 · U-1 option-a): 폰 P1 = 연결 · 결제 합계(07.1-20: 행동 열은 폰에서 숨는다) — `등록`은 P2(접힌 줄 = 사용일 · 가맹점 · 등록).
   // 행 줄 수는 상한으로 잰다(주 행 셀 각 ≤ 1줄 + 접힌 줄 1줄 = ≤ 2). 대리 등록 · 구매 완료 건은 접힌 줄에 행 시트 `등록` 줄과 같은 글자가 있다.
   test("[07.1-19 PA3] 375 · 320 — P1 셋 · 접힌 줄에 등록 값 · 행 ≤ 2줄 · 말줄임 셀 전체 글자 · 대리 · 구매 완료 등록 글자 · 권리 없는 계급 시트에 같은 글자", async ({ browser, baseURL }) => {
     const { person, cardId, teamId } = await makeHolder();
@@ -295,12 +295,12 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       const table = page.getByRole("table");
       await expect(table.locator("tbody tr").first()).toBeVisible();
 
-      // 보이는 머리글 = 연결 · 결제 합계 · 행동(머리글 숨김) 셋 — `등록`은 폰에서 접힌다.
+      // 보이는 머리글 = 연결 · 결제 합계 둘 — `등록`은 폰에서 접히고 행동 열은 폰에서 숨는다(07.1-20).
       const shown = await table.locator("thead th").evaluateAll((cells) => cells.filter((cell) => getComputedStyle(cell).display !== "none").map((cell) => (cell.textContent ?? "").trim()));
-      expect(shown, `${width} 보이는 th`).toEqual(["연결", "결제 합계", "행동"]);
+      expect(shown, `${width} 보이는 th`).toEqual(["연결", "결제 합계"]);
 
       const facts = await table.evaluate((root, names) => {
-        const rows: { name: string; mainCells: number; mainLinesMax: number; foldedLines: number; foldedText: string; foldedTitle: string; linkCellWidth: number; clippedFullText: boolean; foldedRegisteredRight: number; foldedContentRight: number; registeredClipped: boolean; actionWidth: number }[] = [];
+        const rows: { name: string; mainCells: number; mainLinesMax: number; foldedLines: number; foldedText: string; foldedTitle: string; linkCellWidth: number; clippedFullText: boolean; foldedRegisteredRight: number; foldedContentRight: number; registeredClipped: boolean }[] = [];
         const linesOf = (cell: Element): number => {
           const set = new Set<number>();
           const clipBox = (cell.querySelector("[data-cell-text]") ?? cell).getBoundingClientRect();
@@ -322,7 +322,6 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
           const main = folded?.previousElementSibling;
           if (!folded || !main) continue;
           const cells = [...main.querySelectorAll("td")].filter((cell) => getComputedStyle(cell).display !== "none");
-          const dataCells = cells.slice(0, -1);
           const foldedCell = folded.querySelector("td") as HTMLElement;
           const clamp = foldedCell.querySelector("[data-cell-text]") as HTMLElement;
           const clipRight = clamp.getBoundingClientRect().right;
@@ -332,12 +331,12 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
           const lastRects = last ? Array.from((() => { const r = document.createRange(); r.selectNodeContents(last); return r.getClientRects(); })()) : [];
           const registeredClipped = lastRects.length > 0 && lastRects.every((rect) => rect.top >= clipBottom - 1);
           const lastRight = last ? Math.max(...Array.from((() => { const r = document.createRange(); r.selectNodeContents(last); return r.getClientRects(); })()).map((rect) => rect.right)) : 0;
-          const linkCell = dataCells[0] as HTMLElement;
+          const linkCell = cells[0] as HTMLElement;
           const linkText = linkCell.querySelector<HTMLElement>("[title]");
           rows.push({
             name,
             mainCells: cells.length,
-            mainLinesMax: Math.max(...dataCells.map(linesOf)),
+            mainLinesMax: Math.max(...cells.map(linesOf)),
             foldedLines: linesOf(foldedCell),
             foldedText: (foldedCell.textContent ?? "").replace(/\s+/g, " ").trim(),
             foldedTitle: foldedCell.title,
@@ -346,14 +345,13 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
             foldedRegisteredRight: Math.round(lastRight),
             foldedContentRight: Math.round(clipRight),
             registeredClipped,
-            actionWidth: Math.round(cells[cells.length - 1]?.getBoundingClientRect().width ?? 0),
           });
         }
         return rows;
       }, [longMerchant, proxyVendorName, purchaseVendorName]);
       expect(facts.length, `${width} 행 수`).toBe(3);
       for (const fact of facts) {
-        expect(fact.mainCells, `${width} ${fact.name} 주 행 보이는 칸(연결 · 합계 · 행동)`).toBe(3);
+        expect(fact.mainCells, `${width} ${fact.name} 주 행 보이는 칸(연결 · 합계)`).toBe(2);
         expect(fact.mainLinesMax, `${width} ${fact.name} 주 행 셀 줄 수`).toBeLessThanOrEqual(1);
         expect(fact.foldedLines, `${width} ${fact.name} 접힌 줄 줄 수`).toBeLessThanOrEqual(1);
         expect(fact.mainLinesMax + fact.foldedLines, `${width} ${fact.name} 행 줄 수(U-1 option-a ≤ 2)`).toBeLessThanOrEqual(2);
@@ -366,7 +364,7 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       expect(byName(proxyVendorName)?.foldedText).toMatch(new RegExp(`경영관리 등록 · ${proxyPerson.name} \\d{2}-\\d{2}`));
       expect(byName(purchaseVendorName)?.foldedText).toMatch(new RegExp(`구매 요청 ${purchaseNumber} · ${proxyPerson.name} \\d{2}-\\d{2}`));
       // 점검표용 실측(잘림 여부 · 두 값 — `등록` 글자 Range 오른쪽 / 칸 내용 오른쪽 · 연결 칸 폭 F-21).
-      console.log(`PA3 ${width} ${JSON.stringify(facts.map((fact) => ({ n: fact.name.slice(0, 8), reg: [fact.foldedRegisteredRight, fact.foldedContentRight], clipped: fact.registeredClipped, link: fact.linkCellWidth, action: fact.actionWidth })))}`);
+      console.log(`PA3 ${width} ${JSON.stringify(facts.map((fact) => ({ n: fact.name.slice(0, 8), reg: [fact.foldedRegisteredRight, fact.foldedContentRight], clipped: fact.registeredClipped, link: fact.linkCellWidth })))}`);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${width} 문서 넘침`).toBe(0);
 
       // 권리 없는 계급(주인 — 남이 등록한 줄): 행을 탭하면 행 시트 `등록` 줄에 같은 글자가 있다(정보가 남는 길).
@@ -508,7 +506,7 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
   });
 
   // 07.1-20 G-07.1-68: 권리(수정 · 삭제)가 있는 줄의 행동 칸(81px · 69px)에서 두 버튼이 세로로 쌓여 주 행이 128px(한 건 172px)이 됐다.
-  // 07.1-19 PA3 스펙은 행동 칸을 줄 수 판정에서 뺐다(`slice(0, -1)`) — 여기는 보이는 모든 칸을 센다. 폰 행동 열은 숨고(p3) 삭제는 수정 패널 `번호` 줄 끝.
+  // 07.1-19 PA3 스펙은 행동 칸을 줄 수 판정에서 뺐다(마지막 칸 자르기) — 여기는 보이는 모든 칸을 센다. 폰 행동 열은 숨고(p3) 삭제는 수정 패널 `번호` 줄 끝.
   test("[07.1-20 G-07.1-68] 375 · 320 — 권리 있는 줄도 주 행 두 줄 · 행동이 쌓이지 않음 · 폰 삭제는 수정 패널 → 되돌리기", async ({ browser, baseURL }) => {
     const { person, cardId, teamId } = await makeHolder();
     const suffix = randomUUID().slice(0, 8);
@@ -582,7 +580,7 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
         const parent = root.parentElement?.getBoundingClientRect();
         return { own: measure(names[0] ?? ""), ref: measure(names[1] ?? ""), tableOverRight: parent ? box.right - parent.right : 0 };
       }, [ownName, refName]);
-      console.log(`G68 ${width} ${JSON.stringify(shape)}`);
+      console.log(`G68 ${width} ${JSON.stringify(shape)} (G-07.1-68)`);
       expect(shape.own, `${width} 본인 줄`).not.toBeNull();
       expect(shape.ref, `${width} 기준 줄`).not.toBeNull();
       if (!shape.own || !shape.ref) return;
@@ -623,7 +621,8 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       const undo = result.getByRole("button", { name: "되돌리기" });
       await expect(undo, `${width} 삭제 뒤 포커스`).toBeFocused();
       await undo.click();
-      await expect(table.getByText(ownName).first()).toBeVisible();
+      // 가맹점 칸은 폰에서 접혀 있다 — 되살아난 줄은 접힌 줄 탭 칸(`… 상세 보기`)으로 알아본다.
+      await expect(tap, `${width} 되돌린 줄`).toBeVisible();
       await expect(page.getByRole("dialog", { name: "카드 사용 수정" }), `${width} 되돌린 뒤 패널 재오픈`).toHaveCount(0);
       await expect(page).not.toHaveURL(/editId=/);
       await page.context().close();

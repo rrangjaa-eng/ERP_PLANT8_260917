@@ -3,6 +3,7 @@ import { can } from "@/domain/permissions/can";
 import { fundGate, memoizeFundGateForRequest, readFundDivision } from "@/domain/permissions/fund-gate";
 import { FUND_DIVISION_SETTING_KEY } from "@/domain/permissions/fund-scope";
 import type { Viewer } from "@/domain/viewer";
+import { log } from "@/lib/log";
 
 // 07.3-01(D-7301 · D-7310 · D-7311 · D-7313): 자금 게이트 — 계급 viewScope company는 면제, 아니면 소속 본부 === 자금 본부 설정.
 // 기본 의존성(리포지토리)을 가짜로 바꿔 판정 · 요청 memo를 센다.
@@ -61,6 +62,7 @@ const viewer = (): Viewer => ({ id: "u1", roleId: "role-x" });
 
 beforeEach(() => {
   for (const fn of Object.values(repo)) fn.mockReset();
+  vi.restoreAllMocks();
 });
 
 describe("readFundDivision (07.3-01 D-7310)", () => {
@@ -78,6 +80,29 @@ describe("readFundDivision (07.3-01 D-7310)", () => {
   ])("%s → null", async (_label, setting) => {
     world({ setting });
     expect(await readFundDivision(viewer())).toBeNull();
+  });
+
+  it.each([
+    ["값이 uuid가 아니다", "경영관리본부", "not_uuid"],
+    ["가리키는 본부가 없다", "22222222-2222-4222-8222-2222222222f9", "org_unit_missing"],
+    ["가리키는 본부가 보관됐다", ARCHIVED_DIVISION, "org_unit_archived"],
+  ])("값이 있는데 %s → 키 · 사유로 경고 한 번", async (_label, setting, reason) => {
+    world({ setting });
+    const warn = vi.spyOn(log, "warn").mockImplementation(() => undefined);
+    await readFundDivision(viewer());
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith("fund_gate.division_unusable", { key: FUND_DIVISION_SETTING_KEY, reason });
+  });
+
+  it.each([
+    ["설정 행이 없다", undefined],
+    ["값이 JSON null이다", null],
+    ["값이 살아 있는 본부다", FUND_DIVISION],
+  ])("%s → 경고 없음", async (_label, setting) => {
+    world({ setting });
+    const warn = vi.spyOn(log, "warn").mockImplementation(() => undefined);
+    await readFundDivision(viewer());
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

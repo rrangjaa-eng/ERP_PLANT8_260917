@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Viewer } from "@/domain/viewer";
 import { FUND_DIVISION_SETTING_KEY } from "@/domain/permissions/fund-scope";
 import { viewerDivision as defaultViewerDivision } from "@/domain/permissions/viewer-division";
+import { log } from "@/lib/log";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findOrgUnitById } from "@/repositories/org-units";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
@@ -15,10 +16,19 @@ import { findSimpleValue } from "@/repositories/settings";
 /** 자금 본부 설정이 가리키는 살아 있는 본부. tx를 주면 그 연결로 읽는다(잠근 트랜잭션 안 호출처). */
 export async function readFundDivision(viewer: Viewer, tx?: DbOrTx): Promise<{ id: string; name: string } | null> {
   const row = await findSimpleValue(viewer, FUND_DIVISION_SETTING_KEY, tx);
-  const parsed = z.string().uuid().safeParse(row?.value);
-  if (!parsed.success) return null;
+  if (row?.value == null) return null;
+  const parsed = z.string().uuid().safeParse(row.value);
+  if (!parsed.success) return unusable("not_uuid");
   const unit = await findOrgUnitById(viewer, parsed.data, tx);
-  return unit && unit.archivedAt === null ? { id: unit.id, name: unit.name } : null;
+  if (!unit) return unusable("org_unit_missing");
+  if (unit.archivedAt !== null) return unusable("org_unit_archived");
+  return { id: unit.id, name: unit.name };
+}
+
+// 값은 있는데 쓸 수 없으면 닫으면서 경고 한 줄 — 값이 없는 것은 관리자가 비운 정상 상태라 경고하지 않는다.
+function unusable(reason: "not_uuid" | "org_unit_missing" | "org_unit_archived"): null {
+  log.warn("fund_gate.division_unusable", { key: FUND_DIVISION_SETTING_KEY, reason });
+  return null;
 }
 
 export type FundGateDeps = {

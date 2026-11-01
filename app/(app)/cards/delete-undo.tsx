@@ -201,13 +201,9 @@ export function CardUsageDeleteButton({ id, version, name, onDone, busy }: { id:
     // 폰은 행동 열이 숨어 이 `삭제`가 포커스를 받지 못한다 — 같은 줄 묶음의 접힌 줄 탭 칸으로(`PurchaseList` 선례).
     const button = nameRef.current?.closest("button");
     if (!button || button.getClientRects().length > 0) return;
-    for (let next = button.closest("tr")?.nextElementSibling; next; next = next.nextElementSibling) {
-      const cell = next.querySelector<HTMLElement>('td[role="button"]');
-      if (cell) {
-        cell.focus();
-        return;
-      }
-    }
+    const next = button.closest("tr")?.nextElementSibling;
+    if (!next?.matches("[class*='collapsedRow']")) return;
+    next.querySelector<HTMLElement>('td[role="button"]')?.focus();
   }, [restored, clearFocus]);
   const split = splitRefreshTail(rejection ?? undefined);
   return (

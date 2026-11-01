@@ -608,11 +608,9 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       await expect(panel).toBeVisible();
       const panelDelete = panel.getByRole("button", { name: deleteName, exact: true });
       await expect(panelDelete, `${width} 패널 삭제`).toBeVisible();
-      // 시트가 올라오는 애니메이션이 끝난 뒤 잰다(소수점 오차 0.1 허용).
-      await page.waitForTimeout(300);
-      const panelBox = await panelDelete.boundingBox();
-      expect(panelBox?.width ?? 0, `${width} 패널 삭제 너비`).toBeGreaterThanOrEqual(43.9);
-      expect(panelBox?.height ?? 0, `${width} 패널 삭제 높이`).toBeGreaterThanOrEqual(43.9);
+      // 시트가 올라오는 애니메이션이 끝날 때까지 poll로 잰다(소수점 오차 0.1 허용).
+      await expect.poll(async () => (await panelDelete.boundingBox())?.width ?? 0, { message: `${width} 패널 삭제 너비` }).toBeGreaterThanOrEqual(43.9);
+      await expect.poll(async () => (await panelDelete.boundingBox())?.height ?? 0, { message: `${width} 패널 삭제 높이` }).toBeGreaterThanOrEqual(43.9);
       expect(await panel.evaluate((element) => element.scrollWidth - element.clientWidth), `${width} 패널 넘침`).toBeLessThanOrEqual(0);
       await waitForHydration(panelDelete);
       await panelDelete.click();
@@ -632,7 +630,7 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
   });
 
   // 07.1-20 Task 2: 폰 패널 삭제의 가장자리 — 거부 · 저장 중 막힘 · 되돌린 줄 포커스 · 700 이상 경계.
-  test("[07.1-20 G-07.1-68] 375 · 320 — 패널 삭제 거부면 패널 유지 · 이유 한 줄 · 새로 고침 · 저장 중 막힘 · 되돌린 줄 포커스(탭 칸 · 목록 밖 = 화면 제목) · 700 · 768 · 1024 경계", async ({ browser, baseURL }) => {
+  test("[07.1-20 G-07.1-68] 375 · 320 — 패널 삭제 거부면 패널 유지 · 이유 한 줄 · 새로 고침 · 저장 중 막힘 · 되돌린 줄 포커스(탭 칸 · 목록 밖 = 화면 제목) · 700 · 768 · 1024 · 1280 경계", async ({ browser, baseURL }) => {
     const { person, cardId } = await makeHolder();
     const md = seoulToday().slice(5);
     const deleteNameOf = (name: string) => `${md} ${name} 삭제`;
@@ -766,7 +764,7 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       await page.context().close();
     }
 
-    // ⑤ 700 · 768 · 1024 — 행동 칸 `수정` · `삭제`가 그대로 한 줄이고 수정 패널에는 보이는 `삭제`가 없다(폰 전용 자리).
+    // ⑤ 700 · 768 · 1024 · 1280 — 행동 칸 `수정` · `삭제`가 그대로 한 줄이고 수정 패널에는 보이는 `삭제`가 없다(폰 전용 자리).
     const own = await insertOwnUsage(person, cardId, "G68넓은폭");
     for (const width of [700, 768, 1024, 1280]) {
       const page = await loginPage(browser, baseURL, person, { width, height: 800 });
@@ -787,7 +785,7 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       await expect(panel.getByRole("button", { name: deleteNameOf(own.name), exact: true }), `${width} 패널 삭제 없음`).toHaveCount(0);
       await page.context().close();
     }
-    console.log("G-07.1-68 task2 거부 · 저장 중 막힘 · 포커스 · 700/768/1024 경계 통과");
+    console.log("G-07.1-68 task2 거부 · 저장 중 막힘 · 포커스 · 700/768/1024/1280 경계 통과");
   });
 
   // 07.1-20: 권리 판정은 서버 그대로 — 구매 완료로 생긴 건(rights.delete 거짓)의 수정 패널에는 `삭제`가 없고 대리 등록 건에는 있다(관리자).

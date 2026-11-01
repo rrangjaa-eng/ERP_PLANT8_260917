@@ -1,6 +1,8 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { memoizeFundGateForRequest } from "@/domain/permissions/fund-gate";
+import type { FundScopedMenu } from "@/domain/permissions/fund-scope";
+import type { PermissionAction } from "@/domain/permissions/menus";
 import { viewerDivision, type ViewerDivisionDeps } from "@/domain/permissions/viewer-division";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulToday } from "@/lib/dates";
@@ -81,7 +83,7 @@ export type RowScope =
   | { rows: "limited"; includeArchived: boolean; viewerId: string; by: RowScopeBy };
 
 export type RowScopeDeps = {
-  can: (viewer: Viewer, menu: string, action: "view") => Promise<boolean>;
+  can: (viewer: Viewer, menu: string, action: PermissionAction) => Promise<boolean>;
   findRoleById: (viewer: Viewer, id: string) => Promise<{ viewScope: string } | null>;
   findMembershipAtDate: (viewer: Viewer, userId: string, date: string) => Promise<{ teamId: string } | null>;
   findTeamById: (viewer: Viewer, id: string) => Promise<{ orgUnitId: string } | null>;
@@ -93,6 +95,22 @@ export type RowScopeDeps = {
 // 요청 memo(성공 기준 4 · eng I10): React cache()는 렌더 안 memo만 문서화돼 서버 액션에서의 동작이 불명확하다 —
 // getSession()이 요청마다 만든 viewer 객체를 WeakMap 키로 쓴다. 다음 요청은 새 객체라 새 값을 읽고, 요청이 끝나면 함께 사라진다.
 const requestMemo = new WeakMap<Viewer, Map<RowScopeEntity, Promise<RowScope>>>();
+
+// 07.3-01(D-7314): 자금 담당의 보는 범위 — 계급이 company가 아니어도 그 entity의 자금 키 짝 하나라도 can()이 참이면(자금 게이트를 거친다)
+// 회사 전체다. 키 매핑으로 최소화한다 — 증빙 등록 · 구매 처리는 각자 범위가 따로 있어 넣지 않는다(evidenceScopeFor · 구매 요청 listAccess).
+// 사용자가 「자금 키 하나라도」를 원하면 이 표를 넓힌다(RESEARCH Open Q2). 정보 노출표(visible)는 그대로다.
+const FUND_ROW_SCOPE_KEYS: Record<RowScopeEntity, readonly (readonly [FundScopedMenu, PermissionAction])[]> = {
+  project: [
+    ["projects.adjustment", "write"],
+    ["projects.budget", "view"],
+    ["projects.revenue", "view"],
+  ],
+  expense: [
+    ["expenses.payments", "write"],
+    ["expenses.evidence_void", "write"],
+    ["expenses.evidence_attach", "write"],
+  ],
+};
 
 export function memoizeRowScopeForRequest(viewer: Viewer): void {
   requestMemo.set(viewer, new Map());
@@ -126,6 +144,11 @@ async function computeRowScope(
   const findRoleById = deps?.findRoleById ?? defaultFindRoleById;
   const role = await findRoleById(viewer, viewer.roleId);
   if (!role) return { rows: "none", includeArchived };
+
+  if (role.viewScope !== "company") {
+    const fundKeys = await Promise.all(FUND_ROW_SCOPE_KEYS[entity].map(([menu, action]) => canFn(viewer, menu, action)));
+    if (fundKeys.some(Boolean)) return { rows: "all", includeArchived };
+  }
 
   const limited = (by: RowScopeBy): RowScope => ({ rows: "limited", includeArchived, viewerId: viewer.id, by });
   const todayTeamId = async (): Promise<string | null> => {

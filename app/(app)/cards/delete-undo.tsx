@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useTransition, type ReactNode, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { RowAction } from "@/ui/row-actions/RowActions";
+import { RefreshStep, splitRefreshTail } from "@/ui/confirm-dialog/ConfirmDialog";
 import { usePanel } from "@/ui/side-panel/SidePanel";
 import { formatKrw } from "@/lib/format-number";
 import { deleteCardUsageAction, restoreCardUsageAction } from "./actions";
@@ -42,6 +43,17 @@ type DeleteUndoValue = {
 
 const DeleteUndoContext = createContext<DeleteUndoValue | null>(null);
 
+// 07.1-20: 수정 패널이 저장 · 증빙 올리기 중이면 true — 패널 `삭제`는 누름을 무시한다(성공 닫기는 패널의 `submitting` 가드를 건너뛰어 겹친 요청을 막을 곳이 여기다).
+const PanelBusyContext = createContext(false);
+
+export function CardUsagePanelBusy({ value, children }: { value: boolean; children: ReactNode }) {
+  return <PanelBusyContext.Provider value={value}>{children}</PanelBusyContext.Provider>;
+}
+
+function focusScreenTitle() {
+  document.querySelector<HTMLElement>('[data-ui="screen-title"]')?.focus();
+}
+
 function useDeleteUndo(): DeleteUndoValue {
   const value = useContext(DeleteUndoContext);
   if (!value) throw new Error("CardUsageDeleteUndo 밖에서 카드 사용 행동을 그렸다");
@@ -66,6 +78,16 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
   const clearFocus = useCallback(() => setFocusId(null), []);
   const lineRef = useRef<HTMLParagraphElement>(null);
   const focusUndo = useCallback(() => lineRef.current?.querySelector<HTMLElement>("button")?.focus(), []);
+  // 되돌린 뒤 다시 받은 화면이 그려졌는데 포커스가 갈 곳 없이 body에 있으면(되살린 줄이 이 목록에 없다 — 다른 달 건) 화면 제목으로.
+  const [refreshing, startRefresh] = useTransition();
+  const afterUndoRef = useRef(false);
+  useEffect(() => {
+    if (!afterUndoRef.current || refreshing) return;
+    afterUndoRef.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    focusScreenTitle();
+  }, [refreshing]);
 
   async function remove(target: { id: string; version: number }, opts?: { panel?: boolean }): Promise<string | null> {
     setPendingId(target.id);
@@ -74,6 +96,8 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
     if (outcome?.data) {
       setLine({ kind: "removed", removed: { id: target.id, version: outcome.data.version, totalKrw: outcome.data.totalKrw }, retryText: null });
       setShown((count) => count + 1);
+      // 목록에 없는 건을 되돌려 남은 표식은 다음 삭제가 지운다.
+      setFocusId(null);
       router.refresh();
       return null;
     }
@@ -89,7 +113,8 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
     if (outcome?.data) {
       setLine(null);
       setFocusId(removed.id);
-      router.refresh();
+      afterUndoRef.current = true;
+      startRefresh(() => router.refresh());
       return;
     }
     if (outcome?.serverError) {
@@ -162,27 +187,58 @@ export function CardUsageEditAction({ id, href, name }: { id: string; href: stri
 }
 
 // 행 `삭제`(RowAction danger — 맨 끝 · 위험 색). 접근 이름 `{사용일} {가맹점} 삭제`.
-// `onDone`은 삭제가 성공했을 때만 호출부가 그 자리의 패널을 닫는 데 쓴다.
-export function CardUsageDeleteButton({ id, version, name, onDone }: { id: string; version: number; name: string; onDone?: () => void }) {
+// `onDone`은 삭제가 성공했을 때만 호출부가 그 자리의 패널을 닫는 데 쓴다(패널 갈래 — 거부면 패널을 열어 둔 채 버튼 뒤 한 줄,
+// 표 위 결과 줄은 패널에 가려 있다). `onDone`이 없으면(행) 거부도 표 위 결과 줄이 말한다.
+export function CardUsageDeleteButton({ id, version, name, onDone, busy }: { id: string; version: number; name: string; onDone?: () => void; busy?: boolean }) {
   const { pendingId, remove, focusId, clearFocus } = useDeleteUndo();
+  const nameRef = useRef<HTMLSpanElement>(null);
+  const [rejection, setRejection] = useState<string | null>(null);
   // 되돌려 다시 그려진 행이면 이 `삭제`가 포커스를 받고 표식을 지운다(다른 행이 다시 받지 않게).
   const [restored] = useState(() => focusId === id);
   useEffect(() => {
-    if (restored) clearFocus();
+    if (!restored) return;
+    clearFocus();
+    // 폰은 행동 열이 숨어 이 `삭제`가 포커스를 받지 못한다 — 같은 줄 묶음의 접힌 줄 탭 칸으로(`PurchaseList` 선례).
+    const button = nameRef.current?.closest("button");
+    if (!button || button.getClientRects().length > 0) return;
+    for (let next = button.closest("tr")?.nextElementSibling; next; next = next.nextElementSibling) {
+      const cell = next.querySelector<HTMLElement>('td[role="button"]');
+      if (cell) {
+        cell.focus();
+        return;
+      }
+    }
   }, [restored, clearFocus]);
+  const split = splitRefreshTail(rejection ?? undefined);
   return (
-    <RowAction
-      danger
-      pending={pendingId === id}
-      autoFocus={restored}
-      onClick={() => {
-        void remove({ id, version }).then((failed) => {
-          if (failed === null) onDone?.();
-        });
-      }}
-    >
-      <span className="sr-only">{name}</span>삭제
-    </RowAction>
+    <>
+      <RowAction
+        danger
+        pending={pendingId === id}
+        busy={busy}
+        autoFocus={restored}
+        onClick={() => {
+          setRejection(null);
+          void remove({ id, version }, onDone ? { panel: true } : undefined).then((failed) => {
+            if (failed === null) onDone?.();
+            else if (onDone) setRejection(failed);
+          });
+        }}
+      >
+        <span ref={nameRef} className="sr-only">
+          {name}
+        </span>
+        삭제
+      </RowAction>
+      {rejection ? (
+        <>
+          <span role="alert" className={styles.undoFailed}>
+            {split.reason}
+          </span>
+          {split.refresh ? <RefreshStep onDone={() => setRejection(null)} /> : null}
+        </>
+      ) : null}
+    </>
   );
 }
 
@@ -191,6 +247,7 @@ export function CardUsageDeleteButton({ id, version, name, onDone }: { id: strin
 export function CardUsageDeletePanelAction({ id, version, name }: { id: string; version: number; name: string }) {
   const panel = usePanel();
   const { focusUndo } = useDeleteUndo();
+  const busy = useContext(PanelBusyContext);
   const focusUndoOnExitRef = useRef(false);
   useEffect(
     () => () => {
@@ -203,6 +260,7 @@ export function CardUsageDeletePanelAction({ id, version, name }: { id: string; 
       id={id}
       version={version}
       name={name}
+      busy={busy}
       onDone={() => {
         focusUndoOnExitRef.current = true;
         panel?.requestClose("success", { returnFocus: false });

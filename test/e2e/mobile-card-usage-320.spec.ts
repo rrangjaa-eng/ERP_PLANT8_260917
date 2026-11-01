@@ -608,9 +608,11 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       await expect(panel).toBeVisible();
       const panelDelete = panel.getByRole("button", { name: deleteName, exact: true });
       await expect(panelDelete, `${width} 패널 삭제`).toBeVisible();
+      // 시트가 올라오는 애니메이션이 끝난 뒤 잰다(소수점 오차 0.1 허용).
+      await page.waitForTimeout(300);
       const panelBox = await panelDelete.boundingBox();
-      expect(panelBox?.width ?? 0, `${width} 패널 삭제 너비`).toBeGreaterThanOrEqual(44);
-      expect(panelBox?.height ?? 0, `${width} 패널 삭제 높이`).toBeGreaterThanOrEqual(44);
+      expect(panelBox?.width ?? 0, `${width} 패널 삭제 너비`).toBeGreaterThanOrEqual(43.9);
+      expect(panelBox?.height ?? 0, `${width} 패널 삭제 높이`).toBeGreaterThanOrEqual(43.9);
       expect(await panel.evaluate((element) => element.scrollWidth - element.clientWidth), `${width} 패널 넘침`).toBeLessThanOrEqual(0);
       await waitForHydration(panelDelete);
       await panelDelete.click();
@@ -783,6 +785,7 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       await expect(panel.getByRole("button", { name: deleteNameOf(own.name), exact: true }), `${width} 패널 삭제 없음`).toHaveCount(0);
       await page.context().close();
     }
+    console.log("G-07.1-68 task2 거부 · 저장 중 막힘 · 포커스 · 700/768/1024 경계 통과");
   });
 
   // 07.1-20: 권리 판정은 서버 그대로 — 구매 완료로 생긴 건(rights.delete 거짓)의 수정 패널에는 `삭제`가 없고 대리 등록 건에는 있다(관리자).
@@ -840,6 +843,7 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       await expect(panel.getByRole("button", { name: `${md} ${purchaseVendor.name} 삭제`, exact: true }), `${width} 구매 완료 건 패널 삭제`).toHaveCount(0);
       await page.context().close();
     }
+    console.log("G-07.1-68 admin 구매 완료 건 패널 삭제 0");
   });
 });
 

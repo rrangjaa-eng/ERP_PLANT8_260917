@@ -18,6 +18,7 @@ import { useCommaInput } from "@/ui/input/use-comma-input";
 import { CARD_RECEIPT_CODE, cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
 import { formatKrw } from "@/lib/format-number";
 import { registeredText } from "./registered-text";
+import { CardUsagePanelBusy } from "./delete-undo";
 import type { NumberInputKind } from "@/lib/format-number";
 import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
@@ -890,7 +891,11 @@ export function CardUsageForm({
               <span className={rowStyles.label}>번호</span>
               <span className={cardStyles.valueLine}>
                 <span className={cardStyles.valueText}>{edit.number ?? "—"}</span>
-                {editDelete ? <span className={cardStyles.panelDelete}>{editDelete}</span> : null}
+                {editDelete ? (
+                  <span className={cardStyles.panelDelete}>
+                    <CardUsagePanelBusy value={isExecuting || uploading > 0}>{editDelete}</CardUsagePanelBusy>
+                  </span>
+                ) : null}
               </span>
             </div>
           ) : null}

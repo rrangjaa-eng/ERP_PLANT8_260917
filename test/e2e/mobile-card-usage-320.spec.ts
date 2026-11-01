@@ -768,7 +768,7 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
 
     // ⑤ 700 · 768 · 1024 — 행동 칸 `수정` · `삭제`가 그대로 한 줄이고 수정 패널에는 보이는 `삭제`가 없다(폰 전용 자리).
     const own = await insertOwnUsage(person, cardId, "G68넓은폭");
-    for (const width of [700, 768, 1024]) {
+    for (const width of [700, 768, 1024, 1280]) {
       const page = await loginPage(browser, baseURL, person, { width, height: 800 });
       await page.goto("/cards");
       const edit = page.getByRole("link", { name: `${md} ${own.name} 수정`, exact: true });
@@ -778,6 +778,8 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       const editBox = await edit.boundingBox();
       const removeBox = await remove.boundingBox();
       expect(Math.abs((editBox?.y ?? 0) - (removeBox?.y ?? 99999)), `${width} 윗변 차`).toBeLessThanOrEqual(1);
+      const rowShape = await page.getByRole("row").filter({ hasText: own.name }).first().evaluate((row) => ({ rowHeight: row.getBoundingClientRect().height, actionWidth: [...row.querySelectorAll("td")].at(-1)?.getBoundingClientRect().width ?? 0 }));
+      console.log(`G68 wide ${width} ${JSON.stringify(rowShape)} (G-07.1-68)`);
       await waitForHydration(edit);
       await edit.click();
       const panel = page.getByRole("dialog", { name: "카드 사용 수정" });

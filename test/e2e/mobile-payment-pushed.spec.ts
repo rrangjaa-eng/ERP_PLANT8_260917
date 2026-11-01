@@ -5,7 +5,7 @@ import { projects, vendors } from "@/db/schema";
 import { payWeekIndex, resolvePaySchedule } from "@/domain/payments/pay-schedule";
 import { loginPage } from "./leave-org";
 import { setupExpenseE2E, archiveTempRoles } from "./expense-fixture";
-import { addDays, makeTeamPayer, payCalendar, pushedDoc, submittedDoc, targetsGrid } from "./pay-schedule-e2e";
+import { addDays, payTargetsUrl, makeTeamPayer, payCalendar, pushedDoc, submittedDoc, targetsGrid } from "./pay-schedule-e2e";
 
 // 07-16 Task 1(K5): 폰 375 — 밀린 건의 `마감 지나 밀림`은 그 행 P2 접힌 줄의 첫 요소이고 행은 두 줄(주 행 + 접힌 줄)이다.
 // PC의 제목 아래 2행은 폰에서 숨는다(같은 말을 두 번 보이지 않는다 — SYSTEM §7-3 폰 전략).
@@ -20,7 +20,7 @@ test("폰 375 — `마감 지나 밀림`이 P2 접힌 줄 맨 앞 · 행 두 줄
   const itemName = fx.lines.tracer.itemName;
 
   const page = await loginPage(browser, baseURL, payer, { width: 375, height: 812 });
-  await page.goto("/expenses");
+  await page.goto(payTargetsUrl(fx.teamId));
   await expect(page.getByLabel("상태")).toHaveValue("지급 대상");
   const table = targetsGrid(page).or(page.getByRole("table", { name: "지급 대상" }));
   await expect(table).toBeVisible();
@@ -70,7 +70,7 @@ test("폰 375 · 320 — 결재 중 행은 제목 한 줄 말줄임 · 빈 접�
 
   for (const width of [375, 320]) {
     const page = await loginPage(browser, baseURL, payer, { width, height: 812 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const table = targetsGrid(page).or(page.getByRole("table", { name: "지급 대상" }));
     await expect(table).toBeVisible();
     const rowGroup = table.locator("tbody").filter({ hasText: itemName });
@@ -108,7 +108,7 @@ test("폰 375 · 320 — 확인 전 거래처 + 밀림 행은 접힌 줄에 계�
 
   const collapsedOf = async (width: number, expectAccount: boolean) => {
     const page = await loginPage(browser, baseURL, payer, { width, height: 812 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const table = targetsGrid(page).or(page.getByRole("table", { name: "지급 대상" }));
     await expect(table).toBeVisible();
     const rowGroup = table.locator("tbody").filter({ has: page.getByRole("link", { name: itemName }) });

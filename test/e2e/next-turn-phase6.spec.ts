@@ -231,7 +231,10 @@ test.describe("「내 차례」 전표 대기 (07.1-17 PD1)", () => {
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     for (const infoItem of [...INFO_ITEMS, "purchase_request.value", "purchase_request.amount", "card_usage.value", "card_usage.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-    return makePerson("구매처리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+    const person = await makePerson("구매처리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+    // 07.3-01: 구매 처리(cards.purchases)는 자금 키 — 경영관리본부 소속이어야 한다(D-7307). 경영관리팀 발령.
+    await placeInFundDivision(person.viewer.id);
+    return person;
   }
 
   // 구매 완료 요청 + 그 요청에 딸린 카드 사용(구매 경로 고리) — 전표 없음.

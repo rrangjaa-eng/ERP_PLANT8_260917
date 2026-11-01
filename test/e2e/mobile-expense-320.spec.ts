@@ -13,6 +13,7 @@ import { confirmEvidence } from "@/domain/evidence-reviews";
 import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { setupExpenseE2E, submitLineExpense, insertTempRole, type ExpenseE2E } from "./expense-fixture";
+import { payTargetsUrl } from "./pay-schedule-e2e";
 
 // 05-13 Task 2(UI-SPEC responsive S2 · S3 · S8 · S9 · overflow S5 backstop): 폭 375(프로젝트) · 320(파일 안 새 컨텍스트)에서
 // 지출결의 목록 · 폼(외화 · 회사 대납 · 13자리 계산 한 줄) · 폰 행 시트 · 결재함 · 결재 시트가 가로로 넘치지 않는다(`scrollWidth ≤ clientWidth`).
@@ -370,7 +371,7 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
       await lead.context().close();
 
       const page = await phone(browser, baseURL, payer, viewport);
-      await page.goto("/expenses");
+      await page.goto(payTargetsUrl(fx.teamId));
       await expect(page.getByLabel("상태")).toHaveValue("지급 대상");
       const target = page.getByRole("link", { name: new RegExp(item) });
       await expect(target).toHaveCount(1);

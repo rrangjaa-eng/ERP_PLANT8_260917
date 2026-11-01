@@ -50,6 +50,12 @@ export async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
   return person;
 }
 
+// 07.3-01(D-7314): 자금 담당은 회사 전체 문서를 본다 — 공유 E2E DB에서 다른 스펙 행이 쪽(50건)을 넘기고 합계 · 건수에 섞이므로,
+// 지급 대상 화면은 이 스펙 프로젝트 팀의 `team` 거르개로 겨눈다(거르개는 서버 쪽 목록 단계라 쪽 · 합계 · 행이 모두 그 팀만이다).
+export function payTargetsUrl(teamId: string, extra: Record<string, string> = {}): string {
+  return `/expenses?${new URLSearchParams({ status: "지급 대상", team: teamId, ...extra })}`;
+}
+
 export type PayCalendar = { today: string; cfg: PayScheduleConfig; lookup: HolidayLookup; thisPay: string };
 
 export async function payCalendar(): Promise<PayCalendar> {

@@ -31,6 +31,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { attachEvidence, submitReadyDraft, testVendorAccount } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
+import { payTargetsUrl } from "./pay-schedule-e2e";
 
 // 06-15(EXP-09 · UI-SPEC S1 · S2): 지급 권한자의 `/expenses` 기본 보기 「지급 대상」 → 여러 건 고르기 → 확인 모달(지급일) → 건별 처리.
 // E2E DB는 스펙끼리 공유한다 — 지급 권한자는 팀 업무 범위(`expenses.team` 보기)로 이 스펙의 프로젝트 팀 문서만 보게 만든다(목록 보임 범위 = 문서 보임).
@@ -195,7 +196,7 @@ test.describe("지급 대상 · 일괄 지급 (06-15 Task 1)", () => {
     const payer = await makeTeamPayer(fx);
 
     const page = await loginPage(browser, baseURL, payer);
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await expect(page.getByLabel("상태")).toHaveValue("지급 대상");
     const rowA = rowOf(page, fx.lines.tracer.itemName);
     const rowB = rowOf(page, fx.lines.hold.itemName);
@@ -232,38 +233,40 @@ test.describe("지급 대상 · 일괄 지급 (06-15 Task 1)", () => {
 });
 
 test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
-  test("빈 지급 대상 — 0건이면 `지급할 건이 없습니다 · 지급 완료 보기`(→ `?status=지급 완료`), 필터 0건이면 `조건에 맞는 건이 없습니다 · 필터 지우기` · 합계 · 선택 · 1차 없음", async ({ browser, baseURL }) => {
+  // 07.3-01(D-7314): 자금 담당은 회사 전체 문서를 본다 — 공유 E2E DB에는 늘 다른 팀 지급 대상이 있어 글자 `지급할 건이 없습니다 · 지급 완료 보기`
+  // (회사에 지급 대상이 하나도 없을 때만 서는 hasAny 거짓 화면)는 이 시험에서 닿지 못한다. 같은 빈 화면 갈래 중 닿는 쪽 — 이 팀 거르개 0건 · 증빙 거르개 0건이
+  // `조건에 맞는 건이 없습니다 · 필터 지우기`로 서고 합계 · 선택 · 1차가 없다 — 을 다른 팀 지급 대상 하나로 hasAny를 참으로 고정해 겨눈다.
+  test("빈 지급 대상 — 이 팀 거르개 0건이면 `조건에 맞는 건이 없습니다 · 필터 지우기` · 합계 · 선택 · 1차 없음", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
+    const other = await setupExpenseE2E();
+    await approvedTarget(other, "tracer");
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer);
 
-    await page.goto("/expenses");
-    await expect(page.getByText("지급할 건이 없습니다")).toBeVisible();
-    // 화면 이동이라 링크(<a>, SYSTEM §10) — href는 URLSearchParams로 인코딩한다(원시 공백 · 한글 href는 프리페치가 끝나지 않는다, 06-15 검토 I-1).
-    const paidView = page.getByRole("link", { name: "지급 완료 보기" });
-    await expect(paidView).toBeVisible();
-    await expect(paidView).toHaveAttribute("href", `/expenses?${new URLSearchParams({ status: "지급 완료" })}`);
-    await page.waitForLoadState("networkidle");
-    await expect(page.getByRole("region", { name: "합계" })).toHaveCount(0);
-    await expect(page.getByRole("checkbox")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^지급 완료( \d|$)/ })).toHaveCount(0);
-    await waitForHydration(paidView);
-    await paidView.click();
-    await expect(page).toHaveURL(/\/expenses\?status=(%EC%A7%80%EA%B8%89(%20|\+)%EC%99%84%EB%A3%8C|지급 완료)$/);
+    const expectEmptyFilterScreen = async () => {
+      await expect(page.getByText("조건에 맞는 건이 없습니다")).toBeVisible();
+      const clear = page.getByRole("link", { name: "필터 지우기" });
+      await expect(clear).toBeVisible();
+      await expect(clear).toHaveAttribute("href", `/expenses?${new URLSearchParams({ status: "지급 대상" })}`);
+      await page.waitForLoadState("networkidle");
+      await expect(page.getByRole("region", { name: "합계" })).toHaveCount(0);
+      await expect(page.getByRole("checkbox")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
+      return clear;
+    };
+
+    await page.goto(payTargetsUrl(fx.teamId));
+    await expect(page.getByText("지급할 건이 없습니다")).toHaveCount(0);
+    await expectEmptyFilterScreen();
 
     await approvedTarget(fx, "tracer");
-    await page.goto(`/expenses?status=${encodeURIComponent("지급 대상")}&evidence=unreviewed`);
-    await expect(page.getByText("조건에 맞는 건이 없습니다")).toBeVisible();
-    const clear = page.getByRole("link", { name: "필터 지우기" });
-    await expect(clear).toBeVisible();
-    await expect(clear).toHaveAttribute("href", `/expenses?${new URLSearchParams({ status: "지급 대상" })}`);
-    await page.waitForLoadState("networkidle");
-    await expect(page.getByRole("region", { name: "합계" })).toHaveCount(0);
-    await expect(page.getByRole("checkbox")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
+    await page.goto(payTargetsUrl(fx.teamId, { evidence: "unreviewed" }));
+    const clear = await expectEmptyFilterScreen();
     await waitForHydration(clear);
     await clear.click();
-    await expect(page).not.toHaveURL(/evidence=/);
+    await expect(page).not.toHaveURL(/evidence=|team=/);
+    await expect(page.getByRole("region", { name: "합계" })).toBeVisible();
+    await page.goto(payTargetsUrl(fx.teamId));
     await expect(rowOf(page, fx.lines.tracer.itemName)).toHaveCount(1);
     await page.context().close();
   });
@@ -275,7 +278,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer);
 
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await expect(rowOf(page, fx.lines.tracer.itemName)).toHaveCount(1);
     await expect(rowOf(page, fx.lines.hold.itemName)).toHaveCount(1);
     await waitForHydration(page.getByLabel("증빙", { exact: true }));
@@ -296,7 +299,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
 
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const table = page.getByRole("grid", { name: "지급 대상" }); // 06-17 — P4 행에 이체액 편집 칸이 서서 편집 표(grid)다
     const overdue = table.getByText("예정일 지남", { exact: true });
     const thisWeek = table.getByText(new RegExp(`^이번 주 . ${today.slice(5)} · 마감 \\d{2}-\\d{2} \\d{2}:\\d{2}$`));
@@ -323,7 +326,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     const other = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
 
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const rowA = rowOf(page, fx.lines.tracer.itemName);
     const rowB = rowOf(page, fx.lines.hold.itemName);
     await waitForHydration(rowA.getByRole("checkbox"));
@@ -371,7 +374,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
 
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const rowB = rowOf(page, fx.lines.hold.itemName);
     await waitForHydration(rowB.getByRole("checkbox"));
     await rowB.getByRole("checkbox").check();
@@ -426,14 +429,14 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     const payer = await makeTeamPayer(fx);
 
     const tablet = await loginPage(browser, baseURL, payer, { width: 800, height: 900 });
-    await tablet.goto("/expenses");
+    await tablet.goto(payTargetsUrl(fx.teamId));
     await expect(rowOf(tablet, fx.lines.tracer.itemName)).toHaveCount(1);
     await expect(tablet.getByRole("checkbox")).toHaveCount(0);
     await expect(tablet.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
     await tablet.context().close();
 
     const phone = await loginPage(browser, baseURL, payer, { width: 390, height: 844 });
-    await phone.goto("/expenses");
+    await phone.goto(payTargetsUrl(fx.teamId));
     const link = rowOf(phone, fx.lines.tracer.itemName).locator("a[data-row-link]");
     await expect(link).toHaveAttribute("href", `/expenses/${a}`);
     // 검토 D-6 — 한 줄로 자른 폰 제목은 전체 값을 title로도 남긴다.
@@ -450,7 +453,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
 
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     await waitForHydration(row.getByRole("checkbox"));
     const primary = page.getByRole("button", { name: /^지급 완료/ });
@@ -471,7 +474,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     const payer = await makeTeamPayer(fx, { amountHidden: true });
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
 
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     await waitForHydration(row.getByRole("checkbox"));
     await expect(row.getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
@@ -493,7 +496,7 @@ test.describe("일괄 지급 마감 (06-17)", () => {
     const transfer = preview.payableKrw - 3_300;
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     const checkbox = row.getByRole("checkbox");
     await waitForHydration(checkbox);
@@ -547,7 +550,7 @@ test.describe("일괄 지급 마감 (06-17)", () => {
     const tomorrow = addDays(seoulToday(), 1);
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     await waitForHydration(row.getByRole("checkbox"));
     await row.getByRole("checkbox").check();
@@ -589,7 +592,7 @@ test.describe("일괄 지급 마감 (06-17)", () => {
     if (preview.payableKrw == null) throw new Error("지급 총액 없음");
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     await waitForHydration(row.getByRole("checkbox"));
     // 서버 액션(POST · next-action 머리)을 끊는다 — 고르기 뒤 나가는 요청은 합 액션 하나다.
@@ -641,7 +644,7 @@ test.describe("일괄 지급 마감 (06-17)", () => {
     try {
       const payer = await makeTeamPayer(fx);
       const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-      await page.goto("/expenses");
+      await page.goto(payTargetsUrl(fx.teamId));
       const live = page.locator('main p[aria-live="polite"]');
       await expect(live).toHaveCount(1);
       await expect(live).toHaveText("");
@@ -700,7 +703,7 @@ test.describe("일괄 지급 마감 (06-17)", () => {
     await approvedTarget(fx, "hold");
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     await waitForHydration(row.getByRole("checkbox"));
     await row.getByRole("checkbox").check();
@@ -738,7 +741,7 @@ test.describe("일괄 지급 마감 — 쪽 · 키보드 (06-17 Task 3)", () => 
     const docUrl = new RegExp(`/expenses/${id}\\?from=pay&status=`);
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     await waitForHydration(row.getByRole("checkbox"));
     const numberLink = row.getByRole("link", { name: `${doc.number} 지출결의 열기` });
@@ -750,7 +753,7 @@ test.describe("일괄 지급 마감 — 쪽 · 키보드 (06-17 Task 3)", () => 
     await page.context().close();
 
     const narrow = await loginPage(browser, baseURL, payer, { width: 1100, height: 900 });
-    await narrow.goto("/expenses");
+    await narrow.goto(payTargetsUrl(fx.teamId));
     const narrowRow = rowOf(narrow, fx.lines.tracer.itemName);
     await waitForHydration(narrowRow.getByRole("checkbox"));
     await expect(narrowRow.getByRole("link", { name: `${doc.number} 지출결의 열기` })).toHaveCount(0);
@@ -762,12 +765,12 @@ test.describe("일괄 지급 마감 — 쪽 · 키보드 (06-17 Task 3)", () => 
     await narrow.context().close();
 
     const tablet = await loginPage(browser, baseURL, payer, { width: 800, height: 900 });
-    await tablet.goto("/expenses");
+    await tablet.goto(payTargetsUrl(fx.teamId));
     await expect(rowOf(tablet, fx.lines.tracer.itemName).getByRole("link", { name: fx.lines.tracer.itemName })).toHaveAttribute("href", docUrl);
     await tablet.context().close();
 
     const phone = await loginPage(browser, baseURL, payer, { width: 600, height: 900 });
-    await phone.goto("/expenses");
+    await phone.goto(payTargetsUrl(fx.teamId));
     await expect(rowOf(phone, fx.lines.tracer.itemName).locator("a[data-row-link]")).toHaveAttribute("href", `/expenses/${id}`);
     await phone.context().close();
   });
@@ -778,7 +781,7 @@ test.describe("일괄 지급 마감 — 쪽 · 키보드 (06-17 Task 3)", () => 
     await approvedTarget(fx, "hold");
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     await waitForHydration(row.getByRole("checkbox"));
     const rowCount = await page.locator("tbody tr").count();
@@ -808,7 +811,7 @@ test.describe("일괄 지급 마감 — 쪽 · 키보드 (06-17 Task 3)", () => 
     const transfer = lastPayable - 1_000;
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const firstRow = rowOf(page, first.itemName);
     await waitForHydration(firstRow.getByRole("checkbox"));
     await expect(rowOf(page, last.itemName)).toHaveCount(0);
@@ -901,7 +904,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     const doc = await docOf(a);
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const rowA = rowOf(page, fx.lines.tracer.itemName);
     const rowB = rowOf(page, fx.lines.hold.itemName);
     await waitForHydration(rowB.getByRole("checkbox"));
@@ -962,7 +965,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     await db.update(projects).set({ name: `Overseas Pavilion Construction ${"Very Long Project Name ".repeat(12)}`.trim() }).where(eq(projects.id, fx.projectId));
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("button", { name: `${doc.number} 증빙 확인` }));
     const dialog = await openEvidence(page, fx.lines.tracer.itemName, doc.number);
     const subtitle = dialog.locator(`p[title^="${doc.number} · "]`);
@@ -1000,7 +1003,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     const [docOne, docTwo, docThree] = await Promise.all([docOf(one), docOf(two), docOf(three)]);
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const otherRow = rowOf(page, fx.lines.phone.itemName);
     await waitForHydration(otherRow.getByRole("checkbox"));
     const otherPayable = await previewPayable(payer.viewer, { expenseId: other, payDate: seoulToday() });
@@ -1067,7 +1070,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     const docOver = await docOf(over);
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("button", { name: `${docOver.number} 증빙 확인` }));
 
     const dialog = await openEvidence(page, fx.lines.tracer.itemName, docOver.number);
@@ -1094,7 +1097,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     try {
       const payer = await makeTeamPayer(fx);
       const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-      await page.goto("/expenses");
+      await page.goto(payTargetsUrl(fx.teamId));
       const row = rowOf(page, fx.lines.tracer.itemName);
       await waitForHydration(row.getByRole("button", { name: `${doc.number} 증빙 확인` }));
       const dialog = await openEvidence(page, fx.lines.tracer.itemName, doc.number);
@@ -1123,7 +1126,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     const [docEmpty, docFilled] = await Promise.all([docOf(empty), docOf(filled)]);
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await waitForHydration(rowOf(page, fx.lines.hold.itemName).getByRole("button", { name: `${docFilled.number} 증빙 확인` }));
     await expect(page.getByRole("link", { name: /증빙 확인$/ })).toHaveCount(0);
     const dialog = await openEvidence(page, fx.lines.tracer.itemName, docEmpty.number);
@@ -1134,7 +1137,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     await page.context().close();
 
     const tablet = await loginPage(browser, baseURL, payer, { width: 800, height: 900 });
-    await tablet.goto("/expenses");
+    await tablet.goto(payTargetsUrl(fx.teamId));
     await expect(rowOf(tablet, fx.lines.hold.itemName).getByRole("link", { name: `${docFilled.number} 증빙 확인` })).toHaveAttribute(
       "href",
       new RegExp(`^/expenses/${filled}\\?from=pay&`),
@@ -1149,7 +1152,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     const doc = await docOf(id);
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("button", { name: `${doc.number} 증빙 확인` }));
     const cut = (route: import("@playwright/test").Route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback());
     await page.route("**/expenses**", cut);
@@ -1170,7 +1173,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     const doc = await docOf(id);
     const payer = await makeTeamPayer(fx);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("button", { name: `${doc.number} 증빙 확인` }));
     const dialog = await openEvidence(page, fx.lines.tracer.itemName, doc.number);
     await expect(dialog.getByRole("button", { name: /^공급가액과 같음/ })).not.toHaveAttribute("aria-disabled", "true");
@@ -1200,7 +1203,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     if (payA.payableKrw == null || payB.payableKrw == null) throw new Error("지급 총액 없음");
     const docA = await docOf(a);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const rowA = rowOf(page, fx.lines.tracer.itemName);
     const rowB = rowOf(page, fx.lines.hold.itemName);
     await waitForHydration(rowB.getByRole("checkbox"));
@@ -1215,7 +1218,8 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     await rowA.getByRole("link", { name: `${docA.number} 지출결의 열기` }).click();
     await expect(page).toHaveURL(new RegExp(`/expenses/${a}\\?from=pay`));
     await page.goBack();
-    await expect(page).toHaveURL(/\/expenses$/);
+    // 07.3-01: 지급 대상 화면은 이 스펙 팀 거르개 주소로 연다(payTargetsUrl) — 돌아온 주소도 같은 거르개 그대로.
+    await expect(page).toHaveURL(new RegExp(`/expenses\\?status=.*team=${fx.teamId}$`));
     await expect(rowB.getByRole("checkbox")).toBeChecked();
     await expect(rowA.getByRole("checkbox")).toBeChecked();
     await expect(rowA.getByTestId("payment-transfer-cell")).toHaveText(formatKrw(payA.payableKrw - 1_000));
@@ -1250,7 +1254,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     if (payFirst.payableKrw == null) throw new Error("지급 총액 없음");
     const docLast = await docOf(last.id);
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const firstRow = rowOf(page, first.itemName);
     await waitForHydration(firstRow.getByRole("checkbox"));
     await firstRow.getByTestId("payment-transfer-cell").click();
@@ -1376,7 +1380,7 @@ test.describe("계좌 칸 · 번호 보기 (06-20 Task 2)", () => {
     await setReveal(payer, false);
 
     const page = await loginPage(browser, baseURL, payer);
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     await expect(row).toContainText(account.bank);
     await expect(row).toContainText(`****-**-${account.last4}`);
@@ -1394,7 +1398,7 @@ test.describe("계좌 칸 · 번호 보기 (06-20 Task 2)", () => {
     await setReveal(payer, true);
 
     const page = await loginPage(browser, baseURL, payer);
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     await expect(row).toContainText(`${account.bank}`);
     await expect(row).toContainText(`****-**-${account.last4}`);
@@ -1444,7 +1448,7 @@ test.describe("문서 화면 왕복 (06-20 Task 3)", () => {
     const docD = await numberOf(d);
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const rowA = rowOf(page, fx.lines.tracer.itemName);
     const rowB = rowOf(page, fx.lines.hold.itemName);
     const rowC = rowOf(page, fx.lines.retry.itemName);

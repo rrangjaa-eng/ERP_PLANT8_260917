@@ -26,6 +26,7 @@ import {
   expectTokenColor,
   groupOf,
   payCalendar,
+  payTargetsUrl,
   pushedDoc,
   setVendorTerm,
   submittedDoc,
@@ -115,7 +116,7 @@ test.describe("지급 예정일 자동 계산 (07-01 트레이서)", () => {
     const expected = resolvePaySchedule({ baseDate: issuedOn, termDays: cfg.termDays, manualDate: null, approvedAt, now: new Date(), lookup, cfg });
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await expect(page.getByLabel("상태")).toHaveValue("지급 대상");
     expect(await scheduledCellText(page, fx.lines.tracer.itemName)).toBe(expected.payDate.slice(5));
     await page.context().close();
@@ -156,7 +157,7 @@ test.describe("지급 대상 머리글 · 결재 중 하위 그룹 (07-16 Task 2
     await saveScheduledPayDate(payer.viewer, { expenseId: id, scheduledPayDate: manual, version: await docVersion(id) });
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await expect(targetsGrid(page)).toBeVisible();
     expect(await groupOf(page, fx.lines.hold.itemName)).toBe(payWeekGroupLabel(next, cal.today).label);
     expect(await groupOf(page, fx.lines.retry.itemName)).toBe(payWeekGroupLabel(payDateOf(cal, manual), cal.today).label);
@@ -187,7 +188,7 @@ test.describe("지급 대상 머리글 · 결재 중 하위 그룹 (07-16 Task 2
     await saveScheduledPayDate(payer.viewer, { expenseId: id, scheduledPayDate: friday, version: await docVersion(id) });
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await expect(targetsGrid(page)).toBeVisible();
     const noSlotLabel = payWeekGroupLabel(noSlot, cal.today).label;
     const fridayLabel = payWeekGroupLabel(payDateOf(cal, friday), cal.today).label;
@@ -210,7 +211,7 @@ test.describe("지급 대상 머리글 · 결재 중 하위 그룹 (07-16 Task 2
     await saveScheduledPayDate(payer.viewer, { expenseId: id, scheduledPayDate: approving.payDate, version: await docVersion(id) });
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const grid = targetsGrid(page);
     await expect(grid).toBeVisible();
     const label = payWeekGroupLabel(approving, cal.today).label;
@@ -229,10 +230,15 @@ test.describe("지급 대상 머리글 · 결재 중 하위 그룹 (07-16 Task 2
     await page.context().close();
   });
 
-  test("결재 중만 있으면 `이번 주 지급 대상 없음` + 하위 그룹", async ({ browser, baseURL }) => {
+  // 07.3-01(D-7314): 자금 담당은 회사 전체 문서를 봐서 공유 DB에는 늘 다른 팀 지급 대상이 있다 — 글자 `이번 주 지급 대상 없음`은 회사에 지급 대상이
+  // 하나도 없을 때만 서므로(hasAny 거짓) 이 시험에서 닿지 못한다. 같은 갈래(지급 대상 없이 결재 중만 → 하위 그룹 표) 그대로, 다른 팀에 지급 대상을
+  // 하나 둬서 hasAny를 참으로 고정하고 팀 거르개로 겨누면 글자는 `조건에 맞는 건이 없습니다` + `필터 지우기`다.
+  test("결재 중만 있으면 지급 대상 행 없음 · 빈 글자 + 하위 그룹", async ({ browser, baseURL }) => {
     const cal = await payCalendar();
     const fx = await setupExpenseE2E();
     const payer = await makeTeamPayer(fx);
+    const other = await setupExpenseE2E();
+    await approvedDoc(other, "retry", payer, { issuedOn: addDays(cal.today, -3) });
     const issuedOn = addDays(cal.today, 7 - cal.cfg.termDays);
     await submittedDoc(fx, "phone", issuedOn);
     const approving = resolvePaySchedule({ baseDate: issuedOn, termDays: cal.cfg.termDays, manualDate: null, approvedAt: null, now: new Date(), lookup: cal.lookup, cfg: cal.cfg });
@@ -240,8 +246,10 @@ test.describe("지급 대상 머리글 · 결재 중 하위 그룹 (07-16 Task 2
     test.skip(week !== 0 && week !== 1, "결재 중 건이 이번 주 · 다음 주 밖");
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
-    await expect(page.getByText("이번 주 지급 대상 없음", { exact: true })).toBeVisible();
+    await page.goto(payTargetsUrl(fx.teamId));
+    await expect(page.getByText("조건에 맞는 건이 없습니다", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "필터 지우기" })).toBeVisible();
+    await expect(page.getByRole("checkbox")).toHaveCount(0);
     const table = page.getByRole("table", { name: "지급 대상" }).or(targetsGrid(page));
     await expect(table.locator("tbody tr").filter({ hasText: fx.lines.phone.itemName })).toHaveCount(1);
     expect(await approvingGroupOf(page, fx.lines.phone.itemName)).toBe(`${payWeekGroupLabel(approving, cal.today).label} · 결재 중 · 합계 제외`);
@@ -262,7 +270,7 @@ test.describe("지급 대상 머리글 · 결재 중 하위 그룹 (07-16 Task 2
     if (!doc?.number) throw new Error("문서 번호 없음");
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto(`/expenses?${new URLSearchParams({ status: "지급 대상", q: doc.number })}`);
+    await page.goto(payTargetsUrl(fx.teamId, { q: doc.number }));
     const table = page.getByRole("table", { name: "지급 대상" }).or(targetsGrid(page));
     await expect(table.locator("tbody tr").filter({ hasText: fx.lines.phone.itemName })).toHaveCount(1);
     expect(await approvingGroupOf(page, fx.lines.phone.itemName)).toBe(`${payWeekGroupLabel(approving, cal.today).label} · 결재 중 · 합계 제외`);
@@ -503,7 +511,7 @@ test.describe("지급 목록 계좌 아래 한 값 `확인 전 > 계좌 바뀜` 
     await approvedDoc(fx, "hold", payer, { issuedOn });
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const before = await methodCell(page, fx.lines.hold.itemName);
     await expect(before.getByText("거래처 확인 전", { exact: true })).toHaveCount(1);
     await expect(before.getByText("계좌 바뀜", { exact: true })).toHaveCount(0);
@@ -537,7 +545,7 @@ test.describe("지급 목록 계좌 아래 한 값 `확인 전 > 계좌 바뀜` 
     await approvedDoc(fx, "hold", payer, { issuedOn: addDays(seoulToday(), -3) });
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const cell = await methodCell(page, fx.lines.hold.itemName);
     await expect(cell.getByText("거래처 확인 전", { exact: true })).toHaveCount(1);
     const row = targetsTable(page).locator("tbody tr").filter({ has: page.getByRole("link", { name: fx.lines.hold.itemName, exact: false }) });

@@ -21,6 +21,7 @@ import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { submitReadyDraft, testVendorAccount } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { seedLongTeamNames, setupExpenseE2E, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
+import { payTargetsUrl } from "./pay-schedule-e2e";
 
 // 06.5-06(D-6504 · UI-SPEC V5): 지급 대상의 2차 `이체 파일 받기` — 고른 계좌이체 건을 신한 대량이체 xlsx로 내려받는다.
 // 지급 권한자 계급은 payment-batch.spec.ts의 팀 업무 범위 꼴에 버튼 게이트 항목(거래처 계좌 해제)을 더한다. 문서는 도메인 함수로 만든다.
@@ -100,7 +101,7 @@ test.describe("지급 대상 · 이체 파일 받기 (06.5-06 Task 1)", () => {
     await approvedTarget(fx, "tracer", payer);
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const row = rowOf(page, fx.lines.tracer.itemName);
     await waitForHydration(row.getByRole("checkbox"));
     await row.getByRole("checkbox").check();
@@ -139,7 +140,7 @@ test.describe("지급 대상 · 이체 파일 받기 (06.5-06 Task 1)", () => {
     await approvedTarget(fx, "hold", payer);
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await waitForHydration(rowOf(page, fx.lines.hold.itemName).getByRole("checkbox"));
     const button = page.getByRole("button", { name: "이체 파일 받기" });
     await expect(button).toHaveAttribute("aria-disabled", "true");
@@ -168,7 +169,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 막힌 건 · 담김 �
     await withoutAccount(broken);
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const okRow = rowOf(page, fx.lines.tracer.itemName);
     const badRow = rowOf(page, fx.lines.hold.itemName);
     await waitForHydration(okRow.getByRole("checkbox"));
@@ -217,7 +218,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 막힌 건 · 담김 �
 
     for (const width of [1023, 768, 375]) {
       const page = await loginPage(browser, baseURL, payer, { width, height: 900 });
-      await page.goto("/expenses");
+      await page.goto(payTargetsUrl(fx.teamId));
       await expect(page.getByText(fx.lines.retry.itemName).first()).toBeVisible();
       await expect(page.getByRole("button", { name: "이체 파일 받기" })).toHaveCount(0);
       await page.context().close();
@@ -225,13 +226,13 @@ test.describe("지급 대상 · 이체 파일 받기 — 막힌 건 · 담김 �
     for (const hidden of ["vendor.account_number_unmasked", "expense.amount"]) {
       const other = await makeTransferPayer(fx, { hidden: [hidden] });
       const page = await loginPage(browser, baseURL, other, { width: 1280, height: 900 });
-      await page.goto("/expenses");
+      await page.goto(payTargetsUrl(fx.teamId));
       await expect(page.getByText(fx.lines.retry.itemName).first()).toBeVisible();
       await expect(page.getByRole("button", { name: "이체 파일 받기" })).toHaveCount(0);
       await page.context().close();
     }
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await expect(rowOf(page, fx.lines.phone.itemName)).toHaveCount(1);
     await expect(page.getByRole("button", { name: "이체 파일 받기" })).toHaveCount(1);
     await page.context().close();
@@ -245,7 +246,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 막힌 건 · 담김 �
       await withoutAccount(broken);
 
       const page = await loginPage(browser, baseURL, payer, { width, height: 900 });
-      await page.goto("/expenses");
+      await page.goto(payTargetsUrl(fx.teamId));
       const row = rowOf(page, fx.lines.worst.itemName);
       await waitForHydration(row.getByRole("checkbox"));
       await row.getByRole("checkbox").check();
@@ -287,7 +288,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 필터 줄 정렬 · �
     await db.update(expenses).set({ vendorId: vendor.id }).where(eq(expenses.id, broken));
 
     const page = await loginPage(browser, baseURL, plain, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     const okRow = rowOf(page, fx.lines.tracer.itemName);
     const badRow = rowOf(page, fx.lines.worst.itemName);
     await waitForHydration(okRow.getByRole("checkbox"));
@@ -346,7 +347,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 필터 줄 정렬 · �
     // M-2 — 거래처 관리 쓰기가 있으면 같은 막힘이 끝 링크 `계좌 고치기`로 선다. 막힌 행 체크박스에서 Tab: 행 칸들 → 아래 줄 링크 → 다음 행.
     const linked = await makeTransferPayer(fx, { vendorsWrite: true });
     const second = await loginPage(browser, baseURL, linked, { width: 1280, height: 900 });
-    await second.goto("/expenses");
+    await second.goto(payTargetsUrl(fx.teamId));
     const bad = rowOf(second, fx.lines.worst.itemName);
     await waitForHydration(bad.getByRole("checkbox"));
     await bad.getByRole("checkbox").check();
@@ -453,7 +454,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 지급처 합치기 · 
     await db.update(expenses).set({ vendorId: otherVendor.id }).where(eq(expenses.id, other));
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("checkbox"));
     await checkAll(page, [fx.lines.tracer.itemName, fx.lines.hold.itemName, fx.lines.retry.itemName]);
     const waiting = page.waitForEvent("download");
@@ -482,7 +483,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 지급처 합치기 · 
     const targets = await payeeTargets(fx, payer, vendors.flatMap((vendor) => [vendor.id, vendor.id]));
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await waitForHydration(rowOf(page, take(targets, 0).itemName).getByRole("checkbox"));
     await checkAll(page, targets.slice(0, 6).map((target) => target.itemName));
     await page.getByRole("button", { name: /^지급 완료 6/ }).click();
@@ -524,7 +525,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 지급처 합치기 · 
     await db.update(expenses).set({ paymentMethod: "cash" }).where(eq(expenses.id, cash));
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("checkbox"));
     await checkAll(page, [fx.lines.tracer.itemName, fx.lines.hold.itemName, fx.lines.retry.itemName]);
     await page.getByRole("button", { name: /^지급 완료 3/ }).click();
@@ -541,7 +542,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 지급처 합치기 · 
     await approvedTarget(fx, "hold", payer);
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("checkbox"));
     await checkAll(page, [fx.lines.tracer.itemName, fx.lines.hold.itemName]);
     // 여는 순간의 서버 액션 중 지급 행 스냅숏(expectedPayableKrw)을 싣는 것은 소계 읽기뿐이다(합 요청은 id · 이체액만) — 그 하나만 끊는다.

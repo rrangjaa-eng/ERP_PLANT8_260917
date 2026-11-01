@@ -15,6 +15,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
 import { insertLinkFixture, insertRecordFixture } from "../integration/fixtures/evidence";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
+import { payTargetsUrl } from "./pay-schedule-e2e";
 import { archiveTempRoles, insertTempRole, setupExpenseE2E, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 07-23 Task 3(SC-18 · D-745 · K20 · AQ-21 · U11 · U16 · N2): 지출결의 지급처 고르기에서 없는 거래처를 그 자리에서 등록한다 — 검색어가 있으면 목록 끝
@@ -276,7 +277,7 @@ test.describe("N2 — 일하는 자리 등록 거래처의 사후 확인 (07-23)
     await approve(fx, id, manager);
 
     const payPage = await loginPage(browser, baseURL, manager, { width: 1280, height: 900 });
-    await payPage.goto("/expenses");
+    await payPage.goto(payTargetsUrl(fx.teamId));
     await expect((await methodCell(payPage, fx.lines.worst.itemName)).getByText("거래처 확인 전", { exact: true })).toHaveCount(1);
     // 2026-10-24 사용자 결정(G13 일부 변경): 확인 전 거래처 건은 고를 수 없다.
     await expect(targetRow(payPage, fx.lines.worst.itemName).getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
@@ -285,7 +286,7 @@ test.describe("N2 — 일하는 자리 등록 거래처의 사후 확인 (07-23)
     await payPage.getByRole("button", { name: "확인됨으로 표시" }).click();
     await expect(payPage.getByRole("button", { name: "되돌리기" })).toBeVisible();
 
-    await payPage.goto("/expenses");
+    await payPage.goto(payTargetsUrl(fx.teamId));
     await expect((await methodCell(payPage, fx.lines.worst.itemName)).getByText("거래처 확인 전", { exact: true })).toHaveCount(0);
     await expect(targetRow(payPage, fx.lines.worst.itemName).getByRole("checkbox")).not.toHaveAttribute("aria-disabled", "true");
     await payPage.context().close();

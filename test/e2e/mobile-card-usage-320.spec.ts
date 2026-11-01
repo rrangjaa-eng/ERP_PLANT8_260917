@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { test, expect } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { test, expect, type Page } from "@playwright/test";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { corpCardUsages, purchaseRequests, quoteLines } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
@@ -628,4 +628,228 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       await page.context().close();
     }
   });
+
+  // 07.1-20 Task 2: 폰 패널 삭제의 가장자리 — 거부 · 저장 중 막힘 · 되돌린 줄 포커스 · 700 이상 경계.
+  test("[07.1-20 G-07.1-68] 375 · 320 — 패널 삭제 거부면 패널 유지 · 이유 한 줄 · 새로 고침 · 저장 중 막힘 · 되돌린 줄 포커스(탭 칸 · 목록 밖 = 화면 제목) · 700 · 768 · 1024 경계", async ({ browser, baseURL }) => {
+    const { person, cardId } = await makeHolder();
+    const md = seoulToday().slice(5);
+    const deleteNameOf = (name: string) => `${md} ${name} 삭제`;
+    const openPanel = async (page: Page, name: string) => {
+      const tap = page.getByRole("row").filter({ hasText: name }).getByRole("button", { name: /상세 보기$/ });
+      await waitForHydration(tap);
+      await tap.click();
+      const panel = page.getByRole("dialog", { name: "카드 사용 수정" });
+      await expect(panel).toBeVisible();
+      return panel;
+    };
+
+    // ① 거부 — 패널을 연 뒤 그 건의 version이 바뀌면 낡은 version 삭제는 서버가 거부한다.
+    for (const width of [375, 320]) {
+      const own = await insertOwnUsage(person, cardId, `G68거부${width}`);
+      const page = await loginPage(browser, baseURL, person, { width, height: 800 });
+      await page.goto("/cards");
+      const panel = await openPanel(page, own.name);
+      await db.update(corpCardUsages).set({ version: sql`${corpCardUsages.version} + 1` }).where(eq(corpCardUsages.id, own.id));
+      const panelDelete = panel.getByRole("button", { name: deleteNameOf(own.name), exact: true });
+      await waitForHydration(panelDelete);
+      await panelDelete.click();
+      const alert = panel.locator("[role='alert']");
+      await expect(alert, `${width} 거부 한 줄`).toHaveCount(1);
+      const rejection = (await alert.textContent())?.trim() ?? "";
+      expect(rejection.length, `${width} 거부 글자`).toBeGreaterThan(0);
+      await expect(panel, `${width} 거부면 패널 유지`).toBeVisible();
+      await expect(page).toHaveURL(/editId=/);
+      const colors = await alert.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--status-danger)";
+        document.body.append(probe);
+        const danger = getComputedStyle(probe).color;
+        probe.remove();
+        return { actual: getComputedStyle(element).color, danger };
+      });
+      expect(colors.actual, `${width} 거부 글자 색`).toBe(colors.danger);
+      // 표 위 결과 줄에 겹쳐 남지 않는다.
+      await expect(page.locator("p[role='status']").filter({ hasText: rejection }), `${width} 결과 줄 겹침`).toHaveCount(0);
+      expect(await panel.evaluate((element) => element.scrollWidth - element.clientWidth), `${width} 패널 넘침`).toBeLessThanOrEqual(0);
+      // 거부 뒤 다음 행동 — `새로 고침`으로 최신 version을 받은 뒤 다시 누르면 지워진다.
+      const refresh = panel.getByRole("button", { name: "새로 고침" });
+      await expect(refresh, `${width} 새로 고침`).toBeVisible();
+      await refresh.click();
+      await expect(alert, `${width} 새로 고침 뒤 거부 줄`).toHaveCount(0);
+      await panelDelete.click();
+      await expect(page.getByRole("dialog", { name: "카드 사용 수정" })).toHaveCount(0);
+      await expect(page.locator("p[role='status']").filter({ hasText: "카드 사용 삭제됨" })).toBeVisible();
+      await page.context().close();
+    }
+
+    // ② 저장 중에는 패널 삭제가 막힌다(누름 → 요청 0).
+    {
+      const own = await insertOwnUsage(person, cardId, "G68저장중");
+      const page = await loginPage(browser, baseURL, person, { width: 375, height: 800 });
+      await page.goto("/cards");
+      const panel = await openPanel(page, own.name);
+      const panelDelete = panel.getByRole("button", { name: deleteNameOf(own.name), exact: true });
+      await waitForHydration(panelDelete);
+      await panel.getByLabel("메모").fill("저장 중 막힘");
+      let posts = 0;
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/*", async (route) => {
+        const request = route.request();
+        if (request.method() === "POST" && request.headers()["next-action"]) {
+          posts += 1;
+          if (posts === 1) await gate;
+        }
+        await route.continue();
+      });
+      await panel.getByRole("button", { name: /^카드 사용 저장/ }).click();
+      await expect.poll(() => posts, { message: "저장 요청이 붙잡힘" }).toBe(1);
+      await expect(panelDelete, "저장 중 패널 삭제").toHaveAttribute("aria-disabled", "true");
+      await panelDelete.click({ force: true });
+      await page.waitForTimeout(400);
+      expect(posts, "저장 중 패널 삭제 누름 → 새 요청 0").toBe(1);
+      release();
+      await expect(page.getByRole("dialog", { name: "카드 사용 수정" })).toHaveCount(0);
+      await expect(page.getByRole("row").filter({ hasText: own.name }), "그 줄은 표에 남음").toHaveCount(2);
+      await expect(page.locator("p[role='status']").filter({ hasText: "카드 사용 삭제됨" })).toHaveCount(0);
+      await page.context().close();
+    }
+
+    // ③ 되돌린 줄 포커스 — 폰은 행동 열이 숨어 그 줄의 탭 칸이 받는다(body 아님).
+    {
+      const own = await insertOwnUsage(person, cardId, "G68포커스");
+      const page = await loginPage(browser, baseURL, person, { width: 375, height: 800 });
+      await page.goto("/cards");
+      const panel = await openPanel(page, own.name);
+      const panelDelete = panel.getByRole("button", { name: deleteNameOf(own.name), exact: true });
+      await waitForHydration(panelDelete);
+      await panelDelete.click();
+      const undo = page.locator("p[role='status']").getByRole("button", { name: "되돌리기" });
+      await expect(undo).toBeFocused();
+      await undo.click();
+      await expect
+        .poll(() =>
+          page.evaluate((name) => {
+            const active = document.activeElement;
+            if (!active || active === document.body) return "body";
+            const previous = active.closest("tr")?.previousElementSibling;
+            return [active.getAttribute("role"), (active.getAttribute("aria-label") ?? "").endsWith("상세 보기"), (previous?.textContent ?? "").includes(name)].join("|");
+          }, own.name),
+        )
+        .toBe("button|true|true");
+      await page.context().close();
+    }
+
+    // ④ 되살린 줄이 이 목록에 없을 때(지난달 건을 `?editId=`로 직접 연 경우) — 화면 제목으로.
+    {
+      const own = await insertOwnUsage(person, cardId, "G68지난달");
+      const [year, month] = seoulToday().split("-").map(Number);
+      const previous = month === 1 ? `${(year ?? 0) - 1}-12-01` : `${year}-${String((month ?? 1) - 1).padStart(2, "0")}-01`;
+      await db.update(corpCardUsages).set({ usedOn: previous }).where(eq(corpCardUsages.id, own.id));
+      const page = await loginPage(browser, baseURL, person, { width: 375, height: 800 });
+      await page.goto(`/cards?editId=${own.id}`);
+      const panel = page.getByRole("dialog", { name: "카드 사용 수정" });
+      await expect(panel).toBeVisible();
+      const panelDelete = panel.getByRole("button", { name: `${previous.slice(5)} ${own.name} 삭제`, exact: true });
+      await waitForHydration(panelDelete);
+      await panelDelete.click();
+      await expect(page.getByRole("dialog", { name: "카드 사용 수정" })).toHaveCount(0);
+      await expect(page).toHaveURL(/\/cards$/);
+      const undo = page.locator("p[role='status']").getByRole("button", { name: "되돌리기" });
+      await expect(undo).toBeFocused();
+      await undo.click();
+      await expect(page.locator('[data-ui="screen-title"]')).toBeFocused();
+      await page.context().close();
+    }
+
+    // ⑤ 700 · 768 · 1024 — 행동 칸 `수정` · `삭제`가 그대로 한 줄이고 수정 패널에는 보이는 `삭제`가 없다(폰 전용 자리).
+    const own = await insertOwnUsage(person, cardId, "G68넓은폭");
+    for (const width of [700, 768, 1024]) {
+      const page = await loginPage(browser, baseURL, person, { width, height: 800 });
+      await page.goto("/cards");
+      const edit = page.getByRole("link", { name: `${md} ${own.name} 수정`, exact: true });
+      const remove = page.getByRole("button", { name: deleteNameOf(own.name), exact: true });
+      await expect(edit, `${width} 수정`).toBeVisible();
+      await expect(remove, `${width} 삭제`).toBeVisible();
+      const editBox = await edit.boundingBox();
+      const removeBox = await remove.boundingBox();
+      expect(Math.abs((editBox?.y ?? 0) - (removeBox?.y ?? 99999)), `${width} 윗변 차`).toBeLessThanOrEqual(1);
+      await waitForHydration(edit);
+      await edit.click();
+      const panel = page.getByRole("dialog", { name: "카드 사용 수정" });
+      await expect(panel).toBeVisible();
+      await expect(panel.getByRole("button", { name: deleteNameOf(own.name), exact: true }), `${width} 패널 삭제 없음`).toHaveCount(0);
+      await page.context().close();
+    }
+  });
+
+  // 07.1-20: 권리 판정은 서버 그대로 — 구매 완료로 생긴 건(rights.delete 거짓)의 수정 패널에는 `삭제`가 없고 대리 등록 건에는 있다(관리자).
+  test("[07.1-20 G-07.1-68] 375 · 320 — 관리자: 구매 완료 건 패널에 삭제 없음", async ({ browser, baseURL }) => {
+    const { person, cardId, teamId } = await makeHolder();
+    const suffix = randomUUID().slice(0, 8);
+    const year = seoulToday().slice(0, 4);
+    const proxyPerson = await makePerson("G68대리", DEFAULT_ROLE_ID, teamId, `${year}-01-01`);
+    const admin = await makePerson("G68관리자", SYSADMIN_ROLE_ID, teamId, `${year}-01-01`);
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `E2EG68클라이언트-${suffix}`, normalizedName: `e2eg68클라이언트-${suffix}` });
+    const project = await createProject(person.viewer, { clientId: client.id, teamId, pmUserId: person.viewer.id, name: `E2EG68-${suffix}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수 없음");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [
+        {
+          id: randomUUID(),
+          isNew: true as const,
+          subcategory: (await firstSelectableSubcategory()).value,
+          itemName: `G68 줄-${suffix}`,
+          vendorId: null,
+          unitPrice: { currency: "KRW" as const, amount: 2_500_000, fxRate: 1 },
+          execution: { currency: "KRW" as const, amount: 2_000_000, fxRate: 1 },
+        },
+      ],
+    });
+    const [line] = await db.select({ id: quoteLines.id }).from(quoteLines).where(eq(quoteLines.revisionId, revision.id));
+    if (!line) throw new Error("견적 줄 없음");
+    const proxyVendor = await insertVendor(SYSTEM_VIEWER, { name: `G68대리-${suffix}`, normalizedName: `g68대리-${suffix}-${randomUUID()}` });
+    const [proxyRow] = await db
+      .insert(corpCardUsages)
+      .values({ corpCardId: cardId, usedOn: seoulToday(), merchantVendorId: proxyVendor.id, totalCurrency: "KRW", totalForeignAmount: null, totalFxRate: "1", totalAmountKrw: 55_000, supplyKrw: 50_000, vatKrw: 5_000, evidenceTypeCode: "invoice", linkKind: "team_cost", quoteLineId: null, teamId, usedByUserId: person.viewer.id, registeredBy: proxyPerson.viewer.id, registeredVia: "proxy", memo: null })
+      .returning({ id: corpCardUsages.id });
+    const purchaseNumber = `26001-C${randomUUID().slice(0, 8)}`;
+    const [request] = await db
+      .insert(purchaseRequests)
+      .values({ number: purchaseNumber, linkKind: "quote_line", projectId: project.id, quoteLineId: line.id, requestedBy: proxyPerson.viewer.id, itemName: "현수막", estimateAmountKrw: 40_000 })
+      .returning({ id: purchaseRequests.id });
+    const purchaseVendor = await insertVendor(SYSTEM_VIEWER, { name: `G68구매-${suffix}`, normalizedName: `g68구매-${suffix}-${randomUUID()}` });
+    const [purchaseRow] = await db
+      .insert(corpCardUsages)
+      .values({ corpCardId: cardId, usedOn: seoulToday(), merchantVendorId: purchaseVendor.id, totalCurrency: "KRW", totalForeignAmount: null, totalFxRate: "1", totalAmountKrw: 40_000, supplyKrw: 40_000, vatKrw: 0, evidenceTypeCode: "invoice", linkKind: "quote_line", quoteLineId: line.id, teamId: null, usedByUserId: person.viewer.id, registeredBy: proxyPerson.viewer.id, registeredVia: "purchase", purchaseRequestId: request?.id ?? null, memo: null })
+      .returning({ id: corpCardUsages.id });
+    if (!proxyRow || !purchaseRow) throw new Error("카드 사용 건 없음");
+    const md = seoulToday().slice(5);
+    for (const width of [375, 320]) {
+      const page = await loginPage(browser, baseURL, admin, { width, height: 800 });
+      await page.goto(`/cards?editId=${proxyRow.id}`);
+      let panel = page.getByRole("dialog", { name: "카드 사용 수정" });
+      await expect(panel).toBeVisible();
+      await expect(panel.getByRole("button", { name: `${md} ${proxyVendor.name} 삭제`, exact: true }), `${width} 대리 등록 건 패널 삭제`).toHaveCount(1);
+      await page.goto(`/cards?editId=${purchaseRow.id}`);
+      panel = page.getByRole("dialog", { name: "카드 사용 수정" });
+      await expect(panel).toBeVisible();
+      await expect(panel.getByRole("button", { name: `${md} ${purchaseVendor.name} 삭제`, exact: true }), `${width} 구매 완료 건 패널 삭제`).toHaveCount(0);
+      await page.context().close();
+    }
+  });
 });
+
+// 본인 등록 한 건 — 가맹점 `name`, KRW 합계, 팀 비용(권리 수정 · 삭제).
+async function insertOwnUsage(person: Person, cardId: string, label: string): Promise<{ id: string; name: string }> {
+  const name = `${label}-${randomUUID().slice(0, 8)}`;
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: `${name}-${randomUUID()}` });
+  const input: CardUsageInput = { corpCardId: cardId, usedOn: seoulToday(), merchantVendorId: vendor.id, total: { currency: "KRW", amount: 77_000, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "team_cost", memo: null };
+  await createCardUsage(person.viewer, input, await precheckCardUsage(person.viewer, input));
+  const [row] = await db.select({ id: corpCardUsages.id }).from(corpCardUsages).where(eq(corpCardUsages.merchantVendorId, vendor.id));
+  if (!row) throw new Error("카드 사용 건 없음");
+  return { id: row.id, name };
+}

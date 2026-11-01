@@ -64,6 +64,8 @@ test("폰 375 — P1 세 열 · 행 탭 → 이력 시트(예산 바꾸기) · �
   await login(page, user);
   await page.goto("/projects/budget");
   const table = page.locator("table", { has: page.locator("caption", { hasText: /^예산 현황$/ }) });
+  // 07.3-01: 회사 전체 범위(D-7314)라 공용 CI DB에서 표가 loading.tsx 뒤에 늦게 온다 — evaluateAll은 기다리지 않으므로 표를 먼저 기다린다.
+  await expect(table).toBeVisible();
   const visibleHeaders = await table.locator("thead th").evaluateAll((cells) =>
     cells.filter((cell) => cell.getClientRects().length > 0 && getComputedStyle(cell).display !== "none").map((cell) => cell.textContent?.trim() ?? ""),
   );

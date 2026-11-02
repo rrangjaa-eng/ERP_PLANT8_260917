@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { projects, quoteLines } from "@/db/schema";
+import { evidenceRecordLinks, projects, quoteLines } from "@/db/schema";
+import { cardSlipNotFound, cardUsageReadScope } from "@/domain/corp-card-usages";
+import { createCorpCard } from "@/domain/corp-cards";
+import { attachEvidenceRecord, readCardUsageRights } from "@/domain/evidence-records/attach";
 import type { PermissionAction } from "@/domain/permissions/menus";
 import { rowScopeFor } from "@/domain/permissions/scope-for";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
@@ -10,11 +13,13 @@ import { saveProjectLedger } from "@/domain/projects/ledger";
 import { canOpenProject } from "@/domain/projects/visibility";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { prepareQuoteLineSave, type QuoteLineWriteRow } from "@/domain/quotes/lines";
+import { canSeePurchaseRequest } from "@/domain/purchase-requests";
 import { saveRevenue } from "@/domain/revenue";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { grantFundKeys, makeFundPerson, makeFundRole } from "./fixtures/fund-scope";
-import { purchaseProject } from "./fixtures/purchase-requests";
+import { createCardUsageFixture, insertRecordFixture } from "./fixtures/evidence";
+import { purchaseProject, request } from "./fixtures/purchase-requests";
 
 // 07.3-01 Q5(사용자 카드 2026-11-02 「넓힌 범위는 보기에만」): 자금 키로 넓힌 회사 전체 범위는 보기에만 쓴다.
 // 일반 쓰기(견적 줄 · 기간 등)는 계급의 원래 범위(team)로 판정하고, 자금 작업(조정 줄 · 발행·입금 줄)만 그 키로 넓힌 범위에 닿는다.
@@ -112,5 +117,55 @@ describe("넓힌 범위는 보기에만 (07.3-01 Q5)", () => {
       paidEntries: [{ id: entryId, isNew: true, entryDate: "2026-10-01", amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }],
     });
     expect(result).not.toBeNull();
+  });
+});
+
+// 07.3-01 Q5 검토 F1: 카드 사용 · 구매 요청 목록은 자금 키로 넓힌 보기 범위(D-E1)를 쓰지만, 증빙 붙이기 · 떼기(값 덮기 포함)는 쓰기 범위다.
+// 증빙 등록 쓰기 + 예산 보기(team 계급 · 대리 등록 · 지급 · 구매 처리 키 없음)는 다른 팀 카드 사용 · 구매 요청을 보지만 붙이지 못한다.
+describe("넓힌 범위는 보기에만 — 증빙 붙이기 (07.3-01 Q5 F1)", () => {
+  async function intakeWith(name: string, grants: readonly Grant[]): Promise<Viewer> {
+    return mgmtWith(name, [["evidence.intake", "write"], ["evidence", "view"], ...grants]);
+  }
+
+  async function liveLinkCount(ownerId: string): Promise<number> {
+    return (await db.select({ id: evidenceRecordLinks.id }).from(evidenceRecordLinks).where(eq(evidenceRecordLinks.ownerId, ownerId))).length;
+  }
+
+  async function otherTeamCardUsage(): Promise<string> {
+    const fx = await purchaseProject();
+    const last4 = String(1000 + Math.floor(Math.random() * 8999));
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "롯데카드", numberLast4: last4, label: `범위 ${last4}`, kind: "personal", holderUserId: fx.pm.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    return (await createCardUsageFixture(fx.pm, { corpCardId: card.id, usedOn: "2026-04-30", totalKrw: 200_000 })).id;
+  }
+
+  it("카드 사용 — 목록 범위는 전부지만 붙이기 권리는 없고 붙이기는 없는 카드 사용과 같은 거절", async () => {
+    const usageId = await otherTeamCardUsage();
+    const mgmt = await intakeWith("경영관리 예산 카드", [["projects.budget", "view"]]);
+    expect(await cardUsageReadScope(mgmt)).toEqual({ kind: "all" });
+    expect((await readCardUsageRights(mgmt, usageId))?.rights.attach ?? false).toBe(false);
+    const recordId = await insertRecordFixture(mgmt);
+    await expect(attachEvidenceRecord(mgmt, { recordId, owner: { kind: "corp_card_usage", id: usageId } })).rejects.toThrow(cardSlipNotFound().message);
+    expect(await liveLinkCount(usageId)).toBe(0);
+  });
+
+  it("카드 사용 — 지급 처리 쓰기 키는 제 키로 붙이기 권리가 있다", async () => {
+    const usageId = await otherTeamCardUsage();
+    const payer = await intakeWith("경영관리 지급 카드", [["expenses.payments", "write"]]);
+    expect((await readCardUsageRights(payer, usageId))?.rights.attach).toBe(true);
+  });
+
+  it("구매 요청 — 보기는 되지만 붙이기는 없는 구매 요청과 같은 거절, 구매 처리 쓰기 키는 붙인다", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const mgmt = await intakeWith("경영관리 예산 구매", [["projects.budget", "view"]]);
+    expect(await canSeePurchaseRequest(mgmt, { id: created.id })).toBe(true);
+    const recordId = await insertRecordFixture(mgmt, { supplyKrw: 100_000, vatKrw: 10_000 });
+    await expect(attachEvidenceRecord(mgmt, { recordId, owner: { kind: "purchase_request", id: created.id } })).rejects.toThrow("없는 구매 요청");
+    expect(await liveLinkCount(created.id)).toBe(0);
+
+    const purchaser = await intakeWith("경영관리 구매 처리", [["cards.purchases", "write"]]);
+    const ownRecord = await insertRecordFixture(purchaser, { supplyKrw: 100_000, vatKrw: 10_000 });
+    expect(await attachEvidenceRecord(purchaser, { recordId: ownRecord, owner: { kind: "purchase_request", id: created.id } })).toEqual({ created: true });
   });
 });

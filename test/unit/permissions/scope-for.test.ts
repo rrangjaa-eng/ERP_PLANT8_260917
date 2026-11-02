@@ -257,6 +257,23 @@ describe("rowScopeFor 자금 확대 (07.3-01 D-7314)", () => {
     expect(await rowScopeFor(viewer, "project", fundDeps(["projects:view", "projects.adjustment:write"]), op)).toEqual({ rows: "all", includeArchived: false });
   });
 
+  // 07.3-01 Q5 검토 F2: 다른 entity의 자금 키를 자금 작업으로 넘겨도 넓히지 않는다(fail-closed).
+  it.each([
+    ["project", ["projects:view", "expenses.payments:write"], ["expenses.payments", "write"]],
+    ["project", ["projects:view", "cards.purchases:write"], ["cards.purchases", "write"]],
+    ["expense", ["expenses:view", "projects.adjustment:write"], ["projects.adjustment", "write"]],
+  ] as const)("%s 자금 작업에 그 entity 밖 키 %j → %j는 넓히지 않는다", async (entity, granted, fundOp) => {
+    expect(await rowScopeFor(viewer, entity, fundDeps([...granted]), { fundOp })).toMatchObject({ rows: "limited", by: { kind: "team", teamId: "team-1" } });
+  });
+
+  it.each([
+    ["projects.adjustment", "write"],
+    ["projects.budget", "write"],
+    ["projects.revenue", "write"],
+  ] as const)("project 자금 작업 %s:%s는 그 키로 넓힌다", async (menu, action) => {
+    expect(await rowScopeFor(viewer, "project", fundDeps(["projects:view", `${menu}:${action}`]), { fundOp: [menu, action] })).toEqual({ rows: "all", includeArchived: false });
+  });
+
   it("자금 작업 범위도 메뉴 보기가 없으면 none이다", async () => {
     const op = { fundOp: ["projects.adjustment", "write"] } as const;
     expect((await rowScopeFor(viewer, "project", fundDeps(["projects.adjustment:write"]), op)).rows).toBe("none");

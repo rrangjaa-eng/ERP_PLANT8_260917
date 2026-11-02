@@ -8,7 +8,7 @@ import { db } from "@/db/client";
 import { purchaseRequests } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { seoulToday } from "@/lib/dates";
-import { measurePhoneRows } from "./helpers/phone-rows";
+import { expectPhoneRows, measurePhoneRows } from "./helpers/phone-rows";
 import { completePurchase, makeCardHolder, makePrepaidOverdue, makePurchaser, makeTeamPayer, paidExpense, requestPurchase, seedLongTarget } from "./helpers/phone-fixtures";
 import { loginPage } from "./leave-org";
 import { setupExpenseE2E } from "./expense-fixture";
@@ -48,10 +48,9 @@ for (const width of [375, 320] as const) {
       await page.goto("/cards");
       const table = page.locator("main table").first();
       await expect(table.getByText("1,234,567", { exact: true }).first()).toBeVisible();
-      const shape = await measurePhoneRows(table);
-      logShape(`/cards @${width}`, shape);
-      expect(shape.rows).toBeGreaterThanOrEqual(2);
-      expect(shape.maxFoldedLines, "접힌 줄 줄 수").toBeLessThanOrEqual(1);
+      // 07.1-20(G-07.1-68): 두 줄 모두 주인이 등록한 권리 줄 — 행동 칸까지 포함한 주 행 셀이 한 줄이고 주 행 높이가 2 × 12 + 15 × 1.5 = 46.5(+1 허용) 이내다.
+      const shape = await expectPhoneRows(page, table, `/cards @${width}`, { minRows: 2 });
+      expect(shape.medianMainRowHeight, `/cards @${width} 주 행 높이 중앙값`).toBeLessThanOrEqual(48);
       await expectTableFits(page, `/cards @${width}`);
       await page.context().close();
     });

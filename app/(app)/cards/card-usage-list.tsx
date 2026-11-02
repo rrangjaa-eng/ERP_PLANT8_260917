@@ -19,6 +19,7 @@ import { registeredSecond, registeredText } from "./registered-text";
 // 06-05(UI-SPEC S8): 카드 사용 읽기 표 — 그룹 머리글 = 카드, 그룹 안 사용일 오름차순(서버 정렬). 카드 열은 그룹이 말하므로 두지 않는다.
 // 06-09: 행동 칸 — 그 건의 권리(O-11, 서버 `rights`)가 있을 때만 `수정`(→ `?editId=` 옆 패널) · `삭제`(= 보관, 구매 완료 건은 없음),
 // 권리가 없으면 칸이 빈다. 폰 행 탭 — 권리가 있으면 수정 패널, 없으면 `RowSheet`(보기 전용).
+// 07.1-20(G-07.1-68): 폰(<700)은 행동 열이 숨고 수정 = 행 탭 · 삭제 = 수정 패널 `번호` 줄(06-14 D-1 구매 요청 S13 `요청 취소`와 같은 꼴).
 
 export type CardUsageListRowView = {
   id: string;
@@ -130,7 +131,7 @@ function actionsColumn(listHref: string): TableColumn<CardUsageListRowView> {
     key: "actions",
     header: "행동",
     headerHidden: true,
-    priority: "p1",
+    priority: "p3",
     cell: (row) =>
       row.rights.edit ? (
         <RowActions>

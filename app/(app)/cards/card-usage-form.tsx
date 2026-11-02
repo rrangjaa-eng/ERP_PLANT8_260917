@@ -18,6 +18,7 @@ import { useCommaInput } from "@/ui/input/use-comma-input";
 import { CARD_RECEIPT_CODE, cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
 import { formatKrw } from "@/lib/format-number";
 import { registeredText } from "./registered-text";
+import { CardUsagePanelBusy } from "./delete-undo";
 import type { NumberInputKind } from "@/lib/format-number";
 import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
@@ -301,6 +302,7 @@ export function CardUsageForm({
   edit = null,
   purchase = null,
   purchaseCancel = null,
+  editDelete = null,
   slip = null,
   slipEditHref = null,
   evidencePick = null,
@@ -318,6 +320,8 @@ export function CardUsageForm({
   purchase?: CardUsagePurchase | null;
   /** 06-14 폰 S13 패널의 `요청 취소`(품목 줄 옆, PC에서는 숨김 — 행 행동이 맡는다). 서버가 취소할 수 있는 사람에게만 준다. */
   purchaseCancel?: ReactNode;
+  /** 07.1-20 폰 수정 패널 `번호` 줄 끝의 `삭제`(PC에서는 숨김 — 행 행동이 맡는다). 서버가 지울 수 있다고 한 건에만 준다. */
+  editDelete?: ReactNode;
   /** 06-25 메모 아래 `증빙` 줄 — 수정 = 그 건에 바로 올림(즉시 저장), 새 건 = 첫 저장 뒤 올림(`slipEditHref` + 새 건 id로 수정 패널로 바뀐다). */
   slip?: CardSlipArea | null;
   slipEditHref?: string | null;
@@ -885,7 +889,14 @@ export function CardUsageForm({
           {edit ? (
             <div data-ui="field-row" className={rowStyles.row}>
               <span className={rowStyles.label}>번호</span>
-              <span className={cardStyles.valueText}>{edit.number ?? "—"}</span>
+              <span className={cardStyles.valueLine}>
+                <span className={cardStyles.valueText}>{edit.number ?? "—"}</span>
+                {editDelete ? (
+                  <span className={cardStyles.panelDelete}>
+                    <CardUsagePanelBusy value={isExecuting || uploading > 0}>{editDelete}</CardUsagePanelBusy>
+                  </span>
+                ) : null}
+              </span>
             </div>
           ) : null}
           {edit ? (

@@ -343,7 +343,8 @@ describe("조정 — 원자성 · 계약 · 기록 조회 · 권한(ENG-13 · CX
   });
 
   it("연차 -1 · 월차 +1 · 2027 연차 +1 뒤 연도별 조정 기록 · 보기 전용 계급 · PM 거부 · 노출 끄면 빈 항목", async () => {
-    await setHireDate(SYSTEM_VIEWER, org.drafter.id, "2026-10-01");
+    // 07.2-04 PU13: 2026 연차 -1은 남음이 있어야 하므로 입사 2025-10-01(2026 부여 15 · 월차 창 2026-12-31까지).
+    await setHireDate(SYSTEM_VIEWER, org.drafter.id, "2025-10-01");
     const userId = org.drafter.id;
     await addLeaveAdjustment(
       admin,
@@ -373,7 +374,6 @@ describe("조정 — 원자성 · 계약 · 기록 조회 · 권한(ENG-13 · CX
     expect(y2026.map((item) => item.createdAt)).toEqual([at("2026-11-03T01:00:00Z"), at("2026-11-02T01:00:00Z")]);
     expect((await listLeaveAdjustmentsForUser(admin, { userId, fiscalYear: 2027 })).map((i) => [i.kind, i.quarters])).toEqual([
       ["annual", 4],
-      ["monthly", 4],
     ]);
     expect(await listLeaveAdjustmentsForUser(admin, { userId, fiscalYear: 2028 })).toEqual([]);
 

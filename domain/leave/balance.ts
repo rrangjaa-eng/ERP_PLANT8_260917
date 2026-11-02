@@ -394,6 +394,15 @@ export function checkLeaveAdjustment(input: {
   return null;
 }
 
+// 07.2-04 PU13(D-7263): 조정이 남음을 0 아래로 내리면 거부 문구 — `남음 {N}일 · -{N}까지`. 남음이 이미 0 이하면 UI-SPEC
+// 문구 하나로 `남음 0일 · -0까지`(음수 표기를 만들지 않는다). 260907 `O: server/src/leave.ts:2733-2785`(빼는 가감만 검사)와 같은 뜻.
+export function checkAdjustmentFloor(input: { remainingQuarters: number; amountQuarters: number }): string | null {
+  if (input.amountQuarters >= 0) return null;
+  const floor = Math.max(input.remainingQuarters, 0);
+  if (floor + input.amountQuarters >= 0) return null;
+  return `남음 ${formatLeaveDays(floor)} · -${floor / 4}까지`;
+}
+
 // 잔고 문자열(UI-SPEC Copywriting 원문) — 화면 넷(S1 · S2 · S3/S5 · S9)이 같은 함수를 쓴다.
 // 두 잔고의 남음을 더한 값을 만드는 경로가 없다(사용자 요구 11:43).
 export type BalanceLine = { text: string; tone: "default" | "muted" | "warning" };

@@ -499,4 +499,42 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
       await page.context().close();
     });
   });
+  // 07.2-04 PU13(D-7263 · S21 error): 남음 3일 사람에게 -4 조정 → 칸 아래 `남음 3일 · -3까지` · 입력값 유지 · -3은 저장.
+  test("[07.2-04 PU13] 남음 3일 사람에게 -4 조정 → 남음 3일 · -3까지 · 입력값 유지 · -3 → 저장", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const year = yearOf(today);
+      const target = await makeTarget("바닥");
+      await setHireDate(SYSTEM_VIEWER, target.id, `${year - 6}-03-02`);
+      const author = await createAccount(SYSTEM_VIEWER, { name: "조정입력", email: `e2e-floor-${randomUUID()}@example.test`, roleId: SYSADMIN_ROLE_ID });
+      await addLeaveAdjustment(
+        { id: author.userId, roleId: SYSADMIN_ROLE_ID },
+        { userId: target.id, bucket: "annual", fiscalYear: year, amountDays: -14, reason: "정산" },
+      );
+      const page = await adminPage(browser, baseURL);
+      await page.goto(`/admin/people/${target.id}`);
+      await expect(balance(page).first()).toContainText("남음 3일");
+
+      await section(page).getByLabel("일수").fill("-4");
+      await section(page).getByLabel("사유").fill("초과 시도");
+      await primary(page).click();
+      const message = section(page).getByText("남음 3일 · -3까지", { exact: true });
+      await expect(message).toBeVisible();
+      await expect(section(page).getByLabel("일수")).toHaveValue("-4");
+      await expect(section(page).getByLabel("사유")).toHaveValue("초과 시도");
+      expect(await fiscalYearOf(target.id, "초과 시도")).toBeUndefined();
+      for (const width of [1280, 768, 375, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(message).toBeVisible();
+        await section(page).screenshot({ path: `test-results/07.2-04/pu13-error-${width}.png` });
+      }
+      await page.setViewportSize({ width: 1280, height: 720 });
+
+      await section(page).getByLabel("일수").fill("-3");
+      await primary(page).click();
+      await expect(section(page).getByLabel("사유")).toHaveValue("");
+      await expect(balance(page).first()).toContainText("남음 0일");
+      expect(await fiscalYearOf(target.id, "초과 시도")).toBe(year);
+      await page.context().close();
+    });
+  });
 });

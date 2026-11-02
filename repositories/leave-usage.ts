@@ -18,10 +18,11 @@ const PENDING_STATUSES = ["submitted", "in_review"];
 export async function listLeaveUsage(
   viewer: Viewer,
   input: { drafterId: string; fiscalYears: number[]; documentKind: string },
+  tx: DbOrTx = db,
 ): Promise<LeaveUsageRow[]> {
   void viewer;
   if (input.fiscalYears.length === 0) return [];
-  const rows = await db
+  const rows = await tx
     .select({
       id: leaveRequests.id,
       startDate: leaveRequests.startDate,

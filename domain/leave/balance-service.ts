@@ -12,6 +12,8 @@ import { lockSeatKeys } from "@/repositories/seats";
 import { assertLeaveAdjustableInTx } from "@/domain/people/retired";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { findUserById, type UserRow } from "@/repositories/users";
+import type { DbOrTx } from "@/repositories/document-counters";
+import { findEffectiveValue } from "@/repositories/settings";
 import { listLeaveUsage, type LeaveUsageRow } from "@/repositories/leave-usage";
 import { findLeaveRequestsByIds, type LeaveRequestRow } from "@/repositories/leave-requests";
 import { insertLeaveAdjustment, listLeaveAdjustments, type LeaveAdjustmentWithAuthor } from "@/repositories/leave-adjustments";
@@ -23,6 +25,7 @@ import {
   allocateLeave,
   balanceFiscalYears,
   buildLeaveGrants,
+  checkAdjustmentFloor,
   checkLeaveAdjustment,
   monthlyExpiresOn,
   requestBalanceOf,
@@ -90,16 +93,20 @@ function memoized<K, V>(read: (key: K) => Promise<V>): (key: K) => Promise<V> {
   };
 }
 
-function createBalanceReads(viewer: Viewer): BalanceReads {
+// tx를 주면 같은 트랜잭션으로 읽는다 — 잠금 뒤 재조회(07.2-04 PU13)가 pool 연결을 더 쓰지 않는다.
+function createBalanceReads(viewer: Viewer, tx?: DbOrTx): BalanceReads {
   const usageByKey = memoized((key: string) => {
     const [drafterId = "", years = ""] = key.split("|");
-    return listLeaveUsage(viewer, { drafterId, fiscalYears: years.split(",").map(Number), documentKind: LEAVE_DOCUMENT_KIND });
+    return listLeaveUsage(viewer, { drafterId, fiscalYears: years.split(",").map(Number), documentKind: LEAVE_DOCUMENT_KIND }, tx);
   });
+  const settingDeps = tx
+    ? { findEffectiveValue: (v: Viewer, key: string, asOf: string) => findEffectiveValue(v, key, asOf, tx) }
+    : undefined;
   return {
-    annualDays: memoized((year: number) => getSettingValue(LEAVE_ANNUAL_DAYS, { asOf: seoulDateToUtcDate(`${year}-01-01`) })),
+    annualDays: memoized((year: number) => getSettingValue(LEAVE_ANNUAL_DAYS, { asOf: seoulDateToUtcDate(`${year}-01-01`) }, settingDeps)),
     usage: (drafterId, years) => usageByKey(`${drafterId}|${years.join(",")}`),
-    adjustments: memoized((userId: string) => listLeaveAdjustments(viewer, userId)),
-    user: memoized((userId: string) => findUserById(viewer, userId)),
+    adjustments: memoized((userId: string) => listLeaveAdjustments(viewer, userId, tx)),
+    user: memoized((userId: string) => findUserById(viewer, userId, tx)),
   };
 }
 
@@ -328,6 +335,13 @@ export async function addLeaveAdjustment(
       hireDate: user.hireDate,
     });
     if (error) throw new LeaveAdjustmentValidationError(error.field, error.message);
+    // 07.2 D-7263: 잠금 뒤 같은 tx로 다시 읽은 남음으로 판정한다 — 연차 = 조정의 회계연도 · 월차 = 오늘 회계연도의 월차 줄(없으면 0).
+    const reads = createBalanceReads(viewer, tx);
+    const { summary } = await computeBalance(viewer, user, input.fiscalYear ?? yearOf(today), today, undefined, reads);
+    const remainingQuarters =
+      bucket === "annual" ? summary.annual.remainingQuarters : summary.monthly?.status === "active" ? summary.monthly.remainingQuarters : 0;
+    const floorMessage = checkAdjustmentFloor({ remainingQuarters, amountQuarters: input.amountDays * 4 });
+    if (floorMessage) throw new LeaveAdjustmentValidationError("amountDays", floorMessage);
     const row = await insertLeaveAdjustment(
       viewer,
       {

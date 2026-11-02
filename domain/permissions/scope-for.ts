@@ -161,7 +161,8 @@ async function computeRowScope(
   if (!role) return { rows: "none", includeArchived };
 
   if (role.viewScope !== "company" && purpose !== "write") {
-    const keys = purpose === "view" ? FUND_ROW_SCOPE_KEYS[entity] : [purpose.fundOp];
+    // Q5 검토 F2: 자금 작업 키는 그 entity의 자금 메뉴일 때만 넓힌다 — 다른 entity 키는 원래 범위(fail-closed).
+    const keys = purpose === "view" ? FUND_ROW_SCOPE_KEYS[entity] : FUND_ROW_SCOPE_KEYS[entity].some(([menu]) => menu === purpose.fundOp[0]) ? [purpose.fundOp] : [];
     const fundKeys = await Promise.all(keys.map(([menu, action]) => canFn(viewer, menu, action)));
     if (fundKeys.some(Boolean)) return { rows: "all", includeArchived };
   }

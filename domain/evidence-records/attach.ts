@@ -10,7 +10,7 @@ import {
   cardSlipRights,
   cardUsageOverwriteBlocks,
   cardUsageOverwriteBlocksByGroup,
-  cardUsageReadScope,
+  cardUsageWriteScope,
   createCardUsage,
   denyCardSlipWrite,
   loadCardOverwriteBasis,
@@ -59,7 +59,7 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { evidenceScopeFor } from "@/domain/permissions/scope-for";
 import { visible } from "@/domain/permissions/visible";
-import { canSeePurchaseRequest, purchaseRequestAuthorOpen, purchaseRequestReadScope, readPurchaseRequestEvidenceFacts } from "@/domain/purchase-requests";
+import { canSeePurchaseRequest, isPurchaseRequestInWriteScope, purchaseRequestAuthorOpen, purchaseRequestWriteScope, readPurchaseRequestEvidenceFacts } from "@/domain/purchase-requests";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { getSettingValue } from "@/domain/settings/registry";
 import type { Viewer } from "@/domain/viewer";
@@ -320,7 +320,7 @@ function patchChangesValues(
 
 async function planCardAttach(viewer: Viewer, recordId: string, usageId: string): Promise<CardAttachPlan> {
   const owner = await cardSlipOwner(viewer, usageId);
-  if (!owner || !(await cardSlipRights(viewer, owner)).read) throw cardSlipNotFound();
+  if (!owner || !(await cardSlipRights(viewer, owner, "write")).read) throw cardSlipNotFound();
   if (owner.status !== "open") denyCardSlipWrite();
   const usage = await findCardUsageForWrite(viewer, usageId, { includeArchived: false });
   if (!usage) throw cardSlipNotFound();
@@ -657,7 +657,7 @@ export function attachEvidenceBatch(viewer: Viewer, input: AttachBatchInput, dep
 
 // 구매 요청은 05 규칙표 밖 — 결재 · 짝 · 05 훅 없음. 06 읽기 범위(listAccess) 안 · 취소 아님 · evidence.intake. 견적 · 실행가 칸은 건드리지 않는다.
 async function attachToPurchaseRequest(viewer: Viewer, record: EvidenceRecordFacts, requestId: string, deps?: EvidenceAttachDeps): Promise<{ created: boolean }> {
-  if (!(await canSeePurchaseRequest(viewer, { id: requestId }))) throw new UserFacingError(PURCHASE_REQUEST_NOT_FOUND);
+  if (!(await isPurchaseRequestInWriteScope(viewer, { id: requestId }))) throw new UserFacingError(PURCHASE_REQUEST_NOT_FOUND);
   await deps?.afterPreRead?.();
   return withTransaction(async (tx) => {
     const request = await lockPurchaseRequestForUpdate(viewer, requestId, tx);
@@ -769,7 +769,7 @@ async function detachFromPurchaseRequest(
   input: { linkId: string; recordId: string; requestId: string; reason: string },
   deps?: EvidenceAttachDeps,
 ): Promise<{ detached: boolean }> {
-  if (!(await canSeePurchaseRequest(viewer, { id: input.requestId }))) throw new UserFacingError(LINK_NOT_FOUND);
+  if (!(await isPurchaseRequestInWriteScope(viewer, { id: input.requestId }))) throw new UserFacingError(LINK_NOT_FOUND);
   if (!keys.intake) throw new ForbiddenError(INTAKE_FORBIDDEN);
   const reason = validateRejectReason(input.reason);
   await deps?.afterPreRead?.();
@@ -882,7 +882,7 @@ export async function previewDetach(viewer: Viewer, input: { linkId: string }): 
   if (!link) throw new UserFacingError(LINK_NOT_FOUND);
   const none: EvidenceDetachPreviewDto = { result: null, amountKrw: null };
   if (link.ownerKind === "purchase_request") {
-    if (!(await canSeePurchaseRequest(viewer, { id: link.ownerId }))) throw new UserFacingError(LINK_NOT_FOUND);
+    if (!(await isPurchaseRequestInWriteScope(viewer, { id: link.ownerId }))) throw new UserFacingError(LINK_NOT_FOUND);
     if (!keys.intake) throw new ForbiddenError(INTAKE_FORBIDDEN);
     return (await projectMany(viewer, [none], EVIDENCE_DETACH_PREVIEW_DTO_SPEC))[0] ?? {};
   }
@@ -1089,7 +1089,7 @@ function cardCandidate(record: EvidenceRecordFacts, item: JudgedCardCandidate, a
 async function cardCandidatesFor(viewer: Viewer, record: EvidenceRecordFacts): Promise<(Candidate & { cardBlocked: boolean })[]> {
   const row = await findRecordForScope(viewer, await evidenceScopeFor(viewer), record.id);
   if (!row || !isCardFormat(row.format) || row.corpCardId === null) return [];
-  const judged = (await judgeCardCandidates(viewer, [row], await cardUsageReadScope(viewer))).get(row.id) ?? [];
+  const judged = (await judgeCardCandidates(viewer, [row], await cardUsageWriteScope(viewer))).get(row.id) ?? [];
   if (judged.length === 0) return [];
   const [usageAmount, recordAmount] = await Promise.all([visible(viewer, "card_usage.amount"), visible(viewer, "evidence.amount")]);
   return judged.map((item) => cardCandidate(record, item, usageAmount && recordAmount));
@@ -1104,7 +1104,7 @@ export async function listAttachCandidates(viewer: Viewer, input: { recordId: st
   const record = await readAttachableRecord(viewer, keys, input.recordId);
   const [expenseScope, requestScope, codes, amountShown] = await Promise.all([
     visibleExpenseScope(viewer),
-    purchaseRequestReadScope(viewer),
+    purchaseRequestWriteScope(viewer),
     loadPairCodes(viewer),
     visible(viewer, "evidence.amount"),
   ]);
@@ -1144,7 +1144,7 @@ export async function listAttachCandidates(viewer: Viewer, input: { recordId: st
 // S2 행 `붙이기`의 대상 있음(쪽마다 한 번) — 그 사람이 볼 수 있는 번호 있는 지출결의 또는 취소 아닌 구매 요청이 하나라도 있나. 짝 · 권리는
 // 행 · 문서마다 달라 넣지 않는다(다 막혔으면 S4의 noneSelectableReason — eng B-P3).
 export async function hasAttachTarget(viewer: Viewer): Promise<boolean> {
-  const [expenseScope, requestScope] = await Promise.all([visibleExpenseScope(viewer), purchaseRequestReadScope(viewer)]);
+  const [expenseScope, requestScope] = await Promise.all([visibleExpenseScope(viewer), purchaseRequestWriteScope(viewer)]);
   if (await hasExpenseAttachTarget(viewer, { scope: expenseScope, documentKind: EXPENSE_DOCUMENT_KIND })) return true;
   return hasPurchaseRequestAttachTarget(viewer, { scope: requestScope });
 }
@@ -1170,7 +1170,7 @@ export type CardUsageRightsRead = { usage: CardUsageForWrite; rights: { attach: 
 export async function readCardUsageRights(viewer: Viewer, usageId: string, keys?: ViewerKeys): Promise<CardUsageRightsRead | null> {
   const owner = await cardSlipOwner(viewer, usageId);
   if (!owner) return null;
-  const slip = await cardSlipRights(viewer, owner);
+  const slip = await cardSlipRights(viewer, owner, "write");
   if (!slip.read) return null;
   const usage = await findCardUsageForWrite(viewer, usageId, { includeArchived: true });
   if (!usage) return null;
@@ -1453,7 +1453,7 @@ export async function createCardUsageFromEvidence(
     idempotencyKey: input.idempotencyKey,
   };
   const pre = await precheckCardUsage(viewer, cardInput);
-  const scope = await cardUsageReadScope(viewer);
+  const scope = await cardUsageWriteScope(viewer);
   await deps.afterPreRead?.();
 
   const ctx = { evidenceId: input.evidenceId, line, scope };

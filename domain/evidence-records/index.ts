@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
-import { cardUsageReadScope } from "@/domain/corp-card-usages";
+import { cardUsageWriteScope } from "@/domain/corp-card-usages";
 import { EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
 import { EVIDENCE_FORMATS } from "@/domain/evidence-import/registry";
 import type { FormatRule } from "@/domain/evidence-import/types";
@@ -344,7 +344,7 @@ async function withAttachFacts(viewer: Viewer, scope: Awaited<ReturnType<typeof 
   // 06.1-09 S2: 짝 없는 카드 줄(카드 등록됨 · 안 붙음 · 음수 아님 · 보관 아님 — C2)은 완화 후보로 행 행동을 가른다(쪽마다 질의 한 번 — E5 · DB-9).
   const cardLines = intake ? rows.filter((row, index) => row.corpCardId !== null && row.totalKrw >= 0 && dtos[index] !== undefined && attachable(dtos[index])) : [];
   const [judged, replaced] = await Promise.all([
-    cardLines.length > 0 ? attach.judgeCardCandidates(viewer, cardLines, await cardUsageReadScope(viewer)) : Promise.resolve(new Map<string, never[]>()),
+    cardLines.length > 0 ? attach.judgeCardCandidates(viewer, cardLines, await cardUsageWriteScope(viewer)) : Promise.resolve(new Map<string, never[]>()),
     findCardReplacedRecordIds(viewer, dtos.filter((dto) => owners.get(dto.id)?.ownerKind === "corp_card_usage").map((dto) => dto.id)),
   ]);
   const cardLineIds = new Set(cardLines.map((row) => row.id));

@@ -1217,8 +1217,9 @@ export async function cardSlipOwner(viewer: Viewer, id: string, tx?: DbOrTx): Pr
   return stored ? toCardSlipOwner(stored) : null;
 }
 
-export async function cardSlipRights(viewer: Viewer, owner: CardSlipOwner): Promise<{ read: boolean; write: boolean }> {
-  const { scope } = await listAccess(viewer, seoulToday());
+// 07.3-01 Q5 F1: purpose "write"면 read는 쓰기 범위 안인지다(증빙 붙이기 · 떼기 — 자금 키 보기 확대를 쓰지 않는다).
+export async function cardSlipRights(viewer: Viewer, owner: CardSlipOwner, purpose: "view" | "write" = "view"): Promise<{ read: boolean; write: boolean }> {
+  const { scope } = await listAccess(viewer, seoulToday(), purpose);
   const read = await isCardUsageInListScope(viewer, { id: owner.id, scope });
   if (!read || owner.status !== "open") return { read, write: false };
   const stored = await findCardUsageForWrite(viewer, owner.id, { includeArchived: true });
@@ -1534,11 +1535,16 @@ export async function cardUsageReadScope(viewer: Viewer): Promise<CardUsageScope
   return (await listAccess(viewer, seoulToday())).scope;
 }
 
-async function listAccess(viewer: Viewer, today: string): Promise<{ scope: CardUsageScope; privileged: boolean; proxy: boolean }> {
+/** 07.3-01 Q5 F1: 증빙 붙이기 후보 · 붙이기 판정용 — 프로젝트 보는 범위는 쓰기(원래 계급 범위). 대리 등록 · 지급 키 갈래는 그대로. */
+export async function cardUsageWriteScope(viewer: Viewer): Promise<CardUsageScope> {
+  return (await listAccess(viewer, seoulToday(), "write")).scope;
+}
+
+async function listAccess(viewer: Viewer, today: string, purpose: "view" | "write" = "view"): Promise<{ scope: CardUsageScope; privileged: boolean; proxy: boolean }> {
   const proxy = await can(viewer, "cards.proxy", "write");
   const privileged = proxy || (await can(viewer, "expenses.payments", "write"));
   const actor = await loadActorTeamScope(viewer, { todayKst: today });
-  if (privileged || (await projectRowScope(viewer, { today: () => today })).rows === "all") return { scope: { kind: "all" }, privileged, proxy };
+  if (privileged || (await projectRowScope(viewer, { today: () => today }, purpose)).rows === "all") return { scope: { kind: "all" }, privileged, proxy };
   return { scope: { kind: "own", userId: viewer.id, teamId: actor.teamId }, privileged, proxy };
 }
 

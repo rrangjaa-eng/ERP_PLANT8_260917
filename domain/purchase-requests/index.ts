@@ -935,9 +935,9 @@ function monthBounds(month: string): { from: Date; to: Date } {
 
 // 범위: `cards.purchases` write 권한자 · 프로젝트 보는 범위 전사(rowScopeFor rows: all) → 전부 — 06.2 K2, 260907 `O: server/src/purchases.ts:1334` /
 // 그 밖 → 자기 요청 + 자기가 담당 PM인 프로젝트 줄의 요청(쿼리 조건).
-async function listAccess(viewer: Viewer, today: string): Promise<{ scope: PurchaseRequestScope; privileged: boolean }> {
+async function listAccess(viewer: Viewer, today: string, purpose: "view" | "write" = "view"): Promise<{ scope: PurchaseRequestScope; privileged: boolean }> {
   const purchaser = await can(viewer, "cards.purchases", "write");
-  if (purchaser || (await projectRowScope(viewer, { today: () => today })).rows === "all") return { scope: { kind: "all" }, privileged: purchaser };
+  if (purchaser || (await projectRowScope(viewer, { today: () => today }, purpose)).rows === "all") return { scope: { kind: "all" }, privileged: purchaser };
   return { scope: { kind: "own", userId: viewer.id }, privileged: false };
 }
 
@@ -1099,6 +1099,16 @@ export async function purchaseRequestReadScope(viewer: Viewer, today: string = s
 export async function canSeePurchaseRequest(viewer: Viewer, input: { id: string }): Promise<boolean> {
   if (!UUID_SHAPE.test(input.id)) return false;
   return isPurchaseRequestInScope(viewer, { id: input.id, scope: await purchaseRequestReadScope(viewer) });
+}
+
+// 07.3-01 Q5 F1: 증빙 붙이기 · 떼기 판정 · 후보는 쓰기 범위 — 프로젝트 보는 범위는 원래 계급 범위(자금 키 보기 확대 없음). 구매 처리 키 갈래는 그대로.
+export async function purchaseRequestWriteScope(viewer: Viewer, today: string = seoulToday()): Promise<PurchaseRequestScope> {
+  return (await listAccess(viewer, today, "write")).scope;
+}
+
+export async function isPurchaseRequestInWriteScope(viewer: Viewer, input: { id: string }): Promise<boolean> {
+  if (!UUID_SHAPE.test(input.id)) return false;
+  return isPurchaseRequestInScope(viewer, { id: input.id, scope: await purchaseRequestWriteScope(viewer) });
 }
 
 // ── 06.1-08 작성자 증빙 고르기 판정(E30 · DB-10 · PA-PRDONE) ───────────────────────────────────────────────

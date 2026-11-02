@@ -51,6 +51,14 @@ describe("legalTotalQuartersByHireDate — 퇴직 시점 법정 합(쿼터)", ()
     expect(legalTotalQuartersByHireDate({ hireDate: "2026-01-15", resignationDate: "2026-05-14", baseDays: 15 })).toBe(3 * 4);
   });
 
+  it("말일 입사는 월차 부여와 같은 말일 기념일로 센다 — 입사 2026-01-31 · 퇴직 2026-02-28 → 1개월 = 1일", () => {
+    expect(legalTotalQuartersByHireDate({ hireDate: "2026-01-31", resignationDate: "2026-02-28", baseDays: 15 })).toBe(1 * 4);
+  });
+
+  it("말일 기념일 하루 전은 아직 아니다 — 입사 2026-03-31 · 퇴직 2026-04-29 → 0일", () => {
+    expect(legalTotalQuartersByHireDate({ hireDate: "2026-03-31", resignationDate: "2026-04-29", baseDays: 15 })).toBe(0);
+  });
+
   it("퇴직이 입사보다 앞서도 음수가 되지 않는다", () => {
     expect(legalTotalQuartersByHireDate({ hireDate: "2026-05-14", resignationDate: "2026-01-15", baseDays: 15 })).toBe(0);
   });

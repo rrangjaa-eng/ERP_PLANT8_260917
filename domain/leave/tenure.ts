@@ -21,7 +21,9 @@ const FIRST_YEAR_MONTHLY_MAX_DAYS = 11;
 function completedMonths(from: string, to: string): number {
   const [fy = 0, fm = 0, fd = 0] = from.split("-").map(Number);
   const [ty = 0, tm = 0, td = 0] = to.split("-").map(Number);
-  return Math.max(0, (ty - fy) * 12 + (tm - fm) - (td < fd ? 1 : 0));
+  // 기념일은 월차 부여(balance.ts addMonths)와 같이 그달에 없으면 말일로 당긴다(1월 31일 입사 → 2월 28일에 1개월).
+  const anniversaryDay = Math.min(fd, new Date(Date.UTC(ty, tm, 0)).getUTCDate());
+  return Math.max(0, (ty - fy) * 12 + (tm - fm) - (td < anniversaryDay ? 1 : 0));
 }
 
 export function legalTotalQuartersByHireDate(input: { hireDate: string; resignationDate: string; baseDays: number }): number {

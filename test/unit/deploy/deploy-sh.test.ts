@@ -17,13 +17,20 @@ function sh(cmd: string, args: string[], cwd: string): void {
   }
 }
 
-function setupRepo(): string {
+// 07.2-03: 자동 파기 모드 파일 값을 바꿔 임시 저장소를 만든다(기본은 저장소의 dry-run 그대로).
+function setupRepo(purgeMode?: string): string {
   const repoDir = mkdtempSync(join(tmpdir(), "deploy-repo-"));
   mkdirSync(join(repoDir, "scripts"), { recursive: true });
   mkdirSync(join(repoDir, "infra/monitoring"), { recursive: true });
   cpSync(join(REPO_ROOT, "scripts/deploy.sh"), join(repoDir, "scripts/deploy.sh"));
   cpSync(join(REPO_ROOT, "scripts/rollback.sh"), join(repoDir, "scripts/rollback.sh"));
   cpSync(join(REPO_ROOT, "infra/names.sh"), join(repoDir, "infra/names.sh"));
+  if (existsSync(join(REPO_ROOT, "infra/purge-certs-auto.mode"))) {
+    cpSync(join(REPO_ROOT, "infra/purge-certs-auto.mode"), join(repoDir, "infra/purge-certs-auto.mode"));
+  }
+  if (purgeMode !== undefined) {
+    writeFileSync(join(repoDir, "infra/purge-certs-auto.mode"), `${purgeMode}\n`);
+  }
   cpSync(join(REPO_ROOT, "infra/ar-cleanup-policy.json"), join(repoDir, "infra/ar-cleanup-policy.json"));
   cpSync(join(REPO_ROOT, "infra/monitoring"), join(repoDir, "infra/monitoring"), { recursive: true });
   sh("git", ["init", "-q"], repoDir);
@@ -1101,5 +1108,108 @@ describe("deploy.sh — 증빙 버킷(05-12)", () => {
     expect(r.stderr).toContain("docs/EVIDENCE-STORAGE.md");
     expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_evidence_bucket");
     expect(r.log).not.toContain("run deploy ");
+  });
+});
+
+// 07.2-03(PU21): 배포가 자동 파기 Job(dry-run) · job 단위 run.invoker · 월 1회 Scheduler 잡을 만든다.
+describe("deploy.sh — 자동 파기 Scheduler (07.2-03)", () => {
+  const SCHED_JOB = "plant8-staging-purge-certs-monthly";
+  const PURGE_SA = "plant8-staging-purge-sched@test-proj.iam.gserviceaccount.com";
+  const BASE = ["--env", "staging", "--project", "test-proj"];
+  const EMPTY_ARGS = /--args=(\s|$)/;
+
+  it("첫 배포: 자동 Job이 dry-run(빈 --args=, --apply 없음)으로 만들어지고 사람용 Job은 그대로다", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    const auto = jobLine(r.log, "purge-certs-auto");
+    expect(auto).toContain("--command=node,dist/cli/purge-certs.mjs");
+    expect(auto).toMatch(EMPTY_ARGS);
+    expect(auto).not.toContain("--apply");
+    expect(auto).toContain("CERT_SIGNATURE_BUCKET=test-proj-plant8-staging-cert-signatures");
+    const human = jobLine(r.log, "purge-certs");
+    expect(human).not.toContain("--args=");
+    expect(human).not.toContain("--apply");
+  });
+
+  it("이미 있는 환경에서도 dry-run이면 빈 --args=를 명시한다(옛 --apply를 지운다)", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, {
+      state: { "service-exists": true, "image-exists": true, "sa-exists": true, "describe-url": "https://plant8-staging-abc123-du.a.run.app" },
+    });
+    expect(r.status).toBe(0);
+    const auto = jobLine(r.log, "purge-certs-auto");
+    expect(auto).toMatch(EMPTY_ARGS);
+    expect(auto).not.toContain("--apply");
+  });
+
+  it("purge-sched SA가 없으면(bootstrap 전) 경고 한 줄 뒤 바인딩 · Scheduler만 건너뛰고 배포는 0으로 끝난다", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE);
+    expect(r.status).toBe(0);
+    const warnings = `${r.stdout}\n${r.stderr}`.split("\n").filter((l) => l.includes("::warning::purge-sched"));
+    expect(warnings).toHaveLength(1);
+    expect(r.log).toContain("iam service-accounts describe plant8-staging-purge-sched@test-proj.iam.gserviceaccount.com");
+    expect(r.log).not.toContain("run jobs add-iam-policy-binding");
+    expect(r.log).not.toContain(SCHED_JOB);
+    // notify-tick Scheduler는 영향 없다.
+    expect(r.log).toContain("scheduler jobs create http plant8-staging-notify-tick ");
+  });
+
+  it("SA가 있으면 자동 Job 하나에만 job 단위 run.invoker를 바인딩한다", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n").filter((l) => l.startsWith("run jobs add-iam-policy-binding "));
+    expect(lines).toHaveLength(1);
+    const b = lines[0]!;
+    expect(b).toContain("run jobs add-iam-policy-binding plant8-staging-purge-certs-auto ");
+    expect(b).toContain(`--member=serviceAccount:${PURGE_SA}`);
+    expect(b).toContain("--role=roles/run.invoker");
+    expect(b).toContain("--region=asia-northeast3");
+    expect(b).toContain("--project=test-proj");
+    expect(lineIndex(r.log, "run jobs add-iam-policy-binding")).toBeGreaterThan(lineIndex(r.log, "run jobs deploy plant8-staging-purge-certs-auto "));
+  });
+
+  it("Scheduler 잡이 없으면 월 1회 03:00 KST · OAuth · :run URI · 재시도 0으로 create한다(OIDC 없음)", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    const createLines = lines.filter((l) => l.startsWith(`scheduler jobs create http ${SCHED_JOB} `));
+    expect(createLines).toHaveLength(1);
+    const c = createLines[0]!;
+    expect(c).toContain("--schedule=0 3 1 * *");
+    expect(c).toContain("--time-zone=Asia/Seoul");
+    expect(c).toContain(
+      "--uri=https://run.googleapis.com/v2/projects/test-proj/locations/asia-northeast3/jobs/plant8-staging-purge-certs-auto:run",
+    );
+    expect(c).toContain("--http-method=POST");
+    expect(c).toContain(`--oauth-service-account-email=${PURGE_SA}`);
+    expect(c).toContain("--max-retry-attempts=0");
+    expect(c).toContain("--location=asia-northeast3");
+    expect(c).toContain("--project=test-proj");
+    expect(c).not.toContain("--oidc");
+    // 순서: notify Scheduler 다음, 바인딩 다음.
+    expect(lineIndex(r.log, `scheduler jobs describe ${SCHED_JOB}`)).toBeGreaterThan(lineIndex(r.log, "scheduler jobs create http plant8-staging-notify-tick "));
+    expect(lineIndex(r.log, `scheduler jobs create http ${SCHED_JOB}`)).toBeGreaterThan(lineIndex(r.log, "run jobs add-iam-policy-binding"));
+  });
+
+  it("두 잡이 이미 있으면 둘 다 update http다(create 없음)", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true, "scheduler-job": true } });
+    expect(r.status).toBe(0);
+    expect(r.log).not.toContain("scheduler jobs create");
+    expect(r.log.split("\n").filter((l) => l.startsWith(`scheduler jobs update http ${SCHED_JOB} `))).toHaveLength(1);
+  });
+
+  it("notify-tick 잡만 있는 섞인 상태: purge는 create · notify는 update", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true, "scheduler-job-plant8-staging-notify-tick": true } });
+    expect(r.status).toBe(0);
+    expect(r.log).toContain("scheduler jobs update http plant8-staging-notify-tick ");
+    expect(r.log).not.toContain("scheduler jobs create http plant8-staging-notify-tick ");
+    expect(r.log).toContain(`scheduler jobs create http ${SCHED_JOB} `);
+    expect(r.log).not.toContain(`scheduler jobs update http ${SCHED_JOB} `);
   });
 });

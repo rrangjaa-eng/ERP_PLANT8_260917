@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allocateLeave,
   annualGrantQuarters,
+  checkAdjustmentFloor,
   checkLeaveAdjustment,
   formatBalanceLines,
   formatBalanceRow,
@@ -351,5 +352,32 @@ describe("07.2-04 PU8 근속 가산 — 입사 다음 해 뒤 연도부터 legal
 
   it("입사일 없는 사람은 기본 그대로", () => {
     expect(annualGrantQuarters({ fiscalYear: 2026, hireDate: null, resignationDate: null, annualDays: 15 })).toBe(60);
+  });
+});
+
+describe("07.2-04 PU13 조정 바닥 — 남음을 0 아래로 내리면 `남음 {N}일 · -{N}까지`(D-7263)", () => {
+  it("남음 3일에 -4일 → 남음 3일 · -3까지", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: 12, amountQuarters: -16 })).toBe("남음 3일 · -3까지");
+  });
+
+  it("남음 3일에 -3일은 통과(경계 · 0까지 내리기)", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: 12, amountQuarters: -12 })).toBeNull();
+  });
+
+  it("양수 조정은 늘 통과", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: 12, amountQuarters: 4 })).toBeNull();
+    expect(checkAdjustmentFloor({ remainingQuarters: -4, amountQuarters: 4 })).toBeNull();
+  });
+
+  it("남음 0에 -0.25일 → 남음 0일 · -0까지", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: 0, amountQuarters: -1 })).toBe("남음 0일 · -0까지");
+  });
+
+  it("남음이 이미 음수여도 문구는 남음 0일 · -0까지(음수 표기 안 만든다)", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: -4, amountQuarters: -1 })).toBe("남음 0일 · -0까지");
+  });
+
+  it("0.25 단위 남음 2.5일에 -3일 → 남음 2.5일 · -2.5까지", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: 10, amountQuarters: -12 })).toBe("남음 2.5일 · -2.5까지");
   });
 });

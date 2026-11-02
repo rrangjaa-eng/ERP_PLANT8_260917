@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -18,7 +18,8 @@ function sh(cmd: string, args: string[], cwd: string): void {
 }
 
 // 07.2-03: 자동 파기 모드 파일 값을 바꿔 임시 저장소를 만든다(기본은 저장소의 dry-run 그대로).
-function setupRepo(purgeMode?: string): string {
+// null이면 모드 파일을 커밋에서 뺀다.
+function setupRepo(purgeMode?: string | null): string {
   const repoDir = mkdtempSync(join(tmpdir(), "deploy-repo-"));
   mkdirSync(join(repoDir, "scripts"), { recursive: true });
   mkdirSync(join(repoDir, "infra/monitoring"), { recursive: true });
@@ -28,7 +29,9 @@ function setupRepo(purgeMode?: string): string {
   if (existsSync(join(REPO_ROOT, "infra/purge-certs-auto.mode"))) {
     cpSync(join(REPO_ROOT, "infra/purge-certs-auto.mode"), join(repoDir, "infra/purge-certs-auto.mode"));
   }
-  if (purgeMode !== undefined) {
+  if (purgeMode === null) {
+    rmSync(join(repoDir, "infra/purge-certs-auto.mode"), { force: true });
+  } else if (purgeMode !== undefined) {
     writeFileSync(join(repoDir, "infra/purge-certs-auto.mode"), `${purgeMode}\n`);
   }
   cpSync(join(REPO_ROOT, "infra/ar-cleanup-policy.json"), join(repoDir, "infra/ar-cleanup-policy.json"));
@@ -39,6 +42,19 @@ function setupRepo(purgeMode?: string): string {
   sh("git", ["add", "-A"], repoDir);
   sh("git", ["commit", "-q", "-m", "init"], repoDir);
   return repoDir;
+}
+
+// 배포 모드는 --sha 커밋에서 읽으므로 테스트의 --sha는 저장소에 실제로 있는 커밋이어야 한다.
+function headSha(repoDir: string): string {
+  return spawnSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf8" }).stdout.trim();
+}
+
+// 모드 파일을 바꾼 커밋을 위에 쌓고 그 SHA를 돌려준다(배포 모드는 --sha 커밋에서 읽는다).
+function commitMode(repoDir: string, mode: string): string {
+  writeFileSync(join(repoDir, "infra/purge-certs-auto.mode"), `${mode}\n`);
+  sh("git", ["add", "-A"], repoDir);
+  sh("git", ["commit", "-q", "-m", `mode ${mode}`], repoDir);
+  return headSha(repoDir);
 }
 
 interface DeployResult {
@@ -261,7 +277,7 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
   });
 
   it("docker build를 건너뛰고 바로 100% 트래픽으로 재배포한 뒤 경보를 upsert하고 실제 주소로 스모크한다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--sha", "0123456789abcdef0123456789abcdef01234567"], {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--sha", headSha(repoDir)], {
       state: {
         "service-exists": true,
         "image-exists": true,
@@ -565,10 +581,8 @@ describe("deploy.sh — 프로덕션은 빌드하지 않는다(시나리오 11)"
     repoDir = setupRepo();
   });
 
-  const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
-
   it("이미지가 없으면 ProdImageMissing으로 즉시 중단하고 어떤 ensure 단계도 실행하지 않는다", () => {
-    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA]);
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", headSha(repoDir)]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("ProdImageMissing");
     expect(r.log).not.toMatch(/build --build-arg/);
@@ -578,7 +592,7 @@ describe("deploy.sh — 프로덕션은 빌드하지 않는다(시나리오 11)"
   });
 
   it("이미지가 있으면 docker build 없이 run deploy plant8-prod까지 진행한다", () => {
-    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], {
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", headSha(repoDir)], {
       state: { "image-exists": true },
     });
     expect(r.status).toBe(0);
@@ -639,8 +653,7 @@ describe("deploy.sh — 확인증 환경 게이트(E3-07)", () => {
   });
 
   it("프로덕션 배포 로그의 어떤 줄에도 CERT_FEATURE_ALLOWED가 없다", () => {
-    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
-    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], {
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", headSha(repoDir)], {
       state: { "image-exists": true },
     });
     expect(r.status).toBe(0);
@@ -692,8 +705,7 @@ describe("deploy.sh — 서명 버킷(04.3-05)", () => {
   });
 
   it("프로덕션도 자기 버킷 이름을 서비스 환경 변수로 받는다", () => {
-    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
-    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], {
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", headSha(repoDir)], {
       state: { "image-exists": true },
     });
     expect(r.status).toBe(0);
@@ -1061,9 +1073,7 @@ describe("deploy.sh — 증빙 버킷(05-12)", () => {
     expect(deployLine).toContain("STORAGE_DRIVER=gcs");
     expect(deployLine).toContain("GCS_EVIDENCE_BUCKET=test-proj-plant8-staging-evidence");
     expect(deployLine).toContain("CERT_FEATURE_ALLOWED=true");
-
-    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
-    const p = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], { state: { "image-exists": true } });
+    const p = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", headSha(repoDir)], { state: { "image-exists": true } });
     expect(p.status).toBe(0);
     const prodLine = p.log.split("\n").find((l) => l.startsWith("run deploy plant8-prod "));
     expect(prodLine).toContain("GCS_EVIDENCE_BUCKET=test-proj-plant8-prod-evidence");
@@ -1132,7 +1142,7 @@ describe("deploy.sh — 자동 파기 Scheduler (07.2-03)", () => {
     expect(human).not.toContain("--apply");
   });
 
-  it("이미 있는 환경에서도 dry-run이면 빈 --args=를 명시한다(옛 --apply를 지운다)", () => {
+  it("이미 있는 환경(서비스 · 이미지 있음)에서도 dry-run이면 빈 --args=를 명시하고 --apply는 없다", () => {
     const repoDir = setupRepo();
     const r = deploy(repoDir, BASE, {
       state: { "service-exists": true, "image-exists": true, "sa-exists": true, "describe-url": "https://plant8-staging-abc123-du.a.run.app" },
@@ -1238,6 +1248,79 @@ describe("deploy.sh — 자동 파기 Scheduler (07.2-03)", () => {
     expect(r.status).toBe(0);
     expect(jobLine(r.log, "purge-certs-auto")).toContain("--args=--apply");
   });
+
+  function expectNoAutoPurge(r: DeployResult): void {
+    expect(r.status).not.toBe(0);
+    expect(r.log).not.toContain("run jobs deploy plant8-staging-purge-certs-auto ");
+    expect(r.log).not.toContain("--apply");
+    expect(r.stderr).toContain("purge-certs-auto.mode");
+    // 검증은 이르다 — 이미지 빌드 · gcloud 변경 전에 멈춘다.
+    expect(r.log).not.toContain("docker build");
+    expect(r.log).not.toContain("run jobs deploy");
+  }
+
+  it("모드 파일이 --sha 커밋에 없으면 이미지 빌드 전에 멈춘다", () => {
+    const r = deploy(setupRepo(null), BASE, { state: { "sa-exists": true } });
+    expectNoAutoPurge(r);
+  });
+
+  it("모드 파일에 주석 · 빈 줄뿐이면 이미지 빌드 전에 멈춘다", () => {
+    const r = deploy(setupRepo("# 주석만\n\n"), BASE, { state: { "sa-exists": true } });
+    expectNoAutoPurge(r);
+  });
+
+  it("값 뒤 인라인 # 주석은 떼고 읽는다(apply  # x → --args=--apply)", () => {
+    const r = deploy(setupRepo("apply  # 승인"), BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    expect(jobLine(r.log, "purge-certs-auto")).toContain("--args=--apply");
+  });
+
+  it("모드는 작업 트리가 아니라 --sha 커밋에서 읽는다(apply 커밋 위에 dry-run 커밋)", () => {
+    const repoDir = setupRepo();
+    const applySha = commitMode(repoDir, "apply");
+    commitMode(repoDir, "dry-run");
+    const r = deploy(repoDir, [...BASE, "--sha", applySha], { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    expect(jobLine(r.log, "purge-certs-auto")).toContain("--args=--apply");
+  });
+
+  it("반대로 dry-run 커밋 위에 apply 커밋이 있어도 --sha 커밋이 dry-run이면 --apply가 없다", () => {
+    const repoDir = setupRepo();
+    const dryRunSha = commitMode(repoDir, "dry-run");
+    commitMode(repoDir, "apply");
+    const r = deploy(repoDir, [...BASE, "--sha", dryRunSha], { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    expect(jobLine(r.log, "purge-certs-auto")).toMatch(EMPTY_ARGS);
+    expect(r.log).not.toContain("--apply");
+  });
+
+  it("run.invoker 바인딩이 실패하면 0이 아닌 종료로 멈추고 Scheduler 잡을 만들지 않는다", () => {
+    const r = deploy(setupRepo(), BASE, {
+      state: { "sa-exists": true, "fail-gcloud": "run jobs add-iam-policy-binding" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.log).not.toContain(`scheduler jobs create http ${SCHED_JOB}`);
+    expect(r.log).not.toContain(`scheduler jobs update http ${SCHED_JOB}`);
+  });
+
+  it("자동 Job은 스모크 성공 뒤에 배포된다(스모크 · 사람용 Job 다음, Scheduler 앞)", () => {
+    const r = deploy(setupRepo(), BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    const auto = lineIndex(r.log, "run jobs deploy plant8-staging-purge-certs-auto ");
+    const lastSmoke = r.log.split("\n").reduce((acc, l, i) => (l.includes("/internal/notify-tick") && l.includes("-X POST") ? i : acc), -1);
+    expect(lastSmoke).toBeGreaterThan(-1);
+    expect(auto).toBeGreaterThan(lastSmoke);
+    expect(auto).toBeGreaterThan(lineIndex(r.log, "run jobs deploy plant8-staging-purge-certs "));
+    expect(lineIndex(r.log, "run jobs add-iam-policy-binding")).toBeGreaterThan(auto);
+  });
+
+  it("스모크가 실패하면 자동 Job을 배포하지 않고 Scheduler도 건드리지 않는다", () => {
+    const r = deploy(setupRepo(), BASE, { state: { "sa-exists": true, health: "503" } });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("SmokeFailed");
+    expect(r.log).not.toContain("run jobs deploy plant8-staging-purge-certs-auto ");
+    expect(r.log).not.toContain(SCHED_JOB);
+  });
 });
 
 // 07.2-03: verify-gcp.sh purge-scheduler 갈래 — 읽기 전용 확인(소유자 로컬 셸에서만 부른다).
@@ -1260,6 +1343,8 @@ describe("verify-gcp.sh — purge-scheduler 갈래 (07.2-03)", () => {
     expect(branch).toContain("ENABLED");
     expect(branch).toContain("gcloud logging read");
     expect(branch).toContain("run jobs executions list");
+    expect(branch).toContain("containers[0].args");
+    expect(branch).toContain("completionTime");
     expect(branch).toContain("purge-certs-auto");
     expect(branch).not.toMatch(/\b(create|update|delete|execute|add-iam-policy-binding|set-iam-policy|run jobs deploy|jobs run)\b/);
   });

@@ -335,7 +335,7 @@ async function paymentAndSettlementActions(browser: Browser, baseURL: string | u
     lineId: cardLineId,
     memo: null,
   };
-  await createCardUsage(drafter.viewer, usage, await precheckCardUsage(drafter.viewer, usage));
+  const cardUsage = await createCardUsage(drafter.viewer, usage, await precheckCardUsage(drafter.viewer, usage));
 
   const created = await createExpenseFromLines(drafter.viewer, { lineIds: [expenseLineId] });
   const expenseId = created.created[0]?.expenseId;
@@ -402,7 +402,7 @@ async function paymentAndSettlementActions(browser: Browser, baseURL: string | u
 
   // 기안자(담당 PM)가 정산 다시 올리기와 지급 행동 줄을 한 화면 세션에서 모두 보도록 role-pm에 지급·증빙 무효 쓰기를 준다(erp_test는 캡처마다 초기화된다).
   for (const menu of ["expenses.payments", "expenses.evidence_void"]) await upsertPermission(SYSTEM_VIEWER, { roleId: "role-pm", menu, action: "write", allowed: true });
-  return { vars: { projectId: project.id, expenseId }, viewer: drafter };
+  return { vars: { projectId: project.id, expenseId, cardUsageId: cardUsage.id }, viewer: drafter };
 }
 
 // ── 06.1-05(Round 2 G5) 증빙 시드 둘 — 06.1-05 · 06 · 07 · 08 · 09 · 13의 Codex 캡처가 쓴다 ──────────────────────────────────────

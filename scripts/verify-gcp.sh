@@ -87,8 +87,12 @@ case "$INPUT_CHECK" in
       "resource.type=\"cloud_scheduler_job\" AND resource.labels.job_id=\"${job}\"" \
       --project="$PROJECT" --freshness=35d --limit=10 \
       --format='table(timestamp,severity,httpRequest.status,jsonPayload.status,jsonPayload.debugInfo)'
+    # 모드 확인 — 빈 값이면 dry-run, --apply가 보이면 apply(Job 정의에 굳은 값).
+    run_check "container args of ${auto_job} (empty = dry-run, --apply = apply)" gcloud run jobs describe "$auto_job" \
+      --region="$region" --project="$PROJECT" --format='value(spec.template.spec.template.spec.containers[0].args)'
     run_check "executions of ${auto_job}" nonempty gcloud run jobs executions list --job="$auto_job" \
-      --region="$region" --project="$PROJECT" --limit=3
+      --region="$region" --project="$PROJECT" --limit=3 \
+      --format='table(metadata.name,status.completionTime,status.succeededCount,status.failedCount)'
     ;;
   evidence-bucket)
     # (d) 증빙 버킷(05-12, docs/EVIDENCE-STORAGE.md) — 읽기만(gha-deployer는 이 버킷에 storage.admin, 서비스 조회는 run.admin).

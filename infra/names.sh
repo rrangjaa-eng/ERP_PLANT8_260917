@@ -32,7 +32,7 @@ scheduler_sa()    { echo "plant8-$1-scheduler"; }    # 이메일: plant8-$1-sche
 scheduler_job()   { echo "plant8-$1-notify-tick"; }  # Cloud Scheduler 잡 — 매일 09:00 KST POST /internal/notify-tick
 purge_scheduler_job() { echo "plant8-$1-purge-certs-monthly"; }  # D-7278 — 확인증 파기 자동 실행, 매월 1일 03:00 KST
 purge_scheduler_sa()  { echo "plant8-$1-purge-sched"; }          # 이메일: plant8-$1-purge-sched@$PROJECT.iam.gserviceaccount.com — 자동 파기 Job만 부르는 OAuth 호출자(bootstrap이 만든다)
-job_name()        { echo "plant8-$1-$2"; }           # $2 ∈ migrate | db-bootstrap | account
+job_name()        { echo "plant8-$1-$2"; }           # $2 ∈ db-bootstrap | migrate | seed | account | restore | purge-certs | purge-certs-auto
 secret_name()     { echo "$1-$2"; }                  # base-env: better-auth-secret-staging, app-data-key-v1-staging, db-admin-password-staging, smtp-host-staging …
 image_path()      { echo "$3-docker.pkg.dev/$2/$AR_REPO/app:$1"; }   # sha project region
 alert_channel()   { echo "ERP Alerts ($1)"; }

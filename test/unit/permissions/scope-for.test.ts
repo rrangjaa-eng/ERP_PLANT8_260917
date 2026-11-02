@@ -242,6 +242,25 @@ describe("rowScopeFor 자금 확대 (07.3-01 D-7314)", () => {
     expect((await rowScopeFor(viewer, "project", deps)).rows).toBe("all");
     expect(deps.can.mock.calls.map(([, menu]) => menu)).toEqual(["projects", "admin.archive"]);
   });
+
+  // 07.3-01 Q5(사용자 카드 2026-11-02 「넓힌 범위는 보기에만」): 쓰기는 원래 범위, 자금 작업은 그 키 하나로만 넓힌다.
+  it.each([
+    ["project", ["projects:view", "projects.budget:view", "projects.adjustment:write", "projects.revenue:view"]],
+    ["expense", ["expenses:view", "expenses.payments:write", "expenses.evidence_void:write", "expenses.evidence_attach:write"]],
+  ] as const)("%s 쓰기 범위는 자금 키가 다 있어도 넓히지 않는다", async (entity, granted) => {
+    expect(await rowScopeFor(viewer, entity, fundDeps([...granted]), "write")).toMatchObject({ rows: "limited", by: { kind: "team", teamId: "team-1" } });
+  });
+
+  it("자금 작업 범위는 그 작업 키가 참일 때만 all이다 — 다른 자금 키로는 넓히지 않는다", async () => {
+    const op = { fundOp: ["projects.adjustment", "write"] } as const;
+    expect(await rowScopeFor(viewer, "project", fundDeps(["projects:view", "projects.budget:view"]), op)).toMatchObject({ rows: "limited" });
+    expect(await rowScopeFor(viewer, "project", fundDeps(["projects:view", "projects.adjustment:write"]), op)).toEqual({ rows: "all", includeArchived: false });
+  });
+
+  it("자금 작업 범위도 메뉴 보기가 없으면 none이다", async () => {
+    const op = { fundOp: ["projects.adjustment", "write"] } as const;
+    expect((await rowScopeFor(viewer, "project", fundDeps(["projects.adjustment:write"]), op)).rows).toBe("none");
+  });
 });
 
 describe("rowScopeFor 요청 memo", () => {
@@ -289,6 +308,16 @@ describe("rowScopeFor 요청 memo", () => {
     await rowScopeFor(v, "project");
     await rowScopeFor(v, "expense");
     await rowScopeFor(v, "expense");
+    expect(findRoleById).toHaveBeenCalledTimes(2);
+  });
+
+  it("등록한 viewer의 보기 · 쓰기 범위는 따로 memo된다(07.3-01 Q5)", async () => {
+    const v: Viewer = { id: "u1", roleId: "role-pm" };
+    memoizeRowScopeForRequest(v);
+    roleScope(() => "team");
+    await rowScopeFor(v, "project");
+    await rowScopeFor(v, "project", undefined, "write");
+    await rowScopeFor(v, "project", undefined, "write");
     expect(findRoleById).toHaveBeenCalledTimes(2);
   });
 

@@ -77,7 +77,7 @@ export async function createRevisionFromCurrent(
   const insertRevision = deps?.insertRevision ?? repoInsertRevision;
   const ids: DenyWriteIds = { projectId: input.projectId, revisionId: input.fromRevisionId };
 
-  const [rowScope, canWrite] = await Promise.all([projectRowScope(viewer, deps?.can ? { can: canFn } : undefined), canFn(viewer, PROJECTS_MENU, "write")]);
+  const [rowScope, canWrite] = await Promise.all([projectRowScope(viewer, deps?.can ? { can: canFn } : undefined, "write"), canFn(viewer, PROJECTS_MENU, "write")]);
   if (rowScope.rows === "none") denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError(PROJECT_NOT_FOUND));
   // 06.2(M3 · D-6206): 범위 밖은 쓰기 권리 판정보다 먼저 없음 — 트랜잭션(잠금) 전 전역 db 판정(04-32).
   if (!(await findProjectInScope(viewer, rowScope, input.projectId))) denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError(PROJECT_NOT_FOUND));
@@ -188,7 +188,7 @@ export async function setCustomerApproval(
 
   // 트랜잭션 앞(04-32) — 권한 · 행 범위 · 차수의 프로젝트(바뀌지 않는 사실).
   const [rowScope, canWrite, revision] = await Promise.all([
-    projectRowScope(viewer, deps?.can ? { can: canFn } : undefined),
+    projectRowScope(viewer, deps?.can ? { can: canFn } : undefined, "write"),
     canFn(viewer, PROJECTS_MENU, "write"),
     repoFindQuoteRevisionById(viewer, revisionId),
   ]);

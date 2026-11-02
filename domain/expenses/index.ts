@@ -781,7 +781,7 @@ export async function createExpenseFromLines(
   const [gateEnabled, teamScope, rowScope] = await Promise.all([
     getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
     loadActorTeamScope(viewer, { todayKst: seoulToday() }),
-    projectRowScope(viewer),
+    projectRowScope(viewer, undefined, "write"),
   ]);
   const factsByProject = new Map<string, ProjectFacts | null>();
   let paymentMethod: string | null | undefined;
@@ -1086,7 +1086,7 @@ export async function changeExpenseLine(
   const [gateEnabled, teamScope, rowScope] = await Promise.all([
     getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
     loadActorTeamScope(viewer, { todayKst: seoulToday() }),
-    projectRowScope(viewer),
+    projectRowScope(viewer, undefined, "write"),
   ]);
   const facts = await loadProjectFacts(viewer, revision.projectId, gateEnabled, rowScope);
   if (!facts) throw new ExpenseNotFoundError();
@@ -1190,7 +1190,7 @@ export async function submitExpense(
   const teamNumberYear = Number(seoulToday(deps?.now).slice(0, 4));
   // /review F1 · /cso CSO-PR5-1: 프로젝트 쓰기 권리(네 입구와 같은 판정)를 tx 안에서 다시 잰다 — 범위는 tx 전에 읽는다.
   const writeScope = projectRow
-    ? await Promise.all([projectRowScope(viewer), loadActorTeamScope(viewer, { todayKst: seoulToday(deps?.now) })])
+    ? await Promise.all([projectRowScope(viewer, undefined, "write"), loadActorTeamScope(viewer, { todayKst: seoulToday(deps?.now) })])
     : null;
 
   return withTransaction(async (tx): Promise<SubmitExpenseResult> => {
@@ -1895,7 +1895,7 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
   const [gateEnabled, teamScope, rowScope] = await Promise.all([
     getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
     loadActorTeamScope(viewer, { todayKst: seoulToday() }),
-    projectRowScope(viewer),
+    projectRowScope(viewer, undefined, "write"),
   ]);
   const facts = await loadProjectFacts(viewer, input.projectId, gateEnabled, rowScope);
   if (!facts) return hidden;

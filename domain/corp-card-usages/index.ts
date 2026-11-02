@@ -425,7 +425,7 @@ async function precheckLink(
   if (input.linkKind === "out_of_quote") {
     // 견적 외 비용(O-8 · X-6): 현재 차수 · 완료 판정 · 항목 기본값은 트랜잭션 전에 — 잠근 뒤 `project.line-edit`가 상태를 다시 본다.
     // 06.2(D-6208 · T-06.2-31): 범위 밖 프로젝트는 기존 「연결 없음」 — 260907 `O: server/src/card-uses.ts:553` 참여자 조각 누락을 따르지 않는다.
-    const project = await findProjectInScope(viewer, await projectRowScope(viewer), input.projectId);
+    const project = await findProjectInScope(viewer, await projectRowScope(viewer, undefined, "write"), input.projectId);
     if (!project || project.archivedAt) throw new CardUsageRejectedError(LINK_MISSING);
     // 완료 프로젝트: 권한자만 통과 — 몸통의 `project.line-edit`(D-47 ③)가 잠근 행으로 같은 판정을 다시 한다(X-6).
     const completedOutOfQuote = project.status === "completed" && proxy;
@@ -449,7 +449,7 @@ async function precheckLink(
   // 06.2(D-6208 · T-06.2-31): 줄 → 차수 → 프로젝트를 범위로 — 범위 밖 줄 id는 기존 「연결 없음」. 잠근 뒤 판정은 그대로(04-32).
   const line = await findQuoteLineById(viewer, input.lineId);
   const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
-  const project = revision ? await findProjectInScope(viewer, await projectRowScope(viewer), revision.projectId) : null;
+  const project = revision ? await findProjectInScope(viewer, await projectRowScope(viewer, undefined, "write"), revision.projectId) : null;
   if (!line || !project || project.archivedAt) throw new CardUsageRejectedError(LINK_MISSING);
   if (project.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
   const latest = await findLatestQuoteRevision(viewer, project.id);

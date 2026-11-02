@@ -230,7 +230,7 @@ async function loadQuoteLineBasis(viewer: Viewer, lineId: string): Promise<Quote
   // 06.2(D-6208 · T-06.2-31): 줄 → 차수 → 프로젝트를 범위로 — 범위 밖 줄 id는 기존 「연결 없음」.
   const line = await findQuoteLineById(viewer, lineId);
   const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
-  const project = revision ? await findProjectInScope(viewer, await projectRowScope(viewer), revision.projectId) : null;
+  const project = revision ? await findProjectInScope(viewer, await projectRowScope(viewer, undefined, "write"), revision.projectId) : null;
   if (!line || !project || project.archivedAt) throw new PurchaseRequestRejectedError(LINK_MISSING);
   if (project.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
   const latest = await findLatestQuoteRevision(viewer, project.id);
@@ -999,7 +999,7 @@ export async function searchLinesForPurchaseLink(
 ): Promise<{ rows: Partial<CardLinkLineDto>[]; truncated: boolean; subtitle: string; total: number; selectableCount: number; projectBlockedReason: string | null }> {
   if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
   // 06.2(D-6208): 프로젝트 id 직접 호출도 범위 밖이면 없음.
-  const project = await findProjectInScope(viewer, await projectRowScope(viewer), input.projectId);
+  const project = await findProjectInScope(viewer, await projectRowScope(viewer, undefined, "write"), input.projectId);
   if (!project || project.archivedAt) throw new ProjectNotFoundError();
   const revision = await findLatestQuoteRevision(viewer, project.id);
   const lines = revision ? await listQuoteLinesByRevisions(viewer, [revision.id]) : [];

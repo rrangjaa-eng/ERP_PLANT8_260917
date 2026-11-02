@@ -1,5 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
-import { rowScopeFor, type RowScope, type RowScopeDeps } from "@/domain/permissions/scope-for";
+import { rowScopeFor, type RowScope, type RowScopeDeps, type RowScopePurpose } from "@/domain/permissions/scope-for";
 import { findProjectInScope } from "@/repositories/projects";
 import { findQuoteRevisionById } from "@/repositories/quote-revisions";
 
@@ -10,22 +10,23 @@ import { findQuoteRevisionById } from "@/repositories/quote-revisions";
 
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function projectRowScope(viewer: Viewer, deps?: Partial<RowScopeDeps>): Promise<RowScope> {
-  return rowScopeFor(viewer, "project", deps);
+// 07.3-01 Q5: purpose 기본은 보기(자금 확대 포함) — 쓰기 입구는 "write"(원래 범위), 자금 작업 입구는 { fundOp }를 넘긴다.
+export async function projectRowScope(viewer: Viewer, deps?: Partial<RowScopeDeps>, purpose: RowScopePurpose = "view"): Promise<RowScope> {
+  return rowScopeFor(viewer, "project", deps, purpose);
 }
 
-export async function canOpenProject(viewer: Viewer, projectId: string): Promise<boolean> {
+export async function canOpenProject(viewer: Viewer, projectId: string, purpose: RowScopePurpose = "view"): Promise<boolean> {
   if (!UUID_SHAPE.test(projectId)) return false;
-  const scope = await projectRowScope(viewer);
+  const scope = await projectRowScope(viewer, undefined, purpose);
   const row = await findProjectInScope(viewer, scope, projectId);
   if (!row) return false;
   return row.archivedAt === null || scope.includeArchived;
 }
 
 // 차수 → 프로젝트 → 서술자. 차수 id만 알면 열리던 견적 줄 입구(Pitfall 1)를 닫는다.
-export async function canOpenRevision(viewer: Viewer, revisionId: string): Promise<boolean> {
+export async function canOpenRevision(viewer: Viewer, revisionId: string, purpose: RowScopePurpose = "view"): Promise<boolean> {
   if (!UUID_SHAPE.test(revisionId)) return false;
   const revision = await findQuoteRevisionById(viewer, revisionId);
   if (!revision) return false;
-  return canOpenProject(viewer, revision.projectId);
+  return canOpenProject(viewer, revision.projectId, purpose);
 }

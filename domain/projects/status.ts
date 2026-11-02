@@ -115,7 +115,7 @@ export async function actorCoversProjectTeam(
   opts: { todayKst: string },
   deps?: Partial<TeamScopeDeps>,
 ): Promise<boolean> {
-  const [teamScope, rowScope] = await Promise.all([loadActorTeamScope(viewer, opts, deps), projectRowScope(viewer)]);
+  const [teamScope, rowScope] = await Promise.all([loadActorTeamScope(viewer, opts, deps), projectRowScope(viewer, undefined, "write")]);
   return coversProjectTeam(await teamScopeForProject(viewer, teamScope, rowScope, project.id), project.teamId);
 }
 
@@ -189,6 +189,8 @@ export async function loadStatusChangeFacts(
       deps?.can || deps?.findRoleById || deps?.findMembershipAtDate || now
         ? { can: deps.can, findRoleById: deps.findRoleById, findMembershipAtDate: deps.findMembershipAtDate, ...(now ? { today: () => kstToday(now()) } : {}) }
         : undefined,
+      // 07.3-01 Q5: 상태 전환은 쓰기 — 자금 확대 없는 원래 범위(결재 경로는 approvalPathFacts가 따로 연다).
+      "write",
     ),
     loadActorFacts(viewer, deps),
     loadStatusLabels(viewer),
@@ -250,7 +252,7 @@ export async function statusDestinations(
 }
 
 async function loadProjectActorFacts(viewer: Viewer, project: { id: string }, deps?: Partial<StatusChangeFactDeps>): Promise<ActorFacts> {
-  const [facts, rowScope] = await Promise.all([loadActorFacts(viewer, deps), projectRowScope(viewer)]);
+  const [facts, rowScope] = await Promise.all([loadActorFacts(viewer, deps), projectRowScope(viewer, undefined, "write")]);
   return { ...facts, teamScope: await teamScopeForProject(viewer, facts.teamScope, rowScope, project.id) };
 }
 

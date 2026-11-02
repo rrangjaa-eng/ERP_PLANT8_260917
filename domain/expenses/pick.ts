@@ -207,7 +207,7 @@ export async function searchLinesForPick(
   const [gateEnabled, teamScope, rowScope] = await Promise.all([
     getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
     loadActorTeamScope(viewer, { todayKst: seoulToday() }),
-    projectRowScope(viewer),
+    projectRowScope(viewer, undefined, "write"),
   ]);
 
   let candidates: Awaited<ReturnType<typeof listPickProjects>>;

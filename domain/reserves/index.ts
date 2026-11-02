@@ -300,7 +300,7 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
   const [vendorShown, projectShown, projectScope] = await Promise.all([
     (deps?.visible ?? defaultVisible)(viewer, "vendor.value"),
     (deps?.visible ?? defaultVisible)(viewer, "project.value"),
-    projectRowScope(viewer, { can: deps?.can ?? defaultCan }),
+    projectRowScope(viewer, { can: deps?.can ?? defaultCan }, "write"),
   ]);
   // 06.2(M8): 새로 고르거나 바꾼 프로젝트는 보는 범위 안이어야 한다 — 줄에 실린 프로젝트 id를 트랜잭션 앞에서 판정한다(04-32).
   const rowProjectIds = [...new Set(prepared.map((row) => row.payload.projectId).filter((id): id is string => id !== null))];
@@ -690,7 +690,7 @@ export async function listReserveReferences(viewer: Viewer): Promise<ReserveRefe
   const [vendorShown, projectShown, projectScope] = await Promise.all([
     defaultVisible(viewer, "vendor.value"),
     defaultVisible(viewer, "project.value"),
-    projectRowScope(viewer),
+    projectRowScope(viewer, undefined, "write"),
   ]);
   const [vendorRows, projectRows, evidenceRows] = await Promise.all([
     vendorShown ? repoListVendors(viewer, { scope: { rows: "all", includeArchived: false }, includeHidden: false }) : [],

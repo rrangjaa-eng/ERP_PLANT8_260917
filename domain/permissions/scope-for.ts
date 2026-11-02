@@ -94,7 +94,7 @@ export type RowScopeDeps = {
 // 계급의 archivedAt은 보지 않는다(can()과 같음). 팀 · 본부를 못 찾으면 그 id가 null인 limited다.
 // 요청 memo(성공 기준 4 · eng I10): React cache()는 렌더 안 memo만 문서화돼 서버 액션에서의 동작이 불명확하다 —
 // getSession()이 요청마다 만든 viewer 객체를 WeakMap 키로 쓴다. 다음 요청은 새 객체라 새 값을 읽고, 요청이 끝나면 함께 사라진다.
-const requestMemo = new WeakMap<Viewer, Map<RowScopeEntity, Promise<RowScope>>>();
+const requestMemo = new WeakMap<Viewer, Map<string, Promise<RowScope>>>();
 
 // 07.3-01(D-7314): 자금 담당의 보는 범위 — 계급이 company가 아니어도 그 entity의 자금 키 짝 하나라도 can()이 참이면(자금 게이트를 거친다)
 // 회사 전체다. 키 매핑으로 최소화한다 — 증빙 등록 · 구매 처리는 각자 범위가 따로 있어 넣지 않는다(evidenceScopeFor · 구매 요청 listAccess).
@@ -112,27 +112,42 @@ const FUND_ROW_SCOPE_KEYS: Record<RowScopeEntity, readonly (readonly [FundScoped
   ],
 };
 
+// 07.3-01 Q5(사용자 카드 2026-11-02 「넓힌 범위는 보기에만」): 위 확대는 보기(view)에만 쓴다. 일반 쓰기(write)는 계급의 원래 범위다.
+// 자금 작업(fundOp — 조정 줄 · 매출 정산 줄 · 예산 수정)은 그 작업의 키 하나가 can() 참일 때만 회사 전체다(다른 자금 키로는 넓히지 않는다).
+export type RowScopePurpose = "view" | "write" | { fundOp: readonly [FundScopedMenu, PermissionAction] };
+
+function purposeKey(entity: RowScopeEntity, purpose: RowScopePurpose): string {
+  return typeof purpose === "string" ? `${entity}:${purpose}` : `${entity}:fund:${purpose.fundOp[0]}:${purpose.fundOp[1]}`;
+}
+
 export function memoizeRowScopeForRequest(viewer: Viewer): void {
   requestMemo.set(viewer, new Map());
   // 07.3-01: 자금 게이트도 같은 viewer 객체로 요청 memo를 건다(getSession은 이 함수 하나만 부른다).
   memoizeFundGateForRequest(viewer);
 }
 
-export async function rowScopeFor(viewer: Viewer, entity: RowScopeEntity, deps?: Partial<RowScopeDeps>): Promise<RowScope> {
+export async function rowScopeFor(
+  viewer: Viewer,
+  entity: RowScopeEntity,
+  deps?: Partial<RowScopeDeps>,
+  purpose: RowScopePurpose = "view",
+): Promise<RowScope> {
   const memo = requestMemo.get(viewer);
-  if (!memo || deps) return computeRowScope(viewer, entity, deps);
-  const cached = memo.get(entity);
+  if (!memo || deps) return computeRowScope(viewer, entity, deps, purpose);
+  const key = purposeKey(entity, purpose);
+  const cached = memo.get(key);
   if (cached) return cached;
-  const pending = computeRowScope(viewer, entity, deps);
-  memo.set(entity, pending);
-  pending.catch(() => memo.delete(entity));
+  const pending = computeRowScope(viewer, entity, deps, purpose);
+  memo.set(key, pending);
+  pending.catch(() => memo.delete(key));
   return pending;
 }
 
 async function computeRowScope(
   viewer: Viewer,
   entity: RowScopeEntity,
-  deps?: Partial<RowScopeDeps>,
+  deps: Partial<RowScopeDeps> | undefined,
+  purpose: RowScopePurpose,
 ): Promise<RowScope> {
   const canFn = deps?.can ?? defaultCan;
   const [canView, includeArchived] = await Promise.all([
@@ -145,8 +160,9 @@ async function computeRowScope(
   const role = await findRoleById(viewer, viewer.roleId);
   if (!role) return { rows: "none", includeArchived };
 
-  if (role.viewScope !== "company") {
-    const fundKeys = await Promise.all(FUND_ROW_SCOPE_KEYS[entity].map(([menu, action]) => canFn(viewer, menu, action)));
+  if (role.viewScope !== "company" && purpose !== "write") {
+    const keys = purpose === "view" ? FUND_ROW_SCOPE_KEYS[entity] : [purpose.fundOp];
+    const fundKeys = await Promise.all(keys.map(([menu, action]) => canFn(viewer, menu, action)));
     if (fundKeys.some(Boolean)) return { rows: "all", includeArchived };
   }
 

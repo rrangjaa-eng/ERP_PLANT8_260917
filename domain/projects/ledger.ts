@@ -159,13 +159,24 @@ export async function saveProjectLedger(
     // 볼 수 없는 프로젝트(보기 권한·범위 밖, 권한 없는 보관 프로젝트)에는 쓰지 않는다 — 조회
     // 화면(findProject)과 같은 조건이다(/cso 14b1ae15). 04-22(A-13): findProject는 풀에서 자동
     // 정산을 따로 커밋하므로 부르지 않는다 — 판정은 트랜잭션 안 잠금 읽기가 한다.
-    const scope = await projectRowScope(viewer);
+    const scope = await projectRowScope(viewer, undefined, "write");
     if (scope.rows === "none" || !UUID_SHAPE.test(projectId)) {
       throw new UserFacingError("존재하지 않는 프로젝트");
     }
     // 06.2(M1 · D-6206): 범위 밖 프로젝트도 같은 문구 — 잠금 안 판정은 그대로 두고 트랜잭션 전에 거른다.
+    // 07.3-01 Q5(「넓힌 범위는 보기에만」): 원래 범위 밖은 자금 작업 줄만 — 조정 줄(projects.adjustment 쓰기 · 줄 판정은
+    // prepareQuoteLineSave가 canWrite 거짓으로) · 발행 · 입금 줄(projects.revenue 쓰기), 각 키로 넓힌 범위 안일 때. 기간 · 총 매출 예상가 ·
+    // PO 번호 · 발행 요청 줄은 원래 범위만.
     if (!(await findProjectInScope(viewer, scope, projectId))) {
-      throw new UserFacingError("존재하지 않는 프로젝트");
+      const reaches = async (menu: "projects.adjustment" | "projects.revenue") =>
+        (await findProjectInScope(viewer, await projectRowScope(viewer, undefined, { fundOp: [menu, "write"] }), projectId)) !== null;
+      const genericParts = input.period || input.preEstimate || input.poNumber !== undefined || (input.issueRequests?.length ?? 0) > 0;
+      const fundOnly =
+        !genericParts &&
+        (input.quoteLines || input.revenue) &&
+        (!input.quoteLines || (await reaches("projects.adjustment"))) &&
+        (!input.revenue || (await reaches("projects.revenue")));
+      if (!fundOnly) throw new UserFacingError("존재하지 않는 프로젝트");
     }
 
     // A-14: 견적 줄의 차수가 이 프로젝트의 것인지 먼저 확인한다 — 아니면 매출·감사 기록은 이

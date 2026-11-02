@@ -1,4 +1,5 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -440,6 +441,8 @@ test.describe("폰 탭 `내 차례 N` — 홈 밖과 홈의 건수 (07.1-17 PF1)
     const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E폰건수본부-${suffix}` });
     const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E폰건수팀-${suffix}` });
     const person = await makePerson("폰건수", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
+    // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+    await placeInFundDivision(person.viewer.id);
     await db.insert(purchaseRequests).values({ number: `E2E${suffix}`, linkKind: "team_cost", requestedBy: person.viewer.id, itemName: "폰 건수 물건", estimateAmountKrw: 10_000, status: "requested" });
 
     const page = await loginPage(browser, baseURL, person, { width: 375, height: 800 });

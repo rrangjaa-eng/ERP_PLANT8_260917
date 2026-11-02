@@ -162,7 +162,7 @@ export async function setBudgetManually(
   if (memo === "") throw new UserFacingError("사유 · 입력");
   if (memo.length > MEMO_MAX) throw new UserFacingError("사유 · 500자 이하");
   if (!Number.isSafeInteger(input.budgetKrw) || input.budgetKrw < 0) throw new UserFacingError("예산은 0 이상 · 금액 수정");
-  const scope = await projectRowScope(viewer);
+  const scope = await projectRowScope(viewer, undefined, { fundOp: [BUDGET_MENU, "write"] });
 
   return withTransaction(async (tx) => {
     // 쓰기 권한이 있어도 행 범위(예산 현황 목록과 같은 projectRowScope) 밖 프로젝트는 없는 것과 같다.

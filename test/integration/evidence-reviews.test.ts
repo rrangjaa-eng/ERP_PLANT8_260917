@@ -419,14 +419,17 @@ describe("증빙 확인 — 공급가액 고쳐 확인 · 거부 (06-06 Task 3 �
     expect(result.evidenceStatus).toBe("확인됨");
   });
 
-  it("숨은 파일이 지문을 바꾸면(07-27 L-3) 전사 범위가 아닌 지급 권한자의 거부 문구에 그 파일 올린 사람 이름 · 시각이 없다", async () => {
+  // 07.3-01: 팀 범위 지급 권한자도 경영관리본부 안이면 지출결의 범위가 전사라(D-7314 — fileVisibilityFor 파급) 숨은 파일이 보이고 이름 · 시각이 선다.
+  // 「전사 범위가 아닌 지급 권한자」는 더 없다 — 본부 밖이면 자금 게이트에서 먼저 막힌다(D-7301).
+  it("숨은 파일이 지문을 바꾸면(07-27 L-3) 경영관리팀 팀 범위 지급 권한자에게는 이름 · 시각이 서고, 본부 밖 지급 권한자는 막힌다", async () => {
     const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀지급-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
     for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-    const payer = await makePerson("팀지급자", role.id, "기획1팀");
     const fx = await setupExpenseProject();
     const doc = await approvedExpenseWithEvidence(fx);
+    // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령(보는 범위는 그대로 team). 결재 뒤에 만든다(경영관리팀 결재 후보에 끼지 않게).
+    const payer = await makePerson("팀지급자", role.id, "경영관리팀");
     const oldStamp = (await getPaymentView(payer, doc.expenseId))?.evidenceStamp;
     expect(typeof oldStamp).toBe("string");
 
@@ -434,9 +437,12 @@ describe("증빙 확인 — 공급가액 고쳐 확인 · 거부 (06-06 Task 3 �
     await db.update(files).set({ privateToOwner: true }).where(eq(files.id, hidden.id));
 
     const current = (await docRow(doc.expenseId)).version;
+    const outsider = await makePerson("본부밖지급자", role.id, "기획1팀");
+    expect(await errorOf(confirmEvidence(outsider, { expenseId: doc.expenseId, version: current, evidenceStamp: oldStamp ?? "" }))).toBeInstanceOf(ForbiddenError);
     const error = await errorOf(confirmEvidence(payer, { expenseId: doc.expenseId, version: current, evidenceStamp: oldStamp ?? "" }));
     expect(error).toBeInstanceOf(EvidenceReviewConflictError);
-    expect(error.message).toBe("다른 사람이 증빙을 바꿈 · 새로 고침");
+    expect(error.message).not.toBe("다른 사람이 증빙을 바꿈 · 새로 고침");
+    expect(error.message).toMatch(/^.+이 .+에 증빙을 바꿈 · 새로 고침$/);
   });
 });
 

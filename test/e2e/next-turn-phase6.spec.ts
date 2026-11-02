@@ -1,4 +1,5 @@
 import { appendFileSync, mkdirSync } from "node:fs";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
@@ -43,7 +44,10 @@ async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.team", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-  return makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 // 줄 하나 → 증빙 붙여 제출 → 결재선 넷 승인(결재 통과 · 지급 전). 문서 id를 돌려준다.
@@ -227,7 +231,10 @@ test.describe("「내 차례」 전표 대기 (07.1-17 PD1)", () => {
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     for (const infoItem of [...INFO_ITEMS, "purchase_request.value", "purchase_request.amount", "card_usage.value", "card_usage.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-    return makePerson("구매처리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+    const person = await makePerson("구매처리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+    // 07.3-01: 구매 처리(cards.purchases)는 자금 키 — 경영관리본부 소속이어야 한다(D-7307). 경영관리팀 발령.
+    await placeInFundDivision(person.viewer.id);
+    return person;
   }
 
   // 구매 완료 요청 + 그 요청에 딸린 카드 사용(구매 경로 고리) — 전표 없음.

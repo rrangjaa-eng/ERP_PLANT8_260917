@@ -111,7 +111,8 @@ async function makeTeamScopePayer(): Promise<Viewer> {
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-  return makePerson("팀지급", role.id, "기획1팀");
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  return makePerson("팀지급", role.id, "경영관리팀");
 }
 
 type PaidWorld = { fx: ExpenseFixture; docs: { projectA: string; projectB: string; teamCostA: string }; transfers: number[] };
@@ -281,26 +282,31 @@ async function issueWorld() {
   return { a, b };
 }
 
+// 07.3-01: projects.revenue · expenses.payments는 자금 키 — 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
 const teamViewer = (name: string, perms: readonly (readonly [string, "view" | "write"])[]) =>
-  personWith(name, { viewScope: "team", team: "기획1팀", perms: [["projects", "view"], ...perms], infoItems: ISSUE_INFO });
+  personWith(name, { viewScope: "team", team: "경영관리팀", perms: [["projects", "view"], ...perms], infoItems: ISSUE_INFO });
 
 describe("보는 범위 배선 — 발행 요청 목록 · 요약(06.5 D-6516 · 카드 ③)", () => {
-  it("팀 A 범위(projects.revenue 보기만) — 팀 A 프로젝트의 요청 · 건수 · 금액만 / 경영관리(전사)는 전부", async () => {
+  // 07.3-01: 팀 범위 매출 보기 계급의 「팀 A만」은 없어졌다 — 본부 밖(기획1팀)은 막히고(D-7301), 경영관리팀은 팀 범위여도 프로젝트 범위가 전사다(D-7314).
+  it("팀 범위(projects.revenue 보기만) — 기획1팀은 막히고 경영관리팀은 전부 / 경영관리(전사)는 전부", async () => {
     const w = await issueWorld();
-    const teamA = await teamViewer("팀A보기", [["projects.revenue", "view"]]);
+    const planning = await personWith("팀A보기", { viewScope: "team", team: "기획1팀", perms: [["projects", "view"], ["projects.revenue", "view"]], infoItems: ISSUE_INFO });
+    const mgmtTeam = await teamViewer("경영팀보기", [["projects.revenue", "view"]]);
     const company = await personWith("경영관리", { viewScope: "company", team: null, perms: [["projects", "view"], ["projects.revenue", "view"]], infoItems: ISSUE_INFO });
 
-    const narrow = await listIssueRequests(teamA, { status: "requested" }, { today: TODAY_ISSUE });
-    expect(narrow.rows.map((row) => row.id)).toEqual([w.a]);
-    expect(narrow.totals).toEqual({ count: 1, amountKrw: 3_000_000 });
-    expect(await summarizeOpenIssueRequests(teamA)).toEqual({ count: 1, earliestDesiredDate: "2026-10-20", supplyKrw: 3_000_000 });
+    await expect(listIssueRequests(planning, { status: "requested" }, { today: TODAY_ISSUE })).rejects.toThrow("발행 요청 목록 보기 권한 없음");
+    expect(await summarizeOpenIssueRequests(planning)).toBeNull();
+    const mgmt = await listIssueRequests(mgmtTeam, { status: "requested" }, { today: TODAY_ISSUE });
+    expect(mgmt.rows.map((row) => row.id)).toEqual([w.b, w.a]);
+    expect(mgmt.totals).toEqual({ count: 2, amountKrw: 8_000_000 });
+    expect(await summarizeOpenIssueRequests(mgmtTeam)).toEqual({ count: 2, earliestDesiredDate: "2026-10-15", supplyKrw: 8_000_000 });
 
     const wide = await listIssueRequests(company, { status: "requested" }, { today: TODAY_ISSUE });
     expect(wide.rows.map((row) => row.id)).toEqual([w.b, w.a]);
     expect(await summarizeOpenIssueRequests(company)).toEqual({ count: 2, earliestDesiredDate: "2026-10-15", supplyKrw: 8_000_000 });
   });
 
-  it("카드 ③ — 팀 A 범위 + 발행 처리(projects.revenue 쓰기) → 두 함수 모두 팀 B 요청까지 전부", async () => {
+  it("카드 ③ — 경영관리팀 팀 범위 + 발행 처리(projects.revenue 쓰기) → 두 함수 모두 기획1팀 요청까지 전부", async () => {
     const w = await issueWorld();
     const issuer = await teamViewer("발행처리", [["projects.revenue", "view"], ["projects.revenue", "write"]]);
 
@@ -308,7 +314,7 @@ describe("보는 범위 배선 — 발행 요청 목록 · 요약(06.5 D-6516 ·
     expect(await summarizeOpenIssueRequests(issuer)).toEqual({ count: 2, earliestDesiredDate: "2026-10-15", supplyKrw: 8_000_000 });
   });
 
-  it("카드 ③ — 팀 A 범위 + projects.revenue 보기 + 지급 처리(expenses.payments 쓰기) → 전부", async () => {
+  it("카드 ③ — 경영관리팀 팀 범위 + projects.revenue 보기 + 지급 처리(expenses.payments 쓰기) → 전부", async () => {
     const w = await issueWorld();
     const payer = await teamViewer("지급담당", [["projects.revenue", "view"], ["expenses.payments", "write"]]);
 

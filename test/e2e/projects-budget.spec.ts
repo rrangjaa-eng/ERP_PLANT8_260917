@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { projectBudgetEntries, projects, quoteLines, settingsSimple } from "@/db/schema";
 import { createFixtureUser } from "./fixtures";
+import { teamIdByName } from "./helpers/evidence";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
@@ -53,7 +54,8 @@ async function makeTeam(): Promise<Team> {
 
 // 팀 범위 경영관리 계정 — write가 거짓이면 보기만(「예산 바꾸기」 없음 — 배포 직후 쓰기 칸이 꺼진 상태와 같다).
 // settings가 참이면 시스템 설정 보기 · 쓰기도(원가율 잠김 줄의 3차 · 첫 저장 결과 줄 시험). budget이 거짓이면 예산 현황 메뉴 없이 설정만.
-async function budgetUser(teamId: string, opts: { write?: boolean; settings?: boolean; budget?: boolean } = {}) {
+// 07.3-01: 예산 키(자금 키)를 받으면 경영관리팀 발령(D-7301 — 프로젝트 범위는 전사로 넓어진다 D-7314). fundDivision이 거짓이면 받은 팀 그대로(본부 밖 → 막힘).
+async function budgetUser(teamId: string, opts: { write?: boolean; settings?: boolean; budget?: boolean; fundDivision?: boolean } = {}) {
   const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, viewScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   if (opts.budget !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.budget", action: "view", allowed: true });
@@ -62,7 +64,8 @@ async function budgetUser(teamId: string, opts: { write?: boolean; settings?: bo
     for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.settings", action, allowed: true });
   }
   for (const infoItem of ["budget.amount", "quote.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-  return createFixtureUser({ roleId: role.id, teamId });
+  const inFund = opts.budget !== false && opts.fundDivision !== false;
+  return createFixtureUser({ roleId: role.id, teamId: inFund ? await teamIdByName("경영관리팀") : teamId });
 }
 
 async function makeProject(team: Team, name: string, poKrw: number | null): Promise<string> {
@@ -110,15 +113,50 @@ function budgetTable(page: Page) {
   return page.locator("table", { has: page.locator("caption", { hasText: /^예산 현황$/ }) });
 }
 
+// 07.3-01(D-7314): 예산 보기는 자금 키라 본부 안 사람의 범위가 전사다 — 공유 E2E DB의 다른 프로젝트가 표 · 합계에 섞인다. 합계 줄은 이 시험이
+// 프로젝트를 만들기 전 값을 먼저 읽고 만든 뒤 차이로 견준다(이 파일은 desktop-settings 워커 하나라 읽는 사이에 값이 흔들리지 않는다).
+type BudgetTotals = { count: number; budget: number; used: number; remaining: number; uncomputable: number };
+
+async function readBudgetTotals(page: Page): Promise<BudgetTotals> {
+  // loading.tsx가 먼저 서므로 표(또는 빈 화면)가 도착한 뒤에 읽는다 — 합계 줄 없음과 아직 안 옴을 가른다.
+  await expect(budgetTable(page).or(page.getByText(/^예산이 있는 (진행 )?프로젝트가 없습니다$/))).toBeVisible();
+  const region = page.getByRole("region", { name: "합계" });
+  if ((await region.count()) === 0) return { count: 0, budget: 0, used: 0, remaining: 0, uncomputable: 0 };
+  const text = (await region.textContent()) ?? "";
+  const num = (raw: string | undefined) => Number((raw ?? "NaN").replaceAll(",", ""));
+  const amounts = /예산(-?[\d,]+)사용액(-?[\d,]+)남은 예산(-?[\d,]+)/.exec(text);
+  const totals = {
+    count: num(/· (\d+)건\)/.exec(text)?.[1]),
+    budget: num(amounts?.[1]),
+    used: num(amounts?.[2]),
+    remaining: num(amounts?.[3]),
+    uncomputable: /계산 불가 (\d+)건/.test(text) ? num(/계산 불가 (\d+)건/.exec(text)?.[1]) : 0,
+  };
+  if (Object.values(totals).some(Number.isNaN)) throw new Error(`합계 줄을 읽지 못했다: ${text}`);
+  return totals;
+}
+
+function diffTotals(after: BudgetTotals, before: BudgetTotals): BudgetTotals {
+  return {
+    count: after.count - before.count,
+    budget: after.budget - before.budget,
+    used: after.used - before.used,
+    remaining: after.remaining - before.remaining,
+    uncomputable: after.uncomputable - before.uncomputable,
+  };
+}
+
 test.describe("예산 현황 — 트레이서 (07-24 Task 1)", () => {
   test("PO 1,000만 · 원가율 70 → 예산 7,000,000 한 행 · 표 위 합계 줄 · ₩ 없음 · 상태 진행 / 다른 계급 404", async ({ browser }) => {
     await setCostRate(70);
     const team = await makeTeam();
     const name = `E2E예산-${randomUUID().slice(0, 8)}`;
-    await makeProject(team, name, 10_000_000);
     const user = await budgetUser(team.teamId);
-
     const { page, context } = await openAs(browser, user, "/projects/budget");
+    await expect(page.getByRole("heading", { name: "예산 현황", level: 1 })).toBeVisible();
+    const before = await readBudgetTotals(page);
+    await makeProject(team, name, 10_000_000);
+    await page.reload();
     const table = budgetTable(page);
     const row = table.locator("tbody tr", { hasText: name });
     await expect(row).toHaveCount(1);
@@ -128,7 +166,8 @@ test.describe("예산 현황 — 트레이서 (07-24 Task 1)", () => {
 
     // K8: 합계 줄은 표 위(문서 순서상 표보다 앞).
     const totals = page.getByRole("region", { name: "합계" });
-    await expect(totals).toContainText("7,000,000");
+    await expect(totals).toBeVisible();
+    expect(diffTotals(await readBudgetTotals(page), before)).toEqual({ count: 1, budget: 7_000_000, used: 0, remaining: 7_000_000, uncomputable: 0 });
     const totalsBeforeTable = await page.evaluate(() => {
       const summary = document.querySelector('section[aria-label="합계"]');
       const table = document.querySelector("table");
@@ -174,6 +213,11 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
   test("초과가 맨 위 · 상태 칸 `초과` · 합계 = 행 합 · `전체`면 완료 포함 · 계산 불가 `—` + 배지", async ({ browser }) => {
     await setCostRate(70);
     const team = await makeTeam();
+    const user = await budgetUser(team.teamId);
+    const baseline = await openAs(browser, user, "/projects/budget");
+    await expect(baseline.page.getByRole("heading", { name: "예산 현황", level: 1 })).toBeVisible();
+    const before = await readBudgetTotals(baseline.page);
+    await baseline.context.close();
     const over = `E2E초과-${randomUUID().slice(0, 8)}`;
     const calm = `E2E여유-${randomUUID().slice(0, 8)}`;
     const done = `E2E완료-${randomUUID().slice(0, 8)}`;
@@ -185,21 +229,26 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     await db.update(projects).set({ status: "completed" }).where(eq(projects.id, doneId));
     const partialId = await makeProject(team, partial, null);
     await db.update(projects).set({ preEstimateAmountKrw: 5_000_000 }).where(eq(projects.id, partialId));
-    const user = await budgetUser(team.teamId);
 
     const { page, context } = await openAs(browser, user, "/projects/budget");
-    const rows = budgetTable(page).locator("tbody tr").filter({ hasText: /E2E/ });
-    await expect(rows.first()).toContainText(over);
+    // 맨 위 = 초과 줄이 모든 비초과 줄보다 앞 — 공유 DB에는 다른 `초과` 줄도 있어 첫 줄이 이 시험 것이라고 고정할 수 없다(D-7314). 이 시험의 초과 줄은 여유 줄보다 앞.
+    const statusRows = await budgetTable(page).locator("tbody tr").evaluateAll((trs) => trs.map((tr) => ({ text: tr.textContent ?? "", over: [...tr.querySelectorAll("*")].some((el) => el.children.length === 0 && el.textContent?.trim() === "초과") })));
+    const firstNotOver = statusRows.findIndex((row) => !row.over);
+    expect(firstNotOver).toBeGreaterThan(0);
+    expect(statusRows.slice(firstNotOver).some((row) => row.over)).toBe(false);
+    const overAt = statusRows.findIndex((row) => row.text.includes(over));
+    const calmAt = statusRows.findIndex((row) => row.text.includes(calm));
+    expect(overAt).toBeGreaterThanOrEqual(0);
+    expect(overAt).toBeLessThan(firstNotOver);
+    expect(calmAt).toBeGreaterThanOrEqual(firstNotOver);
     const overRow = budgetTable(page).locator("tbody tr", { hasText: over });
     await expect(overRow.getByText("초과", { exact: true })).toBeVisible();
     await expect(overRow).toContainText("-2,000,000");
     await expect(budgetTable(page).locator("tbody tr", { hasText: done })).toHaveCount(0);
     // 합계 = 계산된 두 행(예산 700만 + 140만 · 사용 900만 · 남은 −60만), 계산 불가 행은 `—`와 배지.
-    const totals = page.getByRole("region", { name: "합계" });
-    await expect(totals).toContainText("8,400,000");
-    await expect(totals).toContainText("9,000,000");
-    await expect(totals).toContainText("-600,000");
-    await expect(totals).toContainText("계산 불가 1건");
+    // 공유 DB의 다른 프로젝트가 합계에 섞이므로(D-7314) 만들기 전 값에서 이 시험이 더한 만큼(차이)으로 견준다.
+    await expect(page.getByRole("region", { name: "합계" })).toBeVisible();
+    expect(diffTotals(await readBudgetTotals(page), before)).toEqual({ count: 2, budget: 8_400_000, used: 9_000_000, remaining: -600_000, uncomputable: 1 });
     await expect(budgetTable(page).locator("tbody tr", { hasText: partial })).toContainText("—");
 
     await page.getByLabel("상태").selectOption("all");
@@ -290,7 +339,7 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     await context.close();
   });
 
-  test("원가율 비움 → 잠김 줄 + 설정으로 · 0 → 잠기지 않고 예산 0 행(이력 없음) · 대상 없음 → EMPTY", async ({ browser }) => {
+  test("원가율 비움 → 잠김 줄 + 설정으로 · 0 → 잠기지 않고 예산 0 행(이력 없음) · 본부 밖 예산 키 → 404", async ({ browser }) => {
     const team = await makeTeam();
     const name = `E2E영-${randomUUID().slice(0, 8)}`;
     await setCostRate(null);
@@ -312,11 +361,26 @@ test.describe("예산 현황 — 완성 (07-24 Task 3)", () => {
     await expect(historyPanel(page).getByText("이력 없음", { exact: true })).toBeVisible();
     await context.close();
 
+    // 07.3-01: 예산 보기는 자금 키라 본부 안 사람의 범위가 전사다(D-7314) — 글자 `예산이 있는 진행 프로젝트가 없습니다`(회사 전체가 0줄일 때만 선다)는 공유 E2E DB에서
+    // 닿지 못한다. 같은 뜻의 「예산이 없으면 줄이 서지 않는다」는 이 팀의 예산 없는 진행 프로젝트가 표에 없는 것으로 겨눈다. 본부 밖이면 막힌다(D-7301).
     const emptyTeam = await makeTeam();
-    const emptyUser = await budgetUser(emptyTeam.teamId);
-    const empty = await openAs(browser, emptyUser, "/projects/budget");
-    await expect(empty.page.getByText("예산이 있는 진행 프로젝트가 없습니다", { exact: true })).toBeVisible();
-    await empty.context.close();
+    const noBudget = `E2E예산없음-${randomUUID().slice(0, 8)}`;
+    await makeProject(emptyTeam, noBudget, null);
+    const viewer = await budgetUser(emptyTeam.teamId);
+    const emptyView = await openAs(browser, viewer, "/projects/budget");
+    await expect(emptyView.page.getByRole("heading", { name: "예산 현황", level: 1 })).toBeVisible();
+    await expect(budgetTable(emptyView.page)).toBeVisible();
+    await expect(budgetTable(emptyView.page).locator("tbody tr", { hasText: noBudget })).toHaveCount(0);
+    await emptyView.page.getByLabel("상태").selectOption("all");
+    await expect(emptyView.page).toHaveURL(/status=all/);
+    await expect(budgetTable(emptyView.page).locator("tbody tr", { hasText: noBudget })).toHaveCount(0);
+    await emptyView.context.close();
+
+    const outsider = await budgetUser(team.teamId, { fundDivision: false });
+    const denied = await openAs(browser, outsider, "/projects/budget");
+    await expect(denied.page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
+    await expect(budgetTable(denied.page)).toHaveCount(0);
+    await denied.context.close();
   });
 
   test("원가율 첫 저장 결과 줄(U3) — `예산 N건 생성` + `예산 현황` · 다시 저장하면 없음 · 예산 권한 없으면 링크 없음", async ({ browser }) => {

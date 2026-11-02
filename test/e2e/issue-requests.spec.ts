@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Browser, type Page } from "@playwright/test";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
+import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
@@ -376,7 +377,8 @@ test.describe("발행 요청 취소 (06-21 Task 1 — O-12 · r4 F-F3)", () => {
 // 06-21 S17 — 목록 보는 사람: 제 프로젝트만 보는 계급(viewScope own)이라 다른 스펙 · 테스트가 만든 요청이 목록에 끼지 않는다.
 // 06.5 카드 ③: 발행 처리 권한(projects.revenue write)을 켜면 범위와 무관하게 전부를 본다 — 건수 · 빈 화면 단언은 쓰기 없이,
 // 쓰기에만 서는 3차 · 도착 포커스는 grantWrite 뒤 제 프로젝트 번호가 든 접근 이름 · 고유 값으로 겨눈다.
-async function setupBoard(opts: { write: boolean }) {
+// 07.3-01: 매출 보기는 자금 키 — 본부 안 보유자는 보는 범위 own이어도 프로젝트 범위가 전사라(D-7314) 다른 스펙의 요청도 선다. 건수 · 빈 화면은 더 고정할 수 없다.
+async function setupBoard(opts: { write: boolean; fundDivision?: boolean }) {
   const today = kstToday(new Date());
   const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E발행요청목록-${randomUUID()}`, viewScope: "own" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
@@ -386,6 +388,8 @@ async function setupBoard(opts: { write: boolean }) {
   await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "revenue.issued_amount", visible: true });
   const email = `e2e-board-${randomUUID()}@example.test`;
   const account = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 목록 보는 사람", roleId: role.id });
+  // 07.3-01: 매출 정산 보기 · 쓰기는 자금 키 — 경영관리본부 소속(본부 칸)이어야 목록이 열린다(D-7301).
+  if (opts.fundDivision !== false) await placeInFundDivision(account.userId);
   const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E발행목록-${randomUUID()}`, normalizedName: `e2e발행목록-${randomUUID()}` });
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
@@ -404,15 +408,42 @@ function sundayOf(today: string): string {
   return addDays(today, (7 - new Date(`${today}T00:00:00Z`).getUTCDay()) % 7);
 }
 
+// 07.3-01(D-7314): 보는 범위가 전사라 공유 E2E DB의 다른 스펙(pm-settlement-flow 등 병렬 desktop) 요청이 목록 · 합계에 섞인다.
+// 목록에는 프로젝트 필터가 없으므로 이 시험의 프로젝트 행(프로젝트 칸 링크 `{번호} · {이름}`)만 골라 견준다.
+function ownRows(list: Locator, projectNumber: string): Locator {
+  return list.locator("tr").filter({ has: list.page().getByRole("link", { name: `${projectNumber} · ` }) });
+}
+
 test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
-  test("[Empty] 기본 보기(신청됨) 0건 → `처리할 발행 요청이 없습니다 · 전체 보기`", async ({ browser }) => {
-    const { user } = await setupBoard({ write: false });
+  // 07.3-01: 「0건」 빈 화면(`처리할 발행 요청이 없습니다 · 전체 보기`)은 회사에 신청됨 요청이 하나도 없을 때만 서서 공유 E2E DB에서 닿지 못한다(D-7314).
+  // 같은 흐름(기본 신청됨 → `전체` 보기)은 선택 칸으로 닿고, 이 프로젝트의 신청됨 · 취소 요청이 함께 선다.
+  test("기본 보기(신청됨) → `전체` 보기: URL status=all · 선택 칸 all · 신청됨 + 취소 요청이 함께 선다", async ({ browser }) => {
+    const { user, projectId, projectNumber, today } = await setupBoard({ write: false });
+    await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 1_000_000, memo: "전체 보기 신청됨" });
+    const cancelled = await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 2_000_000, memo: "전체 보기 취소" });
+    await db.update(revenueIssueRequests).set({ status: "cancelled", cancelledAt: new Date(), cancelledBy: user.userId }).where(eq(revenueIssueRequests.id, cancelled));
+
     const { page, context } = await openAs(browser, user, "/projects/issue-requests");
     await expect(page.getByRole("heading", { level: 1, name: "발행 요청" })).toBeVisible();
-    await expect(page.getByText("처리할 발행 요청이 없습니다", { exact: true })).toBeVisible();
-    await page.getByRole("link", { name: "전체 보기", exact: true }).click();
+    await expect(page.locator("#issue-request-filter-status")).toHaveValue("requested");
+    const list = page.locator("table", { has: page.locator("caption", { hasText: /^발행 요청$/ }) });
+    await expect(list.getByText("전체 보기 신청됨", { exact: true }).filter({ visible: true })).toBeVisible();
+    await expect(list.getByText("전체 보기 취소", { exact: true })).toHaveCount(0);
+    await page.locator("#issue-request-filter-status").selectOption("all");
     await expect(page).toHaveURL(/\/projects\/issue-requests\?status=all$/);
     await expect(page.locator("#issue-request-filter-status")).toHaveValue("all");
+    await expect(list.getByText("전체 보기 신청됨", { exact: true }).filter({ visible: true })).toBeVisible();
+    await expect(list.getByText("전체 보기 취소", { exact: true }).filter({ visible: true })).toBeVisible();
+    await expect(ownRows(list, projectNumber)).toHaveCount(2);
+    await context.close();
+  });
+
+  // 07.3-01: 본부 밖 매출 보기 계급이 막히는 것(D-7301).
+  test("경영관리본부 밖 매출 보기 계급 → 발행 요청 목록 404", async ({ browser }) => {
+    const { user } = await setupBoard({ write: false, fundDivision: false });
+    const { page, context } = await openAs(browser, user, "/projects/issue-requests");
+    await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "발행 요청" })).toHaveCount(0);
     await context.close();
   });
 
@@ -433,16 +464,19 @@ test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
     await expect(groups).toHaveText(["희망일 지남", "이번 주", "다음 주", "그 뒤"]);
     const overdueHeader = groups.first().getByText("희망일 지남", { exact: true });
     expect(await overdueHeader.evaluate((node) => getComputedStyle(node).color)).toBe(await cssColor(page, "--status-warning"));
-    // 합계 줄 — 기본 보기(신청됨) 4건 · 공급가 합(취소 건 제외).
-    await expect(page.getByText("합계 (신청됨 · 4건)", { exact: true })).toBeVisible();
-    await expect(page.getByRole("region", { name: "합계" })).toContainText("10,000,000");
+    // 합계 줄은 전사 값이라(D-7314) 모양만 보고, 이 프로젝트의 신청됨 4행 · 희망일 순 공급가(취소 건 제외)로 견준다.
+    await expect(page.getByText(/^합계 \(신청됨 · \d+건\)$/)).toBeVisible();
+    await expect(ownRows(list, projectNumber)).toHaveCount(4);
+    await expect(ownRows(list, projectNumber)).toContainText(["3,000,000", "4,000,000", "2,000,000", "1,000,000"]);
     // 금액 2행 합계(서버 부가세).
     await expect(list).toContainText("합계 3,300,000");
 
     // `취소` 보기 합계.
     await page.locator("#issue-request-filter-status").selectOption("cancelled");
     await expect(page).toHaveURL(/status=cancelled/);
-    await expect(page.getByText("합계 (취소 · 1건)", { exact: true })).toBeVisible();
+    await expect(page.getByText(/^합계 \(취소 · \d+건\)$/)).toBeVisible();
+    await expect(ownRows(list, projectNumber)).toHaveCount(1);
+    await expect(ownRows(list, projectNumber)).toContainText(["5,000,000"]);
 
     // 발행 처리 권한 — 행 3차 접근 이름 `{번호} 희망 {MM-DD} 발행 줄 입력` → `?issueRequest={id}`, 취소 행은 `요청 보기`.
     await grantWrite(roleId);
@@ -479,7 +513,8 @@ test.describe("프로젝트 목록 하위 링크 `발행 요청 {N}` · `?issueR
     const day = today.slice(5);
 
     const { page, context } = await openAs(browser, user, "/projects");
-    await page.getByRole("link", { name: "발행 요청 1", exact: true }).click();
+    // 07.3-01: 범위가 전사라(D-7314) 다른 스펙의 열린 요청도 센다 — N은 고정하지 않는다.
+    await page.getByRole("link", { name: /^발행 요청 \d+$/ }).click();
     await expect(page).toHaveURL(/\/projects\/issue-requests$/);
     await grantWrite(roleId);
     await page.reload();
@@ -502,12 +537,12 @@ test.describe("프로젝트 목록 하위 링크 `발행 요청 {N}` · `?issueR
     await context.close();
   });
 
-  test("열린 요청 0건이면 링크 글자는 `발행 요청`이고 링크는 남는다", async ({ browser }) => {
-    const { user } = await setupBoard({ write: false });
+  // 07.3-01: 「열린 요청 0건」은 공유 E2E DB에서 더 만들 수 없다(D-7314 — 0건 글자는 통합 요약 { count: 0 }이 본다). 본부 밖이면 링크가 없다(D-7301).
+  test("경영관리본부 밖 매출 보기 계급의 프로젝트 목록에는 `발행 요청` 링크가 없다(DOM 0)", async ({ browser }) => {
+    const { user } = await setupBoard({ write: false, fundDivision: false });
     const { page, context } = await openAs(browser, user, "/projects");
-    const link = page.getByRole("link", { name: "발행 요청", exact: true });
-    await expect(link).toBeVisible();
-    await expect(link).toHaveAttribute("href", "/projects/issue-requests");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("link", { name: /^발행 요청( \d+)?$/ })).toHaveCount(0);
     await context.close();
   });
 });

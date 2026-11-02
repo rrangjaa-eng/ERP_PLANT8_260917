@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -28,7 +29,10 @@ async function makePayer(fx: ExpenseE2E): Promise<Person> {
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const [row] = await db.select({ teamId: projects.teamId }).from(projects).where(eq(projects.id, fx.projectId));
   if (!row?.teamId) throw new Error("프로젝트 팀 없음");
-  return makePerson("경영관리", role.id, row.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("경영관리", role.id, row.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 // 줄 하나 → 제출 → 결재선 넷 승인 → 지급 권한자가 증빙 확인 = 지급 대상(고를 수 있음). 번호도 돌려준다.

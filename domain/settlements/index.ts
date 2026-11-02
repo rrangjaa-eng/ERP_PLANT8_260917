@@ -356,7 +356,7 @@ export async function getSettlementHeader(viewer: Viewer, input: { projectId: st
     return { statusWord: HEADER_WORDS[row.status] ?? row.status, canSubmit: false };
   }
   // 06.2(D-6208): 프로젝트 범위 — 260907 `O: server/src/settlement.ts:453` 참여자 조각 누락을 따르지 않는다.
-  const projectRow = await findProjectInScope(viewer, await projectRowScope(viewer), input.projectId);
+  const projectRow = await findProjectInScope(viewer, await projectRowScope(viewer, undefined, "write"), input.projectId);
   if (!projectRow || projectRow.status !== SETTLING || !(await isAssignedPmWriter(viewer, projectRow.pmUserId))) return null;
   return { statusWord: null, canSubmit: true };
 }
@@ -390,7 +390,7 @@ export async function submitSettlement(viewer: Viewer, input: { projectId: strin
   const found = UUID_SHAPE.test(input.projectId) ? await findProject(viewer, input.projectId) : null;
   if (!found || !found.id) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
   // 06.2(D-6208): 프로젝트 범위 — 260907 `O: server/src/settlement.ts:453` 참여자 조각 누락을 따르지 않는다.
-  const projectRow = await findProjectInScope(viewer, await projectRowScope(viewer), input.projectId);
+  const projectRow = await findProjectInScope(viewer, await projectRowScope(viewer, undefined, "write"), input.projectId);
   if (!projectRow) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
   if (!(await isAssignedPmWriter(viewer, projectRow.pmUserId))) throw new ForbiddenError("정산 결재는 담당 PM만");
   if (projectRow.status !== SETTLING) throw notSettling(projectRow.status);

@@ -579,6 +579,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertRole } from "@/repositories/roles";
 import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
+import { placeInFundDivision } from "./fixtures/fund-scope";
 
 describe("카드 사용 목록 범위 축 — 직원은 남의 카드 사용 · 남이 등록한 공용 카드 사용을 받지 않는다 (06-05 · T-06-23)", () => {
   async function team(): Promise<string> {
@@ -670,6 +671,8 @@ describe("구매 요청 목록 누수 — 범위 밖 계정은 남의 요청이 
     await upsertPermission(SYSTEM_VIEWER, { roleId: purchaserRole.id, menu: "cards.purchases", action: "write", allowed: true });
     for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: purchaserRole.id, infoItem, visible: true });
     const purchaser = await makePerson("누수구매담당", purchaserRole.id, await team());
+    // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+    await placeInFundDivision(purchaser.id);
     const purchaserList = await listPurchaseRequests(purchaser, { status: "all" }, today);
     expect(purchaserList.rows.map((row) => row.id)).toContain(created.id);
     expect(purchaserList.privileged).toBe(true);

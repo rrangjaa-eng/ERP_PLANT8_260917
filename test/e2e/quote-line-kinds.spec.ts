@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect, type Locator, type Page, type Request } from "@playwright/test";
 import { waitForCardUsageSection } from "./fixtures";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
@@ -48,7 +49,10 @@ async function makeAdjuster(teamId: string, withProjectsWrite = false): Promise<
   for (const infoItem of ["project.value", "quote.amount", "vendor.value"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   }
-  return makeAccount(role.id, teamId, "E2E 경영관리");
+  const account = await makeAccount(role.id, teamId, "E2E 경영관리");
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(account.userId);
+  return account;
 }
 
 async function login(page: Page, account: Account) {

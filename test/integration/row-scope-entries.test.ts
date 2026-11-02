@@ -468,6 +468,7 @@ function teamCostUsage(corpCardId: string): CardUsageInput {
 }
 
 // 권한 키 하나를 켠 화면 계급(work_scope team · view_scope team — K1 꼴) 사람, 기획1팀.
+// 07.3-01: cards.purchases는 자금 키 — 보유자는 경영관리본부 소속이어야 해(D-7301) 경영관리팀 발령.
 async function privilegedPerson(menu: "cards.proxy" | "cards.purchases", name: string): Promise<Viewer> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `${name}-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action: "write", allowed: true });
@@ -475,7 +476,7 @@ async function privilegedPerson(menu: "cards.proxy" | "cards.purchases", name: s
   for (const infoItem of ["team.value", "card_usage.value", "card_usage.amount", "purchase_request.value", "purchase_request.amount", "project.value"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   }
-  return makePerson(name, role.id, "기획1팀");
+  return makePerson(name, role.id, menu === "cards.purchases" ? "경영관리팀" : "기획1팀");
 }
 
 describe("카드 연결 쓰기(M7 — T-06.2-31)", () => {
@@ -863,7 +864,7 @@ describe("구매 완료 건 수정 · 범위 밖 프로젝트의 담당 PM 이�
       memo: null,
     };
     const done = await completePurchaseRequest(buyer, completion, await precheckPurchaseCompletion(buyer, completion));
-    // 구매 처리자(기획1팀, 보는 범위 team)에게 이 프로젝트(구매 픽스처의 다른 팀)는 범위 밖이다.
+    // 구매 처리자(경영관리팀, 보는 범위 team)에게 이 프로젝트(구매 픽스처의 다른 팀)는 범위 밖이다.
     expect(await findProject(buyer, fx.projectId)).toBeNull();
 
     const [usageRow] = await db.select({ version: corpCardUsages.version }).from(corpCardUsages).where(eq(corpCardUsages.id, done.usageId));

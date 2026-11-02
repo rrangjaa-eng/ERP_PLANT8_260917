@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { waitForCardUsageSection } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -1815,6 +1816,8 @@ test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽
       startDate: today,
       endDate: addDays(today, 10),
     });
+    // 07.3-01: 매출 정산 쓰기는 자금 키 — 이 PM 계급은 경영관리본부 소속이어야 발행 표를 쓴다(D-7301).
+    await placeInFundDivision(pm.userId);
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
     await seedLines(revision.id, [{ subcategory: "stage_construction", itemName: "R2 견적 줄", amount: 1_000_000 }]);

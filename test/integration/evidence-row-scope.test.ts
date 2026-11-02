@@ -35,6 +35,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission } from "@/repositories/permissions";
 import { findUserById, findUserDivision } from "@/repositories/users";
+import { placeInFundDivision } from "./fixtures/fund-scope";
 
 // 06.1-05 Task 2 — 증빙 행 범위 실측(EVID-07 · RP-5). 단언 대상 viewer는 시드 계급 role-pm(오늘 · 미래 발령)과 등록 계급뿐이다 —
 // 시스템 관리자 자격으로 재지 않는다(실제 사용자와 같은 자격으로 낮춰서). SYSTEM_VIEWER는 아래 준비(fixture) 줄에만 쓴다.
@@ -154,6 +155,8 @@ describe("증빙 범위 = 메뉴 판정(07-15 R18)", () => {
     await insertRole(SYSTEM_VIEWER, { id: roleId, name: `R18 ${roleId.slice(-8)}` });
     for (const { menu, action } of cells) await upsertPermission(SYSTEM_VIEWER, { roleId, menu, action, allowed: true });
     const { userId } = await createAccount(SYSTEM_VIEWER, { email: `r18-${randomUUID()}@example.test`, name: "R18", roleId });
+    // 07.3-01: 증빙 등록(자금 키) 보유자는 경영관리본부 소속이어야 한다(D-7301) — 본부 칸 = 경영관리본부.
+    await placeInFundDivision(userId);
     return { id: userId, roleId };
   }
 

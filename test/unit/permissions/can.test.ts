@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { can } from "@/domain/permissions/can";
+import { FUND_SCOPED_MENUS } from "@/domain/permissions/fund-scope";
 import { MENUS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import type { Viewer } from "@/domain/viewer";
@@ -53,7 +54,8 @@ describe("can (ADMN-01)", () => {
 
 // 06-27(D-601): 경영관리 전용 메뉴 키는 상위 메뉴(expenses · cards) 권한으로 대신 통과하지 않는다 — 정확 일치 조회.
 describe("Phase 6 메뉴 키 · 정보 항목 (06-27)", () => {
-  function grantsOnly(grantedMenu: string) {
+  // 07.3-01: 자금 키는 권한 행 뒤에 자금 게이트를 거친다 — 여기서는 게이트를 참으로 스텁해 DB에 닿지 않는다.
+  function grantsOnly(grantedMenu: string, fundGate: () => Promise<boolean> = () => Promise.resolve(true)) {
     return {
       findPermission: (_viewer: Viewer, roleId: string, menu: string, action: string) =>
         Promise.resolve(
@@ -61,6 +63,7 @@ describe("Phase 6 메뉴 키 · 정보 항목 (06-27)", () => {
             ? { id: "p1", roleId, menu, action, allowed: true, updatedAt: new Date(), updatedBy: null }
             : null,
         ),
+      fundGate,
     };
   }
 
@@ -74,6 +77,16 @@ describe("Phase 6 메뉴 키 · 정보 항목 (06-27)", () => {
 
   it.each(["expenses.payments", "cards.purchases", "cards.proxy"])("%s write를 가진 역할은 참이다", async (key) => {
     await expect(can(roleViewer, key, "write", grantsOnly(key))).resolves.toBe(true);
+  });
+
+  it.each(["expenses.payments", "cards.purchases"])("자금 게이트가 거짓이면 %s write를 가진 역할도 거짓이다(07.3-01 D-7301)", async (key) => {
+    await expect(can(roleViewer, key, "write", grantsOnly(key, () => Promise.resolve(false)))).resolves.toBe(false);
+  });
+
+  it("cards.proxy는 자금 게이트와 무관하다(D-7308) — 게이트를 부르지 않는다", async () => {
+    const fundGate = vi.fn(() => Promise.resolve(false));
+    await expect(can(roleViewer, "cards.proxy", "write", grantsOnly("cards.proxy", fundGate))).resolves.toBe(true);
+    expect(fundGate).not.toHaveBeenCalled();
   });
 
   it("MENUS에 세 키가 명세 라벨로 있다", () => {
@@ -98,5 +111,47 @@ describe("Phase 6 메뉴 키 · 정보 항목 (06-27)", () => {
   it("06.1 이름은 정해진 것뿐이다", () => {
     const keys = [...MENUS.map((menu) => menu.key), ...INFO_ITEMS.map((item) => item.key)];
     expect(keys.filter((key) => key.startsWith("evidence"))).toEqual(["evidence", "evidence.intake", "evidence.value", "evidence.amount"]);
+  });
+});
+
+// 07.3-01(D-7301 · D-7312): 자금 키 8개만 권한 행 뒤에 자금 게이트를 거친다 — 한 곳 목록 · 한 접점.
+describe("자금 게이트 접점 (07.3-01)", () => {
+  function rows(allowed: boolean | null) {
+    return (_viewer: Viewer, roleId: string, menu: string, action: string) =>
+      Promise.resolve(allowed === null ? null : { id: "p1", roleId, menu, action, allowed, updatedAt: new Date(), updatedBy: null });
+  }
+
+  it("자금 키 목록은 정확히 8개다(카드 대리 등록 제외)", () => {
+    expect([...FUND_SCOPED_MENUS]).toEqual([
+      "evidence.intake",
+      "expenses.evidence_void",
+      "expenses.evidence_attach",
+      "projects.adjustment",
+      "expenses.payments",
+      "cards.purchases",
+      "projects.budget",
+      "projects.revenue",
+    ]);
+  });
+
+  it.each(FUND_SCOPED_MENUS.flatMap((menu) => (["view", "write"] as const).map((action) => [menu, action] as const)))(
+    "%s %s — 권한 행이 참이어도 게이트가 거짓이면 거짓, 참이면 참이다",
+    async (menu, action) => {
+      await expect(can(roleViewer, menu, action, { findPermission: rows(true), fundGate: () => Promise.resolve(false) })).resolves.toBe(false);
+      await expect(can(roleViewer, menu, action, { findPermission: rows(true), fundGate: () => Promise.resolve(true) })).resolves.toBe(true);
+    },
+  );
+
+  it("권한 행이 없거나 거짓이면 게이트를 부르지 않고 거짓이다", async () => {
+    const fundGate = vi.fn(() => Promise.resolve(true));
+    await expect(can(roleViewer, "expenses.payments", "write", { findPermission: rows(null), fundGate })).resolves.toBe(false);
+    await expect(can(roleViewer, "expenses.payments", "write", { findPermission: rows(false), fundGate })).resolves.toBe(false);
+    expect(fundGate).not.toHaveBeenCalled();
+  });
+
+  it.each(["projects", "expenses", "evidence", "leave", "certs.qr", "cards.proxy"])("자금 키가 아닌 %s는 게이트를 부르지 않는다", async (menu) => {
+    const fundGate = vi.fn(() => Promise.resolve(false));
+    await expect(can(roleViewer, menu, "view", { findPermission: rows(true), fundGate })).resolves.toBe(true);
+    expect(fundGate).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -12,6 +13,7 @@ import { confirmEvidence } from "@/domain/evidence-reviews";
 import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { setupExpenseE2E, submitLineExpense, insertTempRole, type ExpenseE2E } from "./expense-fixture";
+import { payTargetsUrl } from "./pay-schedule-e2e";
 
 // 05-13 Task 2(UI-SPEC responsive S2 · S3 · S8 · S9 · overflow S5 backstop): 폭 375(프로젝트) · 320(파일 안 새 컨텍스트)에서
 // 지출결의 목록 · 폼(외화 · 회사 대납 · 13자리 계산 한 줄) · 폰 행 시트 · 결재함 · 결재 시트가 가로로 넘치지 않는다(`scrollWidth ≤ clientWidth`).
@@ -98,7 +100,10 @@ async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
   for (const infoItem of ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   }
-  return makePerson("경영관리", role.id, team.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("경영관리", role.id, team.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 // 회사 대납 규칙 증빙 종류(시드에 없다 — 이 스펙만 쓰고 끝에서 끈다). 이름이 길수록 `… 규칙` 조각이 길다.
@@ -366,7 +371,7 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
       await lead.context().close();
 
       const page = await phone(browser, baseURL, payer, viewport);
-      await page.goto("/expenses");
+      await page.goto(payTargetsUrl(fx.teamId));
       await expect(page.getByLabel("상태")).toHaveValue("지급 대상");
       const target = page.getByRole("link", { name: new RegExp(item) });
       await expect(target).toHaveCount(1);

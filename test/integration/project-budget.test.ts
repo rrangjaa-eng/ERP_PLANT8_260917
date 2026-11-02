@@ -580,7 +580,8 @@ describe("예산 직접 수정 (07-24 Task 2 · D-729)", () => {
     expect(await budgetLogs(s.projectId)).toEqual([]);
   });
 
-  it("행 범위 밖 프로젝트는 쓰기 권한이 있어도 거부 · 줄 · 로그 없음", async () => {
+  // 07.3-01: 예산 키는 자금 키 — 본부 밖 팀 범위 계급은 행 범위가 아니라 자금 게이트에서 막히고(D-7301), 본부 안이면 범위가 전사다(D-7314).
+  it("경영관리본부 밖 팀 범위 계급은 쓰기 권한이 있어도 거부 · 줄 · 로그 없음", async () => {
     const s = await withBudget();
     const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀 경영관리-${randomUUID()}`, viewScope: "team" });
     for (const [menu, action] of [["projects", "view"], ["projects.budget", "view"], ["projects.budget", "write"]] as const) {
@@ -588,7 +589,7 @@ describe("예산 직접 수정 (07-24 Task 2 · D-729)", () => {
     }
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "budget.amount", visible: true });
     const otherTeam = await makeViewer(role.id, await makeTeam());
-    await expect(setBudgetManually(otherTeam, s.projectId, { budgetKrw: 5_000_000, expectedBudgetKrw: 7_000_000, memo: "정정" })).rejects.toThrow("프로젝트 없음");
+    await expect(setBudgetManually(otherTeam, s.projectId, { budgetKrw: 5_000_000, expectedBudgetKrw: 7_000_000, memo: "정정" })).rejects.toThrow("예산 수정 권한 없음");
     expect(await entriesOf(s.projectId)).toHaveLength(1);
     expect(await budgetLogs(s.projectId)).toEqual([]);
   });
@@ -666,7 +667,8 @@ describe("예산 이력 읽기 (07-24 Task 3 · SC-21 · K9)", () => {
     expect((await listBudgetHistory(viewer, empty.projectId, { cursor: null })).entries).toEqual([]);
   });
 
-  it("보기 권한 · 금액 정보 항목 · 행 범위가 없으면 거부", async () => {
+  // 07.3-01: 본부 밖 팀 범위 예산 보기 계급은 자금 게이트에서 막힌다(D-7301).
+  it("보기 권한 · 금액 정보 항목 · 경영관리본부 소속이 없으면 거부", async () => {
     await setCostRate(70);
     const s = await setup();
     await savePo(s, 10_000_000);
@@ -677,6 +679,6 @@ describe("예산 이력 읽기 (07-24 Task 3 · SC-21 · K9)", () => {
       await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
     }
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "budget.amount", visible: true });
-    await expect(listBudgetHistory(await makeViewer(role.id, await makeTeam()), s.projectId, { cursor: null })).rejects.toThrow("프로젝트 없음");
+    await expect(listBudgetHistory(await makeViewer(role.id, await makeTeam()), s.projectId, { cursor: null })).rejects.toThrow("예산 현황 보기 권한 없음");
   });
 });

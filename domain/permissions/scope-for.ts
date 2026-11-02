@@ -1,12 +1,14 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { memoizeFundGateForRequest } from "@/domain/permissions/fund-gate";
+import type { FundScopedMenu } from "@/domain/permissions/fund-scope";
+import type { PermissionAction } from "@/domain/permissions/menus";
+import { viewerDivision, type ViewerDivisionDeps } from "@/domain/permissions/viewer-division";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulToday } from "@/lib/dates";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
 import { findMembershipAtDate as defaultFindMembershipAtDate } from "@/repositories/team-memberships";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
-import { findUserDivision as defaultFindUserDivision } from "@/repositories/users";
-import { findOrgUnitById as defaultFindOrgUnitById } from "@/repositories/org-units";
 
 // ADMN-01·ADMN-12: 행 필터 서술자 — repositories가 where절로 번역한다. Drizzle
 // SQL 조각을 돌려주지 않는다 — boundaries/element-types가 domain에서 db 계층
@@ -81,7 +83,7 @@ export type RowScope =
   | { rows: "limited"; includeArchived: boolean; viewerId: string; by: RowScopeBy };
 
 export type RowScopeDeps = {
-  can: (viewer: Viewer, menu: string, action: "view") => Promise<boolean>;
+  can: (viewer: Viewer, menu: string, action: PermissionAction) => Promise<boolean>;
   findRoleById: (viewer: Viewer, id: string) => Promise<{ viewScope: string } | null>;
   findMembershipAtDate: (viewer: Viewer, userId: string, date: string) => Promise<{ teamId: string } | null>;
   findTeamById: (viewer: Viewer, id: string) => Promise<{ orgUnitId: string } | null>;
@@ -92,27 +94,60 @@ export type RowScopeDeps = {
 // 계급의 archivedAt은 보지 않는다(can()과 같음). 팀 · 본부를 못 찾으면 그 id가 null인 limited다.
 // 요청 memo(성공 기준 4 · eng I10): React cache()는 렌더 안 memo만 문서화돼 서버 액션에서의 동작이 불명확하다 —
 // getSession()이 요청마다 만든 viewer 객체를 WeakMap 키로 쓴다. 다음 요청은 새 객체라 새 값을 읽고, 요청이 끝나면 함께 사라진다.
-const requestMemo = new WeakMap<Viewer, Map<RowScopeEntity, Promise<RowScope>>>();
+const requestMemo = new WeakMap<Viewer, Map<string, Promise<RowScope>>>();
+
+// 07.3-01(D-7314): 자금 담당의 보는 범위 — 계급이 company가 아니어도 그 entity의 자금 키 짝 하나라도 can()이 참이면(자금 게이트를 거친다)
+// 회사 전체다. 키 매핑으로 최소화한다 — 증빙 등록 · 구매 처리는 각자 범위가 따로 있어 넣지 않는다(evidenceScopeFor · 구매 요청 listAccess).
+// 사용자가 「자금 키 하나라도」를 원하면 이 표를 넓힌다(RESEARCH Open Q2). 정보 노출표(visible)는 그대로다.
+const FUND_ROW_SCOPE_KEYS: Record<RowScopeEntity, readonly (readonly [FundScopedMenu, PermissionAction])[]> = {
+  project: [
+    ["projects.adjustment", "write"],
+    ["projects.budget", "view"],
+    ["projects.revenue", "view"],
+  ],
+  expense: [
+    ["expenses.payments", "write"],
+    ["expenses.evidence_void", "write"],
+    ["expenses.evidence_attach", "write"],
+  ],
+};
+
+// 07.3-01 Q5(사용자 카드 2026-11-02 「넓힌 범위는 보기에만」): 위 확대는 보기(view)에만 쓴다. 일반 쓰기(write)는 계급의 원래 범위다.
+// 자금 작업(fundOp — 조정 줄 · 매출 정산 줄 · 예산 수정)은 그 작업의 키 하나가 can() 참일 때만 회사 전체다(다른 자금 키로는 넓히지 않는다).
+export type RowScopePurpose = "view" | "write" | { fundOp: readonly [FundScopedMenu, PermissionAction] };
+
+function purposeKey(entity: RowScopeEntity, purpose: RowScopePurpose): string {
+  return typeof purpose === "string" ? `${entity}:${purpose}` : `${entity}:fund:${purpose.fundOp[0]}:${purpose.fundOp[1]}`;
+}
 
 export function memoizeRowScopeForRequest(viewer: Viewer): void {
   requestMemo.set(viewer, new Map());
+  // 07.3-01: 자금 게이트도 같은 viewer 객체로 요청 memo를 건다(getSession은 이 함수 하나만 부른다).
+  memoizeFundGateForRequest(viewer);
 }
 
-export async function rowScopeFor(viewer: Viewer, entity: RowScopeEntity, deps?: Partial<RowScopeDeps>): Promise<RowScope> {
+export async function rowScopeFor(
+  viewer: Viewer,
+  entity: RowScopeEntity,
+  deps?: Partial<RowScopeDeps>,
+  purpose: RowScopePurpose = "view",
+): Promise<RowScope> {
   const memo = requestMemo.get(viewer);
-  if (!memo || deps) return computeRowScope(viewer, entity, deps);
-  const cached = memo.get(entity);
+  if (!memo || deps) return computeRowScope(viewer, entity, deps, purpose);
+  const key = purposeKey(entity, purpose);
+  const cached = memo.get(key);
   if (cached) return cached;
-  const pending = computeRowScope(viewer, entity, deps);
-  memo.set(entity, pending);
-  pending.catch(() => memo.delete(entity));
+  const pending = computeRowScope(viewer, entity, deps, purpose);
+  memo.set(key, pending);
+  pending.catch(() => memo.delete(key));
   return pending;
 }
 
 async function computeRowScope(
   viewer: Viewer,
   entity: RowScopeEntity,
-  deps?: Partial<RowScopeDeps>,
+  deps: Partial<RowScopeDeps> | undefined,
+  purpose: RowScopePurpose,
 ): Promise<RowScope> {
   const canFn = deps?.can ?? defaultCan;
   const [canView, includeArchived] = await Promise.all([
@@ -124,6 +159,13 @@ async function computeRowScope(
   const findRoleById = deps?.findRoleById ?? defaultFindRoleById;
   const role = await findRoleById(viewer, viewer.roleId);
   if (!role) return { rows: "none", includeArchived };
+
+  if (role.viewScope !== "company" && purpose !== "write") {
+    // Q5 검토 F2: 자금 작업 키는 그 entity의 자금 메뉴일 때만 넓힌다 — 다른 entity 키는 원래 범위(fail-closed).
+    const keys = purpose === "view" ? FUND_ROW_SCOPE_KEYS[entity] : FUND_ROW_SCOPE_KEYS[entity].some(([menu]) => menu === purpose.fundOp[0]) ? [purpose.fundOp] : [];
+    const fundKeys = await Promise.all(keys.map(([menu, action]) => canFn(viewer, menu, action)));
+    if (fundKeys.some(Boolean)) return { rows: "all", includeArchived };
+  }
 
   const limited = (by: RowScopeBy): RowScope => ({ rows: "limited", includeArchived, viewerId: viewer.id, by });
   const todayTeamId = async (): Promise<string | null> => {
@@ -164,11 +206,7 @@ export type EvidenceScope =
   | { rows: "published"; teamId: string | null; orgUnitId: string | null }
   | { rows: "none" };
 
-type EvidenceScopeDeps = ScopeForDeps &
-  Pick<RowScopeDeps, "findMembershipAtDate" | "findTeamById" | "today"> & {
-    findUserDivision: (viewer: Viewer, id: string) => Promise<{ divisionId: string | null } | null>;
-    findOrgUnitById: (viewer: Viewer, id: string) => Promise<{ archivedAt: Date | null } | null>;
-  };
+type EvidenceScopeDeps = ScopeForDeps & ViewerDivisionDeps;
 
 export async function evidenceScopeFor(viewer: Viewer, deps?: Partial<EvidenceScopeDeps>): Promise<EvidenceScope> {
   const canFn = deps?.can ?? defaultCan;
@@ -176,14 +214,5 @@ export async function evidenceScopeFor(viewer: Viewer, deps?: Partial<EvidenceSc
   if (!(await canFn(viewer, "evidence", "view"))) return { rows: "none" };
   if (await canFn(viewer, "evidence.intake", "write")) return { rows: "all" };
 
-  const findMembershipAtDate = deps?.findMembershipAtDate ?? defaultFindMembershipAtDate;
-  const membership = await findMembershipAtDate(viewer, viewer.id, (deps?.today ?? seoulToday)());
-  const teamId = membership?.teamId ?? null;
-  if (teamId) {
-    const team = await (deps?.findTeamById ?? defaultFindTeamById)(viewer, teamId);
-    return { rows: "published", teamId, orgUnitId: team?.orgUnitId ?? null };
-  }
-  const divisionId = (await (deps?.findUserDivision ?? defaultFindUserDivision)(viewer, viewer.id))?.divisionId ?? null;
-  const division = divisionId ? await (deps?.findOrgUnitById ?? defaultFindOrgUnitById)(viewer, divisionId) : null;
-  return { rows: "published", teamId: null, orgUnitId: division && division.archivedAt === null ? divisionId : null };
+  return { rows: "published", ...(await viewerDivision(viewer, deps)) };
 }

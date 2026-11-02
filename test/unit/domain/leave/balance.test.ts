@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allocateLeave,
+  annualGrantQuarters,
   checkLeaveAdjustment,
   formatBalanceLines,
   formatBalanceRow,
@@ -331,5 +332,24 @@ describe("불변식(assumption-delta) — 세 출처가 한 부여 목록 경로
     const summary = summarizeLeaveBalance({ fiscalYear: 2027, asOf: "2027-03-15", hireDate: "2026-10-01", grants: literal, allocations });
     expect(summary).toEqual(built.summary);
     expect(allocations).toEqual(built.allocations);
+  });
+});
+
+describe("07.2-04 PU8 근속 가산 — 입사 다음 해 뒤 연도부터 legalAnnualDays", () => {
+  it("입사 2020-03-02 · 2026 회계연도 부여 쿼터 = 17 × 4", () => {
+    expect(
+      annualGrantQuarters({ fiscalYear: 2026, hireDate: "2020-03-02", resignationDate: null, annualDays: 15 }),
+    ).toBe(68);
+  });
+
+  it("입사 다음 해(2021)는 일할 값 그대로 — 가산 겹침 0", () => {
+    // 근무 305일 / 366일(2020 윤년) × 60쿼터 = 50
+    expect(
+      annualGrantQuarters({ fiscalYear: 2021, hireDate: "2020-03-02", resignationDate: null, annualDays: 15 }),
+    ).toBe(50);
+  });
+
+  it("입사일 없는 사람은 기본 그대로", () => {
+    expect(annualGrantQuarters({ fiscalYear: 2026, hireDate: null, resignationDate: null, annualDays: 15 })).toBe(60);
   });
 });

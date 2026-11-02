@@ -1212,4 +1212,55 @@ describe("deploy.sh — 자동 파기 Scheduler (07.2-03)", () => {
     expect(r.log).toContain(`scheduler jobs create http ${SCHED_JOB} `);
     expect(r.log).not.toContain(`scheduler jobs update http ${SCHED_JOB} `);
   });
+
+  it("모드 파일이 apply면 자동 Job에만 --args=--apply가 붙는다(사람용 Job은 그대로)", () => {
+    const repoDir = setupRepo("apply");
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    expect(lines.filter((l) => l.startsWith("run jobs deploy ") && l.includes("--args=--apply"))).toHaveLength(1);
+    expect(jobLine(r.log, "purge-certs-auto")).toContain("--args=--apply");
+    expect(jobLine(r.log, "purge-certs")).not.toContain("--apply");
+  });
+
+  it("모드 파일 값이 알 수 없으면(foo) 자동 Job 배포 없이 0이 아닌 종료로 멈춘다", () => {
+    const repoDir = setupRepo("foo");
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).not.toBe(0);
+    expect(r.log).not.toContain("run jobs deploy plant8-staging-purge-certs-auto ");
+    expect(r.log).not.toContain("scheduler jobs create http plant8-staging-purge-certs-monthly");
+    expect(r.stderr).toContain("purge-certs-auto.mode");
+  });
+
+  it("모드 파일의 # 주석 · 빈 줄은 건너뛰고 첫 값을 읽는다", () => {
+    const repoDir = setupRepo("# 주석\n\n  apply  ");
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    expect(jobLine(r.log, "purge-certs-auto")).toContain("--args=--apply");
+  });
+});
+
+// 07.2-03: verify-gcp.sh purge-scheduler 갈래 — 읽기 전용 확인(소유자 로컬 셸에서만 부른다).
+describe("verify-gcp.sh — purge-scheduler 갈래 (07.2-03)", () => {
+  const script = readFileSync(join(REPO_ROOT, "scripts/verify-gcp.sh"), "utf8");
+  const branch = script.split(/^ {2}purge-scheduler\)\n/m)[1]?.split(/^ {4};;$/m)[0] ?? "";
+
+  it("구문 오류가 없다", () => {
+    expect(spawnSync("bash", ["-n", "scripts/verify-gcp.sh"], { cwd: REPO_ROOT }).status).toBe(0);
+  });
+
+  it("갈래가 하나 있고 파일 머리 사용법에 이름이 있다", () => {
+    expect(script.match(/^ {2}purge-scheduler\)$/gm)).toHaveLength(1);
+    expect(script.split("\n").slice(0, 6).join("\n")).toContain("purge-scheduler");
+  });
+
+  it("잡 describe · ENABLED · 실행 기록 · 자동 Job 실행 목록을 읽고 쓰기 명령은 없다", () => {
+    expect(branch).toContain("purge_scheduler_job staging");
+    expect(branch).toContain("scheduler jobs describe");
+    expect(branch).toContain("ENABLED");
+    expect(branch).toContain("gcloud logging read");
+    expect(branch).toContain("run jobs executions list");
+    expect(branch).toContain("purge-certs-auto");
+    expect(branch).not.toMatch(/\b(create|update|delete|execute|add-iam-policy-binding|set-iam-policy|run jobs deploy|jobs run)\b/);
+  });
 });

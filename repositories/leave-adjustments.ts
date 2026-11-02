@@ -30,9 +30,9 @@ export async function insertLeaveAdjustment(
 }
 
 // 한 사람의 조정 전부 — 작성자 이름을 같은 쿼리의 조인으로 싣는다(CX-R2). 최신이 먼저.
-export async function listLeaveAdjustments(viewer: Viewer, userId: string): Promise<LeaveAdjustmentWithAuthor[]> {
+export async function listLeaveAdjustments(viewer: Viewer, userId: string, tx: DbOrTx = db): Promise<LeaveAdjustmentWithAuthor[]> {
   void viewer;
-  const rows = await db
+  const rows = await tx
     .select({ adjustment: leaveAdjustments, createdByName: users.name })
     .from(leaveAdjustments)
     .innerJoin(users, eq(users.id, leaveAdjustments.createdBy))

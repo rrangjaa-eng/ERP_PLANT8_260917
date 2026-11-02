@@ -3,6 +3,7 @@
 // (부여)의 두 출처다. 계산은 끝까지 정수 1/4일(쿼터)이고 날짜는 `YYYY-MM-DD` 문자열의 UTC 연산이다.
 
 import { formatLeaveDays, type LeaveKind } from "@/domain/leave/days";
+import { legalAnnualDays } from "@/domain/leave/tenure";
 
 export type LeaveBucket = "annual" | "monthly";
 
@@ -106,7 +107,7 @@ export function balanceFiscalYears(hireDate: string | null, fiscalYear: number):
   return years;
 }
 
-// 회계연도 Y의 연차 부여(쿼터).
+// 회계연도 Y의 연차 부여(쿼터). 07.2 D-7248: 근속 가산은 입사 다음 해 뒤부터.
 export function annualGrantQuarters(input: {
   fiscalYear: number;
   hireDate: string | null;
@@ -118,7 +119,9 @@ export function annualGrantQuarters(input: {
   if (input.hireDate === null) return full;
   const hireYear = yearOf(input.hireDate);
   if (input.fiscalYear <= hireYear) return 0;
-  if (input.fiscalYear > hireYear + 1) return full;
+  if (input.fiscalYear > hireYear + 1) {
+    return legalAnnualDays({ baseDays: input.annualDays, fiscalYear: input.fiscalYear, hireYear }) * 4;
+  }
   // 입사 다음 해(R1): 0.25일 단위 올림 — ceil(full × 근무일수 / 그 해 날수)를 정수 나눗셈으로.
   const worked = dayNumber(`${hireYear}-12-31`) - dayNumber(input.hireDate) + 1;
   const daysInYear = dayNumber(`${hireYear}-12-31`) - dayNumber(`${hireYear}-01-01`) + 1;
@@ -389,6 +392,29 @@ export function checkLeaveAdjustment(input: {
     if (input.createdOn > expiresOn) return { field: "bucket", message: `월차 ${expiresOn} 소멸 · 연차로 조정하기` };
   }
   return null;
+}
+
+// 07.2-04 PU13(D-7263): 조정이 남음을 0 아래로 내리면 거부 문구 — `남음 {N}일 · -{N}까지`. 남음이 이미 0 이하면 UI-SPEC
+// 문구 하나로 `남음 0일 · -0까지`(음수 표기를 만들지 않는다). 260907 `O: server/src/leave.ts:2733-2785`(빼는 가감만 검사)와 같은 뜻.
+export function checkAdjustmentFloor(input: { remainingQuarters: number; amountQuarters: number }): string | null {
+  if (input.amountQuarters >= 0) return null;
+  const floor = Math.max(input.remainingQuarters, 0);
+  if (floor + input.amountQuarters >= 0) return null;
+  return `남음 ${formatLeaveDays(floor)} · -${floor / 4}까지`;
+}
+
+// 07.2-04 PU14(D-7264): 퇴직 부족일 줄(S21) — 부족이 0 이하면 줄이 없다. 금액 없음 · 끝 0 삭제.
+export function formatShortfallLine(quarters: number): string | null {
+  return quarters > 0 ? `법정 대비 부족 ${formatLeaveDays(quarters)}` : null;
+}
+
+// 부여 합(쿼터) — 연차는 해마다(부여 + 조정) 더하고, 월차(적립 + 월차 조정)는 부여 목록에서 한 번만 더한다. 연도별 요약의 월차 값은
+// 해마다 월차 창 전체라(summarizeLeaveBalance accruedQuarters) 더하지 않는다.
+export function grantedTotalQuarters(input: { summaries: LeaveBalanceSummary[]; grants: LeaveGrant[] }): number {
+  return (
+    sum(input.summaries.map((summary) => summary.annual.grantQuarters + summary.annual.adjustmentQuarters)) +
+    sum(input.grants.filter((grant) => grant.bucket === "monthly").map((grant) => grant.amountQuarters))
+  );
 }
 
 // 잔고 문자열(UI-SPEC Copywriting 원문) — 화면 넷(S1 · S2 · S3/S5 · S9)이 같은 함수를 쓴다.

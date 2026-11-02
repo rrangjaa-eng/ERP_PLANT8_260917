@@ -15,8 +15,8 @@ import { personLoginStatus, personLoginWord } from "../person-status";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { seoulToday } from "@/lib/dates";
 import { kstDateOf } from "@/lib/kst-date";
-import { getLeaveBalanceForUser, listLeaveAdjustmentsForUser } from "@/domain/leave/balance-service";
-import { checkLeaveAdjustment, formatBalanceLines } from "@/domain/leave/balance";
+import { getLeaveBalanceForUser, getLeaveShortfallForUser, listLeaveAdjustmentsForUser } from "@/domain/leave/balance-service";
+import { checkLeaveAdjustment, formatBalanceLines, formatShortfallLine } from "@/domain/leave/balance";
 import { formatLeaveDays } from "@/domain/leave/days";
 import { resolveLeaveYear } from "@/app/(app)/leave/year-param";
 import { LeaveSection, type LeaveAdjustmentRow } from "./leave-section";
@@ -152,6 +152,9 @@ export default async function PersonDetailPage({
   const balanceLines = balance.annual
     ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null, resignation: balance.resignation ?? null }).map((line) => line.text)
     : [];
+  // 07.2-04 PU14(D-7264 · D-7265): 퇴직 줄이 있는 해(퇴직 연도)에만 부족일을 따로 읽는다 — admin.people 보기 ∧ leave.value 판정은 읽기 안에서(본인 DTO에는 없다).
+  const shortfall = balance.resignation ? await getLeaveShortfallForUser(session.viewer, id) : null;
+  const shortfallLine = shortfall ? formatShortfallLine(shortfall.shortfallQuarters) : null;
   const hireDate = current.hireDate ?? null;
   const blocked =
     "hireDate" in current ? checkLeaveAdjustment({ bucket: "monthly", fiscalYear: null, amountDays: 1, reason: "-", createdOn: today, hireDate }) : null;
@@ -221,6 +224,7 @@ export default async function PersonDetailPage({
         year={leaveYear}
         thisYear={thisYear}
         balanceLines={balanceLines}
+        shortfallLine={shortfallLine}
         hireDate={hireDate}
         resignationDate={current.resignationDate ?? null}
         datesVisible={"hireDate" in current}

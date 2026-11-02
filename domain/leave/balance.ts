@@ -3,6 +3,7 @@
 // (부여)의 두 출처다. 계산은 끝까지 정수 1/4일(쿼터)이고 날짜는 `YYYY-MM-DD` 문자열의 UTC 연산이다.
 
 import { formatLeaveDays, type LeaveKind } from "@/domain/leave/days";
+import { legalAnnualDays } from "@/domain/leave/tenure";
 
 export type LeaveBucket = "annual" | "monthly";
 
@@ -106,7 +107,7 @@ export function balanceFiscalYears(hireDate: string | null, fiscalYear: number):
   return years;
 }
 
-// 회계연도 Y의 연차 부여(쿼터).
+// 회계연도 Y의 연차 부여(쿼터). 07.2 D-7248: 근속 가산은 입사 다음 해 뒤부터.
 export function annualGrantQuarters(input: {
   fiscalYear: number;
   hireDate: string | null;
@@ -118,7 +119,9 @@ export function annualGrantQuarters(input: {
   if (input.hireDate === null) return full;
   const hireYear = yearOf(input.hireDate);
   if (input.fiscalYear <= hireYear) return 0;
-  if (input.fiscalYear > hireYear + 1) return full;
+  if (input.fiscalYear > hireYear + 1) {
+    return legalAnnualDays({ baseDays: input.annualDays, fiscalYear: input.fiscalYear, hireYear }) * 4;
+  }
   // 입사 다음 해(R1): 0.25일 단위 올림 — ceil(full × 근무일수 / 그 해 날수)를 정수 나눗셈으로.
   const worked = dayNumber(`${hireYear}-12-31`) - dayNumber(input.hireDate) + 1;
   const daysInYear = dayNumber(`${hireYear}-12-31`) - dayNumber(`${hireYear}-01-01`) + 1;

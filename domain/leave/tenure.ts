@@ -13,3 +13,22 @@ export function legalAnnualDays(input: { baseDays: number; fiscalYear: number; h
   const bonus = Math.floor((tenure - TENURE_BONUS_START_YEARS) / TENURE_BONUS_CYCLE_YEARS) + 1;
   return Math.max(input.baseDays, Math.min(input.baseDays + bonus, LEGAL_ANNUAL_MAX_DAYS));
 }
+
+// 07.2-04 PU14(D-7264): 퇴직 시점 입사일 기준 법정 합 — 260907 `O: server/src/leave.ts:3040-3058`과 같은 뜻. 첫 해 월차는 만 개월 수
+// (상한 11) · 그 뒤는 만 근속년 n마다 법정 연차 legalAnnualDays(근속 n년). 만 개월 · 만 년은 서울 날짜 문자열의 연 · 월 · 일 비교.
+const FIRST_YEAR_MONTHLY_MAX_DAYS = 11;
+
+function completedMonths(from: string, to: string): number {
+  const [fy = 0, fm = 0, fd = 0] = from.split("-").map(Number);
+  const [ty = 0, tm = 0, td = 0] = to.split("-").map(Number);
+  return Math.max(0, (ty - fy) * 12 + (tm - fm) - (td < fd ? 1 : 0));
+}
+
+export function legalTotalQuartersByHireDate(input: { hireDate: string; resignationDate: string; baseDays: number }): number {
+  const months = completedMonths(input.hireDate, input.resignationDate);
+  let days = Math.min(months, FIRST_YEAR_MONTHLY_MAX_DAYS);
+  for (let tenure = 1; tenure <= Math.floor(months / 12); tenure++) {
+    days += legalAnnualDays({ baseDays: input.baseDays, fiscalYear: tenure, hireYear: 0 });
+  }
+  return days * 4;
+}

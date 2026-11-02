@@ -537,4 +537,75 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
       await page.context().close();
     });
   });
+  // 07.2-04 PU14(D-7264 · D-7265 · S21): 퇴직 연도 사람 상세 퇴직 줄 아래 `법정 대비 부족 3.5일`(입사 3년 전 3월 2일 · 퇴직 지난해 6월 30일 ·
+  // 부여 합과 법정 합의 차 2.25일 + 연차 조정 -1.25일). 부족 0 · 노출 끔은 줄 없음 · 조정 +3.5 뒤 줄이 사라진다.
+  test("[07.2-04 PU14] 퇴직자 법정 대비 부족 3.5일 · 부족 0 · 노출 끔은 줄 0 · 조정 +3.5 뒤 사라짐", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const year = yearOf(today);
+      const target = await makeTarget("부족");
+      await setHireDate(SYSTEM_VIEWER, target.id, `${year - 4}-03-02`);
+      await setResignationDate(SYSTEM_VIEWER, target.id, `${year - 1}-06-30`);
+      const author = await createAccount(SYSTEM_VIEWER, { name: "조정입력", email: `e2e-short-${randomUUID()}@example.test`, roleId: SYSADMIN_ROLE_ID });
+      await addLeaveAdjustment(
+        { id: author.userId, roleId: SYSADMIN_ROLE_ID },
+        { userId: target.id, bucket: "annual", fiscalYear: year - 1, amountDays: -1.25, reason: "정산" },
+      );
+      const noHire = await makeTarget("부족없음");
+      await setResignationDate(SYSTEM_VIEWER, noHire.id, `${year - 1}-06-30`);
+
+      const page = await adminPage(browser, baseURL);
+      await page.goto(`/admin/people/${target.id}`);
+      await expect(balance(page).first()).toHaveText(/^퇴직 /);
+      const line = page.getByText("법정 대비 부족 3.5일", { exact: true });
+      await expect(line).toHaveCount(1);
+      // 퇴직 줄 바로 아래 · 값 조각 `3.5일` = 경고색 600 · 앞 글자 = 보조색.
+      await expect(balance(page).nth(1)).toHaveText("법정 대비 부족 3.5일");
+      const value = line.locator("span");
+      await expect(value).toHaveText("3.5일");
+      expect(await value.evaluate((node) => getComputedStyle(node).fontWeight)).toBe("600");
+      const [valueColor, frontColor, warning, muted] = await line.evaluate((node) => {
+        const probe = (name: string) => {
+          const el = document.createElement("span");
+          el.style.color = `var(${name})`;
+          document.body.appendChild(el);
+          const color = getComputedStyle(el).color;
+          el.remove();
+          return color;
+        };
+        return [getComputedStyle(node.querySelector("span") as Element).color, getComputedStyle(node).color, probe("--status-warning"), probe("--text-muted")];
+      });
+      expect(valueColor).toBe(warning);
+      expect(frontColor).toBe(muted);
+      for (const width of [1280, 768, 375, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(line).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+        await section(page).screenshot({ path: `test-results/07.2-04/pu14-shortfall-${width}.png` });
+      }
+      await page.setViewportSize({ width: 1280, height: 720 });
+
+      await addAdjustment(page, { days: "3.5", reason: "부족 보정" });
+      await expect(page.getByText("법정 대비", { exact: false })).toHaveCount(0);
+
+      // 입사일이 없어 법정 합을 셀 수 없는 퇴직자는 줄 없음.
+      await page.goto(`/admin/people/${noHire.id}`);
+      await expect(balance(page).first()).toHaveText(/^퇴직 /);
+      await expect(page.getByText("법정 대비", { exact: false })).toHaveCount(0);
+
+      // admin.people 보기만 있고 연차 값(leave.value) 노출이 꺼진 계급은 줄 0 — 같은 사람이어도.
+      const viewHidden = await createRole(SYSTEM_VIEWER, { name: `E2E 부족숨김 ${randomUUID().slice(0, 8)}` });
+      try {
+        await setPermissionCell(SYSTEM_VIEWER, { roleId: viewHidden.id, menu: "admin.people", action: "view", allowed: true });
+        await setVisibilityCell(SYSTEM_VIEWER, { roleId: viewHidden.id, infoItem: "person.value", visible: true });
+        const hidden = await login(browser, baseURL, await createFixtureUser({ roleId: viewHidden.id }));
+        await hidden.goto(`/admin/people/${target.id}`);
+        await expect(section(hidden)).toBeVisible();
+        expect(await hidden.content()).not.toContain("법정 대비");
+        await hidden.context().close();
+      } finally {
+        await setRoleArchived(SYSTEM_VIEWER, viewHidden.id, true);
+      }
+      await page.context().close();
+    });
+  });
 });

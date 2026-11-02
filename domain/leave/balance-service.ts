@@ -1,7 +1,7 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
-import type { visible as defaultVisible } from "@/domain/permissions/visible";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { project, projectMany } from "@/domain/permissions/project";
 import { getSettingValue } from "@/domain/settings/registry";
 import { LEAVE_ANNUAL_DAYS } from "@/domain/settings/keys";
@@ -20,6 +20,7 @@ import { insertLeaveAdjustment, listLeaveAdjustments, type LeaveAdjustmentWithAu
 import { assertLeaveWrite, canSeeLeaveDocument, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import type { HolidayLookup } from "@/domain/holidays/business-day";
 import { countLeaveQuarters, leaveYearRange, type LeaveDaysInput } from "@/domain/leave/days";
+import { legalTotalQuartersByHireDate } from "@/domain/leave/tenure";
 import { loadLeaveHolidays } from "@/domain/leave/guard";
 import {
   allocateLeave,
@@ -27,6 +28,7 @@ import {
   buildLeaveGrants,
   checkAdjustmentFloor,
   checkLeaveAdjustment,
+  grantedTotalQuarters,
   monthlyExpiresOn,
   requestBalanceOf,
   resignationBalanceOf,
@@ -35,6 +37,7 @@ import {
   type LeaveAllocation,
   type LeaveBalanceSummary,
   type LeaveBucket,
+  type LeaveGrant,
   type LeaveRequestInput,
 } from "@/domain/leave/balance";
 import {
@@ -117,7 +120,7 @@ async function computeBalance(
   today: string,
   extra?: LeaveRequestInput,
   reads: BalanceReads = createBalanceReads(viewer),
-): Promise<{ summary: LeaveBalanceSummary; allocations: LeaveAllocation[] }> {
+): Promise<{ summary: LeaveBalanceSummary; allocations: LeaveAllocation[]; grants: LeaveGrant[] }> {
   const years = balanceFiscalYears(user.hireDate, fiscalYear);
   const annualDaysByYear: Record<number, number> = {};
   for (const year of years) {
@@ -150,7 +153,7 @@ async function computeBalance(
   });
   const allocations = allocateLeave(grants, requests);
   const summary = summarizeLeaveBalance({ fiscalYear, asOf: today, hireDate: user.hireDate, grants, allocations });
-  return { summary, allocations };
+  return { summary, allocations, grants };
 }
 
 async function balanceDto(viewer: Viewer, user: UserRow, fiscalYear: number, today: string): Promise<Partial<LeaveBalanceDto>> {
@@ -193,6 +196,44 @@ export async function getLeaveBalanceForUser(
   const user = await findUserById(viewer, userId);
   if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
   return balanceDto(viewer, user, input.fiscalYear, today);
+}
+
+export type LeaveShortfall = { shortfallQuarters: number };
+
+// 07.2-04 PU14(D-7264 · D-7265 · 07.2 D-7305): 퇴직자 `법정 대비 부족` — 입사일 기준 법정 합(퇴직 시점) − 부여 합(연도별 연차 부여 + 연차 조정 ·
+// 월차 적립 + 월차 조정은 한 번). 보기 = admin.people 보기 ∧ 정보 항목 `leave.value` 노출 — 본인 잔고(getMyLeaveBalance · LEAVE_BALANCE_DTO_SPEC)에는
+// 싣지 않는다. 부족이 0 이하 · 퇴직일 없음 · 입사일 없음이면 null. 보이기만 한다(자동 부여 없음).
+// 가정: 법정 쪽 기본 일수는 퇴직 연도의 LEAVE_ANNUAL_DAYS 하나, 부여 쪽은 해마다 이력형 설정을 읽는다.
+export async function getLeaveShortfallForUser(
+  viewer: Viewer,
+  userId: string,
+  deps?: { can?: typeof defaultCan; visible?: typeof defaultVisible },
+): Promise<LeaveShortfall | null> {
+  if (!(await (deps?.can ?? defaultCan)(viewer, PEOPLE_MENU, "view"))) {
+    throw new ForbiddenError("연차 부족일 열람 권한 없음");
+  }
+  if (!(await (deps?.visible ?? defaultVisible)(viewer, "leave.value"))) return null;
+  const user = await findUserById(viewer, userId);
+  if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
+  if (user.hireDate === null || user.resignationDate === null) return null;
+  const hireYear = yearOf(user.hireDate);
+  const resignationYear = yearOf(user.resignationDate);
+  const reads = createBalanceReads(viewer);
+  const summaries: LeaveBalanceSummary[] = [];
+  let grants: LeaveGrant[] = [];
+  for (let fiscalYear = hireYear; fiscalYear <= resignationYear; fiscalYear++) {
+    // 「오늘」은 퇴직일 — 월차 적립은 퇴직일까지, 시계에 닿지 않는다.
+    const computed = await computeBalance(viewer, user, fiscalYear, user.resignationDate, undefined, reads);
+    summaries.push(computed.summary);
+    grants = computed.grants;
+  }
+  const legal = legalTotalQuartersByHireDate({
+    hireDate: user.hireDate,
+    resignationDate: user.resignationDate,
+    baseDays: await reads.annualDays(resignationYear),
+  });
+  const shortfallQuarters = legal - grantedTotalQuarters({ summaries, grants });
+  return shortfallQuarters > 0 ? { shortfallQuarters } : null;
 }
 
 async function requestBalanceDto(

@@ -403,6 +403,20 @@ export function checkAdjustmentFloor(input: { remainingQuarters: number; amountQ
   return `남음 ${formatLeaveDays(floor)} · -${floor / 4}까지`;
 }
 
+// 07.2-04 PU14(D-7264): 퇴직 부족일 줄(S21) — 부족이 0 이하면 줄이 없다. 금액 없음 · 끝 0 삭제.
+export function formatShortfallLine(quarters: number): string | null {
+  return quarters > 0 ? `법정 대비 부족 ${formatLeaveDays(quarters)}` : null;
+}
+
+// 부여 합(쿼터) — 연차는 해마다(부여 + 조정) 더하고, 월차(적립 + 월차 조정)는 부여 목록에서 한 번만 더한다. 연도별 요약의 월차 값은
+// 해마다 월차 창 전체라(summarizeLeaveBalance accruedQuarters) 더하지 않는다.
+export function grantedTotalQuarters(input: { summaries: LeaveBalanceSummary[]; grants: LeaveGrant[] }): number {
+  return (
+    sum(input.summaries.map((summary) => summary.annual.grantQuarters + summary.annual.adjustmentQuarters)) +
+    sum(input.grants.filter((grant) => grant.bucket === "monthly").map((grant) => grant.amountQuarters))
+  );
+}
+
 // 잔고 문자열(UI-SPEC Copywriting 원문) — 화면 넷(S1 · S2 · S3/S5 · S9)이 같은 함수를 쓴다.
 // 두 잔고의 남음을 더한 값을 만드는 경로가 없다(사용자 요구 11:43).
 export type BalanceLine = { text: string; tone: "default" | "muted" | "warning" };

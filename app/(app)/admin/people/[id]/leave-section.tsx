@@ -28,6 +28,8 @@ export type LeaveSectionProps = {
   year: number;
   thisYear: number;
   balanceLines: string[];
+  // 07.2-04 PU14(D-7264): 퇴직 줄 아래 `법정 대비 부족 {N}일` — 서버가 만든 글자 · 부족 0 이하 · 보기 권한 밖이면 null.
+  shortfallLine?: string | null;
   hireDate: string | null;
   resignationDate: string | null;
   // 입사일 · 퇴직일이 잔고 DTO 투영(leave.value)을 지났는가 — 가려졌으면 빈 칸이 「없음」처럼 보여 실제 값을 덮어쓰게
@@ -160,6 +162,12 @@ export function LeaveSection(props: LeaveSectionProps) {
                     <DayNumbers text={line} />
                   </p>
                 ))}
+                {props.shortfallLine ? (
+                  <p data-testid="person-leave-shortfall" className={peopleStyles.shortfallLine}>
+                    {props.shortfallLine.slice(0, props.shortfallLine.lastIndexOf(" ") + 1)}
+                    <span className={peopleStyles.shortfallValue}>{props.shortfallLine.slice(props.shortfallLine.lastIndexOf(" ") + 1)}</span>
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>

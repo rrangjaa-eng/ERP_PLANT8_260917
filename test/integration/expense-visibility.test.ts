@@ -25,6 +25,7 @@ import { insertRole, setRoleViewScope } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { listExpenseIdsInScope } from "@/repositories/expenses";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { ForbiddenError } from "@/domain/permissions/can";
 import { makePerson, orgUnitIdByName, teamIdByName } from "./approvals-fixtures";
 import { insertMembership } from "@/repositories/team-memberships";
 import { setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture, testVendorAccount } from "./fixtures/expenses";
@@ -367,7 +368,9 @@ describe("팀 이동 · 프로젝트 팀 변경 · 삭제 (05-08 검토 #6)", ()
 });
 
 describe("지급 대상 — 전사 범위 단축 (06.2 T-06.2-83)", () => {
-  it("대표(보는 범위 전사)의 지급 대상은 canSeeExpense를 부르지 않고 결재 통과 문서를 싣는다 — 팀장(팀 범위)도 문서마다 묻지 않고 한 번에 거른다(검토 I-1)", async () => {
+  // 07.3-01(D-7301 · D-7314): 지급 처리는 자금 키 — 기획1팀 팀장은 권한 행이 있어도 지급 대상에 들어오지 못한다(옛 「팀 범위 지급 권한자 한 번에 거름」 갈래는
+  // 경영관리본부 소속이면 D-7314로 전사가 되어 실제 사람에게는 남지 않는다).
+  it("대표(보는 범위 전사)의 지급 대상은 canSeeExpense를 부르지 않고 결재 통과 문서를 싣는다 — 기획1팀 팀장은 지급 처리 쓰기가 있어도 막힌다(07.3-01)", async () => {
     const w = await setup();
     for (const roleId of [CEO_ROLE_ID, TEAM_LEAD_ROLE_ID]) await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "expenses.payments", action: "write", allowed: true });
     await approveThrough(w.teamDocId, [w.divisionHead, w.ceo]);
@@ -379,10 +382,7 @@ describe("지급 대상 — 전사 범위 단축 (06.2 T-06.2-83)", () => {
     expect((await listAllPaymentTargets(w.ceo, {})).map((target) => target.row.id).sort()).toEqual([w.teamDocId, w.pm2DocId].sort());
     expect(seen).not.toHaveBeenCalled();
     expect(batch).not.toHaveBeenCalled();
-    // 팀장(기획1팀): 기획2팀 문서는 범위 밖 — 질의는 행 수와 무관하게 한 번.
-    expect((await listAllPaymentTargets(w.lead, {})).map((target) => target.row.id)).toEqual([w.teamDocId]);
-    expect(seen).not.toHaveBeenCalled();
-    expect(batch).toHaveBeenCalledTimes(1);
+    await expect(listAllPaymentTargets(w.lead, {})).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 
@@ -390,10 +390,12 @@ describe("지급 대상 — 전사 범위 단축 (06.2 T-06.2-83)", () => {
 // 세계: 기획본부(기획1팀 · 기획2팀) · 경영관리본부(경영관리팀). P1(기획1팀, PM 박서연) · P2(기획2팀, PM 다른팀PM) · P3(경영관리팀, PM 다른팀PM,
 // 참여자 붙음). 결재선은 대표 한 단(1~3단 끔)이라 대표 말고는 결재 관련자가 없다 — C만 1단 = 후보결재자(전사 범위의 그 계급)로 제출해 결재 중으로 둔다.
 // 문서: L1(P1 줄, 박서연) · T1 · C(기획1팀 팀 비용, 박서연) · L2(P2 줄, 기획2직원) · L3(P3 줄, 경영직원) · T3(경영관리팀 팀 비용, 경영직원) · DR(P1 작성 중).
-// 사람마다 계급에 지급 처리(expenses.payments) 쓰기를 더한다 — 검수 · 지급 대상 입구가 그 권한을 먼저 본다(보임 판정은 그 권한을 읽지 않는다).
+// 07.3-01: 지급 처리(expenses.payments) 쓰기는 대표에게만 더한다 — 자금 키라 경영관리본부 소속이 아닌 사람은 검수 · 지급 대상 입구에서 막히고(D-7301),
+// 경영관리 소속 사람에게 주면 보는 범위가 전사로 넓어진다(D-7314). 그래서 검수 · 지급 대상 입구는 대표 말고는 모두 「없음」(막힘)이다.
 
 const MATRIX_DOCS = ["L1", "T1", "L2", "L3", "T3", "C", "DR"] as const;
 type MatrixDoc = (typeof MATRIX_DOCS)[number];
+const PAYMENT_ENTRY_NAMES: ReadonlySet<string> = new Set(["검수", "지급 대상"]);
 const MATRIX_PEOPLE = ["같은팀PM", "본부장", "대표", "본인범위", "참여자", "다른팀PM", "후보결재자", "화면팀A", "화면팀B"] as const;
 type MatrixPerson = (typeof MATRIX_PEOPLE)[number];
 
@@ -454,9 +456,7 @@ async function buildMatrix(): Promise<MatrixWorld> {
     화면팀A: await makePerson("화면팀A", screenARoleId, "기획1팀"),
     화면팀B: await makePerson("화면팀B", screenBRoleId, "기획1팀"),
   };
-  for (const roleId of [DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, CEO_ROLE_ID, ownRoleId, approverRoleId, screenARoleId, screenBRoleId]) {
-    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "expenses.payments", action: "write", allowed: true });
-  }
+  await upsertPermission(SYSTEM_VIEWER, { roleId: CEO_ROLE_ID, menu: "expenses.payments", action: "write", allowed: true });
   const plan2Staff = await makePerson("기획2직원", DEFAULT_ROLE_ID, "기획2팀");
   const mgmtStaff = await makePerson("경영직원", DEFAULT_ROLE_ID, "경영관리팀");
   const vendor = await insertVendor(SYSTEM_VIEWER, { name: "더테이블", normalizedName: `더테이블-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
@@ -497,7 +497,7 @@ async function reviewOpens(viewer: Viewer, expenseId: string): Promise<boolean> 
   try {
     await confirmEvidence(viewer, { expenseId, version: -1 });
   } catch (error) {
-    if (error instanceof EvidenceReviewNotFoundError) return false;
+    if (error instanceof EvidenceReviewNotFoundError || error instanceof ForbiddenError) return false;
     if (error instanceof EvidenceReviewConflictError) return true;
     throw error;
   }
@@ -516,7 +516,18 @@ const MATRIX_ENTRIES: readonly MatrixEntry[] = [
     sees: async (viewer, doc) => (await createEvidenceViewUrl(viewer, { fileId: doc.fileId ?? "" }, { storage: matrixStorage })) !== null,
   },
   { name: "검수", applies: () => true, sees: (viewer, doc) => reviewOpens(viewer, doc.id) },
-  { name: "지급 대상", applies: (doc) => doc.approved, sees: async (viewer, doc) => (await listAllPaymentTargets(viewer, {})).some((target) => target.row.id === doc.id) },
+  {
+    name: "지급 대상",
+    applies: (doc) => doc.approved,
+    sees: async (viewer, doc) =>
+      listAllPaymentTargets(viewer, {}).then(
+        (targets) => targets.some((target) => target.row.id === doc.id),
+        (error: unknown) => {
+          if (error instanceof ForbiddenError) return false;
+          throw error;
+        },
+      ),
+  },
 ];
 
 function matrixCaseName(person: MatrixPerson, doc: MatrixDoc, entry: string, visible: boolean): string {
@@ -525,7 +536,9 @@ function matrixCaseName(person: MatrixPerson, doc: MatrixDoc, entry: string, vis
 }
 
 const MATRIX_CASES = MATRIX_PEOPLE.flatMap((person) =>
-  MATRIX_DOCS.flatMap((doc) => MATRIX_ENTRIES.map((entry) => ({ person, doc, entry, visible: SEES[person].includes(doc) }))),
+  MATRIX_DOCS.flatMap((doc) =>
+    MATRIX_ENTRIES.map((entry) => ({ person, doc, entry, visible: SEES[person].includes(doc) && (!PAYMENT_ENTRY_NAMES.has(entry.name) || person === "대표") })),
+  ),
 );
 
 describe("06.2 보는 범위 일치 (SC-3)", () => {
@@ -600,7 +613,8 @@ describe("팀 이동 (검토 반영 R1: eng I9)", () => {
     await assignTeam(SYSTEM_VIEWER, { userId: mover.id, teamId: m.mgmt, effectiveFrom: seoulToday() });
     for (const entry of MATRIX_ENTRIES) {
       for (const doc of ["L1", "T1", "C"] as const) if (entry.applies(m.docs[doc])) expect(await entry.sees(mover, m.docs[doc]), `${entry.name} ${doc}`).toBe(false);
-      for (const doc of ["L3", "T3"] as const) if (entry.applies(m.docs[doc])) expect(await entry.sees(mover, m.docs[doc]), `${entry.name} ${doc}`).toBe(true);
+      // 07.3-01: 지급 처리 쓰기가 없으면 검수 · 지급 대상은 막힌다(위 매트릭스와 같음).
+      for (const doc of ["L3", "T3"] as const) if (entry.applies(m.docs[doc])) expect(await entry.sees(mover, m.docs[doc]), `${entry.name} ${doc}`).toBe(!PAYMENT_ENTRY_NAMES.has(entry.name));
     }
   });
 });

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { createAccount } from "@/domain/auth/accounts";
@@ -94,6 +95,8 @@ type SeedEntry = { entryDate: string; amount: MoneyInputDto; note?: string };
 // 04-16 Task 3 — 담당 PM 계정·프로젝트·견적 줄·발행·입금 줄을 도메인으로 심는다(화면 입력은 04-41 범위).
 async function seedRevenueProject(opts: {
   pmRoleId?: string;
+  /** 07.3-01: 매출 정산 쓰기(자금 키)를 가진 PM 계급이면 PM을 경영관리본부 소속으로(D-7301). */
+  fundDivision?: boolean;
   quoteAmounts?: number[];
   issued?: SeedEntry[];
   paid?: SeedEntry[];
@@ -134,6 +137,7 @@ async function seedRevenueProject(opts: {
   if (opts.issued || opts.paid) {
     await saveRevenue(SYSTEM_VIEWER, project.id, { issuedEntries: opts.issued, paidEntries: opts.paid });
   }
+  if (opts.fundDivision) await placeInFundDivision(pm.userId);
   return { projectUrl: `/projects/${project.id}`, email, password: pm.tempPassword };
 }
 
@@ -574,6 +578,7 @@ test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 
     }
     const seeded = await seedRevenueProject({
       pmRoleId: roleId,
+      fundDivision: true,
       quoteAmounts: [1_000_000],
       issued: [{ entryDate: "2026-09-01", amount: krw(1_000_000) }],
       paid: [{ entryDate: "2026-09-05", amount: krw(1_100_000) }],
@@ -640,6 +645,7 @@ test.describe("매출 표 합계 행 — 다른 표 충돌 줄 수 (결정 7)", 
     }
     const seeded = await seedRevenueProject({
       pmRoleId: roleId,
+      fundDivision: true,
       quoteAmounts: [1_000_000],
       issued: [{ entryDate: "2026-09-01", amount: krw(1_000_000) }],
       paid: [{ entryDate: "2026-09-05", amount: krw(1_100_000) }],
@@ -693,6 +699,7 @@ test.describe("매출 금액 입력 오류 → 그 셀 고정 오류 · 표별 �
     }
     const seeded = await seedRevenueProject({
       pmRoleId: roleId,
+      fundDivision: true,
       quoteAmounts: [1_000_000],
       issued: [{ entryDate: "2026-09-01", amount: krw(1_000_000) }],
       paid: [{ entryDate: "2026-09-05", amount: krw(1_100_000) }],

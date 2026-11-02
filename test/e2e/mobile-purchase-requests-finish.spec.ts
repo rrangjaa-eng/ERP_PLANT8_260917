@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect } from "@playwright/test";
 import { db } from "@/db/client";
 import { purchaseRequests } from "@/db/schema";
@@ -24,7 +25,10 @@ async function makePurchaser(): Promise<Person> {
   for (const infoItem of PURCHASER_VISIBLE) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E폰처리본부-${suffix}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E폰처리팀-${suffix}` });
-  return makePerson("폰처리", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("폰처리", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 async function seedRequest(requestedBy: string, number: string, itemName: string): Promise<void> {

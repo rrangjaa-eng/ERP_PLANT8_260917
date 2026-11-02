@@ -524,16 +524,15 @@ describe("검토 반영 (06-15 독립 검토)", () => {
     expect(row).toMatchObject({ id: doc.expenseId, selectable: false, reason: TAX_UNAVAILABLE, payableKrw: null });
   });
 
-  it("S-3 보임 범위 — 팀 범위 지급 권한자는 다른 팀 문서를 지급 대상에서 보지 못하고, 같은 팀 지급 권한자는 본다", async () => {
+  // 07.3-01: 지급 처리는 자금 키 — 본부 밖(기획1팀) 팀 범위 지급 권한자는 막히고(D-7301), 경영관리본부 안이면 팀 범위여도 전사 문서를 본다(D-7314).
+  it("S-3 보임 범위 — 경영관리팀 팀 범위 지급 권한자는 다른 팀 문서도 지급 대상에서 보고, 기획1팀 지급 권한자는 막힌다", async () => {
     const fx = await setupExpenseProject();
     const doc = await approvedExpenseWithoutEvidence(fx);
-    const otherTeam = await makeTeamPayer("경영관리팀");
-    const sameTeam = await makeTeamPayer("기획1팀");
+    const mgmtTeam = await makeTeamPayer("경영관리팀");
+    const planningTeam = await makeTeamPayer("기획1팀");
 
-    const hidden = await listPaymentTargets(otherTeam, {});
-    expect(rowsOf(hidden)).toEqual([]);
-    expect(hidden.total?.count).toBe(0);
-    expect(rowsOf(await listPaymentTargets(sameTeam, {})).map((row) => row.id)).toEqual([doc.expenseId]);
+    expect(rowsOf(await listPaymentTargets(mgmtTeam, {})).map((row) => row.id)).toEqual([doc.expenseId]);
+    await expect(listPaymentTargets(planningTeam, {})).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it("S-4 요청 안 중복 — 같은 문서를 두 번 실은 요청은 한 번만 처리 · 막힌 행 없음 · 살아 있는 지급 1", async () => {

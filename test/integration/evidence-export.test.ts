@@ -11,6 +11,7 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { createIntakeViewer, createPmInTeam, insertLiveLinkFixture, insertRecordFixture, setRecordArchivedFixture, setRecordVisibilityFixture } from "./fixtures/evidence";
+import { placeInFundDivision } from "./fixtures/fund-scope";
 
 // 06.1-13 G6(RP-16) — 증빙 목록 `파일 받기`. 서버가 목록과 같은 범위 · 거르개 · 투영으로 쪽과 무관하게 전체를 다시 읽고, 직렬화 전에
 // 끌 수 없는 기록 `excel_export`를 남긴다. 단언 대상 viewer는 등록 계급(임시) · 금액을 못 보는 등록 계급 · 시드 role-pm이다
@@ -69,6 +70,8 @@ async function createIntakeViewerWithoutAmount(): Promise<Viewer> {
   await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "evidence.value", visible: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "evidence.amount", visible: false });
   const { userId } = await createAccount(SYSTEM_VIEWER, { email: `noamount-${randomUUID()}@example.test`, name: "금액 없는 등록자", roleId });
+  // 07.3-01: 증빙 등록(자금 키) 보유자는 경영관리본부 소속이어야 한다(D-7301) — 본부 칸 = 경영관리본부.
+  await placeInFundDivision(userId);
   return { id: userId, roleId };
 }
 

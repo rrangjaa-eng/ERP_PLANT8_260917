@@ -13,7 +13,11 @@ import type { Viewer } from "@/domain/viewer";
 const defaults = vi.hoisted(() => ({
   findRoleById: vi.fn<(viewer: unknown, id: string) => Promise<{ viewScope: string } | null>>(),
 }));
-vi.mock("@/domain/permissions/can", () => ({ can: () => Promise.resolve(true) }));
+// 07.3-01(D-7314): 자금 키는 거짓 — 모든 메뉴가 참이면 아래 memo 사례(limited own)가 자금 확대로 all이 된다.
+vi.mock("@/domain/permissions/can", async () => {
+  const { isFundScopedMenu } = await import("@/domain/permissions/fund-scope");
+  return { can: (_v: unknown, menu: string) => Promise.resolve(!isFundScopedMenu(menu)) };
+});
 vi.mock("@/repositories/roles", () => ({ findRoleById: defaults.findRoleById }));
 vi.mock("@/repositories/team-memberships", () => ({ findMembershipAtDate: () => Promise.resolve(null) }));
 vi.mock("@/repositories/teams", () => ({ findTeamById: () => Promise.resolve(null) }));
@@ -189,6 +193,93 @@ describe("rowScopeFor (06.2 행 범위 서술자)", () => {
 });
 
 // 06.2(성공 기준 4 · eng I10): getSession()이 등록한 viewer 객체에만 요청 안 memo가 붙는다 — 다음 요청은 새 객체라 새 값을 읽는다.
+// 07.3-01(D-7314): 자금 담당(계급이 company가 아니어도 그 entity의 자금 키 짝 하나라도 can 참)은 회사 전체를 본다.
+// can 스텁은 action까지 본다(menu:action) — 실제 can은 자금 게이트를 거친다.
+describe("rowScopeFor 자금 확대 (07.3-01 D-7314)", () => {
+  function fundDeps(granted: string[], viewScope = "team") {
+    const can = vi.fn((_v: Viewer, menu: string, action: string) => Promise.resolve(granted.includes(`${menu}:${action}`)));
+    return {
+      can,
+      findRoleById: () => Promise.resolve({ viewScope }),
+      findMembershipAtDate: () => Promise.resolve({ teamId: "team-1" }),
+      findTeamById: () => Promise.resolve({ orgUnitId: "org-1" }),
+      today: () => "2026-10-27",
+    };
+  }
+
+  it.each(["projects.adjustment:write", "projects.budget:view", "projects.revenue:view"])("project — %s가 참이면 team 계급도 all이다", async (key) => {
+    expect(await rowScopeFor(viewer, "project", fundDeps(["projects:view", key]))).toEqual({ rows: "all", includeArchived: false });
+  });
+
+  it.each(["expenses.payments:write", "expenses.evidence_void:write", "expenses.evidence_attach:write"])("expense — %s가 참이면 team 계급도 all이다", async (key) => {
+    expect(await rowScopeFor(viewer, "expense", fundDeps(["expenses:view", key], "own"))).toEqual({ rows: "all", includeArchived: false });
+  });
+
+  it("보관함 보기는 확대 뒤에도 그대로 실린다", async () => {
+    expect(await rowScopeFor(viewer, "project", fundDeps(["projects:view", "admin.archive:view", "projects.budget:view"]))).toEqual({
+      rows: "all",
+      includeArchived: true,
+    });
+  });
+
+  it.each([
+    ["증빙 등록 쓰기만", "expense", ["expenses:view", "evidence.intake:write"]],
+    ["구매 처리 쓰기만", "expense", ["expenses:view", "cards.purchases:write"]],
+    ["지급 처리 보기만(쓰기 아님)", "expense", ["expenses:view", "expenses.payments:view"]],
+    ["프로젝트 자금 키로 지출결의", "expense", ["expenses:view", "projects.budget:view"]],
+    ["지출결의 자금 키로 프로젝트", "project", ["projects:view", "expenses.payments:write"]],
+    ["조정 줄 보기만(쓰기 아님)", "project", ["projects:view", "projects.adjustment:view"]],
+  ] as const)("%s이면 넓히지 않는다(키 매핑)", async (_label, entity, granted) => {
+    expect(await rowScopeFor(viewer, entity, fundDeps([...granted]))).toMatchObject({ rows: "limited", by: { kind: "team", teamId: "team-1" } });
+  });
+
+  it("메뉴 보기가 없으면 자금 키가 있어도 none이다", async () => {
+    expect((await rowScopeFor(viewer, "expense", fundDeps(["expenses.payments:write"]))).rows).toBe("none");
+  });
+
+  it("company 계급은 자금 키를 묻지 않고 all이다", async () => {
+    const deps = fundDeps(["projects:view"], "company");
+    expect((await rowScopeFor(viewer, "project", deps)).rows).toBe("all");
+    expect(deps.can.mock.calls.map(([, menu]) => menu)).toEqual(["projects", "admin.archive"]);
+  });
+
+  // 07.3-01 Q5(사용자 카드 2026-11-02 「넓힌 범위는 보기에만」): 쓰기는 원래 범위, 자금 작업은 그 키 하나로만 넓힌다.
+  it.each([
+    ["project", ["projects:view", "projects.budget:view", "projects.adjustment:write", "projects.revenue:view"]],
+    ["expense", ["expenses:view", "expenses.payments:write", "expenses.evidence_void:write", "expenses.evidence_attach:write"]],
+  ] as const)("%s 쓰기 범위는 자금 키가 다 있어도 넓히지 않는다", async (entity, granted) => {
+    expect(await rowScopeFor(viewer, entity, fundDeps([...granted]), "write")).toMatchObject({ rows: "limited", by: { kind: "team", teamId: "team-1" } });
+  });
+
+  it("자금 작업 범위는 그 작업 키가 참일 때만 all이다 — 다른 자금 키로는 넓히지 않는다", async () => {
+    const op = { fundOp: ["projects.adjustment", "write"] } as const;
+    expect(await rowScopeFor(viewer, "project", fundDeps(["projects:view", "projects.budget:view"]), op)).toMatchObject({ rows: "limited" });
+    expect(await rowScopeFor(viewer, "project", fundDeps(["projects:view", "projects.adjustment:write"]), op)).toEqual({ rows: "all", includeArchived: false });
+  });
+
+  // 07.3-01 Q5 검토 F2: 다른 entity의 자금 키를 자금 작업으로 넘겨도 넓히지 않는다(fail-closed).
+  it.each([
+    ["project", ["projects:view", "expenses.payments:write"], ["expenses.payments", "write"]],
+    ["project", ["projects:view", "cards.purchases:write"], ["cards.purchases", "write"]],
+    ["expense", ["expenses:view", "projects.adjustment:write"], ["projects.adjustment", "write"]],
+  ] as const)("%s 자금 작업에 그 entity 밖 키 %j → %j는 넓히지 않는다", async (entity, granted, fundOp) => {
+    expect(await rowScopeFor(viewer, entity, fundDeps([...granted]), { fundOp })).toMatchObject({ rows: "limited", by: { kind: "team", teamId: "team-1" } });
+  });
+
+  it.each([
+    ["projects.adjustment", "write"],
+    ["projects.budget", "write"],
+    ["projects.revenue", "write"],
+  ] as const)("project 자금 작업 %s:%s는 그 키로 넓힌다", async (menu, action) => {
+    expect(await rowScopeFor(viewer, "project", fundDeps(["projects:view", `${menu}:${action}`]), { fundOp: [menu, action] })).toEqual({ rows: "all", includeArchived: false });
+  });
+
+  it("자금 작업 범위도 메뉴 보기가 없으면 none이다", async () => {
+    const op = { fundOp: ["projects.adjustment", "write"] } as const;
+    expect((await rowScopeFor(viewer, "project", fundDeps(["projects.adjustment:write"]), op)).rows).toBe("none");
+  });
+});
+
 describe("rowScopeFor 요청 memo", () => {
   const findRoleById = defaults.findRoleById;
   function roleScope(viewScope: () => string) {
@@ -234,6 +325,16 @@ describe("rowScopeFor 요청 memo", () => {
     await rowScopeFor(v, "project");
     await rowScopeFor(v, "expense");
     await rowScopeFor(v, "expense");
+    expect(findRoleById).toHaveBeenCalledTimes(2);
+  });
+
+  it("등록한 viewer의 보기 · 쓰기 범위는 따로 memo된다(07.3-01 Q5)", async () => {
+    const v: Viewer = { id: "u1", roleId: "role-pm" };
+    memoizeRowScopeForRequest(v);
+    roleScope(() => "team");
+    await rowScopeFor(v, "project");
+    await rowScopeFor(v, "project", undefined, "write");
+    await rowScopeFor(v, "project", undefined, "write");
     expect(findRoleById).toHaveBeenCalledTimes(2);
   });
 

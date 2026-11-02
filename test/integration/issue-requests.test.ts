@@ -20,6 +20,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertRole } from "@/repositories/roles";
 import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
 import { deferred, waitForLockWaiter, type Deferred } from "./lock-race";
+import { placeInFundDivision } from "./fixtures/fund-scope";
 
 // 06-18 — 발행 요청(D-610): PM이 요청 줄을 일괄 저장하고, 매출 기록 권한자가 새 발행 줄에 `fromIssueRequestId`를 실어 저장하면
 // 같은 트랜잭션에서 요청이 `발행됨`으로 이어진다. 표는 06-27, 이 파일은 domain · 원장 경로만 본다(UI는 E2E).
@@ -788,13 +789,15 @@ describe("발행 요청 — 남의 프로젝트 요청 행은 잠그지 않는�
 
 // 06-21 Task 2 — S17 발행 요청 목록(listIssueRequests). 통합 DB는 모든 테스트가 같이 쓰므로 보는 범위 own 계급의 사람을 PM으로 둔
 // 프로젝트를 만들어 그 사람의 목록에는 그 프로젝트의 요청만 서게 한다.
-async function createBoardViewer(opts: { revenueView: boolean; issuedAmount: boolean }): Promise<Viewer> {
+// 07.3-01: projects.revenue는 자금 키 — 보유자는 경영관리본부 소속(D-7301 · 본부 칸)이고 프로젝트 범위가 전사다(D-7314). fundDivision이 거짓이면 소속 없음(막힘).
+async function createBoardViewer(opts: { revenueView: boolean; issuedAmount: boolean; fundDivision?: boolean }): Promise<Viewer> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `발행 요청 목록-${randomUUID()}`, viewScope: "own" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   if (opts.revenueView) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.revenue", action: "view", allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "revenue.issued_amount", visible: opts.issuedAmount });
   const { userId } = await createAccount(SYSTEM_VIEWER, { email: `board-${randomUUID()}@example.test`, name: "목록 보는 사람", roleId: role.id });
+  if (opts.fundDivision !== false) await placeInFundDivision(userId);
   return { id: userId, roleId: role.id };
 }
 
@@ -885,17 +888,20 @@ describe("발행 요청 목록 (listIssueRequests — S17, 06-21 Task 2)", () =>
     expect(first.totals.count).toBe(51);
   });
 
-  it("보는 범위 밖 프로젝트의 요청은 서지 않는다", async () => {
+  // 07.3-01: 매출 보기(자금 키) 계급은 보는 범위 own이어도 프로젝트 범위가 전사라(D-7314) 「범위 밖 프로젝트」를 만들 수 없다 — 본부 밖이면 막힌다(D-7301).
+  it("보는 범위 own이어도 매출 보기면 다른 사람 프로젝트 요청도 서고, 경영관리본부 밖이면 막힌다", async () => {
     const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
     const other = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const outsider = await createBoardViewer({ revenueView: true, issuedAmount: true, fundDivision: false });
     const mine = await boardProject(viewer);
     const theirs = await boardProject(other);
     const own = await seedBoardRequest(mine.id, viewer.id, { desiredIssueDate: "2026-10-14" });
-    await seedBoardRequest(theirs.id, other.id, { desiredIssueDate: "2026-10-14" });
+    const their = await seedBoardRequest(theirs.id, other.id, { desiredIssueDate: "2026-10-14" });
 
     const list = await listIssueRequests(viewer, {}, { today: TODAY });
 
-    expect(list.rows.map((row) => row.id)).toEqual([own]);
+    expect(list.rows.map((row) => row.id).sort()).toEqual([own, their].sort());
+    await expect(listIssueRequests(outsider, {}, { today: TODAY })).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 

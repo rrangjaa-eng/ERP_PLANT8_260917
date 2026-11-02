@@ -83,6 +83,7 @@ export class RevisionNotFoundError extends UserFacingError {}
 
 const PROJECTS_MENU = "projects";
 const ADJUSTMENT_MENU = "projects.adjustment";
+const ADJUSTMENT_OP = { fundOp: [ADJUSTMENT_MENU, "write"] } as const;
 const QUOTE_LINE_ENTITY = "quote_line";
 // 06-13 — 증빙 파일 주인 종류(domain/expenses EXPENSE_DOCUMENT_KIND와 같은 값 — domain/expenses를 import하지 않는다, 순환 금지).
 const EXPENSE_OWNER_KIND = "expense";
@@ -817,7 +818,9 @@ export async function prepareQuoteLineSave(
   }
 
   // 06.2(Pitfall 1 · M2): 권리 판정 다음 · 트랜잭션 전 — 범위 밖 차수는 없는 차수와 같은 문구.
-  if (!(await canOpenRevision(viewer, revisionId))) throw new RevisionNotFoundError("존재하지 않는 차수");
+  // 07.3-01 Q5: 쓰기는 원래 범위 — 그 밖 차수는 조정 쓰기 키로 넓힌 범위 안일 때 조정 줄만(canWrite 거짓).
+  const inWriteScope = await canOpenRevision(viewer, revisionId, "write");
+  if (!inWriteScope && !(canAdjust && (await canOpenRevision(viewer, revisionId, ADJUSTMENT_OP)))) throw new RevisionNotFoundError("존재하지 않는 차수");
   const revision = await repoFindQuoteRevisionById(viewer, revisionId);
   if (!revision) throw new RevisionNotFoundError("존재하지 않는 차수");
 
@@ -826,7 +829,7 @@ export async function prepareQuoteLineSave(
     projectId: revision.projectId,
     customFieldsSchema: await quoteLineCustomFieldsSchema(viewer),
     lineCap: await getSettingValue(QUOTE_LINE_MAX_PER_REVISION),
-    canWrite,
+    canWrite: canWrite && inWriteScope,
     canAdjust,
     vendorNamesVisible: (await Promise.all([defaultVisible(viewer, "project.value"), defaultVisible(viewer, "vendor.value")])).every(Boolean),
     vendorShown: await defaultVisible(viewer, "vendor.value"),
@@ -1423,7 +1426,9 @@ export async function restoreQuoteLine(
   const revision = line ? await repoFindQuoteRevisionById(viewer, line.revisionId) : null;
   if (!line || !revision) throw new RevisionNotFoundError("대상 찾을 수 없음");
   // 06.2(Pitfall 1): 줄 → 차수 → 프로젝트 범위. 범위 밖 줄은 없는 줄과 같은 문구.
-  if (!(await canOpenRevision(viewer, line.revisionId))) throw new RevisionNotFoundError("대상 찾을 수 없음");
+  // 07.3-01 Q5: 저장과 같은 갈래 — 원래 범위 밖은 조정 쓰기 키로 넓힌 범위 안일 때 조정 줄만(canWrite 거짓).
+  const inWriteScope = await canOpenRevision(viewer, line.revisionId, "write");
+  if (!inWriteScope && !(canAdjust && (await canOpenRevision(viewer, line.revisionId, ADJUSTMENT_OP)))) throw new RevisionNotFoundError("대상 찾을 수 없음");
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   // 04-26(A-19 · ENG-D3 ①) — 상한 값은 트랜잭션 전에 읽는다. 복원도 줄 하나를 더하는 것이라 같은 상한을 지난다.
   const lineCap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
@@ -1441,7 +1446,7 @@ export async function restoreQuoteLine(
     const latest = await repoFindLatestQuoteRevision(viewer, revision.projectId, tx);
     const approvedSeq = latest?.customerApprovedAt ? latest.seq : null;
     const change = { kind: "restore", quoteAmountZero: current.quoteAmountKrw === 0 } as const;
-    const actor = { lineKind: lineKindOf(current), actorCanWrite: canWrite, actorCanAdjust: canAdjust, approvedSeq };
+    const actor = { lineKind: lineKindOf(current), actorCanWrite: canWrite && inWriteScope, actorCanAdjust: canAdjust, approvedSeq };
     const ctx: ProjectLineEditCtx = firstLinked
       ? { status: projectRow.status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, linkedDocumentPaid: firstLinked.paid === true, change }
       : { status: projectRow.status, ...actor, hasLinkedDocuments: false, change };

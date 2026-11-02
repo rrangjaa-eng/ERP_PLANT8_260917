@@ -297,11 +297,12 @@ describe("지급 대상 · 지급 완료 검색(06.5 D-6508 · Task 2)", () => {
     expect(none.hasAny).toBe(true);
   }, 90_000);
 
-  it("지급 대상: 보는 범위 밖 문서는 번호를 정확히 넣어도 0건이다(T-06.5-61)", async () => {
+  // 07.3-01: 지급 처리는 자금 키 — 경영관리본부 안 팀 범위 지급 권한자의 지출결의 범위는 전사다(D-7314). 범위 밖 0건은 목록 검색(위 T-06.5-61)이 본다.
+  it("지급 대상: 경영관리팀 팀 범위 지급 권한자는 다른 팀 문서도 번호로 찾는다(07.3-01 D-7314)", async () => {
     const w = await paidWorld();
-    const outsider = await payer({ value: true, amount: true, person: true }, "경영관리팀");
+    const mgmtTeamPayer = await payer({ value: true, amount: true, person: true }, "경영관리팀");
 
-    expect(targetIds(await listPaymentTargets(outsider, { q: w.a.number }))).toEqual([]);
+    expect(targetIds(await listPaymentTargets(mgmtTeamPayer, { q: w.a.number }))).toEqual([w.a.expenseId]);
     expect(targetIds(await listPaymentTargets(await payer({ value: true, amount: true, person: true }), { q: w.a.number }))).toEqual([w.a.expenseId]);
   }, 90_000);
 

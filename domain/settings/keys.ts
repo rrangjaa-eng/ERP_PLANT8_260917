@@ -4,6 +4,7 @@ import type { SettingDef } from "@/domain/settings/registry";
 import { ALWAYS_ON_ACTION_TYPES, CORE_ACTION_TYPES, type CoreActionType } from "@/domain/action-log/record";
 import { normalizeContactPhone } from "@/domain/certs/format";
 import { CARD_USAGE_NUMBER_MARK } from "@/domain/document-numbering/marks";
+import { FUND_DIVISION_SETTING_KEY } from "@/domain/permissions/fund-scope";
 
 // ROADMAP Phase 3 성공 기준 4가 열거한 키의 정본. 각 항목이 namespace(설정
 // 화면 섹션)·label(짧은 이름)·hint(한 문장, 최대 한 줄)·schema(범위·타입만,
@@ -1403,6 +1404,20 @@ export const EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT: SettingDef<string> = {
 };
 
 SETTING_DEFS.push(EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT);
+
+// 07.3-01(D-7310): 자금 기능 8키를 쓸 수 있는 본부 — 이름이 아니라 본부 uuid 하나로 가리킨다. 기본값이 없어 일반 시드 루프가 건너뛰고
+// domain/seed/fund-scope.ts가 값이 없을 때만 경영관리본부로 채운다. 비우면 자금 기능은 회사 전체 계급만 쓴다(fail-closed).
+export const FUND_DIVISION_ORG_UNIT: SettingDef<string> = {
+  key: FUND_DIVISION_SETTING_KEY,
+  kind: "simple",
+  schema: z.string().uuid(),
+  label: "자금 기능 본부",
+  hint: "증빙 등록 · 지급 · 구매 · 조정 · 예산 · 매출 정산",
+  namespace: "권한",
+  dynamicOptions: "org_units",
+};
+
+SETTING_DEFS.push(FUND_DIVISION_ORG_UNIT);
 
 // ── 05-11 정산 결재 결재선(D-98 · UI-SPEC S13) ───────────────────────────
 // 지출결의 결재선 17키와 같은 꼴 · 같은 라벨(namespace만 다르다). 기본값은 1~3단 꺼짐 · 4단 대표 × 전사 · 자기 승인 = 본인 승인 —

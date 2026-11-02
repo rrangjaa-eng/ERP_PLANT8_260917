@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { loginPage } from "./leave-org";
 import { loginAsAdmin } from "./people-list-helpers";
 import { setupExpenseE2E, archiveTempRoles } from "./expense-fixture";
-import { makeTeamPayer, payCalendar, pushedDoc, targetsGrid } from "./pay-schedule-e2e";
+import { makeTeamPayer, payCalendar, payTargetsUrl, pushedDoc, targetsGrid } from "./pay-schedule-e2e";
 
 // 07.1-18 Task 1 (W1 머리글 · S3) — 머리글 높이는 글자가 정한다. 선택 열(체크박스 머리글)이 있어도 없어도 같다.
 // 한 줄 머리글 표(지급 대상 보기 · 목록 보기)는 `thead tr` ≤ 47(1280 · 1024 · 768 · 700), 머리글이 줄바꿈하는 표(/admin/people 768)는
@@ -40,13 +40,13 @@ test("지급 대상 보기(선택 열 있음)와 승인 보기(선택 열 없음
   const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await expect(page.getByLabel("상태")).toHaveValue("지급 대상");
     await expect(targetsGrid(page).or(page.getByRole("table", { name: "지급 대상" }))).toBeVisible();
     const withSelect = await headerHeight(page, "table");
     // 선택 열(체크박스 머리글)은 편집 가능 폭(≥1024)에서만 있다 — 그 아래는 높이가 같은지만 본다.
     if (width >= 1024) expect(await page.locator("table").first().locator("thead input[type=checkbox]").count(), `${width} 선택 열`).toBeGreaterThan(0);
-    await page.goto("/expenses?status=" + encodeURIComponent("승인"));
+    await page.goto(`/expenses?${new URLSearchParams({ status: "승인", team: fx.teamId })}`);
     await expect(page.locator("table").first()).toBeVisible();
     const without = await headerHeight(page, "table");
     expect(await page.locator("table").first().locator("thead input[type=checkbox]").count(), `${width} 선택 열 없음`).toBe(0);

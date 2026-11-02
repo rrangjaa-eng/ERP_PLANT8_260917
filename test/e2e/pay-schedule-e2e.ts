@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -43,7 +44,16 @@ export async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.team", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of PAY_INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-  return makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
+}
+
+// 07.3-01(D-7314): 자금 담당은 회사 전체 문서를 본다 — 공유 E2E DB에서 다른 스펙 행이 쪽(50건)을 넘기고 합계 · 건수에 섞이므로,
+// 지급 대상 화면은 이 스펙 프로젝트 팀의 `team` 거르개로 겨눈다(거르개는 서버 쪽 목록 단계라 쪽 · 합계 · 행이 모두 그 팀만이다).
+export function payTargetsUrl(teamId: string, extra: Record<string, string> = {}): string {
+  return `/expenses?${new URLSearchParams({ status: "지급 대상", team: teamId, ...extra })}`;
 }
 
 export type PayCalendar = { today: string; cfg: PayScheduleConfig; lookup: HolidayLookup; thisPay: string };

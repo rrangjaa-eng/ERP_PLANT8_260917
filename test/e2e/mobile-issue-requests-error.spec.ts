@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -31,6 +32,8 @@ test.describe("폰 375 발행 요청 목록 오류 경계 (06-21 S17)", () => {
     const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
     const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
     await assignTeam(SYSTEM_VIEWER, { userId: account.userId, teamId: team.id, effectiveFrom: today });
+    // 07.3-01: 매출 정산 보기는 자금 키 — 경영관리본부 소속이어야 목록이 열린다(D-7301). 발령 뒤라 그 발령을 경영관리팀으로 바꾼다(팀이 이긴다).
+    await placeInFundDivision(account.userId);
     const project = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: account.userId, name: `E2E발행목록오류-${randomUUID().slice(0, 8)}`, startDate: today, endDate: addDays(today, 10) });
     await insertIssueRequest(
       SYSTEM_VIEWER,

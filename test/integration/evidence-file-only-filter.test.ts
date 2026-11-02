@@ -15,6 +15,7 @@ import { makePerson } from "./approvals-fixtures";
 import { resetDatabase, skipDbReset } from "./setup";
 import { makeEvidenceManager, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 import { makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
+import { ForbiddenError } from "@/domain/permissions/can";
 
 // 06.1-10(EVID-12 · RP-10 · PA-FILEONLY-SET · PA-FILEONLY-WAIVED): 지급 대상 목록 `evidence=file-only`(「파일만 있음」).
 // 판정은 06.1-12 judgeTargets의 묶음 읽기(evidenceSourcesOf — 파일 수 · 붙임 수) 결과만 쓴다. 증빙 종류 ∈ 파일 서식 종류 ∧ 살아 있는 파일 ≥ 1 ∧
@@ -148,15 +149,16 @@ describe("지급 대상 `파일만 있음` (06.1-10)", () => {
     expect(await fileOnlyIds(payer, docs.fileAndLink?.number)).toEqual([]);
   });
 
-  it("보는 범위와 AND — 범위 밖 팀 계급에는 안 보이고 같은 팀 계급에는 보인다", async () => {
+  // 07.3-01: 지급 처리는 자금 키 — 경영관리팀 팀 범위 지급 권한자는 다른 팀 문서도 보고(D-7314), 기획1팀(문서와 같은 팀)은 막힌다(D-7301).
+  it("보는 범위와 AND — 경영관리팀 팀 범위 계급에는 보이고 본부 밖 같은 팀 계급은 막힌다", async () => {
     const roleId = `role-${randomUUID()}`;
     await insertRole(SYSTEM_VIEWER, { id: roleId, name: `팀지급-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
     await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "expenses", action: "view", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "expenses.payments", action: "write", allowed: true });
-    const outsider = await makePerson("범위밖", roleId, "경영관리팀");
-    const insider = await makePerson("범위안", roleId, "기획1팀");
-    expect(await fileOnlyIds(outsider)).toEqual([]);
-    expect((await fileOnlyIds(insider)).length).toBeGreaterThanOrEqual(1);
+    const mgmtTeam = await makePerson("경영관리팀", roleId, "경영관리팀");
+    const planningTeam = await makePerson("기획1팀", roleId, "기획1팀");
+    expect((await fileOnlyIds(mgmtTeam)).length).toBeGreaterThanOrEqual(1);
+    await expect(fileOnlyIds(planningTeam)).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it("지급 대상 목록(listPaymentTargets)도 같은 값으로 거른다 — 합계 건수 · 행", async () => {

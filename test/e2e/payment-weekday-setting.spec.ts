@@ -5,7 +5,7 @@ import { PAYMENT_WEEKDAY } from "@/domain/settings/keys";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { loginPage } from "./leave-org";
 import { setupExpenseE2E } from "./expense-fixture";
-import { addDays, approvedDoc, groupOf, makeTeamPayer, payCalendar, targetsGrid } from "./pay-schedule-e2e";
+import { addDays, payTargetsUrl, approvedDoc, groupOf, makeTeamPayer, payCalendar, targetsGrid } from "./pay-schedule-e2e";
 
 // 07-16 B-P3-9 — 공용 설정 `payment.weekday`를 바꾸는 스펙이라 desktop-settings 한 워커에서만 돈다(playwright.config.ts DESKTOP_SETTINGS_SPECS).
 // 머리글 요일 글자는 화면이 만들지 않고 07-01 라벨(설정 요일로 셈한 지급일)을 그대로 그린다 — 설정을 목요일로 바꾸면 머리글이 `목`.
@@ -34,7 +34,7 @@ test.describe.serial("설정 지급 요일 → 지급 대상 머리글 (07-16 Ta
     expect(label).toMatch(/^(이번|다음) 주 목 /);
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await page.goto("/expenses");
+    await page.goto(payTargetsUrl(fx.teamId));
     await expect(targetsGrid(page)).toBeVisible();
     expect(await groupOf(page, fx.lines.retry.itemName)).toBe(label);
     await page.context().close();

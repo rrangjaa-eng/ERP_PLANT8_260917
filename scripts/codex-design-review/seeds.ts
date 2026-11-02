@@ -32,7 +32,7 @@ import { setResignationDate } from "@/domain/people";
 import { lockoutConfig } from "@/domain/auth/lockout";
 import { recordAttempt } from "@/repositories/login-attempts";
 import { setSettingValue } from "@/domain/settings/registry";
-import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
+import { FUND_DIVISION_ORG_UNIT, PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { listCodeItems, setCodeItemActive } from "@/repositories/code-tables";
 import type { SeedName } from "./lib";
@@ -402,6 +402,8 @@ async function paymentAndSettlementActions(browser: Browser, baseURL: string | u
 
   // 기안자(담당 PM)가 정산 다시 올리기와 지급 행동 줄을 한 화면 세션에서 모두 보도록 role-pm에 지급·증빙 무효 쓰기를 준다(erp_test는 캡처마다 초기화된다).
   for (const menu of ["expenses.payments", "expenses.evidence_void"]) await upsertPermission(SYSTEM_VIEWER, { roleId: "role-pm", menu, action: "write", allowed: true });
+  // 07.3-01(D-7301): 자금 키는 자금 본부 소속에만 통한다 — 이 캡처 DB에서만 자금 본부를 기안자 본부로 둔다.
+  await setSettingValue(SYSTEM_VIEWER, FUND_DIVISION_ORG_UNIT, orgUnit.id);
   return { vars: { projectId: project.id, expenseId, cardUsageId: cardUsage.id }, viewer: drafter };
 }
 

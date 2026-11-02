@@ -55,6 +55,7 @@ import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
 import { ONLINE_VENDOR, purchaseProject, request, requestInput, type PurchaseFx } from "./fixtures/purchase-requests";
 import { addApprovedRevision, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { placeInFundDivision } from "./fixtures/fund-scope";
 import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06-08(EXP-10 · D-609 · Q3 · GA-38): 구매 요청 신청 경로 통합 파일 — 06-12 · 06-14가 `describe`를 더한다.
@@ -546,6 +547,7 @@ describe("구매 요청 목록 범위", () => {
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
     for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
     const purchaser = await person("구매담당", role.id);
+    await placeInFundDivision(purchaser.id);
     const ceo = await person("목록대표", "role-ceo");
     const staff = await person("목록직원", DEFAULT_ROLE_ID);
 
@@ -625,7 +627,10 @@ async function purchaser(name = "구매담당", hidden: string[] = [], alsoProxy
   }
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `처리본부-${randomUUID()}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `처리팀-${randomUUID()}` });
-  return makePerson(name, role.id, team.name);
+  const person = await makePerson(name, role.id, team.name);
+  // 07.3-01: 구매 처리는 자금 키 — 처리자는 경영관리본부 소속이다(경영관리팀 발령 · 요청자와 다른 팀 그대로).
+  await placeInFundDivision(person.id);
+  return person;
 }
 
 // 공용 카드 — 구매 권한자는 활성 카드 전부를 쓴다(Q5).

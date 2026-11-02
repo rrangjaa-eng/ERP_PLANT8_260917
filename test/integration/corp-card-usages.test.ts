@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "./fixtures/fund-scope";
 import { describe, expect, it, vi } from "vitest";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -1435,6 +1436,8 @@ describe("[07.1-11 D-7112 · W12] 보관 카드 표시 · 거르개 옵션", () 
     for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value", "quote.amount", "card_usage.value", "card_usage.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
     const team = await makeTeam();
     const buyer = await makePerson("구매담당", role.id, team.name);
+    // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+    await placeInFundDivision(buyer.id);
     const oldCard = await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${randomUUID().slice(0, 6)}`, numberLast4: "1111", label: "공용 옛 카드", kind: "shared" });
     const newCard = await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${randomUUID().slice(0, 6)}`, numberLast4: "2222", label: "공용 새 카드", kind: "shared" });
     const [request] = await db

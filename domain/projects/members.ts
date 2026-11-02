@@ -101,7 +101,8 @@ async function loadManagedProject(viewer: Viewer, projectId: string, todayKst: s
     key &&
     !pm &&
     coversProjectTeam(teamScope, project.teamId) &&
-    (await findProjectInScope(viewer, scope, projectId, undefined, { excludeMembership: true })) !== null;
+    // 07.3-01 Q5: 관리(쓰기)는 자금 확대 없는 원래 범위 — 보기(위 project)는 넓힌 범위 그대로.
+    (await findProjectInScope(viewer, await projectRowScope(viewer, undefined, "write"), projectId, undefined, { excludeMembership: true })) !== null;
   return { project, manage: key && (pm || work) };
 }
 

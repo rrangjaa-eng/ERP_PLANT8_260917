@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -11,6 +12,7 @@ import { seoulToday } from "@/lib/dates";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { archiveTempRoles, insertTempRole, setupExpenseE2E, type ExpenseE2E, type LineKey } from "./expense-fixture";
+import { payTargetsUrl } from "./pay-schedule-e2e";
 
 // 06.1-10(EVID-12 · UI-SPEC S9): 지급 대상 목록 `[증빙 전체 ▾]`의 마지막 선택지 `파일만 있음` → URL `evidence=file-only` → 파일만 있고 증빙 기록 붙임이 없는 문서만.
 // 문서는 도메인 함수로 만든다(파일은 메모리 가짜 저장소로 붙여 제출 · 증빙 기록 붙임은 표에 직접 — 붙이기 화면은 06.1-06 몫). 지급 권한자는 이 스펙 프로젝트의 팀 문서만 본다.
@@ -25,7 +27,10 @@ async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const [project] = await db.select({ teamId: projects.teamId }).from(projects).where(eq(projects.id, fx.projectId));
   if (!project?.teamId) throw new Error("프로젝트 팀 없음");
-  return makePerson("경영관리", role.id, project.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("경영관리", role.id, project.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 async function insertLink(ownerId: string, by: string): Promise<void> {
@@ -71,7 +76,7 @@ test.describe("지급 대상 `파일만 있음` (06.1-10)", () => {
     await approvedTarget(fx, "hold", true);
     const page = await loginPage(browser, baseURL, await makeTeamPayer(fx));
 
-    await page.goto(PAY_URL);
+    await page.goto(payTargetsUrl(fx.teamId));
     await expect(rowOf(page, fx.lines.tracer.itemName)).toHaveCount(1);
     await expect(rowOf(page, fx.lines.hold.itemName)).toHaveCount(1);
     const select = page.getByLabel("증빙", { exact: true });
@@ -96,7 +101,7 @@ test.describe("지급 대상 `파일만 있음` (06.1-10)", () => {
     await approvedTarget(fx, "tracer", true);
     const page = await loginPage(browser, baseURL, await makeTeamPayer(fx));
 
-    await page.goto(`${PAY_URL}&evidence=file-only`);
+    await page.goto(payTargetsUrl(fx.teamId, { evidence: "file-only" }));
     await expect(page.getByText("조건에 맞는 건이 없습니다")).toBeVisible();
     await expect(page.getByRole("link", { name: "필터 지우기" })).toHaveAttribute("href", PAY_URL);
     await page.context().close();

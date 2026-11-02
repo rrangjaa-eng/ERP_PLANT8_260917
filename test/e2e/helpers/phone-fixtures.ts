@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { placeInFundDivision } from "@/test/integration/fixtures/fund-scope";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { expenseEvidenceReviews, expensePayments, expenses, files, purchaseRequests, quoteLines } from "@/db/schema";
@@ -85,7 +86,10 @@ export async function makePurchaser(): Promise<Person> {
   for (const infoItem of PURCHASER_VISIBLE) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E폰처리본부-${suffix}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E폰처리팀-${suffix}` });
-  return makePerson("처리", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("처리", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 export type RequestMoney = { currency: "KRW" | "USD"; amount: number; fxRate: number };
@@ -116,7 +120,10 @@ export async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.team", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-  return makePerson("폰지급", role.id, fx.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  const person = await makePerson("폰지급", role.id, fx.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+  await placeInFundDivision(person.viewer.id);
+  return person;
 }
 
 /** 줄 하나 → 증빙 붙여 제출 → 결재 넷 승인 → 지급 권한자 확인 → 오늘 지급(`pay: false`면 확인까지 = 지급 대상). 문서 id. */

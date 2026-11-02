@@ -17,6 +17,7 @@ import {
   pushedDoc,
   setVendorTerm,
   targetRow,
+  payTargetsUrl,
   targetsGrid,
 } from "./pay-schedule-e2e";
 
@@ -27,8 +28,8 @@ import {
 
 test.afterAll(archiveTempRoles);
 
-async function openTargets(page: Page): Promise<void> {
-  await page.goto("/expenses");
+async function openTargets(page: Page, teamId: string): Promise<void> {
+  await page.goto(payTargetsUrl(teamId));
   await expect(page.getByLabel("상태")).toHaveValue("지급 대상");
   await expect(targetsGrid(page)).toBeVisible();
 }
@@ -47,7 +48,7 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     const itemName = fx.lines.tracer.itemName;
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await openTargets(page);
+    await openTargets(page, fx.teamId);
     const row = targetRow(page, itemName);
     expect(await groupOf(page, itemName)).toBe(payWeekGroupLabel(schedule, cal.today).label);
     const pushedTag = row.getByText("마감 지나 밀림", { exact: true });
@@ -94,7 +95,7 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     const stale = fx.lines.retry.itemName;
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await openTargets(page);
+    await openTargets(page, fx.teamId);
     await targetsGrid(page).getByRole("checkbox", { name: `${moved} 고르기` }).check();
     await targetsGrid(page).getByRole("checkbox", { name: `${stale} 고르기` }).check();
     // 화면이 읽은 뒤 다른 사람이 그 문서를 바꿈 — version 충돌로 그 건만 거부(T-07-16-04).
@@ -124,7 +125,7 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     const stale = fx.lines.retry.itemName;
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await openTargets(page);
+    await openTargets(page, fx.teamId);
     await targetsGrid(page).getByRole("checkbox", { name: `${back} 고르기` }).check();
     await targetsGrid(page).getByRole("checkbox", { name: `${stale} 고르기` }).check();
     await page.getByRole("button", { name: "이번 주로", exact: true }).click();
@@ -151,7 +152,7 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     const itemName = fx.lines.tracer.itemName;
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await openTargets(page);
+    await openTargets(page, fx.teamId);
     await db.update(expenses).set({ version: sql`${expenses.version} + 1` }).where(eq(expenses.id, doc.id));
     await targetRow(page, itemName).getByRole("button", { name: `${itemName} 이번 주로` }).click();
     await expect(moveStatus(page)).toHaveText(/^이번 주로 실패 · .*바꿈 · 새로 고침$/);
@@ -168,7 +169,7 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     const itemName = fx.lines.phone.itemName;
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await openTargets(page);
+    await openTargets(page, fx.teamId);
     let dropped = false;
     await page.route("**/expenses**", async (route) => {
       const request = route.request();
@@ -196,7 +197,7 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     const itemName = fx.lines.phone.itemName;
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await openTargets(page);
+    await openTargets(page, fx.teamId);
     let actionPosts = 0;
     await page.route("**/expenses**", async (route) => {
       const request = route.request();
@@ -224,7 +225,7 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     const itemName = fx.lines.tracer.itemName;
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await openTargets(page);
+    await openTargets(page, fx.teamId);
     await expect(targetRow(page, itemName).getByText("마감 지나 밀림", { exact: true })).toBeVisible();
     await targetsGrid(page).getByRole("checkbox", { name: `${itemName} 고르기` }).check();
     await expect(page.getByRole("button", { name: /이번 주로/ })).toHaveCount(0);
@@ -250,7 +251,7 @@ test.describe("이번 주로 · 마감 지나 밀림 (07-16 Task 1)", () => {
     const itemName = fx.lines.worst.itemName;
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
-    await openTargets(page);
+    await openTargets(page, fx.teamId);
     expect(await groupOf(page, itemName)).toBe(payWeekGroupLabel(schedule, cal.today).label);
     await expect(targetRow(page, itemName).getByText("마감 지나 밀림", { exact: true })).toHaveCount(0);
     await expect(targetRow(page, itemName).getByRole("button", { name: /이번 주로/ })).toHaveCount(0);

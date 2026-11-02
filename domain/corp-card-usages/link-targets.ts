@@ -179,7 +179,7 @@ export async function searchProjectsForCardLink(
   const proxy = await can(viewer, "cards.proxy", "write");
   const query = input.query.trim();
   // 06.2(D-6206): 범위 밖 프로젝트는 고르개에서 빠진다 — 260907 `O: server/src/card-uses.ts:553` 참여자 조각 누락을 따르지 않는다.
-  const found = await listLinkProjects(viewer, { scope: await projectRowScope(viewer), query: query === "" ? null : query, limit: LINK_PICK_LIMIT + 1 });
+  const found = await listLinkProjects(viewer, { scope: await projectRowScope(viewer, undefined, "write"), query: query === "" ? null : query, limit: LINK_PICK_LIMIT + 1 });
   const kept = found.slice(0, LINK_PICK_LIMIT);
   const rows: CardLinkProjectDto[] = kept.map((row) => {
     const word = PROJECT_STATUS_WORD[row.status as keyof typeof PROJECT_STATUS_WORD] ?? row.status;
@@ -236,7 +236,7 @@ export async function searchLinesForCardLink(
 ): Promise<{ rows: Partial<CardLinkLineDto>[]; truncated: boolean; subtitle: string; total: number; selectableCount: number }> {
   if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
   // 06.2(D-6208): 프로젝트 id 직접 호출도 범위 밖이면 없음 — 260907 `O: server/src/card-uses.ts:637` 참여자 조각 누락을 따르지 않는다.
-  const project = await findProjectInScope(viewer, await projectRowScope(viewer), input.projectId);
+  const project = await findProjectInScope(viewer, await projectRowScope(viewer, undefined, "write"), input.projectId);
   if (!project || project.archivedAt) throw new ProjectNotFoundError();
   const revision = await findLatestQuoteRevision(viewer, project.id);
   const lines = revision ? await listQuoteLinesByRevisions(viewer, [revision.id]) : [];
@@ -306,7 +306,7 @@ export async function cardLinkProjectChoice(
 ): Promise<CardLinkProjectChoice | null> {
   if (!(await can(viewer, "projects", "view"))) return null;
   // 06.2(D-6208): 범위 밖이면 null(고를 수 없음과 같은 갈래).
-  const project = await findProjectInScope(viewer, await projectRowScope(viewer), projectId);
+  const project = await findProjectInScope(viewer, await projectRowScope(viewer, undefined, "write"), projectId);
   if (!project || project.archivedAt || (projectLinkLock(project.status) && !(options.completedOutOfQuote && project.status === "completed"))) return null;
   const [row] = await projectMany(viewer, [{ id: project.id, number: project.number, name: project.name, note: "", selectable: true }], CARD_LINK_PROJECT_SPEC);
   return row?.id && row.number !== undefined && row.name !== undefined ? { id: row.id, label: `${row.number} ${row.name}` } : null;

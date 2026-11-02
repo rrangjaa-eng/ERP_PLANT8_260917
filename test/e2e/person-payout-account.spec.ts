@@ -10,6 +10,7 @@ import { insertTempRole } from "./temp-roles";
 import { insertVisibilityIfAbsent } from "@/repositories/permissions";
 import { kstToday } from "@/lib/kst-date";
 import { createFixtureUser } from "./fixtures";
+import { teamIdByName } from "./helpers/evidence";
 
 // 06.5-04(D-6505 · UI-SPEC V2): 사람 상세 「지급 계좌」 섹션 + 옆 패널 「지급 계좌 수정」.
 // 대상은 이 스펙이 만든 전용 사람이다(다른 사례와 계좌가 섞이지 않게).
@@ -135,7 +136,8 @@ test.describe("사람 상세 지급 계좌(06.5 D-6505)", () => {
     await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "expenses.payments", action: "write", allowed: true });
     await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "admin.people", action: "view", allowed: true });
     await insertVisibilityIfAbsent(SYSTEM_VIEWER, { roleId, infoItem: "person.value", visible: true });
-    await login(page, await createFixtureUser({ roleId }));
+    // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다(D-7301) — 경영관리팀 발령.
+    await login(page, await createFixtureUser({ roleId, teamId: await teamIdByName("경영관리팀") }));
 
     const account = { accountBank: "신한", accountHolder: "김직원", accountNumber: "110-123-456789" };
     const { userId: adminId } = await createAccount(SYSTEM_VIEWER, {

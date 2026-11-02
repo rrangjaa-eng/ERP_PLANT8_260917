@@ -464,6 +464,31 @@ deploy_jobs() {
     --command=node,dist/cli/purge-certs.mjs \
     --set-env-vars="${common_env},CERT_SIGNATURE_BUCKET=$(cert_bucket "$ENV" "$PROJECT")" \
     --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
+
+  # 07.2-03(PU21 · D-7278): Scheduler가 월 1회 부르는 자동 파기 Job — 사람용 Job과 따로 둬서
+  # 사람용 기본(미리 보기)이 바뀌지 않게 한다. 모드가 apply일 때만 --apply가 붙는다.
+  # dry-run은 --args=""를 명시한다 — gcloud run jobs deploy는 주지 않은 플래그의 이전 값을
+  # 유지하므로, 빈 값을 주지 않으면 apply → dry-run 되돌림 뒤에도 옛 --apply가 남는다.
+  local purge_auto_mode purge_auto_args
+  purge_auto_mode="$(read_purge_auto_mode)"
+  case "$purge_auto_mode" in
+    apply) purge_auto_args=(--args=--apply) ;;
+    dry-run) purge_auto_args=(--args="") ;;
+    *)
+      echo "infra/purge-certs-auto.mode 값이 dry-run | apply가 아니다: '${purge_auto_mode}' — 알 수 없는 모드로 적용하지 않는다" >&2
+      exit 1
+      ;;
+  esac
+  run gcloud run jobs deploy "$(job_name "$ENV" purge-certs-auto)" \
+    "${job_common[@]}" \
+    --command=node,dist/cli/purge-certs.mjs "${purge_auto_args[@]}" \
+    --set-env-vars="${common_env},CERT_SIGNATURE_BUCKET=$(cert_bucket "$ENV" "$PROJECT")" \
+    --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
+}
+
+# infra/purge-certs-auto.mode의 첫 값(공백 · # 줄 제외). 파일이 없거나 비면 빈 문자열 → 호출부가 멈춘다.
+read_purge_auto_mode() {
+  awk '!/^[[:space:]]*(#|$)/ { gsub(/[[:space:]]/, ""); print; exit }' "$ROOT_DIR/infra/purge-certs-auto.mode" 2>/dev/null || true
 }
 
 run_db_bootstrap() {
@@ -644,6 +669,40 @@ ensure_scheduler() {
     --uri="${SERVICE_URL}/internal/notify-tick" --http-method=POST \
     --oidc-service-account-email="$sa_email" \
     --oidc-token-audience="$SERVICE_URL" \
+    --max-retry-attempts=0 --attempt-deadline=180s
+}
+
+# 07.2-03(PU21 · D-7278): 확인증 파기를 매월 1일 03:00 KST에 Scheduler가 자동 실행한다.
+# 전용 SA(purge-sched, bootstrap-gcp.sh가 만든다)가 OAuth 토큰으로 Cloud Run Admin API의
+# jobs/{job}:run을 POST한다 — OIDC가 아니라 OAuth인 이유는 대상이 Google API이기 때문이다.
+# run.invoker는 자동 파기 Job 하나에만 job 단위로 준다(프로젝트 수준 역할 · 키 없음).
+# 실행 인자(overrides)는 쓰지 않는다 — dry-run | apply는 Job 정의(deploy_jobs)로 굳히고 재배포로만 바꾼다.
+# bootstrap 전에 배포가 돌아도 스테이징이 멈추지 않게 SA가 없으면 경고 뒤 건너뛴다(07.2 D-7303);
+# 그 경우 bootstrap 뒤 재배포해야 Scheduler가 생긴다(docs/CERT-PURGE.md 적용 절).
+ensure_purge_scheduler() {
+  STAGE=ensure_purge_scheduler
+  local job auto_job sa sa_email verb
+  job="$(purge_scheduler_job "$ENV")"
+  auto_job="$(job_name "$ENV" purge-certs-auto)"
+  sa="$(purge_scheduler_sa "$ENV")"
+  sa_email="${sa}@${PROJECT}.iam.gserviceaccount.com"
+  if ! run gcloud iam service-accounts describe "$sa_email" --project="$PROJECT" >/dev/null 2>&1; then
+    echo "::warning::purge-sched SA 없음 — bootstrap-gcp.sh 실행 전 · 자동 파기 Scheduler 건너뜀 · bootstrap 뒤 재배포"
+    return 0
+  fi
+  run gcloud run jobs add-iam-policy-binding "$auto_job" \
+    --region="$REGION" --project="$PROJECT" \
+    --member="serviceAccount:${sa_email}" --role=roles/run.invoker >/dev/null
+  verb=create
+  if run gcloud scheduler jobs describe "$job" --location="$REGION" --project="$PROJECT" >/dev/null 2>&1; then
+    verb=update
+  fi
+  run gcloud scheduler jobs "$verb" http "$job" \
+    --location="$REGION" --project="$PROJECT" \
+    --schedule="0 3 1 * *" --time-zone="Asia/Seoul" \
+    --uri="https://run.googleapis.com/v2/projects/${PROJECT}/locations/${REGION}/jobs/${auto_job}:run" \
+    --http-method=POST \
+    --oauth-service-account-email="$sa_email" \
     --max-retry-attempts=0 --attempt-deadline=180s
 }
 
@@ -838,6 +897,7 @@ main() {
   deploy_service
   ensure_evidence_cors
   ensure_scheduler
+  ensure_purge_scheduler
   ensure_alerts
   smoke
   map_domain

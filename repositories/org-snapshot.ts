@@ -1,11 +1,12 @@
-import { and, asc, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
 import { orgUnits, roles, teamMemberships, teams, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 04.1(EXP-04): 결재선 해석용 조직 스냅숏 — 보관되지 않은 사람마다 id · 이름 ·
 // 계급 · asOf 이하 최신 발령의 팀 id · 그 팀의 본부 id를 쿼리 한 번으로 읽는다
-// (사람마다 따로 조회하지 않는다). 발령이 없거나 그 팀 · 본부가 보관됐으면 null이다.
+// (사람마다 따로 조회하지 않는다). 발령이 있으면 그 팀의 본부(팀 · 본부가 보관됐으면 null), 발령이 없으면 사람 본부 칸(보관이면 null — 07.3-02 D-7311).
 export type OrgSnapshotRow = {
   id: string;
   name: string;
@@ -13,6 +14,9 @@ export type OrgSnapshotRow = {
   teamId: string | null;
   orgUnitId: string | null;
 };
+
+// 07.3-02(D-7306 · D-7311): 팀 없는 사람의 본부 칸 — 07.3-01 viewerDivision과 같은 규칙(팀이 이긴다 · 팀 없으면 본부 칸).
+const personDivision = alias(orgUnits, "person_division");
 
 export async function listOrgSnapshot(viewer: Viewer, asOf: string, tx: DbOrTx = db): Promise<OrgSnapshotRow[]> {
   void viewer;
@@ -29,7 +33,7 @@ export async function listOrgSnapshot(viewer: Viewer, asOf: string, tx: DbOrTx =
       name: users.name,
       roleId: users.roleId,
       teamId: teams.id,
-      orgUnitId: orgUnits.id,
+      orgUnitId: sql<string | null>`case when ${latest.teamId} is not null then ${orgUnits.id} else ${personDivision.id} end`,
     })
     .from(users)
     .leftJoin(latest, eq(latest.userId, users.id))
@@ -37,6 +41,7 @@ export async function listOrgSnapshot(viewer: Viewer, asOf: string, tx: DbOrTx =
     // 경고와 같은 판정 — Codex P2). 그 단계는 빈 자리가 되어 건너뛰거나 대표 폴백을 탄다.
     .leftJoin(teams, and(eq(teams.id, latest.teamId), isNull(teams.archivedAt)))
     .leftJoin(orgUnits, and(eq(orgUnits.id, teams.orgUnitId), isNull(orgUnits.archivedAt)))
+    .leftJoin(personDivision, and(eq(personDivision.id, users.divisionId), isNull(personDivision.archivedAt)))
     // 04.1-03(계획 가정 5): 퇴직일 당일까지는 후보, 퇴직일 < asOf면 빠진다(담당 소멸).
     .where(and(isNull(users.archivedAt), or(isNull(users.resignationDate), gte(users.resignationDate, asOf))))
     .orderBy(asc(users.name), asc(users.id));

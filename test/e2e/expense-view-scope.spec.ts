@@ -5,7 +5,7 @@ import { createProject } from "@/domain/projects";
 import { changeProjectStatus } from "@/domain/projects/status";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
-import { createTeam, listTeams } from "@/domain/org";
+import { createOrgUnit, createTeam, listTeams } from "@/domain/org";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { findProjectById } from "@/repositories/projects";
@@ -17,12 +17,14 @@ import { setupExpenseE2E, uniqueReceipt, type ExpenseE2E } from "./expense-fixtu
 
 // 06.2-09(S5 · S6 · D-6215 · D-6224 · D-6206): 다른 팀 PM이 담당인 행사의 견적 줄 지출결의.
 // 세계 = setupExpenseE2E(결재선 팀장 → 본부장 → 경영 → 대표) + 같은 본부의 다른 팀 · 그 팀 PM(타팀PM) + 프로젝트 팀이 setupExpenseE2E 팀인 행사.
-// 1단 「행사 담당 팀장」 = 프로젝트 팀의 팀장(fx.lead)이고, 경영(경영관리팀 · 팀 범위)은 결재 차례로 문서만 보고 프로젝트는 범위 밖이다.
+// 1단 「행사 담당 팀장」 = 프로젝트 팀의 팀장(fx.lead)이다. 3단 경영(경영관리본부 책임자)은 07.3-02 시드로 자금 키를 가져 프로젝트도 범위 안이다(D-7314).
 // 사용자 결정 A-9 「목록만 줄임」(2026-10-09): 지출결의 목록 상태 열은 `팀장 결재 중`, 결재선 · 결재 시트는 `{이름} 행사 담당 팀장`.
 
 type World = {
   fx: ExpenseE2E;
   otherPm: Person;
+  // 2단 「기안자 본부」 본부 책임자 — 같은 본부면 fx.divisionHead, 다른 본부 세계면 그 본부에 세운 사람.
+  step2Head: Person;
   projectId: string;
   projectLabel: string;
   lineId: string;
@@ -31,7 +33,8 @@ type World = {
 
 const UPLOAD_WAIT = 20_000;
 
-async function setupWorld(): Promise<World> {
+// drafterDivision "other": 타팀PM을 다른 본부의 팀에 두고 그 본부 책임자를 세운다 — 2단 결재자가 프로젝트(fx 본부 팀 · 자금 본부 밖) 범위 밖이 된다(D-6206).
+async function setupWorld(drafterDivision: "same" | "other" = "same"): Promise<World> {
   const fx = await setupExpenseE2E();
   const today = seoulToday();
   const year = today.slice(0, 4);
@@ -40,8 +43,10 @@ async function setupWorld(): Promise<World> {
   if (!fxProject) throw new Error("setupExpenseE2E 프로젝트 없음");
   const team = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.id === fxProject.teamId);
   if (!team?.orgUnitId) throw new Error("setupExpenseE2E 팀의 본부 없음");
-  const otherTeam = await createTeam(SYSTEM_VIEWER, { orgUnitId: team.orgUnitId, name: `E2E다른팀-${suffix}` });
+  const otherOrgUnitId = drafterDivision === "same" ? team.orgUnitId : (await createOrgUnit(SYSTEM_VIEWER, { name: `E2E다른본부-${suffix}` })).id;
+  const otherTeam = await createTeam(SYSTEM_VIEWER, { orgUnitId: otherOrgUnitId, name: `E2E다른팀-${suffix}` });
   const otherPm = await makePerson("타팀PM", "role-pm", otherTeam.id, `${year}-01-01`);
+  const step2Head = drafterDivision === "same" ? fx.divisionHead : await makePerson("타본부장", "role-division-head", otherTeam.id, `${year}-01-01`);
 
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E범위고객-${suffix}`, normalizedName: `e2e범위고객-${suffix}` });
   // 짧은 이름 — 폰 행 줄 수가 상태 낱말만으로 정해지게 한다. 320에서 목록 제목 칸(`{행사} · {항목}`) 글자 폭은 89px,
@@ -78,7 +83,7 @@ async function setupWorld(): Promise<World> {
   await changeProjectStatus(fx.lead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
   await setCustomerApproval(otherPm.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
-  return { fx, otherPm, projectId: project.id, projectLabel: `${project.number} ${projectName}`, lineId, itemName };
+  return { fx, otherPm, step2Head, projectId: project.id, projectLabel: `${project.number} ${projectName}`, lineId, itemName };
 }
 
 async function draftOf(world: World): Promise<string> {
@@ -164,7 +169,7 @@ test.describe("행사 담당 팀장 결재선 낱말 · 담당자 (06.2 S5)", ()
 });
 
 test.describe("범위 밖 프로젝트로 가는 죽은 링크 없음 (06.2 S6 · D-6206)", () => {
-  test("1단 팀장(프로젝트 팀)에게는 프로젝트 칸이 상세 링크, 결재 차례가 된 경영(팀 범위 — 프로젝트 범위 밖)에게는 같은 글자가 링크 없이", async ({ browser, baseURL }) => {
+  test("1단 팀장(프로젝트 팀)에게는 프로젝트 칸이 상세 링크, 결재 차례가 된 경영(자금 키 — 프로젝트 전체, 07.3 D-7314)에게도 같은 링크", async ({ browser, baseURL }) => {
     const world = await setupWorld();
     const expenseId = await draftOf(world);
     const drafter = await loginPage(browser, baseURL, world.otherPm);
@@ -183,10 +188,27 @@ test.describe("범위 밖 프로젝트로 가는 죽은 링크 없음 (06.2 S6 �
     await mgmt.goto(`/expenses/${expenseId}`);
     // 문서가 다 그려질 때까지 기다린다 — 로딩 뼈대(loading.tsx)에도 빈 `프로젝트` 칸이 있어 그동안은 칸이 둘이다.
     await waitForHydration(mgmt.getByRole("button", { name: /^승인/ }));
-    await expect(projectField(mgmt)).toHaveText(world.projectLabel);
-    await expect(projectField(mgmt).getByRole("link")).toHaveCount(0);
-    await expect(mgmt.getByRole("link", { name: world.projectLabel })).toHaveCount(0);
+    await expect(projectField(mgmt).getByRole("link", { name: world.projectLabel })).toHaveAttribute("href", `/projects/${world.projectId}`);
     await mgmt.context().close();
+  });
+
+  test("결재 차례가 된 다른 본부 책임자(2단 기안자 본부 — 프로젝트 범위 밖)에게는 프로젝트 칸이 같은 글자, 링크 없이", async ({ browser, baseURL }) => {
+    const world = await setupWorld("other");
+    const expenseId = await draftOf(world);
+    const drafter = await loginPage(browser, baseURL, world.otherPm);
+    await submitAsOtherPm(drafter, expenseId);
+    await drafter.context().close();
+
+    await approveOnDocument(browser, baseURL, world.fx.lead, expenseId);
+
+    const head = await loginPage(browser, baseURL, world.step2Head);
+    await head.goto(`/expenses/${expenseId}`);
+    // 문서가 다 그려질 때까지 기다린다 — 로딩 뼈대(loading.tsx)에도 빈 `프로젝트` 칸이 있어 그동안은 칸이 둘이다.
+    await waitForHydration(head.getByRole("button", { name: /^승인/ }));
+    await expect(projectField(head)).toHaveText(world.projectLabel);
+    await expect(projectField(head).getByRole("link")).toHaveCount(0);
+    await expect(head.getByRole("link", { name: world.projectLabel })).toHaveCount(0);
+    await head.context().close();
   });
 });
 

@@ -6,7 +6,7 @@ import { codeItems, permissionMatrix, visibilityMatrix } from "@/db/schema";
 import { seedMasterData } from "@/domain/seed";
 import { seedApprovalsLeave } from "@/domain/seed/approvals-leave";
 import { seedExpenses } from "@/domain/seed/expenses";
-import { ROLE_DEFAULT_PERMISSIONS } from "@/domain/seed/role-defaults";
+import { FUND_SEED_PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "@/domain/seed/role-defaults";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import {
   CEO_ROLE_ID,
@@ -212,16 +212,18 @@ describe("projects.member 시드(06.2 D-6210)", () => {
 
 // 06.1(D-6113): 증빙 보기는 기획 PM · 팀장에게만 없을 때 켠다. 시스템 관리자는 MENUS 루프가 켠다.
 describe("evidence 시드(06.1 D-6113)", () => {
-  it("첫 시드 뒤 기획 PM · 팀장은 evidence 보기가 켜져 있고 대표 · 본부 책임자는 행이 없다 · 시스템 관리자는 evidence · evidence.intake 보기 · 쓰기가 참", async () => {
+  // 07.3-02(D-7303 · D-7315): 본부 책임자 증빙 보기 · 세 계급 증빙 등록 쓰기 행이 시드된다 — 소속 없는 viewer의 can()은 자금 게이트로 거짓.
+  it("첫 시드 뒤 기획 PM · 팀장 · 본부 책임자는 evidence 보기가 켜져 있고 대표는 행이 없다 · 시스템 관리자는 evidence · evidence.intake 보기 · 쓰기가 참", async () => {
     expect((await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "evidence", "view"))?.allowed).toBe(true);
     expect((await findPermission(SYSTEM_VIEWER, TEAM_LEAD_ROLE_ID, "evidence", "view"))?.allowed).toBe(true);
     expect(await findPermission(SYSTEM_VIEWER, CEO_ROLE_ID, "evidence", "view")).toBeNull();
-    expect(await findPermission(SYSTEM_VIEWER, DIVISION_HEAD_ROLE_ID, "evidence", "view")).toBeNull();
+    expect((await findPermission(SYSTEM_VIEWER, DIVISION_HEAD_ROLE_ID, "evidence", "view"))?.allowed).toBe(true);
     for (const menu of ["evidence", "evidence.intake"]) {
       for (const action of ["view", "write"] as const) {
         expect(await can({ id: "viewer-admin", roleId: SYSADMIN_ROLE_ID }, menu, action), `${menu}:${action}`).toBe(true);
       }
     }
+    expect((await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "evidence.intake", "write"))?.allowed).toBe(true);
     expect(await can({ id: "viewer-pm", roleId: DEFAULT_ROLE_ID }, "evidence.intake", "write")).toBe(false);
   });
 
@@ -274,6 +276,9 @@ describe("개인카드 전표 증빙 종류 시드(06.1 G15)", () => {
 // 07-05(D-722 · T-07-05-03): 시드 계급 기본값을 domain/seed/role-defaults.ts 표 하나로 옮긴 리팩터가 행을 하나도 바꾸지 않는다.
 // 고정값은 리팩터 전 main(4f6236ee)으로 시드한 DB에서 뽑았다 — 시드 계급 4종 줄만(시스템 관리자는 MENUS · INFO_ITEMS 루프 사례가 따로 본다).
 // 시드 계급 기본값을 바꾸는 플랜은 이 고정값을 바꾼 줄만 고친다(diff가 확인 카드의 바꿀 칸과 1:1).
+// 07.3-02(D-7315): 07.3 자금 블록 행 문자열 — 07-05 전 집합에 더한다.
+const FUND_SEED_ROWS_0702 = FUND_SEED_PERMISSIONS.map((row) => `${row.roleId}|${row.menu}|${row.action}|${row.allowed}`);
+
 const SEED_ROLE_PERMISSIONS_BEFORE_0705 = [
   "role-ceo|expenses|view|true",
   "role-ceo|expenses|write|true",
@@ -338,7 +343,8 @@ describe("시드 계급 기본값 표 리팩터 전후 행 집합(07-05 D-722)",
       .filter((row) => row.roleId !== SYSADMIN_ROLE_ID)
       .map((row) => `${row.roleId}|${row.menu}|${row.action}|${row.allowed}`)
       .sort();
-    expect(permissions).toEqual(SEED_ROLE_PERMISSIONS_BEFORE_0705);
+    // 07.3-02(D-7315): 07-05 전 집합 + 07.3 자금 블록(seedFundScope가 넣는다).
+    expect(permissions).toEqual([...new Set([...SEED_ROLE_PERMISSIONS_BEFORE_0705, ...FUND_SEED_ROWS_0702])].sort());
 
     const visibility: Record<string, { visible: string[]; hidden: string[] }> = {};
     for (const row of (await db.select().from(visibilityMatrix)).filter((r) => r.roleId !== SYSADMIN_ROLE_ID)) {
@@ -354,8 +360,10 @@ describe("시드 계급 기본값 표 리팩터 전후 행 집합(07-05 D-722)",
     // 재시드는 행을 바꾸지 않고, 반환 카운트는 리팩터 전 값과 같다(시스템 관리자 루프 + 시드 계급 표).
     // 07-19: 알림 규칙 메뉴(view · write · approve 셋)가 시스템 관리자 루프에 들어와 권한 128 → 131(PC-08 예외 지움).
     // 07.1(D-7107): 연차 · 지출결의 시드 루프의 17행이 표로 와 표 루프가 센다 — 131 → 148(행 집합은 위 스냅숏 그대로).
+    // 07.3-02(D-7315): 자금 블록은 seedFundScope가 넣어 카운트 밖이다. 재시드에서는 증빙 보기 보충 루프가 증빙 등록 쓰기를 가진
+    // 세 계급(사원 · 팀장 · 본부 책임자)을 더 돌아 148 → 151(넣기는 없을 때만이라 행은 그대로).
     const result = await seedMasterData(SYSTEM_VIEWER);
-    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 148, visibility: 190 });
+    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 151, visibility: 190 });
   });
 });
 
@@ -374,8 +382,13 @@ describe("대표 행동 로그 보기 시드 보류(07-05 D-722 ① · ⑧ 끔)"
 describe("07 새 권한 키 · 정보 항목 시드(07-15)", () => {
   const SEED_ROLES_4 = [CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID];
 
-  it("빈 DB 첫 시드 뒤 projects.budget 보기는 시스템 관리자만 참이고 시드 계급 4종은 거짓", async () => {
+  // 07.3-02(D-7309 · D-7315): 행은 사원 · 팀장 · 본부 책임자에 참 · 대표는 없다. 소속 없는 viewer의 can()은 자금 게이트(07.3-01)로 여전히 거짓.
+  it("빈 DB 첫 시드 뒤 projects.budget 보기 행은 세 계급 참 · 대표 없음 · can()은 시스템 관리자만 참이고 소속 없는 시드 계급 4종은 거짓", async () => {
     expect(MENUS.find((menu) => menu.key === "projects.budget")?.label).toBe("예산 현황");
+    for (const roleId of [DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID]) {
+      expect((await findPermission(SYSTEM_VIEWER, roleId, "projects.budget", "view"))?.allowed, roleId).toBe(true);
+    }
+    expect(await findPermission(SYSTEM_VIEWER, CEO_ROLE_ID, "projects.budget", "view")).toBeNull();
     expect(await can({ id: "viewer-admin", roleId: SYSADMIN_ROLE_ID }, "projects.budget", "view")).toBe(true);
     for (const roleId of SEED_ROLES_4) {
       expect(await can({ id: `viewer-${roleId}`, roleId }, "projects.budget", "view"), roleId).toBe(false);
@@ -508,3 +521,41 @@ describe("연차 · 지출결의 기본 권한 표 이동(07.1 D-7107)", () => {
   });
 });
 
+// 07.3-02(D-7315): 자금 시드 블록은 없을 때만 넣고, 쓰기 줄은 짝 칸(같은 메뉴 보기 · 증빙 등록이면 증빙 보기)이 꺼진 행이면 넣지 않는다.
+describe("자금 시드 블록 — 관리자 값 보존(07.3-02 D-7315)", () => {
+  async function deleteRow(roleId: string, menu: string, action: string): Promise<void> {
+    await db
+      .delete(permissionMatrix)
+      .where(and(eq(permissionMatrix.roleId, roleId), eq(permissionMatrix.menu, menu), eq(permissionMatrix.action, action)));
+  }
+
+  it("관리자가 기본 계급 지급 쓰기를 끈 뒤 재시드해도 꺼진 채다", async () => {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "expenses.payments", action: "write", allowed: false });
+    await seedMasterData(SYSTEM_VIEWER);
+    expect((await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "expenses.payments", "write"))?.allowed).toBe(false);
+  });
+
+  it("관리자가 기본 계급 지급 보기만 끄고 쓰기 행이 없으면 재시드가 쓰기 행을 넣지 않는다(보기 끔 · 쓰기 켬이 생기지 않는다)", async () => {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "expenses.payments", action: "view", allowed: false });
+    await deleteRow(DEFAULT_ROLE_ID, "expenses.payments", "write");
+    await seedMasterData(SYSTEM_VIEWER);
+    expect((await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "expenses.payments", "view"))?.allowed).toBe(false);
+    expect(await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "expenses.payments", "write")).toBeNull();
+  });
+
+  it("evidence 보기를 끈 계급에는 증빙 등록 쓰기가 들어가지 않는다(PERMISSION_REQUIRES 짝)", async () => {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, menu: "evidence", action: "view", allowed: false });
+    await deleteRow(TEAM_LEAD_ROLE_ID, "evidence.intake", "write");
+    await seedMasterData(SYSTEM_VIEWER);
+    expect(await findPermission(SYSTEM_VIEWER, TEAM_LEAD_ROLE_ID, "evidence.intake", "write")).toBeNull();
+    expect((await findPermission(SYSTEM_VIEWER, TEAM_LEAD_ROLE_ID, "evidence.intake", "view"))?.allowed).toBe(true);
+  });
+
+  it("행이 지워진 계급에는 재시드가 다시 넣는다(없을 때만 넣기)", async () => {
+    await deleteRow(DIVISION_HEAD_ROLE_ID, "projects.adjustment", "write");
+    await seedMasterData(SYSTEM_VIEWER);
+    expect((await findPermission(SYSTEM_VIEWER, DIVISION_HEAD_ROLE_ID, "projects.adjustment", "write"))?.allowed).toBe(true);
+    expect(await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "projects.adjustment", "write")).toBeNull();
+    expect(await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "cards.proxy", "write")).toBeNull();
+  });
+});

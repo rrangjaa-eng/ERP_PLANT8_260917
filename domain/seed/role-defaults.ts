@@ -1,3 +1,4 @@
+import { FUND_SCOPED_MENUS } from "@/domain/permissions/fund-scope";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import type { PermissionAction } from "@/domain/permissions/menus";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
@@ -34,7 +35,7 @@ export const ROLE_DEFAULT_PERMISSIONS: readonly RoleDefaultPermission[] = [
     action: "write" as const,
     allowed: true,
   })),
-  // 06.1(D-6113): 증빙 보기 — 기획 PM · 팀장만(본부 책임자 · 대표는 넣지 않는다). 등록(evidence.intake)은 어느 시드 계급에도 켜지 않는다.
+  // 06.1(D-6113): 증빙 보기 — 기획 PM · 팀장만(본부 책임자 · 대표는 넣지 않는다). 등록(evidence.intake)은 07.3 D-7315 블록(FUND_SEED_PERMISSIONS)이 켠다.
   ...[DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID].map((roleId) => ({ roleId, menu: "evidence", action: "view" as const, allowed: true })),
   // 07.1(D-7107): 연차 · 지출결의 시드 루프(`domain/seed/approvals-leave.ts` · `expenses.ts`)에 있던 권한 17행을 같은 값으로 옮겼다.
   // 04.1-02 연차 view · write — 시드 계급 넷(시스템 관리자는 MENUS 루프). 05-03 지출결의 view · write — 작성 계급 넷.
@@ -46,6 +47,24 @@ export const ROLE_DEFAULT_PERMISSIONS: readonly RoleDefaultPermission[] = [
     { roleId, menu: "expenses", action: "write" as const, allowed: true },
   ]),
   { roleId: TEAM_LEAD_ROLE_ID, menu: "expenses.team", action: "view", allowed: true },
+];
+
+// 07.3 D-7315 — 자금 시드 표. ROLE_DEFAULT_PERMISSIONS와 따로 둔다: domain/seed/fund-scope.ts가 쓰기 줄의 짝 칸(같은 메뉴 보기 ·
+// PERMISSION_REQUIRES)이 꺼진 행이 아닌지 확인한 뒤 없을 때만 넣는다(일반 루프는 보기 끔을 보지 않는다).
+// 본부 조건(07.3-01 can())이 실제 사람을 거른다 — 경영관리본부 소속만 쓴다. 팀장은 경영관리본부에 자리가 없어도 사원 이상 규칙대로(D-7315).
+// 조정 줄은 본부 책임자만(D-7305) · 본부 책임자 증빙 보기(D-7303 — 증빙 등록 쓰기의 짝). 카드 대리 등록(D-7308) · 승인 칸 · 대표는 넣지 않는다.
+const FUND_SEED_MENUS = FUND_SCOPED_MENUS.filter((menu) => menu !== "projects.adjustment");
+
+export const FUND_SEED_PERMISSIONS: readonly RoleDefaultPermission[] = [
+  { roleId: DIVISION_HEAD_ROLE_ID, menu: "evidence", action: "view", allowed: true },
+  ...[DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID].flatMap((roleId) =>
+    FUND_SEED_MENUS.flatMap((menu) => [
+      { roleId, menu, action: "view" as const, allowed: true },
+      { roleId, menu, action: "write" as const, allowed: true },
+    ]),
+  ),
+  { roleId: DIVISION_HEAD_ROLE_ID, menu: "projects.adjustment", action: "view", allowed: true },
+  { roleId: DIVISION_HEAD_ROLE_ID, menu: "projects.adjustment", action: "write", allowed: true },
 ];
 
 // mode "upsertIfUnedited": 관리자가 손대지 않은(updated_by 없음) 행이면 재시드가 값을 갱신한다. 표지가 없으면 insert-if-absent.

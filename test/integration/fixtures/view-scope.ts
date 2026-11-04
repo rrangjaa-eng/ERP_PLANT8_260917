@@ -3,7 +3,7 @@ import { db } from "@/db/client";
 import { projectMembers } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
-import { createTeam } from "@/domain/org";
+import { createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { insertRole } from "@/repositories/roles";
@@ -14,7 +14,9 @@ import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson, orgUnitIdByName, teamIdByName } from "../approvals-fixtures";
 
 // 06.2-03(D6 · SC-1 · SC-2): 다팀 · 다본부 · 다계급 세계 — 06.2-04 · 05 · 06 · 08 · 10이 재사용한다.
-// 기획본부(기획1팀 · 기획2팀) · 경영관리본부(경영관리팀). P1(기획1팀, PM 팀장) · P2(기획2팀, PM X) · P3(경영관리팀, PM X).
+// 기획본부(기획1팀 · 기획2팀) · 운영본부(운영팀). P1(기획1팀, PM 팀장) · P2(기획2팀, PM X) · P3(운영팀, PM X).
+// 07.3-02(D-7315 · D-7314): 시드가 기본 계급에 자금 키를 켜면 경영관리본부 소속은 프로젝트 · 지출결의를 전사로 본다 — 이 세계의
+// 「다른 본부」는 자금 키가 서지 않는 운영본부로 둔다(teams.mgmt 이름은 그대로).
 // 사람은 도메인 · 리포지토리 함수로만 만든다(approvals-fixtures 규약). 프로젝트는 업무 범위 전사 · projects 쓰기인 시스템 주체가 만든다
 // — 다른 팀 PM 지정(시드 대표에는 projects 쓰기가 없다).
 // K1(사용자 답 「쓰기 범위 복사」, 2026-10-08): 화면 계급 view_scope = work_scope — 화면팀(work_scope team · projects 보기)은 team.
@@ -51,7 +53,7 @@ async function screenRole(id: string, name: string, viewScope: "own" | "team" | 
 export async function buildViewScopeWorld(): Promise<ViewScopeWorld> {
   const plan2 = (await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("기획본부"), name: "기획2팀" })).id;
   const plan1 = await teamIdByName("기획1팀");
-  const mgmt = await teamIdByName("경영관리팀");
+  const mgmt = (await createTeam(SYSTEM_VIEWER, { orgUnitId: (await createOrgUnit(SYSTEM_VIEWER, { name: "운영본부" })).id, name: "운영팀" })).id;
 
   await screenRole(OWN_SCOPE_ROLE_ID, "본인 범위 계급", "own", true);
   await screenRole(SCREEN_TEAM_ROLE_ID, "화면 팀 계급", "team", true);
@@ -64,7 +66,7 @@ export async function buildViewScopeWorld(): Promise<ViewScopeWorld> {
     대표: await makePerson("대표", CEO_ROLE_ID, null),
     본인범위: await makePerson("본인범위", OWN_SCOPE_ROLE_ID, "기획1팀"),
     참여자: await makePerson("참여자", DEFAULT_ROLE_ID, "기획1팀"),
-    X: await makePerson("X", DEFAULT_ROLE_ID, "경영관리팀"),
+    X: await makePerson("X", DEFAULT_ROLE_ID, "운영팀"),
     무소속: await makePerson("무소속", DEFAULT_ROLE_ID, null),
     메뉴없음: await makePerson("메뉴없음", NO_MENU_ROLE_ID, "기획1팀"),
     화면팀: await makePerson("화면팀", SCREEN_TEAM_ROLE_ID, "기획1팀"),

@@ -1,14 +1,37 @@
 // 알림 받는 사람 해석 — 경영관리 · 계급 추가(D-748) · 팀장. 읽기는 repositories/notify-sources.ts.
+// 07.3-02(D-7312): 자금 키 알림(지급 · 임자 없는 증빙)은 권한표 쓰기 보유자 ∩ (자금 본부 소속 ∨ 회사 전체 계급) — 권한표 직독은 이 파일에서만.
 import { resolveHolders, type ScopeKind, type SnapshotPerson } from "@/domain/approvals/route";
+import { readFundDivision } from "@/domain/permissions/fund-gate";
+import type { FundScopedMenu } from "@/domain/permissions/fund-scope";
 import { TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { listActiveUserIdsByRoles, listPaymentManagerIds } from "@/repositories/notify-sources";
+import { listActiveUserDivisions, listActiveUserIdsByRoles, listCompanyScopeRoleIds, listMenuWriterIds, listPaymentManagerIds } from "@/repositories/notify-sources";
 import type { RouteStepRef } from "@/repositories/notify-sources";
 import type { NotifyTx } from "@/repositories/notifications";
 
-// D-702: 경영관리 = 지급 처리 쓰기 권한 보유 활성 사용자.
-export function paymentManagers(today: string, tx?: NotifyTx): Promise<string[]> {
-  return listPaymentManagerIds(SYSTEM_VIEWER, today, tx);
+// D-702: 경영관리 = 지급 처리 쓰기 권한 보유 활성 사용자(07.3-02 — 자금 본부 거르개를 지난 사람).
+export async function paymentManagers(today: string, tx?: NotifyTx): Promise<string[]> {
+  return keepFundHands(await listPaymentManagerIds(SYSTEM_VIEWER, today, tx), today, tx);
+}
+
+// 07.3-02(D-7312): 자금 키 메뉴의 쓰기 권한 보유 활성 사용자 중 자금 본부 거르개를 지난 사람.
+export async function fundScopedWriters(menu: FundScopedMenu, today: string, tx?: NotifyTx): Promise<string[]> {
+  return keepFundHands(await listMenuWriterIds(SYSTEM_VIEWER, menu, today, tx), today, tx);
+}
+
+// can()의 자금 게이트와 같은 판정(D-7313 · D-7310 · D-7311) — 계급이 회사 전체이거나, 자금 본부가 있고 소속 본부(viewerDivision 규칙)가 그 본부.
+// can()은 전역 풀로 읽어 tick 잠금 tx 안에서 부르지 않는다 — 같은 tx로 차례로 읽는다.
+async function keepFundHands(ids: readonly string[], today: string, tx?: NotifyTx): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const fund = await readFundDivision(SYSTEM_VIEWER, tx);
+  const snapshot = await listActiveUserDivisions(SYSTEM_VIEWER, today, tx);
+  const companyRoles = new Set(await listCompanyScopeRoleIds(SYSTEM_VIEWER, tx));
+  const people = new Map(snapshot.map((person) => [person.id, person]));
+  return ids.filter((id) => {
+    const person = people.get(id);
+    if (!person) return false;
+    return (person.roleId !== null && companyRoles.has(person.roleId)) || (fund !== null && person.orgUnitId === fund.id);
+  });
 }
 
 // D-748: 규칙의 받는 계급 추가 — 후보마다 (대상, 대상 id, 회차) 묶음에 그 계급의 회사 전체 활성 사용자를 더한다(같은 사람은 한 번).

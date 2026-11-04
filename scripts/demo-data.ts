@@ -35,7 +35,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createExpenseFromLines, createTeamExpenseDraft, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
-import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { createProject } from "@/domain/projects";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { changeProjectStatus } from "@/domain/projects/status";
@@ -49,7 +49,7 @@ import { seoulToday } from "@/lib/dates";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { insertFile } from "@/repositories/files";
 import { listCodeItems } from "@/repositories/code-tables";
-import { findMembershipAtDate } from "@/repositories/team-memberships";
+import { listOrgSnapshot } from "@/repositories/org-snapshot";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 
 // 스테이징 목록 · 상세 화면 확인용 견본 데이터 CLI(seed | purge) — 기존 CLI 번들(dist/cli)의 한 진입점이라 seed Cloud Run Job을 args만 바꿔
@@ -77,8 +77,8 @@ const PEOPLE: readonly { key: PersonKey; name: string; roleId: string; team: "de
   { key: "pm2", name: "이서연", roleId: DEFAULT_ROLE_ID, team: "demo" },
   { key: "lead", name: "박도윤", roleId: TEAM_LEAD_ROLE_ID, team: "demo" },
   { key: "divisionHead", name: "최지우", roleId: "role-division-head", team: "demo" },
-  // 경영관리 담당 — 시드 계급에 경영관리 계급이 없어 기획 PM 계급으로 경영관리팀에 둔다(결재선 3단은 소속 본부로 찾는다).
-  { key: "mgmt", name: "정하은", roleId: DEFAULT_ROLE_ID, team: "mgmt" },
+  // 경영관리 담당 — 결재선 3단 = 경영관리본부의 본부 책임자(07.3-02 D-7306)라 본부 책임자 계급으로 경영관리팀에 둔다.
+  { key: "mgmt", name: "정하은", roleId: DIVISION_HEAD_ROLE_ID, team: "mgmt" },
   { key: "ceo", name: "강현우", roleId: CEO_ROLE_ID, team: "demo" },
 ];
 
@@ -234,21 +234,11 @@ async function hasActiveCeo(today: string): Promise<boolean> {
   return false;
 }
 
-// 경영관리 담당 = 경영관리팀의 현재 소속 활성 사용자.
+// 경영관리본부에 지금 일하는 실제 사람이 한 명이라도 있는지(결재 스냅숏 규칙 — 팀이 이기고 팀 없으면 본부 칸 · 보관 · 퇴직 제외).
+// 책임자만 보면 실제 실무만 있을 때 견본 책임자가 생겨 ③단 보정(D-E2)이 견본을 책임자로 센다 — 실제 사람이 있으면 계급과 무관하게 견본을 만들지 않는다.
 async function hasActiveMgmt(mgmtTeamId: string, today: string): Promise<boolean> {
-  const members = await db
-    .select({ id: users.id, archivedAt: users.archivedAt, resignationDate: users.resignationDate })
-    .from(teamMemberships)
-    .innerJoin(users, eq(users.id, teamMemberships.userId))
-    .where(eq(teamMemberships.teamId, mgmtTeamId));
-  const seen = new Set<string>();
-  for (const row of members) {
-    if (seen.has(row.id)) continue;
-    seen.add(row.id);
-    if (!isActiveUser(row, today)) continue;
-    if ((await findMembershipAtDate(SYSTEM_VIEWER, row.id, today))?.teamId === mgmtTeamId) return true;
-  }
-  return false;
+  const [team] = await db.select({ orgUnitId: teams.orgUnitId }).from(teams).where(eq(teams.id, mgmtTeamId));
+  return (await listOrgSnapshot(SYSTEM_VIEWER, today)).some((person) => person.orgUnitId === team?.orgUnitId);
 }
 
 // 견본 본부 · 팀이 있으면 재사용하고, purge가 보관해 둔 것은 복원한다(본부 이름은 전역 unique라 새로 만들 수 없다).

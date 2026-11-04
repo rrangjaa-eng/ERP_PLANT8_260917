@@ -1362,6 +1362,7 @@ dirty 셀이 하나라도 있으면 `beforeunload`로 이탈을 경고한다. �
   - **행동 순위**: 1차 = `primaryAction` 하나(**빈 목록이면 머리 1차를 숨기고 빈 화면 버튼 하나가 같은 등록 행동을 맡는다 — DR5 A, `04.6-ANSWERS.md` 인용**) · 2차 = 필터 줄의 보조 행동 · 3차 = 행의 `RowActions`.
 - **`DetailScreen`**: `title` · `status?`(제목 옆 상태 배지) · `meta?`(한 줄 `--text-aux` `--text-muted`) · `actions?` · `numbers?`(네 숫자 줄, `Num`) · 섹션(`DetailScreen.Section` — 제목 `--text-subtitle`, 위 1px `--border-row`). 폼 화면(연차 신청 · 내 계정 · 확인증 정정)도 이 틀 + `Form layout="page"`다.
   - **행동 순위**: 1차 = `actions`의 1차(최대 하나, 오른쪽 끝) · 2차 = `actions`의 2차들(1차 왼쪽) · 3차 = 섹션 안 행동 링크.
+  - **폰의 빈 행동 상자**: 폰(<700)에서 `actions` 상자의 직계 자식이 모두 `PcOnly`(`data-pc-only`)면 상자가 `display: none`이라 머리 줄에 틈을 만들지 않는다(DECISIONS 2026-11-05).
 - **`SidePanel` + `PanelForm`**(§6-3 옆 패널 배치 · §7-8): 제목 + 글자 없는 닫기 x · 본문 · 아래 고정 행동 줄.
   - **행동 순위**: 1차 = 제출(`Ctrl+Enter`) · 2차 = 「취소 Esc」 · 3차 = 없음(닫기 x는 글자 없는 닫기).
   - **주소로 직접 연 패널의 닫힘 포커스**: 열기 요소가 없으면(주소 직접 열기) 호출부가 `returnFocusTo?: () => HTMLElement | null`로 그 행의 열기 요소를 돌려주고, `null`이면 화면 제목으로 간다. 선택자 문자열 API는 두지 않는다(행 링크 모양이 바뀌면 조용히 깨진다) (DECISIONS 06.5 SP-65-3)

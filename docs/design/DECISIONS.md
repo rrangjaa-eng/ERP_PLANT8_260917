@@ -2540,3 +2540,11 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **바뀐 규칙**: SYSTEM.md §6-6(제목 · 규칙 줄 · 그림) · §7-7 인쇄 라우트 행 ERROR 칸(확인증 실제 문구 `인쇄물 만들기 실패 · 다시 시도`). §6-6 트리거 줄(「화면에서 「인쇄」는 2차 버튼 …」)은 고치지 않는다.
 **버린 대안**: 서류마다 인쇄 CSS를 따로 두기 · 세로 Timeline 결재란 · `<div>` 표로 쪽마다 머리 반복 흉내.
 **범위**: `app/print/_frame/` · `app/print/expenses/` · `eslint/restrictions.mjs`(`app/print/**/*.tsx`만). 새 색 · 서체 · radius · 토큰 0(`--print-ink` · `--print-rule` · `--print-line` · `--print-rule-w` 기존).
+
+## 2026-11-05 — 빈 행동 상자는 폰에서 자리를 차지하지 않는다(DetailScreen 머리 줄 · 07.4-01 항목 A)
+**결정**: 폰(<700, PcOnly와 같은 문턱)에서 `DetailScreen`의 `.actions` 상자는 직계 자식이 모두 `PcOnly`(`data-pc-only` 표지)면 `display: none`이다. PC(≥700)와 보이는 행동이 하나라도 있으면 레이아웃은 그대로다.
+**이유**: 지출결의 상세의 2차 「인쇄」는 PcOnly라 폰에서 가려지지만, 빈 `.actions` 상자가 `.head`의 `gap: var(--s-4)` 때문에 둘째 줄로 떨어져 머리 줄이 제목 블록보다 16px 컸다(375 · 320 DOM 실측 102.6 대 86.6px). 폰에서 할 수 없는 행동의 자리도 함께 없애는 것이 「할 수 없는 선택지는 숨긴다」 · 「폰은 읽기만」(2026-10-03 14:57 KST 카드)과 같은 결이다.
+**결정자**: 사용자 카드의 추천안(카드 답 대기 중 진행) — 다른 답이면 `ui/detail-screen/DetailScreen.module.css` 규칙 한 블록과 `pc-only.tsx`의 표지만 되돌린다.
+**바뀐 규칙**: SYSTEM.md §7-20 `DetailScreen` 행동 순위 줄 아래에 한 줄.
+**버린 대안**: `ui/detail-screen`에 `hideActionsOnPhone` 같은 prop을 더함(호출부마다 알아야 한다) · 화면이 폰 폭을 JS로 판정(수화 뒤에야 바뀌어 레이아웃이 움직인다 — pc-only.module.css 주석).
+**범위**: `ui/detail-screen/DetailScreen.module.css` · `app/(app)/admin/pc-only.tsx`(`data-pc-only`). 새 토큰 · 색 0. 실측: 375 · 320 머리 줄 86.58px = 제목 블록 86.58px(`mobile-print-entry`).

@@ -106,10 +106,10 @@ const SEED_ROLE_NAMES: ReadonlyArray<[roleId: string, name: string]> = [
 const SYSADMIN_ROLE_ID = "role-sysadmin";
 const DEFAULT_ROLE_ID = "role-pm";
 
-const ADMIN: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.system-status", "leave"], canIntakeEvidence: false };
-const EMPLOYEE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["leave"], canIntakeEvidence: false };
+const ADMIN: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.system-status", "leave"], canIntakeEvidence: false, canViewReserves: false };
+const EMPLOYEE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["leave"], canIntakeEvidence: false, canViewReserves: false };
 // 04.1-06(A1): 권한표에서 연차 view를 끈 계급 — 계정 그룹에 「연차」가 없다.
-const EMPLOYEE_WITHOUT_LEAVE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: [], canIntakeEvidence: false };
+const EMPLOYEE_WITHOUT_LEAVE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: [], canIntakeEvidence: false, canViewReserves: false };
 
 describe("roleMenu — 상단 바 1차 메뉴 (D-22)", () => {
   it("증빙 등록 권한이 없으면 시스템 관리자 입력이어도 1차 메뉴 4개다", () => {
@@ -126,14 +126,43 @@ describe("roleMenu — 상단 바 1차 메뉴 (D-22)", () => {
 
   it.each(SEED_ROLE_NAMES)("%s(%s)의 1차 메뉴와 폰 탭에 「손익」도, href가 정확히 /pnl인 항목도 없다(2026-11-04 사용자 결정)", (roleId) => {
     for (const canIntakeEvidence of [false, true]) {
-      const menu = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence });
-      const hrefs = [
-        ...menu.topBarMenu.map((item) => item.href),
-        ...menu.bottomTabs.flatMap((tab) => (tab.kind === "link" ? [tab.href] : [])),
-      ];
-      const labels = [...menu.topBarMenu.map((item) => item.label), ...menu.bottomTabs.map((tab) => tab.label)];
-      expect(labels).not.toContain("손익");
-      expect(hrefs).not.toContain("/pnl");
+      for (const canViewReserves of [false, true]) {
+        const menu = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence, canViewReserves });
+        const hrefs = [
+          ...menu.topBarMenu.map((item) => item.href),
+          ...menu.bottomTabs.flatMap((tab) => (tab.kind === "link" ? [tab.href] : [])),
+        ];
+        const labels = [...menu.topBarMenu.map((item) => item.label), ...menu.bottomTabs.map((tab) => tab.label)];
+        expect(labels).not.toContain("손익");
+        expect(hrefs).not.toContain("/pnl");
+      }
+    }
+  });
+
+  it("canViewReserves가 true면 맨 끝에 「리저브」(/pnl/reserves)가 붙는다 — 증빙이 없을 때 다섯", () => {
+    const menu = roleMenu({ ...EMPLOYEE, canViewReserves: true }).topBarMenu;
+    expect(menu.map((item) => item.label)).toEqual(["프로젝트", "지출결의", "법인카드", "결재", "리저브"]);
+    expect(menu[menu.length - 1]).toEqual({ label: "리저브", href: "/pnl/reserves" });
+  });
+
+  it("canViewReserves · canIntakeEvidence가 둘 다 true면 프로젝트 · 지출결의 · 증빙 · 법인카드 · 결재 · 리저브", () => {
+    const menu = roleMenu({ ...EMPLOYEE, canIntakeEvidence: true, canViewReserves: true }).topBarMenu;
+    expect(menu.map((item) => item.label)).toEqual(["프로젝트", "지출결의", "증빙", "법인카드", "결재", "리저브"]);
+  });
+
+  it("canViewReserves가 true일 때 「리저브」를 걸러내면 false일 때와 같고, false면 「리저브」가 없다", () => {
+    expect(roleMenu({ ...EMPLOYEE, canViewReserves: true }).topBarMenu.filter((item) => item.label !== "리저브")).toEqual(
+      roleMenu(EMPLOYEE).topBarMenu,
+    );
+    expect(roleMenu(EMPLOYEE).topBarMenu.map((item) => item.label)).not.toContain("리저브");
+  });
+
+  it("canViewReserves는 폰 하단 탭을 바꾸지 않는다(탭 넷 유지)", () => {
+    for (const [roleId] of SEED_ROLE_NAMES) {
+      const base = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence: false, canViewReserves: false }).bottomTabs;
+      const withReserves = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence: false, canViewReserves: true }).bottomTabs;
+      expect(withReserves).toEqual(base);
+      expect(withReserves).toHaveLength(4);
     }
   });
 
@@ -209,34 +238,34 @@ describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접�
   });
 
   it("계급 이름이 아니라 allowedMenus만 본다 — 시스템 관리자라도 허용 목록이 비면 진입점이 없다", () => {
-    const sysadminWithoutPermission: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [], canIntakeEvidence: false };
+    const sysadminWithoutPermission: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [], canIntakeEvidence: false, canViewReserves: false };
     expect(roleMenu(sysadminWithoutPermission).adminMenu).toEqual([]);
   });
 
   it.each(ADMIN_MENU_KEYS)("%s 하나만 허용돼도 관리자 메뉴는 여전히 「관리」 한 줄이다", (key) => {
-    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [key], canIntakeEvidence: false };
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [key], canIntakeEvidence: false, canViewReserves: false };
     expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
   it("allowedMenus에 admin.* 키 13개가 전부 있어도 관리자 메뉴는 여전히 「관리」 한 줄이다(개별 화면 이름은 adminIndexGroups가 담당)", () => {
-    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS, canIntakeEvidence: false };
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS, canIntakeEvidence: false, canViewReserves: false };
     expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
   it("certs.events 하나만 허용돼도(기획 PM) 관리자 메뉴는 「관리」 한 줄이다", () => {
-    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["projects", "certs.events"], canIntakeEvidence: false };
+    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["projects", "certs.events"], canIntakeEvidence: false, canViewReserves: false };
     expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
   it("1차 메뉴는 certs.events를 허용해도 넷 그대로다(증빙 등록 권한이 없을 때, D-22)", () => {
-    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["certs.events"], canIntakeEvidence: false };
+    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["certs.events"], canIntakeEvidence: false, canViewReserves: false };
     expect(roleMenu(viewer).topBarMenu).toHaveLength(4);
     expect(roleMenu(viewer).bottomTabs).toHaveLength(4);
   });
 
   it("허용된 관리자 메뉴는 매번 같은 순서로 나온다(allowedMenus의 순서와 무관, 순수 함수)", () => {
-    const forward: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS], canIntakeEvidence: false };
-    const reversed: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS].reverse(), canIntakeEvidence: false };
+    const forward: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS], canIntakeEvidence: false, canViewReserves: false };
+    const reversed: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS].reverse(), canIntakeEvidence: false, canViewReserves: false };
     expect(roleMenu(forward).adminMenu).toEqual(roleMenu(reversed).adminMenu);
   });
 });
@@ -254,7 +283,7 @@ describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 
     const viewer: RoleMenuViewer = {
       roleId: SYSADMIN_ROLE_ID,
       allowedMenus: [...ADMIN_MENU_KEYS, ...CERT_ADMIN_MENU_KEYS],
-      canIntakeEvidence: false,
+      canIntakeEvidence: false, canViewReserves: false,
     };
     const groups = adminIndexGroups(viewer);
     expect(groups.map((group) => group.label)).toEqual(["마스터", "설정·권한", "운영 기록", "확인증"]);
@@ -265,7 +294,7 @@ describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 
   });
 
   it("기획 PM(projects · certs.events)이면 「확인증」 그룹 하나만 돌아오고 항목은 「확인증 행사」(/certs/events)다", () => {
-    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["projects", "certs.events"], canIntakeEvidence: false };
+    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["projects", "certs.events"], canIntakeEvidence: false, canViewReserves: false };
     expect(adminIndexGroups(viewer)).toEqual([
       { label: "확인증", items: [{ label: "확인증 행사", href: "/certs/events" }] },
     ]);
@@ -277,7 +306,7 @@ describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 
   });
 
   it("빈 allowedMenus면 []다", () => {
-    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [], canIntakeEvidence: false };
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [], canIntakeEvidence: false, canViewReserves: false };
     expect(adminIndexGroups(viewer)).toEqual([]);
   });
 
@@ -344,7 +373,7 @@ describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 
   });
 
   it("admin.settings(관리자용 설정 화면)는 사용자 자신의 「설정」(/settings)과 라벨·경로가 다르다", () => {
-    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.settings"], canIntakeEvidence: false };
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.settings"], canIntakeEvidence: false, canViewReserves: false };
     const entry = adminIndexGroups(viewer)[0]?.items[0];
     expect(entry?.href).toBe("/admin/settings");
     expect(entry?.href).not.toBe("/settings");
@@ -354,20 +383,20 @@ describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 
 
 describe("roleMenu — 폰 하단 탭 (SYSTEM.md §6-0 표, 계급 5종)", () => {
   it.each(SEED_ROLE_NAMES)("%s(%s) 탭이 정확히 4개이고 4번째는 「더보기」다", (roleId) => {
-    const tabs = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence: false }).bottomTabs;
+    const tabs = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence: false, canViewReserves: false }).bottomTabs;
     expect(tabs).toHaveLength(4);
     expect(tabs[3]).toEqual({ kind: "more", label: "더보기" });
   });
 
   it.each(SEED_ROLE_NAMES)("%s(%s) 탭 라벨이 SYSTEM.md 표의 그 행과 원소 단위로 같다", (roleId, name) => {
     const expected = expectedBottomTabRow(SYSTEM, name);
-    const actual = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence: false }).bottomTabs.map((tab) => tab.label);
+    const actual = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence: false, canViewReserves: false }).bottomTabs.map((tab) => tab.label);
     expect(actual).toEqual(expected);
   });
 
   it("모르는 계급 식별자는 기본 계급(기획 PM) 탭으로 떨어지고 탭 수가 여전히 4다", () => {
-    const unknown = roleMenu({ roleId: "role-does-not-exist", allowedMenus: [], canIntakeEvidence: false }).bottomTabs;
-    const fallback = roleMenu({ roleId: DEFAULT_ROLE_ID, allowedMenus: [], canIntakeEvidence: false }).bottomTabs;
+    const unknown = roleMenu({ roleId: "role-does-not-exist", allowedMenus: [], canIntakeEvidence: false, canViewReserves: false }).bottomTabs;
+    const fallback = roleMenu({ roleId: DEFAULT_ROLE_ID, allowedMenus: [], canIntakeEvidence: false, canViewReserves: false }).bottomTabs;
     expect(unknown).toHaveLength(4);
     expect(unknown).toEqual(fallback);
   });

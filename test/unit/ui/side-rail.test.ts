@@ -14,6 +14,7 @@ describe("RailNav — 주 메뉴", () => {
     roleId: "employee",
     allowedMenus: ["projects", "expenses"],
     canIntakeEvidence: true,
+    canViewReserves: false,
   });
 
   it("nav 「주 메뉴」에 topBarMenu 항목을 순서대로 그린다(증빙은 3번째)", () => {
@@ -33,6 +34,20 @@ describe("RailNav — 주 메뉴", () => {
   it("current가 없으면 aria-current가 없다", () => {
     const out = renderToStaticMarkup(createElement(RailNav, { items: menu.topBarMenu, current: null }));
     expect(out).not.toContain("aria-current");
+  });
+
+  it("canViewReserves 참 메뉴는 마지막 링크가 「리저브」이고 /pnl/reserves에서 그 링크 하나만 aria-current=page다", () => {
+    const reservesMenu = roleMenu({
+      roleId: "employee",
+      allowedMenus: ["projects", "expenses"],
+      canIntakeEvidence: false,
+      canViewReserves: true,
+    });
+    const out = renderToStaticMarkup(createElement(RailNav, { items: reservesMenu.topBarMenu, current: "/pnl/reserves" }));
+    const labels = [...out.matchAll(/<a [^>]*>([^<]+)<\/a>/g)].map((m) => m[1]);
+    expect(labels[labels.length - 1]).toBe("리저브");
+    expect(out.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(out).toMatch(/aria-current="page"[^>]*>리저브<|href="\/pnl\/reserves"[^>]*aria-current="page"/);
   });
 });
 

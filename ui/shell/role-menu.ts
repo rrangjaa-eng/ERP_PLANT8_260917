@@ -14,6 +14,8 @@ export type RoleMenuViewer = {
   allowedMenus: readonly string[];
   /** 증빙 등록(`evidence.intake` 쓰기) 권한 — layout이 can()으로 계산해 넘긴다. true면 1차 메뉴 3번째(지출결의 다음)에 「증빙」이 끼인다. */
   canIntakeEvidence: boolean;
+  /** 리저브 대장이 열리는 두 조건(손익 보기 + 리저브 금액 노출)을 layout이 can() · visible()로 계산해 넘긴다. true면 1차 메뉴 맨 끝에 「리저브」가 붙는다. */
+  canViewReserves: boolean;
 };
 
 export type MenuLink = {
@@ -28,7 +30,7 @@ export type AccountEntry =
 export type BottomTab = { label: string } & ({ kind: "link"; href: string } | { kind: "more" });
 
 export type RoleMenu = {
-  /** SYSTEM.md §6-0 1차 메뉴 — 넷은 대응 화면 유무와 무관하게 역할과 상관없이 항상 전부(D-22), 증빙 등록 권한자에게만 3번째 「증빙」. */
+  /** SYSTEM.md §6-0 1차 메뉴 — 넷은 대응 화면 유무와 무관하게 역할과 상관없이 항상 전부(D-22), 증빙 등록 권한자에게만 3번째 「증빙」, 리저브 대장 계급에게만 끝에 「리저브」. */
   topBarMenu: MenuLink[];
   /** SYSTEM.md §6-0 (a) PC 사용자 메뉴 · §7-8 「더보기」 시트의 「관리」 한 줄 —
    * 권한표에서 view 권한이 있는 admin.* 메뉴가 하나라도 있으면 `[{ label: "관리",
@@ -59,6 +61,9 @@ const TOP_BAR_MENU: readonly MenuLink[] = [
 // 증빙 등록 권한자(`evidence.intake` 쓰기, 화면 게이트 expenses/evidence/layout.tsx와 같은 판정)에게만 3번째(지출결의 다음)에 끼는 1차 메뉴.
 const EVIDENCE_MENU: MenuLink = { label: "증빙", href: "/expenses/evidence" };
 const EVIDENCE_MENU_INDEX = 2;
+
+// 2026-11-04 사용자 결정 — 「손익」 메뉴 대신 리저브 대장(/pnl/reserves)의 진입점. 04-42 B-13 게이트(reserves/layout.tsx)와 같은 판정으로 열리는 계급에게만 맨 끝에 붙는다.
+const RESERVES_MENU: MenuLink = { label: "리저브", href: "/pnl/reserves" };
 
 // D-17 → 「관리」 한 줄로 접기(2026-09-22, quick/260922-i3k, 사용자 결정 옵션 B):
 // 관리자 화면 12종(§6-8 시스템 상태 + Phase 3의 나머지 10개 + 04.3의 확인증 행사) 전부 — 개별 이름은
@@ -249,10 +254,11 @@ function buildBottomTabs(viewer: RoleMenuViewer): BottomTab[] {
  * 메뉴 키가 있을 때만 존재한다.
  */
 export function roleMenu(viewer: RoleMenuViewer): RoleMenu {
+  const primaryMenu = viewer.canIntakeEvidence
+    ? [...TOP_BAR_MENU.slice(0, EVIDENCE_MENU_INDEX), EVIDENCE_MENU, ...TOP_BAR_MENU.slice(EVIDENCE_MENU_INDEX)]
+    : [...TOP_BAR_MENU];
   return {
-    topBarMenu: viewer.canIntakeEvidence
-      ? [...TOP_BAR_MENU.slice(0, EVIDENCE_MENU_INDEX), EVIDENCE_MENU, ...TOP_BAR_MENU.slice(EVIDENCE_MENU_INDEX)]
-      : [...TOP_BAR_MENU],
+    topBarMenu: viewer.canViewReserves ? [...primaryMenu, RESERVES_MENU] : primaryMenu,
     adminMenu: buildAdminMenu(viewer),
     accountGroup: buildAccountGroup(viewer),
     bottomTabs: buildBottomTabs(viewer),

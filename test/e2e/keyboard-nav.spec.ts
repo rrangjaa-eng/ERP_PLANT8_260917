@@ -135,7 +135,7 @@ test.describe("키보드 전용 동선 (성공 기준 3)", () => {
   });
 
   // 포커스 순서 = 시각 순서(§10) — 상단 바 왼쪽에서 오른쪽으로: 스킵 링크 →
-  // 워드마크(「내 차례」 홈 링크, 2026-09-24 FINDING-001) → 1차 메뉴 5개
+  // 워드마크(「내 차례」 홈 링크, 2026-09-24 FINDING-001) → 1차 메뉴 4개
   // (role-menu.ts TOP_BAR_MENU 순서) → 사용자 트리거.
   test("주요 요소의 Tab 도달 순서가 시각 순서(좌→우)와 같다", async ({ page }) => {
     await loginWithKeyboard(page);
@@ -147,7 +147,6 @@ test.describe("키보드 전용 동선 (성공 기준 3)", () => {
       page.getByRole("link", { name: "지출결의", exact: true }),
       page.getByRole("link", { name: "법인카드", exact: true }),
       page.getByRole("link", { name: "결재", exact: true }),
-      page.getByRole("link", { name: "손익", exact: true }),
       page.getByRole("button", { name: "E2E Employee" }),
     ];
 

@@ -6,6 +6,7 @@ import { roleMenu } from "@/ui/shell/role-menu";
 import { Shell } from "@/ui/shell/Shell";
 import { UnreadCountProvider } from "@/ui/shell/unread-count";
 import { can } from "@/domain/permissions/can";
+import { visible } from "@/domain/permissions/visible";
 import { MENUS } from "@/domain/permissions/menus";
 import { withCertMenusGated } from "@/domain/certs/feature";
 import { countMyUnread } from "@/domain/notify/inbox";
@@ -49,7 +50,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const gatedMenus = await withCertMenusGated(allowedMenus);
 
   const canIntakeEvidence = await can(viewer, "evidence.intake", "write");
-  const menu = roleMenu({ roleId: viewer.roleId ?? "", allowedMenus: gatedMenus, canIntakeEvidence });
+  // /pnl/reserves 404 게이트(reserves/layout.tsx)와 같은 두 판정 — 어긋나면 404로 가는 링크가 대장의 존재를 알린다(04-42 B-13).
+  // 손익 보기는 위 allowedMenus가 이미 can(viewer, "pnl", "view")로 판정했다 — 같은 조회를 두 번 하지 않는다.
+  const canViewReserves = allowedMenus.includes("pnl") && (await visible(viewer, "reserve.amount"));
+  const menu = roleMenu({ roleId: viewer.roleId ?? "", allowedMenus: gatedMenus, canIntakeEvidence, canViewReserves });
 
   // D-4219: 첫 값은 레이아웃의 서버 조회 하나뿐이다 — 실패해도 셸 자체는 정상
   // 렌더된다(S1-badge/error, 배지만 없다). 이후 경로 변경마다 다시 받는 일은

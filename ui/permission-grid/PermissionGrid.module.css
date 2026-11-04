@@ -227,6 +227,7 @@
 /* 폰 칸 — 체크박스를 감싸 PC `td`와 같은 저장 중 면(.dirty) · 실패 표시(.errorCell)를 받는다. */
 .mobileCell {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
 }
 

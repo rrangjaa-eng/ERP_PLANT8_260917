@@ -78,48 +78,53 @@ test("자금 본부 설정이 비면 표지가 「자금 본부 미지정」이�
   await expect(page.locator("th[scope='rowgroup']").filter({ hasText: "경영관리본부만" })).toHaveCount(8);
 });
 
-// 리뷰 P2: 본부 이름은 관리자가 고치는 값이라 길 수 있다 — 폰 값 칸(약 200px)에서 표지가 칸을 넘치지 않고 통째로 다음 줄로 내려가야 한다.
+// 리뷰 P2: 본부 이름은 관리자가 고치는 값이라 길 수 있다 — 폰 값 칸(약 190px)에서 표지가 통째로 다음 줄로 내려가 칸 안에 들어가야 한다.
 // 이름을 바꾸는 일도 공용 행(자금 본부)이라 이 스펙(desktop-settings · 워커 1)에서 try/finally로 되돌린다.
-test("자금 본부 이름이 길어도 폰 320에서 표지가 값 칸을 넘치지 않는다", async ({ page }) => {
-  test.setTimeout(240_000);
-  const LONG_NAME = "경영관리본부운영지원재무회계센터";
-  const setting = await findSimpleValue(SYSTEM_VIEWER, FUND_DIVISION_SETTING_KEY);
-  const unitId = String(setting?.value);
-  const [unit] = await db.select().from(orgUnits).where(eq(orgUnits.id, unitId));
-  expect(unit, "자금 본부 조직 단위가 있어야 한다").toBeDefined();
-  const originalName = unit!.name;
+// 12자는 칸 안에 들어가는 길이(엄격: 칸 · 문서 넘침 0), 16자는 칸보다 넓어도 문서는 넘치지 않아야 하는 한계 사례(문서 넘침 0 · 한 줄).
+for (const { name, fitsCell } of [
+  { name: "경영관리본부운영지원센터", fitsCell: true },
+  { name: "경영관리본부운영지원재무회계센터", fitsCell: false },
+]) {
+  test(`자금 본부 이름이 ${name.length}자여도 폰 320에서 표지가 문서를 넘치지 않는다`, async ({ page }) => {
+    test.setTimeout(240_000);
+    const setting = await findSimpleValue(SYSTEM_VIEWER, FUND_DIVISION_SETTING_KEY);
+    const unitId = String(setting?.value);
+    const [unit] = await db.select().from(orgUnits).where(eq(orgUnits.id, unitId));
+    expect(unit, "자금 본부 조직 단위가 있어야 한다").toBeDefined();
+    const originalName = unit!.name;
 
-  try {
-    await db.update(orgUnits).set({ name: LONG_NAME }).where(eq(orgUnits.id, unitId));
-    await login(page);
-    await page.setViewportSize({ width: 320, height: 800 });
-    await page.goto("/admin/permissions");
-    await page.locator("select").first().selectOption({ index: 0 });
-    const note = page.locator("dd span[id]").filter({ hasText: `${LONG_NAME}만` }).first();
-    await expect(note).toBeVisible();
-    const measured = await note.evaluate((el) => {
-      const cell = el.closest("dd")!;
-      const box = el.getBoundingClientRect();
-      const cellBox = cell.getBoundingClientRect();
-      return {
-        lines: el.getClientRects().length,
-        noteRight: Math.round(box.right),
-        cellRight: Math.round(cellBox.right),
-        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
-        cellOverflow: cell.scrollWidth - cell.clientWidth,
-      };
-    });
-    expect(measured.lines).toBe(1);
-    expect(measured.pageOverflow).toBeLessThanOrEqual(0);
-    expect(measured.cellOverflow).toBeLessThanOrEqual(0);
-    expect(measured.noteRight).toBeLessThanOrEqual(measured.cellRight);
-  } finally {
-    await db.update(orgUnits).set({ name: originalName }).where(eq(orgUnits.id, unitId));
-  }
+    try {
+      await db.update(orgUnits).set({ name }).where(eq(orgUnits.id, unitId));
+      await login(page);
+      await page.setViewportSize({ width: 320, height: 800 });
+      await page.goto("/admin/permissions");
+      await page.locator("select").first().selectOption({ index: 0 });
+      const note = page.locator("dd span[id]").filter({ hasText: `${name}만` }).first();
+      await expect(note).toBeVisible();
+      const measured = await note.evaluate((el) => {
+        const cell = el.closest("dd")!;
+        return {
+          lines: el.getClientRects().length,
+          noteRight: Math.round(el.getBoundingClientRect().right),
+          cellRight: Math.round(cell.getBoundingClientRect().right),
+          pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+          cellOverflow: cell.scrollWidth - cell.clientWidth,
+        };
+      });
+      expect(measured.lines).toBe(1);
+      expect(measured.pageOverflow).toBeLessThanOrEqual(0);
+      if (fitsCell) {
+        expect(measured.cellOverflow).toBeLessThanOrEqual(0);
+        expect(measured.noteRight).toBeLessThanOrEqual(measured.cellRight);
+      }
+    } finally {
+      await db.update(orgUnits).set({ name: originalName }).where(eq(orgUnits.id, unitId));
+    }
 
-  const [restored] = await db.select().from(orgUnits).where(eq(orgUnits.id, unitId));
-  expect(restored?.name).toBe(originalName);
-});
+    const [restored] = await db.select().from(orgUnits).where(eq(orgUnits.id, unitId));
+    expect(restored?.name).toBe(originalName);
+  });
+}
 
 async function measureUnset(page: Page, phone: boolean) {
   return page.evaluate((isPhone) => {

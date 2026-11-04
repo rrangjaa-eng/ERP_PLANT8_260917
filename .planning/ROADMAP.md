@@ -1191,13 +1191,33 @@ Review Dispositions — Round 2 — d9b427f(07 절만, eng-review R1~R15 · C1~C
 ### Phase 07.6: 매출 줄 지우기 (revenue-archive) (INSERTED)
 
 **Goal:** 잘못 적은 매출 발행 · 입금 줄을 프로젝트 상세 매출 칸 화면에서 `삭제`(보관 — 물리 삭제 0)하고 바로 `되돌리기`하거나, 그 뒤에는 관리자 보관함 화면에서 「매출 줄」로 되살린다. 지운 줄은 매출 목록 · 합계 · 수금 지연 알림 · 발행 파일 등 어디에도 잡히지 않고, 지우기 · 되살리기는 행동 로그에 남는다. 입금 줄 입금일이 오늘(KST)보다 뒤면 저장을 막는다(카드 확정). 입력 07.6-CONTEXT.md D-7601~D-7611 · /mnt/project-files/revenue-archive/prd.md
-**Requirements**: D-7601 ~ D-7611(07.6-CONTEXT.md 결정 — 요구 ID 없음)
+**Requirements**: D-7601 ~ D-7612(07.6-CONTEXT.md 결정 — 요구 ID 없음)
 **Depends on:** Phase 7 · 07.3(07.3-02~04 main 뒤 — 자금 키 `projects.revenue` 파일 겹침)
 **Plans:** 1 plan
 
 Plans:
 
 - [ ] 07.6-01-PLAN.md — 매출 줄 `삭제`(보관 · version · 잠근 tx · 로그) · 결과 줄 `되돌리기` · 보관함 「매출 줄」 복원 · 발행 요청 연결 막기 · 읽는 곳 전수 회귀 · 입금일 미래 막기(D-7608 카드 확정)
+
+### Phase 07.4: 서류 출력 (document-print) (INSERTED)
+
+**Goal:** 지출결의서 · 연차 신청서 · 프로젝트 정산서를 PC 상세 「인쇄」로 새 탭 A4 종이(회사 정보 머리 · 결재란 · 상태 글자 · 쪽 번호)로 뽑거나 PDF로 저장한다 — 볼 수 없는 서류는 응답 전 404, 금액 · 손익은 보는 사람 권한대로만, 인쇄는 행동 로그 `document_print`에 남는다
+**Requirements**: D-7401 ~ D-7415(07.4-CONTEXT.md 결정 — 요구 ID 없음)
+**Depends on:** Phase 7
+**Plans:** 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 07.4-01-PLAN.md — 공용 인쇄 틀 · 회사 정보 설정 · 인쇄 기록 · 지출결의서(화면 · /design-review · /qa · 세션 머지)
+
+**Wave 2** *(blocked on Wave 1 completion — 같은 틀 · 시드 · 폰 입구 스펙)*
+
+- [ ] 07.4-02-PLAN.md — 연차 신청서(일곱 행 · 입사일 없음 · 결재자도 소속 · 잔여)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 07.4-03-PLAN.md — 프로젝트 정산서(지출결의 · 구매 요청 목록 · 조건부 손익 칸 · risk: Opus 실행 · /cso)
 
 ### Phase 07.5: 화면 항목 추가 (custom-fields-rollout) (INSERTED)
 

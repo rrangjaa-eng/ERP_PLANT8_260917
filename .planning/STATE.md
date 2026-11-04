@@ -497,6 +497,7 @@ Recent decisions affecting current work:
 - Phase 07.2 inserted after Phase 7: 07 새 기능: 사용자 지정 PU1~23 (사용자 카드 2026-10-26)
 - Phase 07.6 inserted after Phase 7: 매출 발행·입금 줄 지우기(보관·되살리기) — 전환 전 작은 플랜(사용자 카드 11/4 13:04 KST)
 - Phase 07.6 edited: edited fields: goal, requirements, depends_on
+- Phase 07.4 inserted after Phase 7: 서류 출력: 일반 지출결의·구매 요청·연차 신청서 인쇄물, 8 전환 전(10/27 카드)
 - Phase 07.5 inserted after Phase 07: 화면 항목 추가 — Phase 10 기준 4(ADMN-07)에서 떼어 냄, 전환 전(사용자 카드 11/4, Phase 8 계획 스레드)
 
 ## Deferred Items

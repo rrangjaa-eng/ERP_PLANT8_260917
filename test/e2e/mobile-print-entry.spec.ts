@@ -17,6 +17,11 @@ test.beforeAll(async ({ browser, baseURL }) => {
 
 const printLink = (page: Page) => page.getByRole("link", { name: "인쇄", exact: true });
 
+// 상세 화면은 로딩 경계(제목만 있는 자리표시)가 먼저 오고 본문이 스트리밍으로 바뀐다 — 제목이 하나로 줄 때까지 기다린 뒤 잰다.
+async function waitForDetailTitle(page: Page): Promise<void> {
+  await expect(page.locator('h1[data-ui="screen-title"]')).toHaveCount(1, { timeout: 20_000 });
+}
+
 async function headHeights(page: Page): Promise<{ head: number; heading: number; actions: number }> {
   // DetailScreen 머리: h1(제목) → 제목 블록(.heading) → 머리 줄(.head). actions 상자는 머리 줄의 둘째 자식이다.
   return page.locator('h1[data-ui="screen-title"]').evaluate((title) => {
@@ -32,7 +37,7 @@ for (const width of [375, 320]) {
     const page = await loginPage(browser, baseURL, fx.pm, { width, height: 800 });
     try {
       await page.goto(`/expenses/${expenseId}`);
-      await expect(page.locator('h1[data-ui="screen-title"]')).toBeVisible();
+      await waitForDetailTitle(page);
       await expect(printLink(page)).toHaveCount(0);
     } finally {
       await page.context().close();
@@ -47,7 +52,7 @@ for (const width of [375, 320]) {
     const page = await loginPage(browser, baseURL, fx.pm, { width, height: 800 });
     try {
       await page.goto(`/expenses/${expenseId}`);
-      await expect(page.locator('h1[data-ui="screen-title"]')).toBeVisible();
+      await waitForDetailTitle(page);
       const heights = await headHeights(page);
       expect(heights.head, `머리 줄 ${JSON.stringify(heights)}`).toBeLessThanOrEqual(heights.heading + 1);
     } finally {
@@ -60,7 +65,7 @@ test("700px부터 「인쇄」 링크가 하나다", async ({ browser, baseURL }
   const page = await loginPage(browser, baseURL, fx.pm, { width: 700, height: 800 });
   try {
     await page.goto(`/expenses/${expenseId}`);
-    await expect(page.locator('h1[data-ui="screen-title"]')).toBeVisible();
+    await waitForDetailTitle(page);
     await expect(printLink(page)).toHaveCount(1);
   } finally {
     await page.context().close();

@@ -201,7 +201,7 @@ test("상세 화면 머리 줄 actions는 1280 · 768에서 넘치지 않는다(
     for (const viewport of [VIEWPORTS[3], VIEWPORTS[2]]) {
       await page.setViewportSize(viewport);
       await page.goto(`/expenses/${inReviewId}`);
-      await expect(page.locator('h1[data-ui="screen-title"]')).toBeVisible();
+      await expect(page.locator('h1[data-ui="screen-title"]')).toHaveCount(1, { timeout: 20_000 });
       await shot(page, "detail-entry", viewport.width);
       rows.push(
         await page.locator('h1[data-ui="screen-title"]').evaluate((title, width) => {

@@ -736,6 +736,33 @@ test.describe("리저브 대장 — 읽기 · 좁은 PC · 저장 중 잠금 · 
     await expect(page.getByRole("link", { name: "리저브 대장" })).toHaveCount(0);
     expect((await page.goto("/pnl/reserves"))?.status()).toBe(404);
   });
+
+  test("주 메뉴 — 대장이 열리는 계급은 「리저브」로 대장에 닿고 「손익」이 없다, 기획 PM · 노출 꺼진 계급엔 「리저브」가 없다(2026-11-04)", async ({ page }) => {
+    const roles = await createRoles();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await login(page, roles.finance);
+
+    const mainNav = page.getByRole("navigation", { name: "주 메뉴" });
+    await expect(mainNav).toBeVisible();
+    await expect(mainNav.getByRole("link", { name: "손익", exact: true })).toHaveCount(0);
+    const reservesLink = mainNav.getByRole("link", { name: "리저브", exact: true });
+    await reservesLink.click();
+    await expect(page).toHaveURL(/\/pnl\/reserves$/);
+    await expect(reservesLink).toHaveAttribute("aria-current", "page");
+    await expect(mainNav.locator('a[aria-current="page"]')).toHaveCount(1);
+
+    await page.context().clearCookies();
+    await login(page, DEFAULT_ROLE_ID);
+    await expect(mainNav).toBeVisible();
+    await expect(mainNav.getByRole("link", { name: "리저브", exact: true })).toHaveCount(0);
+    await expect(mainNav.getByRole("link", { name: "손익", exact: true })).toHaveCount(0);
+
+    await page.context().clearCookies();
+    await login(page, roles.hidden);
+    await expect(mainNav).toBeVisible();
+    await expect(mainNav.getByRole("link", { name: "리저브", exact: true })).toHaveCount(0);
+    await expect(mainNav.getByRole("link", { name: "손익", exact: true })).toHaveCount(0);
+  });
 });
 
 // 묶음 ④ /review — 리저브 붙여넣기·복사·환산·보관 요청 오류.

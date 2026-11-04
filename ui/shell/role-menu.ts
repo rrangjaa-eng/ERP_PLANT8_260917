@@ -14,6 +14,8 @@ export type RoleMenuViewer = {
   allowedMenus: readonly string[];
   /** 증빙 등록(`evidence.intake` 쓰기) 권한 — layout이 can()으로 계산해 넘긴다. true면 1차 메뉴 3번째(지출결의 다음)에 「증빙」이 끼인다. */
   canIntakeEvidence: boolean;
+  /** 리저브 대장이 열리는 두 조건(손익 보기 + 리저브 금액 노출)을 layout이 can() · visible()로 계산해 넘긴다. true면 1차 메뉴 맨 끝에 「리저브」가 붙는다. */
+  canViewReserves: boolean;
 };
 
 export type MenuLink = {
@@ -28,7 +30,7 @@ export type AccountEntry =
 export type BottomTab = { label: string } & ({ kind: "link"; href: string } | { kind: "more" });
 
 export type RoleMenu = {
-  /** SYSTEM.md §6-0 1차 메뉴 — 다섯은 대응 화면 유무와 무관하게 역할과 상관없이 항상 전부(D-22), 증빙 등록 권한자에게만 3번째 「증빙」. */
+  /** SYSTEM.md §6-0 1차 메뉴 — 넷은 대응 화면 유무와 무관하게 역할과 상관없이 항상 전부(D-22), 증빙 등록 권한자에게만 3번째 「증빙」, 리저브 대장 계급에게만 끝에 「리저브」. */
   topBarMenu: MenuLink[];
   /** SYSTEM.md §6-0 (a) PC 사용자 메뉴 · §7-8 「더보기」 시트의 「관리」 한 줄 —
    * 권한표에서 view 권한이 있는 admin.* 메뉴가 하나라도 있으면 `[{ label: "관리",
@@ -46,7 +48,7 @@ export type RoleMenu = {
  * 관리자 화면 항목(허용된 것만). 항목이 0개인 그룹은 배열에 아예 나타나지 않는다. */
 export type AdminMenuGroup = { label: string; items: MenuLink[] };
 
-// 1차 메뉴 다섯의 URL 정본(이 페이즈의 유일한 출처). 02-05가 정확히 이 다섯 경로로
+// 1차 메뉴 넷의 URL 정본(이 페이즈의 유일한 출처; 「손익」은 2026-11-04 사용자 결정으로 뺐다). 02-05가 정확히 이 경로로
 // 화면을 만들고, 그 플랜의 라우트 대조 검증이 이 목록과 실제 라우트를 맞춰 본다 —
 // 다른 곳에 URL 문자열을 복제하지 않는다.
 const TOP_BAR_MENU: readonly MenuLink[] = [
@@ -54,12 +56,14 @@ const TOP_BAR_MENU: readonly MenuLink[] = [
   { label: "지출결의", href: "/expenses" },
   { label: "법인카드", href: "/cards" },
   { label: "결재", href: "/approvals" },
-  { label: "손익", href: "/pnl" },
 ];
 
 // 증빙 등록 권한자(`evidence.intake` 쓰기, 화면 게이트 expenses/evidence/layout.tsx와 같은 판정)에게만 3번째(지출결의 다음)에 끼는 1차 메뉴.
 const EVIDENCE_MENU: MenuLink = { label: "증빙", href: "/expenses/evidence" };
 const EVIDENCE_MENU_INDEX = 2;
+
+// 2026-11-04 사용자 결정 — 「손익」 메뉴 대신 리저브 대장(/pnl/reserves)의 진입점. 04-42 B-13 게이트(reserves/layout.tsx)와 같은 판정으로 열리는 계급에게만 맨 끝에 붙는다.
+const RESERVES_MENU: MenuLink = { label: "리저브", href: "/pnl/reserves" };
 
 // D-17 → 「관리」 한 줄로 접기(2026-09-22, quick/260922-i3k, 사용자 결정 옵션 B):
 // 관리자 화면 12종(§6-8 시스템 상태 + Phase 3의 나머지 10개 + 04.3의 확인증 행사) 전부 — 개별 이름은
@@ -216,23 +220,23 @@ const ROLE_BOTTOM_TABS: Readonly<Record<string, readonly RoleTabLink[]>> = {
   "role-ceo": [
     { label: "내 차례", href: "/" },
     { label: "결재", href: "/approvals" },
-    { label: "손익", href: "/pnl" },
+    { label: "프로젝트", href: "/projects" },
   ],
   "role-division-head": [
     { label: "내 차례", href: "/" },
     { label: "결재", href: "/approvals" },
-    { label: "손익", href: "/pnl" },
+    { label: "프로젝트", href: "/projects" },
   ],
   "role-team-lead": [
     { label: "내 차례", href: "/" },
     { label: "결재", href: "/approvals" },
-    { label: "손익", href: "/pnl" },
+    { label: "프로젝트", href: "/projects" },
   ],
   "role-pm": DEFAULT_ROLE_TABS,
   "role-sysadmin": [
     { label: "내 차례", href: "/" },
     { label: "결재", href: "/approvals" },
-    { label: "손익", href: "/pnl" },
+    { label: "프로젝트", href: "/projects" },
   ],
 };
 
@@ -250,10 +254,11 @@ function buildBottomTabs(viewer: RoleMenuViewer): BottomTab[] {
  * 메뉴 키가 있을 때만 존재한다.
  */
 export function roleMenu(viewer: RoleMenuViewer): RoleMenu {
+  const primaryMenu = viewer.canIntakeEvidence
+    ? [...TOP_BAR_MENU.slice(0, EVIDENCE_MENU_INDEX), EVIDENCE_MENU, ...TOP_BAR_MENU.slice(EVIDENCE_MENU_INDEX)]
+    : [...TOP_BAR_MENU];
   return {
-    topBarMenu: viewer.canIntakeEvidence
-      ? [...TOP_BAR_MENU.slice(0, EVIDENCE_MENU_INDEX), EVIDENCE_MENU, ...TOP_BAR_MENU.slice(EVIDENCE_MENU_INDEX)]
-      : [...TOP_BAR_MENU],
+    topBarMenu: viewer.canViewReserves ? [...primaryMenu, RESERVES_MENU] : primaryMenu,
     adminMenu: buildAdminMenu(viewer),
     accountGroup: buildAccountGroup(viewer),
     bottomTabs: buildBottomTabs(viewer),

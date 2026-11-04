@@ -20,16 +20,14 @@ const STEP3_ROLE_DEFS = [APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID, APPROVAL_ROUTE_EXPE
 
 // 07.3-01(D-7310): 자금 본부 설정을 값이 없을 때만 경영관리본부 uuid로 채운다(관리자 값은 덮지 않는다).
 // 이름 조회는 시드 1회뿐이다(approvals-leave.ts와 같은 꼴) — 런타임 판정은 설정 uuid만 본다.
-// 본부를 못 찾거나 보관됐으면 설정 없이 끝난다 — 자금 기능은 회사 전체 계급만 쓰게 닫히므로 경고 한 줄을 남긴다.
+// 본부를 못 찾거나 보관됐으면 설정 없이 넘어간다 — 자금 기능은 회사 전체 계급만 쓰게 닫히므로 경고 한 줄을 남긴다.
+// ③단 보정은 설정 시드 뒤에 돈다 — 01+02가 함께 처음 배포되는 DB에서도 같은 호출에서 보정되게.
 export async function seedFundScope(viewer: Viewer): Promise<void> {
-  await fixStep3RoleDefaults(viewer);
   await seedFundPermissions(viewer);
   const mgmt = await findOrgUnitByName(viewer, "경영관리본부");
-  if (!mgmt || mgmt.archivedAt !== null) {
-    log.warn("seed.fund_division_missing", { key: FUND_DIVISION_ORG_UNIT.key });
-    return;
-  }
-  await seedSimpleValue(viewer, FUND_DIVISION_ORG_UNIT.key, mgmt.id);
+  if (!mgmt || mgmt.archivedAt !== null) log.warn("seed.fund_division_missing", { key: FUND_DIVISION_ORG_UNIT.key });
+  else await seedSimpleValue(viewer, FUND_DIVISION_ORG_UNIT.key, mgmt.id);
+  await fixStep3RoleDefaults(viewer);
 }
 
 // 07.3-02(D-7316 · D-E2): 기존 DB의 ③단 담당 계급이 옛 기본값("")이고 관리자가 저장한 적 없으면 새 기본값(본부 책임자)으로 —

@@ -158,7 +158,18 @@ describe("③단 담당 계급 시드 보정 (07.3-02 D-7316)", () => {
     expect((await step3Row(leaveKey))?.updatedBy).toBe(admin.id);
   });
 
-  it("경영관리본부가 없어도(자금 본부 경고 갈래) 보정은 그 앞에서 돈다 — 자금 본부 설정이 없으면 미룬다", async () => {
+  it("같은 시드 호출에서 자금 본부 설정이 처음 채워지면 그 호출에서 보정한다(01+02 첫 배포)", async () => {
+    await simulateOldDefaults();
+    await db.delete(settingsSimple).where(eq(settingsSimple.key, FUND_DIVISION_ORG_UNIT.key));
+    await addMgmtHead();
+    const lines = captureLog();
+    await seedFundScope(SYSTEM_VIEWER);
+    expect(await storedValue()).toBe(await orgUnitIdByName("경영관리본부"));
+    expect(await step3Values()).toEqual([DIVISION_HEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID]);
+    expect(lines.filter((line) => line.includes("seed.step3_role_default_deferred"))).toHaveLength(0);
+  });
+
+  it("경영관리본부가 없으면(자금 본부 경고 갈래) 자금 본부 설정이 없어 보정을 미룬다", async () => {
     await simulateOldDefaults();
     await db.delete(settingsSimple).where(eq(settingsSimple.key, FUND_DIVISION_ORG_UNIT.key));
     await db.update(orgUnits).set({ name: "경영지원본부" }).where(eq(orgUnits.name, "경영관리본부"));

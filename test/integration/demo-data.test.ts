@@ -201,6 +201,13 @@ describe("scripts/demo-data 조직 격리 · 실제 사람 재사용", () => {
     expect(await count("approval_instances")).toBe(3);
   }, 120_000);
 
+  it("실제 경영관리 실무(책임자 아님)만 있어도 견본 경영관리 담당을 만들지 않는다 — 견본이 ③단 보정의 책임자로 세어지지 않게", async () => {
+    await makePerson("실제경영실무", DEFAULT_ROLE_ID, "경영관리팀");
+    await seedDemoData();
+    const demoUsers = await db.select({ email: users.email }).from(users).where(like(users.email, DEMO_EMAIL_LIKE));
+    expect(demoUsers.map((user) => user.email)).not.toContain("demo-mgmt@plant8-demo.test");
+  }, 120_000);
+
   it("보관 안 된 견본 본부 · 팀이 이미 있으면 seed가 재사용한다", async () => {
     await seedDemoData();
     const before = await demoOrg();

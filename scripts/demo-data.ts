@@ -234,10 +234,11 @@ async function hasActiveCeo(today: string): Promise<boolean> {
   return false;
 }
 
-// 경영관리 담당 = 경영관리본부의 지금 본부 책임자(결재 스냅숏 규칙 — 팀이 이기고 팀 없으면 본부 칸 · 보관 · 퇴직 제외, 07.3-02 seat 규칙).
+// 경영관리본부에 지금 일하는 실제 사람이 한 명이라도 있는지(결재 스냅숏 규칙 — 팀이 이기고 팀 없으면 본부 칸 · 보관 · 퇴직 제외).
+// 책임자만 보면 실제 실무만 있을 때 견본 책임자가 생겨 ③단 보정(D-E2)이 견본을 책임자로 센다 — 실제 사람이 있으면 계급과 무관하게 견본을 만들지 않는다.
 async function hasActiveMgmt(mgmtTeamId: string, today: string): Promise<boolean> {
   const [team] = await db.select({ orgUnitId: teams.orgUnitId }).from(teams).where(eq(teams.id, mgmtTeamId));
-  return (await listOrgSnapshot(SYSTEM_VIEWER, today)).some((person) => person.roleId === DIVISION_HEAD_ROLE_ID && person.orgUnitId === team?.orgUnitId);
+  return (await listOrgSnapshot(SYSTEM_VIEWER, today)).some((person) => person.orgUnitId === team?.orgUnitId);
 }
 
 // 견본 본부 · 팀이 있으면 재사용하고, purge가 보관해 둔 것은 복원한다(본부 이름은 전역 unique라 새로 만들 수 없다).

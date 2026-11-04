@@ -116,6 +116,7 @@ export default async function ExpensePrintPage({ params }: { params: Promise<{ i
         ],
       });
     }
+    // 비정상 값이라 한글 금액이 null이면 그 글자만 없다(UI-SPEC 합계 행 — 「그 줄만 없다」). 칸은 금액 열 정렬을 위해 비워 둔다.
     const korean = koreanAmountText(payable.amountKrw);
     foot = (
       <>

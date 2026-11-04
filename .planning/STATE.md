@@ -5,7 +5,7 @@ current_phase_name: 후속 (carryover-followup) (INSERTED)
 current_plan: 2
 status: executing
 stopped_at: Completed 07.1-20-PLAN.md
-last_updated: "2026-11-04T03:55:36.700Z"
+last_updated: "2026-11-04T05:25:07.617Z"
 last_activity: 2026-11-01
 last_activity_desc: Phase 07.1 execution started
 state_head: 34cc9d37e18d429c1ee60cc872e244a16c838a79
@@ -496,6 +496,7 @@ Recent decisions affecting current work:
 - Phase 07.1 inserted after Phase 7: 07 후속: 06~06.6 후속 + 07 검증 결함 + C-90~93 (사용자 카드 2026-10-26) (URGENT)
 - Phase 07.2 inserted after Phase 7: 07 새 기능: 사용자 지정 PU1~23 (사용자 카드 2026-10-26)
 - Phase 07.4 inserted after Phase 7: 서류 출력: 일반 지출결의·구매 요청·연차 신청서 인쇄물, 8 전환 전(10/27 카드)
+- Phase 07.5 inserted after Phase 07: 화면 항목 추가 — Phase 10 기준 4(ADMN-07)에서 떼어 냄, 전환 전(사용자 카드 11/4, Phase 8 계획 스레드)
 
 ## Deferred Items
 

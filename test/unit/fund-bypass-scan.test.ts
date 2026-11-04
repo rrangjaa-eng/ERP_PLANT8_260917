@@ -12,11 +12,11 @@ import { describe, expect, it } from "vitest";
 const ROOT = process.cwd();
 const SCAN_DIRS = ["app", "domain", "lib", "repositories", "scripts"];
 
-const NOTIFY_LATER = "07.3-02가 domain/notify/recipients.ts에서 자금 본부 소속 ∪ 회사 전체 계급과 교집합으로 정렬한다(B1 · B2 — 알림 tick 잠금 tx 안이라 can()을 못 부른다)";
+const NOTIFY_FUND = "recipients.ts가 자금 본부 교집합(07.3-02) — 권한표 쓰기 보유자 ∩ (자금 본부 소속 ∨ 회사 전체 계급). 알림 tick 잠금 tx 안이라 can()을 못 부른다";
 
 const MATRIX_IDENTIFIER_ALLOW: Record<string, string> = {
   "repositories/permissions.ts": "권한표 리포지토리 자체(findPermission · listPermissions · 권한표 화면 쓰기) — can()이 읽는 정본",
-  "repositories/notify-sources.ts": `알림 받는 사람 직독(listPaymentManagerIds B1 · listMenuWriterIds B2) — ${NOTIFY_LATER}`,
+  "repositories/notify-sources.ts": `알림 받는 사람 직독(listPaymentManagerIds B1 · listMenuWriterIds B2) — ${NOTIFY_FUND}`,
   "repositories/users.ts": "사람 목록의 관리자 열(admin.permissions write) — 자금 키 아님",
   "repositories/team-memberships.ts": "teamLeadCandidatesAtDate — 메뉴가 projects.status · projects.period 타입으로 묶인 팀장 후보 문구 — 자금 키 아님",
 };
@@ -26,18 +26,19 @@ const DIRECT_READ_ALLOW: Record<string, string> = {
   "domain/permissions/last-admin.ts": "마지막 관리자 지킴(admin.permissions write) — 자금 키 아님",
   "domain/permissions/matrix.ts": "권한표 화면 읽기 · 쓰기(admin.permissions) — 판정이 아니라 표 편집",
   "domain/seed/index.ts": "B4 시드 — evidence.intake 허용 행을 읽어 evidence 보기 행을 넣는다(허용 행 직독이 맞다 · 무해)",
+  "domain/seed/fund-scope.ts": "07.3-02 자금 시드 블록 — 꺼진 행(allowed=false)을 읽어 짝 칸이 꺼진 계급에 쓰기 행을 넣지 않는다(판정이 아니라 시드 · 무해)",
 };
 
 const MENU_HELPER_ALLOW: Record<string, string> = {
   "domain/projects/members.ts": "참여자 후보 = projects 보기 — 자금 키 아님",
   "domain/certs/intake.ts": "확인증 알림 받는 사람 = certs 키 — 자금 키 아님",
   "domain/certs/events.ts": "QR 요청 알림 받는 사람 = certs.qr — 자금 키 아님(D-7308 · 본부 조건 없음)",
-  "domain/notify/recipients.ts": `지급 알림 받는 사람(listPaymentManagerIds B1) — ${NOTIFY_LATER}`,
-  "domain/notify/kinds/orphan-evidence.ts": `미연결 증빙 알림 받는 사람(listMenuWriterIds B2 · evidence.intake) — ${NOTIFY_LATER}`,
+  "domain/notify/recipients.ts": `지급 · 미연결 증빙 알림 받는 사람(listPaymentManagerIds B1 · listMenuWriterIds B2) — ${NOTIFY_FUND}`,
   "domain/permissions/grant-ceiling.ts": "계급 편집 상한(권한 행 전체 비교) — 판정이 아니라 관리자 쓰기 상한",
 };
 
 const DIRECT_READ_NAMES = ["findPermission", "listPermissions"];
+const NOTIFY_DIRECT_NAMES = ["listPaymentManagerIds", "listMenuWriterIds"];
 const MENU_HELPER_NAMES = ["listActiveUserIdsAllowed", "listRoleGrantRows", "listMenuWriterIds", "listPaymentManagerIds"];
 
 function sourceFiles(dir: string): string[] {
@@ -88,6 +89,11 @@ describe("자금 게이트 우회 스캔 (07.3-01)", () => {
     const modules = ["@/repositories/permissions", "@/repositories/notify-sources"];
     const hits = FILES.filter((file) => importedNames(read(file), modules).some((name) => MENU_HELPER_NAMES.includes(name)));
     expect(sorted(hits)).toEqual(sorted(Object.keys(MENU_HELPER_ALLOW)));
+  });
+
+  it("권한표 직독 알림 함수(지급 처리 · 메뉴 쓰기 보유자)를 import하는 파일 = recipients.ts 하나 (07.3-02)", () => {
+    const hits = FILES.filter((file) => importedNames(read(file), ["@/repositories/notify-sources"]).some((name) => NOTIFY_DIRECT_NAMES.includes(name)));
+    expect(hits).toEqual(["domain/notify/recipients.ts"]);
   });
 
   it("허용표 줄마다 이유가 있다", () => {

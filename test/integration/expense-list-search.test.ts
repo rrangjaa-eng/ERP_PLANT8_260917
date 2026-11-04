@@ -445,7 +445,9 @@ describe("지출결의 목록 거르개 — 팀 · 월 · 내 것만 (07.1-09)",
     const months = (await listExpenses(viewer, { status: "all" }, { today: seoulToday() })).months;
     expect(months).toEqual(expect.arrayContaining(["2025-11", "2025-10", "2025-09"]));
     expect([...months].sort().reverse()).toEqual(months);
-    const outsider = await makePerson(`밖-${randomUUID().slice(0, 4)}`, DEFAULT_ROLE_ID, "경영관리팀");
+    // 07.3-02(D-7315): 경영관리팀 기본 계급은 시드 자금 키로 지출결의를 전사로 본다(D-7314) — 범위 밖 사람은 기획본부의 다른 팀에 둔다.
+    const outsideTeam = await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("기획본부"), name: `밖팀-${randomUUID().slice(0, 4)}` });
+    const outsider = await makePerson(`밖-${randomUUID().slice(0, 4)}`, DEFAULT_ROLE_ID, outsideTeam.name);
     expect((await listExpenses(outsider, { status: "all" }, { today: seoulToday() })).months).not.toContain("2025-11");
     expect(w.line.expenseId).toBeTruthy();
   }, 60_000);

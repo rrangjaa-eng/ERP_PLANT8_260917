@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import {
   actionLog,
@@ -10,12 +10,14 @@ import {
   expensePayments,
   expenses,
   leaveRequests,
+  orgUnits,
   permissionMatrix,
   projects,
   quoteLines,
   quoteRevisions,
   roles,
   settlementApprovals,
+  teamMemberships,
   teams,
   users,
 } from "@/db/schema";
@@ -48,6 +50,44 @@ export async function listPaymentManagerIds(viewer: Viewer, today: string, tx: D
     .where(activeUser(today))
     .groupBy(users.id)
     .orderBy(users.id);
+  return rows.map((row) => row.id);
+}
+
+// 07.3-02(D-7312): 활성 사용자마다 계급 · 소속 본부 — 07.3-01 viewerDivision 규칙(오늘 발령 팀이 있으면 그 팀의 본부 · 팀 보관은 보지 않는다,
+// 없으면 사람 본부 칸 · 보관된 본부면 null). 결재 스냅숏(보관된 팀이면 본부 null)과 달리 can()의 자금 게이트와 같은 답을 내려고 따로 둔다.
+export async function listActiveUserDivisions(
+  viewer: Viewer,
+  today: string,
+  tx: DbOrTx = db,
+): Promise<{ id: string; roleId: string | null; orgUnitId: string | null }[]> {
+  void viewer;
+  const latest = db
+    .selectDistinctOn([teamMemberships.userId], { userId: teamMemberships.userId, teamId: teamMemberships.teamId })
+    .from(teamMemberships)
+    .where(lte(teamMemberships.effectiveFrom, today))
+    .orderBy(teamMemberships.userId, desc(teamMemberships.effectiveFrom))
+    .as("latest_memberships");
+  return tx
+    .select({
+      id: users.id,
+      roleId: users.roleId,
+      orgUnitId: sql<string | null>`case when ${latest.teamId} is not null then ${teams.orgUnitId} else ${orgUnits.id} end`,
+    })
+    .from(users)
+    .leftJoin(latest, eq(latest.userId, users.id))
+    .leftJoin(teams, eq(teams.id, latest.teamId))
+    .leftJoin(orgUnits, and(eq(orgUnits.id, users.divisionId), isNull(orgUnits.archivedAt)))
+    .where(activeUser(today));
+}
+
+// 07.3-02(D-7312 · D-7313): 회사 전체 보는 범위(viewScope company) · 보관 아닌 계급 id — 자금 게이트의 면제 조건과 같은 칸.
+export async function listCompanyScopeRoleIds(viewer: Viewer, tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  const rows = await tx
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.viewScope, "company"), isNull(roles.archivedAt)))
+    .orderBy(roles.id);
   return rows.map((row) => row.id);
 }
 

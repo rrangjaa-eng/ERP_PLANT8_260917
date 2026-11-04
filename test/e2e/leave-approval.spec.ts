@@ -2,18 +2,18 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { createAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
 import "@/domain/leave";
 import { submitLeave } from "@/domain/leave";
 import { leaveWeekdayRange } from "./leave-dates";
-import { documentLabel, documentTitle, expectSheetDocumentLink, loginPage as loginAsPerson, setupLeaveOrg, waitForHydration } from "./leave-org";
+import { documentLabel, documentTitle, expectSheetDocumentLink, loginPage as loginAsPerson, makeMgmtHead, setupLeaveOrg, waitForHydration } from "./leave-org";
 import { isStrict } from "./design-principles";
 import { checkPrinciples } from "./principles-check";
 
 // 04.1-02 Task 1 화면 트레이서(EXP-05): /leave/new 신청 → /leave/[id] → /approvals 승인 × 4 → 최종 승인.
 // 다른 스펙의 픽스처와 섞이지 않게 전용 본부 · 팀을 도메인 함수로 만들고 기안자 · 팀장 · 본부 책임자를
-// 발령한다. 3단(경영관리본부 · 계급 무관)은 기존 경영관리팀에 이 스펙의 한 명을, 4단(대표 · 전사)은 이
+// 발령한다. 3단(경영관리본부 · 본부 책임자, 07.3-02)은 이 스펙의 경영관리 책임자(팀 없이 본부 칸)를, 4단(대표 · 전사)은 이
 // 스펙의 대표를 후보로 둔다 — 다른 스펙의 사람이 같은 자리 후보여도 이 스펙의 사람이 처리할 수 있으면 된다.
 
 type Person = { name: string; email: string; password: string };
@@ -64,13 +64,11 @@ test.describe("연차 신청 → 결재함 승인 → 최종 승인 (04.1-02 트
 
     const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E연차본부-${randomUUID().slice(0, 8)}` });
     const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E연차팀-${randomUUID().slice(0, 8)}` });
-    const mgmtTeam = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.name === "경영관리팀");
-    if (!mgmtTeam) throw new Error("시드된 경영관리팀 없음");
 
     const drafter = await makePerson("기안", "role-pm", team.id, yearStart);
     const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
     const divisionHead = await makePerson("본부장", "role-division-head", team.id, yearStart);
-    const mgmt = await makePerson("경영", "role-pm", mgmtTeam.id, yearStart);
+    const mgmt = await makeMgmtHead("경영");
     const ceo = await makePerson("대표", "role-ceo", team.id, yearStart);
     const outsider = await makePerson("무관", "role-pm", team.id, yearStart);
 

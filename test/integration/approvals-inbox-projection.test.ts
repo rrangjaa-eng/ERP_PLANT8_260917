@@ -32,7 +32,7 @@ import type { LeaveRequestBalanceDto } from "@/domain/leave/dto";
 import { setHireDate, setResignationDate } from "@/domain/people";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import { findApprovalGraphByDocument } from "@/repositories/approvals";
-import { APPROVAL_ROUTE_LEAVE_SELF_APPROVAL } from "@/domain/settings/keys";
+import { APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID } from "@/domain/settings/keys";
 import { findVisibility, upsertVisibility } from "@/repositories/permissions";
 import { findLeaveRequestsByIds } from "@/repositories/leave-requests";
 import { listLeaveUsage } from "@/repositories/leave-usage";
@@ -172,6 +172,8 @@ describe("새 계급 · 결재 정보 꺼짐(CEO-10 → 사용자 결정 2026-09
     const role = await createRole(SYSTEM_VIEWER, { name: `새계급-${Date.now()}` });
     if (!role.id) throw new Error("계급 id가 없습니다");
     const newcomer = await makePerson("새담당", role.id, "경영관리팀");
+    // 07.3-02(D-7306): 3단 기본값이 본부 책임자라 이 시험의 새 계급을 3단 담당 계급으로 둔다(시험 뜻 — 결재 정보가 꺼진 계급의 결재자).
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID, role.id);
     await submitLeave(drafter, DAY(7), { now: NOW_2026 });
 
     const inbox = await listMyInbox(newcomer, { now: NOW_2026, withDetails: true });

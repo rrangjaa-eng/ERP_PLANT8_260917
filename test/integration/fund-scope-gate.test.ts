@@ -193,6 +193,10 @@ describe("D-7314 보는 범위 확대", () => {
   });
 
   it("경영관리 사원에게 증빙 등록만 남기면 지출결의는 넓히지 않는다(키 매핑)", async () => {
+    // 07.3-02(D-7315): 시드가 기본 계급에 자금 키를 켠다 — 증빙 등록 밖 자금 키를 꺼서 「등록만 남은」 계급을 만든다.
+    for (const menu of FUND_SCOPED_MENUS.filter((key) => key !== "evidence.intake")) {
+      for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu, action, allowed: false });
+    }
     await grantFundKeys(DEFAULT_ROLE_ID, ["evidence.intake"]);
     const mgmt = await makeFundPerson("경영관리 사원", DEFAULT_ROLE_ID, "경영관리팀");
     expect(await can(mgmt, "evidence.intake", "write")).toBe(true);

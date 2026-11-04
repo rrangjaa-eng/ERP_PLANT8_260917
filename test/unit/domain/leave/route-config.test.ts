@@ -48,7 +48,7 @@ describe("loadLeaveRouteConfig", () => {
       steps: [
         { enabled: true, roleId: "role-team-lead", scope: "drafter_team", orgUnitId: "" },
         { enabled: true, roleId: "role-division-head", scope: "drafter_org_unit", orgUnitId: "" },
-        { enabled: true, roleId: "", scope: "org_unit", orgUnitId: "" },
+        { enabled: true, roleId: "role-division-head", scope: "org_unit", orgUnitId: "" },
         { enabled: true, roleId: "role-ceo", scope: "company", orgUnitId: "" },
       ],
     });

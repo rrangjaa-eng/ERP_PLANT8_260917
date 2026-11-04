@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { settingsSimple, settingsHistorized } from "@/db/schema";
@@ -127,6 +127,30 @@ export async function seedSimpleValue(viewer: Viewer, key: string, value: unknow
     .onConflictDoNothing({ target: settingsSimple.key })
     .returning({ key: settingsSimple.key });
   return inserted.length > 0;
+}
+
+// 07.3-02(D-7316): 기본값 갱신 시드 보정 — 값이 from이고 관리자가 저장한 적 없을 때(updated_by NULL)만 to로 바꾼다
+// (선례 upsertVisibilityIfUnedited). updated_by는 NULL로 둔다 — 다음 기본값 갱신도 같은 규칙을 탄다. 바꿨으면 참.
+export async function updateSimpleValueIfUnedited(
+  viewer: Viewer,
+  key: string,
+  from: unknown,
+  to: unknown,
+  tx: DbOrTx = db,
+): Promise<boolean> {
+  void viewer;
+  const updated = await tx
+    .update(settingsSimple)
+    .set({ value: storedJson(to), updatedAt: new Date() })
+    .where(
+      and(
+        eq(settingsSimple.key, key),
+        sql`${settingsSimple.value} = ${JSON.stringify(from)}::jsonb`,
+        isNull(settingsSimple.updatedBy),
+      ),
+    )
+    .returning({ key: settingsSimple.key });
+  return updated.length > 0;
 }
 
 export async function seedHistorizedValue(

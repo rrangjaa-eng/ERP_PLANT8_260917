@@ -3,9 +3,10 @@ import { expect, type Browser, type Locator, type Page } from "@playwright/test"
 import { createAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
+import { setPersonDivision } from "@/domain/people";
 
 // 04.1-05: 결재 화면 E2E 공용 픽스처 — 04.1-02 leave-approval.spec.ts와 같은 모양(스펙마다 전용 본부 · 팀,
-// 사람은 도메인 함수로 만든다). 3단(경영관리본부 · 계급 무관)은 기존 경영관리팀의 이 스펙 사람, 4단 대표는
+// 사람은 도메인 함수로 만든다). 3단(경영관리본부 · 본부 책임자, 07.3-02 D-7306)은 이 스펙의 경영관리 책임자, 4단 대표는
 // 이 스펙의 대표가 후보다. 다른 스펙의 사람이 같은 자리 후보여도 이 스펙의 사람이 처리할 수 있으면 된다.
 
 export type Person = { name: string; email: string; password: string; viewer: Viewer };
@@ -15,6 +16,20 @@ export async function makePerson(prefix: string, roleId: string, teamId: string,
   const email = `e2e-leave-${randomUUID()}@example.test`;
   const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name, roleId });
   await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom });
+  return { name, email, password: tempPassword, viewer: { id: userId, roleId } };
+}
+
+// 07.3-02(D-7306): 3단 담당 = 경영관리본부의 본부 책임자. 팀 없이 본부 칸 길로 만든다 — 경영관리팀 발령 길은 자리 판정(본부 책임자
+// 한 명)에 막히고, 이미 있는 책임자는 비밀번호를 몰라 로그인할 수 없다. 본부 칸에는 자리 판정이 없어 스펙마다 한 사람씩 선다
+// (다른 스펙의 책임자가 같은 자리 후보여도 이 스펙의 사람이 처리할 수 있으면 된다).
+export async function makeMgmtHead(prefix: string): Promise<Person> {
+  const mgmtTeam = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.name === "경영관리팀");
+  if (!mgmtTeam) throw new Error("시드된 경영관리팀 없음");
+  const name = `${prefix}${randomUUID().slice(0, 4)}`;
+  const email = `e2e-leave-${randomUUID()}@example.test`;
+  const roleId = "role-division-head";
+  const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name, roleId });
+  await setPersonDivision(SYSTEM_VIEWER, userId, mgmtTeam.orgUnitId);
   return { name, email, password: tempPassword, viewer: { id: userId, roleId } };
 }
 
@@ -32,14 +47,12 @@ export async function setupLeaveOrg(today: string): Promise<LeaveOrg> {
   const yearStart = `${today.slice(0, 4)}-01-01`;
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E결재본부-${randomUUID().slice(0, 8)}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E결재팀-${randomUUID().slice(0, 8)}` });
-  const mgmtTeam = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.name === "경영관리팀");
-  if (!mgmtTeam) throw new Error("시드된 경영관리팀 없음");
   return {
     teamId: team.id,
     drafter: await makePerson("기안", "role-pm", team.id, yearStart),
     teamLead: await makePerson("팀장", "role-team-lead", team.id, yearStart),
     divisionHead: await makePerson("본부장", "role-division-head", team.id, yearStart),
-    mgmt: await makePerson("경영", "role-pm", mgmtTeam.id, yearStart),
+    mgmt: await makeMgmtHead("경영"),
     ceo: await makePerson("대표", "role-ceo", team.id, yearStart),
   };
 }

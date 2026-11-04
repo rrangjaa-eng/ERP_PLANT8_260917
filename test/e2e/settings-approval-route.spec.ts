@@ -94,7 +94,8 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     const step1Role = leaveRoute(page).getByLabel("1단 담당 계급").locator("option");
     await expect(step1Role.first()).toHaveText("계급 무관");
     await expect(step1Role.filter({ hasText: /^팀장$/ })).toHaveCount(1);
-    await expect(checkedText(page, "3단 담당 계급")).toHaveText("계급 무관");
+    // 07.3-02(D-7306): 3단 담당 계급 기본값 = 본부 책임자(경영관리 실무는 결재 후보가 아니다).
+    await expect(checkedText(page, "3단 담당 계급")).toHaveText("본부 책임자");
     await expect(checkedText(page, "3단 특정 부서")).toHaveText("경영관리본부");
     await expect(leaveRoute(page).getByLabel("1단 조직 범위").locator("option")).toHaveText(["기안자 팀", "기안자 본부", "전사", "특정 부서"]);
 
@@ -141,6 +142,8 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await expect(expenseStep1Scope.locator("option")).toHaveText(["기안자 팀", "행사 담당 팀", "기안자 본부", "전사", "특정 부서"]);
     await expect(expenseStep1Scope.locator("option:checked")).toHaveText("행사 담당 팀");
     await expect(expenseRoute.getByLabel("1단 특정 부서")).toBeDisabled();
+    // 07.3-02(D-7306): 지출결의 3단 담당 계급도 본부 책임자.
+    await expect(expenseRoute.getByLabel("3단 담당 계급").locator("option:checked")).toHaveText("본부 책임자");
     expect(await page.locator("main").innerText()).not.toContain("project_team");
   });
 

@@ -62,6 +62,14 @@ describe("화면 바 · 쪽 나눔 예외 · caption", () => {
     expect(rule(".bar")).toContain("min(210mm, 100%)");
   });
 
+  // 독립 DOM 감사 D1 — <hr>의 브라우저 기본 border(1px inset 회색)가 좌 · 우 · 아래에 남으면 세로선과 회색 선이 생긴다. 위 한 줄만 그린다.
+  it(".rule(제목 괘선 hr)은 기본 border를 지운 뒤 위 한 줄만 그린다(D1)", () => {
+    const rule_ = rule(".rule");
+    expect(rule_).toMatch(/border:\s*0\s*;/);
+    expect(rule_.indexOf("border: 0")).toBeLessThan(rule_.indexOf("border-top"));
+    expect(rule_).toMatch(/border-top:\s*var\(--print-rule-w\) solid var\(--print-rule\)/);
+  });
+
   it(".rowBreakable만 break-inside: auto이고 dl 행은 avoid(F6)", () => {
     expect(rule(".rowBreakable")).toMatch(/break-inside:\s*auto/);
     expect(rule(".row")).toMatch(/break-inside:\s*avoid/);

@@ -199,6 +199,13 @@ test.describe("종이 본문", () => {
     await expect(numberLine(page)).toContainText("결재 중");
     await expect(sheet.locator("ol li")).toHaveText([/^1\. .+\.jpg$/]);
 
+    // 독립 DOM 감사 D1: 제목 괘선 hr은 위 2px 한 줄뿐이고 좌 · 우 · 아래 테두리(브라우저 기본 inset 회색)가 없다.
+    const hr = await sheet.locator("hr").first().evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { top: cs.borderTopWidth, right: cs.borderRightWidth, bottom: cs.borderBottomWidth, left: cs.borderLeftWidth };
+    });
+    expect(hr).toEqual({ top: "2px", right: "0px", bottom: "0px", left: "0px" });
+
     // 쪽 나눔: 자유 글 행(상세)만 이어질 수 있고 나머지 행은 쪼개지지 않는다(F6). 표 머리는 쪽마다 반복(table-header-group).
     const breakOf = (label: string) => sheet.locator("dl > div").filter({ has: page.getByText(label, { exact: true }) }).evaluate((el) => getComputedStyle(el).breakInside);
     expect(await breakOf("상세")).toBe("auto");

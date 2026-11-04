@@ -28,3 +28,44 @@
 - [x] 새 색 · 서체 · radius · 그림자 없음 — 근거: 추가 CSS는 var(--print-*) · 기존 역할 토큰뿐이고 print-frame-css 단위 시험이 리터럴 색 · 세로선 · 고정 높이 0을 단언한다
 - [x] 시스템 이탈은 DECISIONS 뒤에 SYSTEM — 근거: DECISIONS.md 「서류 출력 공용 인쇄 틀」(2026-11-04) 다음에 SYSTEM §6-6 · §7-7을 고쳤고 :636 트리거 줄은 그대로다(design-system-docs 단위 시험)
 - [x] 화면 바는 폭 320 · 375 · 700 · 768 · 1280에서 1차 버튼이 창 안에 있다 — 근거: E2E 「화면 바는 어느 폭에서도…」가 getBoundingClientRect right ≤ clientWidth와 scrollX 0을 실측한다
+
+## Task 3 — 독립 DOM 감사 (07.4-01) 결과
+감사 원본: `/mnt/project-files/07.4-review/exec/07.4-01-dom-audit.md` · `.planning/phases/07.4-document-print/07.4-UI-REVIEW.md`. 감사자는 실행자가 아닌 gsd-ui-auditor(Opus)이고 판정은 `CI=true` 빌드(:3100)의 계산 스타일 · 상자 · 접근성 트리 · `page.pdf()` 쪽 수다(스크린샷 육안 판정 없음).
+
+| 폭 | 단언 | 실측값 | 판정 |
+|---|---|---|---|
+| 1280 | 1 갈래 A | 열기 → print 1회 · document_print 5→6, 5초 안 beforeprint×2 + 재클릭 → 6, 5초 뒤 → 7 | 통과 |
+| 1280·768·700·375·320 | 2 종이·바 폭 | .sheet 793.7px, 바 793.7/768/700/375/320, print 바 none · @page A4 22/22/20mm | 통과 |
+| print A4 | 3 색 | 계산 색에 rgb(128,128,128) = hr 기본 테두리 | D1 → 고침(아래) |
+| print A4 | 4 면·구조선 | background-image 0 · 흰색 외 배경 0 · 구조선 border 2px | 통과 |
+| 전 폭 | 5 라벨·세로선 | dt 6 순서 · tfoot `지급 총액` · 「합계」 0 / 세로 테두리 hr 1건 | 라벨 통과 · 세로선 D1 → 고침 |
+| 전 폭 | 6 상태 글자 | `팀장 결재 중` · `본부 책임자 결재 중` · `반려` · `결재 중` · 승인 완료 0 | 통과 |
+| 전 폭 | 7 결재란 | F-E1 5칸 · F-E2 approved×4 · F-E3 반려 + 사유 1 · F-E4 기안 1칸 | 통과 |
+| 전 폭 | 8 금액 숨김 | 금액 열 · tfoot · 한글 금액 · 계산 불가 0 | 통과 |
+| 1280 | 9 회사 정보 | 다섯 → A+B줄 · 이름만 → B줄 0 · 비움 → `PLANT8` · 빈 요소 0 | 통과 |
+| 375·320 | 11 폰 입구 | 접근성 0 · 머리 줄 102.6px 대 제목 블록 86.6px(16px 틈) | A: 사용자 카드 대기 |
+| 1280·768 | 11 PC 입구 | 링크 1 · target=_blank rel=noopener | 통과 |
+| 1280 | 12 404·제목 | 없는 id · 남의 서류 404 · title 기본 / 열람 가능 `지출결의서 {번호}` | 통과 |
+| print | 13 회색조 | grayscale(1)에서 번호 줄 · 결재 칸 상태 글자 존재 | 통과 |
+| — | 14 토큰 | stylelint 0 · 색 · 서체 · radius 리터럴 0 | 통과 |
+| — | 15 확인증 회귀 | 감사자 실행은 30분 제한으로 미판정 → 실행자 재실행 cert-setup + cert-print 21 passed(`logs/07.4-01/f-cert.log`) | 통과(실행자 실측) |
+| 320·375·700·768·1280 | 16 화면 바 | 1차 right = 320/375/700/768/1036.8 ≤ clientWidth · 닫기 left ≥ 0 · scrollX 0 | 통과 |
+| — | 17 계산 불가 | 시드로 못 만듦 → expense-tax-rows 단위 시험 8 passed | 통과(단위 근거) |
+| 전 폭 | 18 자유 글 행 | `상세` break-inside auto · 나머지 5행 avoid | 통과 |
+| 전 폭 | 19 caption | table 1 · caption 1 `명세` | 통과 |
+| print | PDF 쪽 수 | F-E1~E4 모두 1쪽 | 통과 |
+
+## 고친 것
+- D1: 제목 괘선 `<hr>`의 브라우저 기본 border(1px inset 회색)가 좌 · 우 · 아래에 남아 단언 3 · 5(UI-SPEC:589 · :591, SYSTEM.md:76)를 어겼다. `.rule`에 `border: 0`을 먼저 두고 위 한 줄만 그린다(새 토큰 없음). 단위 시험 `print-frame-css`(RED → GREEN) · E2E hr 계산 테두리 위 2px · 나머지 0.
+- 감사 재현성 권고: 상세 화면 스트리밍 중 `h1[data-ui="screen-title"]`이 둘 잡히는 순간이 있어 mobile-print-entry · 캡처 스펙이 제목이 하나로 줄 때까지 기다린다.
+
+## 남긴 것
+- A (사용자 카드 대기): 폰 375 · 320 상세 머리 줄 빈 actions 상자 16px 틈 — `ui/detail-screen` 수정이 필요해 이 플랜이 고치지 않는다. 해당 시험 둘은 `test.fixme`.
+- B (관찰, 위반 아님): 화면 바 1차 버튼 right = clientWidth(320~768), 폰 `scrollWidth` 794(종이 210mm 고정, UI-SPEC:152 · :583).
+- 설정 「회사 정보」 라벨 폭 100px(1280 · 768) — 공용 설정 컴포넌트 값이며 07.4 고유가 아니다(관찰).
+
+## 캡처 · 인쇄 시작 갈래 · backstop
+- 캡처 폴더: 세션 scratchpad `capture-07.4-01/` (`state-<이름>-<폭>.png` · `measurements-state-<이름>.json`, `DESIGN_CAPTURE_DIR`). 320 · 375 · 700 · 768 · 1280 + print A4.
+- 인쇄 시작 갈래: A(열면 자동 `window.print()` 1회) — SYSTEM.md:636 일반 트리거 줄이 origin/main에 그대로 있다.
+- backstop 네 줄 측정값: ① 머리 긴 글 — 머리 B줄은 한 문단으로 줄바꿈되고 F-C 다섯 채움 측정에서 넘침 없음(scrollWidth는 종이 794 고정) ② 입구 넘침 — 상세 머리 줄 actions `scrollWidth ≤ clientWidth`(`measurements-state-detail-entry.json`, 1280 · 768) ③ 회색조 — 단언 13 통과 ④ 바닥줄 PDF 텍스트 — `@page` margin box `PLANT8 ERP` + `쪽 / 전체`, F-E1~E4 PDF 1쪽.
+- 회색조 실제 출력 · 실제 프린터 인쇄는 사람 확인 항목으로 남긴다(자동 검증 밖).

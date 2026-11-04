@@ -5,6 +5,8 @@ import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { upsertPermission } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { FUND_SCOPED_MENUS } from "@/domain/permissions/fund-scope";
+import { MENUS } from "@/domain/permissions/menus";
 
 // ADMN-01, D-40, 성공 기준 2: 권한표 셀을 켜면 저장 버튼 없이 즉시 저장되고
 // 다른 계급의 실제 접근이 바뀐다는 end-to-end 증명.
@@ -729,4 +731,78 @@ test.describe("권한표 딸린 칸(07-21 R7 · K4 · K24 · U5 · U6)", () => {
       await setRoleArchived(SYSTEM_VIEWER, role.id, true);
     }
   });
+});
+
+// 07.3-04(D-7318 · 디자인 검토 D1 · D3): 자금 키 8개 메뉴만 그룹 줄 · 폰 값 칸에 「경영관리본부만」 — 표지는 aria-describedby, 폰 라벨은 그대로.
+// 폰 기준선은 main 실측(07.3 디자인 검토 1회차 r1/extra/measure-baseline.json — 320 · 375 같음): 라벨 줄 수와 행 높이(dt 71px).
+test.describe("권한표 자금 본부 표지 (07.3-04 · D-7318)", () => {
+  const NOTE = "경영관리본부만";
+  const fundLabels = FUND_SCOPED_MENUS.map((key) => MENUS.find((menu) => menu.key === key)?.label ?? key);
+  const TWO_LINE_LABELS = ["견적 조정 줄 · 쓰기", "증빙 무효 처리 · 쓰기", "결재 중 증빙 붙이기 · 쓰기"];
+  const ONE_LINE_LABELS = ["매출 정산 · 쓰기", "예산 현황 · 쓰기", "지급 처리 · 쓰기", "구매 처리 · 쓰기", "증빙 등록 · 쓰기"];
+
+  async function openAsAdmin(page: Page, width: number): Promise<void> {
+    await page.setViewportSize({ width, height: 900 });
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/admin/permissions");
+  }
+
+  test("PC 1280: 표지가 자금 그룹 줄 8개에만 있고 칸 aria-label은 그대로, 표지는 aria-describedby로 읽힌다", async ({ page }) => {
+    await openAsAdmin(page, 1280);
+    const groups = page.locator("th[scope='rowgroup']");
+    await expect(groups.first()).toBeVisible();
+    await expect(groups.filter({ hasText: NOTE })).toHaveCount(FUND_SCOPED_MENUS.length);
+    for (const label of fundLabels) await expect(groups.filter({ hasText: NOTE }).filter({ hasText: label }).first()).toHaveText(`${label} · ${NOTE}`);
+    for (const label of ["카드 대리 등록", "지출결의"]) await expect(groups.filter({ hasText: new RegExp(`^${label}$`) })).toHaveCount(1);
+
+    const fundCell = page.getByRole("checkbox", { name: "시스템 관리자 · 증빙 등록 · 쓰기", exact: true });
+    await expect(fundCell).toHaveAccessibleDescription(NOTE);
+    await expect(page.getByRole("checkbox", { name: "증빙 등록 · 쓰기 전체 선택", exact: true })).toHaveAccessibleDescription(NOTE);
+    const plain = page.getByRole("checkbox", { name: "시스템 관리자 · 코드표 · 보기", exact: true });
+    await expect(plain).not.toHaveAttribute("aria-describedby", /.+/);
+    await expect(page.getByText("자금 기능 본부 미지정")).toHaveCount(0);
+  });
+
+  for (const width of [375, 320]) {
+    test(`폰 ${width}: 자금 줄 값 칸에만 표지가 있고 라벨 글자 · 줄 수 · 행 높이는 main 기준선 그대로, 표지는 체크박스와 같은 줄이다`, async ({ page }) => {
+      await openAsAdmin(page, width);
+      await page.locator("select").first().selectOption(DEFAULT_ROLE_ID);
+      const dt = (label: string) => page.locator("dt").filter({ hasText: new RegExp(`^${label}$`) });
+      const dd = (label: string) => dt(label).locator("xpath=following-sibling::dd[1]");
+      await expect(dt("증빙 등록 · 쓰기")).toBeVisible();
+      await expect(dd("증빙 등록 · 쓰기")).toContainText(NOTE);
+      await expect(dd("프로젝트 · 보기")).not.toContainText(NOTE);
+      await expect(page.locator("dt").filter({ hasText: NOTE })).toHaveCount(0);
+      await expect(page.locator("dd").filter({ hasText: NOTE })).toHaveCount(FUND_SCOPED_MENUS.length * 3);
+
+      const measured = await page.evaluate(() => {
+        const tops = (el: Element) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          return new Set(Array.from(range.getClientRects()).filter((rect) => rect.width > 0).map((rect) => Math.round(rect.top))).size;
+        };
+        return Array.from(document.querySelectorAll("dt"))
+          .filter((el) => (el as HTMLElement).offsetParent !== null)
+          .map((el) => ({ text: el.textContent ?? "", lines: tops(el), height: Math.round(el.getBoundingClientRect().height) }));
+      });
+      for (const text of TWO_LINE_LABELS) expect(measured.find((row) => row.text === text), text).toMatchObject({ lines: 2, height: 71 });
+      for (const text of ONE_LINE_LABELS) expect(measured.find((row) => row.text === text), text).toMatchObject({ lines: 1, height: 71 });
+
+      const sameLine = await dd("증빙 등록 · 쓰기").evaluate((cell) => {
+        const note = cell.querySelector<HTMLElement>("[id]:not(input)");
+        const box = cell.querySelector("input")!.getBoundingClientRect();
+        const noteBox = note!.getBoundingClientRect();
+        const center = noteBox.top + noteBox.height / 2;
+        return { inside: center >= box.top && center <= box.bottom, noteLines: note!.getClientRects().length, text: note!.textContent };
+      });
+      expect(sameLine).toEqual({ inside: true, noteLines: 1, text: NOTE });
+      await expect(page.getByRole("checkbox", { name: `${(await page.locator("select").first().locator("option:checked").textContent()) ?? ""} · 증빙 등록 · 쓰기`, exact: true })).toHaveAccessibleDescription(NOTE);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    });
+  }
 });

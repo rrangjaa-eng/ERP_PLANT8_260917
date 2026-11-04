@@ -1190,9 +1190,9 @@ Review Dispositions — Round 2 — d9b427f(07 절만, eng-review R1~R15 · C1~C
 
 ### Phase 07.6: 매출 줄 지우기 (revenue-archive) (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
-**Depends on:** Phase 7
+**Goal:** 잘못 적은 매출 발행 · 입금 줄을 프로젝트 상세 매출 칸 화면에서 `삭제`(보관 — 물리 삭제 0)하고 바로 `되돌리기`하거나, 그 뒤에는 관리자 보관함 화면에서 「매출 줄」로 되살린다. 지운 줄은 매출 목록 · 합계 · 수금 지연 알림 · 발행 파일 등 어디에도 잡히지 않고, 지우기 · 되살리기는 행동 로그에 남는다. 입금 줄 입금일이 오늘(KST)보다 뒤면 저장을 막는다(카드 대기 — 기본값). 입력 07.6-CONTEXT.md D-7601~D-7609 · /mnt/project-files/revenue-archive/prd.md
+**Requirements**: D-7601 ~ D-7609(07.6-CONTEXT.md 결정 — 요구 ID 없음)
+**Depends on:** Phase 7 · 07.3(07.3-02~04 main 뒤 — 자금 키 `projects.revenue` 파일 겹침)
 **Plans:** 0 plans
 
 Plans:

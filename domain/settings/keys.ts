@@ -644,6 +644,7 @@ export const APPROVAL_ROUTE_LEAVE_STEP3_ENABLED: SettingDef<boolean> = {
   default: true,
 };
 
+// 07.3-02(D-7306): ③단 「경영관리」 담당 = 본부 책임자 — 경영관리 실무는 결재 후보가 아니다.
 export const APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID: SettingDef<string> = {
   key: "approval_route.leave.step3.role_id",
   kind: "simple",
@@ -653,7 +654,7 @@ export const APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID: SettingDef<string> = {
   namespace: ROUTE_NAMESPACE,
   optionLabels: { "": "계급 무관" },
   dynamicOptions: "roles",
-  default: "",
+  default: "role-division-head",
 };
 
 export const APPROVAL_ROUTE_LEAVE_STEP3_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
@@ -975,6 +976,7 @@ export const APPROVAL_ROUTE_EXPENSE_STEP3_ENABLED: SettingDef<boolean> = {
   default: true,
 };
 
+// 07.3-02(D-7306): ③단 「경영관리」 담당 = 본부 책임자 — 경영관리 실무는 결재 후보가 아니다.
 export const APPROVAL_ROUTE_EXPENSE_STEP3_ROLE_ID: SettingDef<string> = {
   key: "approval_route.expense.step3.role_id",
   kind: "simple",
@@ -984,7 +986,7 @@ export const APPROVAL_ROUTE_EXPENSE_STEP3_ROLE_ID: SettingDef<string> = {
   namespace: EXPENSE_ROUTE_NAMESPACE,
   optionLabels: { "": "계급 무관" },
   dynamicOptions: "roles",
-  default: "",
+  default: "role-division-head",
 };
 
 export const APPROVAL_ROUTE_EXPENSE_STEP3_SCOPE: SettingDef<ExpenseRouteScopeValue> = {
@@ -1529,6 +1531,7 @@ export const APPROVAL_ROUTE_SETTLEMENT_STEP3_ENABLED: SettingDef<boolean> = {
   default: false,
 };
 
+// 07.3-02(D-7306): ③단 「경영관리」 담당 = 본부 책임자 — 경영관리 실무는 결재 후보가 아니다.
 export const APPROVAL_ROUTE_SETTLEMENT_STEP3_ROLE_ID: SettingDef<string> = {
   key: "approval_route.settlement.step3.role_id",
   kind: "simple",
@@ -1538,7 +1541,7 @@ export const APPROVAL_ROUTE_SETTLEMENT_STEP3_ROLE_ID: SettingDef<string> = {
   namespace: SETTLEMENT_ROUTE_NAMESPACE,
   optionLabels: { "": "계급 무관" },
   dynamicOptions: "roles",
-  default: "",
+  default: "role-division-head",
 };
 
 export const APPROVAL_ROUTE_SETTLEMENT_STEP3_SCOPE: SettingDef<ApprovalRouteScopeValue> = {

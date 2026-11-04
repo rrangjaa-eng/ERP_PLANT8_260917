@@ -426,8 +426,9 @@ describe("정산 머리 · 제출 · 범위 밖 결재자 (06.2-04 Task 1)", () 
     const fx = await setupSettlementProject();
     await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP4_ROLE_ID.key, DIVISION_HEAD_ROLE_ID, null);
     await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP4_SCOPE.key, "org_unit", null);
-    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP4_ORG_UNIT_ID.key, await orgUnitIdByName("경영관리본부"), null);
-    const mgmtHead = await makePerson("경영본부장", DIVISION_HEAD_ROLE_ID, "경영관리팀");
+    // 07.3-02: 범위 밖 본부는 운영본부(view-scope) — 경영관리본부 본부 책임자는 시드 자금 키로 프로젝트를 전사로 본다(D-7314).
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP4_ORG_UNIT_ID.key, await orgUnitIdByName("운영본부"), null);
+    const mgmtHead = await makePerson("경영본부장", DIVISION_HEAD_ROLE_ID, "운영팀");
     await submitSettlement(fx.pm, { projectId: fx.projectId });
     expect(await canOpenProject(mgmtHead, fx.projectId)).toBe(false);
 
@@ -732,7 +733,7 @@ describe("자동 정산 순서 · 본인 범위 · 팀 이동 · 보관 팀 (검
   });
 
   it("오늘 발령이 보관된 팀이면 팀 범위가 없다 — PM · 참여만 남는다(지시 3)", async () => {
-    const archivedTeam = (await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("경영관리본부"), name: "보관될팀" })).id;
+    const archivedTeam = (await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("운영본부"), name: "보관될팀" })).id;
     const member = await makePerson("보관팀원", DEFAULT_ROLE_ID, null);
     await assignTeam(SYSTEM_VIEWER, { userId: member.id, teamId: archivedTeam, effectiveFrom: "2026-01-01" });
     const p7 = await createProject(SYSTEM_VIEWER, { clientId: w.clientId, teamId: archivedTeam, pmUserId: w.people.X.id, name: `보관 팀 P7 ${randomUUID()}`, startDate: "2026-11-01", endDate: "2026-12-31" });

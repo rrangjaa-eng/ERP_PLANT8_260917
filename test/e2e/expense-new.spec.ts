@@ -325,7 +325,9 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
 
   test("/expenses/new — 담당 프로젝트가 없으면 `담당 프로젝트 줄이 없습니다 · 검색으로 찾기`, 검색 0건 · 조회 실패도 검색 칸이 살아 있다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
-    const page = await loginPage(browser, baseURL, fx.mgmt);
+    // 담당 PM인 프로젝트가 없는 기획 PM(지출결의 · 프로젝트 쓰기 있음) — 07.3-02 뒤 fx.mgmt는 프로젝트 쓰기가 없는 본부 책임자라 조회가 거부된다.
+    const noProjectPm = await addPayeeEmployee(fx, "무담당");
+    const page = await loginPage(browser, baseURL, noProjectPm);
     await openNew(page);
     await page.getByRole("button", { name: "견적 줄 고르기" }).click();
     const dialog = page.getByRole("dialog", { name: "견적 줄 고르기" });

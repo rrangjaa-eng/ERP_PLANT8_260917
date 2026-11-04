@@ -118,8 +118,9 @@ async function personNameOf(viewer: Viewer, userId: string): Promise<string> {
 
 // ── 후보(D-6211 · D-6221) ───────────────────────────────────────────────────
 // 후보 계산의 입력 범위 — 담당 본부 사람 + 본부 없는 대표. 거부 문구가 이름을 실어도 되는 사람도 이 범위다(/cso M-1(a)).
+// 「본부 없는 대표」는 살아 있는 팀이 없거나 팀의 본부가 없는 대표다 — 07.3-02가 팀 없는 사람에게 본부 칸을 채워도 대표는 모든 본부 후보로 남는다.
 function inCandidateRange(person: OrgSnapshotRow, division: string | null): boolean {
-  return (division !== null && person.orgUnitId === division) || (person.orgUnitId === null && person.roleId === CEO_ROLE_ID);
+  return (division !== null && person.orgUnitId === division) || ((person.teamId === null || person.orgUnitId === null) && person.roleId === CEO_ROLE_ID);
 }
 
 async function candidateRangeIds(viewer: Viewer, project: ProjectRow, todayKst: string): Promise<Set<string>> {

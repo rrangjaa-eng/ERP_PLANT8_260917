@@ -7,6 +7,7 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { listOrgSnapshot } from "@/repositories/org-snapshot";
 import { setOrgUnitArchived } from "@/repositories/org-units";
 import { setTeamArchived } from "@/repositories/teams";
+import { setDivisionColumn } from "./fixtures/fund-scope";
 
 // Codex P2(PR #90 스레드 r4137164396): 설정 화면은 보관된 부서를 「부서 없음 · 이 단계는 빈 자리로 건너뜀」으로
 // 경고하는데, 결재선 해석용 스냅숏은 보관된 팀 · 본부 id를 그대로 실어 그 단계가 계속 그 사람들에게 갔다.
@@ -38,6 +39,25 @@ describe("결재선 스냅숏 — 보관된 조직", () => {
   it("팀이 보관되면 그 사람의 팀 · 본부는 null이다", async () => {
     const m = await member();
     await setTeamArchived(SYSTEM_VIEWER, m.teamId, true);
+    expect(await rowOf(m.userId)).toMatchObject({ teamId: null, orgUnitId: null });
+  });
+
+  // 07.3-02(D-7306 · D-7311): 발령이 없으면 사람 본부 칸이 본부다(07.3-01 viewerDivision과 같은 규칙) — 보관된 본부면 null.
+  async function divisionOnly(): Promise<{ userId: string; orgUnitId: string }> {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `본부-${randomUUID()}` });
+    const { userId } = await registerPerson(SYSTEM_VIEWER, { name: "팀없음", email: `${randomUUID()}@test.local`, roleId: DEFAULT_ROLE_ID });
+    await setDivisionColumn(userId, orgUnit.id);
+    return { userId, orgUnitId: orgUnit.id };
+  }
+
+  it("팀 없음 · 본부 칸이 살아 있으면 그 본부다", async () => {
+    const m = await divisionOnly();
+    expect(await rowOf(m.userId)).toMatchObject({ teamId: null, orgUnitId: m.orgUnitId });
+  });
+
+  it("팀 없음 · 본부 칸이 보관됐으면 null이다", async () => {
+    const m = await divisionOnly();
+    await setOrgUnitArchived(SYSTEM_VIEWER, m.orgUnitId, true);
     expect(await rowOf(m.userId)).toMatchObject({ teamId: null, orgUnitId: null });
   });
 });

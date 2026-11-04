@@ -23,6 +23,7 @@ import { saveRevenue } from "@/domain/revenue";
 import { planAccountNumberUpdate } from "@/domain/vendors";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { findExpenseById } from "@/repositories/expenses";
+import { listOrgSnapshot } from "@/repositories/org-snapshot";
 import { findProjectById } from "@/repositories/projects";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
@@ -50,6 +51,16 @@ async function makePerson(prefix: string, roleId: string, teamId: string, effect
   return { email, password: tempPassword, viewer: { id: userId, roleId } };
 }
 
+// 07.3-02(D-7306): 결재선 3단 = 경영관리본부의 본부 책임자. 이미 있으면 그 사람(본부 책임자는 본부마다 한 명 — 자리 판정, 발령 길 ·
+// 팀 없이 본부 칸 길 둘 다 본다), 없으면 경영관리팀에 발령해 만든다. 결재는 도메인 함수로만 하므로 비밀번호는 쓰지 않는다.
+async function mgmtHead(mgmtTeam: { id: string; orgUnitId: string }, effectiveFrom: string): Promise<{ viewer: Viewer }> {
+  const existing = (await listOrgSnapshot(SYSTEM_VIEWER, seoulToday())).find(
+    (person) => person.roleId === "role-division-head" && person.orgUnitId === mgmtTeam.orgUnitId,
+  );
+  if (existing) return { viewer: { id: existing.id, roleId: "role-division-head" } };
+  return makePerson("경영", "role-division-head", mgmtTeam.id, effectiveFrom);
+}
+
 // 데이터가 있어야 보이는 화면용 시드 시나리오(capture.spec.ts가 로그인 전에 부른다). erp_test는 캡처마다 초기화되므로 매번 새로 만든다.
 // vars는 경로의 {이름} 자리에 채우고, viewer는 그 화면을 볼 사용자다(기본 sysadmin 대신 로그인한다).
 export type SeedResult = { vars: Record<string, string>; viewer: Person };
@@ -69,7 +80,7 @@ async function preSettleEvidencePending(browser: Browser, baseURL: string | unde
     drafter: await makePerson("기안", "role-pm", team.id, yearStart),
     teamLead: await makePerson("팀장", "role-team-lead", team.id, yearStart),
     divisionHead: await makePerson("본부장", "role-division-head", team.id, yearStart),
-    mgmt: await makePerson("경영", "role-pm", mgmtTeam.id, yearStart),
+    mgmt: await mgmtHead(mgmtTeam, yearStart),
     ceo: await makePerson("대표", "role-ceo", team.id, yearStart),
   };
   const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처클라이언트-${suffix}`, normalizedName: `캡처클라이언트-${suffix}` });
@@ -266,7 +277,7 @@ async function paymentAndSettlementActions(browser: Browser, baseURL: string | u
   const drafter = await makePerson("기안", "role-pm", team.id, yearStart);
   const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
   const divisionHead = await makePerson("본부장", "role-division-head", team.id, yearStart);
-  const mgmt = await makePerson("경영", "role-pm", mgmtTeam.id, yearStart);
+  const mgmt = await mgmtHead(mgmtTeam, yearStart);
   const ceo = await makePerson("대표", "role-ceo", team.id, yearStart);
   const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처클라이언트-${suffix}`, normalizedName: `캡처클라이언트-${suffix}` });
   // 새 초안의 지급 방식 기본값이 계좌이체라 거래처에 쓸 수 있는 계좌가 있어야 제출 버튼이 열린다.
@@ -584,7 +595,7 @@ async function evidenceIntakeFilled(browser: Browser, baseURL: string | undefine
   const drafter = await makePerson("기안", "role-pm", team.id, yearStart);
   const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
   await makePerson("본부장", "role-division-head", team.id, yearStart);
-  await makePerson("경영", "role-pm", mgmtTeam.id, yearStart);
+  await mgmtHead(mgmtTeam, yearStart);
   await makePerson("대표", "role-ceo", team.id, yearStart);
 
   // 등록 계급의 사람은 결재선 밖 전용 팀에 둔다(pre-settle-evidence-pending의 증빙 무효 계급과 같은 꼴).

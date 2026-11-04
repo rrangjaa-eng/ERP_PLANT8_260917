@@ -1201,11 +1201,25 @@ Review Dispositions — Round 2 — d9b427f(07 절만, eng-review R1~R15 · C1~C
   3. 프로젝트·견적 줄 DTO는 추가 칸을 칸마다 노출표로 판정한다(`cf.<entity>.<key>`). 새 칸은 노출표에 자동 등록되고 기본 전 계급 보임, 관리자가 계급별로 끈다. 꺼진 칸은 화면·액션 응답·내보내기 어디에도 없고 누수 스캔이 이를 확인한다
   4. 프로젝트 목록과 거래처 목록에 보이는 추가 칸 열이 있고, 텍스트 칸 값은 키워드 검색에 걸리며 선택 칸은 거르개로 고른다. 거래처 `파일 받기`(CSV)에 보이는 추가 칸 열이 실린다(프로젝트·견적 목록 내보내기는 만들지 않는다 — 2026-10-07 사용자 결정 G6, D-7511). 보관한 칸은 입력·목록·검색·내보내기에서 숨고 복원하면 값이 다시 보인다
   5. 고객 견적서 인쇄와 견적 양식 가져오기는 바뀌지 않는다(D-7513). 정렬용 표현식 인덱스는 실측 근거가 있을 때만 더한다(Issue 13)
-**Plans:** 0 plans
+**Plans:** 0/5 plans executed
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 07.5 to break down)
+- [ ] 07.5-01-PLAN.md — 접근 판정 일반화(readCustomFieldAccess) · 거래처 목록 추가 칸 열 · 검색 · 거르개 · CSV 열 · 날짜 엄격 ISO(Opus · 세션 머지)
+
+**Wave 2** *(blocked on Wave 1 completion · 07.2-17 머지 뒤)*
+
+- [ ] 07.5-02-PLAN.md — 공용 CustomFieldInput · 프로젝트 등록 폼 묶음 · 정보 면 「추가 항목」 · ProjectDto 칸별 거름(Opus · 세션 머지)
+
+**Wave 3** *(blocked on Wave 2 completion — 07.5-03은 07.2-06 · 12 · 14 · 17 머지 뒤)*
+
+- [ ] 07.5-03-PLAN.md — 견적 줄 표 오른쪽 끝 추가 칸 열 · 줄 저장 판정 · 붙여넣기 · 복사 · 폰 행 시트(Opus · 세션 머지)
+- [ ] 07.5-04-PLAN.md — 프로젝트 목록 추가 칸 열 · 키워드 검색 · select 거르개 · 내보내기 없음(Opus · /cso · 세션 머지)
+
+**Wave 4** *(blocked on Wave 3 completion — 01~04 전부 main 뒤에만 대상 켜기, D-7503)*
+
+- [ ] 07.5-05-PLAN.md — 대상 상수 켜기(프로젝트 · 견적 줄) · 관리 화면 대상 고르기 · 노출표/보관함 접두 · 전 출구 누수 스캔 · 여정 E2E(Opus · /cso · 세션 머지)
 
 ### Phase 07.3: 경영관리본부 자금 권한 (management-fund-scope) (INSERTED)
 

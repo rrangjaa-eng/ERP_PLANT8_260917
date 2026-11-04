@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { approvalInstances, expenses, projectMembers, projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
-import { assignTeam, createTeam } from "@/domain/org";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { approveDocument, getApprovalView, listCurrentSteps, listMyInbox } from "@/domain/approvals";
 import { setSettingValue } from "@/domain/settings/registry";
 import {
@@ -387,9 +387,10 @@ describe("지급 대상 — 전사 범위 단축 (06.2 T-06.2-83)", () => {
 });
 
 // ── 06.2-08 Task 2: SC-3 일치 매트릭스 ─────────────────────────────────────
-// 세계: 기획본부(기획1팀 · 기획2팀) · 경영관리본부(경영관리팀). P1(기획1팀, PM 박서연) · P2(기획2팀, PM 다른팀PM) · P3(경영관리팀, PM 다른팀PM,
+// 세계: 기획본부(기획1팀 · 기획2팀) · 운영본부(운영팀). P1(기획1팀, PM 박서연) · P2(기획2팀, PM 다른팀PM) · P3(운영팀, PM 다른팀PM,
 // 참여자 붙음). 결재선은 대표 한 단(1~3단 끔)이라 대표 말고는 결재 관련자가 없다 — C만 1단 = 후보결재자(전사 범위의 그 계급)로 제출해 결재 중으로 둔다.
-// 문서: L1(P1 줄, 박서연) · T1 · C(기획1팀 팀 비용, 박서연) · L2(P2 줄, 기획2직원) · L3(P3 줄, 경영직원) · T3(경영관리팀 팀 비용, 경영직원) · DR(P1 작성 중).
+// 문서: L1(P1 줄, 박서연) · T1 · C(기획1팀 팀 비용, 박서연) · L2(P2 줄, 기획2직원) · L3(P3 줄, 경영직원) · T3(운영팀 팀 비용, 경영직원) · DR(P1 작성 중).
+// 07.3-02(D-7315): 「다른 본부」는 운영본부다 — 경영관리본부 기본 계급은 시드 자금 키로 지출결의를 전사로 본다(D-7314).
 // 07.3-01: 지급 처리(expenses.payments) 쓰기는 대표에게만 더한다 — 자금 키라 경영관리본부 소속이 아닌 사람은 검수 · 지급 대상 입구에서 막히고(D-7301),
 // 경영관리 소속 사람에게 주면 보는 범위가 전사로 넓어진다(D-7314). 그래서 검수 · 지급 대상 입구는 대표 말고는 모두 「없음」(막힘)이다.
 
@@ -438,7 +439,7 @@ async function buildMatrix(): Promise<MatrixWorld> {
   }
   const fx = await setupExpenseProject();
   const plan2 = (await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("기획본부"), name: "기획2팀" })).id;
-  const mgmt = await teamIdByName("경영관리팀");
+  const mgmt = (await createTeam(SYSTEM_VIEWER, { orgUnitId: (await createOrgUnit(SYSTEM_VIEWER, { name: "운영본부" })).id, name: "운영팀" })).id;
   const ownRoleId = await matrixRole("본인 범위", "own", { projects: true, expensesTeam: false });
   const approverRoleId = await matrixRole("외부 결재", "own", { projects: false, expensesTeam: false });
   // K1 「쓰기 범위 복사」: 화면 계급은 이행 전 업무 범위(team)를 보는 범위로 받았다.
@@ -451,14 +452,14 @@ async function buildMatrix(): Promise<MatrixWorld> {
     대표: fx.ceo,
     본인범위: await makePerson("본인범위", ownRoleId, "기획1팀"),
     참여자: await makePerson("참여자", DEFAULT_ROLE_ID, "기획1팀"),
-    다른팀PM: await makePerson("다른팀PM", DEFAULT_ROLE_ID, "경영관리팀"),
-    후보결재자: await makePerson("후보결재자", approverRoleId, "경영관리팀"),
+    다른팀PM: await makePerson("다른팀PM", DEFAULT_ROLE_ID, "운영팀"),
+    후보결재자: await makePerson("후보결재자", approverRoleId, "운영팀"),
     화면팀A: await makePerson("화면팀A", screenARoleId, "기획1팀"),
     화면팀B: await makePerson("화면팀B", screenBRoleId, "기획1팀"),
   };
   await upsertPermission(SYSTEM_VIEWER, { roleId: CEO_ROLE_ID, menu: "expenses.payments", action: "write", allowed: true });
   const plan2Staff = await makePerson("기획2직원", DEFAULT_ROLE_ID, "기획2팀");
-  const mgmtStaff = await makePerson("경영직원", DEFAULT_ROLE_ID, "경영관리팀");
+  const mgmtStaff = await makePerson("경영직원", DEFAULT_ROLE_ID, "운영팀");
   const vendor = await insertVendor(SYSTEM_VIEWER, { name: "더테이블", normalizedName: `더테이블-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const p2 = await setupApprovedProject("기획2 행사", plan2, people.다른팀PM, fx.stageOneId);
   const p3 = await setupApprovedProject("경영 행사", mgmt, people.다른팀PM, fx.stageOneId);
@@ -608,7 +609,7 @@ describe("06.2 보는 범위 일치 (SC-3)", () => {
 });
 
 describe("팀 이동 (검토 반영 R1: eng I9)", () => {
-  it("같은팀PM을 오늘(KST)부터 경영관리팀으로 옮기면 기획1팀 문서가 여섯 입구에서 사라지고 경영관리팀 문서가 보인다", async () => {
+  it("같은팀PM을 오늘(KST)부터 운영팀으로 옮기면 기획1팀 문서가 여섯 입구에서 사라지고 운영팀 문서가 보인다", async () => {
     const mover = m.people.같은팀PM;
     await assignTeam(SYSTEM_VIEWER, { userId: mover.id, teamId: m.mgmt, effectiveFrom: seoulToday() });
     for (const entry of MATRIX_ENTRIES) {

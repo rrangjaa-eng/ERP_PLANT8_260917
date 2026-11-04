@@ -35,7 +35,8 @@ import { makePerson, orgUnitIdByName, teamIdByName } from "./approvals-fixtures"
 import { buildViewScopeWorld, type ViewScopeWorld } from "./fixtures/view-scope";
 
 // 06.2-05(SC-5 · D-6209~D-6213 · D-6222 · D-6223): 참여자 더하기 · 떼기 · 되돌리기 · 후보 · 목록.
-// 세계는 06.2-03 view-scope에 경영관리본부의 다른 팀(재무팀) · 그 팀 사람 Y · 경영관리팀 팀장을 더한다(공용 세계 파일은 고치지 않는다).
+// 세계는 06.2-03 view-scope에 운영본부의 다른 팀(재무팀) · 그 팀 사람 Y · 운영팀 팀장을 더한다(공용 세계 파일은 고치지 않는다).
+// 07.3-02: P3 본부는 경영관리본부가 아니라 운영본부다(view-scope — 시드 자금 키가 서지 않는 본부).
 
 // 액션도 같은 파일에서 부른다 — 세션만 가짜로 둔다(purchase-requests.test.ts 꼴).
 const session = vi.hoisted(() => ({ viewer: null as Viewer | null }));
@@ -63,9 +64,9 @@ type MembersWorld = ViewScopeWorld & { finance: string; Y: Viewer; mgmtLead: Vie
 
 async function buildMembersWorld(): Promise<MembersWorld> {
   const world = await buildViewScopeWorld();
-  const finance = (await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("경영관리본부"), name: "재무팀" })).id;
+  const finance = (await createTeam(SYSTEM_VIEWER, { orgUnitId: await orgUnitIdByName("운영본부"), name: "재무팀" })).id;
   const Y = await makePerson("와이", DEFAULT_ROLE_ID, "재무팀");
-  const mgmtLead = await makePerson("경영팀장", TEAM_LEAD_ROLE_ID, "경영관리팀");
+  const mgmtLead = await makePerson("경영팀장", TEAM_LEAD_ROLE_ID, "운영팀");
   return { ...world, finance, Y, mgmtLead };
 }
 
@@ -96,7 +97,7 @@ async function listedIds(viewer: Viewer): Promise<string[]> {
 }
 
 describe("더하기 트레이서", () => {
-  it("경영관리팀 팀장이 재무팀 Y를 P3 참여자로 더하면 같은 트랜잭션에 project_member_change 한 줄(added: [Y])", async () => {
+  it("운영팀 팀장이 재무팀 Y를 P3 참여자로 더하면 같은 트랜잭션에 project_member_change 한 줄(added: [Y])", async () => {
     const w = await buildMembersWorld();
     const P3 = w.projects.P3.id;
     await expect(addProjectMembers(w.mgmtLead, P3, [w.Y.id])).resolves.toEqual({ added: 1 });
@@ -189,7 +190,7 @@ describe("떼기 · 되돌리기 · 잠금 · 권리", () => {
   it("둘을 더하는데 하나가 담당 팀 사람이면 전체 거부 · 아무 줄도 생기지 않는다", async () => {
     const w = await buildMembersWorld();
     const P3 = w.projects.P3.id;
-    const mgmtPerson = await makePerson("경영사원", DEFAULT_ROLE_ID, "경영관리팀");
+    const mgmtPerson = await makePerson("경영사원", DEFAULT_ROLE_ID, "운영팀");
     await expect(addProjectMembers(w.mgmtLead, P3, [w.Y.id, mgmtPerson.id])).rejects.toThrow("경영사원 더할 수 없음 · 새로 고침");
     expect(await memberRows(P3, w.Y.id)).toEqual([]);
     expect(await memberRows(P3, mgmtPerson.id)).toEqual([]);
@@ -228,7 +229,7 @@ describe("떼기 · 되돌리기 · 잠금 · 권리", () => {
     const P3 = w.projects.P3.id;
     await addProjectMembers(w.mgmtLead, P3, [w.Y.id]);
     await removeProjectMember(w.mgmtLead, P3, w.Y.id);
-    await assignTeam(SYSTEM_VIEWER, { userId: w.Y.id, teamId: await teamIdByName("경영관리팀"), effectiveFrom: kstToday(new Date()) });
+    await assignTeam(SYSTEM_VIEWER, { userId: w.Y.id, teamId: await teamIdByName("운영팀"), effectiveFrom: kstToday(new Date()) });
     await restoreProjectMember(w.mgmtLead, P3, w.Y.id);
     expect(await memberRows(P3, w.Y.id)).toEqual([expect.objectContaining({ archivedAt: null })]);
   });
@@ -263,7 +264,7 @@ describe("후보 · 목록", () => {
     await setUserArchived(SYSTEM_VIEWER, archived.id, true);
     const joined = await makePerson("이미참여", DEFAULT_ROLE_ID, "재무팀");
     await addProjectMembers(w.mgmtLead, P3, [joined.id]);
-    await makePerson("경영사원", DEFAULT_ROLE_ID, "경영관리팀");
+    await makePerson("경영사원", DEFAULT_ROLE_ID, "운영팀");
     const ceoInFinance = await makePerson("가대표", CEO_ROLE_ID, "재무팀");
     const ceoInPlan = await makePerson("기획대표", CEO_ROLE_ID, "기획1팀");
 
@@ -282,7 +283,7 @@ describe("후보 · 목록", () => {
     const w = await buildMembersWorld();
     const P3 = w.projects.P3.id;
     const divisionOnly = await makePerson("본부칸사람", DEFAULT_ROLE_ID, null);
-    await db.update(users).set({ divisionId: await orgUnitIdByName("경영관리본부") }).where(eq(users.id, divisionOnly.id));
+    await db.update(users).set({ divisionId: await orgUnitIdByName("운영본부") }).where(eq(users.id, divisionOnly.id));
     const otherDivision = await makePerson("다른본부칸", DEFAULT_ROLE_ID, null);
     await db.update(users).set({ divisionId: await orgUnitIdByName("기획본부") }).where(eq(users.id, otherDivision.id));
     const ids = await candidateIds(w.mgmtLead, P3);
@@ -384,7 +385,7 @@ describe("후보 · 목록", () => {
     await setUserArchived(SYSTEM_VIEWER, toArchive.id, true);
 
     const listed = await listProjectMembers(w.mgmtLead, P3);
-    expect(listed?.pm).toEqual({ userId: w.people.X.id, name: "X", teamName: "경영관리팀", retired: false, archived: false });
+    expect(listed?.pm).toEqual({ userId: w.people.X.id, name: "X", teamName: "운영팀", retired: false, archived: false });
     expect(listed?.rows).toEqual([
       { userId: w.people.참여자.id, name: "참여자", teamName: "기획1팀", retired: false, archived: false },
       { userId: w.Y.id, name: "와이", teamName: "재무팀", retired: false, archived: false },
@@ -681,7 +682,7 @@ describe("검토 반영 M-1 — 이름은 person.value 투영을 지난다", () 
   it("사람 정보를 못 보는 권리자의 거부 문구는 이름 대신 사람 수", async () => {
     const w = await buildMembersWorld();
     const P3 = w.projects.P3.id;
-    const mgmtPerson = await makePerson("경영사원", DEFAULT_ROLE_ID, "경영관리팀");
+    const mgmtPerson = await makePerson("경영사원", DEFAULT_ROLE_ID, "운영팀");
     await upsertVisibility(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, infoItem: "person.value", visible: false });
     const error = await errorOf(addProjectMembers(w.mgmtLead, P3, [w.Y.id, mgmtPerson.id]));
     expect((error as Error).message).toBe("1명 더할 수 없음 · 새로 고침");

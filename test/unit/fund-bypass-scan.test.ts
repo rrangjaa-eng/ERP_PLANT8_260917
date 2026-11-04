@@ -26,6 +26,7 @@ const DIRECT_READ_ALLOW: Record<string, string> = {
   "domain/permissions/last-admin.ts": "마지막 관리자 지킴(admin.permissions write) — 자금 키 아님",
   "domain/permissions/matrix.ts": "권한표 화면 읽기 · 쓰기(admin.permissions) — 판정이 아니라 표 편집",
   "domain/seed/index.ts": "B4 시드 — evidence.intake 허용 행을 읽어 evidence 보기 행을 넣는다(허용 행 직독이 맞다 · 무해)",
+  "domain/seed/fund-scope.ts": "07.3-02 자금 시드 블록 — 꺼진 행(allowed=false)을 읽어 짝 칸이 꺼진 계급에 쓰기 행을 넣지 않는다(판정이 아니라 시드 · 무해)",
 };
 
 const MENU_HELPER_ALLOW: Record<string, string> = {

@@ -1,6 +1,8 @@
 import type { Viewer } from "@/domain/viewer";
 import { readFundDivision } from "@/domain/permissions/fund-gate";
+import { PERMISSION_REQUIRES } from "@/domain/permissions/matrix";
 import { DIVISION_HEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { FUND_SEED_PERMISSIONS } from "@/domain/seed/role-defaults";
 import {
   APPROVAL_ROUTE_EXPENSE_STEP3_ROLE_ID,
   APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID,
@@ -11,6 +13,7 @@ import { seoulToday } from "@/lib/dates";
 import { log } from "@/lib/log";
 import { listOrgSnapshot } from "@/repositories/org-snapshot";
 import { findOrgUnitByName } from "@/repositories/org-units";
+import { insertPermissionIfAbsent, listPermissions } from "@/repositories/permissions";
 import { seedSimpleValue, updateSimpleValueIfUnedited } from "@/repositories/settings";
 
 const STEP3_ROLE_DEFS = [APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID, APPROVAL_ROUTE_EXPENSE_STEP3_ROLE_ID, APPROVAL_ROUTE_SETTLEMENT_STEP3_ROLE_ID];
@@ -20,6 +23,7 @@ const STEP3_ROLE_DEFS = [APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID, APPROVAL_ROUTE_EXPE
 // 본부를 못 찾거나 보관됐으면 설정 없이 끝난다 — 자금 기능은 회사 전체 계급만 쓰게 닫히므로 경고 한 줄을 남긴다.
 export async function seedFundScope(viewer: Viewer): Promise<void> {
   await fixStep3RoleDefaults(viewer);
+  await seedFundPermissions(viewer);
   const mgmt = await findOrgUnitByName(viewer, "경영관리본부");
   if (!mgmt || mgmt.archivedAt !== null) {
     log.warn("seed.fund_division_missing", { key: FUND_DIVISION_ORG_UNIT.key });
@@ -41,5 +45,21 @@ async function fixStep3RoleDefaults(viewer: Viewer): Promise<void> {
   }
   for (const def of STEP3_ROLE_DEFS) {
     if (await updateSimpleValueIfUnedited(viewer, def.key, "", def.default)) log.info("seed.step3_role_default_fixed", { key: def.key });
+  }
+}
+
+// 07.3-02(D-7315): 자금 시드 블록 — 줄마다 없을 때만 넣되, 쓰기 줄은 짝 칸(같은 메뉴 보기 · PERMISSION_REQUIRES) 중 하나라도
+// 꺼진 행(allowed=false)이 있으면 넣지 않는다 — 관리자가 보기만 끈 계급에 「보기 꺼짐 · 쓰기 켜짐」이 생기지 않게. 관리자가 끈 칸은 되살리지 않는다.
+async function seedFundPermissions(viewer: Viewer): Promise<void> {
+  const off = new Set((await listPermissions(viewer)).filter((row) => !row.allowed).map((row) => `${row.roleId}|${row.menu}|${row.action}`));
+  for (const entry of FUND_SEED_PERMISSIONS) {
+    if (entry.action === "write") {
+      const required = [
+        { menu: entry.menu, action: "view" },
+        ...PERMISSION_REQUIRES.filter((pair) => pair.from.menu === entry.menu && pair.from.action === "write").map((pair) => pair.to),
+      ];
+      if (required.some((cell) => off.has(`${entry.roleId}|${cell.menu}|${cell.action}`))) continue;
+    }
+    await insertPermissionIfAbsent(viewer, { ...entry, updatedBy: null });
   }
 }

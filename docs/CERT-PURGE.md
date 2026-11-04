@@ -4,7 +4,8 @@
 > OPERATIONS.md가 줄 예산이 없어 이 절을 별도 문서로 둔다(사용자 결정 2026-10-01 채팅 — 파기 런북 별도 문서).
 
 명령은 셸에 `ENV=staging`(또는 `prod`) · `GCP_PROJECT_ID` · `GCP_REGION`을 넣고 쓴다.
-Job 이름은 `plant8-$ENV-purge-certs`다(`deploy.sh`가 만들기만 하고 실행하지 않는다).
+Job은 둘이다 — 사람용 `plant8-$ENV-purge-certs`(인자 없이 실행하면 미리 보기 · `deploy.sh`가 만들기만 한다)와
+Scheduler가 부르는 `plant8-$ENV-purge-certs-auto`(모드는 `infra/purge-certs-auto.mode`).
 
 ## 1. 무엇을 지우고 무엇을 남기나
 
@@ -18,8 +19,11 @@ Job 이름은 `plant8-$ENV-purge-certs`다(`deploy.sh`가 만들기만 하고 �
 
 ## 2. 실행 주기와 순서
 
-**사람 월 1회 + 35일 감시 런북 유지, Scheduler 자동화는 Phase 7 이관**(Phase 4 D19-8과 같다 — 이 저장소에 파기용 스케줄러는 없다).
-매월 첫 영업일과 4월 1일 뒤 첫 영업일에 실행한다.
+**Scheduler 월 1회(매월 1일 03:00 KST) 자동 + 처음은 dry-run.** 배포가 Cloud Scheduler 잡 `plant8-$ENV-purge-certs-monthly`를 만들고,
+그 잡이 전용 계정(`plant8-$ENV-purge-sched` · 키 없음 · 자동 Job 하나에만 `run.invoker`)으로 자동 Job을 실행한다.
+모드가 `dry-run`인 동안은 아무것도 지우지 않고 개수만 남긴다.
+**모드를 `apply`로 바꾸기 전까지는 사람이 월 1회 수동 `--apply` 실행(아래 3)을 계속 한다** — 보존 한도(약 35일)가 지켜져야 한다. 전환 뒤 수동 실행은 예외(백업 복원 뒤 · §6)나 즉시 확인이 필요할 때만 쓴다.
+모드 파일은 스테이징 · 프로덕션에 똑같이 적용된다. 프로덕션은 승격된 커밋의 모드를 다음 승격 때 받는다(배포는 `--sha` 커밋의 파일을 읽는다).
 
 1. 미리 보기(기본값 — 아무것도 바꾸지 않는다):
    `gcloud run jobs execute plant8-$ENV-purge-certs --region="$GCP_REGION" --project="$GCP_PROJECT_ID" --wait`
@@ -30,11 +34,26 @@ Job 이름은 `plant8-$ENV-purge-certs`다(`deploy.sh`가 만들기만 하고 �
 5. `filesPending`이 0이 아니면 파일 삭제가 실패한 것이다 — 다음 실행이 다시 지운다(파기된 확인증의 서명과
    24시간 넘은 업로드 의도의 고아 서명 `orphansDeleted` 둘 다). 계속 쌓이면 §4를 본다.
 
+### 자동 실행 적용 전환
+
+1. 자동 dry-run 1~2회의 Job 로그 `purge_certs.done`(`mode: dry-run`) 개수를 사용자에게 보고한다.
+2. 사용자가 적용을 정하면 `infra/purge-certs-auto.mode`를 `apply`로 바꾸는 PR을 사용자가 머지한다(`infra/`는 위험 경로 · 알 수 없는 값이면 배포가 멈춘다).
+3. 머지 배포가 스모크 통과 뒤 자동 Job 정의에 `--apply`를 넣는다(전환 전까지 사람의 월 1회 수동 `--apply`는 그대로 한다). 되돌리려면 `dry-run`으로 되돌리는 PR을 머지한다 — 배포가 빈 인자를 명시해 옛 `--apply`를 지운다.
+
+### 첫 설정 · 건너뜀 복구
+
+- 새 환경은 머지 전에 소유자가 bootstrap-gcp.sh를 한 번 돌린다(purge-sched 계정이 생긴다). purge-sched 코드가 있는 체크아웃 — 머지 전이면 이 PR 브랜치 — 에서 실행한다.
+- 배포 로그에 `purge-sched SA 없음` 경고가 났으면 Scheduler 단계만 건너뛴 것이다 — bootstrap 뒤 재배포(또는 다음 main 푸시)해야 Scheduler가 생긴다. bootstrap 직후에는 IAM 전파로 몇 분 기다린 뒤 재배포한다.
+- 확인(읽기 전용, 소유자 로컬 셸): `INPUT_CHECK=purge-scheduler PROJECT="$GCP_PROJECT_ID" REGION="$GCP_REGION" bash scripts/verify-gcp.sh`
+  — 잡 `ENABLED` · 실행 기록 · 자동 Job 실행 목록. 처음엔 `gcloud scheduler jobs run plant8-$ENV-purge-certs-monthly --location="$GCP_REGION" --project="$GCP_PROJECT_ID"`로 한 번 돌려 본다.
+
 ## 3. 실행 누락 감시 (35일)
 
-마지막 `purge_certs.done`(또는 `gcloud run jobs executions list --job plant8-$ENV-purge-certs --region="$GCP_REGION" --limit 1`의
-마지막 실행)이 35일보다 오래됐으면 한 달 실행을 빠뜨린 것이다 — 곧바로 미리 보기부터 돌린다.
-알림은 없다(자동 감시와 Cloud Scheduler 자동 실행은 Phase 7 이관). 마감으로 닫힌 행사의 IP 가명은 최대 약 35일 남는다.
+dry-run인 동안의 감시는 사람의 수동 `--apply` 실행 기록이다. `apply` 전환 뒤에는 자동 Job의 마지막 실행이 `SUCCEEDED`이고
+그 Job 로그의 `purge_certs.done`이 `mode: apply`인지 본다 — Scheduler 성공은 실행이 시작됐다는 뜻일 뿐이다(`jobs:run`은 작업 ID만 돌려준다).
+`verify-gcp.sh`의 `purge-scheduler` 검사(위, 실행 완료 · 실패 열 포함) 또는 `gcloud run jobs executions list --job plant8-$ENV-purge-certs-auto --region="$GCP_REGION" --limit 1`로 본다.
+마지막 성공 실행이 35일보다 오래됐으면 한 달을 빠뜨린 것이다 — 곧바로 §2 미리 보기부터 돌린다.
+알림은 없다. 마감으로 닫힌 행사의 IP 가명은 최대 약 35일 남는다.
 
 ## 4. 첫 적용 전 확인 — bootstrap-gcp.sh
 

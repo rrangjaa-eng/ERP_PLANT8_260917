@@ -1,5 +1,5 @@
 // 임자 없는 증빙(N21 · D-721 · AQ-25) — 06.1 증빙 목록 「공개」 거르개(공개됐는데 붙임 0 — 같은 stateWhere)에서 등록 N일(기본 7) 넘은 건수를
-// 증빙 담당(evidence.intake 쓰기 권한 활성 사용자)마다 하루 한 행(entity `evidence-orphans`, entityId = 오늘). 사다리 없음 · 꺼 둔 종류.
+// 증빙 담당(evidence.intake 쓰기 권한 활성 사용자 중 자금 본부 소속 ∨ 회사 전체 계급 — 07.3-02 D-7312)마다 하루 한 행(entity `evidence-orphans`, entityId = 오늘). 사다리 없음 · 꺼 둔 종류.
 import { CARD_FORMATS } from "@/domain/evidence-records";
 import { ORPHAN_EVIDENCE_RULE, orphanCreatedBefore } from "@/domain/evidence-records/aging";
 import type { ConditionKind, NotificationCandidate } from "@/domain/notify/condition-kinds";

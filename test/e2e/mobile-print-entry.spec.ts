@@ -44,16 +44,16 @@ for (const width of [375, 320]) {
     }
   });
 
-  // 실측된 결함(2026-11-04): 결재 중 · 종결 버튼 없는 문서의 375 머리 줄은 제목 블록 86.6px보다 16px(--s-4 줄 간격) 크다 —
-  // PcOnly로 가려진 링크 때문에 빈 `.actions` 상자가 둘째 줄로 떨어진다. ui/detail-screen 수정이 필요해 이 플랜(ui/ 변경 금지)이 고치지 않고
-  // 사용자 결정으로 올렸다(07.4-01 SUMMARY). 결정이 나면 이 fixme를 풀고 그대로 단언한다.
+  // 실측된 결함(2026-11-04): 결재 중 · 종결 버튼 없는 문서의 375 머리 줄은 제목 블록보다 16px(--s-4 줄 간격) 컸다 —
+  // PcOnly로 가려진 링크 때문에 빈 `.actions` 상자가 둘째 줄로 떨어졌다. 사용자 카드 추천안으로 DetailScreen이 고쳤다(폰에서 직계 자식이
+  // 모두 PcOnly인 `.actions`는 자리를 차지하지 않는다 — 07.4-01 SUMMARY 항목 A).
   test(`${width}px 머리 줄에 빈 actions 틈이 없다`, async ({ browser, baseURL }) => {
-    test.fixme(true, "빈 .actions 상자가 만드는 --s-4 틈 — ui/detail-screen 변경 결정 대기(07.4-01)");
     const page = await loginPage(browser, baseURL, fx.pm, { width, height: 800 });
     try {
       await page.goto(`/expenses/${expenseId}`);
       await waitForDetailTitle(page);
       const heights = await headHeights(page);
+      test.info().annotations.push({ type: "head-heights", description: JSON.stringify(heights) });
       expect(heights.head, `머리 줄 ${JSON.stringify(heights)}`).toBeLessThanOrEqual(heights.heading + 1);
     } finally {
       await page.context().close();

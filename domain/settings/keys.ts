@@ -1676,7 +1676,7 @@ export const PRINT_COMPANY_REPRESENTATIVE: SettingDef<string> = {
 export const PRINT_COMPANY_PHONE: SettingDef<string> = {
   key: "print.company_phone",
   kind: "simple",
-  schema: printCompanyFormat(/^0\d{1,2}-\d{3,4}-\d{4}$/, "02-123-4567"),
+  schema: printCompanyFormat(/^(0\d{1,3}-\d{3,4}-\d{4}|1[5-8]\d{2}-\d{4})$/, "02-123-4567"),
   label: "전화",
   hint: "02-123-4567",
   namespace: "회사 정보",

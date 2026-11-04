@@ -70,8 +70,13 @@ describe("인쇄 회사 정보 키 (D-7405)", () => {
     expect(screenMessage(PRINT_COMPANY_BUSINESS_NO, "12-345-67890")).toBe("형식 오류 · 123-45-67890처럼");
   });
 
-  it("전화는 0으로 시작하는 하이픈 형식만 받는다", () => {
-    for (const ok of ["02-123-4567", "010-1234-5678"]) expect(PRINT_COMPANY_PHONE.schema.safeParse(ok).success).toBe(true);
+  it("전화는 지역 · 휴대폰 · 4자리 접두(0505 등) · 대표번호(15xx~18xx) 하이픈 형식을 받는다", () => {
+    for (const ok of ["02-123-4567", "010-1234-5678", "031-123-4567", "070-1234-5678", "0505-123-4567", "1588-1234", "1661-1234", "1800-1234"]) {
+      expect(PRINT_COMPANY_PHONE.schema.safeParse(ok).success, ok).toBe(true);
+    }
+    for (const bad of ["021234567", "1588-123", "1288-1234", "1988-1234", "01234-123-4567", "02-12-4567", "02-123-45678", "15881234"]) {
+      expect(PRINT_COMPANY_PHONE.schema.safeParse(bad).success, bad).toBe(false);
+    }
     expect(screenMessage(PRINT_COMPANY_PHONE, "021234567")).toBe("형식 오류 · 02-123-4567처럼");
   });
 

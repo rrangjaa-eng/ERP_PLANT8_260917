@@ -398,7 +398,8 @@ describe("담당 소멸 뒤 고아 최종 — 막힘으로 다룬다(ENG-3 · D2
   async function setupOrphanFinal() {
     const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
     const divHead = await makePerson("본부장", DIVISION_HEAD_ROLE_ID, "기획1팀");
-    const mgmt = await makePerson("경영담당", DEFAULT_ROLE_ID, "경영관리팀");
+    // 07.3-02(D-7306): 3단 담당 = 경영관리본부의 본부 책임자.
+    const mgmt = await makePerson("경영담당", DIVISION_HEAD_ROLE_ID, "경영관리팀");
     const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
     const planningPm = await makePerson("무관PM", DEFAULT_ROLE_ID, "기획1팀");
     await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP1_ROLE_ID.key, CEO_ROLE_ID, null);
@@ -437,7 +438,7 @@ describe("담당 소멸 뒤 고아 최종 — 막힘으로 다룬다(ENG-3 · D2
     expect(await actedCount(instanceId)).toBe(1);
 
     // 담당 복구 — 새 사람을 경영관리팀에 발령한다.
-    const newMgmt = await makePerson("새담당", DEFAULT_ROLE_ID, "경영관리팀");
+    const newMgmt = await makePerson("새담당", DIVISION_HEAD_ROLE_ID, "경영관리팀");
     expect((await listMyInbox(newMgmt, { now: NOW_2026 })).mine.map((item) => item.instanceId)).toEqual([instanceId]);
     const result = await approveDocument(newMgmt, { instanceId, expectedVersion: version }, { now: NOW_2026 });
     expect(result.status).toBe("approved");
@@ -484,7 +485,7 @@ describe("담당 소멸 뒤 고아 최종 — 막힘으로 다룬다(ENG-3 · D2
     const ceoView = await getApprovalView(ceo, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
     expect(ceoView?.endLines?.some(isBlockedLine)).toBe(false);
 
-    await makePerson("새담당", DEFAULT_ROLE_ID, "경영관리팀");
+    await makePerson("새담당", DIVISION_HEAD_ROLE_ID, "경영관리팀");
     const restored = await getApprovalView(drafter, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
     expect(restored?.endLines?.some(isBlockedLine)).toBe(false);
   });

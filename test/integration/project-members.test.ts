@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, projectMembers, projects } from "@/db/schema";
+import { actionLog, projectMembers, projects, users } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -274,6 +274,20 @@ describe("후보 · 목록", () => {
     expect(result.rows.find((row) => row.userId === w.Y.id)).toEqual({ userId: w.Y.id, name: "와이", teamName: "재무팀" });
     expect(result.rows.find((row) => row.userId === w.people.대표.id)).toEqual({ userId: w.people.대표.id, name: "대표", teamName: null });
     for (const out of [sysadmin, retired, archived, joined, ceoInPlan, w.people.무소속]) expect(result.rows.map((row) => row.userId)).not.toContain(out.id);
+  });
+
+  // 07.3-02(D-7306 · D-7311 파급): 결재 스냅숏이 팀 없는 사람의 본부를 본부 칸으로 읽어, 그 본부 프로젝트의 구성원 후보가 된다
+  // (07.1-07 소속 규칙과 같은 답 — 결정 밖 파급이라 SUMMARY · PR 「영향」에 적는다). 본부 칸이 다른 본부면 후보가 아니다.
+  it("팀 없이 본부 칸 = 담당 본부인 사람은 후보 · 다른 본부 칸이면 아니다(07.3-02)", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    const divisionOnly = await makePerson("본부칸사람", DEFAULT_ROLE_ID, null);
+    await db.update(users).set({ divisionId: await orgUnitIdByName("경영관리본부") }).where(eq(users.id, divisionOnly.id));
+    const otherDivision = await makePerson("다른본부칸", DEFAULT_ROLE_ID, null);
+    await db.update(users).set({ divisionId: await orgUnitIdByName("기획본부") }).where(eq(users.id, otherDivision.id));
+    const ids = await candidateIds(w.mgmtLead, P3);
+    expect(ids).toContain(divisionOnly.id);
+    expect(ids).not.toContain(otherDivision.id);
   });
 
   it("이름순은 DB 정렬 규칙(collation)과 무관한 한국어 순 — C 정렬이면 B가 a 앞이지만 후보는 a 먼저(PR #189 CI)", async () => {

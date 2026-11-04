@@ -121,6 +121,8 @@
 
 .rule {
   margin: var(--s-3) 0 var(--s-6);
+  /* <hr>의 브라우저 기본 border(1px inset 회색)를 지운 뒤 위 한 줄만 그린다(독립 DOM 감사 D1). */
+  border: 0;
   border-top: var(--print-rule-w) solid var(--print-rule);
 }
 

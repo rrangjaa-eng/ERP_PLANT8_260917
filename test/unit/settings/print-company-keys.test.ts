@@ -6,8 +6,8 @@ import {
   PRINT_COMPANY_PHONE,
   PRINT_COMPANY_REPRESENTATIVE,
   SETTING_DEFS,
-  type SettingDef,
 } from "@/domain/settings/keys";
+import type { SettingDef } from "@/domain/settings/registry";
 import { koreanZodErrorMessage } from "@/lib/actions/zod-error-message";
 
 // 07.4-01 D-7405 — 인쇄 머리 회사 정보 다섯 키. 오류 문장은 화면에 실제로 나가는 koreanZodErrorMessage 결과로 단언한다(eng 검토 A1).

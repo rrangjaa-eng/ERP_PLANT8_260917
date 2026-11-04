@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { settingsSimple, users } from "@/db/schema";
+import { settingsSimple, teams, users } from "@/db/schema";
+import { can } from "@/domain/permissions/can";
 import { FUND_DIVISION_SETTING_KEY } from "@/domain/permissions/fund-scope";
 import { fundScopedWriters, paymentManagers } from "@/domain/notify/recipients";
 import { seoulToday } from "@/lib/dates";
@@ -49,6 +50,14 @@ describe("자금 알림 받는 사람 (07.3-02 D-7312)", () => {
     await grantAllFundKeys(roleId);
     const person = await makeFundPerson("전사 담당", roleId, null);
     expect(await paymentManagers(seoulToday())).toContain(person.id);
+  });
+
+  it("보관된 경영관리팀에 발령이 남은 사원도 can()처럼 받는다(viewerDivision — 팀 보관은 보지 않는다)", async () => {
+    const w = await buildFundWorld();
+    await db.update(teams).set({ archivedAt: new Date() }).where(eq(teams.name, "경영관리팀"));
+    expect(await can(w.mgmtStaff, "evidence.intake", "write")).toBe(true);
+    expect(split(await fundScopedWriters("evidence.intake", seoulToday()), w).mgmtStaff).toBe(true);
+    expect(split(await paymentManagers(seoulToday()), w).mgmtStaff).toBe(true);
   });
 
   it("넘긴 tx로 읽는다 — tx 안에서 바꾼 소속 · 설정이 답에 보인다", async () => {

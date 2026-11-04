@@ -5,8 +5,7 @@ import { readFundDivision } from "@/domain/permissions/fund-gate";
 import type { FundScopedMenu } from "@/domain/permissions/fund-scope";
 import { TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { listActiveUserIdsByRoles, listCompanyScopeRoleIds, listMenuWriterIds, listPaymentManagerIds } from "@/repositories/notify-sources";
-import { listOrgSnapshot } from "@/repositories/org-snapshot";
+import { listActiveUserDivisions, listActiveUserIdsByRoles, listCompanyScopeRoleIds, listMenuWriterIds, listPaymentManagerIds } from "@/repositories/notify-sources";
 import type { RouteStepRef } from "@/repositories/notify-sources";
 import type { NotifyTx } from "@/repositories/notifications";
 
@@ -20,12 +19,12 @@ export async function fundScopedWriters(menu: FundScopedMenu, today: string, tx?
   return keepFundHands(await listMenuWriterIds(SYSTEM_VIEWER, menu, today, tx), today, tx);
 }
 
-// can()의 자금 게이트와 같은 판정(D-7313 · D-7310 · D-7311) — 계급이 회사 전체이거나, 자금 본부가 있고 소속 본부가 그 본부.
+// can()의 자금 게이트와 같은 판정(D-7313 · D-7310 · D-7311) — 계급이 회사 전체이거나, 자금 본부가 있고 소속 본부(viewerDivision 규칙)가 그 본부.
 // can()은 전역 풀로 읽어 tick 잠금 tx 안에서 부르지 않는다 — 같은 tx로 차례로 읽는다.
 async function keepFundHands(ids: readonly string[], today: string, tx?: NotifyTx): Promise<string[]> {
   if (ids.length === 0) return [];
   const fund = await readFundDivision(SYSTEM_VIEWER, tx);
-  const snapshot = await listOrgSnapshot(SYSTEM_VIEWER, today, tx);
+  const snapshot = await listActiveUserDivisions(SYSTEM_VIEWER, today, tx);
   const companyRoles = new Set(await listCompanyScopeRoleIds(SYSTEM_VIEWER, tx));
   const people = new Map(snapshot.map((person) => [person.id, person]));
   return ids.filter((id) => {

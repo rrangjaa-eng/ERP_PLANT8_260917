@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -17,13 +17,23 @@ function sh(cmd: string, args: string[], cwd: string): void {
   }
 }
 
-function setupRepo(): string {
+// 07.2-03: 자동 파기 모드 파일 값을 바꿔 임시 저장소를 만든다(기본은 저장소의 dry-run 그대로).
+// null이면 모드 파일을 커밋에서 뺀다.
+function setupRepo(purgeMode?: string | null): string {
   const repoDir = mkdtempSync(join(tmpdir(), "deploy-repo-"));
   mkdirSync(join(repoDir, "scripts"), { recursive: true });
   mkdirSync(join(repoDir, "infra/monitoring"), { recursive: true });
   cpSync(join(REPO_ROOT, "scripts/deploy.sh"), join(repoDir, "scripts/deploy.sh"));
   cpSync(join(REPO_ROOT, "scripts/rollback.sh"), join(repoDir, "scripts/rollback.sh"));
   cpSync(join(REPO_ROOT, "infra/names.sh"), join(repoDir, "infra/names.sh"));
+  if (existsSync(join(REPO_ROOT, "infra/purge-certs-auto.mode"))) {
+    cpSync(join(REPO_ROOT, "infra/purge-certs-auto.mode"), join(repoDir, "infra/purge-certs-auto.mode"));
+  }
+  if (purgeMode === null) {
+    rmSync(join(repoDir, "infra/purge-certs-auto.mode"), { force: true });
+  } else if (purgeMode !== undefined) {
+    writeFileSync(join(repoDir, "infra/purge-certs-auto.mode"), `${purgeMode}\n`);
+  }
   cpSync(join(REPO_ROOT, "infra/ar-cleanup-policy.json"), join(repoDir, "infra/ar-cleanup-policy.json"));
   cpSync(join(REPO_ROOT, "infra/monitoring"), join(repoDir, "infra/monitoring"), { recursive: true });
   sh("git", ["init", "-q"], repoDir);
@@ -32,6 +42,19 @@ function setupRepo(): string {
   sh("git", ["add", "-A"], repoDir);
   sh("git", ["commit", "-q", "-m", "init"], repoDir);
   return repoDir;
+}
+
+// 배포 모드는 --sha 커밋에서 읽으므로 테스트의 --sha는 저장소에 실제로 있는 커밋이어야 한다.
+function headSha(repoDir: string): string {
+  return spawnSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf8" }).stdout.trim();
+}
+
+// 모드 파일을 바꾼 커밋을 위에 쌓고 그 SHA를 돌려준다(배포 모드는 --sha 커밋에서 읽는다).
+function commitMode(repoDir: string, mode: string): string {
+  writeFileSync(join(repoDir, "infra/purge-certs-auto.mode"), `${mode}\n`);
+  sh("git", ["add", "-A"], repoDir);
+  sh("git", ["commit", "-q", "-m", `mode ${mode}`], repoDir);
+  return headSha(repoDir);
 }
 
 interface DeployResult {
@@ -254,7 +277,7 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
   });
 
   it("docker build를 건너뛰고 바로 100% 트래픽으로 재배포한 뒤 경보를 upsert하고 실제 주소로 스모크한다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--sha", "0123456789abcdef0123456789abcdef01234567"], {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--sha", headSha(repoDir)], {
       state: {
         "service-exists": true,
         "image-exists": true,
@@ -482,12 +505,12 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     repoDir = setupRepo();
   });
 
-  it("Job 6개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
+  it("Job 7개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
     expect(r.status).toBe(0);
 
     const deployLines = r.log.split("\n").filter((l) => l.startsWith("run jobs deploy plant8-staging-"));
-    expect(deployLines).toHaveLength(6);
+    expect(deployLines).toHaveLength(7);
     for (const line of deployLines) {
       expect(line).toContain("APP_ENV=staging");
       expect(line).toContain("BETTER_AUTH_URL=https://plant8-staging-");
@@ -558,10 +581,8 @@ describe("deploy.sh — 프로덕션은 빌드하지 않는다(시나리오 11)"
     repoDir = setupRepo();
   });
 
-  const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
-
   it("이미지가 없으면 ProdImageMissing으로 즉시 중단하고 어떤 ensure 단계도 실행하지 않는다", () => {
-    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA]);
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", headSha(repoDir)]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("ProdImageMissing");
     expect(r.log).not.toMatch(/build --build-arg/);
@@ -571,7 +592,7 @@ describe("deploy.sh — 프로덕션은 빌드하지 않는다(시나리오 11)"
   });
 
   it("이미지가 있으면 docker build 없이 run deploy plant8-prod까지 진행한다", () => {
-    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], {
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", headSha(repoDir)], {
       state: { "image-exists": true },
     });
     expect(r.status).toBe(0);
@@ -632,8 +653,7 @@ describe("deploy.sh — 확인증 환경 게이트(E3-07)", () => {
   });
 
   it("프로덕션 배포 로그의 어떤 줄에도 CERT_FEATURE_ALLOWED가 없다", () => {
-    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
-    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], {
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", headSha(repoDir)], {
       state: { "image-exists": true },
     });
     expect(r.status).toBe(0);
@@ -685,8 +705,7 @@ describe("deploy.sh — 서명 버킷(04.3-05)", () => {
   });
 
   it("프로덕션도 자기 버킷 이름을 서비스 환경 변수로 받는다", () => {
-    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
-    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], {
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", headSha(repoDir)], {
       state: { "image-exists": true },
     });
     expect(r.status).toBe(0);
@@ -1054,9 +1073,7 @@ describe("deploy.sh — 증빙 버킷(05-12)", () => {
     expect(deployLine).toContain("STORAGE_DRIVER=gcs");
     expect(deployLine).toContain("GCS_EVIDENCE_BUCKET=test-proj-plant8-staging-evidence");
     expect(deployLine).toContain("CERT_FEATURE_ALLOWED=true");
-
-    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
-    const p = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], { state: { "image-exists": true } });
+    const p = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", headSha(repoDir)], { state: { "image-exists": true } });
     expect(p.status).toBe(0);
     const prodLine = p.log.split("\n").find((l) => l.startsWith("run deploy plant8-prod "));
     expect(prodLine).toContain("GCS_EVIDENCE_BUCKET=test-proj-plant8-prod-evidence");
@@ -1101,5 +1118,234 @@ describe("deploy.sh — 증빙 버킷(05-12)", () => {
     expect(r.stderr).toContain("docs/EVIDENCE-STORAGE.md");
     expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_evidence_bucket");
     expect(r.log).not.toContain("run deploy ");
+  });
+});
+
+// 07.2-03(PU21): 배포가 자동 파기 Job(dry-run) · job 단위 run.invoker · 월 1회 Scheduler 잡을 만든다.
+describe("deploy.sh — 자동 파기 Scheduler (07.2-03)", () => {
+  const SCHED_JOB = "plant8-staging-purge-certs-monthly";
+  const PURGE_SA = "plant8-staging-purge-sched@test-proj.iam.gserviceaccount.com";
+  const BASE = ["--env", "staging", "--project", "test-proj"];
+  const EMPTY_ARGS = /--args=(\s|$)/;
+
+  it("첫 배포: 자동 Job이 dry-run(빈 --args=, --apply 없음)으로 만들어지고 사람용 Job은 그대로다", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    const auto = jobLine(r.log, "purge-certs-auto");
+    expect(auto).toContain("--command=node,dist/cli/purge-certs.mjs");
+    expect(auto).toMatch(EMPTY_ARGS);
+    expect(auto).not.toContain("--apply");
+    expect(auto).toContain("CERT_SIGNATURE_BUCKET=test-proj-plant8-staging-cert-signatures");
+    const human = jobLine(r.log, "purge-certs");
+    expect(human).not.toContain("--args=");
+    expect(human).not.toContain("--apply");
+  });
+
+  it("이미 있는 환경(서비스 · 이미지 있음)에서도 dry-run이면 빈 --args=를 명시하고 --apply는 없다", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, {
+      state: { "service-exists": true, "image-exists": true, "sa-exists": true, "describe-url": "https://plant8-staging-abc123-du.a.run.app" },
+    });
+    expect(r.status).toBe(0);
+    const auto = jobLine(r.log, "purge-certs-auto");
+    expect(auto).toMatch(EMPTY_ARGS);
+    expect(auto).not.toContain("--apply");
+  });
+
+  it("purge-sched SA가 없으면(bootstrap 전) 경고 한 줄 뒤 바인딩 · Scheduler만 건너뛰고 배포는 0으로 끝난다", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE);
+    expect(r.status).toBe(0);
+    const warnings = `${r.stdout}\n${r.stderr}`.split("\n").filter((l) => l.includes("::warning::purge-sched"));
+    expect(warnings).toHaveLength(1);
+    expect(r.log).toContain("iam service-accounts describe plant8-staging-purge-sched@test-proj.iam.gserviceaccount.com");
+    expect(r.log).not.toContain("run jobs add-iam-policy-binding");
+    expect(r.log).not.toContain(SCHED_JOB);
+    // notify-tick Scheduler는 영향 없다.
+    expect(r.log).toContain("scheduler jobs create http plant8-staging-notify-tick ");
+  });
+
+  it("SA가 있으면 자동 Job 하나에만 job 단위 run.invoker를 바인딩한다", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n").filter((l) => l.startsWith("run jobs add-iam-policy-binding "));
+    expect(lines).toHaveLength(1);
+    const b = lines[0]!;
+    expect(b).toContain("run jobs add-iam-policy-binding plant8-staging-purge-certs-auto ");
+    expect(b).toContain(`--member=serviceAccount:${PURGE_SA}`);
+    expect(b).toContain("--role=roles/run.invoker");
+    expect(b).toContain("--region=asia-northeast3");
+    expect(b).toContain("--project=test-proj");
+    expect(lineIndex(r.log, "run jobs add-iam-policy-binding")).toBeGreaterThan(lineIndex(r.log, "run jobs deploy plant8-staging-purge-certs-auto "));
+  });
+
+  it("Scheduler 잡이 없으면 월 1회 03:00 KST · OAuth · :run URI · 재시도 0으로 create한다(OIDC 없음)", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    const createLines = lines.filter((l) => l.startsWith(`scheduler jobs create http ${SCHED_JOB} `));
+    expect(createLines).toHaveLength(1);
+    const c = createLines[0]!;
+    expect(c).toContain("--schedule=0 3 1 * *");
+    expect(c).toContain("--time-zone=Asia/Seoul");
+    expect(c).toContain(
+      "--uri=https://run.googleapis.com/v2/projects/test-proj/locations/asia-northeast3/jobs/plant8-staging-purge-certs-auto:run",
+    );
+    expect(c).toContain("--http-method=POST");
+    expect(c).toContain(`--oauth-service-account-email=${PURGE_SA}`);
+    expect(c).toContain("--max-retry-attempts=0");
+    expect(c).toContain("--location=asia-northeast3");
+    expect(c).toContain("--project=test-proj");
+    expect(c).not.toContain("--oidc");
+    // 순서: notify Scheduler 다음, 바인딩 다음.
+    expect(lineIndex(r.log, `scheduler jobs describe ${SCHED_JOB}`)).toBeGreaterThan(lineIndex(r.log, "scheduler jobs create http plant8-staging-notify-tick "));
+    expect(lineIndex(r.log, `scheduler jobs create http ${SCHED_JOB}`)).toBeGreaterThan(lineIndex(r.log, "run jobs add-iam-policy-binding"));
+  });
+
+  it("두 잡이 이미 있으면 둘 다 update http다(create 없음)", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true, "scheduler-job": true } });
+    expect(r.status).toBe(0);
+    expect(r.log).not.toContain("scheduler jobs create");
+    expect(r.log.split("\n").filter((l) => l.startsWith(`scheduler jobs update http ${SCHED_JOB} `))).toHaveLength(1);
+  });
+
+  it("notify-tick 잡만 있는 섞인 상태: purge는 create · notify는 update", () => {
+    const repoDir = setupRepo();
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true, "scheduler-job-plant8-staging-notify-tick": true } });
+    expect(r.status).toBe(0);
+    expect(r.log).toContain("scheduler jobs update http plant8-staging-notify-tick ");
+    expect(r.log).not.toContain("scheduler jobs create http plant8-staging-notify-tick ");
+    expect(r.log).toContain(`scheduler jobs create http ${SCHED_JOB} `);
+    expect(r.log).not.toContain(`scheduler jobs update http ${SCHED_JOB} `);
+  });
+
+  it("모드 파일이 apply면 자동 Job에만 --args=--apply가 붙는다(사람용 Job은 그대로)", () => {
+    const repoDir = setupRepo("apply");
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    expect(lines.filter((l) => l.startsWith("run jobs deploy ") && l.includes("--args=--apply"))).toHaveLength(1);
+    expect(jobLine(r.log, "purge-certs-auto")).toContain("--args=--apply");
+    expect(jobLine(r.log, "purge-certs")).not.toContain("--apply");
+  });
+
+  it("모드 파일 값이 알 수 없으면(foo) 자동 Job 배포 없이 0이 아닌 종료로 멈춘다", () => {
+    const repoDir = setupRepo("foo");
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).not.toBe(0);
+    expect(r.log).not.toContain("run jobs deploy plant8-staging-purge-certs-auto ");
+    expect(r.log).not.toContain("scheduler jobs create http plant8-staging-purge-certs-monthly");
+    expect(r.stderr).toContain("purge-certs-auto.mode");
+  });
+
+  it("모드 파일의 # 주석 · 빈 줄은 건너뛰고 첫 값을 읽는다", () => {
+    const repoDir = setupRepo("# 주석\n\n  apply  ");
+    const r = deploy(repoDir, BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    expect(jobLine(r.log, "purge-certs-auto")).toContain("--args=--apply");
+  });
+
+  function expectNoAutoPurge(r: DeployResult): void {
+    expect(r.status).not.toBe(0);
+    expect(r.log).not.toContain("run jobs deploy plant8-staging-purge-certs-auto ");
+    expect(r.log).not.toContain("--apply");
+    expect(r.stderr).toContain("purge-certs-auto.mode");
+    // 검증은 이르다 — 이미지 빌드 · gcloud 변경 전에 멈춘다.
+    expect(r.log).not.toContain("docker build");
+    expect(r.log).not.toContain("run jobs deploy");
+  }
+
+  it("모드 파일이 --sha 커밋에 없으면 이미지 빌드 전에 멈춘다", () => {
+    const r = deploy(setupRepo(null), BASE, { state: { "sa-exists": true } });
+    expectNoAutoPurge(r);
+  });
+
+  it("모드 파일에 주석 · 빈 줄뿐이면 이미지 빌드 전에 멈춘다", () => {
+    const r = deploy(setupRepo("# 주석만\n\n"), BASE, { state: { "sa-exists": true } });
+    expectNoAutoPurge(r);
+  });
+
+  it("값 뒤 인라인 # 주석은 떼고 읽는다(apply  # x → --args=--apply)", () => {
+    const r = deploy(setupRepo("apply  # 승인"), BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    expect(jobLine(r.log, "purge-certs-auto")).toContain("--args=--apply");
+  });
+
+  it("모드는 작업 트리가 아니라 --sha 커밋에서 읽는다(apply 커밋 위에 dry-run 커밋)", () => {
+    const repoDir = setupRepo();
+    const applySha = commitMode(repoDir, "apply");
+    commitMode(repoDir, "dry-run");
+    const r = deploy(repoDir, [...BASE, "--sha", applySha], { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    expect(jobLine(r.log, "purge-certs-auto")).toContain("--args=--apply");
+  });
+
+  it("반대로 dry-run 커밋 위에 apply 커밋이 있어도 --sha 커밋이 dry-run이면 --apply가 없다", () => {
+    const repoDir = setupRepo();
+    const dryRunSha = commitMode(repoDir, "dry-run");
+    commitMode(repoDir, "apply");
+    const r = deploy(repoDir, [...BASE, "--sha", dryRunSha], { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    expect(jobLine(r.log, "purge-certs-auto")).toMatch(EMPTY_ARGS);
+    expect(r.log).not.toContain("--apply");
+  });
+
+  it("run.invoker 바인딩이 실패하면 0이 아닌 종료로 멈추고 Scheduler 잡을 만들지 않는다", () => {
+    const r = deploy(setupRepo(), BASE, {
+      state: { "sa-exists": true, "fail-gcloud": "run jobs add-iam-policy-binding" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.log).not.toContain(`scheduler jobs create http ${SCHED_JOB}`);
+    expect(r.log).not.toContain(`scheduler jobs update http ${SCHED_JOB}`);
+  });
+
+  it("자동 Job은 스모크 성공 뒤에 배포된다(스모크 · 사람용 Job 다음, Scheduler 앞)", () => {
+    const r = deploy(setupRepo(), BASE, { state: { "sa-exists": true } });
+    expect(r.status).toBe(0);
+    const auto = lineIndex(r.log, "run jobs deploy plant8-staging-purge-certs-auto ");
+    const lastSmoke = r.log.split("\n").reduce((acc, l, i) => (l.includes("/internal/notify-tick") && l.includes("-X POST") ? i : acc), -1);
+    expect(lastSmoke).toBeGreaterThan(-1);
+    expect(auto).toBeGreaterThan(lastSmoke);
+    expect(auto).toBeGreaterThan(lineIndex(r.log, "run jobs deploy plant8-staging-purge-certs "));
+    expect(lineIndex(r.log, "run jobs add-iam-policy-binding")).toBeGreaterThan(auto);
+  });
+
+  it("스모크가 실패하면 자동 Job을 배포하지 않고 Scheduler도 건드리지 않는다", () => {
+    const r = deploy(setupRepo(), BASE, { state: { "sa-exists": true, health: "503" } });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("SmokeFailed");
+    expect(r.log).not.toContain("run jobs deploy plant8-staging-purge-certs-auto ");
+    expect(r.log).not.toContain(SCHED_JOB);
+  });
+});
+
+// 07.2-03: verify-gcp.sh purge-scheduler 갈래 — 읽기 전용 확인(소유자 로컬 셸에서만 부른다).
+describe("verify-gcp.sh — purge-scheduler 갈래 (07.2-03)", () => {
+  const script = readFileSync(join(REPO_ROOT, "scripts/verify-gcp.sh"), "utf8");
+  const branch = script.split(/^ {2}purge-scheduler\)\n/m)[1]?.split(/^ {4};;$/m)[0] ?? "";
+
+  it("구문 오류가 없다", () => {
+    expect(spawnSync("bash", ["-n", "scripts/verify-gcp.sh"], { cwd: REPO_ROOT }).status).toBe(0);
+  });
+
+  it("갈래가 하나 있고 파일 머리 사용법에 이름이 있다", () => {
+    expect(script.match(/^ {2}purge-scheduler\)$/gm)).toHaveLength(1);
+    expect(script.split("\n").slice(0, 6).join("\n")).toContain("purge-scheduler");
+  });
+
+  it("잡 describe · ENABLED · 실행 기록 · 자동 Job 실행 목록을 읽고 쓰기 명령은 없다", () => {
+    expect(branch).toContain("purge_scheduler_job staging");
+    expect(branch).toContain("scheduler jobs describe");
+    expect(branch).toContain("ENABLED");
+    expect(branch).toContain("gcloud logging read");
+    expect(branch).toContain("run jobs executions list");
+    expect(branch).toContain("containers[0].args");
+    expect(branch).toContain("completionTime");
+    expect(branch).toContain("purge-certs-auto");
+    expect(branch).not.toMatch(/\b(create|update|delete|execute|add-iam-policy-binding|set-iam-policy|run jobs deploy|jobs run)\b/);
   });
 });

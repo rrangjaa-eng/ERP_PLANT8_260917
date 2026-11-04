@@ -2,10 +2,13 @@ import { test, expect, type Browser, type BrowserContext, type Page } from "@pla
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog } from "@/db/schema";
-import { createExpenseFromLines } from "@/domain/expenses";
+import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { upsertVisibility } from "@/repositories/permissions";
 import { createFixtureUser } from "./fixtures";
-import { setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
+import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import type { Person } from "./leave-org";
 
 // 07.4-01 — 지출결의서 인쇄 라우트 `/print/expenses/[id]`와 상세 화면 「인쇄」 입구. 인쇄 시작 갈래는 A(열면 자동 인쇄 1회 — origin/main SYSTEM §6-6 :636).
@@ -147,9 +150,128 @@ test.describe("입구 · 종이 · 기록", () => {
     const response = await page.goto(printPath(draftId));
     expect(response?.status()).toBe(200);
     await expect(page).toHaveTitle("지출결의서");
+    // 로딩 경계의 자리표시 main이 사라지고 본문(data-ready)만 남은 뒤에 읽는다.
+    await expect(page.locator("main[data-ready]")).toHaveCount(1);
+    await expect(page.locator("main")).toHaveCount(1);
     const text = await page.locator("main").innerText();
     expect(text).not.toContain("null");
     expect(text).not.toContain("undefined");
+    await context.close();
+  });
+});
+
+// Task 2 — 지출결의서 종이(F-E1 결재 중 · F-E2 승인 완료 · F-E3 반려 · F-E4 금액 못 보는 계급).
+const articleOf = (page: Page) => page.locator("article");
+const numberLine = (page: Page) => page.locator("article > p").first();
+
+async function approveAll(expenseDocId: string): Promise<void> {
+  for (const approver of [fx.lead, fx.divisionHead, fx.mgmt, fx.ceo]) {
+    const view = await getApprovalView(approver.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseDocId });
+    if (!view) throw new Error(`결재 문서를 읽지 못했다: ${approver.name}`);
+    await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: view.version });
+  }
+}
+
+test.describe("종이 본문", () => {
+  test("F-E1 결재 중: 라벨 여섯 · 명세 표 · 세금 · 합계 행이 상세 화면 계산 한 줄과 같고 합계 글자는 없다", async ({ browser, baseURL }) => {
+    const { context, page } = await loggedIn(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${expenseId}`);
+    const detailLine = await page.getByTestId("expense-tax-line").first().innerText();
+    const detailTotal = /지급 총액\s*([\d,]+)/.exec(detailLine)?.[1];
+    expect(detailTotal, detailLine).toBeTruthy();
+
+    await page.goto(printPath(expenseId));
+    await expect(page.locator("main[data-ready]")).toHaveCount(1);
+    const sheet = articleOf(page);
+    await expect(sheet.locator("dl dt")).toHaveText(["프로젝트", "지급처", "증빙", "지급 방식", "지급 예정일", "상세"]);
+    const head = sheet.locator("thead th");
+    await expect(head.nth(1)).toHaveText("구분");
+    await expect(head.nth(2)).toHaveText("내용");
+    await expect(head.nth(3)).toHaveText("금액");
+    await expect(sheet.locator("tbody tr").first()).toContainText("공급가액");
+    await expect(sheet.locator("tbody tr").nth(1)).toContainText("부가세");
+    const foot = sheet.locator("tfoot tr").first();
+    await expect(foot).toContainText("지급 총액");
+    expect(await foot.locator("td").last().innerText()).toBe(detailTotal);
+    expect(await sheet.innerText()).not.toContain("합계");
+    await expect(sheet.getByText(/^금 .+ 원정$/)).toHaveCount(1);
+    await expect(sheet.locator("caption")).toHaveCount(1);
+    await expect(numberLine(page)).toContainText("결재 중");
+    await expect(sheet.locator("ol li")).toHaveText([/^1\. .+\.jpg$/]);
+
+    // 쪽 나눔: 자유 글 행(상세)만 이어질 수 있고 나머지 행은 쪼개지지 않는다(F6). 표 머리는 쪽마다 반복(table-header-group).
+    const breakOf = (label: string) => sheet.locator("dl > div").filter({ has: page.getByText(label, { exact: true }) }).evaluate((el) => getComputedStyle(el).breakInside);
+    expect(await breakOf("상세")).toBe("auto");
+    expect(await breakOf("프로젝트")).toBe("avoid");
+    expect(await sheet.locator("thead").evaluate((el) => getComputedStyle(el).display)).toBe("table-header-group");
+    await context.close();
+  });
+
+  test("화면 바는 어느 폭에서도 1차 버튼이 창 안에 있고, 인쇄 미디어에는 바가 없다", async ({ browser, baseURL }) => {
+    const { context, page } = await loggedIn(browser, baseURL, fx.pm);
+    await page.goto(printPath(expenseId));
+    await expect(page.locator("main[data-ready]")).toHaveCount(1);
+    const primary = page.getByRole("button", { name: "인쇄 · PDF 저장" });
+    const close = page.getByRole("button", { name: "닫기" });
+    for (const width of [320, 375, 700, 768, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+      const primaryBox = await primary.boundingBox();
+      const closeBox = await close.boundingBox();
+      if (!primaryBox || !closeBox) throw new Error(`버튼 상자 없음 ${width}`);
+      expect(primaryBox.x + primaryBox.width, `1차 오른쪽 ${width}`).toBeLessThanOrEqual(clientWidth + 0.5);
+      expect(closeBox.x, `닫기 왼쪽 ${width}`).toBeGreaterThanOrEqual(0);
+      expect(await page.evaluate(() => window.scrollX), `scrollX ${width}`).toBe(0);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const sheetWidth = await articleOf(page).evaluate((el) => el.getBoundingClientRect().width);
+    expect(sheetWidth).toBeGreaterThan(793);
+    expect(sheetWidth).toBeLessThan(794.5);
+
+    await page.emulateMedia({ media: "print" });
+    // 숨은 요소는 접근성 트리에서 빠지므로 역할이 아니라 위치(main의 첫 div = 화면 바)로 찾는다.
+    expect(await page.locator("main > div").first().evaluate((el) => getComputedStyle(el).display)).toBe("none");
+    expect((await page.pdf({ preferCSSPageSize: true })).length).toBeGreaterThan(1000);
+    await context.close();
+  });
+
+  test("F-E2 승인 완료는 상태 글자가 없고 F-E3 반려는 「반려」 + 반려 사유 한 줄이다", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const approvedId = await submitLineExpense(browser, baseURL, fx, "retry");
+    await approveAll(approvedId);
+    const rejectedId = await submitLineExpense(browser, baseURL, fx, "phone");
+    const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: rejectedId });
+    if (!view) throw new Error("결재 문서를 읽지 못했다");
+    await rejectDocument(fx.lead.viewer, { instanceId: view.instanceId, expectedVersion: view.version, reason: "금액 다시" });
+
+    const { context, page } = await loggedIn(browser, baseURL, fx.pm);
+    await page.goto(printPath(approvedId));
+    await expect(page.locator("main[data-ready]")).toHaveCount(1);
+    await expect(numberLine(page)).not.toContainText(/결재 중|반려|회수|작성 중|종결/);
+    await expect(articleOf(page).getByText("반려 사유", { exact: true })).toHaveCount(0);
+
+    await page.goto(printPath(rejectedId));
+    await expect(page.locator("main[data-ready]")).toHaveCount(1);
+    await expect(numberLine(page)).toContainText("반려");
+    await expect(articleOf(page).getByText("반려 사유", { exact: true })).toHaveCount(1);
+    await expect(articleOf(page).getByText("금액 다시")).toHaveCount(1);
+    await context.close();
+  });
+
+  test("F-E4 금액을 못 보는 계급은 금액 열 · 세금 · 합계 · 한글 금액이 DOM에 없고 내용 칸은 남는다", async ({ browser, baseURL }) => {
+    const blind = await makeEvidenceManagerE2E();
+    if (!blind.viewer.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: blind.viewer.roleId, infoItem: "expense.amount", visible: false });
+    const { context, page } = await loggedIn(browser, baseURL, blind);
+    await page.goto(printPath(expenseId));
+    await expect(page.locator("main[data-ready]")).toHaveCount(1);
+    const sheet = articleOf(page);
+    await expect(sheet.locator("thead th").filter({ hasText: "금액" })).toHaveCount(0);
+    await expect(sheet.locator("thead th").filter({ hasText: "내용" })).toHaveCount(1);
+    await expect(sheet.locator("tfoot")).toHaveCount(0);
+    await expect(sheet.getByText(/지급 총액|실지급액|부가세|원천징수|계산 불가/)).toHaveCount(0);
+    await expect(sheet.getByText(/^금 .+ 원정$/)).toHaveCount(0);
+    await expect(sheet.locator("tbody tr").first()).toContainText("공급가액");
     await context.close();
   });
 });

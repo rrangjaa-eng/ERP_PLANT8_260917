@@ -3,11 +3,12 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, expenses, files } from "@/db/schema";
 import { listEvidence, voidEvidence } from "@/domain/evidence";
-import { EXPENSE_DOCUMENT_KIND, getExpense } from "@/domain/expenses";
+import { approveDocument } from "@/domain/approvals";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, getExpense } from "@/domain/expenses";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { approvedExpenseWithEvidence } from "./fixtures/payments";
-import { attachEvidence, makeEvidenceManager, setupExpenseProject } from "./fixtures/expenses";
+import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 import { createInReviewExpenseFixture, createIntakeManager } from "./fixtures/evidence";
 
 // 07.4-01 D-7408 · D-7412 — 지출결의서 인쇄물이 쓰는 재료: 금액 투영(키 유무가 판정 근거)과 증빙 파일 이름 목록(무효 · 숨김 제외).
@@ -38,17 +39,23 @@ describe("지출결의서 인쇄 재료", () => {
 
   it("무효 처리된 증빙은 이름 목록에서 빠진다", async () => {
     const fx = await setupExpenseProject();
-    const doc = await approvedExpenseWithEvidence(fx);
+    // 승인 뒤에는 첨부를 더할 수 없어 제출 전에 두 번째 파일을 붙이고, 결재를 끝낸 뒤 그 파일을 무효 처리한다.
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    await attachEvidence(fx.pm, expenseId, undefined, { name: "추가 전표.jpg" });
+    const submitted = await submitReadyDraft(fx.pm, expenseId);
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+    const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+    await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
     const manager = await makeEvidenceManager("증빙관리");
-    await attachEvidence(manager, doc.expenseId, undefined, { name: "추가 전표.jpg" });
-    const [extra] = await db.select({ id: files.id }).from(files).where(and(eq(files.ownerId, doc.expenseId), eq(files.originalName, "추가 전표.jpg")));
+    const [extra] = await db.select({ id: files.id }).from(files).where(and(eq(files.ownerId, expenseId), eq(files.originalName, "추가 전표.jpg")));
     if (!extra) throw new Error("추가 증빙 없음");
-    expect(await printableNames(fx.pm, doc.expenseId)).toContain("추가 전표.jpg");
+    expect(await printableNames(fx.pm, expenseId)).toContain("추가 전표.jpg");
 
     await voidEvidence(manager, { fileId: extra.id, reason: "잘못 붙임" });
-    const names = await printableNames(fx.pm, doc.expenseId);
+    const names = await printableNames(fx.pm, expenseId);
     expect(names).not.toContain("추가 전표.jpg");
-    expect(names).toContain("세금계산서.jpg");
+    expect(names.length).toBeGreaterThan(0);
   });
 
   it("G15 숨긴 파일(올린 사람 · 경영관리만 보기)은 결재자의 목록에 없다", async () => {

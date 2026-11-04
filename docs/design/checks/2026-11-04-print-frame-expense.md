@@ -20,3 +20,11 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: print-frame.module.css의 색은 var(--print-ink|--print-rule|--print-line|--surface-*|--border-surface|--status-danger|--accent)뿐이고 리터럴 색 · radius · 그림자 0(단위 시험 print-frame-css가 단언). 2px 구조 선은 var(--print-rule-w)
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 화면 바는 min(210mm, 100%) 폭이라 창 안에 남는다. 종이는 210mm 고정 가로 스크롤이 SYSTEM §6-6 규정(인쇄 라우트는 §11 넘침 점검 제외). 4폭 실측은 Task 3 독립 DOM 감사 표에 적는다
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: Task 3 캡처 스펙 design-capture-07.4-01(DESIGN_CAPTURE_DIR) 산출물 — 판정은 스크린샷 육안이 아니라 measurements json의 DOM 실측(CLAUDE.md §6)
+
+## Task 2 — 지출결의서 본문 · 명세 표 · 결재란 끝 (07.4-01)
+- [x] 종이에 설명문을 더하지 않았다 — 근거: 본문은 라벨 여섯 · 명세 표 · 증빙 파일 이름 · 결재란뿐이고, 계산 불가 한 칸(`계산 불가 · 세율 없음`)만 이유를 같은 줄에 적는다(종이에 hover가 없다 — SYSTEM §6-6)
+- [x] 사용자가 정할 것이 없다 — 근거: 세금 · 합계 · 한글 금액은 상세 화면 계산 한 줄과 같은 taxResult에서 서버가 정하고(다시 세지 않음), 금액을 못 보는 계급은 금액 열 · 세금 · 합계 · 한글 금액이 흔적 없이 빠진다(E2E F-E4)
+- [x] 합계 행 라벨은 화면과 같은 낱말이다 — 근거: 부가세 문서 「지급 총액」, 원천징수 「실지급액」(tax-rows.ts · 단위 시험), 종이에 「합계」 글자 0(E2E F-E1)
+- [x] 새 색 · 서체 · radius · 그림자 없음 — 근거: 추가 CSS는 var(--print-*) · 기존 역할 토큰뿐이고 print-frame-css 단위 시험이 리터럴 색 · 세로선 · 고정 높이 0을 단언한다
+- [x] 시스템 이탈은 DECISIONS 뒤에 SYSTEM — 근거: DECISIONS.md 「서류 출력 공용 인쇄 틀」(2026-11-04) 다음에 SYSTEM §6-6 · §7-7을 고쳤고 :636 트리거 줄은 그대로다(design-system-docs 단위 시험)
+- [x] 화면 바는 폭 320 · 375 · 700 · 768 · 1280에서 1차 버튼이 창 안에 있다 — 근거: E2E 「화면 바는 어느 폭에서도…」가 getBoundingClientRect right ≤ clientWidth와 scrollX 0을 실측한다

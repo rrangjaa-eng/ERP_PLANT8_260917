@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { PrintDocumentKind } from "@/domain/print/record";
 import { Button } from "@/ui/button/Button";
 import { recordDocumentPrintAction } from "./actions";
 import styles from "./print-frame.module.css";
 
-type Kind = "expense" | "leave" | "settlement";
-
 // 닫히지 않는 창(로그인 리디렉트 등으로 열린 창)에서는 그 서류의 상세 화면으로 간다.
-const DETAIL_HREF: Record<Kind, (id: string) => string> = {
+const DETAIL_HREF: Record<PrintDocumentKind, (id: string) => string> = {
   expense: (id) => `/expenses/${id}`,
   leave: (id) => `/leave/${id}`,
   settlement: (id) => `/projects/${id}/settlement`,
@@ -19,7 +18,7 @@ const COALESCE_MS = 5000;
 let lastRecordedAt: number | null = null;
 
 // 인쇄 기록은 화면에 아무것도 띄우지 않는다 — 결과 · 오류를 읽지 않는다(UI-SPEC 재량 8).
-function record(kind: Kind, id: string): void {
+function record(kind: PrintDocumentKind, id: string): void {
   const now = Date.now();
   if (lastRecordedAt !== null && now - lastRecordedAt < COALESCE_MS) return;
   lastRecordedAt = now;
@@ -28,7 +27,7 @@ function record(kind: Kind, id: string): void {
 
 // 07.4-01 D-7409: 인쇄 시작 갈래 A — 열면 자동으로 한 번 인쇄한다(SYSTEM §6-6 트리거 줄). 서버 액션 요청이 인쇄 미리보기가
 // 렌더러를 멈추기 전에 나가도록 window.print()는 동기로 부르지 않고 다음 틱에 부른다.
-export function PrintBar({ kind, id }: { kind: Kind; id: string }) {
+export function PrintBar({ kind, id }: { kind: PrintDocumentKind; id: string }) {
   const started = useRef(false);
 
   useEffect(() => {

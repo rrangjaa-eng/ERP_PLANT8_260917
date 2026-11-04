@@ -1,8 +1,8 @@
-// 07.4-01 D-7405 · D-7406: 머리 B줄과 워드마크 글자. 순수 함수 — import 없음.
-export type CompanyInfo = { name: string; address: string; businessNo: string; representative: string; phone: string };
+// 07.4-01 D-7405 · D-7406: 머리 B줄과 워드마크 글자. 순수 함수 — 가져오는 것은 회사 정보 타입뿐이다(런타임 import 없음).
+import type { PrintCompany } from "@/domain/print/company";
 
 // 주소 · 사업자번호 · 대표 · 전화 중 값이 있는 항목만(이름째 빼고) " · "로 잇는다. 전부 비면 null — B줄 요소를 그리지 않는다.
-export function companyInfoLine(company: CompanyInfo): string | null {
+export function companyInfoLine(company: PrintCompany): string | null {
   const parts = [
     company.address.trim(),
     labeled("사업자번호", company.businessNo),

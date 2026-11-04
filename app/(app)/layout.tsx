@@ -51,8 +51,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   const canIntakeEvidence = await can(viewer, "evidence.intake", "write");
   // /pnl/reserves 404 게이트(reserves/layout.tsx)와 같은 두 판정 — 어긋나면 404로 가는 링크가 대장의 존재를 알린다(04-42 B-13).
-  const [canViewPnl, reserveShown] = await Promise.all([can(viewer, "pnl", "view"), visible(viewer, "reserve.amount")]);
-  const canViewReserves = canViewPnl && reserveShown;
+  // 손익 보기는 위 allowedMenus가 이미 can(viewer, "pnl", "view")로 판정했다 — 같은 조회를 두 번 하지 않는다.
+  const canViewReserves = allowedMenus.includes("pnl") && (await visible(viewer, "reserve.amount"));
   const menu = roleMenu({ roleId: viewer.roleId ?? "", allowedMenus: gatedMenus, canIntakeEvidence, canViewReserves });
 
   // D-4219: 첫 값은 레이아웃의 서버 조회 하나뿐이다 — 실패해도 셸 자체는 정상

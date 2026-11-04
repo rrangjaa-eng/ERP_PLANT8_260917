@@ -20,3 +20,42 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: `.groupNote`는 `--s-2` · `--text-muted` · `--text-aux` · `--fw-regular`만(CSS diff에 색 · px 없음), `.mobileCell`에 `align-items: center`만 더했다. 새 클래스 이름은 `.groupNote` 하나
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: E2E permissions-grid 폰 375 · 320(scrollWidth <= innerWidth · 표지 행 라벨 줄 수 · dt 71px = main 기준선) · 체크박스 44px 그대로 · DOM 실측 measurements-state-fund-note-default.json
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: /tmp/claude-0/-home-user-ERP-PLANT8-260917/30ed6bf6-3ae4-50c2-9db0-a6fc33c75269/scratchpad/capture-07.3-04/state-fund-note-default-{1280,768,375,320}.png · state-fund-note-unset-{1280,768,375,320}.png (CI=true 프로덕션 빌드, 판정은 같은 폴더 measurements-*.json의 DOM 수치 — 독립 DOM 감사 결과는 이 파일 아래 감사 표에 이어 적는다)
+
+## 독립 DOM 감사 (2026-11-04 · gsd-ui-auditor · CI=true 프로덕션 빌드 · 1280 · 1024 · 375 · 320)
+판정은 DOM 실측만(스크린샷 육안 없음). DOM 결함 0 · 20/24. 보고서: `.planning/phases/07.3-management-fund-scope/07.3-UI-REVIEW.md` · 원자료 `/mnt/project-files/07.3-review/exec-04/audit-default.json` · `audit-unset.json` · `audit-dom.js`. 폰 기준선 = main 실측 `/mnt/project-files/07.3-review/design/r1/extra/measure-baseline.json`.
+
+| 폭 | 점검 | 실측 | 판정 |
+|---|---|---|---|
+| 1280/1024/375/320 | 권한표 가로 넘침(기본 · 미지정) | scrollWidth = innerWidth | PASS |
+| 1280/1024/375/320 | 설정 「권한」 절 가로 넘침 | scrollWidth = innerWidth | PASS |
+| 전체 | 표지 white-space · 줄 수 | `nowrap` · 1줄 | PASS |
+| 전체 | 표지 글자색 · 크기 = `--text-muted` · `--text-aux` | rgb(82,97,92) · 13px, 토큰 probe와 같음 | PASS |
+| 1280/1024 | 표지가 그룹 이름과 같은 줄 | sameLine true ×8 | PASS |
+| 1280 | 그룹 줄 높이(표지 있음 대 없음) | 표지 37.30 ×8 · 없음 37.30 ×29(첫 그룹 「프로젝트」만 36.80, 표지와 무관) | PASS |
+| 1280/1024 | 표지는 자금 메뉴 8개에만 | 38그룹 중 8 · 자금 밖 0 | PASS |
+| 1280/1024 | 칸 · 행 머리 체크박스 aria-describedby → 표지 id | 칸 18/18 · 행 머리 3/3, 그룹 ×8 | PASS |
+| 1280/1024 | 그룹 줄 접근성 글자에 「 · 」 | `매출 정산 · 경영관리본부만` ×8 | PASS |
+| 375/320 | 폰: 표지는 자금 행에만 | 111행 중 24(8×3) · 자금 밖 0 | PASS |
+| 375/320 | 폰 표지 행 라벨 줄 수 · 행 높이 = main 기준선 | 24행 모두 기준선과 같음(줄 1/2 · dt 71px) | PASS |
+| 375/320 | 표지는 라벨에 없음 | labelHasNote false ×24 | PASS |
+| 375/320 | 표지 세로 중심이 체크박스 안(같은 줄) | true ×24 | PASS |
+| 375/320 | 표지가 값 칸 안(넘침 없음) | note right 248 ≤ dd right 359/304 | PASS |
+| 375/320 | 폰 체크박스 aria-describedby → 표지 | true ×24 | PASS |
+| 전체(미지정) | 표지 글자 | 「자금 본부 미지정」 ×8그룹 / ×24폰 행 · 1줄 · nowrap | PASS |
+| 전체(미지정) | 표 위 잠김 한 줄 하나 | 1 × `자금 기능 본부 미지정 · 설정` | PASS |
+| 1280/1024(미지정) | 잠김 줄 1줄 | p 22.8px · 글자 중심 대 링크 중심 Δ0.5px | PASS |
+| 375/320(미지정) | 잠김 줄 1줄(44px) | p 44px = 3차 링크 min-height `--touch-min` 44(SYSTEM §233) · Δ0.5px 한 줄 | PASS |
+| 전체(미지정) | 잠김 줄 가로 넘침 | 0 | PASS |
+| 전체(미지정) | 「설정」 링크 3차 모양 | `.btn .tertiary` · `--accent` · href `/admin/settings?group=권한#setting-permissions.fund.division_org_unit` | PASS(크기는 남은 경고) |
+| 전체(미지정, admin.settings 보기 없는 계정) | 링크 없는 잠김 줄 | `자금 기능 본부 미지정` 1 · 링크 0 · 넘침 0 (계정: 권한표 보기만 있는 임시 계급) | PASS |
+| 전체 | 설정 「권한」 절 구조 | Form.Field 라벨 · select · 힌트(aria-describedby) — 다른 select 설정과 같은 렌더러 | PASS |
+| 전체 | 설정 앵커 | `#setting-permissions.fund.division_org_unit` 있음 · 기본 「경영관리본부」 · 미지정 「—」 | PASS |
+
+**고친 것: 없음** (감사 결함 0 — 5단계 수정 · 재실행 없음).
+**캡처 폴더:** `/tmp/claude-0/-home-user-ERP-PLANT8-260917/30ed6bf6-3ae4-50c2-9db0-a6fc33c75269/scratchpad/capture-07.3-04/` (`state-fund-note-default-{1280,768,375,320}.png` · `state-fund-note-unset-{1280,768,375,320}.png` · `measurements-state-fund-note-{default,unset}.json`). 폰 기준선은 실행 때 main 대조 없이 위 `measure-baseline.json` 상수로 E2E가 잰다(실행일 값과 달랐던 것 없음).
+
+### 남은 경고 (고치지 않음 — 시스템 수준 · 이 플랜 밖)
+- 잠김 줄 「설정」 3차 링크가 힌트 글자(13px)보다 크다(PC 14px · 폰 15px) — permissions/page.tsx:55-60. 공용 3차 컴포넌트라 고치려면 SYSTEM 변경(DECISIONS 먼저 · 사용자 승인).
+- 설정 「자금 기능 본부」 힌트(domain/settings/keys.ts · 07.3-01)가 용어 6개로 8개 메뉴를 가리킨다(증빙 무효 처리 · 결재 중 증빙 붙이기는 암시만).
+- admin.settings 보기 없는 계정의 잠김 줄 `자금 기능 본부 미지정`에는 다음 걸음이 없다(잠김 한 줄 · 명사형 규칙상 허용, 선택: `· 시스템 관리자` 꼬리).
+

@@ -51,6 +51,17 @@ export async function listPaymentManagerIds(viewer: Viewer, today: string, tx: D
   return rows.map((row) => row.id);
 }
 
+// 07.3-02(D-7312 · D-7313): 회사 전체 보는 범위(viewScope company) · 보관 아닌 계급 id — 자금 게이트의 면제 조건과 같은 칸.
+export async function listCompanyScopeRoleIds(viewer: Viewer, tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  const rows = await tx
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.viewScope, "company"), isNull(roles.archivedAt)))
+    .orderBy(roles.id);
+  return rows.map((row) => row.id);
+}
+
 // D-748: 계급 → 회사 전체의 그 계급 활성 사용자 — 보관된 계급 id는 건너뛴다(읽기에서 빠진다). 계급마다 한 쿼리가 아니라 한 번에 읽는다.
 export async function listActiveUserIdsByRoles(
   viewer: Viewer,

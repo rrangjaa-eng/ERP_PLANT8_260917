@@ -3,9 +3,9 @@
 import { CARD_FORMATS } from "@/domain/evidence-records";
 import { ORPHAN_EVIDENCE_RULE, orphanCreatedBefore } from "@/domain/evidence-records/aging";
 import type { ConditionKind, NotificationCandidate } from "@/domain/notify/condition-kinds";
+import { fundScopedWriters } from "@/domain/notify/recipients";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { countPublishedUnattachedBefore } from "@/repositories/evidence-records";
-import { listMenuWriterIds } from "@/repositories/notify-sources";
 
 export const orphanEvidenceKind: ConditionKind = {
   kind: "orphan-evidence",
@@ -23,7 +23,7 @@ export const orphanEvidenceKind: ConditionKind = {
       ctx.tx,
     );
     if (count === 0) return [];
-    const recipients = await listMenuWriterIds(SYSTEM_VIEWER, "evidence.intake", ctx.today, ctx.tx);
+    const recipients = await fundScopedWriters("evidence.intake", ctx.today, ctx.tx);
     return recipients.map(
       (recipientId): NotificationCandidate => ({
         entity: "evidence-orphans",

@@ -4,9 +4,9 @@ import { db } from "@/db/client";
 import { actionLog } from "@/db/schema";
 import { createExpenseFromLines, getExpense } from "@/domain/expenses";
 import { getLeave, submitLeave } from "@/domain/leave";
-import { getSettlement } from "@/domain/settlements";
+import { getSettlement, submitSettlement } from "@/domain/settlements";
 import { recordDocumentPrint } from "@/domain/print/record";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 import { setSettingValue } from "@/domain/settings/registry";
@@ -50,6 +50,8 @@ describe("recordDocumentPrint", () => {
 
   it("연차는 detail.number에 연차 번호가 실린다", async () => {
     const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
+    await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    await makePerson("최대표", CEO_ROLE_ID, null);
     const deps = { now: NOW_2026 };
     const submitted = await submitLeave(drafter, { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-23", half: "" }, deps);
     const number = (await getLeave(drafter, submitted.leaveId, deps))?.number;
@@ -63,6 +65,7 @@ describe("recordDocumentPrint", () => {
 
   it("정산서는 프로젝트 id로 부르고 detail.number는 프로젝트 번호다", async () => {
     const fx = await setupSettlementProject();
+    await submitSettlement(fx.pm, { projectId: fx.projectId });
     await recordDocumentPrint(fx.pm, { kind: "settlement", id: fx.projectId });
     const rows = await printRows(fx.projectId);
     expect(rows).toHaveLength(1);

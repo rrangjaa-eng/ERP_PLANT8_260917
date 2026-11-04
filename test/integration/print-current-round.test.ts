@@ -50,8 +50,9 @@ describe("currentApprovalRound", () => {
     const current = await currentApprovalRound(fx.pm, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
     expect(current?.submittedAt).toEqual(round2?.submittedAt);
     expect(current?.submittedAt.getTime()).toBeGreaterThan(round1?.submittedAt.getTime() ?? Infinity);
+    // 문서 행의 submittedAt은 다시 제출해도 첫 제출 시각이다 — 지금 차수 시각과 다르다.
     const view = await getExpense(fx.pm, { expenseId });
-    expect(view?.submittedAt?.getTime()).toBe(round1?.submittedAt.getTime());
+    expect(view?.submittedAt?.getTime()).toBeLessThan(round2?.submittedAt.getTime() ?? 0);
     expect(view?.submittedAt?.getTime()).not.toBe(current?.submittedAt.getTime());
   });
 

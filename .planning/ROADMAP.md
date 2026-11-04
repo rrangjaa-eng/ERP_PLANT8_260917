@@ -1188,6 +1188,26 @@ Review Dispositions — Round 2 — d9b427f(07 절만, eng-review R1~R15 · C1~C
 
 이 페이즈가 끝나면 인트라넷 4기능이 전부 새 시스템에 있다(패리티 완료). 그래서 바로 다음이 전환이다(하드 제약 4; 데이터 이전 없음 — 2026-09-23). Phase 3에서 미룬 관리 콘솔 전체 검수(CEO OV-5)도 여기서 끝난다.
 
+### Phase 07.4: 서류 출력 (document-print) (INSERTED)
+
+**Goal:** 지출결의서 · 연차 신청서 · 프로젝트 정산서를 PC 상세 「인쇄」로 새 탭 A4 종이(회사 정보 머리 · 결재란 · 상태 글자 · 쪽 번호)로 뽑거나 PDF로 저장한다 — 볼 수 없는 서류는 응답 전 404, 금액 · 손익은 보는 사람 권한대로만, 인쇄는 행동 로그 `document_print`에 남는다
+**Requirements**: D-7401 ~ D-7415(07.4-CONTEXT.md 결정 — 요구 ID 없음)
+**Depends on:** Phase 7
+**Plans:** 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 07.4-01-PLAN.md — 공용 인쇄 틀 · 회사 정보 설정 · 인쇄 기록 · 지출결의서(화면 · /design-review · /qa · 세션 머지)
+
+**Wave 2** *(blocked on Wave 1 completion — 같은 틀 · 시드 · 폰 입구 스펙)*
+
+- [ ] 07.4-02-PLAN.md — 연차 신청서(일곱 행 · 입사일 없음 · 결재자도 소속 · 잔여)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 07.4-03-PLAN.md — 프로젝트 정산서(지출결의 · 구매 요청 목록 · 조건부 손익 칸 · risk: Opus 실행 · /cso)
+
 ### Phase 07.5: 화면 항목 추가 (custom-fields-rollout) (INSERTED)
 
 **Goal:** 관리자가 코드 없이 프로젝트·견적 줄에 추가 칸(텍스트/숫자/날짜/선택 4종)을 만들면, 그 칸이 프로젝트 폼(기본 칸 아래 묶음)·견적 줄 표(오른쪽 끝 열)·프로젝트 목록·검색과 거래처 목록·검색·CSV 내보내기에 바로 반영된다(프로젝트·견적 목록 내보내기는 만들지 않는다 — 2026-10-07 G6). Phase 04.5가 거래처 하나에 켠 관리 화면·보관·노출표 자동 등록·칸별 노출 판정·값 보존을 프로젝트·견적 줄로 넓히고, 서버 검증은 Phase 3 규약(`buildCustomFieldsSchema`)을 그대로 쓴다. 원래 Phase 10 기준 4였고 전환 전에 한다(사용자 카드 2026-11-04, Phase 8 계획 스레드). 입력 07.5-CONTEXT.md D-7501~D-7522 · 07.5-RESEARCH.md

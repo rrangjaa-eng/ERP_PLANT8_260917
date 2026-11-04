@@ -273,7 +273,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ADMN-04 | Phase 04.1 (결재 부분 — 단계·담당 계급·조직 범위·규칙 on/off·문서 종류별 자기 승인 + 연차 연간 일수. 알림 시점·대상은 Phase 7, 세율·수식은 Phase 5) | Complete |
 | ADMN-05 | Phase 3 | Complete |
 | ADMN-06 | Phase 3 | Complete |
-| ADMN-07 | Phase 10 | Pending |
+| ADMN-07 | Phase 07.5 | Pending |
 | ADMN-08 | Phase 3 | Complete |
 | ADMN-09 | Phase 4 | Complete |
 | ADMN-10 | Phase 3 (새 배포 직후 대표 계정의 행동 로그 화면 404 — 계급 기본 권한 — 는 Phase 7 전 메뉴 권한 검수 확정 항목, 2026-10-01) | Gaps Found |
@@ -305,10 +305,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 91
 - Unmapped: 0 ✓
 
-**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.2 (4) · 04.3 (2) · 04.4 (1) · 5 (9) · 6 (12) · 7 (3) · 8 (2) · 9 (11) · 10 (6) · 11 (2)
+**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.2 (4) · 04.3 (2) · 04.4 (1) · 5 (9) · 6 (12) · 7 (3) · 07.5 (1) · 8 (2) · 9 (11) · 10 (5) · 11 (2)
 
 ---
 *Requirements defined: 2026-09-17*
+*2026-11-04: ADMN-07 Phase 10 → Phase 07.5(화면 항목 추가, 전환 전 — 사용자 카드). 91/91 mapped 그대로*
 *2026-09-24: Phase 7에서 Phase 04.2로 ADMN-11·NOTI-01·NOTI-02·NOTI-04 이동(PR #50 분리 — 옮긴 4 + 남긴 3 = 원래 7)*
 *Last updated: 2026-10-02 — CERT-01 문장을 명단 폐지 흐름(2026-09-30 결정)에 맞춤(사용자 승인, PR #88)*
 *Earlier update: 2026-09-24 — CERT-01·02 → Phase 04.3(D-1101·D-1102·D-1103 문구), Phase 11은 CERT-03·04 (86/86 mapped)*

@@ -58,6 +58,8 @@ created: "2026-11-04"
 | 08-05-T1 · T3 | 08-05 | 2 | (운영 배포) | 운영 덮어쓰기 | 선행 조건 · 수동 백업 · production 승격 성공 | gh 읽기 | 08-05 Task 1 · 3 `<automated>` | — | ⬜ pending |
 | 08-06-T2 | 08-06 | 3 | OPS-03 | 운영 덮어쓰기 | 프로덕션 리허설 성공(로그 `INPUT_ENV: production`) | gh 읽기 + 기존 unit | 08-06 Task 2 `<automated>` · `test/unit/deploy/restore-rehearsal-workflow.test.ts` | ✅ | ⬜ pending |
 | 08-06-T3 | 08-06 | 3 | MIG-04 | — | 로그인 상태 배지 · 정산 결재선 3단 + 본부 책임자 1명 | manual + 기존 integration | `… test/integration/people-login-status.test.ts` | ✅ | ⬜ pending |
+| 08-09-T1 · T2 | 08-09 | 3 | MIG-05 | 권한 우회 · 운영 덮어쓰기 | 리허설 전용 SA · 임시 인스턴스만 조건부 cloudsql.admin · restore Job만 실행 · 재실행 멱등(`--condition`) · WIF main ref(새로 · 이미 있음 같은 조건) · 워크플로 SA 이름 대조 | unit | `pnpm exec vitest run --project unit test/unit/deploy` | ✅ 확장 | ⬜ pending |
+| 08-09-T3 | 08-09 | 3 | MIG-05 | 권한 우회 | 스테이징 리허설이 gha-rehearsal로 성공 · main 밖 ref 인증 거부 | gh 읽기 | 08-09 Task 3 `<automated>` | — | ⬜ pending |
 | 08-07-T1 · T3 | 08-07 | 4 | MIG-05 | 선행 조건 미충족 · 잘못된 환경 | 선행 조건 기계 게이트(07.2 · 07.3 SUMMARY · 07.4 · 07.5 · 07.6 VERIFICATION · #109) · 운영 apply 성공(env · mode 로그) | gh 읽기 | 08-07 Task 1 · 3 `<automated>` | — | ⬜ pending |
 | 08-08-T1 · T2 · T3 | 08-08 | 5 | MIG-04/MIG-05 | — | 전환 뒤 dry-run demo 0 · 첫 번호 · 2주 뒤 리허설 | gh 읽기 | 08-08 Task 1 · 2 · 3 `<automated>` | — | ⬜ pending |
 
@@ -83,6 +85,7 @@ created: "2026-11-04"
 | 운영 첫 승격·재승격 성공 | (운영 배포) | GCP·Actions 실제 실행 | `deploy.yml` 실행 기록 링크와 `/api/health`를 체크리스트 증거 칸에 |
 | 프로덕션 대상 복원 리허설 성공 | OPS-03 / 기준 5 | 운영 인스턴스 대상 | 상태 화면 「복원 리허설」 행 일시·성공 |
 | 마스터 손 입력·전 직원 계정 발급 | MIG-04/MIG-05 기준 1·2 | 사람 입력 | 사람 목록 배지·관리 화면 건수 |
+| 리허설 전용 SA · WIF main ref 조건 적용(CEO-5) | MIG-05 | 소유자 Cloud Shell IAM 변경 | 08-09 Task 3 — 증거 세 줄 · 스테이징 리허설 링크 · main 밖 ref 거부 실행 링크 |
 | 전환일 실행(demo 삭제 apply·공지) | MIG-05 기준 3·4 | 되돌릴 수 없는 운영 작업 | 체크리스트 순서대로, dry-run 건수 기록 뒤 apply |
 
 ---

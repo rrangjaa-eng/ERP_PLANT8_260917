@@ -1,5 +1,5 @@
 # 서류 출력 공용 인쇄 틀 · 지출결의서 — 점검표
-화면: app/print/_frame/, app/print/expenses/, app/(app)/expenses/[id]/expense-document.tsx
+화면: app/print/_frame/, app/print/expenses/, app/(app)/expenses/[id]/expense-document.tsx, ui/detail-screen/, app/(app)/admin/pc-only.tsx
 기준: BRIEF.md · frontend.md 화면 사용성 원칙 · CHECKLIST.md §1 · SYSTEM.md §6-6 (인쇄 템플릿) · 07.4-UI-SPEC.md
 
 ## 원칙
@@ -43,7 +43,7 @@
 | 전 폭 | 7 결재란 | F-E1 5칸 · F-E2 approved×4 · F-E3 반려 + 사유 1 · F-E4 기안 1칸 | 통과 |
 | 전 폭 | 8 금액 숨김 | 금액 열 · tfoot · 한글 금액 · 계산 불가 0 | 통과 |
 | 1280 | 9 회사 정보 | 다섯 → A+B줄 · 이름만 → B줄 0 · 비움 → `PLANT8` · 빈 요소 0 | 통과 |
-| 375·320 | 11 폰 입구 | 접근성 0 · 머리 줄 102.6px 대 제목 블록 86.6px(16px 틈) | A: 사용자 카드 대기 |
+| 375·320 | 11 폰 입구 | 접근성 0 · 머리 줄 102.6px 대 제목 블록 86.6px(16px 틈) | A: 추천안으로 고침(사용자 카드 답 대기 중 진행 · 고친 뒤 head 86.58 = heading 86.58px) |
 | 1280·768 | 11 PC 입구 | 링크 1 · target=_blank rel=noopener | 통과 |
 | 1280 | 12 404·제목 | 없는 id · 남의 서류 404 · title 기본 / 열람 가능 `지출결의서 {번호}` | 통과 |
 | print | 13 회색조 | grayscale(1)에서 번호 줄 · 결재 칸 상태 글자 존재 | 통과 |
@@ -60,7 +60,7 @@
 - 감사 재현성 권고: 상세 화면 스트리밍 중 `h1[data-ui="screen-title"]`이 둘 잡히는 순간이 있어 mobile-print-entry · 캡처 스펙이 제목이 하나로 줄 때까지 기다린다.
 
 ## 남긴 것
-- A (사용자 카드 대기): 폰 375 · 320 상세 머리 줄 빈 actions 상자 16px 틈 — `ui/detail-screen` 수정이 필요해 이 플랜이 고치지 않는다. 해당 시험 둘은 `test.fixme`.
+- A (고침 · 사용자 카드 답 대기 중 추천안으로 진행): 폰 375 · 320 상세 머리 줄 빈 actions 상자 16px 틈 — `DetailScreen.module.css` 폰 규칙 한 블록 + `PcOnly`의 `data-pc-only` 표지로 고쳤다. 다른 답이면 되돌린다. 아래 「항목 A」 절 참조.
 - B (관찰, 위반 아님): 화면 바 1차 버튼 right = clientWidth(320~768), 폰 `scrollWidth` 794(종이 210mm 고정, UI-SPEC:152 · :583).
 - 설정 「회사 정보」 라벨 폭 100px(1280 · 768) — 공용 설정 컴포넌트 값이며 07.4 고유가 아니다(관찰).
 
@@ -69,3 +69,13 @@
 - 인쇄 시작 갈래: A(열면 자동 `window.print()` 1회) — SYSTEM.md:636 일반 트리거 줄이 origin/main에 그대로 있다.
 - backstop 네 줄 측정값: ① 머리 긴 글 — 머리 B줄은 한 문단으로 줄바꿈되고 F-C 다섯 채움 측정에서 넘침 없음(scrollWidth는 종이 794 고정) ② 입구 넘침 — 상세 머리 줄 actions `scrollWidth ≤ clientWidth`(`measurements-state-detail-entry.json`, 1280 · 768) ③ 회색조 — 단언 13 통과 ④ 바닥줄 PDF 텍스트 — `@page` margin box `PLANT8 ERP` + `쪽 / 전체`, F-E1~E4 PDF 1쪽.
 - 회색조 실제 출력 · 실제 프린터 인쇄는 사람 확인 항목으로 남긴다(자동 검증 밖).
+
+## 항목 A — 폰에서 행동이 모두 PcOnly면 `DetailScreen`의 `.actions` 상자가 자리를 차지하지 않는다 (사용자 카드 추천안, 답 대기 중 진행)
+지금 화면 기준 어긋남: 375 · 320 지출결의 상세(결재 중 · 종결 버튼 없음)에서 머리 줄 102.6px, 제목 블록 86.6px(차 16px = `.head`의 `gap: var(--s-4)`) — 「인쇄」가 PcOnly로 가려져도 빈 `.actions` 상자가 둘째 줄로 떨어진다. 고칠 계획: PcOnly 상자에 `data-pc-only` 표지를 달고, `DetailScreen.module.css` 폰 미디어쿼리(`max-width: 699.98px`, PcOnly와 같은 문턱)에서 직계 자식이 모두 `[data-pc-only]`인 `.actions`만 `display: none`. CSS 한 규칙 + 표지 속성 하나, JS · prop 변경 없음.
+- [x] 안내 문구: 문구를 더하지 않는다 — 근거: 변경은 CSS 한 규칙과 표지 속성 하나뿐이고 글자 추가 0
+- [x] 결정 최소 · 할 수 없는 선택지는 숨긴다 — 근거: 폰에서 할 수 없는 행동(PcOnly)만 있으면 그 자리(상자)도 함께 없어진다. 사용자가 고를 것 추가 0
+- [x] 같은 종류의 행동은 같은 모양 · 주 버튼 하나 — 근거: 1차/2차 버튼 모양 · 개수 불변. PC(≥700)에서는 규칙이 걸리지 않아 레이아웃 불변
+- [x] §1 사용자 결정(웜톤 · 폰 읽기만 2026-10-03 14:57 등)을 어기지 않았다 — 근거: 폰 읽기만 결정을 실현하는 쪽(편집 행동의 자리를 없앰). 색 · 면 변경 0
+- [x] 새 색 · 서체 · radius · 그림자 없음 — 근거: 추가 CSS는 `display: none` 한 줄뿐
+- [x] 폰 320 가로 넘침 없음 · 터치 44px — 근거: 상자가 사라질 뿐 다른 요소 크기 불변. `mobile-print-entry` 375 · 320 시험이 머리 줄 높이 = 제목 블록 높이를 DOM 실측하고, 700 폭에서는 「인쇄」 링크 하나를 단언한다
+- [x] 실제 앱 화면을 찍어 보고 확인했다 — 근거: 판정은 육안이 아니라 `getBoundingClientRect` 실측(CLAUDE.md §6): 고친 뒤 head 대 heading 높이를 보고서에 적었다

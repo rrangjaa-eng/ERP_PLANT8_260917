@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // 07.4-01 /review: 페이지 본문 분기(계산 불가 · 정상 · 금액 못 봄)를 서버 컴포넌트째 렌더해 단언한다. 읽기 함수는 모두 가짜로 바꾸고,
 // 페이지가 만드는 표 · 합계 행만 본다(DB 없음). 계산 불가 글자 자체는 expense-tax-rows 단위 시험이 따로 단언한다.
-const state = vi.hoisted(() => ({ expense: {} as Record<string, unknown> }));
+const state = vi.hoisted((): { expense: Record<string, unknown> } => ({ expense: {} }));
 
 vi.mock("next/navigation", () => ({
   notFound: () => {
@@ -15,16 +15,16 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("@/app/(app)/document-kinds", () => ({}));
-vi.mock("@/domain/approvals", () => ({ getApprovalView: async () => null }));
+vi.mock("@/domain/approvals", () => ({ getApprovalView: () => Promise.resolve(null) }));
 vi.mock("@/domain/approvals/route", () => ({ statusStepLabel: (label: string) => label }));
-vi.mock("@/domain/evidence", () => ({ listEvidence: async () => [] }));
+vi.mock("@/domain/evidence", () => ({ listEvidence: () => Promise.resolve([]) }));
 vi.mock("@/domain/expenses", () => ({ EXPENSE_DOCUMENT_KIND: "expense" }));
 vi.mock("@/domain/money", () => ({ formatRatePercent: (rate: number) => `${Math.round(rate * 100)}%` }));
-vi.mock("@/domain/print/current-round", () => ({ currentApprovalRound: async () => null }));
-vi.mock("@/domain/print/company", () => ({ loadPrintCompany: async () => ({ name: "", address: "", businessNo: "", representative: "", phone: "" }) }));
-vi.mock("@/lib/viewer", () => ({ getSessionId: async () => "session", requireSession: async () => ({ viewer: { id: "viewer", roleId: "role-pm" } }) }));
+vi.mock("@/domain/print/current-round", () => ({ currentApprovalRound: () => Promise.resolve(null) }));
+vi.mock("@/domain/print/company", () => ({ loadPrintCompany: () => Promise.resolve({ name: "", address: "", businessNo: "", representative: "", phone: "" }) }));
+vi.mock("@/lib/viewer", () => ({ getSessionId: () => Promise.resolve("session"), requireSession: () => Promise.resolve({ viewer: { id: "viewer", roleId: "role-pm" } }) }));
 vi.mock("@/app/print/_frame/PrintBar", () => ({ PrintBar: () => null }));
-vi.mock("@/app/print/expenses/[id]/load", () => ({ loadExpenseForPrint: async () => state.expense }));
+vi.mock("@/app/print/expenses/[id]/load", () => ({ loadExpenseForPrint: () => Promise.resolve(state.expense) }));
 
 const { default: ExpensePrintPage } = await import("../../../app/print/expenses/[id]/page");
 

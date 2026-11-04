@@ -1190,14 +1190,23 @@ Review Dispositions — Round 2 — d9b427f(07 절만, eng-review R1~R15 · C1~C
 
 ### Phase 07.4: 서류 출력 (document-print) (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** 지출결의서 · 연차 신청서 · 프로젝트 정산서를 PC 상세 「인쇄」로 새 탭 A4 종이(회사 정보 머리 · 결재란 · 상태 글자 · 쪽 번호)로 뽑거나 PDF로 저장한다 — 볼 수 없는 서류는 응답 전 404, 금액 · 손익은 보는 사람 권한대로만, 인쇄는 행동 로그 `document_print`에 남는다
+**Requirements**: D-7401 ~ D-7415(07.4-CONTEXT.md 결정 — 요구 ID 없음)
 **Depends on:** Phase 7
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 07.4 to break down)
+- [ ] 07.4-01-PLAN.md — 공용 인쇄 틀 · 회사 정보 설정 · 인쇄 기록 · 지출결의서(화면 · /design-review · /qa · 세션 머지)
+
+**Wave 2** *(blocked on Wave 1 completion — 같은 틀 · 시드 · 폰 입구 스펙)*
+
+- [ ] 07.4-02-PLAN.md — 연차 신청서(일곱 행 · 입사일 없음 · 결재자도 소속 · 잔여)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 07.4-03-PLAN.md — 프로젝트 정산서(지출결의 · 구매 요청 목록 · 조건부 손익 칸 · risk: Opus 실행 · /cso)
 
 ### Phase 07.3: 경영관리본부 자금 권한 (management-fund-scope) (INSERTED)
 

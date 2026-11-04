@@ -1188,6 +1188,17 @@ Review Dispositions — Round 2 — d9b427f(07 절만, eng-review R1~R15 · C1~C
 
 이 페이즈가 끝나면 인트라넷 4기능이 전부 새 시스템에 있다(패리티 완료). 그래서 바로 다음이 전환이다(하드 제약 4; 데이터 이전 없음 — 2026-09-23). Phase 3에서 미룬 관리 콘솔 전체 검수(CEO OV-5)도 여기서 끝난다.
 
+### Phase 07.6: 매출 줄 지우기 (revenue-archive) (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 7
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 07.6 to break down)
+
 ### Phase 07.3: 경영관리본부 자금 권한 (management-fund-scope) (INSERTED)
 
 **Goal:** 자금 기능 8개(증빙 등록 · 증빙 무효 처리 · 결재 중 증빙 붙이기 · 견적 조정 줄 · 지급 처리 · 구매 처리 · 예산 현황 · 매출 정산)를 「계급에 켜진 키 ∧ 경영관리본부 소속」인 사람만 쓰게 한다(대표 · 시스템 관리자 등 회사 전체 계급은 그대로, 카드 대리 등록 제외). 판정은 `can()` 한 접점 · 자금 본부는 설정 uuid · 소속은 07.1-07 규칙(팀이 이긴다 · 팀 없으면 본부 칸). 그 위에 사원 · 팀장 · 본부 책임자 시드와 결재선 ③단(경영관리본부 책임자)을 맞추고, 권한표에 본부 조건 표지를 보이며, 계급 「기획 PM」을 「사원」으로 바꾼다. 입력 07.3-CONTEXT.md D-7301~D-7320 · 07.3-RESEARCH.md

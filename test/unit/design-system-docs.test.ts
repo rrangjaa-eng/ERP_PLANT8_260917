@@ -685,3 +685,50 @@ describe("06.1 증빙 — 상태 낱말 · 잠김 · 링크 건수 · 폰 시트
     expect(DECISIONS).toContain("SP-6106");
   });
 });
+
+// 07.4-01 D-7404 · D-7410 · D-7412 — 서류 출력 공용 인쇄 틀: DECISIONS 기록 뒤 SYSTEM §6-6 반영(시스템 이탈 순서).
+describe("docs/design — 서류 출력 공용 인쇄 틀 (07.4-01)", () => {
+  const print = section(SYSTEM, "### 6-6", "### 6-7");
+  const entry = DECISIONS.split("\n## ").find((e) => e.includes("서류 출력 공용 인쇄 틀")) ?? "";
+
+  it("DECISIONS에 항목이 있고 D-7410이 적혀 있다", () => {
+    expect(entry).not.toBe("");
+    expect(entry).toContain("D-7410");
+  });
+
+  it("§6-6 제목이 세 서류와 확인증을 포함한다", () => {
+    expect(SYSTEM).toContain("### 6-6. 인쇄 템플릿 (지출결의서 · 연차 신청서 · 프로젝트 정산서 · 기타소득 확인증)");
+  });
+
+  it.each([
+    "결재선 단계 수만큼",
+    "`@page` 여백",
+    "회사 정보 줄",
+    "`app/print/**`의 `<table>`",
+    "비면 `PLANT8`",
+    "지급처",
+    "지급 방식",
+    "{단계} 결재 중",
+    "지급 총액",
+    "실지급액",
+    "파일 이름",
+    "결재란은 서류 맨 끝",
+    "화면 바",
+    "min(210mm, 100%)",
+    "폰",
+    "계산 불가 · ",
+    "자유 글 행",
+    "대표 결재 중",
+  ])("§6-6 구간에 '%s' 문장이 있다", (phrase) => {
+    expect(print).toContain(phrase);
+  });
+
+  it("§7-7 인쇄 라우트 행의 ERROR 칸은 확인증 실제 문구다(F11)", () => {
+    expect(SYSTEM).toContain("인쇄물 만들기 실패 · 다시 시도");
+    expect(SYSTEM).not.toContain("인쇄물을 만들지 못했습니다 · 다시 시도");
+  });
+
+  it("§6-6 트리거 줄은 main과 같다(07.4는 고치지 않는다)", () => {
+    expect(print).toContain("- 화면에서 「인쇄」는 2차 버튼. 새 탭으로 인쇄 라우트를 열고 자동 `window.print()`");
+  });
+});

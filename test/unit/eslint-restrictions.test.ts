@@ -53,6 +53,16 @@ describe("eslint: app/**에서 <table>·<dialog> 직접 금지", () => {
     expect(found[0]?.message).toContain("ui/confirm-dialog");
   });
 
+  // 07.4-01(DECISIONS 서류 출력 공용 인쇄 틀 · 사용자 카드 Q7 「인쇄 화면만 예외」): 쪽마다 표 머리가 반복되려면 실제 <table>이 필요하다.
+  it("app/print/**의 <table>은 통과하고 다른 app 경로는 그대로 오류다", async () => {
+    expect(await errors(TABLE, "app/print/_frame/x.tsx")).toHaveLength(0);
+    expect(await errors(TABLE, "app/(app)/x.tsx")).toHaveLength(1);
+  });
+
+  it("app/print/**에서도 <dialog>는 오류다", async () => {
+    expect(await errors(DIALOG, "app/print/_frame/x.tsx")).toHaveLength(1);
+  });
+
   it("ui/table/Table.tsx 경로는 같은 코드가 통과한다", async () => {
     expect(await errors(TABLE, "ui/table/Table.tsx")).toHaveLength(0);
     expect(await errors(DIALOG, "ui/side-panel/SidePanel.tsx")).toHaveLength(0);

@@ -14,7 +14,7 @@ export function PrintApproval({ boxes, columns, rejectReason }: ApprovalBoxes) {
               {box.name}
             </span>
             <span className={styles.boxState}>{box.stateText}</span>
-            {box.at ?? box.dataState === "draft" ? <span className={`${styles.boxAt} ${styles.num}`}>{box.at ?? "—"}</span> : null}
+            {box.at !== null || box.dataState === "draft" ? <span className={`${styles.boxAt} ${styles.num}`}>{box.at ?? "—"}</span> : null}
           </div>
         ))}
       </div>

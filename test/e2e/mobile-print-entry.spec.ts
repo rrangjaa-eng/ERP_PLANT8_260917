@@ -1,4 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
+import { getApprovalView, rejectDocument } from "@/domain/approvals";
+import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { loginPage } from "./leave-org";
 
@@ -70,4 +72,39 @@ test("700px부터 「인쇄」 링크가 하나다", async ({ browser, baseURL }
   } finally {
     await page.context().close();
   }
+});
+
+// 리뷰 지적(PR #356): 반려된 지출결의를 기안자가 재상신 폼으로 여는 갈래에도 「인쇄」 입구가 있어야 한다(D-7411).
+test.describe("반려 재상신 폼의 「인쇄」 입구", () => {
+  let rejectedId: string;
+
+  test.beforeAll(async ({ browser, baseURL }) => {
+    rejectedId = await submitLineExpense(browser, baseURL, fx, "retry");
+    const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: rejectedId });
+    if (!view) throw new Error("결재 문서를 읽지 못했다");
+    await rejectDocument(fx.lead.viewer, { instanceId: view.instanceId, expectedVersion: view.version, reason: "금액 다시" });
+  });
+
+  test("1280px에서 기안자의 반려 지출결의에 「인쇄」 링크가 하나이고 인쇄 라우트를 가리킨다", async ({ browser, baseURL }) => {
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 900 });
+    try {
+      await page.goto(`/expenses/${rejectedId}`);
+      await waitForDetailTitle(page);
+      await expect(printLink(page)).toHaveCount(1);
+      await expect(printLink(page)).toHaveAttribute("href", `/print/expenses/${rejectedId}`);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("375px에서는 같은 링크가 접근성 트리에 없다", async ({ browser, baseURL }) => {
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 375, height: 800 });
+    try {
+      await page.goto(`/expenses/${rejectedId}`);
+      await waitForDetailTitle(page);
+      await expect(printLink(page)).toHaveCount(0);
+    } finally {
+      await page.context().close();
+    }
+  });
 });

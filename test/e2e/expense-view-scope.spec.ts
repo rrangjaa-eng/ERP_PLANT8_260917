@@ -5,7 +5,7 @@ import { createProject } from "@/domain/projects";
 import { changeProjectStatus } from "@/domain/projects/status";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
-import { createTeam, listTeams } from "@/domain/org";
+import { createOrgUnit, createTeam, listTeams } from "@/domain/org";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { findProjectById } from "@/repositories/projects";
@@ -23,6 +23,8 @@ import { setupExpenseE2E, uniqueReceipt, type ExpenseE2E } from "./expense-fixtu
 type World = {
   fx: ExpenseE2E;
   otherPm: Person;
+  // 2단 「기안자 본부」 본부 책임자 — 같은 본부면 fx.divisionHead, 다른 본부 세계면 그 본부에 세운 사람.
+  step2Head: Person;
   projectId: string;
   projectLabel: string;
   lineId: string;
@@ -31,7 +33,8 @@ type World = {
 
 const UPLOAD_WAIT = 20_000;
 
-async function setupWorld(): Promise<World> {
+// drafterDivision "other": 타팀PM을 다른 본부의 팀에 두고 그 본부 책임자를 세운다 — 2단 결재자가 프로젝트(fx 본부 팀 · 자금 본부 밖) 범위 밖이 된다(D-6206).
+async function setupWorld(drafterDivision: "same" | "other" = "same"): Promise<World> {
   const fx = await setupExpenseE2E();
   const today = seoulToday();
   const year = today.slice(0, 4);
@@ -40,8 +43,10 @@ async function setupWorld(): Promise<World> {
   if (!fxProject) throw new Error("setupExpenseE2E 프로젝트 없음");
   const team = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.id === fxProject.teamId);
   if (!team?.orgUnitId) throw new Error("setupExpenseE2E 팀의 본부 없음");
-  const otherTeam = await createTeam(SYSTEM_VIEWER, { orgUnitId: team.orgUnitId, name: `E2E다른팀-${suffix}` });
+  const otherOrgUnitId = drafterDivision === "same" ? team.orgUnitId : (await createOrgUnit(SYSTEM_VIEWER, { name: `E2E다른본부-${suffix}` })).id;
+  const otherTeam = await createTeam(SYSTEM_VIEWER, { orgUnitId: otherOrgUnitId, name: `E2E다른팀-${suffix}` });
   const otherPm = await makePerson("타팀PM", "role-pm", otherTeam.id, `${year}-01-01`);
+  const step2Head = drafterDivision === "same" ? fx.divisionHead : await makePerson("타본부장", "role-division-head", otherTeam.id, `${year}-01-01`);
 
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E범위고객-${suffix}`, normalizedName: `e2e범위고객-${suffix}` });
   // 짧은 이름 — 폰 행 줄 수가 상태 낱말만으로 정해지게 한다. 320에서 목록 제목 칸(`{행사} · {항목}`) 글자 폭은 89px,
@@ -78,7 +83,7 @@ async function setupWorld(): Promise<World> {
   await changeProjectStatus(fx.lead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
   await setCustomerApproval(otherPm.viewer, revision.id, { approvalBasis: "verbal", approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
-  return { fx, otherPm, projectId: project.id, projectLabel: `${project.number} ${projectName}`, lineId, itemName };
+  return { fx, otherPm, step2Head, projectId: project.id, projectLabel: `${project.number} ${projectName}`, lineId, itemName };
 }
 
 async function draftOf(world: World): Promise<string> {
@@ -185,6 +190,25 @@ test.describe("범위 밖 프로젝트로 가는 죽은 링크 없음 (06.2 S6 �
     await waitForHydration(mgmt.getByRole("button", { name: /^승인/ }));
     await expect(projectField(mgmt).getByRole("link", { name: world.projectLabel })).toHaveAttribute("href", `/projects/${world.projectId}`);
     await mgmt.context().close();
+  });
+
+  test("결재 차례가 된 다른 본부 책임자(2단 기안자 본부 — 프로젝트 범위 밖)에게는 프로젝트 칸이 같은 글자, 링크 없이", async ({ browser, baseURL }) => {
+    const world = await setupWorld("other");
+    const expenseId = await draftOf(world);
+    const drafter = await loginPage(browser, baseURL, world.otherPm);
+    await submitAsOtherPm(drafter, expenseId);
+    await drafter.context().close();
+
+    await approveOnDocument(browser, baseURL, world.fx.lead, expenseId);
+
+    const head = await loginPage(browser, baseURL, world.step2Head);
+    await head.goto(`/expenses/${expenseId}`);
+    // 문서가 다 그려질 때까지 기다린다 — 로딩 뼈대(loading.tsx)에도 빈 `프로젝트` 칸이 있어 그동안은 칸이 둘이다.
+    await waitForHydration(head.getByRole("button", { name: /^승인/ }));
+    await expect(projectField(head)).toHaveText(world.projectLabel);
+    await expect(projectField(head).getByRole("link")).toHaveCount(0);
+    await expect(head.getByRole("link", { name: world.projectLabel })).toHaveCount(0);
+    await head.context().close();
   });
 });
 

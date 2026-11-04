@@ -291,6 +291,15 @@ describe("후보 · 목록", () => {
     expect(ids).not.toContain(otherDivision.id);
   });
 
+  // 07.3-02 이전에는 팀 없는 대표의 스냅숏 본부가 늘 null이라 본부 칸과 무관하게 모든 프로젝트 후보였다 — 그 동작을 지킨다(독립 검토 P3-2).
+  it("팀 없는 대표는 본부 칸이 다른 본부여도 후보다(07.3-02 이전 동작)", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    const ceoWithDivision = await makePerson("본부칸대표", CEO_ROLE_ID, null);
+    await db.update(users).set({ divisionId: await orgUnitIdByName("기획본부") }).where(eq(users.id, ceoWithDivision.id));
+    expect(await candidateIds(w.mgmtLead, P3)).toContain(ceoWithDivision.id);
+  });
+
   it("이름순은 DB 정렬 규칙(collation)과 무관한 한국어 순 — C 정렬이면 B가 a 앞이지만 후보는 a 먼저(PR #189 CI)", async () => {
     const w = await buildMembersWorld();
     const P3 = w.projects.P3.id;

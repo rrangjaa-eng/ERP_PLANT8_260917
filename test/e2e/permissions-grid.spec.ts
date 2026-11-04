@@ -765,7 +765,8 @@ test.describe("권한표 자금 본부 표지 (07.3-04 · D-7318)", () => {
     await expect(page.getByRole("checkbox", { name: "증빙 등록 · 쓰기 전체 선택", exact: true })).toHaveAccessibleDescription(NOTE);
     const plain = page.getByRole("checkbox", { name: "시스템 관리자 · 코드표 · 보기", exact: true });
     await expect(plain).not.toHaveAttribute("aria-describedby", /.+/);
-    await expect(page.getByText("자금 기능 본부 미지정")).toHaveCount(0);
+    // 시드(설정 있음)에서는 표 위 잠김 한 줄(설정 앵커 링크가 있는 줄)이 없다.
+    await expect(page.locator("p").filter({ has: page.locator("a[href*=\"division_org_unit\"]") })).toHaveCount(0);
   });
 
   for (const width of [375, 320]) {
@@ -787,14 +788,14 @@ test.describe("권한표 자금 본부 표지 (07.3-04 · D-7318)", () => {
           return new Set(Array.from(range.getClientRects()).filter((rect) => rect.width > 0).map((rect) => Math.round(rect.top))).size;
         };
         return Array.from(document.querySelectorAll("dt"))
-          .filter((el) => (el as HTMLElement).offsetParent !== null)
+          .filter((el) => el.offsetParent !== null)
           .map((el) => ({ text: el.textContent ?? "", lines: tops(el), height: Math.round(el.getBoundingClientRect().height) }));
       });
       for (const text of TWO_LINE_LABELS) expect(measured.find((row) => row.text === text), text).toMatchObject({ lines: 2, height: 71 });
       for (const text of ONE_LINE_LABELS) expect(measured.find((row) => row.text === text), text).toMatchObject({ lines: 1, height: 71 });
 
       const sameLine = await dd("증빙 등록 · 쓰기").evaluate((cell) => {
-        const note = cell.querySelector<HTMLElement>("[id]:not(input)");
+        const note = cell.querySelector<HTMLElement>("span[id]");
         const box = cell.querySelector("input")!.getBoundingClientRect();
         const noteBox = note!.getBoundingClientRect();
         const center = noteBox.top + noteBox.height / 2;

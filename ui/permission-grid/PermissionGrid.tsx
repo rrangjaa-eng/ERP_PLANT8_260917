@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { Toast } from "@/ui/toast/Toast";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { KvList } from "@/ui/kv-list/KvList";
@@ -17,7 +17,8 @@ import styles from "./PermissionGrid.module.css";
 // locked(보관된 행 · 열) = 체크된 칸만 해제할 수 있고 빈 칸은 비활성이며, 행 머리 「전체」는 잠기지 않은 칸만 다룬다
 // (PR #171 디자인 검토 F-1 — 보관 값으로 새 짝을 만들 수 없다).
 export type PermissionGridRow = { id: string; label: string; locked?: boolean };
-export type PermissionGridColumn = { id: string; label: string; group?: string; locked?: boolean };
+// groupNote = 그 그룹(메뉴)에 붙는 보조 글자(07.3-04 D-7318 본부 조건 표지) — PC는 그룹 줄 이름 뒤, 폰은 값 칸 체크박스 옆. 칸 aria-label은 그대로이고 aria-describedby가 가리킨다.
+export type PermissionGridColumn = { id: string; label: string; group?: string; locked?: boolean; groupNote?: string };
 
 export function buildCellKey(rowId: string, columnId: string): string {
   return `${rowId}::${columnId}`;
@@ -155,12 +156,14 @@ function ColumnCheckbox({
   indeterminate,
   disabled,
   ariaLabel,
+  ariaDescribedBy,
   onChange,
 }: {
   checked: boolean;
   indeterminate: boolean;
   disabled: boolean;
   ariaLabel: string;
+  ariaDescribedBy?: string;
   onChange: (next: boolean) => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
@@ -177,6 +180,7 @@ function ColumnCheckbox({
         checked={checked}
         disabled={disabled}
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
         onChange={(event) => onChange(event.target.checked)}
       />
     </label>
@@ -198,6 +202,7 @@ export function PermissionGrid({
   linked,
   saveNoun = "권한",
 }: PermissionGridProps) {
+  const noteIdPrefix = useId();
   const [cells, setCells] = useState<Record<string, CellState>>(() => buildInitialCells(rows, columns, values));
   const [toast, setToast] = useState<{ message: string; tone: "default" | "error" } | null>(null);
   const [selectedRoleId, setSelectedRoleId] = useState<string>(rows[0]?.id ?? "");
@@ -238,12 +243,14 @@ export function PermissionGrid({
   }
 
   // 그룹 하나 = <tbody> 하나(Table.tsx와 같다) — 그룹 줄은 이름이 있는 그룹에만 그린다(이름 없는 열은 줄 없는 tbody).
-  const tableGroups: { name: string | undefined; start: number; columns: PermissionGridColumn[] }[] = [];
+  const tableGroups: { name: string | undefined; start: number; note: string | undefined; columns: PermissionGridColumn[] }[] = [];
   columns.forEach((column, index) => {
     const last = tableGroups[tableGroups.length - 1];
     if (last && last.name === column.group) last.columns.push(column);
-    else tableGroups.push({ name: column.group, start: index, columns: [column] });
+    else tableGroups.push({ name: column.group, start: index, note: column.groupNote, columns: [column] });
   });
+  // 표지 id — 이름이 있는 그룹 줄에만 표지를 그리므로 그 그룹의 칸 · 행 머리 체크박스만 가리킨다.
+  const groupNoteId = (group: (typeof tableGroups)[number]) => (group.name && group.note ? `${noteIdPrefix}-note-${group.start}` : undefined);
 
   async function saveCell(rowId: string, columnId: string, next: boolean): Promise<boolean> {
     const key = buildCellKey(rowId, columnId);
@@ -441,6 +448,14 @@ export function PermissionGrid({
                   <tr className={styles.groupRow}>
                     <th scope="rowgroup" colSpan={rows.length + 1} className={styles.groupHeader}>
                       {group.name}
+                      {group.note ? (
+                        <>
+                          <span className="sr-only"> · </span>
+                          <span id={groupNoteId(group)} className={styles.groupNote}>
+                            {group.note}
+                          </span>
+                        </>
+                      ) : null}
                     </th>
                   </tr>
                 ) : null}
@@ -455,6 +470,7 @@ export function PermissionGrid({
                             indeterminate={state.indeterminate}
                             disabled={bulkTargetRows(rows, column).length === 0}
                             ariaLabel={columnAriaLabel(column)}
+                            ariaDescribedBy={groupNoteId(group)}
                             onChange={(next) => {
                               void handleColumnToggle(column, next);
                             }}
@@ -481,6 +497,7 @@ export function PermissionGrid({
                                 checked={cell.checked}
                                 disabled={cellDisabled(row, column, cell.checked)}
                                 aria-label={cellAriaLabel(row, column)}
+                                aria-describedby={groupNoteId(group)}
                                 aria-busy={cell.status === "saving" ? true : undefined}
                                 aria-disabled={cell.status === "saving" ? true : undefined}
                                 onChange={() => {
@@ -523,6 +540,7 @@ export function PermissionGrid({
             items={columns.map((column) => {
               const key = buildCellKey(selectedRow.id, column.id);
               const cell = cells[key] ?? { checked: false, status: "idle" as CellStatus };
+              const mobileNoteId = column.groupNote ? `${noteIdPrefix}-mnote-${column.id.replace(/[^A-Za-z0-9_-]/g, "_")}` : undefined;
               return {
                 label: column.group ? `${column.group} · ${column.label}` : column.label,
                 value: (
@@ -543,12 +561,18 @@ export function PermissionGrid({
                       checked={cell.checked}
                       disabled={cellDisabled(selectedRow, column, cell.checked)}
                       aria-label={cellAriaLabel(selectedRow, column)}
+                      aria-describedby={mobileNoteId}
                       aria-busy={cell.status === "saving" ? true : undefined}
                       aria-disabled={cell.status === "saving" ? true : undefined}
                       onChange={() => {
                         void handleCellToggle(selectedRow, column);
                       }}
                     />
+                    {mobileNoteId ? (
+                      <span id={mobileNoteId} className={styles.groupNote}>
+                        {column.groupNote}
+                      </span>
+                    ) : null}
                   </span>
                 ),
               };

@@ -88,7 +88,7 @@ async function measureUnset(page: Page, phone: boolean) {
     const link = line?.querySelector("a");
     const lineStyle = line ? getComputedStyle(line) : null;
     const linkStyle = link ? getComputedStyle(link) : null;
-    const notes = Array.from(document.querySelectorAll<HTMLElement>(isPhone ? "dd [id]:not(input)" : "th[scope=rowgroup] span[id]")).filter((el) => el.offsetParent !== null);
+    const notes = Array.from(document.querySelectorAll<HTMLElement>(isPhone ? "dd span[id]" : "th[scope=rowgroup] span[id]")).filter((el) => el.offsetParent !== null);
     const note = notes[0];
     const noteStyle = note ? getComputedStyle(note) : null;
     return {

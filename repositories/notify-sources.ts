@@ -61,7 +61,7 @@ export async function listActiveUserDivisions(
   tx: DbOrTx = db,
 ): Promise<{ id: string; roleId: string | null; orgUnitId: string | null }[]> {
   void viewer;
-  const latest = tx
+  const latest = db
     .selectDistinctOn([teamMemberships.userId], { userId: teamMemberships.userId, teamId: teamMemberships.teamId })
     .from(teamMemberships)
     .where(lte(teamMemberships.effectiveFrom, today))

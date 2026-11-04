@@ -28,7 +28,7 @@ export type AccountEntry =
 export type BottomTab = { label: string } & ({ kind: "link"; href: string } | { kind: "more" });
 
 export type RoleMenu = {
-  /** SYSTEM.md §6-0 1차 메뉴 — 다섯은 대응 화면 유무와 무관하게 역할과 상관없이 항상 전부(D-22), 증빙 등록 권한자에게만 3번째 「증빙」. */
+  /** SYSTEM.md §6-0 1차 메뉴 — 넷은 대응 화면 유무와 무관하게 역할과 상관없이 항상 전부(D-22), 증빙 등록 권한자에게만 3번째 「증빙」. */
   topBarMenu: MenuLink[];
   /** SYSTEM.md §6-0 (a) PC 사용자 메뉴 · §7-8 「더보기」 시트의 「관리」 한 줄 —
    * 권한표에서 view 권한이 있는 admin.* 메뉴가 하나라도 있으면 `[{ label: "관리",
@@ -46,7 +46,7 @@ export type RoleMenu = {
  * 관리자 화면 항목(허용된 것만). 항목이 0개인 그룹은 배열에 아예 나타나지 않는다. */
 export type AdminMenuGroup = { label: string; items: MenuLink[] };
 
-// 1차 메뉴 다섯의 URL 정본(이 페이즈의 유일한 출처). 02-05가 정확히 이 다섯 경로로
+// 1차 메뉴 넷의 URL 정본(이 페이즈의 유일한 출처; 「손익」은 2026-11-04 사용자 결정으로 뺐다). 02-05가 정확히 이 경로로
 // 화면을 만들고, 그 플랜의 라우트 대조 검증이 이 목록과 실제 라우트를 맞춰 본다 —
 // 다른 곳에 URL 문자열을 복제하지 않는다.
 const TOP_BAR_MENU: readonly MenuLink[] = [
@@ -54,7 +54,6 @@ const TOP_BAR_MENU: readonly MenuLink[] = [
   { label: "지출결의", href: "/expenses" },
   { label: "법인카드", href: "/cards" },
   { label: "결재", href: "/approvals" },
-  { label: "손익", href: "/pnl" },
 ];
 
 // 증빙 등록 권한자(`evidence.intake` 쓰기, 화면 게이트 expenses/evidence/layout.tsx와 같은 판정)에게만 3번째(지출결의 다음)에 끼는 1차 메뉴.
@@ -216,23 +215,23 @@ const ROLE_BOTTOM_TABS: Readonly<Record<string, readonly RoleTabLink[]>> = {
   "role-ceo": [
     { label: "내 차례", href: "/" },
     { label: "결재", href: "/approvals" },
-    { label: "손익", href: "/pnl" },
+    { label: "프로젝트", href: "/projects" },
   ],
   "role-division-head": [
     { label: "내 차례", href: "/" },
     { label: "결재", href: "/approvals" },
-    { label: "손익", href: "/pnl" },
+    { label: "프로젝트", href: "/projects" },
   ],
   "role-team-lead": [
     { label: "내 차례", href: "/" },
     { label: "결재", href: "/approvals" },
-    { label: "손익", href: "/pnl" },
+    { label: "프로젝트", href: "/projects" },
   ],
   "role-pm": DEFAULT_ROLE_TABS,
   "role-sysadmin": [
     { label: "내 차례", href: "/" },
     { label: "결재", href: "/approvals" },
-    { label: "손익", href: "/pnl" },
+    { label: "프로젝트", href: "/projects" },
   ],
 };
 

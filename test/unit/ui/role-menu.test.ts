@@ -112,17 +112,34 @@ const EMPLOYEE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["leav
 const EMPLOYEE_WITHOUT_LEAVE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: [], canIntakeEvidence: false };
 
 describe("roleMenu — 상단 바 1차 메뉴 (D-22)", () => {
-  it("증빙 등록 권한이 없으면 시스템 관리자 입력이어도 1차 메뉴 5개다", () => {
-    expect(roleMenu(ADMIN).topBarMenu).toHaveLength(5);
+  it("증빙 등록 권한이 없으면 시스템 관리자 입력이어도 1차 메뉴 4개다", () => {
+    expect(roleMenu(ADMIN).topBarMenu).toHaveLength(4);
   });
 
-  it("증빙 등록 권한이 없는 기획 PM 입력이면 1차 메뉴 5개가 전부 들어 있다 — 대응 화면 유무와 무관하다", () => {
-    expect(roleMenu(EMPLOYEE).topBarMenu).toHaveLength(5);
+  it("증빙 등록 권한이 없는 기획 PM 입력이면 1차 메뉴 4개가 전부 들어 있다 — 대응 화면 유무와 무관하다", () => {
+    expect(roleMenu(EMPLOYEE).topBarMenu).toHaveLength(4);
   });
 
-  it("canIntakeEvidence가 true면 1차 메뉴가 6개이고 3번째가 「증빙」(/expenses/evidence)이다", () => {
+  it("기본 1차 메뉴는 프로젝트 · 지출결의 · 법인카드 · 결재 넷이다(2026-11-04 손익 메뉴 없음)", () => {
+    expect(roleMenu(EMPLOYEE).topBarMenu.map((item) => item.label)).toEqual(["프로젝트", "지출결의", "법인카드", "결재"]);
+  });
+
+  it.each(SEED_ROLE_NAMES)("%s(%s)의 1차 메뉴와 폰 탭에 「손익」도, href가 정확히 /pnl인 항목도 없다(2026-11-04 사용자 결정)", (roleId) => {
+    for (const canIntakeEvidence of [false, true]) {
+      const menu = roleMenu({ roleId, allowedMenus: [], canIntakeEvidence });
+      const hrefs = [
+        ...menu.topBarMenu.map((item) => item.href),
+        ...menu.bottomTabs.flatMap((tab) => (tab.kind === "link" ? [tab.href] : [])),
+      ];
+      const labels = [...menu.topBarMenu.map((item) => item.label), ...menu.bottomTabs.map((tab) => tab.label)];
+      expect(labels).not.toContain("손익");
+      expect(hrefs).not.toContain("/pnl");
+    }
+  });
+
+  it("canIntakeEvidence가 true면 1차 메뉴가 5개이고 3번째가 「증빙」(/expenses/evidence)이다", () => {
     const menu = roleMenu({ ...EMPLOYEE, canIntakeEvidence: true }).topBarMenu;
-    expect(menu.map((item) => item.label)).toEqual(["프로젝트", "지출결의", "증빙", "법인카드", "결재", "손익"]);
+    expect(menu.map((item) => item.label)).toEqual(["프로젝트", "지출결의", "증빙", "법인카드", "결재"]);
     expect(menu[2]).toEqual({ label: "증빙", href: "/expenses/evidence" });
     expect(menu.filter((item) => item.label !== "증빙")).toEqual(roleMenu(EMPLOYEE).topBarMenu);
   });
@@ -211,9 +228,9 @@ describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접�
     expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
-  it("1차 메뉴는 certs.events를 허용해도 다섯 그대로다(증빙 등록 권한이 없을 때, D-22)", () => {
+  it("1차 메뉴는 certs.events를 허용해도 넷 그대로다(증빙 등록 권한이 없을 때, D-22)", () => {
     const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["certs.events"], canIntakeEvidence: false };
-    expect(roleMenu(viewer).topBarMenu).toHaveLength(5);
+    expect(roleMenu(viewer).topBarMenu).toHaveLength(4);
     expect(roleMenu(viewer).bottomTabs).toHaveLength(4);
   });
 

@@ -102,6 +102,30 @@ export async function hasAccountLockSince(viewer: Viewer, email: string, since: 
   return row !== undefined;
 }
 
+// 07.4-01 /review: 같은 사람이 같은 서류(종류 · id)를 windowSeconds 안에 이미 인쇄 기록했는가 — 끌 수 없는 기록이 반복 호출로 넘치지 않게 서버도 합친다.
+// 시각은 DB 시계로 잰다(occurred_at 기본값도 now()라 같은 시계).
+export async function hasDocumentPrintWithin(
+  viewer: Viewer,
+  query: { actorId: string; documentId: string; kind: string; windowSeconds: number },
+  tx?: DbOrTx,
+): Promise<boolean> {
+  void viewer;
+  const [row] = await (tx ?? db)
+    .select({ seq: actionLog.seq })
+    .from(actionLog)
+    .where(
+      and(
+        eq(actionLog.actionType, "document_print"),
+        eq(actionLog.actorId, query.actorId),
+        eq(actionLog.documentId, query.documentId),
+        sql`${actionLog.detail} ->> 'kind' = ${query.kind}`,
+        sql`${actionLog.occurredAt} > now() - make_interval(secs => ${query.windowSeconds})`,
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
 // 06.5-06(결정 맥락 11 · DM-5): 이체 파일 기록(excel_export · bank_transfer) 중 since 이후 · 주어진 문서 id를 하나라도 품은 줄 —
 // 지급 대상 행의 「{HH:mm} 이체 파일에 담김」. 값은 파라미터로만 간다(jsonb `?|`는 글자 배열 매개변수). 시각 · 문서 id 배열만 돌려준다.
 export async function findTransferFileTimes(

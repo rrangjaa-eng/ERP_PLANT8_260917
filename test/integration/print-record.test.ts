@@ -76,6 +76,27 @@ describe("recordDocumentPrint", () => {
     expect(await printRows(fx.projectId)).toHaveLength(1);
   });
 
+  // /review 지적: 클라이언트 합치기(5초)만으로는 로그인한 사용자가 서버 액션을 반복 호출해 끌 수 없는 기록을 넘치게 할 수 있다 — 서버도 같은 창으로 합친다.
+  it("같은 사람 · 종류 · 서류의 5초 안 재호출은 1행으로 합치고 창이 지나면 한 행을 더한다", async () => {
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    await submitReadyDraft(fx.pm, expenseId);
+
+    await recordDocumentPrint(fx.pm, { kind: "expense", id: expenseId });
+    await recordDocumentPrint(fx.pm, { kind: "expense", id: expenseId });
+    expect(await printRows(expenseId)).toHaveLength(1);
+
+    // 다른 사람이 같은 서류를 인쇄하면 따로 남는다.
+    await recordDocumentPrint(fx.lead, { kind: "expense", id: expenseId });
+    expect(await printRows(expenseId)).toHaveLength(2);
+
+    // action_log는 고칠 수 없는 표라 시각을 당길 수 없다 — 1초 창으로 「창이 지난 뒤」를 만든다.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await recordDocumentPrint(fx.pm, { kind: "expense", id: expenseId }, { windowSeconds: 1 });
+    expect(await printRows(expenseId)).toHaveLength(3);
+  });
+
   it("행동 로그 선택 목록이 빈 배열이어도 1행이 남는다(끌 수 없음)", async () => {
     await setSettingValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES, []);
     const fx = await setupExpenseProject();

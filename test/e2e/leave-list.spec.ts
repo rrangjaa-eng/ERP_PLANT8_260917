@@ -6,7 +6,7 @@ import { setPermissionCell, setVisibilityCell } from "@/domain/permissions/matri
 import { setRoleArchived } from "@/repositories/roles";
 import { previewRoute, rejectDocument } from "@/domain/approvals";
 import { LEAVE_DOCUMENT_KIND, listMyLeave, submitLeave } from "@/domain/leave";
-import { registerPerson, setHireDate } from "@/domain/people";
+import { listPeople, registerPerson, setHireDate, setResignationDate } from "@/domain/people";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { getSettingValue } from "@/domain/settings/registry";
 import { LEAVE_ANNUAL_DAYS } from "@/domain/settings/keys";
@@ -227,6 +227,23 @@ test.describe("연차 목록 /leave (04.1-06 Task 1 · S1 · S10)", () => {
       const expected = await expectedBalance(today, today);
       expect(expected.lines[1]).toMatch(/^월차 적립 0일 · /);
       await expect(balanceLines(page)).toHaveText(expected.lines);
+      await page.context().close();
+    });
+  });
+
+  // 07.2-04 PU14(D-7265): 본인 연차 화면에는 `법정 대비`가 없다 — 퇴직 줄이 있는 본인(퇴직 예정 연도)이어도.
+  test("[07.2-04 PU14] 본인 /leave DOM에 `법정 대비` 0 — 퇴직 줄이 있어도", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const year = yearOf(today);
+      const me = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+      const person = (await listPeople(SYSTEM_VIEWER)).find((candidate) => candidate.email === me.email);
+      if (!person) throw new Error("만든 사람이 목록에 없다");
+      await setHireDate(SYSTEM_VIEWER, person.id, `${year - 4}-03-02`);
+      await setResignationDate(SYSTEM_VIEWER, person.id, `${year}-12-31`);
+      const page = await login(browser, baseURL, me);
+      await page.goto("/leave");
+      await expect(balanceLines(page).first()).toHaveText(/^퇴직 /);
+      expect(await page.content()).not.toContain("법정 대비");
       await page.context().close();
     });
   });

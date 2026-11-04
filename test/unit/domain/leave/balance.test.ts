@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   allocateLeave,
+  annualGrantQuarters,
+  checkAdjustmentFloor,
   checkLeaveAdjustment,
   formatBalanceLines,
   formatBalanceRow,
   formatBalanceRowBeforeDates,
   formatResignationLine,
+  formatShortfallLine,
+  grantedTotalQuarters,
   requestBalanceOf,
   summarizeLeaveBalance,
   type LeaveGrant,
@@ -331,5 +335,81 @@ describe("불변식(assumption-delta) — 세 출처가 한 부여 목록 경로
     const summary = summarizeLeaveBalance({ fiscalYear: 2027, asOf: "2027-03-15", hireDate: "2026-10-01", grants: literal, allocations });
     expect(summary).toEqual(built.summary);
     expect(allocations).toEqual(built.allocations);
+  });
+});
+
+describe("07.2-04 PU8 근속 가산 — 입사 다음 해 뒤 연도부터 legalAnnualDays", () => {
+  it("입사 2020-03-02 · 2026 회계연도 부여 쿼터 = 17 × 4", () => {
+    expect(
+      annualGrantQuarters({ fiscalYear: 2026, hireDate: "2020-03-02", resignationDate: null, annualDays: 15 }),
+    ).toBe(68);
+  });
+
+  it("입사 다음 해(2021)는 일할 값 그대로 — 가산 겹침 0", () => {
+    // 근무 305일 / 366일(2020 윤년) × 60쿼터 = 50
+    expect(
+      annualGrantQuarters({ fiscalYear: 2021, hireDate: "2020-03-02", resignationDate: null, annualDays: 15 }),
+    ).toBe(50);
+  });
+
+  it("입사일 없는 사람은 기본 그대로", () => {
+    expect(annualGrantQuarters({ fiscalYear: 2026, hireDate: null, resignationDate: null, annualDays: 15 })).toBe(60);
+  });
+});
+
+describe("07.2-04 PU13 조정 바닥 — 남음을 0 아래로 내리면 `남음 {N}일 · -{N}까지`(D-7263)", () => {
+  it("남음 3일에 -4일 → 남음 3일 · -3까지", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: 12, amountQuarters: -16 })).toBe("남음 3일 · -3까지");
+  });
+
+  it("남음 3일에 -3일은 통과(경계 · 0까지 내리기)", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: 12, amountQuarters: -12 })).toBeNull();
+  });
+
+  it("양수 조정은 늘 통과", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: 12, amountQuarters: 4 })).toBeNull();
+    expect(checkAdjustmentFloor({ remainingQuarters: -4, amountQuarters: 4 })).toBeNull();
+  });
+
+  it("남음 0에 -0.25일 → 남음 0일 · -0까지", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: 0, amountQuarters: -1 })).toBe("남음 0일 · -0까지");
+  });
+
+  it("남음이 이미 음수여도 문구는 남음 0일 · -0까지(음수 표기 안 만든다)", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: -4, amountQuarters: -1 })).toBe("남음 0일 · -0까지");
+  });
+
+  it("0.25 단위 남음 2.5일에 -3일 → 남음 2.5일 · -2.5까지", () => {
+    expect(checkAdjustmentFloor({ remainingQuarters: 10, amountQuarters: -12 })).toBe("남음 2.5일 · -2.5까지");
+  });
+});
+
+describe("07.2-04 PU14 부족 줄 · 부여 합", () => {
+  it("formatShortfallLine(14) = `법정 대비 부족 3.5일` · 끝 0 삭제", () => {
+    expect(formatShortfallLine(14)).toBe("법정 대비 부족 3.5일");
+    expect(formatShortfallLine(12)).toBe("법정 대비 부족 3일");
+    expect(formatShortfallLine(1)).toBe("법정 대비 부족 0.25일");
+  });
+
+  it("부족 0 이하는 줄 없음", () => {
+    expect(formatShortfallLine(0)).toBeNull();
+    expect(formatShortfallLine(-4)).toBeNull();
+  });
+
+  it("월차는 한 번만 — 입사 2023-03-02, 2023 · 2024 요약 둘 다 월차 줄이 있어도 월차 11일(44)은 한 번", () => {
+    const base = {
+      hireDate: "2023-03-02",
+      asOf: "2024-12-31",
+      adjustments: [
+        { id: "a1", bucket: "annual" as const, fiscalYear: 2024, amountQuarters: -2, createdOn: "2024-05-01" },
+        { id: "m1", bucket: "monthly" as const, fiscalYear: null, amountQuarters: 4, createdOn: "2024-01-10" },
+      ],
+    };
+    const y2023 = runBalance({ ...base, fiscalYear: 2023 });
+    const y2024 = runBalance({ ...base, fiscalYear: 2024 });
+    expect(y2023.summary.monthly?.status).toBe("active");
+    expect(y2024.summary.monthly?.status).toBe("active");
+    // 손 셈: 연차 2023 0 + 2024 ceil(60 x 305 / 365) = 51, 연차 조정 -2 → 49 · 월차 적립 11일 = 44 + 월차 조정 4 = 48 → 97.
+    expect(grantedTotalQuarters({ summaries: [y2023.summary, y2024.summary], grants: y2024.grants })).toBe(97);
   });
 });

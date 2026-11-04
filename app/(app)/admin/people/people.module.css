@@ -45,6 +45,17 @@
   color: var(--text-muted);
 }
 
+/* 07.2-04 PU14 퇴직 줄 아래 부족 한 줄 — 앞 글자 보조색 · 값 조각 경고색 600(S21). 폰은 줄 바꿈만. */
+.shortfallLine {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.shortfallValue {
+  color: var(--status-warning);
+  font-weight: var(--fw-medium);
+}
+
 @media (min-width: 700px) {
   .leaveField {
     display: grid;

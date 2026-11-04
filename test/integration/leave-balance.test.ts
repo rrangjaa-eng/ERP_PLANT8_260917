@@ -7,6 +7,7 @@ import {
   addLeaveAdjustment,
   getLeaveBalanceForRequest,
   getLeaveBalanceForUser,
+  getLeaveShortfallForUser,
   getMyLeaveBalance,
   listLeaveAdjustmentsForUser,
   previewLeaveBalance,
@@ -343,7 +344,8 @@ describe("조정 — 원자성 · 계약 · 기록 조회 · 권한(ENG-13 · CX
   });
 
   it("연차 -1 · 월차 +1 · 2027 연차 +1 뒤 연도별 조정 기록 · 보기 전용 계급 · PM 거부 · 노출 끄면 빈 항목", async () => {
-    await setHireDate(SYSTEM_VIEWER, org.drafter.id, "2026-10-01");
+    // 07.2-04 PU13: 2026 연차 -1은 남음이 있어야 하므로 입사 2025-10-01(2026 부여 15 · 월차 창 2026-12-31까지).
+    await setHireDate(SYSTEM_VIEWER, org.drafter.id, "2025-10-01");
     const userId = org.drafter.id;
     await addLeaveAdjustment(
       admin,
@@ -373,7 +375,6 @@ describe("조정 — 원자성 · 계약 · 기록 조회 · 권한(ENG-13 · CX
     expect(y2026.map((item) => item.createdAt)).toEqual([at("2026-11-03T01:00:00Z"), at("2026-11-02T01:00:00Z")]);
     expect((await listLeaveAdjustmentsForUser(admin, { userId, fiscalYear: 2027 })).map((i) => [i.kind, i.quarters])).toEqual([
       ["annual", 4],
-      ["monthly", 4],
     ]);
     expect(await listLeaveAdjustmentsForUser(admin, { userId, fiscalYear: 2028 })).toEqual([]);
 
@@ -567,5 +568,62 @@ describe("입사일 · 퇴직일 변경과 행동 로그 원자성", () => {
     const row = await findUserById(SYSTEM_VIEWER, person.id);
     expect(row?.hireDate).toBe("2025-01-01");
     expect(row?.resignationDate).toBeNull();
+  });
+});
+
+// 07.2-04 PU14(D-7264 · D-7265 · 07.2 D-7305): 퇴직자 `법정 대비 부족` — admin.people 보기 ∧ leave.value 노출일 때만 읽는다.
+// fixture: 입사 2023-03-02 · 퇴직 2026-06-30 · 기본 15 → 법정 합 57일. 부여 합 = 월차 11 + 연차 2024 12.75(일할 51쿼터) + 2025 15 + 2026 16 = 54.75일
+// → 부족 2.25일. 연차 조정 -1.25일을 넣으면 3.5일(14쿼터).
+describe("퇴직자 부족일(PU14)", () => {
+  const NOW_AFTER = at("2026-09-24T03:00:00Z");
+  let admin: Viewer;
+  let userId: string;
+
+  beforeEach(async () => {
+    admin = await makePerson("관리자", SYSADMIN_ROLE_ID, null);
+    const person = await makePerson("퇴직자", DEFAULT_ROLE_ID, null);
+    userId = person.id;
+    await setHireDate(SYSTEM_VIEWER, userId, "2023-03-02");
+    await setResignationDate(SYSTEM_VIEWER, userId, "2026-06-30");
+    await addLeaveAdjustment(admin, { userId, bucket: "annual", fiscalYear: 2026, amountDays: -1.25, reason: "정산" }, { now: NOW_AFTER });
+  });
+
+  it("법정 합 − 부여 합 = 3.5일(14쿼터) · 조정 +3.5 뒤 null", async () => {
+    expect(await getLeaveShortfallForUser(admin, userId)).toEqual({ shortfallQuarters: 14 });
+    await addLeaveAdjustment(admin, { userId, bucket: "annual", fiscalYear: 2026, amountDays: 3.5, reason: "보정" }, { now: NOW_AFTER });
+    expect(await getLeaveShortfallForUser(admin, userId)).toBeNull();
+  });
+
+  it("퇴직 안 한 사람 · 입사일 없는 사람은 null", async () => {
+    const active = await makePerson("재직", DEFAULT_ROLE_ID, null);
+    await setHireDate(SYSTEM_VIEWER, active.id, "2023-03-02");
+    expect(await getLeaveShortfallForUser(admin, active.id)).toBeNull();
+    const noHire = await makePerson("입사일없음", DEFAULT_ROLE_ID, null);
+    await setResignationDate(SYSTEM_VIEWER, noHire.id, "2026-06-30");
+    expect(await getLeaveShortfallForUser(admin, noHire.id)).toBeNull();
+  });
+
+  it("admin.people 보기 없는 계정은 ForbiddenError(본인 포함)", async () => {
+    const none = await makePerson("권한없음", DEFAULT_ROLE_ID, null);
+    await expect(getLeaveShortfallForUser(none, userId)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(getLeaveShortfallForUser({ id: userId, roleId: DEFAULT_ROLE_ID }, userId)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("admin.people 보기 있음 + leave.value 끔 → null(줄 없음), 켬 → 값", async () => {
+    const role = await createRole(SYSTEM_VIEWER, { name: `부족일-${Date.now()}` });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.people", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "leave.value", visible: false });
+    const reader = await makePerson("보기만", role.id, null);
+    expect(await getLeaveShortfallForUser(reader, userId)).toBeNull();
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "leave.value", visible: true });
+    expect(await getLeaveShortfallForUser(reader, userId)).toEqual({ shortfallQuarters: 14 });
+  });
+
+  it("본인 잔고 JSON에 shortfall · 부족 글자가 없다(D-7265)", async () => {
+    const mine = await getMyLeaveBalance({ id: userId, roleId: DEFAULT_ROLE_ID }, { fiscalYear: 2026 }, { now: NOW_AFTER });
+    const serialized = JSON.stringify(mine);
+    expect(serialized).not.toContain("shortfall");
+    expect(serialized).not.toContain("법정");
+    expect(serialized).not.toContain("부족");
   });
 });

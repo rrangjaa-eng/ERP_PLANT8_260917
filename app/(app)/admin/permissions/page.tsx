@@ -29,14 +29,17 @@ export default async function PermissionsPage() {
   let fundUnset = false;
   let canOpenSettings = false;
 
+  // 07.3-04(D-7318): 자금 키 열의 본부 조건 표지 — 이름은 자금 게이트와 같은 출처(readFundDivision). 설정이 비면 「자금 본부 미지정」.
+  // 표지는 덧붙이는 표시라 격자 조회와 함께 먼저 시작하고, 이쪽이 실패하면 표지 · 잠김 줄 없이 격자만 그린다(권한표 불러오기 실패로 번지지 않는다).
+  const fundLookup = Promise.all([readFundDivision(session.viewer), can(session.viewer, "admin.settings", "view")]).catch(() => null);
+
   try {
     const grid = await readPermissionGrid(session.viewer);
     rows = grid.roles;
-    // 07.3-04(D-7318): 자금 키 열의 본부 조건 표지 — 이름은 자금 게이트와 같은 출처(readFundDivision). 설정이 비면 「자금 본부 미지정」.
-    const [division, settingsViewable] = await Promise.all([readFundDivision(session.viewer), can(session.viewer, "admin.settings", "view")]);
-    columns = withFundNotes(grid.columns, division);
-    fundUnset = division === null;
-    canOpenSettings = settingsViewable;
+    const fund = await fundLookup;
+    columns = fund ? withFundNotes(grid.columns, fund[0]) : grid.columns;
+    fundUnset = fund !== null && fund[0] === null;
+    canOpenSettings = fund !== null && fund[1];
     values = grid.values;
     requires = grid.requires;
   } catch (error) {

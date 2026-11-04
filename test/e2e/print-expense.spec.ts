@@ -90,6 +90,8 @@ test.describe("입구 · 종이 · 기록", () => {
 
   test("5초 안의 재클릭 · beforeprint는 1행으로 합치고 5초 뒤 클릭은 한 행을 더한다. 기록 실패는 화면에 아무것도 띄우지 않는다", async ({ browser, baseURL }) => {
     const { context, page } = await loggedIn(browser, baseURL, fx.pm, (ctx) => ctx.clock.install());
+    // 서버는 같은 사람 · 같은 서류의 인쇄 기록을 5초 안에 한 행으로 합친다(실제 시계). 앞 시험의 기록이 창 밖이 되도록 기다린다.
+    await page.waitForTimeout(5200);
     const before = await printRows(expenseId);
     await page.goto(printPath(expenseId));
     await expect(page.locator("main[data-ready]")).toHaveCount(1);
@@ -102,6 +104,8 @@ test.describe("입구 · 종이 · 기록", () => {
     await page.waitForTimeout(1000);
     expect(await printRows(expenseId)).toBe(before + 1);
 
+    // 클릭 쪽 합침은 가짜 시계로, 서버 쪽 합침은 실제 시간으로 5초를 넘긴다.
+    await page.waitForTimeout(5200);
     await page.clock.fastForward(6000);
     await button.click();
     await expect.poll(() => printRows(expenseId), { timeout: 10_000 }).toBe(before + 2);

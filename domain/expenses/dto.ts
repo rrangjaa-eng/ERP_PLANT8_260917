@@ -2,6 +2,7 @@ import type { DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { Money } from "@/domain/money";
 import type { TaxLinePart } from "@/domain/expenses/tax";
+import type { TaxRuleKind } from "@/domain/code-tables/tax-rule";
 import type { PaymentAccount } from "@/domain/payments";
 
 // 05-03: 지출결의 DTO 둘 — 문서 칸은 expense.value, 금액 칸(공급가액 · 세율 · 세액 · 지급 총액)은 expense.amount.
@@ -78,6 +79,11 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   payableKrw: number | null;
   // 계산 한 줄 — 제출 뒤 문서는 저장된 스냅숏, 작성 중은 지금 기준 계산. 조각의 emphasis가 숫자 700 표식(금액 정보 항목).
   taxLine: { text: string; parts: TaxLinePart[] } | null;
+  // 07.4 인쇄: 상세 화면 taxLine과 같은 result의 숫자 — 스냅숏 칸과 다를 수 있다(공급가를 고친 문서 · 기안자가 고칠 수 있는 반려 · 회수 문서는 지금 기준 계산).
+  taxResult:
+    | { ruleKind: TaxRuleKind; rate: number | null; vatKrw: number; withholdingKrw: number; companyBorneKrw: number; payableKrw: number }
+    | { unavailable: true }
+    | null;
   // 05-06 세율 바뀜 — 번호 있는 문서만, 저장 스냅숏 값 대 지금 기준 재계산 값이 다를 때 한 줄(같으면 null). 조각 모양은 taxLine과 같다.
   taxDrift: { text: string; parts: TaxLinePart[] } | null;
   // 05-05 폼 자동 채움 재료(작성 중에만 채운다) — 거래처 기본 증빙 종류 이름 · 견적 줄 실행가 줄(외화면 둘째 줄) · 분할 지급 갈래와 힌트 한 줄.
@@ -134,6 +140,7 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "companyBorneKrw", from: "companyBorneKrw", infoItem: "expense.amount" },
     { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
+    { key: "taxResult", from: "taxResult", infoItem: "expense.amount" },
     { key: "taxDrift", from: "taxDrift", infoItem: "expense.amount" },
     { key: "defaultEvidenceName", from: "defaultEvidenceName", infoItem: "expense.value" },
     { key: "executionLines", from: "executionLines", infoItem: "expense.amount" },

@@ -34,7 +34,7 @@ describe("documentStatusText", () => {
 
   it("보는 사람 기준 낱말은 나오지 않는다", () => {
     for (const status of ["draft", "submitted", "in_review", "approved", "rejected", "withdrawn", undefined]) {
-      expect(documentStatusText(status, "대표")).not.toMatch(/내 결재|대기/);
+      expect(documentStatusText(status, "대표") ?? "").not.toMatch(/내 결재|대기/);
     }
   });
 });

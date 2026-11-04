@@ -161,6 +161,46 @@ describe("bootstrap-gcp.sh — 단일 파일(names.sh 미의존) + 이름 상수
     expect(script).not.toMatch(/source .*names\.sh/);
   });
 
+  // 07.2-03(PU21): 자동 파기 Scheduler의 OAuth 호출자 — 환경마다 새 SA, 배포자는 actAs만, 프로젝트 수준 역할 0.
+  it("환경마다 purge-sched SA를 만들고 배포자에게 그 SA의 serviceAccountUser만 준다(프로젝트 수준 바인딩 0)", () => {
+    const r = bootstrap(["--project", "test-proj", "--github-repo", "rrangjaa-eng/ERP_PLANT8_260917"], { "no-vpc-peering": true });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    for (const env of ["staging", "prod"]) {
+      const creates = lines.filter((l) => l.startsWith(`iam service-accounts create plant8-${env}-purge-sched `));
+      expect(creates, `create for ${env}`).toHaveLength(1);
+      expect(creates[0]).toContain("--display-name=PLANT8 ERP " + env + " cert purge scheduler");
+      const bindings = lines.filter((l) =>
+        l.startsWith(`iam service-accounts add-iam-policy-binding plant8-${env}-purge-sched@test-proj.iam.gserviceaccount.com `),
+      );
+      expect(bindings, `actAs binding for ${env}`).toHaveLength(1);
+      expect(bindings[0]).toContain("--member=serviceAccount:gha-deployer@test-proj.iam.gserviceaccount.com");
+      expect(bindings[0]).toContain("--role=roles/iam.serviceAccountUser");
+    }
+    for (const l of lines.filter((x) => x.startsWith("projects add-iam-policy-binding"))) {
+      expect(l).not.toContain("purge-sched");
+    }
+  });
+
+  it("purge-sched SA가 이미 있으면 create 없이 바인딩만 다시 건다(멱등)", () => {
+    const r = bootstrap(["--project", "test-proj", "--github-repo", "rrangjaa-eng/ERP_PLANT8_260917"], {
+      "no-vpc-peering": true,
+      "sa-exists": true,
+      "wif-pool-exists": true,
+      "wif-provider-exists": true,
+    });
+    expect(r.status).toBe(0);
+    expect(r.log).not.toContain("iam service-accounts create plant8-staging-purge-sched");
+    expect(r.log).toContain("iam service-accounts add-iam-policy-binding plant8-staging-purge-sched@");
+  });
+
+  it("purge-sched SA 이름이 infra/names.sh purge_scheduler_sa와 같다", () => {
+    for (const env of ["staging", "prod"]) {
+      const out = spawnSync("bash", ["-c", `source "${NAMES_PATH}"; purge_scheduler_sa ${env}`], { encoding: "utf8" });
+      expect(out.stdout.trim()).toBe(`plant8-${env}-purge-sched`);
+    }
+  });
+
   it("스케줄러 SA 이름이 infra/names.sh scheduler_sa와 같다(04.2-04)", () => {
     const r = bootstrap(["--project", "test-proj", "--github-repo", "rrangjaa-eng/ERP_PLANT8_260917"], {
       "no-vpc-peering": true,

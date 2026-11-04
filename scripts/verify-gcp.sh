@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # .github/workflows/verify.yml이 실행한다. 입력은 환경 변수로만 받는다(T-1-32).
-#   INPUT_CHECK=policies|notify-tick|evidence-bucket  PROJECT  REGION
+#   INPUT_CHECK=policies|notify-tick|evidence-bucket|purge-scheduler  PROJECT  REGION
+# purge-scheduler는 소유자 로컬 셸에서만 부른다(verify.yml 선택지에 없다).
 # 각 명령의 실패를 삼키지 않는다 — 권한이 없으면 PERMISSION_DENIED가 그대로 로그에
 # 남고, 마지막에 실패 수로 종료한다.
 set -u
@@ -71,6 +72,27 @@ case "$INPUT_CHECK" in
       "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$(svc_name staging)\" AND jsonPayload.event=~\"^(notify|holiday)[.]\"" \
       --project="$PROJECT" --freshness=7d --limit=40 \
       --format='table(timestamp,severity,jsonPayload.event,jsonPayload.ok,jsonPayload.businessDay,jsonPayload.sent,jsonPayload.skipped,jsonPayload.remaining,jsonPayload.emailSent,jsonPayload.emailFailed,jsonPayload.emailUnknown,jsonPayload.reason,jsonPayload.message)'
+    ;;
+  purge-scheduler)
+    # (e) 확인증 자동 파기(07.2-03, docs/CERT-PURGE.md) — 스테이징 Scheduler 잡 설정 · ENABLED · 실행 기록 · 자동 Job 실행 목록. 읽기만 한다.
+    # 첫 배포 · 첫 달 1일 전에는 실행 기록이 없어 실패가 정상이다 — 런북(docs/CERT-PURGE.md)의 수동 실행 한 번 뒤에 본다.
+    job="$(purge_scheduler_job staging)"
+    auto_job="$(job_name staging purge-certs-auto)"
+    region="${REGION:-$REGION_DEFAULT}"
+    run_check "scheduler job ${job}" gcloud scheduler jobs describe "$job" --location="$region" --project="$PROJECT" \
+      --format='yaml(schedule,timeZone,state,lastAttemptTime,status,httpTarget.uri,httpTarget.oauthToken)'
+    run_check "scheduler job ${job} is ENABLED" test \
+      "$(gcloud scheduler jobs describe "$job" --location="$region" --project="$PROJECT" --format='value(state)')" = ENABLED
+    run_check "scheduler runs ${job}" nonempty gcloud logging read \
+      "resource.type=\"cloud_scheduler_job\" AND resource.labels.job_id=\"${job}\"" \
+      --project="$PROJECT" --freshness=35d --limit=10 \
+      --format='table(timestamp,severity,httpRequest.status,jsonPayload.status,jsonPayload.debugInfo)'
+    # 모드 확인 — 빈 값이면 dry-run, --apply가 보이면 apply(Job 정의에 굳은 값).
+    run_check "container args of ${auto_job} (empty = dry-run, --apply = apply)" gcloud run jobs describe "$auto_job" \
+      --region="$region" --project="$PROJECT" --format='value(spec.template.spec.template.spec.containers[0].args)'
+    run_check "executions of ${auto_job}" nonempty gcloud run jobs executions list --job="$auto_job" \
+      --region="$region" --project="$PROJECT" --limit=3 \
+      --format='table(metadata.name,status.completionTime,status.succeededCount,status.failedCount)'
     ;;
   evidence-bucket)
     # (d) 증빙 버킷(05-12, docs/EVIDENCE-STORAGE.md) — 읽기만(gha-deployer는 이 버킷에 storage.admin, 서비스 조회는 run.admin).

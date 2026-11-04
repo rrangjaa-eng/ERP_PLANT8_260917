@@ -6,8 +6,11 @@ import { seedMasterData } from "@/domain/seed";
 import { seedFundScope } from "@/domain/seed/fund-scope";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import {
+  APPROVAL_ROUTE_EXPENSE_STEP3_ORG_UNIT_ID,
   APPROVAL_ROUTE_EXPENSE_STEP3_ROLE_ID,
+  APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID,
   APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID,
+  APPROVAL_ROUTE_SETTLEMENT_STEP3_ORG_UNIT_ID,
   APPROVAL_ROUTE_SETTLEMENT_STEP3_ROLE_ID,
   FUND_DIVISION_ORG_UNIT,
 } from "@/domain/settings/keys";
@@ -169,7 +172,7 @@ describe("③단 담당 계급 시드 보정 (07.3-02 D-7316)", () => {
     expect(lines.filter((line) => line.includes("seed.step3_role_default_deferred"))).toHaveLength(0);
   });
 
-  it("경영관리본부가 없으면(자금 본부 경고 갈래) 자금 본부 설정이 없어 보정을 미룬다", async () => {
+  it("경영관리본부가 없으면(자금 본부 경고 갈래) ③단 본부에 책임자가 없어 보정을 미룬다", async () => {
     await simulateOldDefaults();
     await db.delete(settingsSimple).where(eq(settingsSimple.key, FUND_DIVISION_ORG_UNIT.key));
     await db.update(orgUnits).set({ name: "경영지원본부" }).where(eq(orgUnits.name, "경영관리본부"));
@@ -177,6 +180,27 @@ describe("③단 담당 계급 시드 보정 (07.3-02 D-7316)", () => {
     await seedFundScope(SYSTEM_VIEWER);
     expect(await step3Values()).toEqual(["", "", ""]);
     expect(lines.filter((line) => line.includes("seed.step3_role_default_deferred"))).toHaveLength(1);
+  });
+
+  // Codex P2(PR #340): 책임자 판정은 자금 본부 설정이 아니라 결재선마다 그 ③단 특정 부서(resolveStepScope가 쓰는 값)를 본다.
+  it("자금 본부를 책임자 있는 다른 본부로 바꿔도 ③단 본부(경영관리)에 책임자가 없으면 그대로", async () => {
+    await simulateOldDefaults();
+    await upsertSimpleValue(SYSTEM_VIEWER, FUND_DIVISION_ORG_UNIT.key, await orgUnitIdByName("기획본부"), null);
+    await makeFundPerson("기획 책임자", DIVISION_HEAD_ROLE_ID, { division: "기획본부" });
+    await makeFundPerson("경영관리 사원", DEFAULT_ROLE_ID, "경영관리팀");
+    await seedFundScope(SYSTEM_VIEWER);
+    expect(await step3Values()).toEqual(["", "", ""]);
+  });
+
+  it("결재선마다 다른 ③단 본부를 가리키면 각각 판정한다", async () => {
+    await simulateOldDefaults();
+    const planning = await orgUnitIdByName("기획본부");
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID.key, planning, null);
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP3_ORG_UNIT_ID.key, await orgUnitIdByName("경영관리본부"), null);
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP3_ORG_UNIT_ID.key, planning, null);
+    await makeFundPerson("기획 책임자", DIVISION_HEAD_ROLE_ID, { division: "기획본부" });
+    await seedFundScope(SYSTEM_VIEWER);
+    expect(await step3Values()).toEqual([DIVISION_HEAD_ROLE_ID, "", DIVISION_HEAD_ROLE_ID]);
   });
 });
 

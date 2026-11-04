@@ -51,7 +51,9 @@
 | 전체 | 설정 「권한」 절 구조 | Form.Field 라벨 · select · 힌트(aria-describedby) — 다른 select 설정과 같은 렌더러 | PASS |
 | 전체 | 설정 앵커 | `#setting-permissions.fund.division_org_unit` 있음 · 기본 「경영관리본부」 · 미지정 「—」 | PASS |
 
-**고친 것: 없음** (감사 결함 0 — 5단계 수정 · 재실행 없음).
+**고친 것:** 독립 DOM 감사 결함은 0이라 없었다. `/review` 지적 둘을 고쳤다.
+- (P2, `ed202d0b`) 폰 값 칸 `.mobileCell`에 `flex-wrap: wrap` — 긴 본부 이름(12자)이 칸 · 문서를 넘치던 것(문서 넘침 10px · 16자 38px)을 표지가 통째로 다음 줄로 내려 해결. 16자는 칸(약 190px)보다 넓어 칸 안에서 3px 넘치지만 문서 넘침은 0(한계 사례, 새 클래스 · 토큰 없음).
+- (P3, `4ceb67fd`) 표지용 `readFundDivision` · `can(admin.settings)` 조회를 격자 조회보다 먼저 시작하고, 실패하면 표지 · 잠김 줄 없이 격자만 그린다(권한표 불러오기 실패로 번지지 않음).
 **캡처 폴더:** `/tmp/claude-0/-home-user-ERP-PLANT8-260917/30ed6bf6-3ae4-50c2-9db0-a6fc33c75269/scratchpad/capture-07.3-04/` (`state-fund-note-default-{1280,768,375,320}.png` · `state-fund-note-unset-{1280,768,375,320}.png` · `measurements-state-fund-note-{default,unset}.json`). 폰 기준선은 실행 때 main 대조 없이 위 `measure-baseline.json` 상수로 E2E가 잰다(실행일 값과 달랐던 것 없음).
 
 ### 남은 경고 (고치지 않음 — 시스템 수준 · 이 플랜 밖)

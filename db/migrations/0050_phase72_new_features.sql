@@ -1,4 +1,4 @@
--- rollback-floor: 없음 — 더하기만. 옛 리비전은 새 칸 · 새 표를 읽지 않고, 넣기는 기본값(days = 1)과 NULL을 받으며, 바뀐 CHECK 둘(line_kind ·
+-- rollback-floor를 두지 않는다 — 더하기만. 옛 리비전은 새 칸 · 새 표를 읽지 않고, 넣기는 기본값(days = 1)과 NULL을 받으며, 바뀐 CHECK 둘(line_kind ·
 -- files owner_kind)은 옛 값을 그대로 품는다.
 -- 07.2-01(R1) — 07.2 새 기능이 저장할 칸 · 표 · 줄 종류를 한 번에 만든다. 쓰는 길은 뒤 플랜이 만들고 칸이 비어 있어도 지금 동작은 그대로다.
 -- quote_lines: days(PU6 D-7230 · D-7231 · numeric(12,2) NOT NULL DEFAULT 1 — 상수 기본값이라 pg16은 표를 다시 쓰지 않고 기존 줄은 1로 읽혀

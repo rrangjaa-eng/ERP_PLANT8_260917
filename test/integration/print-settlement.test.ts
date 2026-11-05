@@ -216,7 +216,7 @@ describe("정산서 지출결의 목록 — 지출결의 목록 화면과 같은
 
     const screen = await listedIn(fx.ceo, world.numbered.map((doc) => doc.expenseId));
     const wordOf = new Map(screen.map((row) => [row.id, row.statusWord]));
-    for (const row of rows ?? []) expect(row.statusWord, row.number).toBe(wordOf.get(row.id ?? ""));
+    for (const row of rows ?? []) expect(row.statusWord, row.number ?? undefined).toBe(wordOf.get(row.id ?? ""));
     expect(rows?.find((row) => row.id === world.numbered[0]?.expenseId)?.statusWord).toBe("지급 완료");
     expect(rows?.find((row) => row.id === world.numbered[1]?.expenseId)?.statusWord).toBe("승인");
     expect(rows?.find((row) => row.id === world.numbered[2]?.expenseId)?.statusWord).toMatch(/ 결재 중$/);

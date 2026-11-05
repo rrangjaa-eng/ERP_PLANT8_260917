@@ -2,7 +2,10 @@ import { test, expect, type Page } from "@playwright/test";
 import { getApprovalView, rejectDocument } from "@/domain/approvals";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
-import { loginPage } from "./leave-org";
+import { submitLeave } from "@/domain/leave";
+import { seoulToday } from "@/lib/dates";
+import { leaveWeekdayRange } from "./leave-dates";
+import { loginPage, setupLeaveOrg, type LeaveOrg } from "./leave-org";
 
 // 07.4-01 D-7409 E1 — 지출결의 상세의 「인쇄」 입구는 폰(<700)에서 접근성 트리에 없고 700부터 하나다. 폰에서 숨은 링크 때문에 빈 actions 상자가
 // DetailScreen 머리 줄에 둘째 줄 틈을 만들면 안 된다(머리 줄 높이 = 제목 블록 높이). 07.4-02 · 03이 같은 파일에 연차 · 정산 사례를 더한다.
@@ -103,6 +106,47 @@ test.describe("반려 재상신 폼의 「인쇄」 입구", () => {
       await page.goto(`/expenses/${rejectedId}`);
       await waitForDetailTitle(page);
       await expect(printLink(page)).toHaveCount(0);
+    } finally {
+      await page.context().close();
+    }
+  });
+});
+
+// 07.4-02 D-7409 E2 — 연차 상세의 「인쇄」 입구도 같은 규칙이다(폰 접근성 트리 0 · 700부터 1 · 빈 actions 틈 없음).
+test.describe("연차 상세의 「인쇄」 입구", () => {
+  let org: LeaveOrg;
+  let leaveId: string;
+
+  test.beforeAll(async () => {
+    const today = seoulToday();
+    org = await setupLeaveOrg(today);
+    const range = leaveWeekdayRange(today, { week: 30, weekdays: 1 });
+    leaveId = (await submitLeave(org.drafter.viewer, { kind: "full_day", half: "", ...range })).leaveId;
+  });
+
+  for (const width of [375, 320]) {
+    test(`${width}px 폰에서는 「인쇄」 링크가 접근성 트리에 없고 머리 줄에 빈 actions 틈이 없다`, async ({ browser, baseURL }) => {
+      const page = await loginPage(browser, baseURL, org.drafter, { width, height: 800 });
+      try {
+        await page.goto(`/leave/${leaveId}`);
+        await waitForDetailTitle(page);
+        await expect(printLink(page)).toHaveCount(0);
+        const heights = await headHeights(page);
+        test.info().annotations.push({ type: "head-heights", description: JSON.stringify(heights) });
+        expect(heights.head, `머리 줄 ${JSON.stringify(heights)}`).toBeLessThanOrEqual(heights.heading + 1);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
+  test("700px부터 「인쇄」 링크가 하나다", async ({ browser, baseURL }) => {
+    const page = await loginPage(browser, baseURL, org.drafter, { width: 700, height: 800 });
+    try {
+      await page.goto(`/leave/${leaveId}`);
+      await waitForDetailTitle(page);
+      await expect(printLink(page)).toHaveCount(1);
+      await expect(printLink(page)).toHaveAttribute("href", `/print/leaves/${leaveId}`);
     } finally {
       await page.context().close();
     }

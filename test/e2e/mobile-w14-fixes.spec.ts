@@ -55,7 +55,7 @@ async function selfOverflow(page: Page): Promise<string[]> {
   // 시드 계급 이름 입력만 잰다 — 다른 스펙이 남긴 긴 이름은 입력 안에서 넘쳐도 되는 경우다.
   return page.locator("table tbody input:visible").evaluateAll((elements) =>
     elements.flatMap((element) =>
-      element instanceof HTMLInputElement && ["대표", "본부 책임자", "팀장", "기획 PM", "시스템 관리자"].includes(element.value) && element.scrollWidth > element.clientWidth
+      element instanceof HTMLInputElement && ["대표", "본부 책임자", "팀장", "사원", "시스템 관리자"].includes(element.value) && element.scrollWidth > element.clientWidth
         ? [`${element.value} ${element.clientWidth}/${element.scrollWidth}`]
         : [],
     ),
@@ -143,7 +143,7 @@ for (const width of [375, 320]) {
       const table = page.locator("table");
       await expect(table.locator("input, select, textarea").filter({ visible: true })).toHaveCount(0);
       await expect(table.locator("button").filter({ visible: true }).filter({ hasNotText: /^(비활성화|활성화|삭제)$/ })).toHaveCount(0);
-      for (const text of ["대표", "본부 책임자", "팀장", "기획 PM", "시스템 관리자"]) {
+      for (const text of ["대표", "본부 책임자", "팀장", "사원", "시스템 관리자"]) {
         await expect(table.getByRole("cell", { name: text, exact: true }).first()).toBeVisible();
       }
       await expect(table.getByRole("cell", { name: "전사", exact: true }).first()).toBeVisible();

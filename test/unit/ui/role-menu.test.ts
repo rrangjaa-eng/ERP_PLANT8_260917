@@ -99,7 +99,7 @@ const SEED_ROLE_NAMES: ReadonlyArray<[roleId: string, name: string]> = [
   ["role-ceo", "대표"],
   ["role-division-head", "본부 책임자"],
   ["role-team-lead", "팀장"],
-  ["role-pm", "기획 PM"],
+  ["role-pm", "사원"],
   ["role-sysadmin", "시스템 관리자"],
 ];
 

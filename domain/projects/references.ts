@@ -63,9 +63,9 @@ for (const [name, spec] of [
 // 프로젝트 등록 폼의 클라이언트·담당 PM·팀 select 세 칸(⑨) — D-38 "클라이언트·
 // 거래처는 자동완성되고" 요구를 채운다. `listVendors`/`listTeams`/`listPeople`가
 // 각각 "admin.vendors"/"admin.people" 메뉴 view를 요구해(scope-for.ts
-// ENTITY_MENUS) 그대로 쓰면 그 메뉴가 없는 role-pm(기획 PM)에게 등록 폼의
+// ENTITY_MENUS) 그대로 쓰면 그 메뉴가 없는 role-pm(사원)에게 등록 폼의
 // select 세 칸이 전부 빈 목록으로 렌더된다 — `test/e2e/people.spec.ts`
-// "기본 계급(기획 PM)으로는 사람 화면이 404다"가 이미 admin.people
+// "기본 계급(사원)으로는 사람 화면이 404다"가 이미 admin.people
 // 기본값이 없음을 계약으로 고정해 두어(seedMasterData를 admin.people
 // view 기본 참으로 바꾸는 시도는 그 테스트를 깬다) 두 메뉴 권한을 넓히지
 // 않는다. 대신 "projects" 메뉴 view 권한 하나로 게이트하는 축소 투영

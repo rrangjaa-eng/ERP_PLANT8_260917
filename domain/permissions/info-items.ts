@@ -41,7 +41,7 @@ export const INFO_ITEMS: InfoItemDef[] = [
   // 투영이 모든 계급에서 0필드를 돌려주는 조용한 결함이 된다(정보 노출표
   // 행이 없으면 visible()은 기본 거부) — 구조적으로 필요해 함께 등록한다.
   { key: "project.value", label: "프로젝트 정보", staffDefault: true },
-  // PROJ-02: 견적·실행가·차익 열. 기획 PM이 매일 다루는 자기 프로젝트의
+  // PROJ-02: 견적·실행가·차익 열. 사원이 매일 다루는 자기 프로젝트의
   // 숫자라 기본값 참(위 vendor.amount처럼 대표 전용으로 막지 않는다) —
   // 손익 숫자(pnl.amount)와는 다른 항목이다(견적 줄 = 계획값, 손익 = 확정
   // 비용 기준 결과값, Phase 9).

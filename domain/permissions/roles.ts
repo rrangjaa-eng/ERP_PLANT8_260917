@@ -51,7 +51,7 @@ export const SEED_ROLES: SeedRole[] = [
   { id: "role-ceo", name: "대표", isSeed: true, sortOrder: 0, workScope: "company", viewScope: "company" },
   { id: "role-division-head", name: "본부 책임자", isSeed: true, sortOrder: 1, workScope: "company", viewScope: "org_unit" },
   { id: "role-team-lead", name: "팀장", isSeed: true, sortOrder: 2, workScope: "team", viewScope: "team" },
-  { id: "role-pm", name: "기획 PM", isSeed: true, sortOrder: 3, workScope: "team", viewScope: "team" },
+  { id: "role-pm", name: "사원", isSeed: true, sortOrder: 3, workScope: "team", viewScope: "team" },
   { id: "role-sysadmin", name: "시스템 관리자", isSeed: true, sortOrder: 4, workScope: "company", viewScope: "company" },
 ];
 

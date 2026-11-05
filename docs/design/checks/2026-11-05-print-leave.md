@@ -1,5 +1,5 @@
 # 연차 신청서 인쇄 · 상세 「인쇄」 입구 — 점검표
-화면: app/print/leaves/, app/(app)/leave/[id]/page.tsx, app/print/_frame/print-frame.module.css
+화면: app/print/leaves/, app/(app)/leave/[id]/page.tsx, app/print/_frame/print-frame.module.css, app/print/_frame/approval-boxes.ts
 기준: BRIEF.md · frontend.md 화면 사용성 원칙 · CHECKLIST.md §1 · SYSTEM.md §6-6 (인쇄 템플릿) · 07.4-UI-SPEC.md P2
 
 ## 원칙
@@ -43,3 +43,4 @@
 - backstop 1 (E2 입구 overflow): `/leave/{id}` 머리 줄 actions `scrollWidth 50 <= clientWidth 50` — 1280 · 768 (700은 감사자가 같은 판정, 320 · 375에서는 PcOnly로 actions가 없다).
 - backstop 2 (print-media 회색조): `filter: grayscale(1)` 상태에서 번호 줄 상태 글자 DOM 존재 — F-L1 · F-L2 「팀장 결재 중」, F-L3 없음(승인 완료). 320 · 375 · 768 · 1280 + 화면 바 700 모두 가로 넘침은 종이 210mm 고정(793.688px) 때문이며 SYSTEM §6-6 · UI-SPEC:540 · :583이 합격으로 정한다.
 - 미판정 항목(사람 확인): 실물 흑백 프린터 출력은 07.4-03 끝 사람 확인 항목이다.
+- 결재권자가 없는 중간 단계 칸 숨김(사용자 결정 2026-11-05, DECISIONS.md 같은 날 항목): `toApprovalBoxes`가 `empty` · `blocked` 단계를 칸으로 만들지 않는다 — 단위 시험(`approval-boxes.test.ts`)으로 증명, 칸 수는 남은 칸 기준 4~5.

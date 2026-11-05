@@ -2,7 +2,7 @@ import type { ApprovalStepView } from "@/domain/approvals/dto";
 import { kstDateTimeOf } from "@/lib/kst-date";
 
 // 07.4-01 D-7410: 결재선 → 가로 결재 칸. 순수 함수 — 칸 구성 · 상태 글자 · data-state를 정한다(UI-SPEC 「결재란」 표).
-export type ApprovalBoxState = "submitted" | "draft" | "approved" | "rejected" | "pending" | "skipped" | "empty" | "self";
+export type ApprovalBoxState = "submitted" | "draft" | "approved" | "rejected" | "pending" | "skipped" | "self";
 
 export type ApprovalBox = { label: string; name: string; stateText: string; at: string | null; dataState: ApprovalBoxState };
 
@@ -17,7 +17,8 @@ type Input = {
 
 const NONE = "—";
 
-function stepBox(step: ApprovalStepView): ApprovalBox {
+// 결재권자가 없는 단계(empty · blocked)는 칸 자체를 그리지 않는다(사용자 결정 2026-11-05) — null.
+function stepBox(step: ApprovalStepView): ApprovalBox | null {
   switch (step.state) {
     case "approved":
       return {
@@ -36,7 +37,7 @@ function stepBox(step: ApprovalStepView): ApprovalBox {
       return { label: step.label, name: NONE, stateText: "건너뜀", at: null, dataState: "skipped" };
     case "empty":
     case "blocked":
-      return { label: step.label, name: NONE, stateText: "담당 없음", at: null, dataState: "empty" };
+      return null;
     default: {
       const unreachable: never = step.state;
       return unreachable;
@@ -53,7 +54,7 @@ export function toApprovalBoxes(input: Input): ApprovalBoxes {
   const drafter: ApprovalBox = { label: "기안", name, stateText: "상신", at: input.submittedAt ? kstDateTimeOf(input.submittedAt) : null, dataState: "submitted" };
   // 결재선을 못 보는 계급(steps가 투영으로 빠짐)은 기안 칸 하나만 — 결재자 이름 · 일시 · 사유는 싣지 않는다.
   if (!input.steps) return { boxes: [drafter], columns: 4, rejectReason: null };
-  const boxes = [drafter, ...input.steps.map(stepBox)];
+  const boxes = [drafter, ...input.steps.flatMap((step) => stepBox(step) ?? [])];
   const rejected = input.steps.find((step) => step.state === "rejected");
   return { boxes, columns: Math.min(5, Math.max(4, boxes.length)) as 4 | 5, rejectReason: rejected?.reason ?? null };
 }

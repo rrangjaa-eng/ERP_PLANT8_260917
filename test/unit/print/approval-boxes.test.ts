@@ -64,11 +64,26 @@ describe("toApprovalBoxes — 전체 매핑 (UI-SPEC 결재란 표)", () => {
     [{ state: "current" }, { name: "—", stateText: "대기", at: null, dataState: "pending" }],
     [{ state: "pending" }, { name: "—", stateText: "대기", at: null, dataState: "pending" }],
     [{ state: "skipped_self" }, { name: "—", stateText: "건너뜀", at: null, dataState: "skipped" }],
-    [{ state: "empty" }, { name: "—", stateText: "담당 없음", at: null, dataState: "empty" }],
-    [{ state: "blocked" }, { name: "—", stateText: "담당 없음", at: null, dataState: "empty" }],
   ] as const)("%j", (over, expected) => {
     const result = all([step({ stepIndex: 1, label: "팀장", ...over })]);
     expect(result.boxes[1]).toEqual({ label: "팀장", ...expected });
+  });
+
+  it.each(["empty", "blocked"] as const)("결재권자가 없는 중간 단계(%s)는 칸을 그리지 않는다 — 열 수는 남은 칸 기준", (state) => {
+    const result = all([
+      step({ stepIndex: 1, label: "팀장", state: "approved", actedByName: "김도윤", actedAt: ACTED }),
+      step({ stepIndex: 2, label: "본부장", state }),
+      step({ stepIndex: 3, label: "경영", state: "pending" }),
+      step({ stepIndex: 4, label: "대표", state: "pending" }),
+    ]);
+    expect(result.boxes.map((box) => box.label)).toEqual(["기안", "팀장", "경영", "대표"]);
+    expect(result.boxes.some((box) => box.stateText === "담당 없음")).toBe(false);
+    expect(result.columns).toBe(4);
+  });
+
+  it("자기 승인 건너뜀은 결재권자(기안자)가 있으므로 칸이 남는다", () => {
+    const result = all([step({ stepIndex: 1, label: "팀장", state: "skipped_self" }), step({ stepIndex: 2, label: "본부장", state: "empty" })]);
+    expect(result.boxes.map((box) => box.label)).toEqual(["기안", "팀장"]);
   });
 
   it("반려 단계의 사유가 rejectReason이다", () => {

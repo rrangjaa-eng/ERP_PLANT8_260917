@@ -2548,3 +2548,11 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **바뀐 규칙**: SYSTEM.md §7-20 `DetailScreen` 행동 순위 줄 아래에 한 줄.
 **버린 대안**: `ui/detail-screen`에 `hideActionsOnPhone` 같은 prop을 더함(호출부마다 알아야 한다) · 화면이 폰 폭을 JS로 판정(수화 뒤에야 바뀌어 레이아웃이 움직인다 — pc-only.module.css 주석).
 **범위**: `ui/detail-screen/DetailScreen.module.css` · `app/(app)/admin/pc-only.tsx`(`data-pc-only`). 새 토큰 · 색 0. 실측: 375 · 320 머리 줄 86.58px = 제목 블록 86.58px(`mobile-print-entry`).
+
+## 2026-11-05 — 인쇄 결재란은 결재권자가 없는 중간 단계 칸을 그리지 않는다(07.4 D-7410 보정)
+**결정**: `toApprovalBoxes`가 결재 단계 상태 `empty` · `blocked`(「담당 없음」 칸)를 칸으로 만들지 않는다. 열 수는 남은 칸(기안 + 보이는 단계)으로 세어 4~5다. 자기 승인으로 건너뛴 단계(`skipped_self`)는 결재권자(기안자)가 있어 「건너뜀」 칸이 그대로 남는다. 제목 곁 상태 글자(「{단계} 결재 중」)는 그대로다.
+**이유**: 사용자 결정 2026-11-05 「중간에 결재권자가 없으면 해당 결재란은 표시하지 마」. 종이에 「—」 + 「담당 없음」 칸이 있으면 서류를 받는 사람에게 내부 결재선 사정이 보인다.
+**결정자**: 사용자(채팅 2026-11-05).
+**바뀐 규칙**: SYSTEM.md §6-6 결재란 줄에 한 문장. UI-SPEC 「결재란」 표의 「담당 없음」 칸 행(`.planning/`)은 손으로 고치지 않고 07.4-02 SUMMARY에 편차로 적는다.
+**버린 대안**: 칸은 두고 글자만 바꿈 · 연차 · 지출결의 · 정산서 중 일부만 적용(세 서류가 한 공용 함수를 쓴다).
+**범위**: `app/print/_frame/approval-boxes.ts` · 단위 시험 `test/unit/print/approval-boxes.test.ts`. 화면(웹) 결재선 목록의 「담당 없음」 줄은 그대로. 새 색 · 서체 · radius · 토큰 0.

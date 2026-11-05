@@ -761,6 +761,13 @@ describe("docs/design — 07.2 DC 규칙 (07.2-05)", () => {
     return DECISIONS.split("\n").filter((line) => line.startsWith("## ") && line.includes(token));
   }
 
+  function entryOf(headLine: string): string {
+    const start = headLine === "" ? -1 : DECISIONS.indexOf(headLine);
+    if (start === -1) return "";
+    const next = DECISIONS.indexOf("\n## ", start + 1);
+    return DECISIONS.slice(start, next === -1 ? undefined : next);
+  }
+
   it("DC-1: DECISIONS에 `07.2 DC-1` 머리가 하나 있다", () => {
     expect(decisionHeads("07.2 DC-1 ")).toHaveLength(1);
   });
@@ -793,6 +800,112 @@ describe("docs/design — 07.2 DC 규칙 (07.2-05)", () => {
       expect(bullet).toContain('`variant="text"` 전용');
       expect(bullet).toContain("status-map.ts");
       expect(bullet).toContain("새 색 없음");
+    });
+  });
+
+  // DC-2 ~ DC-12 — DECISIONS 항목 하나씩(DC-5는 조건부 기록만).
+  it.each([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])("DECISIONS에 `07.2 DC-%i` 머리가 하나 있다", (n) => {
+    expect(decisionHeads(`07.2 DC-${n} `)).toHaveLength(1);
+  });
+
+  it("DC-5는 조건부 기록이다 — SYSTEM §7-3 열 접기 기준은 바꾸지 않는다", () => {
+    const entry = entryOf(decisionHeads("07.2 DC-5 ")[0] ?? "");
+    expect(entry).toContain("조건부");
+    expect(entry).toContain("07.2-06");
+    expect(SYSTEM).not.toContain("07.2 DC-5");
+  });
+
+  describe("260907과 다른 곳 일곱 (D-7205)", () => {
+    const head = decisionHeads("07.2 260907 다름");
+    it("항목이 하나 있다", () => {
+      expect(head).toHaveLength(1);
+    });
+    const entry = entryOf(head[0] ?? "");
+    it.each(["D-7226", "D-7238", "D-7223", "D-7252", "D-7214", "D-7258", "D-7300"])("결정 번호 %s와 260907 file:line이 있다", (id) => {
+      const line = entry.split("\n").find((l) => l.includes(id)) ?? "";
+      expect(line).not.toBe("");
+      expect(line).toMatch(/\.(ts|tsx|sql):\d+/);
+    });
+    it("반반차 시각 DB 비강제 · 조정 쌍 공유 키를 적는다", () => {
+      expect(entry).toContain("반반차");
+      expect(entry).toContain("adjustment_pair_id");
+    });
+  });
+
+  describe("SYSTEM 절 개정", () => {
+    const input = section(SYSTEM, "### 7-2.", "### 7-3.");
+    const table = section(SYSTEM, "### 7-3.", "### 7-4.");
+    const popups = section(SYSTEM, "### 7-8.", "### 7-9.");
+    const attach = section(SYSTEM, "### 7-10.", "### 7-11.");
+    const listScreen = section(SYSTEM, "### 7-20.", "## 8. 카피 규칙");
+    const listDoc = section(SYSTEM, "### 6-1.", "### 6-2.");
+    const printDoc = section(SYSTEM, "### 6-6", "### 6-7");
+
+    it("DC-4 §7-2에 ReasonField", () => {
+      expect(input).toContain("`ReasonField`");
+      expect(input).toContain("07.2 DC-4");
+    });
+    it("DC-6 §7-10에 variant=\"logo\"", () => {
+      expect(attach).toContain('`variant="logo"`');
+    });
+    it("DC-3 · DC-10 §6-6에 고객 견적서 라우트 `app/print/quotes/[id]`", () => {
+      expect(printDoc).toContain("`app/print/quotes/[id]`");
+      expect(printDoc).toContain("07.2 DC-3");
+    });
+    it("DC-7 §7-8에 계산 도우미 폼 예외", () => {
+      expect(popups).toContain("계산 도우미 폼");
+      expect(popups).toContain("07.2 DC-7");
+    });
+    it("DC-11 §6-1에 선택 링크 줄 `내 연차` · `전체`", () => {
+      const line = listDoc.split("\n").find((l) => l.includes("07.2 DC-11")) ?? "";
+      expect(line).toContain("`내 연차`");
+      expect(line).toContain("`전체`");
+    });
+    it("DC-9 고치기 묶음 4칸(행사명 · 고객사 · 담당 팀 · 담당 PM)", () => {
+      const line = SYSTEM.split("\n").find((l) => l.includes("07.2 DC-9")) ?? "";
+      for (const word of ["행사명", "고객사", "담당 팀", "담당 PM", "`고치기`"]) expect(line).toContain(word);
+    });
+    it("DC-2 `삭제 예정`이 §7-10 취소선 예외 · §7-3 Delete 두 곳에 있다", () => {
+      expect(attach).toContain("07.2 DC-2");
+      expect(attach).toContain("`삭제 예정`");
+      const deleteLines = table.split("\n").filter((l) => /Delete/.test(l) && l.includes("07.2 DC-2"));
+      expect(deleteLines.length).toBeGreaterThanOrEqual(2);
+      expect(table).not.toContain("Delete 줄 삭제(확인 모달)");
+      expect(table).not.toContain("`Delete`: 줄 삭제 확인 모달");
+    });
+
+    it("DC-8 §7-3 (카) 선택 막대 규칙", () => {
+      expect(table).toContain("선택 막대에는 고른 건 요약과 2차만");
+      expect(table).toContain("`고른 건 없음`");
+      expect(table).toContain("`결재할 건 없음`");
+      expect(table).toContain("결재함(≥700)");
+      expect(table).toContain("증빙 목록(≥1024");
+    });
+    it("DC-8 §7-20 예외 문장은 정확히 하나이고 결재함 · 승인만 말한다(증빙 0)", () => {
+      const lines = listScreen.split("\n").filter((l) => l.includes("07.2 DC-8"));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("결재함");
+      expect(lines[0]).toContain("승인");
+      expect(lines[0]).toContain("phoneHidden");
+      expect(lines[0]).not.toContain("증빙");
+    });
+
+    it("DC-12 표 위 줄 순서에 가져오기 결과 줄", () => {
+      const order = "현재 복원 → 이전 차수 복원 → 가져오기 결과 → 잠김 → ④";
+      expect(SYSTEM.split(order)).toHaveLength(2);
+      expect(SYSTEM).not.toContain("이전 차수 복원 → 잠김");
+      const line = SYSTEM.split("\n").find((l) => l.includes(order)) ?? "";
+      expect(line).toContain("엑셀 올리기 결과");
+      expect(line).toContain("`되돌리기`");
+      expect(line).toContain("07.2 DC-12");
+    });
+
+    it("자동 인쇄 없음은 고객 견적서에만 걸린다 — 세 서류는 자동 인쇄 그대로", () => {
+      const lines = SYSTEM.split("\n").filter((l) => l.includes("자동 인쇄 없음"));
+      expect(lines.length).toBeGreaterThanOrEqual(1);
+      for (const l of lines) expect(l).toContain("고객 견적서");
+      const quote = lines.find((l) => l.includes("07.2 DC-3")) ?? "";
+      for (const w of ["지출결의서", "연차 신청서", "프로젝트 정산서", "자동 `window.print()` 그대로"]) expect(quote).toContain(w);
     });
   });
 });

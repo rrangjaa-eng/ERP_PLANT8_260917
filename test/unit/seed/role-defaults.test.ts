@@ -118,8 +118,9 @@ describe("FUND_SEED_PERMISSIONS(07.3 D-7315)", () => {
   });
 });
 
-// 07.2(D-7213 · D-7304): 프로젝트 삭제 키 — 팀장 · 본부 책임자 · 대표에게 쓰기만 켠다. 사원(role-pm)은 없고, 권한표 칸이 쓰기 하나라 보기 · 승인 줄도 없다.
-describe("07.2 프로젝트 권한 키 기본값(D-7213 · D-7304)", () => {
+// 07.2(D-7213 · D-7216 · D-7219 · D-7304): 프로젝트 삭제는 팀장 · 본부 책임자 · 대표, 완료 되돌리기는 대표, 기본 정보 수정은 사원(role-pm) ·
+// 팀장 · 본부 책임자 · 대표에게 쓰기만 켠다. 권한표 칸이 쓰기 하나라 보기 · 승인 줄이 없다.
+describe("07.2 프로젝트 권한 키 기본값(D-7213 · D-7216 · D-7219 · D-7304)", () => {
   const rolesWith = (menu: string, action: string) =>
     ROLE_DEFAULT_PERMISSIONS.filter((row) => row.menu === menu && row.action === action && row.allowed)
       .map((row) => row.roleId)
@@ -133,5 +134,25 @@ describe("07.2 프로젝트 권한 키 기본값(D-7213 · D-7304)", () => {
   it("projects.delete는 MENUS에 쓰기 한 칸으로 있고 시드 표에 보기 · 승인 줄이 없다", () => {
     expect(MENUS.find((menu) => menu.key === "projects.delete")).toEqual({ key: "projects.delete", label: "프로젝트 삭제", actions: ["write"] });
     expect(ROLE_DEFAULT_PERMISSIONS.filter((row) => row.menu === "projects.delete" && row.action !== "write")).toEqual([]);
+  });
+
+  it("projects.reopen 쓰기는 대표에게만 있다(D-7216) — 다른 계급 줄이 없다", () => {
+    expect(ROLE_DEFAULT_PERMISSIONS.filter((row) => row.menu === "projects.reopen").map((row) => `${row.roleId}|${row.action}|${row.allowed}`)).toEqual([
+      `${CEO_ROLE_ID}|write|true`,
+    ]);
+  });
+
+  it("projects.info 쓰기는 사원(role-pm) · 팀장 · 본부 책임자 · 대표에게 있다(D-7219)", () => {
+    expect(rolesWith("projects.info", "write")).toEqual([CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID].sort());
+  });
+
+  it("projects.reopen · projects.info는 MENUS에 쓰기 한 칸으로 있고 시드 표에 보기 · 승인 줄이 없다(D-7304)", () => {
+    expect(MENUS.filter((menu) => menu.key === "projects.reopen" || menu.key === "projects.info")).toEqual([
+      { key: "projects.reopen", label: "완료 되돌리기", actions: ["write"] },
+      { key: "projects.info", label: "프로젝트 기본 정보 수정", actions: ["write"] },
+    ]);
+    expect(
+      ROLE_DEFAULT_PERMISSIONS.filter((row) => (row.menu === "projects.reopen" || row.menu === "projects.info") && row.action !== "write"),
+    ).toEqual([]);
   });
 });

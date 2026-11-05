@@ -104,6 +104,25 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
     await expect(page.getByRole("checkbox", { name: "시스템 관리자 · 프로젝트 참여자 변경 · 쓰기" })).toBeVisible();
   });
 
+  // 07.2-02(D-7304): 프로젝트 삭제 · 완료 되돌리기 · 기본 정보 수정은 쓰기 한 칸만 — MENUS에서 권한표 행이 생기고 보기 · 승인 칸은 없다.
+  test("새 프로젝트 권한 키 셋은 쓰기 체크박스만 한 줄씩 나타난다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/permissions");
+
+    for (const label of ["프로젝트 삭제", "완료 되돌리기", "프로젝트 기본 정보 수정"]) {
+      await expect(page.getByRole("checkbox", { name: `대표 · ${label} · 쓰기`, exact: true })).toHaveCount(1);
+      await expect(page.getByRole("checkbox", { name: `대표 · ${label} · 보기`, exact: true })).toHaveCount(0);
+      await expect(page.getByRole("checkbox", { name: `대표 · ${label} · 승인`, exact: true })).toHaveCount(0);
+    }
+  });
+
   // 회귀: PermissionGrid.module.css의 .wrap이 overflow-x: auto만 갖고 높이
   // 제약이 없어 세로로 넘칠 수 없었다(scrollHeight === clientHeight 항상) —
   // 그런데 overflow-x: auto는 overflow-y도 auto로 계산시켜 .wrap이 자손의

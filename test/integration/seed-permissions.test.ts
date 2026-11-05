@@ -231,6 +231,43 @@ describe("projects.delete 시드(07.2 D-7213)", () => {
   });
 });
 
+// 07.2(D-7216 · D-7219 · D-7304): 완료 되돌리기는 대표, 기본 정보 수정은 사원 · 팀장 · 본부 책임자 · 대표 — 시스템 관리자는 MENUS 루프.
+describe("projects.reopen · projects.info 시드(07.2 D-7216 · D-7219)", () => {
+  it("첫 시드 뒤 projects.reopen 쓰기 행은 대표에만 있고 can()은 대표 · 시스템 관리자만 참이다", async () => {
+    const rows = (await db.select().from(permissionMatrix)).filter((row) => row.menu === "projects.reopen" && row.roleId !== SYSADMIN_ROLE_ID);
+    expect(rows.map((row) => `${row.roleId}|${row.action}|${row.allowed}`)).toEqual([`${CEO_ROLE_ID}|write|true`]);
+    for (const roleId of [CEO_ROLE_ID, SYSADMIN_ROLE_ID]) {
+      expect(await can({ id: `viewer-${roleId}`, roleId }, "projects.reopen", "write"), roleId).toBe(true);
+    }
+    for (const roleId of [DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID]) {
+      expect(await can({ id: `viewer-${roleId}`, roleId }, "projects.reopen", "write"), roleId).toBe(false);
+    }
+  });
+
+  it("첫 시드 뒤 projects.info 쓰기는 사원 · 팀장 · 본부 책임자 · 대표 · 시스템 관리자가 참이고 새 계급은 거짓이다", async () => {
+    for (const roleId of [CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID]) {
+      expect(await can({ id: `viewer-${roleId}`, roleId }, "projects.info", "write"), roleId).toBe(true);
+    }
+    const fresh = await insertRole(SYSTEM_VIEWER, { id: `role-test-${randomUUID()}`, name: `새 계급-${randomUUID()}` });
+    expect(await can({ id: "viewer-fresh", roleId: fresh.id }, "projects.info", "write")).toBe(false);
+  });
+
+  it("세 키 모두 보기 · 승인 행이 없다 — 시스템 관리자도 쓰기 한 줄(D-7304)", async () => {
+    const rows = (await db.select().from(permissionMatrix)).filter((row) => ["projects.delete", "projects.reopen", "projects.info"].includes(row.menu));
+    expect(rows.filter((row) => row.action !== "write")).toEqual([]);
+    const sysadmin = rows.filter((row) => row.roleId === SYSADMIN_ROLE_ID).map((row) => row.menu).sort();
+    expect(sysadmin).toEqual(["projects.delete", "projects.info", "projects.reopen"]);
+  });
+
+  it("관리자가 끈 대표 projects.reopen · 사원 projects.info 쓰기는 재시드가 되살리지 않는다(insert-if-absent)", async () => {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: CEO_ROLE_ID, menu: "projects.reopen", action: "write", allowed: false });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "projects.info", action: "write", allowed: false });
+    await seedMasterData(SYSTEM_VIEWER);
+    expect((await findPermission(SYSTEM_VIEWER, CEO_ROLE_ID, "projects.reopen", "write"))?.allowed).toBe(false);
+    expect((await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "projects.info", "write"))?.allowed).toBe(false);
+  });
+});
+
 // 06.1(D-6113): 증빙 보기는 기획 PM · 팀장에게만 없을 때 켠다. 시스템 관리자는 MENUS 루프가 켠다.
 describe("evidence 시드(06.1 D-6113)", () => {
   // 07.3-02(D-7303 · D-7315): 본부 책임자 증빙 보기 · 세 계급 증빙 등록 쓰기 행이 시드된다 — 소속 없는 viewer의 can()은 자금 게이트로 거짓.
@@ -307,8 +344,10 @@ const SEED_ROLE_PERMISSIONS_BEFORE_0705 = [
   "role-ceo|leave|write|true",
   "role-ceo|projects.complete|write|true",
   "role-ceo|projects.delete|write|true",
+  "role-ceo|projects.info|write|true",
   "role-ceo|projects.member|write|true",
   "role-ceo|projects.period|write|true",
+  "role-ceo|projects.reopen|write|true",
   "role-ceo|projects.status|write|true",
   "role-ceo|projects|view|true",
   "role-division-head|expenses|view|true",
@@ -316,6 +355,7 @@ const SEED_ROLE_PERMISSIONS_BEFORE_0705 = [
   "role-division-head|leave|view|true",
   "role-division-head|leave|write|true",
   "role-division-head|projects.delete|write|true",
+  "role-division-head|projects.info|write|true",
   "role-division-head|projects.member|write|true",
   "role-division-head|projects.period|write|true",
   "role-division-head|projects.status|write|true",
@@ -327,6 +367,7 @@ const SEED_ROLE_PERMISSIONS_BEFORE_0705 = [
   "role-pm|expenses|write|true",
   "role-pm|leave|view|true",
   "role-pm|leave|write|true",
+  "role-pm|projects.info|write|true",
   "role-pm|projects.member|write|true",
   "role-pm|projects|view|true",
   "role-pm|projects|write|true",
@@ -337,6 +378,7 @@ const SEED_ROLE_PERMISSIONS_BEFORE_0705 = [
   "role-team-lead|leave|view|true",
   "role-team-lead|leave|write|true",
   "role-team-lead|projects.delete|write|true",
+  "role-team-lead|projects.info|write|true",
   "role-team-lead|projects.member|write|true",
   "role-team-lead|projects.period|write|true",
   "role-team-lead|projects.status|write|true",
@@ -386,9 +428,10 @@ describe("시드 계급 기본값 표 리팩터 전후 행 집합(07-05 D-722)",
     // 07.1(D-7107): 연차 · 지출결의 시드 루프의 17행이 표로 와 표 루프가 센다 — 131 → 148(행 집합은 위 스냅숏 그대로).
     // 07.3-02(D-7315): 자금 블록은 seedFundScope가 넣어 카운트 밖이다. 재시드에서는 증빙 보기 보충 루프가 증빙 등록 쓰기를 가진
     // 세 계급(사원 · 팀장 · 본부 책임자)을 더 돌아 148 → 151(넣기는 없을 때만이라 행은 그대로).
-    // 07.2-02(D-7213 · D-7304): projects.delete 쓰기 한 칸 — 시스템 관리자 루프 1 + 팀장 · 본부 책임자 · 대표 3 → 155.
+    // 07.2-02(D-7213 · D-7216 · D-7219 · D-7304): 새 키 셋이 각각 쓰기 한 칸 — 시스템 관리자 루프 3 + 계급 기본값 8
+    // (삭제 3 · 완료 되돌리기 1 · 기본 정보 수정 4) → 151 + 11 = 162.
     const result = await seedMasterData(SYSTEM_VIEWER);
-    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 155, visibility: 190 });
+    expect({ permissions: result.permissions, visibility: result.visibility }).toEqual({ permissions: 162, visibility: 190 });
   });
 });
 

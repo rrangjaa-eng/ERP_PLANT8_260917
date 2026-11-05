@@ -15,7 +15,7 @@ import styles from "./pnl.module.css";
 // authentication.md). Phase 4가 이 라우트에 원장 데이터를 올린다.
 export default async function PnlPage() {
   const { viewer } = await requireSession();
-  // 04-42(CEO 리뷰 B-13) — 상단 메뉴는 누구에게나 다섯 전부라 기획 PM도 여기 닿는다. 리저브 대장 링크는 대장이
+  // 04-42(CEO 리뷰 B-13) — 상단 메뉴는 누구에게나 다섯 전부라 사원도 여기 닿는다. 리저브 대장 링크는 대장이
   // 열리는 두 조건(pnl 보기 + reserve.amount 노출)일 때만 그린다 — 404로 가는 링크가 대장의 존재를 알리지 않는다.
   const [canViewPnl, reserveShown] = await Promise.all([can(viewer, "pnl", "view"), visible(viewer, "reserve.amount")]);
 

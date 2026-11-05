@@ -98,6 +98,15 @@
   text-align: left;
 }
 
+/* 07.3-04(D-7318) 그룹 줄 본부 조건 표지 — 이름 바로 뒤 보조 글자(끝 정렬 아님). 폰은 값 칸 체크박스 옆에서 같은 클래스. */
+.groupNote {
+  margin-inline-start: var(--s-2);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-regular);
+  white-space: nowrap;
+}
+
 /* §7-3 그룹 줄은 아래 선 없음(공통 th 규칙보다 우선하도록 .table 아래에 둔다). */
 .table .groupHeader {
   border-bottom: 0;
@@ -218,6 +227,8 @@
 /* 폰 칸 — 체크박스를 감싸 PC `td`와 같은 저장 중 면(.dirty) · 실패 표시(.errorCell)를 받는다. */
 .mobileCell {
   display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .mobileCheckbox {

@@ -686,6 +686,27 @@ describe("06.1 증빙 — 상태 낱말 · 잠김 · 링크 건수 · 폰 시트
   });
 });
 
+describe("docs/design/SYSTEM.md §7-13 — 그룹 줄 본부 조건 표지 (07.3-04 · D-7318)", () => {
+  const grid = section(SYSTEM, "### 7-13.", "### 7-14.");
+
+  it("그룹 줄 본부 조건 표지 문장이 있고 회사 전체 계급은 본부 조건이 없다고 적는다", () => {
+    expect(grid).toContain("본부 조건");
+    expect(grid).toContain("경영관리본부만");
+    expect(grid).toContain("회사 전체 계급은 본부 조건 없음");
+    expect(grid).toContain("aria-describedby");
+  });
+
+  it("설정이 비면 「자금 본부 미지정」 표지와 표 위 잠김 한 줄을 적는다", () => {
+    expect(grid).toContain("자금 본부 미지정");
+    expect(grid).toContain("자금 기능 본부 미지정 · 설정");
+  });
+
+  it("DECISIONS에 D-7318 항목과 폰 개정 10 비교 문장이 있다", () => {
+    expect(DECISIONS).toContain("D-7318");
+    expect(DECISIONS).toContain("roles-client.tsx:54");
+  });
+});
+
 // 07.4-01 D-7404 · D-7410 · D-7412 — 서류 출력 공용 인쇄 틀: DECISIONS 기록 뒤 SYSTEM §6-6 반영(시스템 이탈 순서).
 describe("docs/design — 서류 출력 공용 인쇄 틀 (07.4-01)", () => {
   const print = section(SYSTEM, "### 6-6", "### 6-7");

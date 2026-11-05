@@ -29,7 +29,8 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
-import { setResignationDate } from "@/domain/people";
+import { setHireDate, setResignationDate } from "@/domain/people";
+import { LEAVE_DOCUMENT_KIND, LeaveValidationError, submitLeave } from "@/domain/leave";
 import { lockoutConfig } from "@/domain/auth/lockout";
 import { recordAttempt } from "@/repositories/login-attempts";
 import { setSettingValue } from "@/domain/settings/registry";
@@ -994,6 +995,85 @@ async function printExpense(browser: Browser, baseURL: string | undefined): Prom
   return { vars: { expenseId }, viewer: teamLead };
 }
 
+// 07.4-02 date helpers — 서버가 휴일 · 겹침을 거절하면(LeaveValidationError) 다음 영업일을 시도한다. 실행일에 따라 깨지지 않게 날짜는 상대값이다.
+const DAY_MS = 86_400_000;
+const isoOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+const addDays = (iso: string, days: number): string => isoOf(Date.parse(`${iso}T00:00:00Z`) + days * DAY_MS);
+const isWeekend = (iso: string): boolean => [0, 6].includes(new Date(`${iso}T00:00:00Z`).getUTCDay());
+
+async function submitLeaveFrom(
+  drafter: Person,
+  from: string,
+  input: { kind: "full_day" | "half_day"; half?: "am" | "pm"; note?: string; twoDays?: boolean },
+): Promise<{ leaveId: string; startDate: string; endDate: string }> {
+  for (let offset = 0; offset < 60; offset += 1) {
+    const startDate = addDays(from, offset);
+    if (isWeekend(startDate)) continue;
+    let endDate = startDate;
+    if (input.twoDays) {
+      endDate = addDays(startDate, 1);
+      while (isWeekend(endDate)) endDate = addDays(endDate, 1);
+    }
+    try {
+      const result = await submitLeave(drafter.viewer, {
+        kind: input.kind,
+        startDate,
+        endDate: input.kind === "half_day" ? "" : endDate,
+        half: input.half ?? "",
+        note: input.note ?? null,
+      });
+      return { leaveId: result.leaveId, startDate, endDate };
+    } catch (error) {
+      if (!(error instanceof LeaveValidationError)) throw error;
+    }
+  }
+  throw new Error(`연차를 제출할 수 있는 날짜가 없습니다: ${from}`);
+}
+
+// print-leave: 07.4-02 연차 신청서 인쇄물 캡처용. 기안자는 둘이다 — 같은 기안자 · 같은 회계연도로는 「잔고 한 줄」과 「그해 부여 없음 → 잔여 초과 줄까지」를 함께 만들 수 없다.
+//  A(입사 3년 전 · 그해 연차 부여 있음): {leaveId} F-L1 결재 중(1단계 대기 · 잔고 한 줄), {leaveId3} F-L3 승인 완료(잔고 「—」 · 상태 글자 없음)
+//  B(입사 10일 전 · 그해 부여 없음): {leaveId2} F-L2 결재 중 반차 · 비고 10줄 · 잔고 여러 줄(잔여 초과)
+// 보는 사람은 같은 팀의 팀장 — F-L1 · F-L2의 지금 단계(1단계) 후보이고 F-L3의 1단계를 처리한 사람이다(위 단계 담당은 1단계에 머문 문서를 못 본다).
+async function printLeave(): Promise<SeedResult> {
+  const today = seoulToday();
+  const year = Number(today.slice(0, 4));
+  const suffix = randomUUID().slice(0, 6);
+  const yearStart = `${year}-01-01`;
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처연차본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처연차팀-${suffix}` });
+  const mgmtTeam = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.name === "경영관리팀");
+  if (!mgmtTeam) throw new Error("시드된 경영관리팀 없음");
+  const drafterA = await makePerson("기안A", "role-pm", team.id, yearStart);
+  const drafterB = await makePerson("기안B", "role-pm", team.id, yearStart);
+  const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
+  const mgmt = await mgmtHead(mgmtTeam, yearStart);
+  const ceo = await makePerson("대표", "role-ceo", team.id, yearStart);
+
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_NAME, "플랜트에이트 주식회사");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_ADDRESS, "서울특별시 성동구 왕십리로 10");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_BUSINESS_NO, "123-45-67890");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_REPRESENTATIVE, "김대표");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_PHONE, "02-123-4567");
+
+  await setHireDate(SYSTEM_VIEWER, drafterA.viewer.id, `${year - 3}-01-01`);
+  // 입사 10일 전 — 오늘이 1월이면 그해 1월 1일로 당겨 같은 회계연도 안에 둔다(입사 연도 안 · 첫 월차 적립 전).
+  const hireB = addDays(today, -10) < yearStart ? yearStart : addDays(today, -10);
+  await setHireDate(SYSTEM_VIEWER, drafterB.viewer.id, hireB);
+
+  const noteLines = Array.from({ length: 10 }, (_, index) => `${index + 1}. 행사 준비로 현장 일정이 겹쳐 반차를 신청합니다`).join("\n");
+  const first = await submitLeaveFrom(drafterA, `${year}-03-02`, { kind: "full_day", twoDays: true, note: "가족 행사" });
+  const third = await submitLeaveFrom(drafterA, addDays(first.endDate, 7), { kind: "full_day", twoDays: true });
+  const second = await submitLeaveFrom(drafterB, addDays(hireB, 1), { kind: "half_day", half: "am", note: noteLines });
+
+  // F-L3 승인 완료 — 팀장 → (본부장 빈 자리 건너뜀) → 경영관리 → 대표.
+  for (const approver of [teamLead, mgmt, ceo]) {
+    const view = await getApprovalView(approver.viewer, { kind: LEAVE_DOCUMENT_KIND, documentId: third.leaveId });
+    if (!view) throw new Error("결재 인스턴스가 없습니다");
+    await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: view.version });
+  }
+  return { vars: { leaveId: first.leaveId, leaveId2: second.leaveId, leaveId3: third.leaveId }, viewer: teamLead };
+}
+
 // people-list-filled: 07-17 사람 목록 · 상세 캡처용 — 시스템 관리자가 보는 사람 12명(잠김 2 · 퇴직 1 · 팀장 1 · 나머지는 임시 비밀번호 사용 중).
 // {lockedId}는 잠긴 재직자 한 명(상세 로그인 섹션의 `잠금 풀기` · `비밀번호 초기화`가 함께 보이는 상태).
 async function peopleListFilled(): Promise<SeedResult> {
@@ -1032,5 +1112,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return peopleListFilled();
     case "print-expense":
       return printExpense(browser, baseURL);
+    case "print-leave":
+      return printLeave();
   }
 }

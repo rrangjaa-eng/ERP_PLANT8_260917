@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
@@ -11,6 +12,8 @@ import {
   REJECT_REASON_MAX,
   REJECT_REASON_TOO_LONG_MESSAGE,
 } from "@/domain/approvals";
+import { PcOnly } from "@/app/(app)/admin/pc-only";
+import buttonStyles from "@/ui/button/Button.module.css";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
@@ -116,6 +119,20 @@ export default async function LeaveDocumentPage({
       title={formatLeaveTitle(leave)}
       status={statusKey ? <StatusTag status={leaveStatusWord(statusKey)} /> : undefined}
       meta={leave.number || undefined}
+      // 07.4-02 D-7409: 결재 인스턴스가 있을 때만 머리 줄 2차 「인쇄」(새 탭). 폰(<700)에서는 PcOnly가 숨긴다.
+      actions={
+        view?.instanceId
+          ? {
+              secondary: (
+                <PcOnly>
+                  <Link href={`/print/leaves/${id}`} target="_blank" rel="noopener" prefetch={false} className={`${buttonStyles.btn} ${buttonStyles.secondary}`}>
+                    인쇄
+                  </Link>
+                </PcOnly>
+              ),
+            }
+          : undefined
+      }
     >
       <KvList items={items} />
       <DocumentActions

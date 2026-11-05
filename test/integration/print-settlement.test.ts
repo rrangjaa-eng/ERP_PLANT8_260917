@@ -225,6 +225,18 @@ describe("정산서 지출결의 목록 — 지출결의 목록 화면과 같은
     for (const row of rows ?? []) expect(row).toHaveProperty("supply");
   }, 60_000);
 
+  it("일련번호 자릿수가 프로젝트 도중 바뀌어도 번호는 숫자 순서다(/review 지적)", async () => {
+    const world = await expenseWorld();
+    const { fx } = world;
+    const [first, second] = world.numbered;
+    // 앞 문서는 1자리(…-9), 뒤 문서는 자릿수를 4로 늘린 뒤의 번호(…-0010) — 글자 비교면 …-0010이 앞에 온다.
+    await db.update(expenses).set({ number: "SORT-9" }).where(eq(expenses.id, first?.expenseId ?? ""));
+    await db.update(expenses).set({ number: "SORT-0010" }).where(eq(expenses.id, second?.expenseId ?? ""));
+    const rows = (await listProjectExpenseRows(fx.ceo, fx.projectId)) ?? [];
+    const order = rows.map((row) => row.number).filter((number) => number?.startsWith("SORT-"));
+    expect(order).toEqual(["SORT-9", "SORT-0010"]);
+  }, 60_000);
+
   it("자기 범위 계급의 행은 그 사람이 지출결의 목록 화면에서 보는 A 행과 같은 집합이다", async () => {
     const world = await expenseWorld();
     const { fx } = world;

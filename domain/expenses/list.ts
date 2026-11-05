@@ -287,7 +287,8 @@ export async function listProjectExpenseRows(viewer: Viewer, projectId: string, 
   const summary = await summarizeExpenseList(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, filter });
   if (summary.viewCount === 0) return [];
   const rows = await listExpensePage(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, limit: summary.viewCount, offset: 0, filter });
-  const sorted = [...rows].sort((a, b) => ((a.number ?? "") < (b.number ?? "") ? -1 : (a.number ?? "") > (b.number ?? "") ? 1 : 0));
+  // 숫자 비교 — 일련번호 자릿수 설정이 프로젝트 도중 바뀌어도(document-numbering seq_digits) 순서가 섞이지 않는다.
+  const sorted = [...rows].sort((a, b) => (a.number ?? "").localeCompare(b.number ?? "", "ko", { numeric: true }));
   const [payments, loaded] = await Promise.all([paymentStatuses(viewer, sorted, today), loadExpenseSchedules(viewer, sorted)]);
   return projectMany(
     viewer,

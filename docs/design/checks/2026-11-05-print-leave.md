@@ -1,5 +1,5 @@
 # 연차 신청서 인쇄 · 상세 「인쇄」 입구 — 점검표
-화면: app/print/leaves/, app/(app)/leave/[id]/page.tsx
+화면: app/print/leaves/, app/(app)/leave/[id]/page.tsx, app/print/_frame/print-frame.module.css
 기준: BRIEF.md · frontend.md 화면 사용성 원칙 · CHECKLIST.md §1 · SYSTEM.md §6-6 (인쇄 템플릿) · 07.4-UI-SPEC.md P2
 
 ## 원칙
@@ -20,3 +20,26 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: 연차 전용 CSS module을 만들지 않았고(`ls app/print/leaves/[id]/*.module.css` 0) 공용 틀 print-frame.module.css를 고치지 않았다. 잔고 줄 색(tone)은 종이에 싣지 않는다
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 종이는 210mm 고정 가로 스크롤이 SYSTEM §6-6 규정이고 화면 바는 공용 틀(07.4-01 단언 16 통과). 입구는 폰에서 접근성 트리 0 · 머리 줄 높이 = 제목 블록 높이를 mobile-print-entry 연차 사례가 375 · 320에서 DOM 실측한다
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: Task 2 캡처 스펙 design-capture-07.4-02(DESIGN_CAPTURE_DIR) 산출물 — 판정은 스크린샷 육안이 아니라 measurements json의 DOM 실측(CLAUDE.md §6)
+
+## 독립 DOM 감사 (Task 2 ④ · ⑤ · ⑥)
+- 보고서: `/mnt/project-files/07.4-review/exec/07.4-02-dom-audit.md` · `.planning/phases/07.4-document-print/07.4-UI-REVIEW.md` 「07.4-02 연차 신청서」 (gsd-ui-auditor, Opus, `CI=true` 프로덕션 빌드, 계산 스타일 · 상자 · 접근성 트리 · `page.pdf()` 쪽 수 실측 — 스크린샷 육안 판정 없음)
+- 결과: 24 단언 중 23 통과. 07.4-02 고유 결함 0. 공용 틀 결함 D2 하나.
+
+| 단언 | 폭 | 판정 |
+|---|---|---|
+| 1 갈래 A · 2 틀 폭 · 4 배경 · 6 상태 글자 · 7 결재 칸 · 9 회사 줄 · 12 404 · 13 회색조 · 14 토큰 · 18 `비고` breakable · 19 표 없음 | 1280 · 768 · 700 · 375 · 320 + print A4 | 통과 |
+| 5 라벨 7행(입사일 0) · 11 입구(폰 숨김 · `.head` 틈 없음) · 16 인쇄 바 폭 | 1280 · 768 · 700 · 375 · 320 | 통과 |
+| 3 계산 색 집합 | print A4 | D2 발견 → 고침 · 아래 |
+| 종이 잔고 = 화면 잔고 · 일수 「일」 한 번 · PDF 1쪽 | F-L1 · F-L2 · F-L3 | 통과 |
+
+- 연차 라벨 7행(고용 시작 날짜 행 제외 — D-7413 · UI-SPEC도 디자인 검토 B1로 7행)
+
+## 고친 것
+- **D2 (공용 틀 `app/print/_frame/print-frame.module.css` `.rule`)**: 제목 괘선 `<hr>`에 브라우저 기본 `color`(회색 rgb(128,128,128))가 print 계산 색 집합에 남아 UI-SPEC 단언 3 문구를 어겼다(칠해진 픽셀은 0). `.rule`에 `color: inherit;` 한 줄(커밋 80436710 `fix(07.4-01)`, 오케스트레이터 결정으로 07.4-01 후속). 같은 틀을 쓰는 연차 · 지출결의서 print 계산 색을 다시 쟀다 — 둘 다 {rgb(0,0,0), rgb(0,84,70), rgb(207,219,215), rgb(255,255,255), 투명}뿐이고 회색(R=G=B, 0 · 255 제외) 0, `hr` 계산 color는 rgb(0,0,0)이다.
+- 07.4-02 페이지 · 입구에는 고칠 결함이 없었다.
+
+## 캡처 · 측정
+- 캡처 폴더: `test-results/design-capture-07.4-02/` (gitignored) — `state-<f-l1 | f-l2-note | f-l3-approved | f-x-404 | detail-entry>-<폭>.png`, print A4 PNG, `measurements-state-*.json`. Codex 경로 캡처(`/design-review` 증거)는 `.planning/phases/07.4-document-print/codex/07.4-02/`에 PR 게이트에서 남긴다.
+- backstop 1 (E2 입구 overflow): `/leave/{id}` 머리 줄 actions `scrollWidth 50 <= clientWidth 50` — 1280 · 768 (700은 감사자가 같은 판정, 320 · 375에서는 PcOnly로 actions가 없다).
+- backstop 2 (print-media 회색조): `filter: grayscale(1)` 상태에서 번호 줄 상태 글자 DOM 존재 — F-L1 · F-L2 「팀장 결재 중」, F-L3 없음(승인 완료). 320 · 375 · 768 · 1280 + 화면 바 700 모두 가로 넘침은 종이 210mm 고정(793.688px) 때문이며 SYSTEM §6-6 · UI-SPEC:540 · :583이 합격으로 정한다.
+- 미판정 항목(사람 확인): 실물 흑백 프린터 출력은 07.4-03 끝 사람 확인 항목이다.

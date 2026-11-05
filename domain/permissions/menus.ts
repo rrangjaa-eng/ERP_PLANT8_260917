@@ -19,9 +19,8 @@ export const MENUS: MenuDef[] = [
   { key: "projects", label: "프로젝트" },
   // 04-02(D-57): 매출 섹션 쓰기 주체가 갈린다 — 계약 금액은 기존
   // "projects" 메뉴의 write(PM)를 그대로 쓰고, 세금계산서 발행·입금 줄은
-  // 이 새 메뉴의 write로 별도 게이트한다("경영관리"는 이 milestone의
-  // SEED_ROLES 5종에 없는 조직상 역할이라 권한표에서 관리자가 실제
-  // 담당 계급에 배정한다 — 코드에 역할 이름을 박지 않는다).
+  // 이 새 메뉴의 write로 별도 게이트한다(시드가 사원 · 팀장 · 본부 책임자에게
+  // 켜고 경영관리본부 소속만 쓴다 — 07.3 D-7315 · can(), 코드에 역할 이름을 박지 않는다).
   { key: "projects.revenue", label: "매출 정산" },
   // 04-20(D-46·D-79): 사람의 상태 전환 주체가 둘로 갈린다 — 수주중·미수주의
   // 전환은 "projects.status"(팀장 이상 + 계급 업무 범위), 정산 → 완료는
@@ -36,7 +35,7 @@ export const MENUS: MenuDef[] = [
   // 04-13(D-83): 경영관리의 원가 보정(조정 줄) — 프로젝트 상태와 무관하게 조정 줄만 만들고 고친다. 매출 기록
   // (projects.revenue)과 다른 일이라 따로 두고, 시드는 본부 책임자에게만 켠다(07.3 D-7305 — 경영관리본부 소속만 쓴다, can()).
   { key: "projects.adjustment", label: "견적 조정 줄" },
-  // 07-15(D-722 · D-729): 예산 현황 — 시드 계급 중 시스템 관리자만 MENUS 루프로 켜고, 경영관리 쓰기는 배포 뒤 권한표에서 켠다.
+  // 07-15(D-722 · D-729): 예산 현황 — 시드가 사원 · 팀장 · 본부 책임자에게 켜고 경영관리본부 소속만 쓴다(07.3 D-7315 · can()).
   { key: "projects.budget", label: "예산 현황" },
   { key: "expenses", label: "지출결의" },
   { key: "expenses.team", label: "팀 지출결의 보기" },
@@ -46,7 +45,8 @@ export const MENUS: MenuDef[] = [
   { key: "expenses.evidence_void", label: "증빙 무효 처리" },
   { key: "expenses.evidence_attach", label: "결재 중 증빙 붙이기" },
   // 06-27(D-601): 지급 처리 · 구매 처리 · 카드 대리 등록 — 경영관리의 일이라 상위 메뉴(expenses · cards) 쓰기와 따로 둔다(정확 일치 판정).
-  // 위 증빙 키들처럼 시드 계급 중에는 시스템 관리자만 MENUS 루프로 켜지고, 경영관리 계급은 관리자가 권한표에서 켠다.
+  // 지급 처리 · 구매 처리는 위 증빙 키들처럼 시드가 사원 · 팀장 · 본부 책임자에게 켜고 경영관리본부 소속만 쓴다(07.3 D-7315 · can()).
+  // 카드 대리 등록은 계급대로이고(D-7308) 시드 계급 중에는 시스템 관리자만 MENUS 루프로 켜진다.
   { key: "expenses.payments", label: "지급 처리" },
   { key: "cards", label: "법인카드" },
   { key: "cards.purchases", label: "구매 처리" },

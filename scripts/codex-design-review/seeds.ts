@@ -2,7 +2,7 @@ import { createHash, randomInt, randomUUID } from "node:crypto";
 import { expect, type Browser } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, files } from "@/db/schema";
+import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, files, purchaseRequests } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -11,14 +11,14 @@ import { changeProjectStatus } from "@/domain/projects/status";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
 import { findApprovalGraphByDocument } from "@/repositories/approvals";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
 import { voidEvidence } from "@/domain/evidence";
-import { createPurchaseRequest, precheckPurchaseRequest } from "@/domain/purchase-requests";
+import { completePurchaseRequest, createPurchaseRequest, precheckPurchaseCompletion, precheckPurchaseRequest } from "@/domain/purchase-requests";
 import { saveRevenue } from "@/domain/revenue";
 import { planAccountNumberUpdate } from "@/domain/vendors";
 import { approvalBasis } from "@/repositories/quote-revisions";
@@ -27,14 +27,18 @@ import { listOrgSnapshot } from "@/repositories/org-snapshot";
 import { findProjectById } from "@/repositories/projects";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
+import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
 import { setHireDate, setResignationDate } from "@/domain/people";
 import { LEAVE_DOCUMENT_KIND, LeaveValidationError, submitLeave } from "@/domain/leave";
 import { lockoutConfig } from "@/domain/auth/lockout";
 import { recordAttempt } from "@/repositories/login-attempts";
-import { setSettingValue } from "@/domain/settings/registry";
+import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import {
+  APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED,
+  APPROVAL_ROUTE_SETTLEMENT_STEP2_ENABLED,
+  APPROVAL_ROUTE_SETTLEMENT_STEP3_ENABLED,
   FUND_DIVISION_ORG_UNIT,
   PRINT_COMPANY_ADDRESS,
   PRINT_COMPANY_BUSINESS_NO,
@@ -1074,6 +1078,136 @@ async function printLeave(): Promise<SeedResult> {
   return { vars: { leaveId: first.leaveId, leaveId2: second.leaveId, leaveId3: third.leaveId }, viewer: teamLead };
 }
 
+// print-settlement: 07.4-03 프로젝트 정산서 인쇄물 캡처용 — 같은 조직의 정산 결재 중 프로젝트 둘.
+// F-S1 {projectId} = 지출결의 3(4단 결재 통과) · 구매 요청 2(1건 구매 완료 · 카드 사용) · 결재선 기본(대표 1단) — 1쪽.
+// F-S3 {projectId2} = 지출결의 45 · 구매 요청 12 · 결재선 4단계(팀장 → 본부장 → 경영관리 → 대표, 단계마다 결재권자가 있다) — 여러 쪽.
+// 결재선 1~3단 켜기는 F-S3 올리기 동안만이고 끝나면 원래 값으로 되돌린다. 증빙은 브라우저 올리기 대신 선결제 표시로 ⑧을 푼다(48건 — 승인 문서는 점검을 막지 않는다).
+// viewer = pnl 보기 + 전사 범위 임시 계급(손익 절이 보이는 프로젝트 행 범위 안 — 범위 밖 결재 관련자는 손익 절이 없다).
+async function printSettlement(): Promise<SeedResult> {
+  const today = seoulToday();
+  const lastYear = Number(today.slice(0, 4)) - 1;
+  const suffix = randomUUID().slice(0, 6);
+  const yearStart = `${today.slice(0, 4)}-01-01`;
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처정산서본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처정산서팀-${suffix}` });
+  const mgmtTeam = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.name === "경영관리팀");
+  if (!mgmtTeam) throw new Error("시드된 경영관리팀 없음");
+  const drafter = await makePerson("기안담당남궁", "role-pm", team.id, yearStart);
+  const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
+  const divisionHead = await makePerson("본부장", "role-division-head", team.id, yearStart);
+  const mgmt = await mgmtHead(mgmtTeam, yearStart);
+  const ceo = await makePerson("대표", "role-ceo", team.id, yearStart);
+
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_NAME, "플랜트에이트 주식회사");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_ADDRESS, "서울특별시 성동구 왕십리로 10");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_BUSINESS_NO, "123-45-67890");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_REPRESENTATIVE, "김대표");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_PHONE, "02-123-4567");
+  await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, CAPTURE_ONLINE_VENDOR_NAME);
+
+  const vendor = await vendorWithAccount(`캡처정산서거래처-${suffix}`);
+  const longVendor = await vendorWithAccount(`캡처 무대 · 조명 · 음향 통합 제작 협력사 주식회사-${suffix}`);
+  const online = await insertVendor(SYSTEM_VIEWER, { name: CAPTURE_ONLINE_VENDOR_NAME, normalizedName: CAPTURE_ONLINE_VENDOR_NAME.toLowerCase() });
+  const [subcategory] = await listCodeItems(SYSTEM_VIEWER, { tableKey: QUOTE_SUBCATEGORY_TABLE_KEY, scope: { rows: "all", includeArchived: false }, includeInactive: false });
+  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+
+  const buyerRole = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `캡처정산서구매-${suffix}`, workScope: "team" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: buyerRole.id, menu: "cards.purchases", action: "write", allowed: true });
+  for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value", "quote.amount", "card_usage.value", "card_usage.amount"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: buyerRole.id, infoItem, visible: true });
+  }
+  // 07.3-01: 자금 키 보유자는 경영관리본부 소속이어야 한다 — 경영관리팀 발령.
+  const buyer = await makePerson("구매", buyerRole.id, mgmtTeam.id, yearStart);
+
+  async function settlementProject(name: string, expenseCount: number, purchaseCount: number, longText: boolean): Promise<string> {
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처정산서클라이언트-${name}-${suffix}`, normalizedName: `캡처정산서클라이언트-${name}-${suffix}` });
+    const period = { startDate: `${lastYear}-11-01`, endDate: `${lastYear}-12-31` };
+    const project = await createProject(drafter.viewer, { clientId: client.id, teamId: team.id, pmUserId: drafter.viewer.id, name: `캡처정산서${name}-${suffix}`, ...period });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision || !project.id) throw new Error("프로젝트 · 1차 차수가 없습니다");
+    const row = (itemName: string, vendorId: string, executionKrw: number) => ({
+      id: randomUUID(),
+      isNew: true as const,
+      subcategory: subcategory?.value ?? "",
+      itemName,
+      vendorId,
+      unitPrice: { currency: "KRW" as const, amount: executionKrw + 500_000, fxRate: 1 },
+      execution: { currency: "KRW" as const, amount: executionKrw, fxRate: 1 },
+    });
+    // longText면 첫 줄은 긴 항목 · 긴 지급처(줄바꿈 · 열 폭 실측용 — F-S3만. F-S1은 1쪽).
+    const expenseRows = Array.from({ length: expenseCount }, (_, index) =>
+      longText && index === 0
+        ? row(`메인 스테이지 구조물 설치 · 철거 및 현장 안전 관리 인력 추가 투입-${suffix}`, longVendor.id, 4_300_000)
+        : row(`무대 제작 ${index + 1}-${suffix}`, vendor.id, 1_000_000 + index * 10_000),
+    );
+    const onlineRow = row(`현장 소모품-${suffix}`, online.id, 5_000_000);
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [...expenseRows, onlineRow] });
+    await changeProjectStatus(teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
+    const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
+    await setCustomerApproval(drafter.viewer, revision.id, { approvalBasis: "verbal", approvedOn: period.endDate, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+
+    for (const line of expenseRows) {
+      const created = await createExpenseFromLines(drafter.viewer, { lineIds: [line.id], fields: { note: "행사 운영비" } });
+      const expenseId = created.created[0]?.expenseId;
+      if (!expenseId) throw new Error(`작성 중 문서를 만들지 못했다: ${JSON.stringify(created.blocked)}`);
+      const draft = await findExpenseById(drafter.viewer, expenseId);
+      if (!draft) throw new Error("작성 중 문서를 찾지 못했다");
+      const saved = await saveExpenseDraft(drafter.viewer, { expenseId, expectedVersion: draft.version, fields: { prepaid: true, prepaidReason: "캡처 시드 선결제" } });
+      const submitted = await submitExpense(drafter.viewer, { expenseId, expectedVersion: saved.version });
+      if (submitted.kind !== "submitted") throw new Error(`지출결의가 제출되지 않았다: ${JSON.stringify(submitted)}`);
+      for (const approver of [teamLead, divisionHead, mgmt, ceo]) {
+        const view = await getApprovalView(approver.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+        if (!view) throw new Error("결재 인스턴스가 없습니다");
+        await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: view.version });
+      }
+    }
+
+    const requestIds: string[] = [];
+    for (let index = 0; index < purchaseCount; index += 1) {
+      const itemName = longText && index === 0 ? `행사장 안내 배너 · 현수막 · 바닥 유도 스티커 묶음-${suffix}` : `현수막 ${index + 1}장-${suffix}`;
+      const input = { linkKind: "quote_line" as const, lineId: onlineRow.id, itemName, linkUrl: null, estimate: { currency: "KRW" as const, amount: 110_000 + index * 1_000, fxRate: 1 }, memo: null };
+      requestIds.push((await createPurchaseRequest(drafter.viewer, input, await precheckPurchaseRequest(drafter.viewer, input))).id);
+    }
+    const firstRequest = requestIds[0];
+    if (firstRequest) {
+      const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `캡처정산서카드사-${name}-${suffix}`, numberLast4: pickCardLast4(await takenCardLast4()), label: `캡처정산서카드-${name}`, kind: "shared" });
+      const [requested] = await db.select({ version: purchaseRequests.version }).from(purchaseRequests).where(eq(purchaseRequests.id, firstRequest));
+      if (!requested || !card.id) throw new Error("요청 · 카드 없음");
+      const input = { requestId: firstRequest, version: requested.version, corpCardId: card.id, usedOn: today, merchantVendorId: null, total: { currency: "KRW" as const, amount: 99_000, fxRate: 1 }, evidenceTypeCode: "invoice", memo: null };
+      await completePurchaseRequest(buyer.viewer, input, await precheckPurchaseCompletion(buyer.viewer, input));
+    }
+
+    // 발행 합계(매출 기준)는 견적 합보다 조금 작게 — 손익 칸이 견적 합과 다른 기준액 · 양의 수익금을 보인다.
+    await saveRevenue(SYSTEM_VIEWER, project.id, { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: period.endDate, amount: { currency: "KRW", amount: basis.totalKrw - 330_000, fxRate: 1 } }] });
+    // 종료일이 지난 진행 프로젝트는 앞선 쓰기(잠금 안 재판정)에서 이미 정산이 됐을 수 있다 — 상태로 확인한다.
+    await applyAutoSettlement({ projectIds: [project.id] });
+    const status = (await findProjectById(SYSTEM_VIEWER, project.id))?.status;
+    if (status !== "settling") throw new Error(`자동 정산이 되지 않았습니다: ${status}`);
+    return project.id;
+  }
+
+  const projectId = await settlementProject("한쪽", 3, 2, false);
+  const first = await submitSettlement(drafter.viewer, { projectId });
+  if (first.kind !== "submitted") throw new Error(`정산 결재가 올라가지 않았습니다: ${JSON.stringify(first)}`);
+
+  const projectId2 = await settlementProject("여러쪽", 45, 12, true);
+  const routeSteps = [APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED, APPROVAL_ROUTE_SETTLEMENT_STEP2_ENABLED, APPROVAL_ROUTE_SETTLEMENT_STEP3_ENABLED];
+  const previous = await Promise.all(routeSteps.map((def) => getSettingValue(def)));
+  try {
+    for (const def of routeSteps) await setSettingValue(SYSTEM_VIEWER, def, true);
+    const second = await submitSettlement(drafter.viewer, { projectId: projectId2 });
+    if (second.kind !== "submitted") throw new Error(`정산 결재가 올라가지 않았습니다: ${JSON.stringify(second)}`);
+  } finally {
+    for (const [index, def] of routeSteps.entries()) await setSettingValue(SYSTEM_VIEWER, def, previous[index] ?? false);
+  }
+
+  const viewerRole = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `캡처정산서손익-${suffix}`, workScope: "company", viewScope: "company" });
+  for (const menu of ["projects", "expenses", "pnl"]) await upsertPermission(SYSTEM_VIEWER, { roleId: viewerRole.id, menu, action: "view", allowed: true });
+  for (const item of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: viewerRole.id, infoItem: item.key, visible: true });
+  const viewer = await makePerson("손익", viewerRole.id, team.id, yearStart);
+  return { vars: { projectId, projectId2 }, viewer };
+}
+
 // people-list-filled: 07-17 사람 목록 · 상세 캡처용 — 시스템 관리자가 보는 사람 12명(잠김 2 · 퇴직 1 · 팀장 1 · 나머지는 임시 비밀번호 사용 중).
 // {lockedId}는 잠긴 재직자 한 명(상세 로그인 섹션의 `잠금 풀기` · `비밀번호 초기화`가 함께 보이는 상태).
 async function peopleListFilled(): Promise<SeedResult> {
@@ -1114,5 +1248,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return printExpense(browser, baseURL);
     case "print-leave":
       return printLeave();
+    case "print-settlement":
+      return printSettlement();
   }
 }

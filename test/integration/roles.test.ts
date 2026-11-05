@@ -36,6 +36,12 @@ describe("roles (ADMN-08, 실제 Postgres)", () => {
     expect(ids).toEqual([...SEED_ROLES.map((r) => r.id)].sort());
   });
 
+  // 07.3(D-7302 · D-7317): 새 DB는 시드 이름으로 선다 — role-pm 표시 이름은 「사원」(id · 권한 그대로).
+  it("빈 DB에 시드를 돌리면 role-pm 이름이 「사원」이다", async () => {
+    const roles = await listRoles(SYSTEM_VIEWER);
+    expect(roles.find((r) => r.id === DEFAULT_ROLE_ID)?.name).toBe("사원");
+  });
+
   it("계급을 추가하고 이름을 바꿀 수 있다", async () => {
     const id = `role-test-${randomUUID()}`;
     await insertRole(SYSTEM_VIEWER, { id, name: "임시 계급" });
@@ -130,7 +136,7 @@ describe("계급 업무 범위(D11·D20)", () => {
     return (await findRoleById(SYSTEM_VIEWER, id))?.workScope;
   }
 
-  it("빈 DB에 시드를 돌리면 팀장·기획 PM은 team, 본부 책임자·대표·시스템 관리자는 company다", async () => {
+  it("빈 DB에 시드를 돌리면 팀장·사원은 team, 본부 책임자·대표·시스템 관리자는 company다", async () => {
     const dtos = await listRoleDtos(SYSTEM_VIEWER);
     const scopes = Object.fromEntries(dtos.map((role) => [role.id, role.workScope]));
     expect(scopes).toEqual({
@@ -155,7 +161,7 @@ describe("계급 업무 범위(D11·D20)", () => {
     expect(logs[0]?.detail).toEqual({ workScope: { from: "team", to: "company" }, changes: { workScope: ["team", "company"] } });
   });
 
-  it("admin.people 쓰기가 없는 기획 PM의 변경은 거부되고 DB 값이 그대로다", async () => {
+  it("admin.people 쓰기가 없는 사원의 변경은 거부되고 DB 값이 그대로다", async () => {
     await expect(setRoleWorkScope(PM_VIEWER, "role-team-lead", "company")).rejects.toBeInstanceOf(ForbiddenError);
     expect(await workScopeOf("role-team-lead")).toBe("team");
   });
@@ -212,7 +218,7 @@ describe("계급 보는 범위(06.2 D-6201)", () => {
     return (await findRoleById(SYSTEM_VIEWER, id))?.viewScope;
   }
 
-  it("관리자가 기획 PM을 company로 바꾸면 그 계급 사람의 새 viewer가 전 행을, 다시 own으로 바꾸면 본인만 본다", async () => {
+  it("관리자가 사원을 company로 바꾸면 그 계급 사람의 새 viewer가 전 행을, 다시 own으로 바꾸면 본인만 본다", async () => {
     await setRoleViewScope(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "company");
     expect((await rowScopeFor({ id: "pm-person", roleId: DEFAULT_ROLE_ID }, "project")).rows).toBe("all");
 

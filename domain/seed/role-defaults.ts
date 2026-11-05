@@ -35,6 +35,13 @@ export const ROLE_DEFAULT_PERMISSIONS: readonly RoleDefaultPermission[] = [
     action: "write" as const,
     allowed: true,
   })),
+  // 07.2(D-7213): 프로젝트 삭제 — 팀장 이상(260907 team_lead 보유 `O: db/schema/130_company_bundle.sql:147`).
+  ...[TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID, CEO_ROLE_ID].map((roleId) => ({
+    roleId,
+    menu: "projects.delete",
+    action: "write" as const,
+    allowed: true,
+  })),
   // 06.1(D-6113): 증빙 보기 — 사원 · 팀장(대표는 넣지 않는다). 본부 책임자 보기는 07.3 D-7303(FUND_SEED_PERMISSIONS)이 켠다. 등록(evidence.intake)은 07.3 D-7315 블록(FUND_SEED_PERMISSIONS)이 켠다.
   ...[DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID].map((roleId) => ({ roleId, menu: "evidence", action: "view" as const, allowed: true })),
   // 07.1(D-7107): 연차 · 지출결의 시드 루프(`domain/seed/approvals-leave.ts` · `expenses.ts`)에 있던 권한 17행을 같은 값으로 옮겼다.

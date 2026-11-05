@@ -1,0 +1,2411 @@
+[
+  {
+    "route": "/expenses/{expenseId}",
+    "width": 375,
+    "screenshot": "expenses_expenseId_-4a480844-375.png",
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > p.DetailScreen-module__0yNRdq__meta",
+        "gap": 12
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > p.DetailScreen-module__0yNRdq__meta",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section",
+        "gap": 24
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(1)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(2)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(3)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(3)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(4)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(4)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(5)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(5)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(6)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(6)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(7)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(7)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(8)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(8)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(9)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(9)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(10)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section",
+        "before": "#evidence",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section > div.expense-module__kx56Zq__evidence",
+        "gap": 12
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 57,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "팀장d02d",
+        "width": 52,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__heading > h1.DetailScreen-module__0yNRdq__title",
+        "kind": "heading",
+        "text": "지출결의 — 캡처증빙-32642b · 무대 제작-32642b",
+        "width": 343,
+        "height": 57,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(1) > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "26002 캡처증빙-32642b",
+        "width": 177,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence",
+        "kind": "heading",
+        "text": "증빙",
+        "width": 343,
+        "height": 23,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div > ul.Attachments-module__8aWDMa__list > li.Attachments-module__8aWDMa__item:nth-of-type(1) > span.Attachments-module__8aWDMa__actions > span.RowActions-module__pGoC0a__row > a.RowActions-module__pGoC0a__action",
+        "kind": "link",
+        "text": "크게 보기",
+        "width": 47,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(1)",
+        "kind": "nav",
+        "text": "내 차례",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(2)",
+        "kind": "nav",
+        "text": "결재",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(3)",
+        "kind": "nav",
+        "text": "프로젝트",
+        "width": 91,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > button.BottomTabs-module__PJycjq__tab",
+        "kind": "button",
+        "text": "더보기",
+        "width": 103,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/expenses/{expenseId}",
+    "width": 320,
+    "screenshot": "expenses_expenseId_-4a480844-320.png",
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > p.DetailScreen-module__0yNRdq__meta",
+        "gap": 12
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > p.DetailScreen-module__0yNRdq__meta",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section",
+        "gap": 24
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(1)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(2)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(3)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(3)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(4)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(4)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(5)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(5)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(6)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(6)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(7)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(7)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(8)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(8)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(9)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(9)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(10)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section",
+        "before": "#evidence",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section > div.expense-module__kx56Zq__evidence",
+        "gap": 12
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 57,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "팀장d02d",
+        "width": 52,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__heading > h1.DetailScreen-module__0yNRdq__title",
+        "kind": "heading",
+        "text": "지출결의 — 캡처증빙-32642b · 무대 제작-32642b",
+        "width": 288,
+        "height": 57,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(1) > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "26002 캡처증빙-32642b",
+        "width": 177,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence",
+        "kind": "heading",
+        "text": "증빙",
+        "width": 288,
+        "height": 23,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div > ul.Attachments-module__8aWDMa__list > li.Attachments-module__8aWDMa__item:nth-of-type(1) > span.Attachments-module__8aWDMa__actions > span.RowActions-module__pGoC0a__row > a.RowActions-module__pGoC0a__action",
+        "kind": "link",
+        "text": "크게 보기",
+        "width": 47,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(1)",
+        "kind": "nav",
+        "text": "내 차례",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(2)",
+        "kind": "nav",
+        "text": "결재",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > a.BottomTabs-module__PJycjq__tab:nth-of-type(3)",
+        "kind": "nav",
+        "text": "프로젝트",
+        "width": 77,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > nav.BottomTabs-module__PJycjq__tabs > button.BottomTabs-module__PJycjq__tab",
+        "kind": "button",
+        "text": "더보기",
+        "width": 89,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/expenses/{expenseId}",
+    "width": 768,
+    "screenshot": "expenses_expenseId_-4a480844-768.png",
+    "scrollWidth": 768,
+    "clientWidth": 768,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > p.DetailScreen-module__0yNRdq__meta",
+        "gap": 12
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > p.DetailScreen-module__0yNRdq__meta",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section",
+        "gap": 24
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(1)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(2)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(3)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(3)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(4)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(4)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(5)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(5)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(6)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(6)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(7)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(7)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(8)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(8)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(9)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(9)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(10)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section",
+        "before": "#evidence",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section > div.expense-module__kx56Zq__evidence",
+        "gap": 12
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > button.RailSheet-module__plcX-q__trigger",
+        "kind": "button",
+        "text": "≡메뉴",
+        "width": 44,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 54,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "팀장d02d",
+        "width": 52,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__heading > h1.DetailScreen-module__0yNRdq__title",
+        "kind": "heading",
+        "text": "지출결의 — 캡처증빙-32642b · 무대 제작-32642b",
+        "width": 452,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__actions > div.pc-only-module__bNEY5a__pcOnly > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "인쇄",
+        "width": 50,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(1) > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "26002 캡처증빙-32642b",
+        "width": 150,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence",
+        "kind": "heading",
+        "text": "증빙",
+        "width": 720,
+        "height": 23,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div > ul.Attachments-module__8aWDMa__list > li.Attachments-module__8aWDMa__item:nth-of-type(1) > span.Attachments-module__8aWDMa__actions > span.RowActions-module__pGoC0a__row > a.RowActions-module__pGoC0a__action",
+        "kind": "link",
+        "text": "크게 보기",
+        "width": 47,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/expenses/{expenseId}",
+    "width": 1280,
+    "screenshot": "expenses_expenseId_-4a480844-1280.png",
+    "scrollWidth": 1280,
+    "clientWidth": 1280,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > p.DetailScreen-module__0yNRdq__meta",
+        "gap": 12
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > p.DetailScreen-module__0yNRdq__meta",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "gap": 16
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section",
+        "gap": 24
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(1)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(2)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(3)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(3)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(4)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(4)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(5)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(5)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(6)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(6)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(7)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(7)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(8)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(8)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(9)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv",
+        "before": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(9)",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dt:nth-of-type(10)",
+        "gap": 0
+      },
+      {
+        "parent": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section",
+        "before": "#evidence",
+        "after": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > section.DetailScreen-module__0yNRdq__section > div.expense-module__kx56Zq__evidence",
+        "gap": 12
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > a.TopBar-module__tle3Rq__markLink",
+        "kind": "link",
+        "text": "PLANT8",
+        "width": 176,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(1)",
+        "kind": "nav",
+        "text": "프로젝트",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(2)",
+        "kind": "nav",
+        "text": "지출결의",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(3)",
+        "kind": "nav",
+        "text": "법인카드",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > nav.TopBar-module__tle3Rq__railNav > a.SideRail-module__Q65iMa__link:nth-of-type(4)",
+        "kind": "nav",
+        "text": "결재",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.Shell-module__h6bOmG__shell > header.TopBar-module__tle3Rq__bar > div.TopBar-module__tle3Rq__bottom > div.TopBar-module__tle3Rq__userWrap > button.TopBar-module__tle3Rq__userTrigger",
+        "kind": "button",
+        "text": "팀장d02d",
+        "width": 176,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__heading > h1.DetailScreen-module__0yNRdq__title",
+        "kind": "heading",
+        "text": "지출결의 — 캡처증빙-32642b · 무대 제작-32642b",
+        "width": 452,
+        "height": 29,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > div.DetailScreen-module__0yNRdq__head > div.DetailScreen-module__0yNRdq__actions > div.pc-only-module__bNEY5a__pcOnly > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "인쇄",
+        "width": 50,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#main-content > div.expense-module__kx56Zq__column > div.DetailScreen-module__0yNRdq__screen > dl.KvList-module__PA6jsG__kv > dd:nth-of-type(1) > a.Button-module__TNl3Yq__btn",
+        "kind": "link",
+        "text": "26002 캡처증빙-32642b",
+        "width": 150,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "#evidence",
+        "kind": "heading",
+        "text": "증빙",
+        "width": 720,
+        "height": 23,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "div > ul.Attachments-module__8aWDMa__list > li.Attachments-module__8aWDMa__item:nth-of-type(1) > span.Attachments-module__8aWDMa__actions > span.RowActions-module__pGoC0a__row > a.RowActions-module__pGoC0a__action",
+        "kind": "link",
+        "text": "크게 보기",
+        "width": 47,
+        "height": 21,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/print/expenses/{expenseId}",
+    "width": 375,
+    "screenshot": "print_expenses_expenseId_-8cc11853-375.png",
+    "scrollWidth": 794,
+    "clientWidth": 375,
+    "overflowX": true,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root",
+        "before": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "gap": 16
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow",
+        "gap": 48
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > p.print-frame-module__Q1ubIW__sub",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > p.print-frame-module__Q1ubIW__sub",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > hr.print-frame-module__Q1ubIW__rule",
+        "gap": 12
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > hr.print-frame-module__Q1ubIW__rule",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "gap": 24
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "gap": 32
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > ol.print-frame-module__Q1ubIW__files",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > ol.print-frame-module__Q1ubIW__files",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval",
+        "gap": 32
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header > div.print-frame-module__Q1ubIW__top",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header > p.print-frame-module__Q1ubIW__company",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(1)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(2)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(3)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(3)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(4)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(4)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(5)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(5)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(6)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "gap": 1
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > h2.print-frame-module__Q1ubIW__section",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > div.print-frame-module__Q1ubIW__boxes",
+        "gap": 4
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar > span.Button-module__TNl3Yq__wrap:nth-of-type(1) > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "닫기",
+        "width": 44,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar > span.Button-module__TNl3Yq__wrap:nth-of-type(2) > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "인쇄 · PDF 저장",
+        "width": 118,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow > h1.print-frame-module__Q1ubIW__title",
+        "kind": "heading",
+        "text": "지출결의서",
+        "width": 101,
+        "height": 31,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "kind": "heading",
+        "text": "증빙 파일",
+        "width": 627,
+        "height": 19,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > h2.print-frame-module__Q1ubIW__section",
+        "kind": "heading",
+        "text": "결재",
+        "width": 627,
+        "height": 19,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "번호구분내용금액",
+        "width": 627,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "번호",
+        "width": 30,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "구분",
+        "width": 83,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th",
+        "kind": "cell",
+        "text": "내용",
+        "width": 359,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "금액",
+        "width": 155,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "1공급가액1 무대 제작-8e42bc12,400,000",
+        "width": 627,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "1",
+        "width": 30,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "공급가액",
+        "width": 83,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td",
+        "kind": "cell",
+        "text": "1 무대 제작-8e42bc",
+        "width": 359,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "12,400,000",
+        "width": 155,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2)",
+        "kind": "row",
+        "text": "2부가세10%1,240,000",
+        "width": 627,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "2",
+        "width": 30,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "부가세",
+        "width": 83,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td",
+        "kind": "cell",
+        "text": "10%",
+        "width": 359,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "1,240,000",
+        "width": 155,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "지급 총액금 일천삼백육십사만 원정13,640,000",
+        "width": 627,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td",
+        "kind": "cell",
+        "text": "",
+        "width": 30,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__totalLabel",
+        "kind": "cell",
+        "text": "지급 총액",
+        "width": 83,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__totalKorean",
+        "kind": "cell",
+        "text": "금 일천삼백육십사만 원정",
+        "width": 359,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "13,640,000",
+        "width": 155,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/print/expenses/{expenseId}",
+    "width": 320,
+    "screenshot": "print_expenses_expenseId_-8cc11853-320.png",
+    "scrollWidth": 794,
+    "clientWidth": 320,
+    "overflowX": true,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root",
+        "before": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "gap": 16
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow",
+        "gap": 48
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > p.print-frame-module__Q1ubIW__sub",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > p.print-frame-module__Q1ubIW__sub",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > hr.print-frame-module__Q1ubIW__rule",
+        "gap": 12
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > hr.print-frame-module__Q1ubIW__rule",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "gap": 24
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "gap": 32
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > ol.print-frame-module__Q1ubIW__files",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > ol.print-frame-module__Q1ubIW__files",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval",
+        "gap": 32
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header > div.print-frame-module__Q1ubIW__top",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header > p.print-frame-module__Q1ubIW__company",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(1)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(2)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(3)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(3)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(4)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(4)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(5)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(5)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(6)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "gap": 1
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > h2.print-frame-module__Q1ubIW__section",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > div.print-frame-module__Q1ubIW__boxes",
+        "gap": 4
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar > span.Button-module__TNl3Yq__wrap:nth-of-type(1) > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "닫기",
+        "width": 44,
+        "height": 44,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar > span.Button-module__TNl3Yq__wrap:nth-of-type(2) > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "인쇄 · PDF 저장",
+        "width": 118,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow > h1.print-frame-module__Q1ubIW__title",
+        "kind": "heading",
+        "text": "지출결의서",
+        "width": 101,
+        "height": 31,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "kind": "heading",
+        "text": "증빙 파일",
+        "width": 627,
+        "height": 19,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > h2.print-frame-module__Q1ubIW__section",
+        "kind": "heading",
+        "text": "결재",
+        "width": 627,
+        "height": 19,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "번호구분내용금액",
+        "width": 627,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "번호",
+        "width": 30,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "구분",
+        "width": 83,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th",
+        "kind": "cell",
+        "text": "내용",
+        "width": 359,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "금액",
+        "width": 155,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "1공급가액1 무대 제작-8e42bc12,400,000",
+        "width": 627,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "1",
+        "width": 30,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "공급가액",
+        "width": 83,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td",
+        "kind": "cell",
+        "text": "1 무대 제작-8e42bc",
+        "width": 359,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "12,400,000",
+        "width": 155,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2)",
+        "kind": "row",
+        "text": "2부가세10%1,240,000",
+        "width": 627,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "2",
+        "width": 30,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "부가세",
+        "width": 83,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td",
+        "kind": "cell",
+        "text": "10%",
+        "width": 359,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "1,240,000",
+        "width": 155,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "지급 총액금 일천삼백육십사만 원정13,640,000",
+        "width": 627,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td",
+        "kind": "cell",
+        "text": "",
+        "width": 30,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__totalLabel",
+        "kind": "cell",
+        "text": "지급 총액",
+        "width": 83,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__totalKorean",
+        "kind": "cell",
+        "text": "금 일천삼백육십사만 원정",
+        "width": 359,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "13,640,000",
+        "width": 155,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": true,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/print/expenses/{expenseId}",
+    "width": 768,
+    "screenshot": "print_expenses_expenseId_-8cc11853-768.png",
+    "scrollWidth": 794,
+    "clientWidth": 768,
+    "overflowX": true,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root",
+        "before": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "gap": 16
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow",
+        "gap": 48
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > p.print-frame-module__Q1ubIW__sub",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > p.print-frame-module__Q1ubIW__sub",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > hr.print-frame-module__Q1ubIW__rule",
+        "gap": 12
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > hr.print-frame-module__Q1ubIW__rule",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "gap": 24
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "gap": 32
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > ol.print-frame-module__Q1ubIW__files",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > ol.print-frame-module__Q1ubIW__files",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval",
+        "gap": 32
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header > div.print-frame-module__Q1ubIW__top",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header > p.print-frame-module__Q1ubIW__company",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(1)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(2)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(3)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(3)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(4)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(4)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(5)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(5)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(6)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "gap": 1
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > h2.print-frame-module__Q1ubIW__section",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > div.print-frame-module__Q1ubIW__boxes",
+        "gap": 4
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar > span.Button-module__TNl3Yq__wrap:nth-of-type(1) > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "닫기",
+        "width": 24,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar > span.Button-module__TNl3Yq__wrap:nth-of-type(2) > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "인쇄 · PDF 저장",
+        "width": 112,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow > h1.print-frame-module__Q1ubIW__title",
+        "kind": "heading",
+        "text": "지출결의서",
+        "width": 101,
+        "height": 31,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "kind": "heading",
+        "text": "증빙 파일",
+        "width": 627,
+        "height": 19,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > h2.print-frame-module__Q1ubIW__section",
+        "kind": "heading",
+        "text": "결재",
+        "width": 627,
+        "height": 19,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "번호구분내용금액",
+        "width": 627,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "번호",
+        "width": 30,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "구분",
+        "width": 83,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th",
+        "kind": "cell",
+        "text": "내용",
+        "width": 359,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "금액",
+        "width": 155,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "1공급가액1 무대 제작-8e42bc12,400,000",
+        "width": 627,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "1",
+        "width": 30,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "공급가액",
+        "width": 83,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td",
+        "kind": "cell",
+        "text": "1 무대 제작-8e42bc",
+        "width": 359,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "12,400,000",
+        "width": 155,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2)",
+        "kind": "row",
+        "text": "2부가세10%1,240,000",
+        "width": 627,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "2",
+        "width": 30,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "부가세",
+        "width": 83,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td",
+        "kind": "cell",
+        "text": "10%",
+        "width": 359,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "1,240,000",
+        "width": 155,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "지급 총액금 일천삼백육십사만 원정13,640,000",
+        "width": 627,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td",
+        "kind": "cell",
+        "text": "",
+        "width": 30,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__totalLabel",
+        "kind": "cell",
+        "text": "지급 총액",
+        "width": 83,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__totalKorean",
+        "kind": "cell",
+        "text": "금 일천삼백육십사만 원정",
+        "width": 359,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "13,640,000",
+        "width": 155,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  },
+  {
+    "route": "/print/expenses/{expenseId}",
+    "width": 1280,
+    "screenshot": "print_expenses_expenseId_-8cc11853-1280.png",
+    "scrollWidth": 1280,
+    "clientWidth": 1280,
+    "overflowX": false,
+    "scrollersX": [],
+    "gaps": [
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root",
+        "before": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "gap": 16
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow",
+        "gap": 48
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > p.print-frame-module__Q1ubIW__sub",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > p.print-frame-module__Q1ubIW__sub",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > hr.print-frame-module__Q1ubIW__rule",
+        "gap": 12
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > hr.print-frame-module__Q1ubIW__rule",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "gap": 24
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "gap": 32
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > ol.print-frame-module__Q1ubIW__files",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > ol.print-frame-module__Q1ubIW__files",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval",
+        "gap": 32
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header > div.print-frame-module__Q1ubIW__top",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > header > p.print-frame-module__Q1ubIW__company",
+        "gap": 4
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(1)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(2)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(3)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(3)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(4)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(4)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(5)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(5)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > dl.print-frame-module__Q1ubIW__list > div.print-frame-module__Q1ubIW__row:nth-of-type(6)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "gap": 1
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1)",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2)",
+        "gap": 0
+      },
+      {
+        "parent": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval",
+        "before": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > h2.print-frame-module__Q1ubIW__section",
+        "after": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > div.print-frame-module__Q1ubIW__boxes",
+        "gap": 4
+      }
+    ],
+    "omitted": 0,
+    "elements": [
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar > span.Button-module__TNl3Yq__wrap:nth-of-type(1) > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "닫기",
+        "width": 24,
+        "height": 22,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > div.print-frame-module__Q1ubIW__bar > span.Button-module__TNl3Yq__wrap:nth-of-type(2) > button.Button-module__TNl3Yq__btn",
+        "kind": "button",
+        "text": "인쇄 · PDF 저장",
+        "width": 112,
+        "height": 32,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > div.print-frame-module__Q1ubIW__titleRow > h1.print-frame-module__Q1ubIW__title",
+        "kind": "heading",
+        "text": "지출결의서",
+        "width": 101,
+        "height": 31,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > h2.print-frame-module__Q1ubIW__section",
+        "kind": "heading",
+        "text": "증빙 파일",
+        "width": 627,
+        "height": 19,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > section.print-frame-module__Q1ubIW__approval > h2.print-frame-module__Q1ubIW__section",
+        "kind": "heading",
+        "text": "결재",
+        "width": 627,
+        "height": 19,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "번호구분내용금액",
+        "width": 627,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 2
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "번호",
+        "width": 30,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "구분",
+        "width": 83,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th",
+        "kind": "cell",
+        "text": "내용",
+        "width": 359,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > thead > tr:nth-of-type(1) > th.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "금액",
+        "width": 155,
+        "height": 36,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "1공급가액1 무대 제작-8e42bc12,400,000",
+        "width": 627,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "1",
+        "width": 30,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "공급가액",
+        "width": 83,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td",
+        "kind": "cell",
+        "text": "1 무대 제작-8e42bc",
+        "width": 359,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "12,400,000",
+        "width": 155,
+        "height": 39,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2)",
+        "kind": "row",
+        "text": "2부가세10%1,240,000",
+        "width": 627,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__w8",
+        "kind": "cell",
+        "text": "2",
+        "width": 30,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__w22",
+        "kind": "cell",
+        "text": "부가세",
+        "width": 83,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td",
+        "kind": "cell",
+        "text": "10%",
+        "width": 359,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tbody > tr:nth-of-type(2) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "1,240,000",
+        "width": 155,
+        "height": 40,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1)",
+        "kind": "row",
+        "text": "지급 총액금 일천삼백육십사만 원정13,640,000",
+        "width": 627,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td",
+        "kind": "cell",
+        "text": "",
+        "width": 30,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": null
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__totalLabel",
+        "kind": "cell",
+        "text": "지급 총액",
+        "width": 83,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__totalKorean",
+        "kind": "cell",
+        "text": "금 일천삼백육십사만 원정",
+        "width": 359,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      },
+      {
+        "selector": "main.print-frame-module__Q1ubIW__root > article.print-frame-module__Q1ubIW__sheet > table.print-frame-module__Q1ubIW__table > tfoot > tr:nth-of-type(1) > td.print-frame-module__Q1ubIW__end",
+        "kind": "cell",
+        "text": "13,640,000",
+        "width": 155,
+        "height": 48,
+        "overflowsSelf": false,
+        "exceedsViewport": false,
+        "scrollContainer": false,
+        "lines": 1
+      }
+    ]
+  }
+]

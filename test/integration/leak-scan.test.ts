@@ -67,6 +67,7 @@ import "@/domain/evidence-records/attach";
 import "@/domain/evidence-records/linked";
 import "@/domain/evidence-records/pool";
 import "@/app/(app)/expenses/evidence/attach/actions.registry";
+import "@/app/print/_frame/actions.registry";
 import "@/domain/action-log";
 import "@/domain/approvals/dto";
 import "@/domain/corp-card-usages/link-targets";

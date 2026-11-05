@@ -560,5 +560,6 @@
 ### 지출결의서 인쇄(뒤 페이즈)
 
 **What:** §6-6 인쇄 라우트(`/print/expenses/[id]` · `system/print-expense.html`)와 문서 화면 머리 줄 2차 `인쇄`는 Phase 5에서 뺐다(사용자 결정 2026-09-26 · 05-UI-SPEC Assumptions #19).
+**해결:** 07.4-01(PR #356) — `/print/expenses/[id]`와 지출결의 상세 머리 줄 2차 `인쇄`(PC만)를 공용 인쇄 틀(`app/print/_frame/`)로 만들었다.
 **Priority:** P3
 **Depends on:** 인쇄를 맡을 페이즈 결정

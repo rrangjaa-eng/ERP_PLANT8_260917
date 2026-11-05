@@ -1,0 +1,455 @@
+/* 07.4-01 — 공용 인쇄 틀(SYSTEM §6-6 · docs/design/system/print-expense.html). 토큰만(docs/design/tokens.css).
+   인쇄 템플릿은 색 토큰 셋(--print-ink · --print-rule · --print-line)만 쓴다. 화면 바탕은 --surface-canvas, 종이 면은
+   --surface-base, 종이 외곽은 1px --border-surface. 인쇄 미디어에서는 바탕 · 외곽 · 화면 바가 없다.
+   여러 쪽 서류의 여백은 .sheet padding이 아니라 @page margin으로 준다(2쪽부터도 위 · 아래 여백이 유지된다).
+   글자 크기(px)와 2px 구조 선(--print-rule-w)은 인쇄 템플릿 자체의 값이다(app/print/** 인쇄 영구 예외). */
+
+@page {
+  size: A4 portrait;
+  margin: 22mm 22mm 20mm;
+
+  @bottom-left {
+    content: "PLANT8 ERP";
+    font-size: 12px;
+    padding-bottom: 8mm;
+  }
+
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-size: 12px;
+    padding-bottom: 8mm;
+  }
+}
+
+.root {
+  min-height: 100vh;
+  padding: var(--s-4) 0;
+  background: var(--surface-canvas);
+  color: var(--print-ink);
+  font-size: 14px;
+  line-height: var(--lh-body);
+  letter-spacing: var(--ls-body);
+  word-break: keep-all;
+  orphans: 3;
+  widows: 3;
+}
+
+.sheet {
+  position: relative;
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 22mm 22mm 20mm;
+  background: var(--surface-base);
+  outline: var(--line-w) solid var(--border-surface);
+}
+
+/* 화면 바 — 종이 위 한 줄. 창이 종이보다 좁아도 1차 버튼이 창 안에 남는다(폭 min(210mm, 100%)). 인쇄에는 없다. */
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  width: min(210mm, 100%);
+  margin: 0 auto var(--s-4);
+}
+
+/* 숫자는 어떤 폭에서도 줄바꿈하지 않는다(SYSTEM §2-4). */
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--ls-num);
+  white-space: nowrap;
+}
+
+/* 머리 — A줄(워드마크 자리 + 출력 일시) · B줄(회사 정보). */
+.top {
+  display: flex;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.mark {
+  font-weight: var(--fw-mark);
+  font-size: 15px;
+  letter-spacing: var(--ls-head);
+  color: var(--print-rule);
+}
+
+.printedAt {
+  margin-left: auto;
+}
+
+.company {
+  margin: var(--s-1) 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* 제목 블록 — 제목 · 번호 줄(+ 상태 글자) · 2px 괘선. */
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin-top: var(--s-12);
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-head);
+  line-height: var(--lh-tight);
+}
+
+.aside {
+  font-size: 12px;
+}
+
+.sub {
+  margin: var(--s-1) 0 0;
+  font-size: 12px;
+}
+
+.subNum {
+  margin-right: var(--s-2);
+}
+
+.status {
+  font-weight: var(--fw-medium);
+}
+
+.rule {
+  margin: var(--s-3) 0 var(--s-6);
+  /* <hr>의 브라우저 기본 border(1px inset 회색)를 지운 뒤 위 한 줄만 그린다(독립 DOM 감사 D1). */
+  border: 0;
+  border-top: var(--print-rule-w) solid var(--print-rule);
+}
+
+/* 라벨 · 값 — 가로선만. 행은 쪼개지지 않는다(자유 글 행만 쪽을 넘어 이어진다). */
+.list {
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 30mm minmax(0, 1fr);
+  column-gap: var(--s-4);
+  border-bottom: var(--line-w) solid var(--print-line);
+  break-inside: avoid;
+}
+
+.rowBreakable {
+  break-inside: auto;
+}
+
+.row dt {
+  padding: var(--s-2) 0;
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+}
+
+.row dd {
+  min-width: 0;
+  margin: 0;
+  padding: var(--s-2) 0;
+  overflow-wrap: anywhere;
+}
+
+/* 절 제목(h2) — 12px 600, 쪽 끝에 홀로 남지 않는다. */
+.section {
+  margin: var(--s-8) 0 var(--s-1);
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.08em;
+  break-after: avoid;
+}
+
+/* 결재란 — 칸마다 위 2px 선, 한 덩어리로 쪽에 쪼개지지 않는다. */
+.approval {
+  break-inside: avoid;
+}
+
+.boxes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: var(--s-4);
+  row-gap: var(--s-3);
+}
+
+.boxes[data-cols="5"] {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.box {
+  min-width: 0;
+  padding-top: var(--s-1);
+  border-top: var(--print-rule-w) solid var(--print-rule);
+  overflow-wrap: anywhere;
+}
+
+.boxLabel {
+  display: block;
+  font-size: 12px;
+}
+
+.boxName {
+  display: block;
+  font-weight: var(--fw-bold);
+}
+
+.boxName[data-empty] {
+  font-weight: var(--fw-regular);
+}
+
+.boxState {
+  display: block;
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+}
+
+.boxAt {
+  display: block;
+  font-size: 11px;
+}
+
+.rejectReason {
+  margin: var(--s-2) 0 0;
+  font-size: 12px;
+  break-inside: avoid;
+}
+
+.rejectReason b {
+  margin-right: var(--s-2);
+  font-weight: var(--fw-medium);
+}
+
+/* 표 — 실제 <table>(app/print/**만 허용). 세로선 없음. 머리는 쪽마다 반복되고 행은 쪽 경계에 걸리지 않는다. */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.table th {
+  padding: var(--s-2) var(--s-2);
+  border-bottom: var(--print-rule-w) solid var(--print-rule);
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table thead {
+  display: table-header-group;
+}
+
+.table tr {
+  break-inside: avoid;
+}
+
+.table td {
+  padding: var(--s-2) var(--s-2);
+  border-bottom: var(--line-w) solid var(--print-line);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.table .end {
+  text-align: right;
+}
+
+.table tfoot td {
+  border-bottom: 0;
+}
+
+.table tfoot tr:first-child td {
+  border-top: var(--print-rule-w) solid var(--print-rule);
+}
+
+.w8 {
+  width: 8mm;
+}
+
+.w20 {
+  width: 20mm;
+}
+
+.w22 {
+  width: 22mm;
+}
+
+.w28 {
+  width: 28mm;
+}
+
+.w30 {
+  width: 30mm;
+}
+
+.w36 {
+  width: 36mm;
+}
+
+.w40 {
+  width: 40mm;
+}
+
+/* 표 안 보조줄(외화 원금 · 회사 대납 세금) 11px. */
+.small {
+  display: block;
+  font-size: 11px;
+}
+
+/* 합계 행 — 라벨 + 한글 금액(12px) · 숫자 24px 700. */
+.totalLabel {
+  font-weight: var(--fw-medium);
+}
+
+.totalKorean {
+  font-size: 12px;
+}
+
+.totalAmount {
+  font-size: 24px;
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}
+
+/* 금액 블록(정산서 — 07.4-03이 쓴다): 오른쪽 90mm. */
+.amountBlock {
+  width: 90mm;
+  margin: var(--s-8) 0 0 auto;
+  break-inside: avoid;
+}
+
+/* 손익 칸(정산서 — 07.4-03이 쓴다). 틀 CSS를 03이 고치지 않도록 여기에 둔다. */
+.metricRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: var(--s-4);
+  break-inside: avoid;
+}
+
+.metricCell {
+  padding-top: var(--s-2);
+  border-top: var(--line-w) solid var(--print-line);
+}
+
+.metricLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+}
+
+.metricValue {
+  display: block;
+  font-size: 14px;
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.metricNote {
+  display: block;
+  font-size: 12px;
+  font-weight: var(--fw-regular);
+}
+
+/* 읽기 표의 caption — 화면 · 인쇄 모두 보이지 않는다(판독기 이름만). */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 첨부 번호 목록 — 파일 이름은 종이 폭 안에서 줄바꿈한다. */
+.files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* ERROR — 화면 한 줄(제목 요소) + 2차 「다시 시도」. 인쇄 미디어에서는 숨는다. */
+.errorLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  margin: 0;
+  padding: var(--s-12) var(--s-4);
+  color: var(--status-danger);
+}
+
+.errorTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: var(--fw-regular);
+}
+
+/* LOADING — 빈 A4 틀 + 상단 진행 바(글자 · 스피너 없음). 지연 표시: 처음 opacity 0, 300ms 뒤 한 번만 1로. */
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
+.progress {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--print-rule-w);
+  background: var(--accent);
+  opacity: 0;
+  animation-name: appear;
+  animation-duration: 0s;
+  animation-delay: 300ms;
+  animation-fill-mode: forwards;
+}
+
+/* 준비 전 수동 인쇄 한 줄 — 화면에서는 늘 숨고, 인쇄 미디어에서는 data-ready가 없을 때만 보인다. */
+.notReady {
+  display: none;
+}
+
+@media print {
+  .root {
+    min-height: 0;
+    padding: 0;
+    background: none;
+  }
+
+  .sheet {
+    width: auto;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+    outline: none;
+  }
+
+  .bar,
+  .errorLine,
+  .progress {
+    display: none;
+  }
+
+  .root:not([data-ready]) .sheet {
+    display: none;
+  }
+
+  .root:not([data-ready]) .notReady {
+    display: block;
+    margin: 0;
+    color: var(--print-ink);
+  }
+}

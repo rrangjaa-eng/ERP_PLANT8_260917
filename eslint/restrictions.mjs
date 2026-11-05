@@ -21,6 +21,20 @@ const restrictions = [
       ],
     },
   },
+  // 07.4-01 DECISIONS 「서류 출력 공용 인쇄 틀」(사용자 카드 Q7 2026-11-04 「인쇄 화면만 예외」): 인쇄 라우트는 쪽마다 표 머리가 반복되려면 실제 <table>이 필요하다(div 표는 반복되지 않는다).
+  // 뒤 객체가 앞을 교체하므로 <dialog> 금지를 다시 적는다.
+  {
+    files: ["app/print/**/*.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXOpeningElement[name.name='dialog']",
+          message: "app/**에서 <dialog> 직접 금지 — ui/confirm-dialog 또는 ui/side-panel을 쓴다",
+        },
+      ],
+    },
+  },
 ];
 
 export default restrictions;

@@ -33,7 +33,15 @@ import { setResignationDate } from "@/domain/people";
 import { lockoutConfig } from "@/domain/auth/lockout";
 import { recordAttempt } from "@/repositories/login-attempts";
 import { setSettingValue } from "@/domain/settings/registry";
-import { FUND_DIVISION_ORG_UNIT, PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
+import {
+  FUND_DIVISION_ORG_UNIT,
+  PRINT_COMPANY_ADDRESS,
+  PRINT_COMPANY_BUSINESS_NO,
+  PRINT_COMPANY_NAME,
+  PRINT_COMPANY_PHONE,
+  PRINT_COMPANY_REPRESENTATIVE,
+  PURCHASE_ONLINE_VENDOR_NAME,
+} from "@/domain/settings/keys";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { listCodeItems, setCodeItemActive } from "@/repositories/code-tables";
 import type { SeedName } from "./lib";
@@ -899,6 +907,93 @@ async function evidencePrivateType(browser: Browser, baseURL: string | undefined
   return { vars: { expenseId }, viewer: teamLead };
 }
 
+// print-expense: 07.4-01 지출결의서 인쇄물 캡처용 — 결재 중 문서 1건(기안 · 팀장 승인 · 경영관리 승인 · 대표 대기, 증빙 1개)과 회사 정보 다섯 키.
+// {expenseId}는 /print/expenses/{expenseId} · /expenses/{expenseId} 경로 자리다. 보는 사람은 팀장(결재선 전체를 보는 계급).
+async function printExpense(browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
+  const today = seoulToday();
+  const suffix = randomUUID().slice(0, 6);
+  const yearStart = `${today.slice(0, 4)}-01-01`;
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처인쇄본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처인쇄팀-${suffix}` });
+  const mgmtTeam = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.name === "경영관리팀");
+  if (!mgmtTeam) throw new Error("시드된 경영관리팀 없음");
+  const drafter = await makePerson("기안", "role-pm", team.id, yearStart);
+  const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
+  const mgmt = await mgmtHead(mgmtTeam, yearStart);
+  await makePerson("대표", "role-ceo", team.id, yearStart);
+  const vendor = await vendorWithAccount(`캡처거래처-${suffix}`);
+  const {
+    lineIds: [lineId],
+  } = await inProgressProjectLines({ suffix, teamId: team.id, pm: drafter, teamLead, vendorId: vendor.id }, [12_400_000]);
+  if (!lineId) throw new Error("견적 줄이 없습니다");
+
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_NAME, "플랜트에이트 주식회사");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_ADDRESS, "서울특별시 성동구 왕십리로 10");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_BUSINESS_NO, "123-45-67890");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_REPRESENTATIVE, "김대표");
+  await setSettingValue(SYSTEM_VIEWER, PRINT_COMPANY_PHONE, "02-123-4567");
+
+  const created = await createExpenseFromLines(drafter.viewer, { lineIds: [lineId] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  const draft = await findExpenseById(drafter.viewer, expenseId);
+  if (!draft) throw new Error("작성 중 문서를 찾지 못했다");
+  await saveExpenseDraft(drafter.viewer, { expenseId, expectedVersion: draft.version, fields: { note: "시안 캡처용 상세 — 메인 스테이지 구조물 설치 및 철거" } });
+
+  // 증빙 올리기가 브라우저 경로라 올리기 · 제출만 화면으로 한다(evidencePrivateType 꼴).
+  const context = await browser.newContext({ baseURL });
+  try {
+    const page = await context.newPage();
+    await page.goto("/login");
+    const hydrated = (selector: () => ReturnType<typeof page.getByLabel>) =>
+      expect.poll(() => selector().evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$")))).toBe(true);
+    await hydrated(() => page.getByLabel("이메일"));
+    await page.getByLabel("이메일").fill(drafter.email);
+    await page.getByLabel("비밀번호").fill(drafter.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto(`/expenses/${expenseId}`);
+    await expect
+      .poll(() => page.getByRole("button", { name: /^임시 저장/ }).evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
+      .toBe(true);
+    const tag = randomUUID();
+    const base64 = await page.evaluate(async (label) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 3000;
+      canvas.height = 2000;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("캔버스를 만들 수 없다");
+      ctx.fillStyle = "#eef2f1";
+      ctx.fillRect(0, 0, 3000, 2000);
+      ctx.fillStyle = "#1f2d29";
+      ctx.font = "bold 90px sans-serif";
+      ctx.fillText(label, 100, 300);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
+      if (!blob) throw new Error("JPEG를 만들 수 없다");
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary);
+    }, tag);
+    await page.getByTestId("attachments-input").setInputFiles({ name: `receipt-${tag.slice(0, 8)}.jpg`, mimeType: "image/jpeg", buffer: Buffer.from(base64, "base64") });
+    await expect(page.locator('[data-ui="attachments"] li').getByText(/^\d+KB · \d{2}-\d{2}$/)).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: /^지출결의 제출/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
+  } finally {
+    await context.close();
+  }
+
+  // 팀장 → 경영관리 승인, 대표가 남는다(빈 본부장 자리는 건너뛴다).
+  const view = await getApprovalView(teamLead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+  if (!view) throw new Error("결재 인스턴스가 없습니다");
+  let version = view.version;
+  for (const approver of [teamLead, mgmt]) {
+    const result = await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: version });
+    version = result.version;
+  }
+  return { vars: { expenseId }, viewer: teamLead };
+}
+
 // people-list-filled: 07-17 사람 목록 · 상세 캡처용 — 시스템 관리자가 보는 사람 12명(잠김 2 · 퇴직 1 · 팀장 1 · 나머지는 임시 비밀번호 사용 중).
 // {lockedId}는 잠긴 재직자 한 명(상세 로그인 섹션의 `잠금 풀기` · `비밀번호 초기화`가 함께 보이는 상태).
 async function peopleListFilled(): Promise<SeedResult> {
@@ -935,5 +1030,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return evidencePrivateType(browser, baseURL);
     case "people-list-filled":
       return peopleListFilled();
+    case "print-expense":
+      return printExpense(browser, baseURL);
   }
 }

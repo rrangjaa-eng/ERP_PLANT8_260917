@@ -168,6 +168,9 @@ describe("공급가액 고친 문서 — D-6520 · UI-SPEC V8 고친 뒤 문서 
     const view = await getExpense(fx.pm, { expenseId: doc.expenseId });
     expect(view?.taxLine?.text).toBe("부가세 12% 1,440,000 · 지급 총액 13,440,000 · 세금계산서 규칙");
     expect(view?.taxDrift).toBeNull();
+    // 07.4-01 eng 검토 A2 — 인쇄 세금 · 합계는 상세 화면 계산 한 줄과 같은 result의 숫자다(저장 스냅숏 1,240,000 / 13,640,000이 아니다).
+    expect(view?.taxResult).toMatchObject({ ruleKind: "vat_surcharge", vatKrw: 1_440_000, payableKrw: 13_440_000 });
+    for (const key of ["historizedId", "rateEffectiveFrom", "method", "basisDate"]) expect(view?.taxResult).not.toHaveProperty(key);
     expect(await expenseRow(doc.expenseId)).toMatchObject({
       supplyAmountKrw: 12_000_000,
       taxRuleKind: "vat_surcharge",
@@ -187,6 +190,9 @@ describe("공급가액 고친 문서 — D-6520 · UI-SPEC V8 고친 뒤 문서 
     const view = await getExpense(fx.pm, { expenseId: doc.expenseId });
     expect(view?.taxLine?.text).toBe("부가세 10% 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙");
     expect(view?.taxDrift?.text).toBe("세율 바뀜 · 부가세 10% → 12% · 지급 총액 13,640,000 → 13,888,000");
+    // 07.4-01 A2 — 고치지 않은 문서의 taxResult는 저장 스냅숏 값이다.
+    expect(view?.taxResult).toMatchObject({ ruleKind: "vat_surcharge", vatKrw: 1_240_000, payableKrw: 13_640_000 });
+    for (const key of ["historizedId", "rateEffectiveFrom", "method", "basisDate"]) expect(view?.taxResult).not.toHaveProperty(key);
   });
 });
 

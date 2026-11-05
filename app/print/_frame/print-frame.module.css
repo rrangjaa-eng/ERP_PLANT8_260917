@@ -124,6 +124,8 @@
   /* <hr>의 브라우저 기본 border(1px inset 회색)를 지운 뒤 위 한 줄만 그린다(독립 DOM 감사 D1). */
   border: 0;
   border-top: var(--print-rule-w) solid var(--print-rule);
+  /* <hr>의 브라우저 기본 color(회색)가 print 계산 색 집합에 남지 않게 한다(독립 DOM 감사 D2). */
+  color: inherit;
 }
 
 /* 라벨 · 값 — 가로선만. 행은 쪼개지지 않는다(자유 글 행만 쪽을 넘어 이어진다). */

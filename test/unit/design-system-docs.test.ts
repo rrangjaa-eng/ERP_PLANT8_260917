@@ -754,3 +754,45 @@ describe("docs/design — 서류 출력 공용 인쇄 틀 (07.4-01)", () => {
     expect(print).toContain("- 화면에서 「인쇄」는 2차 버튼. 새 탭으로 인쇄 라우트를 열고 자동 `window.print()`");
   });
 });
+
+describe("docs/design — 07.2 DC 규칙 (07.2-05)", () => {
+  // DECISIONS 항목 머리 `## 2026-11-02 — 07.2 DC-N …`은 DECISIONS → SYSTEM 순서(CLAUDE.md §6)의 앞 절반이다.
+  function decisionHeads(token: string): string[] {
+    return DECISIONS.split("\n").filter((line) => line.startsWith("## ") && line.includes(token));
+  }
+
+  it("DC-1: DECISIONS에 `07.2 DC-1` 머리가 하나 있다", () => {
+    expect(decisionHeads("07.2 DC-1 ")).toHaveLength(1);
+  });
+
+  // DC-1 — §7-5 상태 낱말 여덟(전부 variant="text", 정본 status-map.ts, 새 색 0).
+  const DC1_WORDS: Array<[string, string]> = [
+    ["사후 추인", "warning"],
+    ["보냄", "muted"],
+    ["삭제 예정", "muted"],
+    ["취소 예정", "muted"],
+    ["취소 요청 중", "accent"],
+    ["취소됨", "muted"],
+    ["변경 요청 중", "accent"],
+    ["거절", "danger"],
+  ];
+
+  describe("§7-5 상태 낱말 여덟", () => {
+    const tags = section(SYSTEM, "### 7-5.", "### 7-6.");
+    const bullet = tags.split("\n").find((line) => line.includes("07.2 DC-1")) ?? "";
+
+    it("07.2 DC-1 낱말 줄이 §7-5 안에 하나 있다", () => {
+      expect(bullet).not.toBe("");
+    });
+
+    it.each(DC1_WORDS)("`%s`는 색 종류 %s로 표기된다", (word, kind) => {
+      expect(bullet).toMatch(new RegExp(`\`${word}\`→\`--[a-z-]+\`\\(\`${kind}\``));
+    });
+
+    it("variant=\"text\" 전용 · status-map.ts 정본 · 새 색 0을 적는다", () => {
+      expect(bullet).toContain('`variant="text"` 전용');
+      expect(bullet).toContain("status-map.ts");
+      expect(bullet).toContain("새 색 없음");
+    });
+  });
+});

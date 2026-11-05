@@ -1,0 +1,5 @@
+/* 07.4-03 감사 D1: 정산서 두 목록(지출결의 · 구매 요청)의 표 본문은 12px(UI-SPEC 「표 본문(정산서 목록은 12)」 · 「행 12px」).
+   공용 PrintTable · 틀 CSS(app/print/_frame/**)는 건드리지 않고 두 절을 감싼 요소에서만 맞춘다. 글자 크기(px)는 인쇄 템플릿 값(app/print/** 인쇄 영구 예외). */
+.lists td {
+  font-size: 12px;
+}

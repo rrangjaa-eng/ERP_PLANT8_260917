@@ -336,6 +336,15 @@ test.describe("두 목록 · 0행 · 여러 쪽 · 금액 열", () => {
     await expect(purchaseRows.nth(0).locator("td").nth(5).locator("span", { hasText: /^카드 사용/ })).toHaveText(`카드 사용 ${rich.usage.usedOn.slice(5)} · ${formatKrw(rich.usage.totalKrw)}`);
     await expect(purchaseRows.nth(1).getByText(/카드 사용/)).toHaveCount(0);
 
+    // 감사 D1 · D2(print 미디어): 두 표 본문은 12px(UI-SPEC 「행 12px」), 보조 줄의 사용일 MM-DD는 한 줄 상자다(22mm 칸에서 하이픈으로 끊기지 않는다).
+    await page.emulateMedia({ media: "print" });
+    const usageDate = purchaseRows.nth(0).locator("td").nth(5).locator("span", { hasText: /^카드 사용/ }).locator("span", { hasText: new RegExp(`^${rich.usage.usedOn.slice(5)}$`) });
+    await expect(usageDate).toHaveCount(1);
+    expect(await usageDate.evaluate((element) => element.getClientRects().length)).toBe(1);
+    const tdSizes = await sheet.locator("table td").evaluateAll((cells) => [...new Set(cells.map((cell) => getComputedStyle(cell).fontSize))]);
+    expect(tdSizes).toEqual(["12px"]);
+    await page.emulateMedia({ media: "screen" });
+
     await expect(sheet.locator("tfoot")).toHaveCount(0);
     await expect(sheet.locator("td", { hasText: /합계/ })).toHaveCount(0);
     for (const caption of ["지출결의", "구매 요청"]) {

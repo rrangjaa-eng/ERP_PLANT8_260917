@@ -24,6 +24,7 @@ import { PrintTable, type PrintTableColumn, type PrintTableRow } from "@/app/pri
 import { PrintTitle } from "@/app/print/_frame/PrintTitle";
 import { documentStatusText } from "@/app/print/_frame/status-text";
 import styles from "@/app/print/_frame/print-frame.module.css";
+import settlementStyles from "./settlement.module.css";
 import { loadSettlementForPrint } from "./load";
 import { profitCells } from "./profit-cells";
 
@@ -97,7 +98,12 @@ export default async function SettlementPrintPage({ params }: { params: Promise<
     // 목록 화면 statusSecondLine과 같은 글자 — 사용일 · 결제 합계는 투영을 지난 키만(빠지면 그 조각이 없다).
     const usage =
       row.status === "purchased" && row.usageUsedOn
-        ? `카드 사용 ${row.usageUsedOn.slice(5)}${typeof row.usageTotalKrw === "number" ? ` · ${formatKrw(row.usageTotalKrw)}` : ""}`
+        ? (
+            <>
+              카드 사용 <span className={styles.num}>{row.usageUsedOn.slice(5)}</span>
+              {typeof row.usageTotalKrw === "number" ? ` · ${formatKrw(row.usageTotalKrw)}` : ""}
+            </>
+          )
         : null;
     return {
       key: row.id ?? `purchase-${index}`,
@@ -151,14 +157,16 @@ export default async function SettlementPrintPage({ params }: { params: Promise<
           </div>
         </>
       ) : null}
-      {expenseRows ? (
-        <>
-          <h2 className={styles.section}>지출결의</h2>
-          <PrintTable caption="지출결의" columns={expenseColumns} rows={expenseTable} />
-        </>
-      ) : null}
-      <h2 className={styles.section}>구매 요청</h2>
-      <PrintTable caption="구매 요청" columns={purchaseColumns} rows={purchaseTable} />
+      <div className={settlementStyles.lists}>
+        {expenseRows ? (
+          <>
+            <h2 className={styles.section}>지출결의</h2>
+            <PrintTable caption="지출결의" columns={expenseColumns} rows={expenseTable} />
+          </>
+        ) : null}
+        <h2 className={styles.section}>구매 요청</h2>
+        <PrintTable caption="구매 요청" columns={purchaseColumns} rows={purchaseTable} />
+      </div>
       <PrintApproval {...approval} />
     </PrintFrame>
   );

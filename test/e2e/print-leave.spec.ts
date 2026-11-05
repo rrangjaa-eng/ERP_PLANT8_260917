@@ -161,6 +161,17 @@ test.describe("입구 · 종이 · 기록", () => {
     await context.close();
   });
 
+  test("세션 없이 열면 로그인으로 가고 서류 제목 · 기록이 남지 않는다", async ({ browser, baseURL }) => {
+    const context = await browser.newContext({ baseURL });
+    const page = await context.newPage();
+    const before = await printRows(inProgressId);
+    await page.goto(printPath(inProgressId));
+    await expect(page).toHaveURL(/\/login/);
+    expect(await page.title()).not.toMatch(/^연차 신청서/);
+    expect(await printRows(inProgressId)).toBe(before);
+    await context.close();
+  });
+
   test("종이 쪽 나눔: 비고 행만 이어질 수 있고 나머지 행은 쪼개지지 않는다", async ({ browser, baseURL }) => {
     const { context, page } = await loggedIn(browser, baseURL, org.teamLead);
     await page.goto(printPath(inProgressId));

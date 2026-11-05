@@ -174,10 +174,11 @@ describe("docs/design/SYSTEM.md — §6-0 보강 (구간 단위 검증)", () => 
     expect(shell).toContain("시스템 상태");
   });
 
-  it.each(["대표", "본부 책임자", "팀장", "기획 PM", "시스템 관리자"])(
+  // 07.3(D-7317): 표 행 시작(`| 계급 |`)으로 단언한다 — 다른 문장 속 같은 낱말(예: 「사원」)에 속지 않는다.
+  it.each(["대표", "본부 책임자", "팀장", "사원", "시스템 관리자"])(
     "폰 하단 탭 역할 표에 계급 '%s' 행이 있다",
     (role) => {
-      expect(shell).toContain(role);
+      expect(shell).toContain(`| ${role} |`);
     },
   );
 

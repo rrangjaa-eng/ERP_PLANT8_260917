@@ -1,5 +1,5 @@
 {
-  "id": "b293fde4-95b3-4527-9aa5-e62c295c556b",
+  "id": "d17957f6-ea4f-495d-bbf8-e932fd3015a9",
   "prevId": "be9c0e61-325c-4a5f-b77c-4467bc62561b",
   "version": "7",
   "dialect": "postgresql",
@@ -3157,6 +3157,175 @@
       },
       "isRLSEnabled": false
     },
+    "public.expense_date_change_requests": {
+      "name": "expense_date_change_requests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "expense_id": {
+          "name": "expense_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_by": {
+          "name": "requested_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "new_date": {
+          "name": "new_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reject_memo": {
+          "name": "reject_memo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "expense_date_change_requests_expense_idx": {
+          "name": "expense_date_change_requests_expense_idx",
+          "columns": [
+            {
+              "expression": "expense_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "expense_date_change_requests_pending_uniq": {
+          "name": "expense_date_change_requests_pending_uniq",
+          "columns": [
+            {
+              "expression": "expense_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"expense_date_change_requests\".\"status\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "expense_date_change_requests_expense_id_expenses_id_fk": {
+          "name": "expense_date_change_requests_expense_id_expenses_id_fk",
+          "tableFrom": "expense_date_change_requests",
+          "tableTo": "expenses",
+          "columnsFrom": [
+            "expense_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "expense_date_change_requests_requested_by_users_id_fk": {
+          "name": "expense_date_change_requests_requested_by_users_id_fk",
+          "tableFrom": "expense_date_change_requests",
+          "tableTo": "users",
+          "columnsFrom": [
+            "requested_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "expense_date_change_requests_decided_by_users_id_fk": {
+          "name": "expense_date_change_requests_decided_by_users_id_fk",
+          "tableFrom": "expense_date_change_requests",
+          "tableTo": "users",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "expense_date_change_requests_status_check": {
+          "name": "expense_date_change_requests_status_check",
+          "value": "\"expense_date_change_requests\".\"status\" IN ('pending','approved','rejected','withdrawn')"
+        },
+        "expense_date_change_requests_reason_length_check": {
+          "name": "expense_date_change_requests_reason_length_check",
+          "value": "char_length(\"expense_date_change_requests\".\"reason\") BETWEEN 1 AND 500"
+        },
+        "expense_date_change_requests_decided_check": {
+          "name": "expense_date_change_requests_decided_check",
+          "value": "(\"expense_date_change_requests\".\"status\" = 'pending') = (\"expense_date_change_requests\".\"decided_at\" IS NULL) AND (\"expense_date_change_requests\".\"decided_at\" IS NULL) = (\"expense_date_change_requests\".\"decided_by\" IS NULL)"
+        },
+        "expense_date_change_requests_reject_memo_check": {
+          "name": "expense_date_change_requests_reject_memo_check",
+          "value": "(\"expense_date_change_requests\".\"status\" = 'rejected') = (\"expense_date_change_requests\".\"reject_memo\" IS NOT NULL)"
+        },
+        "expense_date_change_requests_reject_memo_length_check": {
+          "name": "expense_date_change_requests_reject_memo_length_check",
+          "value": "\"expense_date_change_requests\".\"reject_memo\" IS NULL OR char_length(\"expense_date_change_requests\".\"reject_memo\") BETWEEN 1 AND 500"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.expense_evidence_reviews": {
       "name": "expense_evidence_reviews",
       "schema": "",
@@ -4388,7 +4557,7 @@
       "checkConstraints": {
         "files_owner_kind_check": {
           "name": "files_owner_kind_check",
-          "value": "\"files\".\"owner_kind\" IN ('expense','quote_revision','reserve_entry','corp_card_usage','vendor_document','project_document','revenue_entry')"
+          "value": "\"files\".\"owner_kind\" IN ('expense','quote_revision','reserve_entry','corp_card_usage','vendor_document','project_document','revenue_entry','company_logo')"
         },
         "files_sha256_check": {
           "name": "files_sha256_check",
@@ -6824,6 +6993,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "printed_at": {
+          "name": "printed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "printed_by": {
+          "name": "printed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "source": {
           "name": "source",
           "type": "text",
@@ -6883,6 +7064,19 @@
           "tableTo": "users",
           "columnsFrom": [
             "customer_approved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "quote_revisions_printed_by_users_id_fk": {
+          "name": "quote_revisions_printed_by_users_id_fk",
+          "tableFrom": "quote_revisions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "printed_by"
           ],
           "columnsTo": [
             "id"
@@ -7051,6 +7245,36 @@
           "primaryKey": false,
           "notNull": false
         },
+        "client_remark": {
+          "name": "client_remark",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "major_category": {
+          "name": "major_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mid_category": {
+          "name": "mid_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "adjustment_pair_id": {
+          "name": "adjustment_pair_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "counterpart_project_id": {
+          "name": "counterpart_project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "copied_from_line_id": {
           "name": "copied_from_line_id",
           "type": "uuid",
@@ -7154,6 +7378,21 @@
           "method": "gin",
           "with": {}
         },
+        "quote_lines_adjustment_pair_idx": {
+          "name": "quote_lines_adjustment_pair_idx",
+          "columns": [
+            {
+              "expression": "adjustment_pair_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "quote_lines_source_expense_live_uniq": {
           "name": "quote_lines_source_expense_live_uniq",
           "columns": [
@@ -7198,6 +7437,19 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
+        "quote_lines_counterpart_project_id_projects_id_fk": {
+          "name": "quote_lines_counterpart_project_id_projects_id_fk",
+          "tableFrom": "quote_lines",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "counterpart_project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "quote_lines_copied_from_line_id_quote_lines_id_fk": {
           "name": "quote_lines_copied_from_line_id_quote_lines_id_fk",
           "tableFrom": "quote_lines",
@@ -7222,7 +7474,15 @@
         },
         "quote_lines_line_kind_check": {
           "name": "quote_lines_line_kind_check",
-          "value": "\"quote_lines\".\"line_kind\" IN ('quote','out_of_quote','adjustment')"
+          "value": "\"quote_lines\".\"line_kind\" IN ('quote','out_of_quote','adjustment','commission')"
+        },
+        "quote_lines_client_remark_length_check": {
+          "name": "quote_lines_client_remark_length_check",
+          "value": "\"quote_lines\".\"client_remark\" IS NULL OR char_length(\"quote_lines\".\"client_remark\") <= 500"
+        },
+        "quote_lines_adjustment_pair_check": {
+          "name": "quote_lines_adjustment_pair_check",
+          "value": "(\"quote_lines\".\"adjustment_pair_id\" IS NULL) = (\"quote_lines\".\"counterpart_project_id\" IS NULL) AND (\"quote_lines\".\"adjustment_pair_id\" IS NULL OR \"quote_lines\".\"line_kind\" = 'adjustment')"
         },
         "quote_lines_source_expense_kind_check": {
           "name": "quote_lines_source_expense_kind_check",
@@ -7834,6 +8094,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "start_time": {
+          "name": "start_time",
+          "type": "time",
+          "primaryKey": false,
+          "notNull": false
+        },
         "days_quarters": {
           "name": "days_quarters",
           "type": "integer",
@@ -7928,6 +8194,10 @@
         "leave_requests_days_quarters_check": {
           "name": "leave_requests_days_quarters_check",
           "value": "\"leave_requests\".\"days_quarters\" >= 0"
+        },
+        "leave_requests_start_time_kind_check": {
+          "name": "leave_requests_start_time_kind_check",
+          "value": "\"leave_requests\".\"start_time\" IS NULL OR \"leave_requests\".\"kind\" = 'quarter_day'"
         }
       },
       "isRLSEnabled": false

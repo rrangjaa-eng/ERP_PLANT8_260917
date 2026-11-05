@@ -229,7 +229,8 @@ describe("07.2 스키마 — 지급 희망일 변경 요청(X4 · D-7291)", () =
 
   it("상태 foo는 expense_date_change_requests_status_check로 거부된다", async () => {
     const { expenseId, userId } = await expenseFixture();
-    await expectPgError(() => insertRequest(expenseId, userId, { status: "foo" }), "23514", "expense_date_change_requests_status_check");
+    // 처리 칸을 채워 decided_check는 지나가게 하고 상태 목록만 어긋나게 한다.
+    await expectPgError(() => insertRequest(expenseId, userId, { status: "foo", decided: true }), "23514", "expense_date_change_requests_status_check");
   });
 
   it("거절인데 거절 메모가 없으면 expense_date_change_requests_reject_memo_check로 거부된다", async () => {

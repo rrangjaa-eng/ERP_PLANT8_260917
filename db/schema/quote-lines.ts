@@ -21,6 +21,8 @@ export const quoteLines = pgTable(
     itemName: text("item_name").notNull(),
     vendorId: uuid("vendor_id").references(() => vendors.id),
     quantity: numeric("quantity", { precision: 12, scale: 2 }).notNull().default("1.00"),
+    // 07.2 PU6(D-7230 · D-7231): 일수 — 견적가 = 수량 × 단가 × 일수. 수량과 같은 자리수, 기본 1이라 기존 줄의 견적가가 바뀌지 않는다.
+    days: numeric("days", { precision: 12, scale: 2 }).notNull().default("1.00"),
     ...moneyColumns("unitPrice"),
     ...moneyColumns("execution"),
     // D-63: 견적가 = 수량 × 단가, 서버 계산·저장. 차익 = 견적가 − 실행가.
@@ -53,6 +55,7 @@ export const quoteLines = pgTable(
   (table) => [
     index("quote_lines_revision_sort_idx").on(table.revisionId, table.sortOrder),
     index("quote_lines_custom_fields_idx").using("gin", table.customFields),
+    check("quote_lines_days_check", sql`${table.days} > 0`),
     check("quote_lines_line_kind_check", sql`${table.lineKind} IN ('quote','out_of_quote','adjustment')`),
     check("quote_lines_source_expense_kind_check", sql`${table.sourceExpenseId} IS NULL OR ${table.lineKind} = 'adjustment'`),
     check("quote_lines_source_synced_pair_check", sql`(${table.sourceExpenseId} IS NULL) = (${table.sourceSyncedVersion} IS NULL)`),

@@ -68,7 +68,7 @@ test.describe("사람 등록 → 계정·초기 비밀번호 발급 → 로그�
     await expect(page.getByText(newEmail)).toBeVisible();
   });
 
-  test("기본 계급(기획 PM)으로는 사람 화면이 404다", async ({ page }) => {
+  test("기본 계급(사원)으로는 사람 화면이 404다", async ({ page }) => {
     const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
 
     await page.goto("/login");
@@ -531,8 +531,8 @@ test.describe("조직 화면 팀장 · 책임자 중복 (06.4 D-6405 · D-6413)"
 
     await links.first().click();
     await expect(page).toHaveURL(new RegExp(`/admin/people/${world.holderIds[0]}$`));
-    await page.locator("#person-role-change").selectOption({ label: "기획 PM" });
-    await expect(page.locator("dd").filter({ hasText: /^기획 PM$/ })).toBeVisible();
+    await page.locator("#person-role-change").selectOption({ label: "사원" });
+    await expect(page.locator("dd").filter({ hasText: /^사원$/ })).toBeVisible();
 
     await page.goto("/admin/people/org");
     const after = orgRow(page, world.teamName);
@@ -561,14 +561,14 @@ async function makeAccount(name: string, roleId: string): Promise<string> {
 test.describe("위임 계급의 계급 자리 (06.4 D-6402 · D-6414 · D7~D9)", () => {
   test.describe.configure({ mode: "serial" });
 
-  test("등록: 위임 계정의 계급 select에 기획 PM은 있고 시스템 관리자는 없다", async ({ page }) => {
+  test("등록: 위임 계정의 계급 select에 사원은 있고 시스템 관리자는 없다", async ({ page }) => {
     const delegate = await createDelegatedAccount();
     await loginWith(page, delegate);
     await page.goto("/admin/people");
     await page.getByRole("link", { name: "사람 등록" }).first().click();
     await expect(page.locator("#roleId")).toBeVisible({ timeout: 20_000 });
     const options = await page.locator("#roleId option").allTextContents();
-    expect(options).toContain("기획 PM");
+    expect(options).toContain("사원");
     expect(options).not.toContain("시스템 관리자");
   });
 

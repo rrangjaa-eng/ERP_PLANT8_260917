@@ -218,7 +218,7 @@ routeSettings?, canResubmit?, loadDetails?, detailDto?, buildDetailRows?})`(`dom
 (2) 공개 domain `domain/certs/intake.ts`는 `can` · `visible` · `scopeFor`를 부르지 않는다 — 토큰 · 행사 id · 경품 id로 where를 좁히고,
 공개 결과(`publicPrizes`)에 가액 칸을 싣지 않는다. 제출은 IP 가명 기준 속도 제한(`domain/certs/submit-limit.ts`)을 거친다.
 (3) 서명 저장소 포트 `lib/storage/signature-store.ts` — 로컬은 로컬 드라이버, 그 밖은 GCS REST 드라이버(버킷 수준 권한).
-(4) 인쇄 `/print/certs/[id]`는 앱 셸 밖이고 페이지가 스스로 세션 · 개인정보 접근을 판정한다.
+(4) 인쇄 `/print/certs/[id]` · `/print/expenses/[id]`는 앱 셸 밖이고 페이지가 스스로 세션 · 접근(확인증은 개인정보, 지출결의는 서류 열람)을 판정한다.
 (5) 파기는 사람이 실행하는 Cloud Run Job(`scripts/purge-certs.ts` — 인자 없음 = 미리 보기, `docs/CERT-PURGE.md`).
 
 ## 5. DB·마이그레이션

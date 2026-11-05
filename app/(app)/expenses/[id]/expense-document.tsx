@@ -13,6 +13,7 @@ import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
+import { PcOnly } from "@/app/(app)/admin/pc-only";
 import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import { DocumentActions } from "@/app/(app)/leave/[id]/document-actions";
 import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
@@ -236,6 +237,20 @@ export function ExpenseDocument({
     </DetailScreen.Section>
   );
 
+  const printLink = view?.instanceId ? (
+    <PcOnly>
+      <Link href={`/print/expenses/${id}`} target="_blank" rel="noopener" prefetch={false} className={`${buttonStyles.btn} ${buttonStyles.secondary}`}>
+        인쇄
+      </Link>
+    </PcOnly>
+  ) : null;
+  const secondary = (
+    <>
+      {printLink}
+      {expense.closeDialog ? <CloseExpenseButton expenseId={id} version={expense.version ?? 1} dialog={expense.closeDialog} messages={reasonMessages} /> : null}
+    </>
+  );
+
   return (
     <div className={styles.column}>
       <DetailScreen
@@ -243,11 +258,8 @@ export function ExpenseDocument({
         status={closure ? <StatusTag status="종결" /> : expense.number !== null && !view ? undefined : <StatusTag status={expenseStatusWord(view?.status)} />}
         meta={meta}
         // 06-28(S23): 반려 · 회수 문서를 보는 기안자 · 지급 권한자에게만 2차 `종결`(서버 closeDialog) — 결재 통과 문서의 지급 행과 함께 서지 않는다.
-        actions={
-          expense.closeDialog
-            ? { secondary: <CloseExpenseButton expenseId={id} version={expense.version ?? 1} dialog={expense.closeDialog} messages={reasonMessages} /> }
-            : undefined
-        }
+        // 07.4-01 D-7409(E1): 결재 인스턴스가 있을 때만 2차 `인쇄` 링크(새 탭 · PC만) — 기존 2차 `종결`의 왼쪽. 1차는 건드리지 않는다.
+        actions={printLink || expense.closeDialog ? { secondary: secondary } : undefined}
       >
         <KvList items={items} />
         {paymentView && paymentView !== "error" ? (

@@ -115,10 +115,11 @@ describe("트레이서 — 견적 줄에서 최종 승인까지", () => {
     expect(steps.map((step) => [step.round, step.stepIndex, step.roleId])).toEqual([
       [1, 1, "role-team-lead"],
       [1, 2, "role-division-head"],
-      [1, 3, null],
+      [1, 3, "role-division-head"],
       [1, 4, "role-ceo"],
     ]);
-    expect(steps[2]?.label).toBe("경영관리본부");
+    // 07.3-02(D-7306): 3단에 계급(본부 책임자)이 서면 단계 이름은 계급 이름이다(planStep — 2단과 같은 이름).
+    expect(steps[2]?.label).toBe("본부 책임자");
     expect((await getExpense(fx.pm, { expenseId }))?.statusWord).toBe("결재 중");
 
     // 팀장 승인 → 2 · 3단 빈 자리 건너뜀 → 대표 승인 → 최종.

@@ -277,3 +277,12 @@ describe("evidence_record_needs_check_clear (07.1-05 D-7115)", () => {
     expect(appendActionLog).toHaveBeenCalledTimes(1);
   });
 });
+
+// 07.4-01 D-7415: 서류 인쇄 기록 — 세 배열에 함께 있고 설정으로 끌 수 없다.
+describe("document_print (07.4 D-7415)", () => {
+  it("CORE · ALWAYS_ON에 있고 라벨이 「서류 인쇄」다", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("document_print");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("document_print");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).document_print).toBe("서류 인쇄");
+  });
+});

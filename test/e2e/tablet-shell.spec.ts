@@ -31,7 +31,7 @@ test.describe("태블릿 700–1279 뷰포트는 48px 바 + 가림 레일 셸이
 
       await page.getByRole("button", { name: "메뉴" }).click();
       await expect(mainMenu).toBeVisible();
-      await expect(mainMenu.locator("a")).toHaveCount(5);
+      await expect(mainMenu.locator("a")).toHaveCount(4);
 
       const { scrollWidth, clientWidth } = await page.evaluate(() => ({
         scrollWidth: document.documentElement.scrollWidth,

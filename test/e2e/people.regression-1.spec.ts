@@ -17,7 +17,7 @@ test("팀을 고른 뒤 발령일을 지우면 발령일 칸 오류가 보이고
   const form = page.locator("#person-form");
   await form.getByLabel("이름").fill("E2E발령일없음");
   await form.getByLabel("이메일").fill(`e2e-${randomUUID()}@example.test`);
-  await form.locator("#roleId").selectOption({ label: "기획 PM" });
+  await form.locator("#roleId").selectOption({ label: "사원" });
   await form.locator("#teamId").selectOption(team.id);
   await form.locator("#effectiveFrom").fill("");
   await form.locator("#hireDate").fill("2026-10-01");
@@ -37,7 +37,7 @@ test("팀을 고르면 발령일이 오늘로 채워지고 날짜를 채우지 �
   const form = page.locator("#person-form");
   await form.getByLabel("이름").fill("E2E발령일오늘");
   await form.getByLabel("이메일").fill(`e2e-${randomUUID()}@example.test`);
-  await form.locator("#roleId").selectOption({ label: "기획 PM" });
+  await form.locator("#roleId").selectOption({ label: "사원" });
   await expect(form.locator("#effectiveFrom")).toHaveValue("");
   await form.locator("#teamId").selectOption(team.id);
   await expect(form.locator("#effectiveFrom")).toHaveValue(kstToday(new Date()));

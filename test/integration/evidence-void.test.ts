@@ -182,14 +182,15 @@ describe("승인 뒤 증빙 무효 처리", () => {
     });
   });
 
-  it("시드 직후 expenses.evidence_void · expenses.evidence_attach를 가진 시드 계급은 시스템 관리자 하나다", async () => {
+  // 07.3 D-7315: 자금 시드가 사원 · 팀장 · 본부 책임자에게 두 키를 켠다(본부 조건이 실제 사람을 거른다). 대표는 여전히 없다.
+  it("시드 직후 expenses.evidence_void · expenses.evidence_attach를 가진 시드 계급은 시스템 관리자 · 사원 · 팀장 · 본부 책임자다(대표 없음)", async () => {
     const seedRoles = [SYSADMIN_ROLE_ID, CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID];
     for (const menu of ["expenses.evidence_void", "expenses.evidence_attach"]) {
       const rows = await db
         .select({ roleId: permissionMatrix.roleId })
         .from(permissionMatrix)
         .where(and(eq(permissionMatrix.menu, menu), eq(permissionMatrix.action, "write"), eq(permissionMatrix.allowed, true), inArray(permissionMatrix.roleId, seedRoles)));
-      expect(rows.map((row) => row.roleId), menu).toEqual([SYSADMIN_ROLE_ID]);
+      expect(rows.map((row) => row.roleId).sort(), menu).toEqual([SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID].sort());
     }
   });
 });

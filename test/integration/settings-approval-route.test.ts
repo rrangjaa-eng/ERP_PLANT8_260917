@@ -471,7 +471,8 @@ describe("결재선 한 단계 원자 저장(사용자 결정 2026-09-30 A)", ()
   it("3단 특정 부서 행이 없어도(기본값 없음 — 결재선 로더는 빈 값) 3단을 저장하고 부서는 빈 값이 된다", async () => {
     const STEP3 = LEAVE_ROUTE_SETTINGS.steps[2]!;
     await db.delete(settingsSimple).where(eq(settingsSimple.key, STEP3.orgUnitId.key));
-    const loaded = { enabled: true, roleId: "", scope: "org_unit", orgUnitId: undefined };
+    // 07.3-02(D-7306): 3단 담당 계급 기본값 = 본부 책임자.
+    const loaded = { enabled: true, roleId: "role-division-head", scope: "org_unit", orgUnitId: undefined };
 
     await saveRouteStepSettings(SYSTEM_VIEWER, {
       kind: LEAVE_DOCUMENT_KIND,
@@ -488,7 +489,8 @@ describe("결재선 한 단계 원자 저장(사용자 결정 2026-09-30 A)", ()
     const STEP3 = LEAVE_ROUTE_SETTINGS.steps[2]!;
     const [first, second] = (await listOrgUnits(SYSTEM_VIEWER, { scope: { rows: "all", includeArchived: false } })).map((unit) => unit.id);
     await db.delete(settingsSimple).where(eq(settingsSimple.key, STEP3.orgUnitId.key));
-    const loaded = { enabled: true, roleId: "", scope: "org_unit", orgUnitId: undefined };
+    // 07.3-02(D-7306): 3단 담당 계급 기본값 = 본부 책임자.
+    const loaded = { enabled: true, roleId: "role-division-head", scope: "org_unit", orgUnitId: undefined };
 
     let release: () => void = () => {};
     const paused = new Promise<void>((resolve) => (release = resolve));

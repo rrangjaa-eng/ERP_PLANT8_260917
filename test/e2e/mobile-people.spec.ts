@@ -111,7 +111,7 @@ test.describe("폰 사람 목록 로그인 배지 · 칸 접기 (04.4-05, D8-07)
     }
     const collapsed = collapsedRowOf(row);
     await expect(collapsed).toBeVisible();
-    expect(await visibleText(collapsed.locator("td"))).toBe(`${email} · 기획 PM · —`);
+    expect(await visibleText(collapsed.locator("td"))).toBe(`${email} · 사원 · —`);
 
     // §7-3: 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다.
     const mainBorders = await row.evaluate((tr) =>

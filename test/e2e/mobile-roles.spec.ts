@@ -111,7 +111,7 @@ test.describe("폰 375 계급 보는 범위 읽기 글자 (06.2 S1 · design I8)
     expect(await collapsedLineOf(page, "팀장").innerText()).toContain("보기 팀");
     await expect(page.getByLabel("대표 보는 범위").filter({ visible: true })).toHaveCount(0);
     await expect(page.locator("table tbody select").filter({ visible: true })).toHaveCount(0);
-    for (const roleName of ["대표", "본부 책임자", "팀장", "기획 PM"]) {
+    for (const roleName of ["대표", "본부 책임자", "팀장", "사원"]) {
       expect(await rowLines(page, roleName), `${roleName} 행 줄 수`).toBeLessThanOrEqual(2);
     }
   });
@@ -129,7 +129,7 @@ test.describe("폰 320 계급 화면 (06.2 S1)", () => {
       clientWidth: document.documentElement.clientWidth,
     }));
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
-    for (const roleName of ["대표", "본부 책임자", "팀장", "기획 PM"]) {
+    for (const roleName of ["대표", "본부 책임자", "팀장", "사원"]) {
       expect(await rowLines(page, roleName), `${roleName} 행 줄 수`).toBeLessThanOrEqual(2);
     }
   });

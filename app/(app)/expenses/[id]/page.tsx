@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { seoulToday } from "@/lib/dates";
 import { requireSession } from "@/lib/viewer";
@@ -15,6 +16,8 @@ import type { Viewer } from "@/domain/viewer";
 import { log } from "@/lib/log";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
+import buttonStyles from "@/ui/button/Button.module.css";
+import { PcOnly } from "@/app/(app)/admin/pc-only";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Num } from "@/ui/num/Num";
@@ -243,15 +246,26 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         // 06-28(S23): 반려 · 회수 폼에는 서버가 종결 모달 재료(closeDialog)를 실었을 때만 2차 `종결` — 1차는 폼의 다시 제출 그대로.
         actions={
           resubmitting
-            ? expense.closeDialog
+            ? expense.closeDialog || view?.instanceId
               ? {
                   secondary: (
-                    <CloseExpenseButton
-                      expenseId={id}
-                      version={expense.version ?? 1}
-                      dialog={expense.closeDialog}
-                      messages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
-                    />
+                    <>
+                      {view?.instanceId ? (
+                        <PcOnly>
+                          <Link href={`/print/expenses/${id}`} target="_blank" rel="noopener" prefetch={false} className={`${buttonStyles.btn} ${buttonStyles.secondary}`}>
+                            인쇄
+                          </Link>
+                        </PcOnly>
+                      ) : null}
+                      {expense.closeDialog ? (
+                        <CloseExpenseButton
+                          expenseId={id}
+                          version={expense.version ?? 1}
+                          dialog={expense.closeDialog}
+                          messages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
+                        />
+                      ) : null}
+                    </>
                   ),
                 }
               : undefined

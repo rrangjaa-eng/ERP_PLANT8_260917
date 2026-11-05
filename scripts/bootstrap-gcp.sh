@@ -119,6 +119,11 @@ for env in $ENVS; do
   if ! gcloud iam service-accounts describe "${scheduler_sa}@${PROJECT}.iam.gserviceaccount.com" --project="$PROJECT" >/dev/null 2>&1; then
     gcloud iam service-accounts create "$scheduler_sa" --project="$PROJECT" --display-name="PLANT8 ERP ${env} notify scheduler"
   fi
+  # 07.2-03(D-7278): 확인증 자동 파기 Job을 부르는 Cloud Scheduler의 OAuth 계정(키 없음 · 프로젝트 역할 없음)
+  purge_sched_sa="plant8-${env}-purge-sched"
+  if ! gcloud iam service-accounts describe "${purge_sched_sa}@${PROJECT}.iam.gserviceaccount.com" --project="$PROJECT" >/dev/null 2>&1; then
+    gcloud iam service-accounts create "$purge_sched_sa" --project="$PROJECT" --display-name="PLANT8 ERP ${env} cert purge scheduler"
+  fi
 done
 
 DEPLOYER_EMAIL="${DEPLOYER_SA}@${PROJECT}.iam.gserviceaccount.com"
@@ -142,6 +147,9 @@ done
 # SA 관리 권한은 주지 않는다(D-4212)
 for env in $ENVS; do
   gcloud iam service-accounts add-iam-policy-binding "plant8-${env}-scheduler@${PROJECT}.iam.gserviceaccount.com" --project="$PROJECT" \
+    --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/iam.serviceAccountUser >/dev/null
+  # 07.2-03: 자동 파기 Scheduler 잡의 OAuth 계정으로 지정할 사용 권한만 — run.invoker는 deploy.sh가 자동 파기 Job 하나에 job 단위로 준다
+  gcloud iam service-accounts add-iam-policy-binding "plant8-${env}-purge-sched@${PROJECT}.iam.gserviceaccount.com" --project="$PROJECT" \
     --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/iam.serviceAccountUser >/dev/null
 done
 

@@ -867,9 +867,10 @@ test("pageshow persisted면 다시 불러와 서버 판정 · 조회 기록을 �
     window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
   });
   await expect.poll(() => viewLogCount(seeded.submissionId)).toBe(views + 1);
-  await expect
-    .poll(() => page.evaluate(() => (window as unknown as { __restored?: boolean }).__restored ?? null))
-    .toBeNull();
+  // 다시 불러오는 문서 교체 순간의 evaluate 오류를 재시도하려고 poll이 아닌 toPass를 쓴다.
+  await expect(async () => {
+    expect(await page.evaluate(() => (window as unknown as { __restored?: boolean }).__restored ?? null)).toBeNull();
+  }).toPass();
 });
 
 test("입력이 이어지면 5분에 한 번 활동 기록 — 정정 칸에 4분마다 한 글자씩 35분 입력해도 저장이 끊기지 않는다(G3 a)", async ({ page }) => {

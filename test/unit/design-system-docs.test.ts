@@ -174,10 +174,11 @@ describe("docs/design/SYSTEM.md — §6-0 보강 (구간 단위 검증)", () => 
     expect(shell).toContain("시스템 상태");
   });
 
-  it.each(["대표", "본부 책임자", "팀장", "기획 PM", "시스템 관리자"])(
+  // 07.3(D-7317): 표 행 시작(`| 계급 |`)으로 단언한다 — 다른 문장 속 같은 낱말(예: 「사원」)에 속지 않는다.
+  it.each(["대표", "본부 책임자", "팀장", "사원", "시스템 관리자"])(
     "폰 하단 탭 역할 표에 계급 '%s' 행이 있다",
     (role) => {
-      expect(shell).toContain(role);
+      expect(shell).toContain(`| ${role} |`);
     },
   );
 
@@ -683,5 +684,73 @@ describe("06.1 증빙 — 상태 낱말 · 잠김 · 링크 건수 · 폰 시트
     for (const word of ["`문서`", "`증빙`", "`카드 사용`", "`preselect`", "`maxSelected`", "`limit`", "`{ ok: false, reason, retryable }`"]) expect(pick, word).toContain(word);
     expect(pick).toContain("새 컴포넌트는 없다");
     expect(DECISIONS).toContain("SP-6106");
+  });
+});
+
+describe("docs/design/SYSTEM.md §7-13 — 그룹 줄 본부 조건 표지 (07.3-04 · D-7318)", () => {
+  const grid = section(SYSTEM, "### 7-13.", "### 7-14.");
+
+  it("그룹 줄 본부 조건 표지 문장이 있고 회사 전체 계급은 본부 조건이 없다고 적는다", () => {
+    expect(grid).toContain("본부 조건");
+    expect(grid).toContain("경영관리본부만");
+    expect(grid).toContain("회사 전체 계급은 본부 조건 없음");
+    expect(grid).toContain("aria-describedby");
+  });
+
+  it("설정이 비면 「자금 본부 미지정」 표지와 표 위 잠김 한 줄을 적는다", () => {
+    expect(grid).toContain("자금 본부 미지정");
+    expect(grid).toContain("자금 기능 본부 미지정 · 설정");
+  });
+
+  it("DECISIONS에 D-7318 항목과 폰 개정 10 비교 문장이 있다", () => {
+    expect(DECISIONS).toContain("D-7318");
+    expect(DECISIONS).toContain("roles-client.tsx:54");
+  });
+});
+
+// 07.4-01 D-7404 · D-7410 · D-7412 — 서류 출력 공용 인쇄 틀: DECISIONS 기록 뒤 SYSTEM §6-6 반영(시스템 이탈 순서).
+describe("docs/design — 서류 출력 공용 인쇄 틀 (07.4-01)", () => {
+  const print = section(SYSTEM, "### 6-6", "### 6-7");
+  const entry = DECISIONS.split("\n## ").find((e) => e.includes("서류 출력 공용 인쇄 틀")) ?? "";
+
+  it("DECISIONS에 항목이 있고 D-7410이 적혀 있다", () => {
+    expect(entry).not.toBe("");
+    expect(entry).toContain("D-7410");
+  });
+
+  it("§6-6 제목이 세 서류와 확인증을 포함한다", () => {
+    expect(SYSTEM).toContain("### 6-6. 인쇄 템플릿 (지출결의서 · 연차 신청서 · 프로젝트 정산서 · 기타소득 확인증)");
+  });
+
+  it.each([
+    "결재선 단계 수만큼",
+    "`@page` 여백",
+    "회사 정보 줄",
+    "`app/print/**`의 `<table>`",
+    "비면 `PLANT8`",
+    "지급처",
+    "지급 방식",
+    "{단계} 결재 중",
+    "지급 총액",
+    "실지급액",
+    "파일 이름",
+    "결재란은 서류 맨 끝",
+    "화면 바",
+    "min(210mm, 100%)",
+    "폰",
+    "계산 불가 · ",
+    "자유 글 행",
+    "대표 결재 중",
+  ])("§6-6 구간에 '%s' 문장이 있다", (phrase) => {
+    expect(print).toContain(phrase);
+  });
+
+  it("§7-7 인쇄 라우트 행의 ERROR 칸은 확인증 실제 문구다(F11)", () => {
+    expect(SYSTEM).toContain("인쇄물 만들기 실패 · 다시 시도");
+    expect(SYSTEM).not.toContain("인쇄물을 만들지 못했습니다 · 다시 시도");
+  });
+
+  it("§6-6 트리거 줄은 main과 같다(07.4는 고치지 않는다)", () => {
+    expect(print).toContain("- 화면에서 「인쇄」는 2차 버튼. 새 탭으로 인쇄 라우트를 열고 자동 `window.print()`");
   });
 });

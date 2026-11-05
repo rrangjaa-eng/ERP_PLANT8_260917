@@ -162,7 +162,7 @@ test.describe("보관된 계급을 가진 사람의 상세 화면", () => {
 // 시드 계급의 값은 읽기만 한다(다른 워커의 스펙이 시드 계급의 보이는 행에 기댄다). 바꾸는 것은 이 묶음이 만든 임시 계급뿐이다.
 // 보는 범위는 P2 열이라 StaticTable이 같은 칸을 폰 접힌 줄에도 그린다(PC에서는 그 줄이 display:none) — 보이는 select 하나만 고른다.
 function viewScopeSelect(page: Page, roleName: string): Locator {
-  return page.getByLabel(`${roleName} 보는 범위`).filter({ visible: true });
+  return page.getByLabel(`${roleName} 보는 범위`, { exact: true }).filter({ visible: true });
 }
 
 const ROLES_POST = (response: { request(): { method(): string }; url(): string }) =>
@@ -173,7 +173,7 @@ test.describe("계급 보는 범위 칸 (06.2 S1 · D-6201 · D-6203)", () => {
     await archiveTempRoles();
   });
 
-  test("열이 업무 범위 바로 오른쪽 · 시드 여부 앞이고 시드 값이 대표 전사 · 본부 책임자 본부 · 팀장 팀 · 기획 PM 팀, 선택지는 전사 · 본부 · 팀 · 본인", async ({ page }) => {
+  test("열이 업무 범위 바로 오른쪽 · 시드 여부 앞이고 시드 값이 대표 전사 · 본부 책임자 본부 · 팀장 팀 · 사원 팀, 선택지는 전사 · 본부 · 팀 · 본인", async ({ page }) => {
     await loginAs(page);
     await page.goto("/admin/people/roles");
 
@@ -182,7 +182,7 @@ test.describe("계급 보는 범위 칸 (06.2 S1 · D-6201 · D-6203)", () => {
     await expect(selectedLabel(viewScopeSelect(page, "대표"))).toHaveText("전사");
     await expect(selectedLabel(viewScopeSelect(page, "본부 책임자"))).toHaveText("본부");
     await expect(selectedLabel(viewScopeSelect(page, "팀장"))).toHaveText("팀");
-    await expect(selectedLabel(viewScopeSelect(page, "기획 PM"))).toHaveText("팀");
+    await expect(selectedLabel(viewScopeSelect(page, "사원"))).toHaveText("팀");
     await expect(viewScopeSelect(page, "팀장").locator("option")).toHaveText(["전사", "본부", "팀", "본인"]);
   });
 

@@ -366,6 +366,7 @@ type SourceExtras = Partial<
     | "evidenceTypeName"
     | "paymentMethodName"
     | "taxLine"
+    | "taxResult"
     | "taxDrift"
     | "defaultEvidenceName"
     | "executionLines"
@@ -421,6 +422,7 @@ function toSource(row: ExpenseSummaryRow, payment: PaymentFields, extras: Source
     companyBorneKrw: row.companyBorneKrw,
     payableKrw: row.payableKrw,
     taxLine: extras.taxLine ?? null,
+    taxResult: extras.taxResult ?? null,
     taxDrift: extras.taxDrift ?? null,
     defaultEvidenceName: extras.defaultEvidenceName ?? null,
     executionLines: extras.executionLines ?? [],
@@ -1768,6 +1770,12 @@ export async function getNewExpenseDefaults(viewer: Viewer, deps?: { now?: Date;
   return project(viewer, { usageDate, teamName: team?.name ?? null, usageDateError: team ? null : NO_TEAM_AT_USAGE_DATE }, EXPENSE_NEW_DEFAULTS_DTO_SPEC);
 }
 
+function printableTaxResult(result: ExpenseTaxResult): NonNullable<ExpenseDocumentDto["taxResult"]> {
+  if (result.unavailable) return { unavailable: true };
+  const { ruleKind, rate, vatKrw, withholdingKrw, companyBorneKrw, payableKrw } = result;
+  return { ruleKind, rate, vatKrw, withholdingKrw, companyBorneKrw, payableKrw };
+}
+
 // 문서 하나 — 보이는 사람(canSeeExpense)이 아니면 null(→ 404).
 export async function getExpense(viewer: Viewer, input: { expenseId: string }): Promise<Partial<ExpenseDocumentDto> | null> {
   if (!UUID_SHAPE.test(input.expenseId)) return null;
@@ -1803,6 +1811,8 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
       evidenceTypeName,
       paymentMethodName: row.paymentMethod ? (paymentNames.get(row.paymentMethod) ?? row.paymentMethod) : null,
       taxLine,
+      // 07.4 인쇄: taxLine과 같은 조건 · 같은 result — 설정 이력 id · 적용일 같은 칸은 종이에 쓸 데가 없어 싣지 않는다.
+      taxResult: result && supply ? printableTaxResult(result) : null,
       taxDrift,
       defaultEvidenceName: vendor?.defaultEvidenceType ? (evidenceNames.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType) : null,
       ...(await lineFactsFor(viewer, row, supply)),

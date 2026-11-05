@@ -475,6 +475,72 @@ describe("증빙 종류 세금 규칙 시드 맞춤(0029)", () => {
   });
 });
 
+// 07.3(D-7302 · D-7317): 계급 role-pm 표시 이름 「기획 PM」 → 「사원」. 시드는 기존 행을 덮지 않아(onConflictDoNothing)
+// 이미 만든 DB는 마이그레이션이 바꾼다. 이름이 아직 옛 값일 때만 바꾸고(관리자가 바꾼 이름은 그대로), 「사원」 이름 계급이
+// 이미 있으면 이름 unique 때문에 바꾸지 않고 지나간다(배포를 멈추지 않는다). 두 번 돌려도 결과가 같다.
+describe("계급 이름 「기획 PM」 → 「사원」(phase73_role_pm_to_staff)", () => {
+  const OLD_STAMP = "2026-01-01 00:00:00";
+
+  async function beforeRename(): Promise<Pool> {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_phase73_role_pm_to_staff") - 1);
+    await pool.query(`UPDATE roles SET updated_at = $1 WHERE id = 'role-pm'`, [OLD_STAMP]);
+    return pool;
+  }
+
+  async function rolePm(pool: Pool): Promise<{ name: string; touched: boolean }> {
+    const { rows } = await pool.query<{ name: string; touched: boolean }>(
+      `SELECT name, updated_at <> $1::timestamp AS touched FROM roles WHERE id = 'role-pm'`,
+      [OLD_STAMP],
+    );
+    if (!rows[0]) throw new Error("role-pm 행이 없습니다");
+    return rows[0];
+  }
+
+  async function runAgain(pool: Pool): Promise<void> {
+    const entry = journal.entries.find((e) => e.tag.endsWith("_phase73_role_pm_to_staff"));
+    if (!entry) throw new Error("journal에 _phase73_role_pm_to_staff 마이그레이션이 없습니다");
+    const migrationSql = readFileSync(join(MIGRATIONS_DIR, `${entry.tag}.sql`), "utf8");
+    for (const statement of migrationSql.split("--> statement-breakpoint")) {
+      if (statement.trim()) await pool.query(`BEGIN; ${statement}; COMMIT;`);
+    }
+  }
+
+  it("이름이 아직 「기획 PM」이면 「사원」으로 바뀌고 updated_at이 바뀌며, 다시 돌려도 같다", async () => {
+    const pool = await beforeRename();
+    expect(await rolePm(pool)).toEqual({ name: "기획 PM", touched: false });
+
+    await migrateTo(pool, countThrough("_phase73_role_pm_to_staff"));
+    expect(await rolePm(pool)).toEqual({ name: "사원", touched: true });
+
+    await runAgain(pool);
+    expect((await rolePm(pool)).name).toBe("사원");
+  });
+
+  it("관리자가 role-pm을 다른 이름으로 바꿨으면 그대로 둔다", async () => {
+    const pool = await beforeRename();
+    await pool.query(`UPDATE roles SET name = '플래너' WHERE id = 'role-pm'`);
+
+    await migrateTo(pool, countThrough("_phase73_role_pm_to_staff"));
+    expect(await rolePm(pool)).toEqual({ name: "플래너", touched: false });
+
+    await runAgain(pool);
+    expect(await rolePm(pool)).toEqual({ name: "플래너", touched: false });
+  });
+
+  it("다른 계급이 이미 「사원」이면 role-pm은 「기획 PM」 그대로이고 마이그레이션은 오류 없이 끝난다", async () => {
+    const pool = await beforeRename();
+    await pool.query(`INSERT INTO roles (id, name) VALUES ('role-admin-staff', '사원')`);
+
+    await migrateTo(pool, countThrough("_phase73_role_pm_to_staff"));
+    expect(await rolePm(pool)).toEqual({ name: "기획 PM", touched: false });
+    const { rows } = await pool.query<{ count: string }>(`SELECT count(*) FROM drizzle.__drizzle_migrations`);
+    expect(Number(rows[0]?.count)).toBe(countThrough("_phase73_role_pm_to_staff"));
+    const { rows: staff } = await pool.query<{ id: string }>(`SELECT id FROM roles WHERE name = '사원'`);
+    expect(staff).toEqual([{ id: "role-admin-staff" }]);
+  });
+});
+
 // 거래처 사업자번호 유일 색인(0030 · 계획 bizno-unique-plan §5 · T7 · T8) — 숫자만 뽑은 번호가 살아 있는(보관 안 된) 거래처 사이에서
 // 유일하다. 숨김도 세고, 보관 · NULL · 빈 값(숫자 없음)은 빠진다. 이미 살아 있는 중복이 있으면 가드가 번호를 알리며 멈춘다.
 describe("거래처 사업자번호 유일 색인(0030)", () => {

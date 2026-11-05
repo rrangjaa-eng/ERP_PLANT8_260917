@@ -1624,3 +1624,64 @@ SETTING_DEFS.push(
   APPROVAL_ROUTE_SETTLEMENT_STEP4_SCOPE,
   APPROVAL_ROUTE_SETTLEMENT_STEP4_ORG_UNIT_ID,
 );
+
+// 07.4-01 D-7405: 인쇄 서류 머리의 회사 정보 다섯 칸. 스키마는 모두 `refine`(zod custom 이슈)로 짓는다 — 길이 · 정규식 메서드에 문구를 넘기면
+// 저장 실패가 koreanZodErrorMessage를 지나며 「… 이하만 가능 · 값 확인」 · 「형식 오류 · 값 확인」으로 바뀐다(eng 검토 A1). 빈 문자열은 검사 안에서 통과로 본다.
+// 사업자번호는 형식만 본다(국세청 검증 숫자는 보지 않는다 — RESEARCH Pitfall 8).
+const printCompanyText = (max: number) => z.string().trim().refine((value) => Array.from(value).length <= max, `길이 초과 · ${max}자 이내`);
+const printCompanyFormat = (pattern: RegExp, example: string) =>
+  z.string().trim().refine((value) => value === "" || pattern.test(value), `형식 오류 · ${example}처럼`);
+
+export const PRINT_COMPANY_NAME: SettingDef<string> = {
+  key: "print.company_name",
+  kind: "simple",
+  schema: printCompanyText(60),
+  label: "회사명",
+  namespace: "회사 정보",
+  default: "",
+  readInvalidAsDefault: true,
+};
+
+export const PRINT_COMPANY_ADDRESS: SettingDef<string> = {
+  key: "print.company_address",
+  kind: "simple",
+  schema: printCompanyText(120),
+  label: "주소",
+  namespace: "회사 정보",
+  default: "",
+  readInvalidAsDefault: true,
+};
+
+export const PRINT_COMPANY_BUSINESS_NO: SettingDef<string> = {
+  key: "print.company_business_no",
+  kind: "simple",
+  schema: printCompanyFormat(/^\d{3}-\d{2}-\d{5}$/, "123-45-67890"),
+  label: "사업자번호",
+  hint: "123-45-67890",
+  namespace: "회사 정보",
+  default: "",
+  readInvalidAsDefault: true,
+};
+
+export const PRINT_COMPANY_REPRESENTATIVE: SettingDef<string> = {
+  key: "print.company_representative",
+  kind: "simple",
+  schema: printCompanyText(30),
+  label: "대표자",
+  namespace: "회사 정보",
+  default: "",
+  readInvalidAsDefault: true,
+};
+
+export const PRINT_COMPANY_PHONE: SettingDef<string> = {
+  key: "print.company_phone",
+  kind: "simple",
+  schema: printCompanyFormat(/^(0\d{1,3}-\d{3,4}-\d{4}|1[5-8]\d{2}-\d{4})$/, "02-123-4567"),
+  label: "전화",
+  hint: "02-123-4567",
+  namespace: "회사 정보",
+  default: "",
+  readInvalidAsDefault: true,
+};
+
+SETTING_DEFS.push(PRINT_COMPANY_NAME, PRINT_COMPANY_ADDRESS, PRINT_COMPANY_BUSINESS_NO, PRINT_COMPANY_REPRESENTATIVE, PRINT_COMPANY_PHONE);

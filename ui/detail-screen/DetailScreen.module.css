@@ -39,6 +39,14 @@
   margin-inline-start: auto;
 }
 
+/* 폰(<700, PcOnly와 같은 문턱)에서 행동이 모두 PcOnly(`data-pc-only`)로 가려지면 빈 상자가 머리 줄 둘째 줄로 떨어져 --s-4 틈을 만든다 —
+   직계 자식이 모두 PcOnly인 상자는 폰에서 자리를 차지하지 않는다(DECISIONS 2026-11-05). PC 레이아웃은 그대로다. */
+@media (max-width: 699.98px) {
+  .actions:not(:has(> :not([data-pc-only]))) {
+    display: none;
+  }
+}
+
 .meta {
   margin: 0 0 var(--s-4);
   color: var(--text-muted);

@@ -71,6 +71,8 @@ export const CORE_ACTION_TYPES = [
   "work_vendor_create",
   // 07-24 D-729: 예산 직접 수정은 돈 기록이라 끌 수 없다
   "budget_manual_change",
+  // 07.4 D-7415: 서류 인쇄 — 누가 · 어떤 서류. 끌 수 없다(저장된 선택 목록에 새 종류가 자동으로 들어가지 않아 조용히 빠지는 것을 막는다)
+  "document_print",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -122,6 +124,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   notification_rule_change: "알림 규칙 변경",
   work_vendor_create: "업무 중 거래처 등록",
   budget_manual_change: "예산 직접 수정",
+  document_print: "서류 인쇄",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -179,6 +182,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "work_vendor_create",
   // 07-24 D-729: 예산 직접 수정은 돈 기록이라 끌 수 없다
   "budget_manual_change",
+  // 07.4 D-7415: 서류 인쇄 기록은 누가 어떤 서류를 뽑았는지의 흔적이라 끌 수 없다
+  "document_print",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

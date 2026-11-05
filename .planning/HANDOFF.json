@@ -1,83 +1,38 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-21T10:10:00Z",
-  "phase": "07",
-  "phase_name": "schedule-notify-audit",
-  "phase_dir": ".planning/phases/07-schedule-notify-audit",
+  "timestamp": "2026-11-04T05:15:30.553Z",
+  "phase": "08",
+  "phase_name": "cutover",
+  "phase_dir": ".planning/phases/08-cutover",
   "plan": 0,
   "task": 0,
   "total_tasks": 0,
   "status": "paused",
   "completed_tasks": [
-    {
-      "id": 1,
-      "name": "plan-eng-review",
-      "status": "done",
-      "commit": "b029773"
-    },
-    {
-      "id": 2,
-      "name": "plan-design-review",
-      "status": "done",
-      "commit": "8a82238"
-    },
-    {
-      "id": 3,
-      "name": "eng R2-R15 + design U1-U18 계획 반영, 재검토 1회(BLOCKER 0), UI-SPEC approved",
-      "status": "done",
-      "commit": "5ab9a96"
-    },
-    {
-      "id": 6,
-      "name": "PR #258 [지시] 반영: D-726 A(07-13 → PR-LOG, PR-S W3 끝 ready), D-747 A 유지",
-      "status": "done",
-      "commit": "docs: apply R1=A (07-13 → PR-LOG)"
-    }
+    {"id": 1, "name": "plan-phase 8: research (260907 대조) · validation · patterns · 8 plans", "status": "done", "commit": "26a4a6f"}
   ],
   "remaining_tasks": [
-    {
-      "id": 4,
-      "name": "PR #258 사용자 머지(.claude/ 위험 경로)",
-      "status": "in_progress"
-    },
-    {
-      "id": 5,
-      "name": "머지 뒤 main 기준 실행 브랜치 → /gsd-execute-phase 07",
-      "status": "not_started"
-    }
+    {"id": 2, "name": "plan checker (gsd-plan-checker) + Codex adversarial review, 새 세션", "status": "not_started"},
+    {"id": 3, "name": "/plan-ceo-review (정수 페이즈 — 실행 훅 plant8-skill-gate.sh:140이 요구), 새 세션", "status": "not_started"},
+    {"id": 4, "name": "/plan-eng-review (Codex 없이), 새 세션", "status": "not_started"},
+    {"id": 5, "name": "/plan-design-review + Codex (08-03 화면), 새 세션", "status": "not_started"},
+    {"id": 6, "name": "PR #344 CI 초록 확인 → 사용자 카드 뒤 ready → 사용자 머지(문서만 PR)", "status": "not_started"}
   ],
   "blockers": [],
   "async_jobs": [],
   "human_actions_pending": [
-    {
-      "action": "PR #258 머지",
-      "context": ".claude/gates/phase-07.log 포함 — 훅이 세션 머지를 막음",
-      "blocking": true
-    }
+    {"action": "계획 PR #344 머지(문서만 PR은 사용자 머지)", "context": "게이트 통과 뒤", "blocking": true}
   ],
   "decisions": [
-    {
-      "decision": "STATE.md 13b 변경 되돌림",
-      "rationale": "06.6 선례: 실행 세션만 자기 페이즈 진행 표기 갱신",
-      "phase": "07"
-    },
-    {
-      "decision": "AQ-11 no-slot: 기한 안 마지막 영업일, 마감 넘기면 다음 지급 가능 금요일",
-      "rationale": "사용자 답(D-741)",
-      "phase": "07"
-    },
-    {
-      "decision": "D-726 개정: 위험 경로 네 묶음 — PR-S(07-02·07·11, W3 끝) · PR-LOG(07-13, PR-S 머지 뒤) · PR-AUTH · PR-PERM, 사용자 직접 머지 4번",
-      "rationale": "PR #258 [지시] issuecomment-6313020600 (R1 → A)",
-      "phase": "07"
-    },
-    {
-      "decision": "D-747 원가율 첫 저장 되돌리기 없음(결과 줄만)",
-      "rationale": "PR #258 [지시] (Q1 → A)",
-      "phase": "07"
-    }
+    {"decision": "견적 줄 일수 칸은 전환 전(07.2-01·06)", "rationale": "사용자 2026-11-04 「일수 칸 넣어」", "phase": "08"},
+    {"decision": "화면 항목 추가는 07.5로 떼어 전환 전", "rationale": "사용자 카드 2026-11-04", "phase": "08"},
+    {"decision": "번호 초기화 = cert 제외 전부", "rationale": "사용자 카드 13:38 KST — expense·purchase_request period가 프로젝트 번호", "phase": "08"},
+    {"decision": "PITR 전환 전 켬", "rationale": "사용자 카드 13:38 KST", "phase": "08"},
+    {"decision": "첫 운영 승격 지금 먼저, 전환 전 한 번 더", "rationale": "사용자 카드 13:38 KST — 승격 뒤 9/18로 롤백 불가, 프로덕션 리허설 선행", "phase": "08"},
+    {"decision": "demo 삭제 대상 = 표 이름 분류 + 완전성 가드(source 컬럼 기준 아님)", "rationale": "expenses 등에 source 없음, 새 마이그레이션 회피(RESEARCH OQ1)", "phase": "08"},
+    {"decision": "STATE current_phase는 바꾸지 않음", "rationale": "07.2·07.3 실행 중, 실행 세션이 자기 페이즈만 갱신", "phase": "08"}
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 [#258-04 실행]: /gsd-progress → PR #258 머지·새 [지시] 확인 → 머지됐으면 /gsd-execute-phase 07",
-  "context_notes": "계획 게이트 통과(5ab9a96). R1=A(07-13 → PR-LOG `claude/07-pr-log`, PR-S W3 끝 ready, 사용자 머지 4번) · Q1=A. R10 대표 action_log.detail은 07-05 D-722 카드 ⑧(무답=끔). PR 묶음·머지 규칙은 07-01-PLAN.md PR 묶음 절."
+  "next_action": "새 세션에서 /plant8:gsd-plan-phase 8 맥락으로 플랜 체커(+Codex 동시)부터. 브랜치 claude/project-thread-00p3x5, PR #344.",
+  "context_notes": "계획 스레드 cmsg_01JxAnD1jDpD9cQroZfV4bYGPLpisKDL5iAvwgkcVYG7pK. 07.4(#341)·07.5·07.6 ROADMAP 줄은 각 계획 스레드가 넣는다(여기선 번호 참조만)."
 }

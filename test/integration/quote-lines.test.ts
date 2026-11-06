@@ -1480,3 +1480,50 @@ describe("견적 줄 저장 로그의 줄 전후(07.1-13 S8)", () => {
     expect(detail).not.toHaveProperty("lineChanges");
   });
 });
+
+// 07.2 PU6(D-7230 · D-7231 · D-7232) — 일수 · 고객 비고 · 대 · 중분류. 견적가 = 수량 × 단가 × 일수를 서버가 다시 계산한다.
+describe("일수 · 고객 비고 · 분류 칸(07.2-06)", () => {
+  const krwMoney = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+
+  it("일수 3 줄 저장 → quote_amount_krw 6,000 · 고객 비고 · 중분류 · 대분류 저장", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const id = randomUUID();
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [
+        {
+          id, isNew: true, subcategory: subcategoryValue, itemName: "조명 임대",
+          quantity: 2, days: 3, unitPrice: krwMoney(1_000), execution: krwMoney(0),
+          clientRemark: "3일 사용", midCategory: "조명", majorCategory: "Venue",
+        },
+      ],
+    });
+    const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, id));
+    expect(row?.quoteAmountKrw).toBe(6_000);
+    expect(row?.days).toBe("3.00");
+    expect(row).toMatchObject({ clientRemark: "3일 사용", midCategory: "조명", majorCategory: "Venue" });
+    const [dto] = await listQuoteLines(SYSTEM_VIEWER, revision.id, { status: "bidding", canWrite: true });
+    expect(dto).toMatchObject({ days: 3, clientRemark: "3일 사용", midCategory: "조명", majorCategory: "Venue", quoteAmountKrw: 6_000 });
+  });
+
+  it("일수 없이 저장 → 일수 1 · 견적가 = 수량 × 단가", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const id = randomUUID();
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [{ id, isNew: true, subcategory: subcategoryValue, itemName: "무대", quantity: 2, unitPrice: krwMoney(1_000), execution: krwMoney(0) }],
+    });
+    const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, id));
+    expect(row?.days).toBe("1.00");
+    expect(row?.quoteAmountKrw).toBe(2_000);
+  });
+
+  it("수량 2 · 단가 4,000억 · 일수 2 → 견적가 상한 오류가 수량 · 단가 · 일수 칸에", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const error = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [
+        { id: randomUUID(), isNew: true, subcategory: subcategoryValue, itemName: "큰 줄", quantity: 2, days: 2, unitPrice: krwMoney(400_000_000_000), execution: krwMoney(0) },
+      ],
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SaveRejectedError);
+    expect((error as SaveRejectedError).formatErrors.map((issue) => issue.field).sort()).toEqual(["days", "quantity", "unitPrice"]);
+  });
+});

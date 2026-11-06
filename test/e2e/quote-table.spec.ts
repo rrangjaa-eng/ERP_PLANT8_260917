@@ -2006,3 +2006,47 @@ test.describe("견적 줄 표 — 묶음 ④ /qa 포커스", () => {
     expect(actual.color, "머리글 글자").toBe(await resolved("color", "--g-950"));
   });
 });
+
+// 07.2 PU6(D-7230 · D-7233 · S4) — 일수 열. 열은 머리글 이름으로 찾는다(열 순서 = 논리 순서 = 붙여넣기 순서).
+async function headerIndex(page: Page, name: string): Promise<number> {
+  const headers = await quoteTable(page).locator("thead th").allInnerTexts();
+  const index = headers.findIndex((text) => text.trim() === name);
+  if (index === -1) throw new Error(`머리글 ${name} 없음: ${headers.join(" | ")}`);
+  return index;
+}
+
+test.describe("견적 줄 표 — 일수 · 고객 비고 · 중분류 열(07.2-06 S4)", () => {
+  test("머리글 순서가 번호 · 소분류 · 항목 · 거래처 · 수량 · 단가 · 일수 · 견적가 · 실행가 · 차익 · 상태 · 내부 비고 · 고객 비고 · 중분류", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "머리글 줄", amount: 1000 }]);
+    const headers = (await quoteTable(page).locator("thead th").allInnerTexts()).map((text) => text.trim()).filter((text) => text !== "" && text !== "행동");
+    expect(headers).toEqual(["번호", "소분류", "항목", "거래처", "수량", "단가", "일수", "견적가", "실행가", "차익", "상태", "내부 비고", "고객 비고", "중분류"]);
+  });
+
+  test("수량 2 · 단가 1,000 · 일수 3 → 일괄 저장 뒤 견적가 `6,000` · 다시 열어도 일수 3 · 일수 `abc`는 `숫자 아님 · 1.5처럼`", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "일수 줄", amount: 1000 }]);
+    const days = await headerIndex(page, "일수");
+    const quantity = await headerIndex(page, "수량");
+    const quoteAmount = await headerIndex(page, "견적가");
+
+    await editNumberCell(page, 0, quantity, "2");
+    await editNumberCell(page, 0, days, "3");
+    await saveWithKeyboard(page, 0, days);
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    await expect(quoteCell(page, 0, quoteAmount)).toHaveText("6,000");
+
+    await page.reload();
+    await expect(quoteCell(page, 0, await headerIndex(page, "일수"))).toHaveText("3");
+
+    const daysCell = quoteCell(page, 0, days);
+    await expect(async () => {
+      await daysCell.focus();
+      await page.keyboard.press("Enter");
+      await expect(daysCell.locator("input")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("abc");
+    await page.keyboard.press("Enter");
+    await expect(daysCell).toHaveAttribute("aria-invalid", "true");
+    await expect(daysCell).toContainText("숫자 아님 · 1.5처럼");
+  });
+});

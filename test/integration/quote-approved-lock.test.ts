@@ -175,6 +175,20 @@ describe("승인 차수 잠금 — 단독 저장(04-40 · 사용자 D7 · ENG-D7
     expect((await reload(s.krwLine.id)).subcategory).toBe(s.krwLine.subcategory);
   });
 
+  // 07.2 PU6(D-7232) — 일수 · 고객 비고는 수량 · 단가처럼 잠긴다.
+  it("일수 변경은 승인 문구로 거부 · 합계 그대로(07.2-06)", async () => {
+    const s = await setupApproved();
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.krwLine, { days: 2 })] })).rejects.toThrow(LOCKED);
+    expect((await reload(s.krwLine.id)).days).toBe("1.00");
+    expect(await quoteTotal(s.revisionId)).toBe(s.approvedTotal);
+  });
+
+  it("고객 비고 변경은 승인 문구로 거부(07.2-06 · D-7232)", async () => {
+    const s = await setupApproved();
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.krwLine, { clientRemark: "바꿈" })] })).rejects.toThrow(LOCKED);
+    expect((await reload(s.krwLine.id)).clientRemark).toBeNull();
+  });
+
   it("실행가만 바꾼 저장은 통과하고 합계가 그대로다", async () => {
     const s = await setupApproved();
     await saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.krwLine, { execution: krw(55_000) })] });

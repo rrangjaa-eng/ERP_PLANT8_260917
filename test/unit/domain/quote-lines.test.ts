@@ -130,3 +130,62 @@ describe("quoteLineFormatErrors — 종류별 음수 실행가(04-13)", () => {
     expect(quoteLineFormatErrors(line(-120_000), 0, "adjustment")).toEqual([]);
   });
 });
+
+// 07.2 PU6(D-7230) — 일수는 수량과 같은 세 검사(0 이하 · 상한 · 소수 2자리), 같은 상한 상수(numeric(12,2) 넘침 22003이 화면에 닿지 않게).
+describe("quoteLineFormatErrors — 일수(07.2-06)", () => {
+  const line = (days: number) => ({
+    id: "row-1",
+    subcategory: "a",
+    itemName: "항목",
+    days,
+    unitPrice: { currency: "KRW" as const, amount: 1_000, fxRate: 1 },
+    execution: { currency: "KRW" as const, amount: 0, fxRate: 1 },
+  });
+  const daysErrors = (days: number) => quoteLineFormatErrors(line(days), 0, "quote").filter((error) => error.field === "days");
+
+  it("일수 1e10 → 상한 오류", () => {
+    expect(daysErrors(1e10).map((error) => error.reason)).toEqual(["일수 상한 초과 · 일수 수정"]);
+  });
+
+  it("소수 3자리 1.255 → 형식 오류(소수 2자리까지)", () => {
+    expect(daysErrors(1.255)).toHaveLength(1);
+  });
+
+  it("0 · 음수 → 오류", () => {
+    expect(daysErrors(0)).toHaveLength(1);
+    expect(daysErrors(-1)).toHaveLength(1);
+  });
+
+  it("3 · 0.5 · 1.25는 통과", () => {
+    expect(daysErrors(3)).toEqual([]);
+    expect(daysErrors(0.5)).toEqual([]);
+    expect(daysErrors(1.25)).toEqual([]);
+  });
+
+  it("행 스키마: 일수를 숫자로 받고 고객 비고 · 대 · 중분류 글자를 받는다", () => {
+    const parsed = quoteLineRowInputSchema.parse({
+      isNew: true,
+      subcategory: "a",
+      itemName: "항목",
+      days: "3",
+      clientRemark: "고객에게",
+      midCategory: "중",
+      majorCategory: "대",
+      unitPrice: { currency: "KRW", amount: 1_000, fxRate: 1 },
+      execution: { currency: "KRW", amount: 0, fxRate: 1 },
+    });
+    expect(parsed).toMatchObject({ days: 3, clientRemark: "고객에게", midCategory: "중", majorCategory: "대" });
+  });
+});
+
+describe("computeQuoteLineAmounts — 일수(07.2-06 · D-7230)", () => {
+  it("수량 2 · 단가 1,000 · 일수 3 → 견적가 6,000", () => {
+    const result = computeQuoteLineAmounts({
+      quantity: 2,
+      days: 3,
+      unitPrice: { currency: "KRW", amount: 1_000, fxRate: 1 },
+      execution: { currency: "KRW", amount: 0, fxRate: 1 },
+    });
+    expect(result.quoteAmountKrw).toBe(6_000);
+  });
+});

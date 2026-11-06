@@ -109,6 +109,26 @@ describe("quoteAmount", () => {
     expect(quoteAmount(undefined, unitPrice)).toBe(1_200_000);
     expect(quoteAmount(0, unitPrice)).toBe(1_200_000);
   });
+
+  // 07.2 PU6(D-7230 · D-63 개정) — 견적가 = 수량 × 단가 × 일수. 일수를 비우면 1이라 기존 줄의 견적가가 그대로다(D-7231).
+  const krwPrice = (amount: number): Money => ({ __brand: "Money", currency: "KRW", amount, fxRate: 1, amountKrw: amount });
+
+  it("수량 2 · 단가 1,000 · 일수 3 → 6,000", () => {
+    expect(quoteAmount(2, krwPrice(1_000), 3)).toBe(6_000);
+  });
+
+  it("일수를 비우면 기본 1 — 수량 × 단가와 같다", () => {
+    expect(quoteAmount(2, krwPrice(1_000))).toBe(2_000);
+    expect(quoteAmount(2, krwPrice(1_000), undefined)).toBe(2_000);
+  });
+
+  it("소수 일수 0.5 · 수량 3 · 단가 1,001 → 곱 1,501.5를 한 번만 반올림해 1,502(중간 반올림 없음)", () => {
+    expect(quoteAmount(3, krwPrice(1_001), 0.5)).toBe(1_502);
+  });
+
+  it("음수 단가는 기존 반올림 그대로(Math.round — −x.5 → −x, grossFromSignedTotal의 절댓값 대칭 규칙이 아니다)", () => {
+    expect(quoteAmount(0.5, krwPrice(-1_001), 1)).toBe(-500);
+  });
 });
 
 describe("profit", () => {
@@ -323,6 +343,12 @@ describe("quoteAmountWithinBound", () => {
   it("USD 수량 2 × USD 400,000,000 @1,350(원화 1.08조)은 거짓 · 수량 0은 기본 1이라 참", () => {
     expect(quoteAmountWithinBound(2, { currency: "USD", amount: 400_000_000, fxRate: 1350 })).toBe(false);
     expect(quoteAmountWithinBound(0, krw(1_000_000))).toBe(true);
+  });
+
+  // 07.2 PU6(D-7230) — 일수도 곱에 든다. 수량 2 × 단가 4,000억은 상한 안이지만 × 일수 2 = 1.6조라 거짓.
+  it("수량 × 단가 × 일수의 곱이 상한을 넘으면 거짓 — 일수 생략은 1", () => {
+    expect(quoteAmountWithinBound(2, krw(400_000_000_000), 2)).toBe(false);
+    expect(quoteAmountWithinBound(2, krw(400_000_000_000))).toBe(true);
   });
 });
 

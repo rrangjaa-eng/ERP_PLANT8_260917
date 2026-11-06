@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Num } from "@/ui/num/Num";
 import { RowSheet } from "@/ui/table/RowSheet";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
@@ -34,11 +35,11 @@ const COLUMNS: TableColumn<PeopleBalanceRow>[] = [
     ),
   },
   { key: "team", header: "팀", priority: "p2", cell: (row) => row.team },
-  { key: "granted", header: "부여", priority: "p3", align: "right", collapseBelow: 1280, cell: (row) => row.granted },
-  { key: "used", header: "사용", priority: "p2", align: "right", cell: (row) => row.used },
-  { key: "pending", header: "결재 중", priority: "p3", align: "right", collapseBelow: 1280, cell: (row) => row.pending },
-  { key: "remaining", header: "남음", priority: "p1", align: "right", cell: (row) => row.remaining },
-  { key: "monthlyRemaining", header: "월차 남음", priority: "p3", align: "right", collapseBelow: 1280, cell: (row) => row.monthlyRemaining },
+  { key: "granted", header: "부여", priority: "p3", align: "right", collapseBelow: 1280, cell: (row) => <Num value={row.granted} /> },
+  { key: "used", header: "사용", priority: "p2", align: "right", cell: (row) => <Num value={row.used} /> },
+  { key: "pending", header: "결재 중", priority: "p3", align: "right", collapseBelow: 1280, cell: (row) => <Num value={row.pending} /> },
+  { key: "remaining", header: "남음", priority: "p1", align: "right", cell: (row) => <Num value={row.remaining} /> },
+  { key: "monthlyRemaining", header: "월차 남음", priority: "p3", align: "right", collapseBelow: 1280, cell: (row) => <Num value={row.monthlyRemaining} /> },
 ];
 
 export function PeopleBalanceTable({ rows }: { rows: PeopleBalanceRow[] }) {

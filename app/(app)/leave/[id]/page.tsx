@@ -19,7 +19,7 @@ import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
 import { DayNumbers } from "../day-numbers";
-import { formatLeavePeriod, HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
+import { formatLeaveKind, formatLeavePeriod } from "../labels";
 import { leaveStatusWord, routeListSteps, seoulMinuteOf, toLeaveStatusKey, withdrawResultLines } from "../status-display";
 import { previewRouteOrBlocked } from "../route-preview";
 import { DocumentActions } from "./document-actions";
@@ -52,7 +52,7 @@ export default async function LeaveDocumentPage({
 
   const statusKey = toLeaveStatusKey(leave.status);
   const period = leave.startDate && leave.endDate ? `${leave.startDate}${leave.endDate !== leave.startDate ? ` ~ ${leave.endDate}` : ""}` : "";
-  const kindLabel = leave.kind ? `${LEAVE_KIND_LABELS[leave.kind] ?? leave.kind}${leave.half ? ` ${HALF_LABELS[leave.half] ?? leave.half}` : ""}` : "";
+  const kindLabel = formatLeaveKind(leave);
 
   // 잔고 행은 결재 중(진행 중) 문서에만 — 승인 · 반려 · 회수된 문서는 읽지도 그리지도 않는다(CXF-B-F03).
   const inProgress = view?.status !== undefined && IN_PROGRESS.includes(view.status);
@@ -158,7 +158,7 @@ export default async function LeaveDocumentPage({
             ? {
                 leaveId: leave.id,
                 expectedVersion: view.version,
-                initial: { kind: leave.kind, startDate: leave.startDate, endDate: leave.endDate, half: leave.half ?? null, note: leave.note ?? null },
+                initial: { kind: leave.kind, startDate: leave.startDate, endDate: leave.endDate, half: leave.half ?? null, startTime: leave.startTime ?? null, note: leave.note ?? null },
               }
             : null
         }

@@ -49,7 +49,18 @@ import {
 } from "@/repositories/leave-requests";
 import { findLiveLeaveOverlap, loadLeaveHolidays } from "@/domain/leave/guard";
 import { overlapMessage } from "@/domain/leave/overlap";
-import { countLeaveQuarters, formatLeaveDays, LEAVE_KIND_WORDS, leaveYearRange, type HalfPeriod, type LeaveFieldError, type LeaveKind } from "@/domain/leave/days";
+import {
+  countLeaveQuarters,
+  formatLeaveDays,
+  LEAVE_KIND_WORDS,
+  leaveYearRange,
+  type HalfPeriod,
+  type LeaveDaysResult,
+  type LeaveFieldError,
+  type LeaveKind,
+  type LeaveYearRange,
+} from "@/domain/leave/days";
+import type { HolidayLookup } from "@/domain/holidays/business-day";
 import { LEAVE_REQUEST_DTO_SPEC, type LeaveRequestBalanceDto, type LeaveRequestDto } from "@/domain/leave/dto";
 import { assertLeaveWrite, canSeeLeaveDocument, canWriteLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { getLeaveBalancesForRequests } from "@/domain/leave/balance-service";
@@ -127,6 +138,36 @@ export async function loadLeaveRouteConfig(deps?: Parameters<typeof getSimpleSet
   return { selfApproval, steps };
 }
 
+// 07.2-08(PU11 · D-7257 · D-7258): 반반차 시작 시각 — 새 반반차는 필수 · `HH:MM` 형식만(근무시간 검사 없음). 반반차가 아니면
+// 온 값을 버리고 null로 저장한다(start_time CHECK가 반반차에만 값을 받는다). 제출 · 다시 신청 · 미리보기가 같은 함수를 쓴다.
+const START_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export function leaveStartTimeOf(
+  kind: string,
+  startTime: string | null | undefined,
+): { ok: true; startTime: string | null } | { ok: false; error: LeaveFieldError } {
+  if (kind !== "quarter_day") return { ok: true, startTime: null };
+  if (startTime && START_TIME_PATTERN.test(startTime)) return { ok: true, startTime };
+  return { ok: false, error: { field: "startTime", message: "시작 시각 형식 오류 · 14:00처럼" } };
+}
+
+// 제출 · 다시 신청의 칸 검증 — 일수(countLeaveQuarters)와 시작 시각 오류를 함께 모아 던진다. 저장에는 검증된 값만 쓴다.
+export function validateLeaveInput(
+  input: SubmitLeaveInput,
+  range: LeaveYearRange,
+  holidays: HolidayLookup,
+): Extract<LeaveDaysResult, { ok: true }> & { startTime: string | null } {
+  const days = countLeaveQuarters(input, range, holidays);
+  const time = leaveStartTimeOf(input.kind, input.startTime);
+  if (!days.ok || !time.ok) throw new LeaveValidationError([...(days.ok ? [] : days.errors), ...(time.ok ? [] : [time.error])]);
+  return { ...days, startTime: time.startTime };
+}
+
+// DB time 칸은 `HH:MM:SS` — 화면 · DTO는 `HH:MM`.
+function hourMinuteOf(time: string | null): string | null {
+  return time ? time.slice(0, 5) : null;
+}
+
 function toSource(row: LeaveRequestWithApproval): LeaveRequestDto {
   return {
     id: row.id,
@@ -136,6 +177,7 @@ function toSource(row: LeaveRequestWithApproval): LeaveRequestDto {
     startDate: row.startDate,
     endDate: row.endDate,
     half: row.half as HalfPeriod | null,
+    startTime: hourMinuteOf(row.startTime),
     daysQuarters: row.daysQuarters,
     days: formatLeaveDays(row.daysQuarters),
     fiscalYear: row.fiscalYear,
@@ -178,10 +220,13 @@ function leaveSummaryFields(leave: Partial<LeaveRequestDto>): Pick<DocumentSumma
 // 문서 화면 머리와 결재 시트 머리가 같이 쓴다(표 셀은 `·` — 표에서 `—`는 「비어 있음」이다).
 const HALF_WORDS: Record<HalfPeriod, string> = { am: "오전", pm: "오후" };
 
-type LeaveTitleSource = { kind?: LeaveKind; half?: HalfPeriod | null; startDate?: string; endDate?: string };
+type LeaveTitleSource = { kind?: LeaveKind; half?: HalfPeriod | null; startTime?: string | null; startDate?: string; endDate?: string };
 
+// 07.2-08(PU11): 반반차는 시작 시각이 오전/오후 자리에 온다(`반반차 14:00`) — 시각 없는 기존 행은 `반반차`(half 글자 없음).
+// 화면 쪽 같은 글자는 app/(app)/leave/labels.ts formatLeaveKind(도메인이 app을 import하지 않아 두 곳 — 단위 테스트가 같은 글자를 고정).
 function kindWord(leave: LeaveTitleSource): string {
   if (!leave.kind) return "";
+  if (leave.kind === "quarter_day") return `${LEAVE_KIND_WORDS.quarter_day}${leave.startTime ? ` ${leave.startTime}` : ""}`;
   return `${LEAVE_KIND_WORDS[leave.kind]}${leave.half ? ` ${HALF_WORDS[leave.half]}` : ""}`;
 }
 
@@ -198,6 +243,7 @@ export type LeaveDetailDto = {
   number: string | null;
   kind: LeaveKind;
   half: HalfPeriod | null;
+  startTime: string | null;
   startDate: string;
   endDate: string;
   days: string;
@@ -212,6 +258,7 @@ export const LEAVE_DETAIL_DTO_SPEC: DtoSpec<LeaveDetailDto, LeaveDetailDto> = {
     { key: "number", from: "number", infoItem: "leave.value" },
     { key: "kind", from: "kind", infoItem: "leave.value" },
     { key: "half", from: "half", infoItem: "leave.value" },
+    { key: "startTime", from: "startTime", infoItem: "leave.value" },
     { key: "startDate", from: "startDate", infoItem: "leave.value" },
     { key: "endDate", from: "endDate", infoItem: "leave.value" },
     { key: "days", from: "days", infoItem: "leave.value" },
@@ -244,6 +291,7 @@ async function loadLeaveDetails(viewer: Viewer, ids: string[], deps: LoadDetails
       number: row.number,
       kind: row.kind as LeaveKind,
       half: row.half as HalfPeriod | null,
+      startTime: hourMinuteOf(row.startTime),
       startDate: row.startDate,
       endDate: row.endDate,
       days: formatLeaveDays(row.daysQuarters),
@@ -307,7 +355,7 @@ registerDocumentKind({
   buildDetailRows: buildLeaveDetailRows,
 });
 
-export type SubmitLeaveInput = { kind: string; startDate: string; endDate: string; half: string; note?: string | null };
+export type SubmitLeaveInput = { kind: string; startDate: string; endDate: string; half: string; startTime?: string | null; note?: string | null };
 export type SubmitLeaveDeps = { now?: Date } & TxLogDeps;
 
 // 제출 — 검증(검증된 값만 저장) → 트랜잭션 전 읽기(결재선 · 스냅숏 · 로그 켜짐 ·
@@ -322,8 +370,7 @@ export async function submitLeave(
   const today = seoulToday(deps?.now);
   const range = leaveYearRange(today);
   const holidays = await loadLeaveHolidays(input.startDate, range);
-  const days = countLeaveQuarters(input, range, holidays);
-  if (!days.ok) throw new LeaveValidationError(days.errors);
+  const days = validateLeaveInput(input, range, holidays);
   const year = Number(today.slice(0, 4));
 
   const prepared = await prepareSubmission(viewer, { kind: LEAVE_DOCUMENT_KIND, drafterId: viewer.id }, { now: deps?.now });
@@ -343,6 +390,7 @@ export async function submitLeave(
         startDate: days.startDate,
         endDate: days.endDate,
         half: days.half,
+        startTime: days.startTime,
         daysQuarters: days.quarters,
         fiscalYear: days.fiscalYear,
         note,

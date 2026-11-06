@@ -23,6 +23,7 @@ export async function insertLeaveRequest(
     startDate: string;
     endDate: string;
     half: string | null;
+    startTime: string | null;
     daysQuarters: number;
     fiscalYear: number;
     note: string | null;
@@ -126,6 +127,7 @@ export async function updateLeaveRequestFields(
     startDate: string;
     endDate: string;
     half: string | null;
+    startTime: string | null;
     daysQuarters: number;
     fiscalYear: number;
     note: string | null;

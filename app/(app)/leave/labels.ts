@@ -14,7 +14,17 @@ export type LeavePeriodSource = {
   startDate?: string;
   endDate?: string;
   half?: string | null;
+  startTime?: string | null;
 };
+
+// 07.2-08(PU11 · D-7258): 종류 글자 — 반반차는 시작 시각이 오전/오후 자리에(`반반차 14:00`), 시각 없는 기존 행은 `반반차`.
+// 목록 · 문서 화면 종류 줄 · 인쇄가 이 함수를 쓰고, 제목 · 결재 시트 · 결재함 문서 칸은 domain/leave/index.ts kindWord(같은 글자).
+export function formatLeaveKind(leave: Pick<LeavePeriodSource, "kind" | "half" | "startTime">): string {
+  if (!leave.kind) return "";
+  const kind = LEAVE_KIND_LABELS[leave.kind] ?? leave.kind;
+  if (leave.kind === "quarter_day") return leave.startTime ? `${kind} ${leave.startTime}` : kind;
+  return leave.half ? `${kind} ${HALF_LABELS[leave.half] ?? leave.half}` : kind;
+}
 
 // 표 · 접힌 줄의 날짜 — 같은 해면 `09-18`, 다른 해면 ISO(UI-SPEC Typography · 04.1-06 DOM 감사 #5).
 // 올해를 주지 않으면 늘 `09-18`(올해와 비교하지 않는 호출부).
@@ -25,11 +35,9 @@ export function formatTableDate(isoDate: string, thisYear?: number): string {
 // 투영에서 칸이 빠지면 빈 문자열.
 export function formatLeavePeriod(leave: LeavePeriodSource, thisYear?: number): string {
   if (!leave.kind || !leave.startDate) return "";
-  const kind = LEAVE_KIND_LABELS[leave.kind] ?? leave.kind;
   const start = formatTableDate(leave.startDate, thisYear);
   const end = leave.endDate && leave.endDate !== leave.startDate ? ` ~ ${formatTableDate(leave.endDate, thisYear)}` : "";
-  const half = leave.half ? ` ${HALF_LABELS[leave.half] ?? leave.half}` : "";
-  return `${kind}${half} ${start}${end}`;
+  return `${formatLeaveKind(leave)} ${start}${end}`;
 }
 
 // 04.6-18: 연차 목록 표의 열 이름 — 표(`(list)/leave-table.tsx`)와 뼈대(`(list)/loading.tsx`)가 같은 낱말을 쓴다(뼈대 머리글 = 진짜 열 이름).

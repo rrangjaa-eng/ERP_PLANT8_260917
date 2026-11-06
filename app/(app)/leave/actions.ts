@@ -3,7 +3,14 @@
 import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
 import "@/app/(app)/document-kinds";
-import { formatRequestBalanceRow, formatRequestBalanceRowBeforeDates, LEAVE_DOCUMENT_KIND, LeaveValidationError, submitLeave } from "@/domain/leave";
+import {
+  formatRequestBalanceRow,
+  formatRequestBalanceRowBeforeDates,
+  LEAVE_DOCUMENT_KIND,
+  leaveStartTimeOf,
+  LeaveValidationError,
+  submitLeave,
+} from "@/domain/leave";
 import {
   countLeaveQuarters,
   LEAVE_DATE_EMPTY_ERROR,
@@ -31,6 +38,7 @@ const leaveInputSchema = z.object({
   startDate: z.string().max(10),
   endDate: z.string().max(10),
   half: z.string().max(10),
+  startTime: z.string().max(10).optional(),
   note: z.string().max(500, "비고 500자 넘음 · 줄여 적기").optional(),
 });
 
@@ -130,6 +138,9 @@ export const previewLeaveAction = authedActionClient.schema(leaveInputSchema).ac
   }
   // 결재선이 막혀도(대표 없음) 잔고 행은 버리지 않고 막힌 이유를 결재선 자리에 준다 — 제출해야 처음 보이지 않게
   // (04.1-06 코드 검토 L3). 다른 오류는 그대로 던진다.
+  // 07.2-08(PU11): 반반차 시작 시각 형식 — 다른 막힘이 없을 때 한 줄(제출 검사 validateLeaveInput과 같은 함수 · 같은 글자).
+  const time = leaveStartTimeOf(parsedInput.kind, parsedInput.startTime);
+  if (!time.ok && !blockedReason) blockedReason = time.error;
   const { route, blocked: routeBlocked } = await previewRouteOrBlocked(ctx.viewer);
   return { remote: days.ok && days.kind === "remote", offDays, balance, route, routeBlocked, blockedReason };
 });

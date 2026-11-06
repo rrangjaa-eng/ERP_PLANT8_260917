@@ -13,6 +13,8 @@ export type LeaveRequestDto = {
   startDate: string;
   endDate: string;
   half: HalfPeriod | null;
+  // 07.2-08(PU11): 반반차 시작 시각 `HH:MM` — 반반차가 아니거나 시각 없는 기존 행은 null.
+  startTime: string | null;
   daysQuarters: number;
   days: string;
   fiscalYear: number;
@@ -34,6 +36,7 @@ export const LEAVE_REQUEST_DTO_SPEC: DtoSpec<LeaveRequestSource, LeaveRequestDto
     { key: "startDate", from: "startDate", infoItem: "leave.value" },
     { key: "endDate", from: "endDate", infoItem: "leave.value" },
     { key: "half", from: "half", infoItem: "leave.value" },
+    { key: "startTime", from: "startTime", infoItem: "leave.value" },
     { key: "daysQuarters", from: "daysQuarters", infoItem: "leave.value" },
     { key: "days", from: "days", infoItem: "leave.value" },
     { key: "fiscalYear", from: "fiscalYear", infoItem: "leave.value" },

@@ -15,6 +15,13 @@ export function formBlocked(
 // 오전/오후 칸은 반차만. 종류별 칸 집합과 보내는 값이 여기 한 곳이다(폼은 이 결과대로 그린다).
 export const DEFAULT_START_TIME = "09:00";
 
+// 시작 시각 칸의 처음 값 — 새 신청은 09:00, 다시 신청은 저장된 시각. 시각 없이 저장된 기존 반반차(07.2-08 전)는 빈 칸으로 두어
+// 사람이 고르게 한다(09:00을 채우면 오후 반반차가 말없이 09:00으로 바뀐다 · PR #368 리뷰 P3-1). 빈 칸은 서버 형식 검사가 막는다.
+export function initialStartTime(resubmit: { kind: string; startTime: string | null } | undefined): string {
+  if (!resubmit) return DEFAULT_START_TIME;
+  return resubmit.startTime ?? (resubmit.kind === "quarter_day" ? "" : DEFAULT_START_TIME);
+}
+
 export type LeaveFormField = "startDate" | "endDate" | "half" | "startTime";
 
 export function leaveFieldsOf(kind: string): LeaveFormField[] {

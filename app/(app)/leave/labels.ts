@@ -17,12 +17,13 @@ export type LeavePeriodSource = {
   startTime?: string | null;
 };
 
-// 07.2-08(PU11 · D-7258): 종류 글자 — 반반차는 시작 시각이 오전/오후 자리에(`반반차 14:00`), 시각 없는 기존 행은 `반반차`.
+// 07.2-08(PU11 · D-7258): 종류 글자 — 반반차는 시작 시각이 오전/오후 자리에(`반반차 14:00`). 시각 없는 기존 행(이 PR 전 저장)은
+// 저장된 오전/오후를 그대로(`반반차 오전`) — 시각도 half도 없으면 `반반차`.
 // 목록 · 문서 화면 종류 줄 · 인쇄가 이 함수를 쓰고, 제목 · 결재 시트 · 결재함 문서 칸은 domain/leave/index.ts kindWord(같은 글자).
 export function formatLeaveKind(leave: Pick<LeavePeriodSource, "kind" | "half" | "startTime">): string {
   if (!leave.kind) return "";
   const kind = LEAVE_KIND_LABELS[leave.kind] ?? leave.kind;
-  if (leave.kind === "quarter_day") return leave.startTime ? `${kind} ${leave.startTime}` : kind;
+  if (leave.kind === "quarter_day" && leave.startTime) return `${kind} ${leave.startTime}`;
   return leave.half ? `${kind} ${HALF_LABELS[leave.half] ?? leave.half}` : kind;
 }
 

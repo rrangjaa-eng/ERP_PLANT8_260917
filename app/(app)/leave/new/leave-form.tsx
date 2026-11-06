@@ -25,8 +25,8 @@ import { HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
 import { previewLeaveAction, resubmitLeaveAction, submitLeaveAction } from "../actions";
 import { usePhoneWidth } from "../use-phone-width";
 import {
-  DEFAULT_START_TIME,
   formBlocked,
+  initialStartTime,
   leaveFieldsOf,
   sameLeaveInput,
   shownSubmitErrors,
@@ -113,7 +113,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   const [initial] = useState<Values>(() => ({
     kind: resubmit?.initial.kind ?? "full_day",
     half: resubmit?.initial.half ?? DEFAULT_HALF_PERIOD,
-    startTime: resubmit?.initial.startTime ?? DEFAULT_START_TIME,
+    startTime: initialStartTime(resubmit?.initial),
     startDate: resubmit?.initial.startDate ?? "",
     endDate: resubmit?.initial.endDate ?? "",
     note: resubmit?.initial.note ?? "",

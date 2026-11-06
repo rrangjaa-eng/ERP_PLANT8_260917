@@ -40,6 +40,7 @@ export async function assertLeaveWrite(viewer: Viewer, deps?: { can?: typeof def
 }
 
 // 07.2-08(PU12 · D-7261 · 07.2 D-7308 · T-07.2-08-01/02): 사람별 연차 잔여(`/leave?view=all`)를 누가 어디까지 보나 — 판정 한 곳.
+// `leave` 보기가 없으면 null(D-7261 — 「전체」는 `/leave` 안 탭이라 연차 메뉴 보기 권한자만). 그다음
 // `admin.people` 보기 = 전사, 그 밖은 오늘(서울) seat-rules 팀장 자리의 그 팀만, 둘 다 아니면 null(화면 링크 0 · 직접 주소 404 ·
 // 도메인 ForbiddenError). 팀장 자리 = seat-rules 정본(TEAM_LEAD_ROLE_ID 계급 + 오늘 발령 팀 ∩ 그 팀 팀장 자리 보유자) —
 // 계급 이름 · 업무 범위 · 쓰기 권한(teamLeadCandidatesAtDate · projects.status)에 읽기 권리를 묶지 않는다(D-6202).
@@ -49,7 +50,9 @@ export async function peopleLeaveScopeOf(
   viewer: Viewer,
   deps?: { now?: Date; can?: typeof defaultCan },
 ): Promise<PeopleLeaveScope | null> {
-  if (await (deps?.can ?? defaultCan)(viewer, "admin.people", "view")) return { kind: "company" };
+  const can = deps?.can ?? defaultCan;
+  if (!(await can(viewer, "leave", "view"))) return null;
+  if (await can(viewer, "admin.people", "view")) return { kind: "company" };
   if (viewer.roleId !== TEAM_LEAD_ROLE_ID) return null;
   const today = seoulToday(deps?.now);
   // domain은 db를 직접 쓰지 않는다(boundaries) — 두 읽기를 같은 스냅숏의 읽기 트랜잭션 하나로.

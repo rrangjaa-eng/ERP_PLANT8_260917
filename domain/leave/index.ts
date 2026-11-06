@@ -222,11 +222,11 @@ const HALF_WORDS: Record<HalfPeriod, string> = { am: "오전", pm: "오후" };
 
 type LeaveTitleSource = { kind?: LeaveKind; half?: HalfPeriod | null; startTime?: string | null; startDate?: string; endDate?: string };
 
-// 07.2-08(PU11): 반반차는 시작 시각이 오전/오후 자리에 온다(`반반차 14:00`) — 시각 없는 기존 행은 `반반차`(half 글자 없음).
+// 07.2-08(PU11): 반반차는 시작 시각이 오전/오후 자리에 온다(`반반차 14:00`) — 시각 없는 기존 행은 저장된 오전/오후 그대로(`반반차 오전`).
 // 화면 쪽 같은 글자는 app/(app)/leave/labels.ts formatLeaveKind(도메인이 app을 import하지 않아 두 곳 — 단위 테스트가 같은 글자를 고정).
 function kindWord(leave: LeaveTitleSource): string {
   if (!leave.kind) return "";
-  if (leave.kind === "quarter_day") return `${LEAVE_KIND_WORDS.quarter_day}${leave.startTime ? ` ${leave.startTime}` : ""}`;
+  if (leave.kind === "quarter_day" && leave.startTime) return `${LEAVE_KIND_WORDS.quarter_day} ${leave.startTime}`;
   return `${LEAVE_KIND_WORDS[leave.kind]}${leave.half ? ` ${HALF_WORDS[leave.half]}` : ""}`;
 }
 

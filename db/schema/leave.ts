@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, timestamp, uuid, date, index, check } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, uuid, date, time, index, check } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 
 // 04.1(LEAV-01): 연차 신청. 일수는 정수 1/4일(days_quarters) — 종일 = 평일 수 × 4,
@@ -17,6 +17,8 @@ export const leaveRequests = pgTable(
     startDate: date("start_date").notNull(),
     endDate: date("end_date").notNull(),
     half: text("half"),
+    // 07.2 PU11(D-7258): 반반차 시작 시각 — 반반차에만 둔다. 기존 반반차 행은 NULL이라 「반반차면 반드시 값」은 DB가 아니라 도메인이 새 신청에 강제한다.
+    startTime: time("start_time"),
     daysQuarters: integer("days_quarters").notNull(),
     fiscalYear: integer("fiscal_year").notNull(),
     note: text("note"),
@@ -28,6 +30,7 @@ export const leaveRequests = pgTable(
     check("leave_requests_kind_check", sql`${table.kind} IN ('full_day','half_day','quarter_day','remote')`),
     check("leave_requests_half_check", sql`${table.half} IS NULL OR ${table.half} IN ('am','pm')`),
     check("leave_requests_days_quarters_check", sql`${table.daysQuarters} >= 0`),
+    check("leave_requests_start_time_kind_check", sql`${table.startTime} IS NULL OR ${table.kind} = 'quarter_day'`),
   ],
 );
 

@@ -20,6 +20,9 @@ export const quoteRevisions = pgTable(
     // 07 W6: 고객 승인 근거(발주서 · 이메일 · 구두) + 메모 — 이미 승인된 옛 차수는 NULL, 새 승인의 근거 필수는 도메인(07-18).
     customerApprovalBasis: text("customer_approval_basis").$type<"purchase_order" | "email" | "verbal">(),
     customerApprovalMemo: text("customer_approval_memo"),
+    // 07.2 PU4(D-7226 · D-7228): 출력 기록 — 「보냄」 상태 없이 마지막으로 출력한 때 · 사람만 남긴다.
+    printedAt: timestamp("printed_at"),
+    printedBy: text("printed_by").references(() => users.id),
     source: text("source").notNull().default("demo"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

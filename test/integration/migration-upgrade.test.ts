@@ -952,3 +952,66 @@ describe("증빙 금액 칸 삭제(06.5 D-6520)", () => {
     expect(await supplies(pool)).toEqual({ [EXP.draft]: null });
   });
 });
+
+// 07.2-01(R1 · phase72_new_features) — 직전 리비전까지 적용한 DB의 견적 줄 · 연차 행 위에 새 칸 · 표 · CHECK를 올린다. 기존 줄은 days = 1이라
+// 견적가가 바뀌지 않고(D-7231), 새 칸은 NULL, 줄 종류는 그대로이며, 검증을 미룬 제약 여덟이 validate 파일에서 검증된다. 본 파일과 validate
+// 파일을 따로 올려 「앞 배포에서 본 파일이 이미 적용된」 길(0045 · 0048 머리 주석)도 함께 지난다.
+describe("07.2 새 칸 · 표 · CHECK(phase72_new_features)", () => {
+  const PROJECT = "00000000-0000-4000-8000-000000007201";
+  const DEFERRED = [
+    "quote_lines_days_check",
+    "quote_lines_client_remark_length_check",
+    "quote_lines_adjustment_pair_check",
+    "quote_lines_line_kind_check",
+    "quote_lines_counterpart_project_id_projects_id_fk",
+    "quote_revisions_printed_by_users_id_fk",
+    "leave_requests_start_time_kind_check",
+    "files_owner_kind_check",
+  ];
+
+  it("옛 견적 줄은 days = 1 · 새 칸 NULL · 종류 그대로이고, 옛 반반차 행은 start_time NULL이며, 미룬 제약 여덟이 검증된다(시드 없이)", async () => {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_phase72_new_features") - 1);
+    await insertParents(pool);
+    await insertProject(pool, PROJECT, "26072", "in_progress", 1);
+    await insertLine(pool, PROJECT, "옛 무대");
+    await pool.query(
+      `INSERT INTO quote_lines (revision_id, subcategory, item_name, line_kind, unit_price_amount_krw, execution_amount_krw, quote_amount_krw, profit_krw)
+       VALUES ($1, 'etc', '옛 조정', 'adjustment', -10000, -10000, -10000, 0)`,
+      [PROJECT],
+    );
+    await pool.query(
+      `INSERT INTO leave_requests (drafter_id, kind, start_date, end_date, half, days_quarters, fiscal_year)
+       VALUES ('old-pm', 'quarter_day', '2026-10-01', '2026-10-01', 'am', 1, 2026), ('old-pm', 'full_day', '2026-10-02', '2026-10-02', NULL, 4, 2026)`,
+    );
+
+    await migrateTo(pool, countThrough("_phase72_new_features"));
+    await migrateTo(pool);
+
+    const { rows: lines } = await pool.query(
+      `SELECT item_name, line_kind, days, quote_amount_krw, client_remark, major_category, mid_category, adjustment_pair_id, counterpart_project_id
+       FROM quote_lines ORDER BY item_name`,
+    );
+    expect(lines).toEqual([
+      { item_name: "옛 무대", line_kind: "quote", days: "1.00", quote_amount_krw: "100000", client_remark: null, major_category: null, mid_category: null, adjustment_pair_id: null, counterpart_project_id: null },
+      { item_name: "옛 조정", line_kind: "adjustment", days: "1.00", quote_amount_krw: "-10000", client_remark: null, major_category: null, mid_category: null, adjustment_pair_id: null, counterpart_project_id: null },
+    ]);
+    const { rows: leaves } = await pool.query(`SELECT kind, start_time FROM leave_requests ORDER BY kind`);
+    expect(leaves).toEqual([
+      { kind: "full_day", start_time: null },
+      { kind: "quarter_day", start_time: null },
+    ]);
+    const { rows: revisions } = await pool.query(`SELECT printed_at, printed_by FROM quote_revisions`);
+    expect(revisions).toEqual([{ printed_at: null, printed_by: null }]);
+    const { rows: requests } = await pool.query(`SELECT count(*)::int AS count FROM expense_date_change_requests`);
+    expect(requests).toEqual([{ count: 0 }]);
+
+    const { rows: constraints } = await pool.query<{ conname: string; convalidated: boolean }>(
+      `SELECT conname, convalidated FROM pg_constraint WHERE conname = ANY($1::text[]) ORDER BY conname`,
+      [DEFERRED],
+    );
+    expect(constraints).toEqual([...DEFERRED].sort().map((conname) => ({ conname, convalidated: true })));
+    const { rows: applied } = await pool.query<{ count: string }>(`SELECT count(*) FROM drizzle.__drizzle_migrations`);
+    expect(Number(applied[0]?.count)).toBe(journal.entries.length);
+  });
+});

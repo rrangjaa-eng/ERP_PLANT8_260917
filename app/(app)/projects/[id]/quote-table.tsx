@@ -110,6 +110,8 @@ type DraftLine = {
   /** /qa ISSUE-001 — 서버가 실은 저장된 거래처(quoteLineVendorLabel). */
   savedVendor?: QuoteTableOption | null;
   quantity: number;
+  /** 07.2 PU6(D-7230) — 견적가 = 수량 × 단가 × 일수. 새 줄 1. */
+  days: number;
   unitPriceAmount: number;
   unitPriceCurrency: Currency;
   unitPriceFxRate: number;
@@ -120,6 +122,9 @@ type DraftLine = {
   profitKrw: number;
   lineStatus: string;
   note: string | null;
+  clientRemark: string | null;
+  midCategory: string | null;
+  majorCategory: string | null;
   dirty: boolean;
   /** 04-28 — Alt+↑↓로 옮겨진 줄. 값 비교로는 드러나지 않는 남은 변경이다. */
   moved?: true;
@@ -177,11 +182,13 @@ export function byKind<T extends { lineKind: QuoteLineKind }>(lines: T[]): T[] {
 
 // 04-19(C-04) — 줄 순서 = 표시 순서. 종류 순서 뒤 표의 그룹(견적 줄은 소분류, 나머지는 종류)을 처음 나온 순서로 모은다 —
 // Table의 그룹 묶기와 같은 순서라 번호 열(`lines.indexOf(row) + 1`)이 표시 순서의 전체 번호가 되고 새 줄은 그 그룹 끝에 선다.
-function lineGroupKey(line: { lineKind: QuoteLineKind; subcategory: string }): string {
-  return line.lineKind === "quote" ? `quote:${line.subcategory}` : line.lineKind;
+// 07.2 D-7240(D-62 개정) — 저장 대분류가 있는 견적 줄은 그 대분류로 묶는다(머리글과 같은 기준).
+function lineGroupKey(line: { lineKind: QuoteLineKind; subcategory: string; majorCategory?: string | null }): string {
+  if (line.lineKind !== "quote") return line.lineKind;
+  return line.majorCategory ? `major:${line.majorCategory}` : `quote:${line.subcategory}`;
 }
 
-function displayOrder<T extends { lineKind: QuoteLineKind; subcategory: string }>(lines: T[]): T[] {
+function displayOrder<T extends { lineKind: QuoteLineKind; subcategory: string; majorCategory?: string | null }>(lines: T[]): T[] {
   const groups = new Map<string, T[]>();
   for (const line of byKind(lines)) {
     const key = lineGroupKey(line);
@@ -197,6 +204,14 @@ export function quoteLineGroupLabel(row: { lineKind: QuoteLineKind; subcategory:
   return row.lineKind === "quote" ? subcategoryLabel(row.subcategory) : KIND_GROUP_LABELS[row.lineKind];
 }
 
+// 07.2 D-7240(D-62 개정) — 대분류 그룹 머리글 = 저장 대분류 ?? 소분류에서 파생.
+export function quoteLineGroupHeader(
+  row: { lineKind: QuoteLineKind; subcategory: string; majorCategory?: string | null },
+  subcategoryLabel: (value: string) => string,
+): string {
+  return row.lineKind === "quote" && row.majorCategory ? row.majorCategory : quoteLineGroupLabel(row, subcategoryLabel);
+}
+
 type CellConflictDraft = { field: string; reason: string; theirRaw: string | number | null; theirVersion: number };
 
 // 04-28 거부 봉투 — 도메인 필드 → 표 열 key 대응 한 표(충돌은 CompareField,
@@ -206,12 +221,16 @@ const FIELD_TO_COLUMN: Record<string, string> = {
   itemName: "itemName",
   vendorId: "vendor",
   quantity: "quantity",
+  days: "days",
   unitPriceAmountKrw: "unitPrice",
   unitPrice: "unitPrice",
   executionAmountKrw: "execution",
   execution: "execution",
   lineStatus: "status",
   note: "note",
+  clientRemark: "clientRemark",
+  midCategory: "midCategory",
+  majorCategory: "subcategory",
 };
 
 // 04-30(DR-35) — 편집기가 있는 표 열 key → 셀 단계 칸.
@@ -220,15 +239,23 @@ const COLUMN_TO_FIELD: Record<string, QuoteLineField> = {
   itemName: "itemName",
   vendor: "vendorId",
   quantity: "quantity",
+  days: "days",
   unitPrice: "unitPrice",
   execution: "execution",
   note: "note",
+  clientRemark: "clientRemark",
+  midCategory: "midCategory",
 };
 
 // 07-18(SC-19) — 정보 면 머리의 3차 `고치기`(펼친 면에만) · 면 뿌리/본문 id(D-P3-1: E2E 도우미는 `#project-info` 안에서 찾는다).
 const INFO_EDIT_TRIGGER_ID = "project-info-edit";
 const INFO_PANEL_ID = "project-info";
 const INFO_BODY_ID = "project-info-body";
+
+// 07.2 S4 — 일수 칸은 「숫자 아님 · 1.5처럼」(UI-SPEC S4 error), 나머지 숫자 칸은 기존 글자.
+function numericCellError(columnKey: string): string {
+  return columnKey === "days" ? "숫자 아님 · 1.5처럼" : "숫자 형식 오류 · 12,400,000처럼";
+}
 
 // 충돌 이유 문자열 끝의 행동 글자 — 셀에서는 이 둘이 3차 버튼으로 그려진다.
 const CONFLICT_ACTIONS_SUFFIX = " · 덮어쓰기 / 그 값으로";
@@ -274,6 +301,8 @@ function theirValuePatch(
       return { baseline: { ...current, vendorId: text }, value: { vendorId: text } };
     case "quantity":
       return { baseline: { ...current, quantity: Number(raw) }, value: { quantity: Number(raw) } };
+    case "days":
+      return { baseline: { ...current, days: Number(raw) }, value: { days: Number(raw) } };
     case "unitPriceAmountKrw": {
       const amount = Number(raw);
       return {
@@ -287,6 +316,12 @@ function theirValuePatch(
       return { baseline: { ...current, lineStatus: text ?? "" }, value: { lineStatus: text ?? "" } };
     case "note":
       return { baseline: { ...current, note: text }, value: { note: text } };
+    case "clientRemark":
+      return { baseline: { ...current, clientRemark: text }, value: { clientRemark: text } };
+    case "midCategory":
+      return { baseline: { ...current, midCategory: text }, value: { midCategory: text } };
+    case "majorCategory":
+      return { baseline: { ...current, majorCategory: text }, value: { majorCategory: text } };
     default:
       return { baseline: current, value: {} };
   }
@@ -299,10 +334,14 @@ function lineDiffersFromBaseline(line: DraftLine): boolean {
     line.itemName !== base.itemName ||
     line.vendorId !== base.vendorId ||
     line.quantity !== base.quantity ||
+    line.days !== (base.days ?? 1) ||
     line.unitPriceAmountKrw !== base.unitPriceAmountKrw ||
     line.executionAmount !== base.executionAmountKrw ||
     line.lineStatus !== base.lineStatus ||
-    line.note !== base.note
+    line.note !== base.note ||
+    line.clientRemark !== (base.clientRemark ?? null) ||
+    line.midCategory !== (base.midCategory ?? null) ||
+    line.majorCategory !== (base.majorCategory ?? null)
   );
 }
 
@@ -313,10 +352,14 @@ function baselineFromDto(dto: QuoteLineDto): QuoteLineBaseline {
     // Codex 리뷰 P1(PR #125) — 거래처가 가려진 계급의 DTO에는 vendorId가 없다(저장 스키마는 null을 받는다).
     vendorId: dto.vendorId ?? null,
     quantity: dto.quantity,
+    days: dto.days,
     unitPriceAmountKrw: dto.unitPrice?.amountKrw ?? 0,
     executionAmountKrw: dto.execution?.amountKrw ?? 0,
     lineStatus: dto.lineStatus,
     note: dto.note,
+    clientRemark: dto.clientRemark,
+    midCategory: dto.midCategory,
+    majorCategory: dto.majorCategory,
   };
 }
 
@@ -332,6 +375,7 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     ...(dto.vendorId === undefined ? { vendorHidden: true as const } : {}),
     savedVendor: dto.vendorId && dto.vendorName ? { id: dto.vendorId, name: dto.vendorName } : null,
     quantity: dto.quantity,
+    days: dto.days,
     unitPriceAmount: dto.unitPrice?.amount ?? 0,
     unitPriceCurrency: dto.unitPrice?.currency ?? "KRW",
     unitPriceFxRate: dto.unitPrice?.fxRate ?? 1,
@@ -342,6 +386,9 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     profitKrw: dto.profitKrw,
     lineStatus: dto.lineStatus,
     note: dto.note,
+    clientRemark: dto.clientRemark,
+    midCategory: dto.midCategory,
+    majorCategory: dto.majorCategory,
     dirty: false,
     baseline: baselineFromDto(dto),
     cellErrors: {},
@@ -367,6 +414,7 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
     itemName: "",
     vendorId: null,
     quantity: 1,
+    days: 1,
     unitPriceAmount: 0,
     unitPriceCurrency: "KRW",
     unitPriceFxRate: 1,
@@ -377,6 +425,9 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
     profitKrw: 0,
     lineStatus: "not_started",
     note: null,
+    clientRemark: null,
+    midCategory: null,
+    majorCategory: null,
     dirty: true,
     // 새 줄(isNew)은 baseline이 저장 시 쓰이지 않는다 — 로드된 값이
     // 아니므로 의미상 비운 값을 그대로 둔다.
@@ -385,10 +436,14 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
       itemName: "",
       vendorId: null,
       quantity: 1,
+      days: 1,
       unitPriceAmountKrw: 0,
       executionAmountKrw: 0,
       lineStatus: "not_started",
       note: null,
+      clientRemark: null,
+      midCategory: null,
+      majorCategory: null,
     },
     cellErrors: {},
     cellConflicts: {},
@@ -419,10 +474,14 @@ type StoredNewLine = {
   itemName: string;
   vendorId: string | null;
   quantity: number;
+  days: number;
   unitPrice: StoredUnitPrice;
   execution: number;
   lineStatus: string;
   note: string | null;
+  clientRemark: string | null;
+  midCategory: string | null;
+  majorCategory: string | null;
 };
 
 export function editsSnapshot(
@@ -445,10 +504,14 @@ export function editsSnapshot(
         itemName: line.itemName,
         vendorId: line.vendorId,
         quantity: line.quantity,
+        days: line.days,
         unitPrice,
         execution: line.executionAmount,
         lineStatus: line.lineStatus,
         note: line.note,
+        clientRemark: line.clientRemark,
+        midCategory: line.midCategory,
+        majorCategory: line.majorCategory,
       };
       edits[`${line.clientKey}:new`] = stored;
       continue;
@@ -462,6 +525,10 @@ export function editsSnapshot(
     if (line.executionAmount !== base.executionAmountKrw) edits[`${line.id}:execution`] = line.executionAmount;
     if (line.lineStatus !== base.lineStatus) edits[`${line.id}:status`] = line.lineStatus;
     if (line.note !== base.note) edits[`${line.id}:note`] = line.note;
+    if (line.days !== (base.days ?? 1)) edits[`${line.id}:days`] = line.days;
+    if (line.clientRemark !== (base.clientRemark ?? null)) edits[`${line.id}:clientRemark`] = line.clientRemark;
+    if (line.midCategory !== (base.midCategory ?? null)) edits[`${line.id}:midCategory`] = line.midCategory;
+    if (line.majorCategory !== (base.majorCategory ?? null)) edits[`${line.id}:majorCategory`] = line.majorCategory;
     // 검토 8(S18) — 칸이 하나라도 있으면 그 줄의 version·baseline을 함께 보관한다(복원 뒤 저장이 충돌 판정을 받는다).
     if (lineDiffersFromBaseline(line) && line.version !== undefined) {
       const stored: StoredLineBase = { version: line.version, baseline: base, vendorHidden: line.vendorHidden };
@@ -521,6 +588,13 @@ function readLineBase(value: unknown): StoredLineBase | null {
   ) {
     return null;
   }
+  // 07.2 PU6 — 일수 · 고객 비고 · 분류 기준값은 옛 보관본에 없다(없으면 비교하지 않는다).
+  const extra: Partial<QuoteLineBaseline> = {
+    ...(typeof b.days === "number" ? { days: b.days } : {}),
+    ...(isTextOrNull(b.clientRemark) ? { clientRemark: b.clientRemark } : {}),
+    ...(isTextOrNull(b.midCategory) ? { midCategory: b.midCategory } : {}),
+    ...(isTextOrNull(b.majorCategory) ? { majorCategory: b.majorCategory } : {}),
+  };
   return {
     version: value.version,
     ...(value.vendorHidden === true ? { vendorHidden: true as const } : {}),
@@ -533,6 +607,7 @@ function readLineBase(value: unknown): StoredLineBase | null {
       executionAmountKrw: b.executionAmountKrw,
       lineStatus: b.lineStatus,
       note: b.note,
+      ...extra,
     },
   };
 }
@@ -563,6 +638,14 @@ export function restoredCellPatch(column: string, value: unknown): Partial<Draft
       return typeof value === "string" ? { lineStatus: value } : null;
     case "note":
       return typeof value === "string" || value === null ? { note: value } : null;
+    case "days":
+      return typeof value === "number" ? { days: value } : null;
+    case "clientRemark":
+      return typeof value === "string" || value === null ? { clientRemark: value } : null;
+    case "midCategory":
+      return typeof value === "string" || value === null ? { midCategory: value } : null;
+    case "majorCategory":
+      return typeof value === "string" || value === null ? { majorCategory: value } : null;
     default:
       return null;
   }
@@ -587,10 +670,14 @@ function restoredNewLine(value: unknown, subcategories: readonly string[], kindC
     ["itemName", "itemName"],
     ["vendorId", "vendor"],
     ["quantity", "quantity"],
+    ["days", "days"],
     ["unitPrice", "unitPrice"],
     ["execution", "execution"],
     ["lineStatus", "status"],
     ["note", "note"],
+    ["clientRemark", "clientRemark"],
+    ["midCategory", "midCategory"],
+    ["majorCategory", "majorCategory"],
   ] as const) {
     // 지금 셀 단계에서 편집할 수 없는 칸(정산 새 줄의 수량·단가·상태)은 보관값을 넣지 않는다 — 기본값이 서버와 같다.
     if (cells[field] !== "edit") continue;
@@ -1773,7 +1860,7 @@ export function QuoteLedger({
       setLines((prev) =>
         prev.map((line) =>
           line.clientKey === clientKey
-            ? { ...line, cellErrors: { ...line.cellErrors, [columnKey]: "숫자 형식 오류 · 12,400,000처럼" }, dirty: true }
+            ? { ...line, cellErrors: { ...line.cellErrors, [columnKey]: numericCellError(columnKey) }, dirty: true }
             : line,
         ),
       );
@@ -1787,10 +1874,12 @@ export function QuoteLedger({
       // 04-23 — 견적 줄에서만 소분류를 물려받는다(조정·견적 외 비용 줄의 소분류 칸은 종류 값이다).
       // /review red team — 끈 · 보관 분류는 물려받지 않는다(새 입력엔 고를 수 없다).
       const afterSubcategory = afterRow?.lineKind === "quote" ? afterRow.subcategory : undefined;
-      const inheritedSubcategory =
-        (subcategories.some((option) => option.value === afterSubcategory) ? afterSubcategory : undefined) ?? subcategories[0]?.value ?? "";
+      const kept = subcategories.some((option) => option.value === afterSubcategory) ? afterSubcategory : undefined;
+      const inheritedSubcategory = kept ?? subcategories[0]?.value ?? "";
+      // 07.2 D-7240 — 그룹 안 새 줄은 그 그룹의 저장 대분류도 물려받는다(같은 머리글 아래 선다).
+      const majorCategory = kept !== undefined ? (afterRow?.majorCategory ?? null) : null;
       persistPendingRef.current = true;
-      setLines((prev) => [...prev, newDraftLine(inheritedSubcategory, newLineCells)]);
+      setLines((prev) => [...prev, { ...newDraftLine(inheritedSubcategory, newLineCells), majorCategory }]);
     },
     [subcategories, newLineCells, setLines],
   );
@@ -1827,11 +1916,15 @@ export function QuoteLedger({
         vendorId: source.vendorId,
         savedVendor: source.savedVendor,
         quantity: source.quantity,
+        days: source.days,
         unitPriceAmount: source.unitPriceAmount,
         unitPriceCurrency: source.unitPriceCurrency,
         unitPriceFxRate: source.unitPriceFxRate,
         executionAmount: source.executionAmount,
         note: source.note,
+        clientRemark: source.clientRemark,
+        midCategory: source.midCategory,
+        majorCategory: subcategory === source.subcategory ? source.majorCategory : null,
       };
       const index = prev.findIndex((line) => line.clientKey === clientKey);
       return [...prev.slice(0, index + 1), copy, ...prev.slice(index + 1)];
@@ -2017,6 +2110,7 @@ export function QuoteLedger({
                 itemName: line.itemName,
                 vendorId: line.vendorId ?? undefined,
                 quantity: line.quantity,
+                days: line.days,
                 unitPrice: {
                   currency: line.unitPriceCurrency,
                   amount: line.unitPriceAmount,
@@ -2027,6 +2121,9 @@ export function QuoteLedger({
                 // 04-12(A-37) — 서버가 줄 상태를 QUOTE_LINE_STATUSES로 검증한다(화면 타입 좁히기는 04-30).
                 lineStatus: line.lineStatus as QuoteLineStatus,
                 note: line.note ?? undefined,
+                clientRemark: line.clientRemark ?? undefined,
+                midCategory: line.midCategory ?? undefined,
+                majorCategory: line.majorCategory ?? undefined,
                 baseline: line.isNew ? undefined : { ...line.baseline, lineStatus: line.baseline.lineStatus as QuoteLineStatus },
               })),
             }
@@ -2152,7 +2249,8 @@ export function QuoteLedger({
               : []),
           ],
           onCommit: (value) => {
-            commitCell(row.clientKey, "subcategory", { subcategory: value });
+            // 07.2 D-7240(플래너 가정 · UI-SPEC Open questions 6) — 소분류를 바꾸면 저장 대분류를 비워 파생값으로 돌아간다.
+            commitCell(row.clientKey, "subcategory", { subcategory: value, ...(value !== row.subcategory ? { majorCategory: null } : {}) });
             ctx.onCommit(value);
           },
         }),
@@ -2288,6 +2386,27 @@ export function QuoteLedger({
       },
     },
     {
+      key: "days",
+      header: "일수",
+      priority: "p2",
+      align: "right",
+      editability: (row) => atWidth(row.cells.days),
+      cell: (row) => (row.lineKind === "quote" ? formatQuantity(row.days) : "—"),
+      // 07.2 S4 — 폰 접힌 줄은 일수가 1이 아닐 때만 단가 뒤 `{n}일`.
+      summary: (row) => (row.lineKind === "quote" && row.days !== 1 ? `${formatQuantity(row.days)}일` : null),
+      editCell: (row, ctx) => (
+        <NumericEditCell
+          ariaLabel="일수"
+          initialValue={String(row.days)}
+          kind="quantity"
+          onCommit={(value) => {
+            commitNumericCell(row.clientKey, "days", value, (num) => ({ days: num }));
+            ctx.onCommit(value);
+          }}
+        />
+      ),
+    },
+    {
       key: "quoteAmount",
       header: "견적가",
       priority: "p2",
@@ -2339,17 +2458,51 @@ export function QuoteLedger({
     },
     {
       key: "note",
-      header: "비고",
+      header: "내부 비고",
       priority: "p3",
       collapseBelow: 1024,
       editability: (row) => atWidth(row.cells.note),
       cell: (row) => row.note ?? "—",
       editCell: (row, ctx) =>
         textEditCell({
-          ariaLabel: "비고",
+          ariaLabel: "내부 비고",
           initialValue: row.note ?? "",
           onCommit: (value) => {
             commitCell(row.clientKey, "note", { note: value || null });
+            ctx.onCommit(value);
+          },
+        }),
+    },
+    {
+      key: "clientRemark",
+      header: "고객 비고",
+      priority: "p3",
+      collapseBelow: 1024,
+      editability: (row) => atWidth(row.cells.clientRemark),
+      cell: (row) => row.clientRemark ?? "—",
+      editCell: (row, ctx) =>
+        textEditCell({
+          ariaLabel: "고객 비고",
+          initialValue: row.clientRemark ?? "",
+          onCommit: (value) => {
+            commitCell(row.clientKey, "clientRemark", { clientRemark: value || null });
+            ctx.onCommit(value);
+          },
+        }),
+    },
+    {
+      key: "midCategory",
+      header: "중분류",
+      priority: "p3",
+      collapseBelow: 1024,
+      editability: (row) => atWidth(row.cells.midCategory),
+      cell: (row) => row.midCategory ?? "—",
+      editCell: (row, ctx) =>
+        textEditCell({
+          ariaLabel: "중분류",
+          initialValue: row.midCategory ?? "",
+          onCommit: (value) => {
+            commitCell(row.clientKey, "midCategory", { midCategory: value || null });
             ctx.onCommit(value);
           },
         }),
@@ -2493,9 +2646,10 @@ export function QuoteLedger({
   for (const column of columns) column.copyText = copyTextByKey.get(column.key);
 
   // 04-04(다) — 붙여넣기 열 정의. columns와 같은 순서·같은 길이여야 한다
-  // (Table이 colIndex로 이 둘을 함께 참조한다).
+  // (Table이 colIndex로 이 둘을 함께 참조한다). 07.2 S4(D-7233) — 순서는 columns의 열 key 배열 하나에서 만든다.
+  const columnKeyList = columns.map((column) => column.key).join(" ");
   const pasteColumns: PasteColumn<DraftLine>[] = useMemo(() => {
-    const all: PasteColumn<DraftLine>[] = [
+    const byKey: PasteColumn<DraftLine>[] = [
       { key: "sort", kind: "text", isEditable: () => false },
       {
         key: "subcategory",
@@ -2514,17 +2668,20 @@ export function QuoteLedger({
       },
       { key: "quantity", kind: "number", numberKind: "quantity", isEditable: (row) => row.cells.quantity === "edit" },
       { key: "unitPrice", kind: "number", numberKind: "krw", isEditable: (row) => row.cells.unitPrice === "edit" },
+      { key: "days", kind: "number", numberKind: "quantity", isEditable: (row) => row.cells.days === "edit" },
       { key: "quoteAmount", kind: "text", isEditable: () => false },
       { key: "execution", kind: "number", numberKind: "krw", isEditable: (row) => row.cells.execution === "edit" },
       { key: "profit", kind: "text", isEditable: () => false },
       { key: "status", kind: "text", isEditable: () => false },
       { key: "note", kind: "text", isEditable: (row) => row.cells.note === "edit" },
+      { key: "clientRemark", kind: "text", isEditable: (row) => row.cells.clientRemark === "edit" },
+      { key: "midCategory", kind: "text", isEditable: (row) => row.cells.midCategory === "edit" },
       // 05-05 — 행 행동 열도 columns와 같은 자리(맨 끝)에 같은 길이로 둔다.
-      ...(lineDoors.showColumn ? [{ key: "door", kind: "text" as const, isEditable: () => false }] : []),
+      { key: "door", kind: "text", isEditable: () => false },
     ];
-    // quick 261001-85g — columns와 같은 열을 뺀다(colIndex로 함께 참조).
-    return vendorShown ? all : all.filter((column) => column.key !== "vendor");
-  }, [subcategories, vendors, vendorShown, lineDoors.showColumn, lines]);
+    // quick 261001-85g — columns에 없는 열(거래처 숨김 · 행동 열 없음)은 빠진다(colIndex로 함께 참조).
+    return columnKeyList.split(" ").flatMap((key) => byKey.filter((column) => column.key === key));
+  }, [subcategories, vendors, columnKeyList, lines]);
 
   // 04-30(DR-35) — 잠긴 셀은 표 위 한 줄과 같은 이유(quoteLockReason), 읽기 전용 셀은 연결 문서 이유(DTO).
   // 이유가 없는 잠김은 아무것도 띄우지 않는다(DR-22).
@@ -2624,7 +2781,9 @@ export function QuoteLedger({
         const cellConflicts = { ...target.cellConflicts };
         delete cellConflicts[cell.columnKey];
         if (cell.result.status === "error") {
-          cellErrors[cell.columnKey] = blockedReasons.get(`${cell.rowIndex}:${cell.columnKey}`) ?? cell.result.reason;
+          cellErrors[cell.columnKey] =
+            blockedReasons.get(`${cell.rowIndex}:${cell.columnKey}`) ??
+            (cell.columnKey === "days" && cell.result.reason === numericCellError("quantity") ? numericCellError("days") : cell.result.reason);
           next[cell.rowIndex] = { ...target, cellErrors, cellConflicts, dirty: true };
           continue;
         }
@@ -2633,7 +2792,8 @@ export function QuoteLedger({
         let patch: Partial<DraftLine> = {};
         switch (cell.columnKey) {
           case "subcategory":
-            patch = { subcategory: value };
+            // 07.2 D-7240 — 소분류가 바뀌면 저장 대분류를 비운다(칸 편집과 같다).
+            patch = { subcategory: value, ...(value !== target.subcategory ? { majorCategory: null } : {}) };
             break;
           case "itemName":
             patch = { itemName: value };
@@ -2663,6 +2823,15 @@ export function QuoteLedger({
           case "note":
             // ISSUE-011(/qa) — 빈 비고의 복사 글자는 `—`(읽기 열 copyText)다. 붙일 때 빈 비고로 읽는다.
             patch = { note: value === "—" ? null : value || null };
+            break;
+          case "days":
+            patch = { days: Number(value) };
+            break;
+          case "clientRemark":
+            patch = { clientRemark: value === "—" ? null : value || null };
+            break;
+          case "midCategory":
+            patch = { midCategory: value === "—" ? null : value || null };
             break;
           default:
             break;
@@ -3102,7 +3271,7 @@ export function QuoteLedger({
         columns={columns}
         rows={lines}
         getRowId={(row) => row.clientKey}
-        groupBy={(row) => quoteLineGroupLabel(row, subcategoryLabel)}
+        groupBy={(row) => quoteLineGroupHeader(row, subcategoryLabel)}
         openCell={openCell}
         // 04-19(D-91) — 30줄 쪽은 Table이 자른다(이 파일은 전체 줄을 넘긴다). 새 차수로 다시 그리면 1쪽부터.
         pagination={{ pageSize: QUOTE_TABLE_PAGE_SIZE, unit: "줄", label: "견적 줄", resetKey: renderedRevisionId, resplitKey }}
@@ -3271,6 +3440,7 @@ export function QuoteLedger({
           items={[
             { label: "수량", value: openSheetRow.quantity },
             { label: "단가", value: formatKrw(openSheetRow.unitPriceAmountKrw) },
+            { label: "일수", value: formatQuantity(openSheetRow.days) },
             { label: "견적가", value: formatKrw(openSheetRow.quoteAmountKrw) },
             { label: "차익", value: formatKrw(openSheetRow.profitKrw) },
             {
@@ -3282,7 +3452,9 @@ export function QuoteLedger({
                   fxRate: openSheetRow.unitPriceFxRate,
                 }) ?? "—",
             },
-            { label: "비고", value: openSheetRow.note ?? "—" },
+            { label: "내부 비고", value: openSheetRow.note ?? "—" },
+            { label: "고객 비고", value: openSheetRow.clientRemark ?? "—" },
+            { label: "중분류", value: openSheetRow.midCategory ?? "—" },
             {
               label: "상태",
               value:

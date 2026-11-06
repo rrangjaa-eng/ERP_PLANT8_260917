@@ -80,9 +80,9 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
     await gridcell(5).getByLabel("단가", { exact: true }).fill("1200000");
     await gridcell(5).getByLabel("단가", { exact: true }).press("Enter");
 
-    await gridcell(7).click(); // 실행가
-    await gridcell(7).getByLabel("실행가").fill("800000");
-    await gridcell(7).getByLabel("실행가").press("Enter");
+    await gridcell(8).click(); // 실행가
+    await gridcell(8).getByLabel("실행가").fill("800000");
+    await gridcell(8).getByLabel("실행가").press("Enter");
 
     await page.getByRole("button", { name: /일괄 저장/ }).click();
 

@@ -172,21 +172,24 @@ export function moneyToColumns(input: MoneyInput): {
   };
 }
 
-// D-63: 견적가 = 수량(기본 1) × 단가. 서버 계산·저장, 브라우저 계산값은
-// 버린다(PROJ-02). 수량이 비었거나 0 이하이면 기본 1이 적용돼 단가와 같다.
-export function quoteAmount(quantity: number | null | undefined, unitPrice: Money): number {
-  return quoteAmountFromKrw(quantity, unitPrice.amountKrw);
+// D-63(07.2 D-7230 개정): 견적가 = 수량(기본 1) × 단가 × 일수(기본 1). 서버 계산·저장, 브라우저 계산값은
+// 버린다(PROJ-02). 수량 · 일수가 비었거나 0 이하이면 기본 1이라 일수가 없는 기존 줄의 견적가는 그대로다(D-7231).
+export function quoteAmount(quantity: number | null | undefined, unitPrice: Money, days: number | null | undefined = 1): number {
+  return quoteAmountFromKrw(quantity, unitPrice.amountKrw, days);
 }
 
-function quoteAmountFromKrw(quantity: number | null | undefined, unitPriceKrw: number): number {
+// 곱셈 순서(수량 × 단가 × 일수) 뒤 반올림 한 번 — 중간 반올림이 없다. 음수 단가도 같은 Math.round(−x.5 → −x)라
+// grossFromSignedTotal의 절댓값 대칭 규칙이 아니다(기존 규칙 그대로).
+function quoteAmountFromKrw(quantity: number | null | undefined, unitPriceKrw: number, days: number | null | undefined): number {
   const qty = quantity && quantity > 0 ? quantity : 1;
-  return round(qty * unitPriceKrw, 1, "round");
+  const dayCount = days && days > 0 ? days : 1;
+  return round(qty * unitPriceKrw * dayCount, 1, "round");
 }
 
-// 04-40(DR-9) — 수량 × 단가로 계산한 견적가(quoteAmount와 같은 계산)가 quote_amount_krw 컬럼 범위 안인가. 서버 전용
+// 04-40(DR-9) — 수량 × 단가 × 일수로 계산한 견적가(quoteAmount와 같은 계산)가 quote_amount_krw 컬럼 범위 안인가. 서버 전용
 // import가 없어 화면도 같은 함수를 부른다.
-export function quoteAmountWithinBound(quantity: number | null | undefined, unitPrice: MoneyInput): boolean {
-  return withinKrwColumn(quoteAmountFromKrw(quantity, toKrw(unitPrice)));
+export function quoteAmountWithinBound(quantity: number | null | undefined, unitPrice: MoneyInput, days: number | null | undefined = 1): boolean {
+  return withinKrwColumn(quoteAmountFromKrw(quantity, toKrw(unitPrice), days));
 }
 
 // 차익 = 견적가 − 실행가. 실행가가 음수면(EXP-14 회수·환불) 차익이 견적가보다

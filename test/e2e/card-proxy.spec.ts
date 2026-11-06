@@ -618,7 +618,7 @@ test.describe("견적 줄에서 바로 카드 사용 등록", () => {
     const link = row.getByRole("link", { name: "카드 사용 등록" });
     await waitForHydration(row.getByRole("button", { name: "지출결의 올리기" }));
 
-    const note = row.getByRole("gridcell").nth(10);
+    const note = row.getByRole("gridcell").nth(11);
     await expect(async () => {
       await note.focus();
       await page.keyboard.press("Enter");

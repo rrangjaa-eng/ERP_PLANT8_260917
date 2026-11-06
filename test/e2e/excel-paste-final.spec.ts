@@ -22,7 +22,7 @@ import {
 // 재생되는지 다시 본다(사용자 D21, OV-7). 원문은 test/fixtures/excel-clipboard.ts
 // 하나뿐이다 — 손으로 만든 문자열이 아니다(2026-09-23 사용자 승인 — 04-04 방식).
 
-const COL = { subcategory: 1, itemName: 2, vendor: 3, quantity: 4, unitPrice: 5, quoteAmount: 6, execution: 7, note: 10 } as const;
+const COL = { subcategory: 1, itemName: 2, vendor: 3, quantity: 4, unitPrice: 5, days: 6, quoteAmount: 7, execution: 8, note: 11 } as const;
 
 type Account = { userId: string; email: string; password: string };
 
@@ -259,7 +259,7 @@ test.describe("실제 엑셀 캡처 원문 — 최종 견적 표 재생(04-31 Ta
     // 앱 복사일 때만 적용된다(04-47). 끝 CRLF 하나(실제 엑셀 관례)를 둔다.
     await focusGridCell(page, quoteCell(page, 0, COL.subcategory));
     await pasteWithFormats(page, {
-      "text/plain": `무대·시공\t엑셀6열항목1\t${vendor.name}\t2\t1000\t800\r\n무대·시공\t엑셀6열항목2\t${vendor.name}\t3\t2000\t900\r\n`,
+      "text/plain": `무대·시공\t엑셀6열항목1\t${vendor.name}\t2\t1000\t1\t800\r\n무대·시공\t엑셀6열항목2\t${vendor.name}\t3\t2000\t1\t900\r\n`,
     });
 
     await expect(quoteCell(page, 0, COL.itemName)).toHaveText("엑셀6열항목1");
@@ -406,7 +406,7 @@ test.describe("실제 엑셀 캡처 원문 — 최종 견적 표 재생(04-31 Ta
     await expect(quoteCell(page, 29, COL.itemName)).toHaveText("상한최종새300");
   });
 
-  test("(e, 캡처 A) PR #85 실제 6열 캡처(헤더 행 포함) — 앱 열 순서와 어긋나 견적가 칸들이 ENG-D5 오류다", async ({ page }) => {
+  test("(e, 캡처 A) PR #85 실제 6열 캡처(헤더 행 포함) — 6번째 값(실행가)이 일수 칸(07.2 S4)에 떨어진다 · 헤더 글자는 오류 셀", async ({ page }) => {
     // 04-31 Task 2 인간 확인(2026-09-28, PR #85 댓글 5861946973) — 사람 눈 재확인 대신
     // 원문(REAL_EXCEL_WINDOWS_20260928_SIX_COL, 헤더 행 A..F + 데이터 2행)을 손대지
     // 않고 그대로 붙인다. 캡처의 6열(항목류·항목·거래처·수량·단가·실행가)과 앱 열
@@ -435,9 +435,14 @@ test.describe("실제 엑셀 캡처 원문 — 최종 견적 표 재생(04-31 Ta
     expect(row1Text).toBe("무대 설치\n2일차");
     expect(await quoteCell(page, 2, COL.itemName).textContent()).toBe('"대형" 현수막');
 
+    // 07.2 S4(D-7233) — 열 순서가 엑셀 양식(ITEM · QTY · COST/UNIT · DAY/SET)과 같아져 6번째 칸은 일수다. 헤더 글자 "F"는
+    // 일수 칸 숫자 오류, 데이터 두 줄의 6번째 값은 그대로 일수로 들어가고 견적가 칸에는 떨어지지 않는다.
+    await expect(quoteCell(page, 0, COL.days)).toHaveAttribute("aria-invalid", "true");
+    await expect(quoteCell(page, 0, COL.days)).toContainText("숫자 아님 · 1.5처럼");
+    await expect(quoteCell(page, 1, COL.days)).toHaveText("1,000,000");
+    await expect(quoteCell(page, 2, COL.days)).toHaveText("30,000");
     for (const rowIndex of [0, 1, 2]) {
-      await expect(quoteCell(page, rowIndex, COL.quoteAmount)).toHaveAttribute("aria-invalid", "true");
-      await expect(quoteCell(page, rowIndex, COL.quoteAmount)).toContainText("읽기 전용·잠김 셀에 값 떨어짐");
+      await expect(quoteCell(page, rowIndex, COL.quoteAmount)).not.toHaveAttribute("aria-invalid", "true");
     }
 
     // 04-47(DR-5) — 오류가 남아도 저장 버튼은 눌린다(거부 경로는 서버가 판단).

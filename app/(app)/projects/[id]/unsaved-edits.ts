@@ -17,6 +17,9 @@ type LineCellValues = {
     executionAmountKrw: number;
     lineStatus: string;
     note: string | null;
+    days?: number;
+    clientRemark?: string | null;
+    midCategory?: string | null;
   };
   subcategory: string;
   itemName: string;
@@ -26,9 +29,12 @@ type LineCellValues = {
   executionAmount: number;
   lineStatus: string;
   note: string | null;
+  days: number;
+  clientRemark: string | null;
+  midCategory: string | null;
 };
 
-const LINE_FIELD_KEYS = ["subcategory", "itemName", "vendor", "quantity", "unitPrice", "execution", "status", "note"];
+const LINE_FIELD_KEYS = ["subcategory", "itemName", "vendor", "quantity", "unitPrice", "days", "execution", "status", "note", "clientRemark", "midCategory"];
 
 // 저장 안 한 칸 표시 — 저장된 값(baseline)과 다른 칸만 true. 새 줄의 baseline은 만들 때의 기본값이라 같은 규칙이 선다.
 export function lineCellDirty(line: LineCellValues, columnKey: string): boolean {
@@ -57,6 +63,12 @@ export function lineCellDirty(line: LineCellValues, columnKey: string): boolean 
       return line.lineStatus !== base.lineStatus;
     case "note":
       return line.note !== base.note;
+    case "days":
+      return line.days !== (base.days ?? 1);
+    case "clientRemark":
+      return line.clientRemark !== (base.clientRemark ?? null);
+    case "midCategory":
+      return line.midCategory !== (base.midCategory ?? null);
     default:
       return false;
   }

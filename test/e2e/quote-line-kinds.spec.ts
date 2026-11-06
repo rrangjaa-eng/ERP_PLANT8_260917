@@ -23,7 +23,7 @@ import { addDays, kstToday } from "@/lib/kst-date";
 const TODAY = kstToday(new Date());
 
 // 열 순서(quote-table.tsx) — 번호 · 소분류 · 항목 · 거래처 · 수량 · 단가 · 견적가 · 실행가 · 차익 · 상태 · 비고.
-const COL = { subcategory: 1, itemName: 2, vendor: 3, quantity: 4, unitPrice: 5, quoteAmount: 6, execution: 7, status: 9, note: 10 } as const;
+const COL = { subcategory: 1, itemName: 2, vendor: 3, quantity: 4, unitPrice: 5, days: 6, quoteAmount: 7, execution: 8, status: 10, note: 11 } as const;
 
 type Account = { userId: string; email: string; password: string };
 

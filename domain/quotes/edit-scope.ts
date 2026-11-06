@@ -18,24 +18,30 @@ export const QUOTE_LINE_FIELDS = [
   "itemName",
   "vendorId",
   "quantity",
+  // 07.2 PU6(D-7230) — 일수는 수량과 같은 견적 칸이다. 고객 비고(D-7232) · 대 · 중분류(D-7240)는 글자 칸.
+  "days",
   "unitPrice",
   "execution",
   "lineStatus",
   "note",
+  "clientRemark",
+  "midCategory",
+  "majorCategory",
 ] as const;
 export type QuoteLineField = (typeof QUOTE_LINE_FIELDS)[number];
 
-// 정산의 새 줄은 견적 칸(수량·단가)과 상태가 잠긴다(사용자 D12 — 견적가 0).
-export const QUOTE_FIELDS_LOCKED_IN_SETTLING_INSERT = ["quantity", "unitPrice", "lineStatus"] as const;
+// 정산의 새 줄은 견적 칸(수량·일수·단가)과 상태가 잠긴다(사용자 D12 — 견적가 0).
+export const QUOTE_FIELDS_LOCKED_IN_SETTLING_INSERT = ["quantity", "days", "unitPrice", "lineStatus"] as const;
 
-// D-66 — 연결 문서가 있는 줄의 금액 칸은 읽기 전용이다(환율은 단가·실행가 칸에 들어 있다).
-const LINKED_READONLY_FIELDS: readonly QuoteLineField[] = ["quantity", "unitPrice", "execution"];
+// D-66 — 연결 문서가 있는 줄의 금액 칸은 읽기 전용이다(환율은 단가·실행가 칸에 들어 있다). 일수도 견적가를 바꾼다(07.2 D-7230).
+const LINKED_READONLY_FIELDS: readonly QuoteLineField[] = ["quantity", "days", "unitPrice", "execution"];
 
 // 04-13(D-83) — 조정 줄에서 조정 권한이 있는 사람이 고치는 칸. 소분류·수량·단가·상태는 서버가 고정값으로 쓴다.
 const ADJUSTMENT_EDIT_FIELDS: readonly QuoteLineField[] = ["itemName", "vendorId", "execution", "note"];
 
 // 04-40(사용자 D7 · ENG-D7) — 승인된 현재 차수에서 기존 견적 줄의 잠김 칸. 새 줄은 정산 새 줄과 같은 칸(소분류는 고른다).
-const APPROVED_LOCKED_FIELDS: readonly QuoteLineField[] = ["quantity", "unitPrice", "lineStatus", "subcategory"];
+// 07.2 D-7232 — 일수 · 고객 비고도 고객이 승인한 견적서 내용이라 잠근다.
+const APPROVED_LOCKED_FIELDS: readonly QuoteLineField[] = ["quantity", "days", "unitPrice", "lineStatus", "subcategory", "clientRemark"];
 
 export type LineEditScopeInput = {
   status: string;
@@ -51,12 +57,14 @@ export type LineEditScopeInput = {
 };
 
 function cellLevel(input: LineEditScopeInput, field: QuoteLineField): QuoteCellEditability {
+  // 07.2 D-7240 — 저장 대분류는 소분류를 바꿀 때 함께 비워진다(파생값으로 돌아감) — 소분류 칸과 같은 단계다.
+  if (field === "majorCategory") return cellLevel(input, "subcategory");
   // DR-22 — 권한 밖 조정 줄은 이유 글자 없이 잠김이다(이유 문자열은 quoteLockReason이 상태로만 만든다).
   if (input.lineKind === "adjustment") return input.canAdjust && ADJUSTMENT_EDIT_FIELDS.includes(field) ? "edit" : "locked";
   if (!input.canWrite || input.status === "completed") return "locked";
   // 04-13(D-48) — 견적 외 비용은 견적가 0인 견적 줄이다: 수량·단가는 늘 잠김, 나머지는 견적 줄의 상태 규칙 그대로.
   // 04-23 검토 S-2 — 소분류는 종류 값(`견적 외 비용`)을 읽기 전용 글자로만 그린다.
-  if (input.lineKind === "out_of_quote" && (field === "subcategory" || field === "quantity" || field === "unitPrice")) return "locked";
+  if (input.lineKind === "out_of_quote" && (field === "subcategory" || field === "quantity" || field === "days" || field === "unitPrice")) return "locked";
   if (input.hasLinkedDocuments && LINKED_READONLY_FIELDS.includes(field)) return "readonly";
   if (input.status === "settling") {
     if (input.isNewLine) {
@@ -100,11 +108,17 @@ export function structuralEditability(input: {
 // 사용자 D12 · 엔지 리뷰 A §2 P1 — 정산 새 줄의 견적 칸 0: 원화 단가 0 · 수량이 비었거나 1(견적가가 0이 되는 조합).
 // 수량 0은 받지 않는다(수량 > 0 검증을 느슨하게 하지 않는다). 상태도 새 줄에서 잠김이라 비었거나 기본값이어야 한다
 // (QUOTE_FIELDS_LOCKED_IN_SETTLING_INSERT와 같은 칸 — 04-12 검토 S2).
-export function quoteCellsZero(input: { quantity?: number; unitPrice: { currency: string; amount: number; fxRate: number }; lineStatus?: string }): boolean {
+export function quoteCellsZero(input: {
+  quantity?: number;
+  days?: number;
+  unitPrice: { currency: string; amount: number; fxRate: number };
+  lineStatus?: string;
+}): boolean {
   return (
     input.unitPrice.currency === "KRW" &&
     input.unitPrice.amount === 0 &&
     (input.quantity === undefined || input.quantity === 1) &&
+    (input.days === undefined || input.days === 1) &&
     (input.lineStatus === undefined || input.lineStatus === "not_started")
   );
 }

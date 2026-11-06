@@ -1219,7 +1219,7 @@ describe("원화 밖 숫자 컬럼 범위(04-40 검토 SF-1)", () => {
 
 // 04-40(DR-9) — 수량 × 단가의 계산 견적가가 quote_amount_krw 상한을 넘으면 수량·단가 두 칸 셀 오류로 쓰기 전에 거부한다.
 describe("계산 견적가 상한(04-40 · DR-9)", () => {
-  const OVER = "견적가 상한 초과 · 수량이나 단가 수정";
+  const OVER = "견적가 상한 초과 · 수량 · 단가 · 일수 수정";
 
   function overBatch(subcategory: string) {
     const ok = newRow(subcategory, { unitPrice: krw(100_000) });
@@ -1229,7 +1229,7 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
 
   function expectTwoCells(error: SaveRejectedError, rowId: string) {
     const cells = error.formatErrors.filter((cell) => cell.rowId === rowId);
-    expect(cells.map((cell) => cell.field).sort()).toEqual(["quantity", "unitPrice"]);
+    expect(cells.map((cell) => cell.field).sort()).toEqual(["days", "quantity", "unitPrice"]);
     expect(cells.every((cell) => cell.reason === OVER)).toBe(true);
   }
 
@@ -1272,7 +1272,7 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
     expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(0);
   });
 
-  it("(d3) saveProjectLedgerAction의 봉투가 { rejected: { summary: 「오류 2칸 · 전부 거부」, cells } }이고 그 줄의 quantity·unitPrice 두 칸이 있다(W3)", async () => {
+  it("(d3) saveProjectLedgerAction의 봉투가 { rejected: { summary: 「오류 3칸 · 전부 거부」, cells } }이고 그 줄의 quantity·unitPrice·days 세 칸이 있다(W3 · 07.2 D-7230)", async () => {
     const { project, revision, subcategoryValue } = await setupProject();
     const over = { id: randomUUID(), isNew: true as const, subcategory: subcategoryValue, itemName: `상한-${randomUUID()}`, quantity: 3, unitPrice: krw(500_000_000_000), execution: krw(10_000) };
 
@@ -1280,11 +1280,12 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
 
     const data = result?.data;
     if (!data || !("rejected" in data)) throw new Error(`거부 봉투가 아니다: ${JSON.stringify(result)}`);
-    expect(data.rejected.summary).toBe("오류 2칸 · 전부 거부");
+    expect(data.rejected.summary).toBe("오류 3칸 · 전부 거부");
     expect(data.rejected.cells).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ rowId: over.id, field: "quantity", kind: "error", reason: OVER }),
         expect.objectContaining({ rowId: over.id, field: "unitPrice", kind: "error", reason: OVER }),
+        expect.objectContaining({ rowId: over.id, field: "days", kind: "error", reason: OVER }),
       ]),
     );
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
@@ -1433,7 +1434,9 @@ describe("견적 줄 저장 로그의 줄 전후(07.1-13 S8)", () => {
     expect(created).toMatchObject({ kind: "quote", no: 4, name: "새 영상" });
     expect(created.changes).toMatchObject({ itemName: [null, "새 영상"], unitPrice: [null, "30,000원"], execution: [null, "10,000원"], note: [null, "새 비고"] });
     for (const pair of Object.values(created.changes)) expect(pair[0]).toBeNull();
-    for (const key of Object.keys(created.changes)) expect(["subcategory", "itemName", "vendorId", "quantity", "unitPrice", "execution", "lineStatus", "note"]).toContain(key);
+    for (const key of Object.keys(created.changes)) {
+      expect(["subcategory", "itemName", "vendorId", "quantity", "days", "unitPrice", "execution", "lineStatus", "note", "clientRemark", "midCategory", "majorCategory"]).toContain(key);
+    }
 
     const removed = byId.get(light.id)!;
     expect(removed).toMatchObject({ kind: "quote", no: 3, name: "조명" });

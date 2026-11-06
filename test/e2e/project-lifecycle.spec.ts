@@ -700,7 +700,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(trigger).not.toHaveAttribute("aria-disabled", "true");
 
     const dataRow = page.locator("tbody tr").nth(1);
-    const executionCell = dataRow.getByRole("gridcell").nth(7);
+    const executionCell = dataRow.getByRole("gridcell").nth(8);
     await executionCell.click();
     await executionCell.getByLabel("실행가").fill("70000");
     await executionCell.getByLabel("실행가").press("Enter");

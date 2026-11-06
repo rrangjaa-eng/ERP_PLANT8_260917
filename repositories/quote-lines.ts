@@ -119,6 +119,8 @@ export type QuoteLineInsertInput = {
   itemName: string;
   vendorId?: string | null;
   quantity: string;
+  // 07.2 PU6(D-7230) — 일수(numeric 글자). 없으면 DB 기본 1(지출결의 → 조정 줄 동기화는 늘 1).
+  days?: string;
   unitPriceCurrency: string;
   unitPriceForeignAmount: string | null;
   unitPriceFxRate: string;
@@ -133,6 +135,10 @@ export type QuoteLineInsertInput = {
   // 04-13 — 줄 종류(없으면 DB 기본값 quote). 새 줄에서만 쓴다 — 갱신은 이 칸을 쓰지 않는다.
   lineKind?: string;
   note?: string | null;
+  // 07.2 PU6(D-7232) · X2(D-7240) — 고객 비고 · 중분류 · 저장 대분류.
+  clientRemark?: string | null;
+  midCategory?: string | null;
+  majorCategory?: string | null;
   copiedFromLineId?: string | null;
   source?: string;
   customFields?: Record<string, unknown>;
@@ -156,6 +162,7 @@ export async function insertQuoteLineIfAbsent(
       itemName: input.itemName,
       vendorId: input.vendorId ?? null,
       quantity: input.quantity,
+      ...(input.days ? { days: input.days } : {}),
       unitPriceCurrency: input.unitPriceCurrency,
       unitPriceForeignAmount: input.unitPriceForeignAmount,
       unitPriceFxRate: input.unitPriceFxRate,
@@ -169,6 +176,9 @@ export async function insertQuoteLineIfAbsent(
       lineStatus: input.lineStatus,
       ...(input.lineKind ? { lineKind: input.lineKind } : {}),
       note: input.note ?? null,
+      clientRemark: input.clientRemark ?? null,
+      midCategory: input.midCategory ?? null,
+      majorCategory: input.majorCategory ?? null,
       copiedFromLineId: input.copiedFromLineId ?? null,
       source: input.source ?? "demo",
       customFields: input.customFields ?? {},
@@ -279,6 +289,7 @@ export async function updateQuoteLineIfVersionMatches(
       itemName: input.itemName,
       vendorId: input.vendorId ?? null,
       quantity: input.quantity,
+      ...(input.days ? { days: input.days } : {}),
       unitPriceCurrency: input.unitPriceCurrency,
       unitPriceForeignAmount: input.unitPriceForeignAmount,
       unitPriceFxRate: input.unitPriceFxRate,
@@ -291,6 +302,9 @@ export async function updateQuoteLineIfVersionMatches(
       profitKrw: input.profitKrw,
       lineStatus: input.lineStatus,
       note: input.note ?? null,
+      clientRemark: input.clientRemark ?? null,
+      midCategory: input.midCategory ?? null,
+      majorCategory: input.majorCategory ?? null,
       version: sql`${quoteLines.version} + 1`,
       updatedAt: new Date(),
     })

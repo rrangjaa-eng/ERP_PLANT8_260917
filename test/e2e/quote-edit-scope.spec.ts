@@ -19,7 +19,7 @@ import { chooseApprovalBasis, expandProjectInfo, openProjectInfoEdit, projectInf
 const TODAY = kstToday(new Date());
 
 // 열 순서(quote-table.tsx) — 번호 · 소분류 · 항목 · 거래처 · 수량 · 단가 · 견적가 · 실행가 · 차익 · 상태 · 비고.
-const COL = { subcategory: 1, itemName: 2, vendor: 3, quantity: 4, unitPrice: 5, quoteAmount: 6, execution: 7, note: 10 } as const;
+const COL = { subcategory: 1, itemName: 2, vendor: 3, quantity: 4, unitPrice: 5, days: 6, quoteAmount: 7, execution: 8, note: 11 } as const;
 
 type Account = { userId: string; email: string; password: string };
 
@@ -906,7 +906,7 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     // 숨은 칸은 접근성 트리에서 빠진다 — DOM 위치(td)로 고른다.
     await lineCell(page, "폭 첫 줄", COL.execution).focus();
     await page.keyboard.press("ArrowRight");
-    await expect(lineCell(page, "폭 첫 줄", 9)).toBeFocused();
+    await expect(lineCell(page, "폭 첫 줄", 10)).toBeFocused();
     await page.keyboard.press("ArrowLeft");
     await expect(lineCell(page, "폭 첫 줄", COL.execution)).toBeFocused();
     await expect(page.locator("tfoot").getByText(/차익 \d/)).toBeVisible();
@@ -952,7 +952,7 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
     await lineCell(page, "폭 첫 줄", COL.note).focus();
     await page.keyboard.press("Enter");
-    await page.getByRole("textbox", { name: "비고", exact: true }).fill("폭 전환 비고");
+    await page.getByRole("textbox", { name: "내부 비고", exact: true }).fill("폭 전환 비고");
 
     await page.setViewportSize({ width: 1000, height: 800 });
     await expect(primarySave(page)).toContainText("일괄 저장 1");

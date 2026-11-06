@@ -614,7 +614,8 @@ export async function createCardUsage(
       if (again) return again;
       const target = locked.find((row) => row.id === input.lineId);
       // 화면이 내보내지 않는 줄(조정 · 취소 · 보관 · 현재 차수 밖) — 새 문구 없음. 고정 연결은 차수를 보지 않는다.
-      if (!target || target.lineKind === "adjustment" || target.lineStatus === "cancelled" || target.archivedAt || (!pre.linkFixed && target.revisionId !== pre.revisionId)) {
+      // 07.2 D-7221 — 수수료 줄(청구 전용)도 거부.
+      if (!target || target.lineKind === "adjustment" || target.lineKind === "commission" || target.lineStatus === "cancelled" || target.archivedAt || (!pre.linkFixed && target.revisionId !== pre.revisionId)) {
         throw new ForbiddenError(LINK_MISSING);
       }
       const links = await findLineLinks(viewer, [input.lineId], innerTx);
@@ -843,7 +844,7 @@ export async function updateCardUsage(
       const locked = await lockQuoteLines(viewer, current ? [lineId, current] : [lineId], innerTx);
       const target = locked.find((row) => row.id === lineId);
       // 새로 잇는 줄 — 화면이 내보내지 않는 줄(조정 · 취소 · 보관 · 현재 차수 밖)은 거부(새 건과 같다).
-      if (!target || (!pre.linkFixed && (target.lineKind === "adjustment" || target.lineStatus === "cancelled" || target.archivedAt || target.revisionId !== pre.revisionId))) {
+      if (!target || (!pre.linkFixed && (target.lineKind === "adjustment" || target.lineKind === "commission" || target.lineStatus === "cancelled" || target.archivedAt || target.revisionId !== pre.revisionId))) {
         throw new ForbiddenError(LINK_MISSING);
       }
       const links = await findLineLinks(viewer, [lineId], innerTx);

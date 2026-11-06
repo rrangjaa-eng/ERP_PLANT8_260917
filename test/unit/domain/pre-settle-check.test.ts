@@ -263,3 +263,20 @@ describe("강행 허용 세 키 조합", () => {
     expect(summarizePreSettle(counts, { ...OFF, missingRevenue: true })).toMatchObject({ blockedCount: 3, forcedResultLine: "강행 · 매출 미입력" });
   });
 });
+
+// 07.2 PU3(D-7221) — 수수료 줄은 청구 전용 줄: 「안 붙은 줄」 셈에서 빠지고, 번호는 견적 표와 같은 순서(조정 앞).
+describe("수수료 줄(commission · 07.2-06)", () => {
+  it("실행가가 있어도 「안 붙은 줄」로 세지 않는다", () => {
+    expect(isUnmatchedLine({ lineKind: "commission", cancelled: false, executionKrw: 10_000, liveLinks: 0 })).toBe(false);
+  });
+
+  it("번호 순서: 견적 → 견적 외 비용 → 수수료 → 조정", () => {
+    const numbers = lineDisplayNumbers([
+      { id: "adj", lineKind: "adjustment", subcategory: "adjustment" },
+      { id: "fee", lineKind: "commission", subcategory: "commission" },
+      { id: "q", lineKind: "quote", subcategory: "a" },
+      { id: "oq", lineKind: "out_of_quote", subcategory: "out_of_quote" },
+    ]);
+    expect([...numbers.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id)).toEqual(["q", "oq", "fee", "adj"]);
+  });
+});

@@ -125,6 +125,7 @@ type QuoteLineProjectable = {
   vendorId: string | null;
   vendorName: string | null;
   quantity: number;
+  days: number;
   unitPrice: MoneyDto;
   execution: MoneyDto;
   quoteAmountKrw: number;
@@ -132,6 +133,9 @@ type QuoteLineProjectable = {
   lineStatus: string;
   lineKind: string;
   note: string | null;
+  clientRemark: string | null;
+  midCategory: string | null;
+  majorCategory: string | null;
   copiedFromLineId: string | null;
   version: number;
   customFields: Record<string, unknown>;
@@ -164,6 +168,7 @@ function toProjectable(row: QuoteLineRow, facts: LineEditFacts, vendorName: stri
     vendorId: row.vendorId,
     vendorName,
     quantity: Number(row.quantity),
+    days: Number(row.days),
     unitPrice: moneyToDto(
       moneyFromRow({
         currency: row.unitPriceCurrency,
@@ -185,6 +190,9 @@ function toProjectable(row: QuoteLineRow, facts: LineEditFacts, vendorName: stri
     lineStatus: row.lineStatus,
     lineKind: row.lineKind,
     note: row.note,
+    clientRemark: row.clientRemark,
+    midCategory: row.midCategory,
+    majorCategory: row.majorCategory,
     copiedFromLineId: row.copiedFromLineId,
     version: row.version,
     customFields: row.customFields as Record<string, unknown>,
@@ -204,14 +212,21 @@ export type QuoteLineDto = {
   // /qa ISSUE-001 — 거래처 이름(보관 · 숨김 거래처도). 선택지에 없는 거래처를 UUID 대신 이름으로 그린다.
   vendorName: string | null;
   quantity: number;
+  // 07.2 PU6(D-7230) — 일수(견적가 = 수량 × 단가 × 일수).
+  days: number;
   unitPrice: MoneyDto;
   execution: MoneyDto;
   quoteAmountKrw: number;
   profitKrw: number;
   lineStatus: string;
-  // 04-13(D-48 · D-83) — 줄 종류(quote · out_of_quote · adjustment). 화면(04-23)이 그룹·행 모양을 이것으로 그린다.
+  // 04-13(D-48 · D-83) — 줄 종류(quote · out_of_quote · adjustment · 07.2 commission). 화면(04-23)이 그룹·행 모양을 이것으로 그린다.
   lineKind: string;
+  // 내부 비고(화면 머리글 `내부 비고`).
   note: string | null;
+  // 07.2 PU6(D-7232) — 고객 비고 · 07.2 X2(D-7240) — 중분류 · 저장 대분류(없으면 화면이 소분류에서 파생).
+  clientRemark: string | null;
+  midCategory: string | null;
+  majorCategory: string | null;
   copiedFromLineId: string | null;
   version: number;
   customFields: Record<string, unknown>;
@@ -241,6 +256,7 @@ export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = 
     // /qa ISSUE-001 — 거래처 이름은 거래처 정보다. 프로젝트 정보와 함께 볼 때만(all-of, 리저브 선택지와 같은 결).
     { key: "vendorName", from: "vendorName", infoItem: ["project.value", "vendor.value"] },
     { key: "quantity", from: "quantity", infoItem: "project.value" },
+    { key: "days", from: "days", infoItem: "project.value" },
     { key: "unitPrice", from: "unitPrice", infoItem: "quote.amount" },
     { key: "execution", from: "execution", infoItem: "quote.amount" },
     { key: "quoteAmountKrw", from: "quoteAmountKrw", infoItem: "quote.amount" },
@@ -248,6 +264,9 @@ export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = 
     { key: "lineStatus", from: "lineStatus", infoItem: "project.value" },
     { key: "lineKind", from: "lineKind", infoItem: "project.value" },
     { key: "note", from: "note", infoItem: "project.value" },
+    { key: "clientRemark", from: "clientRemark", infoItem: "project.value" },
+    { key: "midCategory", from: "midCategory", infoItem: "project.value" },
+    { key: "majorCategory", from: "majorCategory", infoItem: "project.value" },
     { key: "copiedFromLineId", from: "copiedFromLineId", infoItem: "project.value" },
     { key: "version", from: "version", infoItem: "project.value" },
     { key: "customFields", from: "customFields", infoItem: "project.value" },
@@ -465,15 +484,20 @@ export async function listQuoteLines(viewer: Viewer, revisionId: string, ctx: Qu
 // 그대로면 쓰이지 않는다. 버전이 달라졌을 때만 이 값과 서버의 현재 값을
 // 셀 단위로 비교해 **실제로 달라진 셀만** 충돌로 판정한다(D-65) — 그냥
 // "버전이 다르다"만으로 그 줄 전체를 충돌 처리하지 않는다.
+// 07.2-06 — 일수 · 고객 비고 · 대 · 중분류는 이 칸들이 생기기 전 화면이 실은 스냅샷에 없을 수 있다: 없으면 비교하지 않는다.
 export type QuoteLineBaseline = {
   subcategory: string;
   itemName: string;
   vendorId: string | null;
   quantity: number;
+  days?: number;
   unitPriceAmountKrw: number;
   executionAmountKrw: number;
   lineStatus: string;
   note: string | null;
+  clientRemark?: string | null;
+  midCategory?: string | null;
+  majorCategory?: string | null;
 };
 
 export type QuoteLineWriteRow = {
@@ -491,12 +515,18 @@ export type QuoteLineWriteRow = {
   itemName: string;
   vendorId?: string | null;
   quantity?: number;
+  /** 07.2 PU6(D-7230) — 일수(비면 1). */
+  days?: number;
   unitPrice: MoneyInputDto;
   /** 04-02(D-71) — 단가 환율 칸을 이번 저장에서 실제로 고쳤을 때만 true. */
   unitPriceFxRateTouched?: boolean;
   execution: MoneyInputDto;
   lineStatus?: string;
   note?: string | null;
+  /** 07.2 PU6(D-7232) · X2(D-7240) — 비면 null. */
+  clientRemark?: string | null;
+  midCategory?: string | null;
+  majorCategory?: string | null;
   customFields?: Record<string, unknown>;
   baseline?: QuoteLineBaseline;
 };
@@ -508,10 +538,14 @@ const FIELD_LABELS: Record<CompareField, string> = {
   itemName: "항목",
   vendorId: "거래처",
   quantity: "수량",
+  days: "일수",
   unitPriceAmountKrw: "단가",
   executionAmountKrw: "실행가",
   lineStatus: "상태",
-  note: "비고",
+  note: "내부 비고",
+  clientRemark: "고객 비고",
+  midCategory: "중분류",
+  majorCategory: "대분류",
 };
 
 const COMPARE_FIELDS: CompareField[] = [
@@ -519,10 +553,14 @@ const COMPARE_FIELDS: CompareField[] = [
   "itemName",
   "vendorId",
   "quantity",
+  "days",
   "unitPriceAmountKrw",
   "executionAmountKrw",
   "lineStatus",
   "note",
+  "clientRemark",
+  "midCategory",
+  "majorCategory",
 ];
 
 function currentFieldValue(row: QuoteLineRow, field: CompareField): string | number | null {
@@ -535,6 +573,8 @@ function currentFieldValue(row: QuoteLineRow, field: CompareField): string | num
       return row.vendorId;
     case "quantity":
       return Number(row.quantity);
+    case "days":
+      return Number(row.days);
     case "unitPriceAmountKrw":
       return row.unitPriceAmountKrw;
     case "executionAmountKrw":
@@ -543,6 +583,12 @@ function currentFieldValue(row: QuoteLineRow, field: CompareField): string | num
       return row.lineStatus;
     case "note":
       return row.note;
+    case "clientRemark":
+      return row.clientRemark;
+    case "midCategory":
+      return row.midCategory;
+    case "majorCategory":
+      return row.majorCategory;
   }
 }
 
@@ -619,13 +665,15 @@ export type QuoteLineComputedAmounts = {
 // 04-12(PROJ-02) — 취소 줄의 견적가는 0이다(수량·단가 열은 이력으로 그대로 둔다).
 export function computeQuoteLineAmounts(input: {
   quantity?: number;
+  days?: number;
   unitPrice: MoneyInputDto;
   execution: MoneyInputDto;
   lineStatus?: string;
 }): QuoteLineComputedAmounts {
   const unitPriceMoney = moneyFromRow(moneyToColumns(input.unitPrice));
   const executionMoney = moneyFromRow(moneyToColumns(input.execution));
-  const quoteAmountKrw = input.lineStatus === "cancelled" ? 0 : quoteAmount(input.quantity, unitPriceMoney);
+  // 07.2 D-7230 — 견적가 = 수량 × 단가 × 일수(일수가 비면 1).
+  const quoteAmountKrw = input.lineStatus === "cancelled" ? 0 : quoteAmount(input.quantity, unitPriceMoney, input.days);
   const profitKrw = profit(quoteAmountKrw, executionMoney);
 
   return {
@@ -669,6 +717,8 @@ function cellConflictsFor(
   const conflicts: CellConflict[] = [];
   for (const field of COMPARE_FIELDS) {
     const baselineValue = baseline[field];
+    // 07.2-06 — 스냅샷에 없는 칸(새 칸이 생기기 전 화면)은 비교하지 않는다.
+    if (baselineValue === undefined) continue;
     const currentValue = currentFieldValue(current, field);
     if (baselineValue === currentValue) continue; // 값이 실제로 같으면 충돌이 아니다.
     const theirValue = formatFieldValue(field, currentValue, vendorLabel);
@@ -692,6 +742,13 @@ export type SaveQuoteLinesResult = { lines: QuoteLineDto[] };
 // `archivedLineIds`는 이번 저장에서 지울(보관할) 줄(엔지 리뷰 A §2 P2 · D-56).
 export type QuoteLinesWriteInput = { rows: QuoteLineWriteRow[]; order?: string[]; archivedLineIds?: string[] };
 
+// 07.2-06 — 글자 칸 길이 상한(DB CHECK quote_lines_client_remark_length_check · 분류는 화면 한도).
+const CLIENT_REMARK_LIMIT = 500;
+const CATEGORY_LIMIT = 100;
+const CLIENT_REMARK_TOO_LONG = "고객 비고 · 500자 이하";
+const MID_CATEGORY_TOO_LONG = "중분류 · 100자 이하";
+const MAJOR_CATEGORY_TOO_LONG = "대분류 · 100자 이하";
+
 // A-37 — 화면 입력 검증. 줄 상태는 QUOTE_LINE_STATUSES만, 줄·보관·순서 id는 uuid. 줄 id가 없는 새 줄은
 // 04-30이 화면 uuid를 싣기 전까지의 과도기다(액션이 서버 uuid를 붙인다). 기존 줄은 version을 싣는다.
 const quoteLineMoneyInputSchema = z.object({
@@ -711,6 +768,8 @@ export const quoteLineRowInputSchema = z
     itemName: z.string().min(1, "항목명 필요 · 항목명 입력"),
     vendorId: z.string().optional(),
     quantity: z.coerce.number().optional(),
+    // 07.2 PU6(D-7230) — 수량과 같은 형(비면 1 — 서버 writePayload).
+    days: z.coerce.number().optional(),
     unitPrice: quoteLineMoneyInputSchema,
     unitPriceFxRateTouched: z.boolean().optional(),
     execution: quoteLineMoneyInputSchema,
@@ -718,6 +777,10 @@ export const quoteLineRowInputSchema = z
     // 04-13 — 새 줄의 종류(기존 줄은 싣지 않는다 — 서버가 DB 종류를 쓴다).
     lineKind: z.enum(QUOTE_LINE_KINDS).optional(),
     note: z.string().optional(),
+    // 07.2 PU6(D-7232) · X2(D-7240) — 고객 비고 500자 · 분류 100자(빈 글자는 서버가 null로).
+    clientRemark: z.string().max(500, CLIENT_REMARK_TOO_LONG).nullable().optional(),
+    midCategory: z.string().max(100, MID_CATEGORY_TOO_LONG).nullable().optional(),
+    majorCategory: z.string().max(100, MAJOR_CATEGORY_TOO_LONG).nullable().optional(),
     // 04-04 Task 2 ② — 이 줄을 불러왔을 때의 스냅샷(D-65 셀 단위 충돌 판정의 baseline). 기존 줄에서만 의미가 있다.
     baseline: z
       .object({
@@ -725,10 +788,14 @@ export const quoteLineRowInputSchema = z
         itemName: z.string(),
         vendorId: z.string().nullable(),
         quantity: z.number(),
+        days: z.number().optional(),
         unitPriceAmountKrw: z.number(),
         executionAmountKrw: z.number(),
         lineStatus: z.enum(QUOTE_LINE_STATUSES),
         note: z.string().nullable(),
+        clientRemark: z.string().nullable().optional(),
+        midCategory: z.string().nullable().optional(),
+        majorCategory: z.string().nullable().optional(),
       })
       .optional(),
   })
@@ -849,7 +916,11 @@ export async function prepareQuoteLineSave(
 // 적는다(요청의 그 칸들은 읽지 않는다). 조정 줄은 상태도 미착수로 고정한다(상태 칸이 없다).
 function normalizeForKind(row: QuoteLineWriteRow, kind: QuoteLineKind): QuoteLineWriteRow {
   if (kind === "quote") return row;
-  const zeroQuote = { ...row, subcategory: kind, quantity: 1, unitPrice: { currency: "KRW" as const, amount: 0, fxRate: 1 }, unitPriceFxRateTouched: false };
+  // 07.2 D-7222 — 수수료 줄: 단가(원화 · 음수 허용)가 곧 견적가다. 0으로 덮지 않고, 수량 · 일수 1 · 거래처 없음 · 실행가 0으로 고정한다.
+  if (kind === "commission") {
+    return { ...row, subcategory: kind, quantity: 1, days: 1, vendorId: undefined, execution: { currency: "KRW", amount: 0, fxRate: 1 } };
+  }
+  const zeroQuote = { ...row, subcategory: kind, quantity: 1, days: 1, unitPrice: { currency: "KRW" as const, amount: 0, fxRate: 1 }, unitPriceFxRateTouched: false };
   return kind === "adjustment" ? { ...zeroQuote, lineStatus: "not_started" } : zeroQuote;
 }
 
@@ -865,6 +936,17 @@ function keepHiddenVendor(
   return { ...row, vendorId, baseline: row.baseline && current ? { ...row.baseline, vendorId: current.vendorId } : row.baseline };
 }
 
+// PR #367 검토 M1 — 07.2에서 더한 일수 · 고객 비고를 싣지 않는 옛 모양 입력도 받는다(입력 스키마가 optional). 기존 줄에서 칸이
+// 빠졌으면 저장값 그대로 둔다 — 빈 칸을 일수 1 · 고객 비고 null로 쓰면 견적가가 말없이 바뀐다. 새 줄은 그대로(비면 일수 1).
+function keepOmittedStored(row: QuoteLineWriteRow, current: QuoteLineRow | undefined): QuoteLineWriteRow {
+  if (!current) return row;
+  return {
+    ...row,
+    days: row.days === undefined ? Number(current.days) : row.days,
+    clientRemark: row.clientRemark === undefined ? current.clientRemark : row.clientRemark,
+  };
+}
+
 // 04-13(엔지 리뷰 B §2 · T-04-64) — 판정·저장이 보는 종류. 새 줄은 요청 값(없으면 quote), 기존 줄은 잠근 tx로 다시 읽은
 // DB 행의 종류다. 기존 줄에 다른 종류가 실려 오면 종류 변경 요청이라 null(거부).
 export function resolveLineKind(row: Pick<QuoteLineWriteRow, "isNew" | "lineKind">, storedKind: QuoteLineKind | undefined): QuoteLineKind | null {
@@ -878,11 +960,13 @@ export function resolveLineKind(row: Pick<QuoteLineWriteRow, "isNew" | "lineKind
 function writePayload(row: QuoteLineWriteRow) {
   const { unitPriceColumns, executionColumns, quoteAmountKrw, profitKrw } = computeQuoteLineAmounts(row);
   const quantity = row.quantity && row.quantity > 0 ? row.quantity : 1;
+  const days = row.days && row.days > 0 ? row.days : 1;
   return {
     subcategory: row.subcategory,
     itemName: row.itemName,
     vendorId: row.vendorId ?? null,
     quantity: quantity.toFixed(2),
+    days: days.toFixed(2),
     unitPriceCurrency: unitPriceColumns.currency,
     unitPriceForeignAmount: unitPriceColumns.foreignAmount,
     unitPriceFxRate: unitPriceColumns.fxRate,
@@ -895,6 +979,9 @@ function writePayload(row: QuoteLineWriteRow) {
     profitKrw,
     lineStatus: row.lineStatus ?? "not_started",
     note: row.note ? row.note : null,
+    clientRemark: row.clientRemark ? row.clientRemark : null,
+    midCategory: row.midCategory ? row.midCategory : null,
+    majorCategory: row.majorCategory ? row.majorCategory : null,
   };
 }
 
@@ -905,10 +992,14 @@ const FIELD_COLUMNS: Record<QuoteLineField, readonly (keyof QuoteLineWritePayloa
   itemName: ["itemName"],
   vendorId: ["vendorId"],
   quantity: ["quantity"],
+  days: ["days"],
   unitPrice: ["unitPriceCurrency", "unitPriceForeignAmount", "unitPriceFxRate", "unitPriceAmountKrw"],
   execution: ["executionCurrency", "executionForeignAmount", "executionFxRate", "executionAmountKrw"],
   lineStatus: ["lineStatus"],
   note: ["note"],
+  clientRemark: ["clientRemark"],
+  midCategory: ["midCategory"],
+  majorCategory: ["majorCategory"],
 };
 
 // 07.1-13 S8: 로그 줄 전후 보기 — 비교 칸(QUOTE_LINE_FIELDS)만 싣고 sortOrder · version · id는 넣지 않는다. 단가 · 실행가는
@@ -939,7 +1030,7 @@ function lineChangeView(source: QuoteLineRow | QuoteLineWritePayload, fields: re
 
 // 07.1-13 S8: 로그 줄 순번 = 견적 표 번호 열(app/(app)/projects/[id]/quote-table.tsx `displayOrder` — 클라이언트 파일이라 가져올 수 없어
 // 같은 규칙을 둔다): 종류(견적 줄 → 견적 외 비용 → 조정) 안정 정렬 뒤, 견적 줄은 소분류 · 나머지는 종류로 처음 나온 차례대로 묶는다.
-const DISPLAY_KIND_ORDER: Record<QuoteLineKind, number> = { quote: 0, out_of_quote: 1, adjustment: 2 };
+const DISPLAY_KIND_ORDER: Record<QuoteLineKind, number> = { quote: 0, out_of_quote: 1, commission: 2, adjustment: 3 };
 
 function displayNumbers(rows: readonly QuoteLineRow[]): Map<string, number> {
   const groups = new Map<string, QuoteLineRow[]>();
@@ -964,7 +1055,9 @@ function sameCustomFields(stored: unknown, next: Record<string, unknown>): boole
 }
 
 // 04-40 검토 SF-1 — quantity numeric(12,2)의 정수부 한계(db/schema/quote-lines.ts). 저장은 toFixed(2) 뒤 값이다.
+// 07.2 D-7230 — days도 같은 numeric(12,2)라 같은 상수를 쓴다.
 const QUANTITY_COLUMN_LIMIT = 1e10;
+const DAYS_PRECISION = "일수는 소수 2자리까지";
 
 // EXP-14 — 실행가 음수는 견적 외 비용·조정 줄만 받는다.
 export function quoteLineFormatErrors(input: QuoteLineWriteRow, rowIndex: number, kind: QuoteLineKind): CellFormatError[] {
@@ -978,7 +1071,30 @@ export function quoteLineFormatErrors(input: QuoteLineWriteRow, rowIndex: number
   if (input.quantity !== undefined && input.quantity > 0 && Number(input.quantity.toFixed(MAX_DECIMALS.quantity)) !== input.quantity) {
     errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: numberInputRejectionReason("quantity", "precision") });
   }
-  if (input.unitPrice.amount < 0) {
+  // 07.2 PU6(D-7230) — 일수는 수량과 같은 세 검사(같은 상한 상수).
+  if (input.days !== undefined && input.days <= 0) {
+    errors.push({ rowIndex, rowId: input.id, field: "days", label: "일수", reason: "숫자 형식 오류 · 0보다 큰 수" });
+  }
+  if (input.days !== undefined && Number(input.days.toFixed(2)) >= QUANTITY_COLUMN_LIMIT) {
+    errors.push({ rowIndex, rowId: input.id, field: "days", label: "일수", reason: "일수 상한 초과 · 일수 수정" });
+  }
+  if (input.days !== undefined && input.days > 0 && Number(input.days.toFixed(MAX_DECIMALS.quantity)) !== input.days) {
+    errors.push({ rowIndex, rowId: input.id, field: "days", label: "일수", reason: DAYS_PRECISION });
+  }
+  if ((input.clientRemark ?? "").length > CLIENT_REMARK_LIMIT) {
+    errors.push({ rowIndex, rowId: input.id, field: "clientRemark", label: "고객 비고", reason: CLIENT_REMARK_TOO_LONG });
+  }
+  if ((input.midCategory ?? "").length > CATEGORY_LIMIT) {
+    errors.push({ rowIndex, rowId: input.id, field: "midCategory", label: "중분류", reason: MID_CATEGORY_TOO_LONG });
+  }
+  if ((input.majorCategory ?? "").length > CATEGORY_LIMIT) {
+    errors.push({ rowIndex, rowId: input.id, field: "majorCategory", label: "대분류", reason: MAJOR_CATEGORY_TOO_LONG });
+  }
+  // 07.2 D-7222 — 수수료 줄은 음수 단가(감액)를 받고, 원화만 받는다(조용히 환산하지 않는다).
+  if (input.unitPrice.amount < 0 && kind !== "commission") {
+    errors.push({ rowIndex, rowId: input.id, field: "unitPrice", label: "단가", reason: "숫자 형식 오류 · 12,400,000처럼" });
+  }
+  if (kind === "commission" && input.unitPrice.currency !== "KRW") {
     errors.push({ rowIndex, rowId: input.id, field: "unitPrice", label: "단가", reason: "숫자 형식 오류 · 12,400,000처럼" });
   }
   if (input.execution.amount < 0 && kind === "quote") {
@@ -992,14 +1108,18 @@ const CELL_LABELS: Record<QuoteLineField, string> = {
   itemName: "항목",
   vendorId: "거래처",
   quantity: "수량",
+  days: "일수",
   unitPrice: "단가",
   execution: "실행가",
   lineStatus: "상태",
-  note: "비고",
+  note: "내부 비고",
+  clientRemark: "고객 비고",
+  midCategory: "중분류",
+  majorCategory: "대분류",
 };
 
-// UI-SPEC rev 5 `Error — 셀(금액 범위, 04-40 · DR-9)` — 계산값 상한은 수량·단가 두 칸 모두.
-const QUOTE_AMOUNT_OVER = "견적가 상한 초과 · 수량이나 단가 수정";
+// UI-SPEC rev 5 `Error — 셀(금액 범위, 04-40 · DR-9)` — 계산값 상한은 수량·단가·일수 세 칸 모두(07.2 D-7230).
+const QUOTE_AMOUNT_OVER = "견적가 상한 초과 · 수량 · 단가 · 일수 수정";
 // quick 261002-3mx — 고를 수 없는 소분류(코드표에 없음 · 비활성 · 보관). 화면은 불러온 뒤 꺼진 분류를 아직 보일 수 있다.
 const SUBCATEGORY_NOT_LISTED = "고를 수 없는 소분류 · 새로 고침";
 
@@ -1018,8 +1138,8 @@ function normalizeLineMoney(row: QuoteLineWriteRow, rowIndex: number): { row: Qu
   };
   const unitPrice = normalize("unitPrice");
   const execution = normalize("execution");
-  if (errors.length === 0 && !quoteAmountWithinBound(row.quantity, unitPrice)) {
-    for (const field of ["quantity", "unitPrice"] as const) {
+  if (errors.length === 0 && !quoteAmountWithinBound(row.quantity, unitPrice, row.days)) {
+    for (const field of ["quantity", "unitPrice", "days"] as const) {
       errors.push({ rowIndex, rowId: row.id, field, label: CELL_LABELS[field], reason: QUOTE_AMOUNT_OVER });
     }
   }
@@ -1191,7 +1311,8 @@ export async function writeQuoteLinesInTx(
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
       const current = received.isNew ? undefined : currentById.get(received.id);
       // /review 적대 검토 — 가려진 채 그린 줄은 그 사이 거래처가 보이게 바뀌었어도 거래처를 본 적이 없다.
-      const requested = prepared.vendorShown && !received.vendorHidden ? received : keepHiddenVendor(received, current, currentById);
+      const shown = prepared.vendorShown && !received.vendorHidden ? received : keepHiddenVendor(received, current, currentById);
+      const requested = keepOmittedStored(shown, current);
       const resolved = resolveLineKind(requested, current && lineKindOf(current));
       if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
       const kind = resolved ?? lineKindOf(current!);

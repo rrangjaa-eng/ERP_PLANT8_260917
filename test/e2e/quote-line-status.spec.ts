@@ -28,7 +28,7 @@ import { submitReadyDraft } from "../integration/fixtures/expenses";
 const DESKTOP = { width: 1280, height: 800 };
 // Phase 4 표 열 순서 그대로(실행가 = 7).
 const ITEM_COLUMN = 2;
-const EXECUTION_COLUMN = 7;
+const EXECUTION_COLUMN = 8;
 const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"];
 
 async function makePayerE2E(): Promise<Person> {

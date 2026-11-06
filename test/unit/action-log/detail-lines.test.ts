@@ -347,7 +347,7 @@ describe("줄 전후 lineChanges (07.1-13 S8)", () => {
 
   it("항목명이 비면 빼고 띄어쓰기 하나 · 둘 다 없음이면 뺀다", () => {
     const detail = { lineChanges: [{ id: LINE_ID, kind: "quote", no: 3, name: "", changes: { note: [null, "메모"], subcategory: [null, ""] } }] };
-    expect(detailLines(detail)).toEqual([{ label: "견적 줄 3 비고", before: "없음", after: "메모" }]);
+    expect(detailLines(detail)).toEqual([{ label: "견적 줄 3 내부 비고", before: "없음", after: "메모" }]);
   });
 
   it("changes와 lineChanges가 함께면 changes 줄 먼저", () => {

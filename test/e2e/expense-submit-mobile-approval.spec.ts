@@ -286,8 +286,8 @@ test.describe("웨이브 6 — 견적 줄 행동 열 실패 줄 · 접근 이름
   });
 });
 
-// 05-15 D-66 — 제출된 지출결의(번호 있음)가 붙은 견적 줄은 상태 `지출결의 중` · 금액 셀 읽기 전용(이유 한 줄). 격자 열 순서는 Phase 4 표 그대로(실행가 = 7).
-const EXECUTION_COLUMN = 7;
+// 05-15 D-66 — 제출된 지출결의(번호 있음)가 붙은 견적 줄은 상태 `지출결의 중` · 금액 셀 읽기 전용(이유 한 줄). 격자 열 순서는 07.2 S4 표(실행가 = 8).
+const EXECUTION_COLUMN = 8;
 
 test.describe("D-66 잠금", () => {
   test("제출한 뒤 프로젝트 상세로 돌아오면 줄 상태가 지출결의 중이고 금액 셀이 편집되지 않고 이유가 보인다", async ({ browser, baseURL }) => {
@@ -322,10 +322,10 @@ test.describe("D-66 잠금", () => {
   });
 });
 
-// 05-15 Task 2 — 견적 줄 표 행 행동 셀 나머지 갈래 · 표 위 한 줄 · 누름 중 · 미저장 편집 · 한 줄 Ctrl+E · 힌트 줄. 열 순서는 Phase 4 표 그대로(비고 10 · 행동 11).
+// 05-15 Task 2 — 견적 줄 표 행 행동 셀 나머지 갈래 · 표 위 한 줄 · 누름 중 · 미저장 편집 · 한 줄 Ctrl+E · 힌트 줄. 열 순서는 07.2 S4 표(내부 비고 11 · 행동 14).
 const VENDOR_COLUMN = 3;
 const ITEM_COLUMN = 2;
-const NOTE_COLUMN = 10;
+const NOTE_COLUMN = 11;
 const DESKTOP = { width: 1280, height: 800 };
 
 async function currentRevisionId(fx: ExpenseE2E): Promise<string> {

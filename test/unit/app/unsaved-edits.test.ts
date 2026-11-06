@@ -30,7 +30,18 @@ describe("lineCellDirty", () => {
     executionAmount: 0,
     lineStatus: "not_started",
     note: null,
+    days: 1,
+    clientRemark: null,
+    midCategory: null,
     ...patch,
+  });
+
+  it("07.2 S4 — 일수 · 고객 비고 · 중분류 칸도 고친 칸만 true(옛 기준값에 없으면 일수 1 · 빈 값)", () => {
+    const edited = line({ days: 3, clientRemark: "F.O.C" });
+    expect(lineCellDirty(edited, "days")).toBe(true);
+    expect(lineCellDirty(edited, "clientRemark")).toBe(true);
+    expect(lineCellDirty(edited, "midCategory")).toBe(false);
+    expect(lineCellDirty(edited, "subcategory")).toBe(false);
   });
 
   it("고친 칸만 true", () => {

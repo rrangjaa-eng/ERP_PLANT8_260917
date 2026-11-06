@@ -789,3 +789,15 @@ td:has(> .rowNumber) {
   overflow-y: auto;
   padding: var(--s-2) var(--panel-pad-x);
 }
+
+/* 07.2-06(UI-SPEC S5) — 수수료 계산 패널 결과 한 줄. 글자는 보조 · 흐림, 숫자는 700. */
+.commissionResult {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.commissionResult strong {
+  color: var(--text-strong);
+  font-weight: var(--fw-bold);
+}

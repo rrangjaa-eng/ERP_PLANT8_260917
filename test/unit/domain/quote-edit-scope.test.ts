@@ -29,16 +29,16 @@ function fieldsAt(cells: Record<string, string>, level: string): string[] {
 }
 
 describe("lineCellEditability — 셀 단계 결정표", () => {
-  it("정산 · 기존 줄: 실행가만 edit, 나머지 일곱 칸 locked", () => {
+  it("정산 · 기존 줄: 실행가만 edit, 나머지 열한 칸 locked", () => {
     const cells = lineCellEditability({ ...base, status: "settling" });
     expect(fieldsAt(cells, "edit")).toEqual(["execution"]);
-    expect(fieldsAt(cells, "locked")).toHaveLength(7);
+    expect(fieldsAt(cells, "locked")).toHaveLength(11);
   });
 
-  it("정산 · 새 줄: 소분류·항목·거래처·비고·실행가 edit, 수량·단가·상태 locked(D10·D12)", () => {
+  it("정산 · 새 줄: 소분류·항목·거래처·비고·실행가 · 고객 비고 · 대 · 중분류 edit, 수량·일수·단가·상태 locked(D10·D12 · D-7230)", () => {
     const cells = lineCellEditability({ ...base, status: "settling", isNewLine: true });
-    expect(fieldsAt(cells, "edit")).toEqual(["execution", "itemName", "note", "subcategory", "vendorId"]);
-    expect(fieldsAt(cells, "locked")).toEqual(["lineStatus", "quantity", "unitPrice"]);
+    expect(fieldsAt(cells, "edit")).toEqual(["clientRemark", "execution", "itemName", "majorCategory", "midCategory", "note", "subcategory", "vendorId"]);
+    expect(fieldsAt(cells, "locked")).toEqual(["days", "lineStatus", "quantity", "unitPrice"]);
   });
 
   it("완료는 기존 줄·새 줄 모두 전부 locked", () => {
@@ -57,9 +57,9 @@ describe("lineCellEditability — 셀 단계 결정표", () => {
     }
   });
 
-  it("진행 + 연결 문서: 수량·단가·실행가 readonly, 항목·비고 edit(D-66)", () => {
+  it("진행 + 연결 문서: 수량·일수·단가·실행가 readonly, 항목·비고 edit(D-66 · D-7230)", () => {
     const cells = lineCellEditability({ ...base, status: "in_progress", hasLinkedDocuments: true });
-    expect(fieldsAt(cells, "readonly")).toEqual(["execution", "quantity", "unitPrice"]);
+    expect(fieldsAt(cells, "readonly")).toEqual(["days", "execution", "quantity", "unitPrice"]);
     expect(cells.itemName).toBe("edit");
     expect(cells.note).toBe("edit");
   });
@@ -262,10 +262,10 @@ describe("visibleHintKeys — 힌트 줄 거르기", () => {
 // 04-13(D-83 · D-48 · 사용자 D10·D12) — 줄 종류 × 조정 권한 결정표. 조정 줄은 상태를 보지 않고 조정 권한으로만,
 // 견적 외 비용은 견적 줄의 상태 규칙을 따르되 수량·단가가 늘 잠김(견적가 0).
 describe("줄 종류 축 결정표(04-13)", () => {
-  it("조정 줄 + 조정 권한 + 완료: 항목·거래처·실행가·비고 edit, 소분류·수량·단가·상태 locked", () => {
+  it("조정 줄 + 조정 권한 + 완료: 항목·거래처·실행가·비고 edit, 소분류·수량·일수·단가·상태 · 고객 비고 · 대 · 중분류 locked", () => {
     const cells = lineCellEditability({ ...base, status: "completed", lineKind: "adjustment", canAdjust: true });
     expect(fieldsAt(cells, "edit")).toEqual(["execution", "itemName", "note", "vendorId"]);
-    expect(fieldsAt(cells, "locked")).toEqual(["lineStatus", "quantity", "subcategory", "unitPrice"]);
+    expect(fieldsAt(cells, "locked")).toEqual(["clientRemark", "days", "lineStatus", "majorCategory", "midCategory", "quantity", "subcategory", "unitPrice"]);
   });
 
   it("조정 줄 + 조정 권한 없음(담당 PM): 어느 상태든 전부 locked", () => {
@@ -291,11 +291,11 @@ describe("줄 종류 축 결정표(04-13)", () => {
     });
   });
 
-  it("견적 외 비용 + 진행: 추가 가능, 소분류·수량·단가 locked(소분류는 읽기 전용 글자 — 04-23 검토 S-2), 나머지 edit", () => {
+  it("견적 외 비용 + 진행: 추가 가능, 소분류(대분류도 따라)·수량·일수·단가 locked(소분류는 읽기 전용 글자 — 04-23 검토 S-2), 나머지 edit", () => {
     expect(structuralEditability({ status: "in_progress", canWrite: true, lineKind: "out_of_quote" }).insert).toBe(true);
     for (const isNewLine of [false, true]) {
       const cells = lineCellEditability({ ...base, status: "in_progress", isNewLine, lineKind: "out_of_quote" });
-      expect(fieldsAt(cells, "locked")).toEqual(["quantity", "subcategory", "unitPrice"]);
+      expect(fieldsAt(cells, "locked")).toEqual(["days", "majorCategory", "quantity", "subcategory", "unitPrice"]);
     }
   });
 
@@ -320,8 +320,8 @@ describe("줄 종류 축 결정표(04-13)", () => {
     expect(Object.values(structuralEditability({ status: "completed", canWrite: true, lineKind: "out_of_quote" })).some(Boolean)).toBe(false);
   });
 
-  it("QUOTE_LINE_KINDS는 견적 줄 · 견적 외 비용 · 조정 세 값", () => {
-    expect(QUOTE_LINE_KINDS).toEqual(["quote", "out_of_quote", "adjustment"]);
+  it("QUOTE_LINE_KINDS는 견적 줄 · 견적 외 비용 · 조정 · 수수료(07.2 D-7222) 네 값", () => {
+    expect(QUOTE_LINE_KINDS).toEqual(["quote", "out_of_quote", "adjustment", "commission"]);
   });
 });
 
@@ -396,20 +396,21 @@ describe("조정 권한 축 — 표 위 한 줄 · EMPTY · 힌트 줄(04-23)", 
 describe("승인 차수 축(approvedSeq)", () => {
   const approved = { ...base, status: "in_progress", lineKind: "quote" as const, approvedSeq: 2 };
 
-  it("기존 견적 줄: 수량·단가·상태·소분류 locked, 실행가·항목·거래처·비고 edit(ENG-D7)", () => {
+  it("기존 견적 줄: 수량·일수·단가·상태·소분류(대분류도)·고객 비고 locked, 실행가·항목·거래처·비고·중분류 edit(ENG-D7 · D-7232)", () => {
     const cells = lineCellEditability(approved);
-    expect(fieldsAt(cells, "locked")).toEqual(["lineStatus", "quantity", "subcategory", "unitPrice"]);
-    expect(fieldsAt(cells, "edit")).toEqual(["execution", "itemName", "note", "vendorId"]);
+    expect(fieldsAt(cells, "locked")).toEqual(["clientRemark", "days", "lineStatus", "majorCategory", "quantity", "subcategory", "unitPrice"]);
+    expect(fieldsAt(cells, "edit")).toEqual(["execution", "itemName", "midCategory", "note", "vendorId"]);
   });
 
   it("approvedSeq: null이면 전부 edit", () => {
-    expect(fieldsAt(lineCellEditability({ ...approved, approvedSeq: null }), "edit")).toHaveLength(8);
+    expect(fieldsAt(lineCellEditability({ ...approved, approvedSeq: null }), "edit")).toHaveLength(QUOTE_LINE_FIELDS.length);
   });
 
-  it("새 견적 줄: 수량·단가·상태 locked(정산 새 줄과 같은 칸), 소분류는 고른다", () => {
+  it("새 견적 줄: 수량·일수·단가·상태 locked(정산 새 줄과 같은 칸), 소분류 · 고객 비고는 고친다(D-7232)", () => {
     const cells = lineCellEditability({ ...approved, isNewLine: true });
-    expect(fieldsAt(cells, "locked")).toEqual(["lineStatus", "quantity", "unitPrice"]);
+    expect(fieldsAt(cells, "locked")).toEqual(["days", "lineStatus", "quantity", "unitPrice"]);
     expect(cells.subcategory).toBe("edit");
+    expect(cells.clientRemark).toBe("edit");
   });
 
   it("정산 + 승인은 정산 규칙 그대로(실행가만) · 연결 문서는 읽기 전용이 이긴다", () => {
@@ -443,5 +444,82 @@ describe("승인 차수 축(approvedSeq)", () => {
     );
     expect(tableLockLine({ status: "settling", approvedSeq: 2, hasEditableCells: true, lineCount: 2 })).toBe("정산 · 실행가와 새 줄만");
     expect(tableLockLine({ status: "in_progress", approvedSeq: 2, hasEditableCells: true, lineCount: 0 })).toBeNull();
+  });
+});
+
+// 07.2 PU6(D-7230 · D-7232 · D-66) — 일수는 수량이 나오는 모든 잠금 목록에 같이 선다. 조정 줄 편집 칸에는 없다.
+describe("일수 · 고객 비고 · 대 · 중분류 칸(07.2-06)", () => {
+  it("QUOTE_LINE_FIELDS에 일수 · 고객 비고 · 중분류 · 대분류가 있다", () => {
+    expect(QUOTE_LINE_FIELDS).toEqual(expect.arrayContaining(["days", "clientRemark", "midCategory", "majorCategory"]));
+  });
+
+  it("승인 차수 기존 줄: 일수 · 고객 비고 locked / 새 줄: 고객 비고 edit · 일수 locked", () => {
+    const existing = lineCellEditability({ ...base, status: "in_progress", approvedSeq: 1 });
+    expect(existing.days).toBe("locked");
+    expect(existing.clientRemark).toBe("locked");
+    const inserted = lineCellEditability({ ...base, status: "in_progress", approvedSeq: 1, isNewLine: true });
+    expect(inserted.clientRemark).toBe("edit");
+    expect(inserted.days).toBe("locked");
+  });
+
+  it("연결 문서 줄: 일수 readonly(D-66)", () => {
+    expect(lineCellEditability({ ...base, status: "in_progress", hasLinkedDocuments: true }).days).toBe("readonly");
+  });
+
+  it("정산 새 줄: 일수 locked", () => {
+    expect(lineCellEditability({ ...base, status: "settling", isNewLine: true }).days).toBe("locked");
+  });
+
+  it("견적 외 비용 줄: 일수 locked", () => {
+    expect(lineCellEditability({ ...base, status: "in_progress", lineKind: "out_of_quote" }).days).toBe("locked");
+  });
+
+  it("조정 줄: 일수 locked(조정 편집 칸 아님 — 지출결의가 붙은 줄의 견적가가 일수로 바뀌지 않는다)", () => {
+    expect(lineCellEditability({ ...base, status: "in_progress", lineKind: "adjustment", canAdjust: true }).days).toBe("locked");
+  });
+
+  it("quoteCellsZero: 일수가 비었거나 1일 때만 참(정산 새 줄의 견적 칸 0)", () => {
+    const zero = { unitPrice: { currency: "KRW", amount: 0, fxRate: 1 } };
+    expect(quoteCellsZero({ ...zero, days: 1 })).toBe(true);
+    expect(quoteCellsZero({ ...zero, days: 2 })).toBe(false);
+  });
+});
+
+// 07.2 PU3(D-7222 · D-7221) — 수수료 줄: 단가만 금액 칸(수량 · 일수 1 고정 · 거래처 · 실행가 없음 · 소분류는 종류 값),
+// 승인 · 내용 토큰은 견적 줄과 같다(edit-scope · register approvalLocks).
+describe("수수료 줄(commission · 07.2-06)", () => {
+  const commission = { ...base, status: "in_progress", lineKind: "commission" as const };
+
+  it("QUOTE_LINE_KINDS에 commission이 있다", () => {
+    expect(QUOTE_LINE_KINDS).toContain("commission");
+  });
+
+  it("미승인 차수: 수량 · 일수 · 거래처 · 실행가 · 소분류(대분류도) 늘 locked, 단가 · 항목 · 비고 · 고객 비고 · 중분류 · 상태 edit", () => {
+    const cells = lineCellEditability(commission);
+    expect(fieldsAt(cells, "locked")).toEqual(["days", "execution", "majorCategory", "quantity", "subcategory", "vendorId"]);
+    expect(fieldsAt(cells, "edit")).toEqual(["clientRemark", "itemName", "lineStatus", "midCategory", "note", "unitPrice"]);
+  });
+
+  it("승인 차수: 기존 줄 · 새 줄 모두 단가 locked(견적 줄과 같음)", () => {
+    expect(lineCellEditability({ ...commission, approvedSeq: 1 }).unitPrice).toBe("locked");
+    expect(lineCellEditability({ ...commission, approvedSeq: 1, isNewLine: true }).unitPrice).toBe("locked");
+    expect(lineCellEditability({ ...commission, approvedSeq: 1 }).clientRemark).toBe("locked");
+  });
+
+  it("project.line-edit — 승인 차수 수수료 줄 단가 수정 · 새 수수료 줄(단가 ≠ 0) · 보관은 승인 이유로 거부", async () => {
+    const ctx = (change: ProjectLineEditCtx["change"]) =>
+      gate({}, "project.line-edit", {
+        status: "in_progress",
+        lineKind: "commission",
+        actorCanWrite: true,
+        actorCanAdjust: false,
+        hasLinkedDocuments: false,
+        approvedSeq: 1,
+        change,
+      } satisfies ProjectLineEditCtx);
+    const denied = { allowed: false, reason: "1차 고객 승인됨 · 고치려면 새 차수" };
+    await expect(ctx({ kind: "update", fields: ["unitPrice"] })).resolves.toEqual(denied);
+    await expect(ctx({ kind: "insert", quoteCellsZero: false })).resolves.toEqual(denied);
+    await expect(ctx({ kind: "archive", quoteAmountZero: false })).resolves.toEqual(denied);
   });
 });

@@ -112,7 +112,7 @@ async function revisionCount(projectId: string): Promise<number> {
   return (await db.select().from(quoteRevisions).where(eq(quoteRevisions.projectId, projectId))).length;
 }
 
-const COL = { subcategory: 1, itemName: 2, quantity: 4, unitPrice: 5, execution: 7 } as const;
+const COL = { subcategory: 1, itemName: 2, quantity: 4, unitPrice: 5, execution: 8 } as const;
 
 test.describe("복사해 새 차수 (04-24 Task 1 — B-02 · B-03 · DR-6)", () => {
   test("담당 PM이 줄 둘인 수주중 프로젝트에서 1차를 두 번 빠르게 눌러도 2차 하나 · 토스트 · 부제 · 표", async ({ page }) => {

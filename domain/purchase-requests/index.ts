@@ -345,7 +345,8 @@ export async function createPurchaseRequest(
     const lockedProject = await lockProjectForLinkWrite(viewer, { projectId: pre.projectId, revisionId: pre.revisionId }, inner);
     const [locked] = await lockQuoteLines(viewer, [input.lineId], inner);
     // 화면이 내보내지 않는 줄(조정 · 취소 · 보관 · 현재 차수 밖) — 새 문구 없음.
-    if (!locked || locked.lineKind === "adjustment" || locked.lineStatus === "cancelled" || locked.archivedAt || locked.revisionId !== pre.revisionId) {
+    // 07.2 D-7221 — 수수료 줄(청구 전용)도 화면이 내보내지 않는 줄이다.
+    if (!locked || locked.lineKind === "adjustment" || locked.lineKind === "commission" || locked.lineStatus === "cancelled" || locked.archivedAt || locked.revisionId !== pre.revisionId) {
       throw new ForbiddenError(LINK_MISSING);
     }
     // 경합 패자는 잠금 뒤 여기서 승자 행을 받는다 — 상한 게이트가 승자 몫까지 세어 거부하기 전에(EP2-B2).
@@ -1004,7 +1005,9 @@ export async function searchLinesForPurchaseLink(
   const revision = await findLatestQuoteRevision(viewer, project.id);
   const lines = revision ? await listQuoteLinesByRevisions(viewer, [revision.id]) : [];
   lines.sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
-  const numbered = lines.map((line, index) => ({ line, lineNo: index + 1 })).filter(({ line }) => line.lineKind !== "adjustment" && line.lineStatus !== "cancelled");
+  const numbered = lines
+    .map((line, index) => ({ line, lineNo: index + 1 }))
+    .filter(({ line }) => line.lineKind !== "adjustment" && line.lineKind !== "commission" && line.lineStatus !== "cancelled");
   const lineIds = numbered.map(({ line }) => line.id);
 
   const links = await findLineLinks(viewer, lineIds);

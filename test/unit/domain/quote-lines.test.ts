@@ -130,3 +130,88 @@ describe("quoteLineFormatErrors — 종류별 음수 실행가(04-13)", () => {
     expect(quoteLineFormatErrors(line(-120_000), 0, "adjustment")).toEqual([]);
   });
 });
+
+// 07.2 PU6(D-7230) — 일수는 수량과 같은 세 검사(0 이하 · 상한 · 소수 2자리), 같은 상한 상수(numeric(12,2) 넘침 22003이 화면에 닿지 않게).
+describe("quoteLineFormatErrors — 일수(07.2-06)", () => {
+  const line = (days: number) => ({
+    id: "row-1",
+    subcategory: "a",
+    itemName: "항목",
+    days,
+    unitPrice: { currency: "KRW" as const, amount: 1_000, fxRate: 1 },
+    execution: { currency: "KRW" as const, amount: 0, fxRate: 1 },
+  });
+  const daysErrors = (days: number) => quoteLineFormatErrors(line(days), 0, "quote").filter((error) => error.field === "days");
+
+  it("일수 1e10 → 상한 오류", () => {
+    expect(daysErrors(1e10).map((error) => error.reason)).toEqual(["일수 상한 초과 · 일수 수정"]);
+  });
+
+  it("소수 3자리 1.255 → 형식 오류(소수 2자리까지)", () => {
+    expect(daysErrors(1.255)).toHaveLength(1);
+  });
+
+  it("0 · 음수 → 오류", () => {
+    expect(daysErrors(0)).toHaveLength(1);
+    expect(daysErrors(-1)).toHaveLength(1);
+  });
+
+  it("3 · 0.5 · 1.25는 통과", () => {
+    expect(daysErrors(3)).toEqual([]);
+    expect(daysErrors(0.5)).toEqual([]);
+    expect(daysErrors(1.25)).toEqual([]);
+  });
+
+  it("행 스키마: 일수를 숫자로 받고 고객 비고 · 대 · 중분류 글자를 받는다", () => {
+    const parsed = quoteLineRowInputSchema.parse({
+      isNew: true,
+      subcategory: "a",
+      itemName: "항목",
+      days: "3",
+      clientRemark: "고객에게",
+      midCategory: "중",
+      majorCategory: "대",
+      unitPrice: { currency: "KRW", amount: 1_000, fxRate: 1 },
+      execution: { currency: "KRW", amount: 0, fxRate: 1 },
+    });
+    expect(parsed).toMatchObject({ days: 3, clientRemark: "고객에게", midCategory: "중", majorCategory: "대" });
+  });
+});
+
+describe("computeQuoteLineAmounts — 일수(07.2-06 · D-7230)", () => {
+  it("수량 2 · 단가 1,000 · 일수 3 → 견적가 6,000", () => {
+    const result = computeQuoteLineAmounts({
+      quantity: 2,
+      days: 3,
+      unitPrice: { currency: "KRW", amount: 1_000, fxRate: 1 },
+      execution: { currency: "KRW", amount: 0, fxRate: 1 },
+    });
+    expect(result.quoteAmountKrw).toBe(6_000);
+  });
+});
+
+// 07.2 PU3(D-7222) — 수수료 줄(commission)은 청구 전용 줄: 음수 단가를 받고(할인 · 감액), 단가는 원화만(조용히 환산하지 않는다 · eng r2 B N7).
+describe("quoteLineFormatErrors — 수수료 줄(07.2-06)", () => {
+  const line = (unitPrice: { currency: "KRW" | "USD"; amount: number; fxRate: number }) => ({
+    id: "row-1",
+    subcategory: "commission",
+    itemName: "대행 수수료",
+    unitPrice,
+    execution: { currency: "KRW" as const, amount: 0, fxRate: 1 },
+  });
+
+  it("수수료 줄 단가 −50,000은 통과 · 견적 줄 단가 음수는 여전히 형식 오류", () => {
+    expect(quoteLineFormatErrors(line({ currency: "KRW", amount: -50_000, fxRate: 1 }), 0, "commission")).toEqual([]);
+    expect(quoteLineFormatErrors(line({ currency: "KRW", amount: -50_000, fxRate: 1 }), 0, "quote").map((error) => error.field)).toEqual(["unitPrice"]);
+  });
+
+  it("수수료 줄 단가 통화가 원화가 아니면 단가 칸 형식 오류(기존 글자)", () => {
+    const errors = quoteLineFormatErrors(line({ currency: "USD", amount: 100, fxRate: 1300 }), 0, "commission");
+    expect(errors.map((error) => [error.field, error.reason])).toEqual([["unitPrice", "숫자 형식 오류 · 12,400,000처럼"]]);
+  });
+
+  it("행 스키마 — 새 수수료 줄은 소분류가 비어도 통과한다", () => {
+    const parsed = quoteLineRowInputSchema.safeParse({ ...line({ currency: "KRW", amount: 300_000, fxRate: 1 }), id: undefined, isNew: true, lineKind: "commission", subcategory: "" });
+    expect(parsed.success).toBe(true);
+  });
+});

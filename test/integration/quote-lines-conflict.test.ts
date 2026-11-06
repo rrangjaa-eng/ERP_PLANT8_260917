@@ -276,6 +276,41 @@ describe("domain/quotes/lines saveQuoteLines — 배치 충돌·전부 거부(04
 
 // /review PR #128 분리 과제 — 거래처 칸 충돌 이유가 거래처 UUID가 아니라 이름을 보인다. 이름은 거래처 정보라
 // project.value · vendor.value를 다 볼 때만(all-of) 싣는다 — 하나라도 없으면 「다른 값」.
+// 07.2 PU6 — 동시 수정 비교 칸에 일수 · 고객 비고 · 대 · 중분류가 있다. 다른 사람이 일수만 바꾼 줄은 셀 충돌 `일수`.
+describe("domain/quotes/lines saveQuoteLines — 일수 충돌(07.2-06)", () => {
+  it("다른 사람이 일수만 바꾼 줄을 옛 버전으로 저장 → 셀 충돌 칸 `일수`", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+    const created = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [{ id: randomUUID(), isNew: true, subcategory: subcategoryValue, itemName: "조명", quantity: 1, days: 1, unitPrice: krw(1_000), execution: krw(0) }],
+    });
+    const [line] = created.lines;
+    if (!line) throw new Error("setup 실패");
+    const baseline: QuoteLineBaseline = {
+      subcategory: line.subcategory,
+      itemName: line.itemName,
+      vendorId: line.vendorId,
+      quantity: line.quantity,
+      days: line.days,
+      unitPriceAmountKrw: line.unitPrice.amountKrw,
+      executionAmountKrw: line.execution.amountKrw,
+      lineStatus: line.lineStatus,
+      note: line.note,
+      clientRemark: line.clientRemark,
+      midCategory: line.midCategory,
+      majorCategory: line.majorCategory,
+    };
+    const base = { id: line.id, version: line.version, subcategory: line.subcategory, unitPrice: krw(1_000), execution: krw(0), baseline };
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [{ ...base, itemName: "조명", days: 3 }] });
+
+    const error = await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [{ ...base, itemName: "조명 수정", days: 1 }] }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SaveRejectedError);
+    const conflicts = (error as SaveRejectedError).conflicts;
+    expect(conflicts.map((conflict) => conflict.label)).toEqual(["일수"]);
+    expect(conflicts[0]?.theirRaw).toBe(3);
+  });
+});
+
 describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거래처 이름", () => {
   async function createSaver(visible: string[]): Promise<Viewer> {
     const roleId = `role-${randomUUID()}`;

@@ -1094,6 +1094,70 @@ async function peopleListFilled(): Promise<SeedResult> {
   return { vars: { lockedId: people[0]?.viewer.id ?? "" }, viewer };
 }
 
+// 07.2-06(UI-SPEC S4 · S5) — 미승인 차수 견적 표: 대분류 둘(Venue · Agency) · 일수 3 줄 · 고객 비고 · 중분류 · 수수료 줄 둘. 담당 PM으로 본다.
+async function quoteLinesFilled(): Promise<SeedResult> {
+  const today = seoulToday();
+  const year = today.slice(0, 4);
+  const suffix = randomUUID().slice(0, 6);
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처견적본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처견적팀-${suffix}` });
+  const pm = await makePerson("담당", "role-pm", team.id, `${year}-01-01`);
+  const teamLead = await makePerson("팀장", "role-team-lead", team.id, `${year}-01-01`);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처클라이언트-${suffix}`, normalizedName: `캡처클라이언트-${suffix}` });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `캡처거래처-${suffix}`, normalizedName: `캡처거래처-${suffix}` });
+  const project = await createProject(pm.viewer, {
+    clientId: client.id,
+    teamId: team.id,
+    pmUserId: pm.viewer.id,
+    name: `캡처견적-${suffix}`,
+    startDate: `${year}-01-01`,
+    endDate: `${year}-12-31`,
+  });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision || !project.id) throw new Error("프로젝트 · 1차 차수가 없습니다");
+  const [subcategory] = await listCodeItems(SYSTEM_VIEWER, {
+    tableKey: QUOTE_SUBCATEGORY_TABLE_KEY,
+    scope: { rows: "all", includeArchived: false },
+    includeInactive: false,
+  });
+  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const quote = (itemName: string, majorCategory: string, amount: number, extra: { quantity?: number; days?: number; clientRemark?: string; midCategory?: string } = {}) => ({
+    id: randomUUID(),
+    isNew: true as const,
+    lineKind: "quote" as const,
+    subcategory: subcategory.value,
+    itemName,
+    vendorId: vendor.id,
+    majorCategory,
+    unitPrice: { currency: "KRW" as const, amount, fxRate: 1 },
+    execution: { currency: "KRW" as const, amount: Math.round(amount * 0.7), fxRate: 1 },
+    ...extra,
+  });
+  const commission = (itemName: string, amount: number, clientRemark: string) => ({
+    id: randomUUID(),
+    isNew: true as const,
+    lineKind: "commission" as const,
+    subcategory: "",
+    itemName,
+    clientRemark,
+    unitPrice: { currency: "KRW" as const, amount, fxRate: 1 },
+    execution: { currency: "KRW" as const, amount: 0, fxRate: 1 },
+  });
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: [
+      quote("메인 홀 대관", "Venue", 4_000_000, { days: 3, clientRemark: "3일 사용", midCategory: "대관" }),
+      quote("음향 장비", "Venue", 1_500_000, { quantity: 2, midCategory: "장비" }),
+      quote("현장 운영 인력", "Agency", 250_000, { quantity: 6, days: 3, midCategory: "인력" }),
+      quote("기획 · 연출", "Agency", 3_000_000),
+      commission("Venue Commission", 750_000, "5%"),
+      commission("Agency Fee", 900_000, "12%"),
+    ],
+  });
+  // 고객 승인 표시는 하지 않는다 — 미승인 차수(편집 · 「수수료 줄 추가」 · 「계산」이 보이는 상태)가 이 시나리오다.
+  await changeProjectStatus(teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
+  return { vars: { projectId: project.id }, viewer: pm };
+}
+
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
   switch (name) {
     case "pre-settle-evidence-pending":
@@ -1114,5 +1178,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return printExpense(browser, baseURL);
     case "print-leave":
       return printLeave();
+    case "quote-lines-filled":
+      return quoteLinesFilled();
   }
 }

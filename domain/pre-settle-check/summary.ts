@@ -76,11 +76,12 @@ export function liveLinkCount(
 
 // D-612 — 실행가 ≠ 0 · 취소 아님 · 조정 줄 아님 · 살아 있는 연결 0. 연결 합이 실행가와 달라도 연결이 하나면 매칭이다.
 export function isUnmatchedLine(line: { lineKind: string; cancelled: boolean; executionKrw: number; liveLinks: number }): boolean {
-  return line.lineKind !== "adjustment" && !line.cancelled && line.executionKrw !== 0 && line.liveLinks === 0;
+  // 07.2 D-7221 — 수수료 줄은 청구 전용 줄이라 연결을 기다리지 않는다.
+  return line.lineKind !== "adjustment" && line.lineKind !== "commission" && !line.cancelled && line.executionKrw !== 0 && line.liveLinks === 0;
 }
 
 // 견적 표 번호 열과 같은 순서 — 종류(견적 · 견적 외 · 조정) 뒤 그룹(견적 줄은 소분류, 나머지는 종류)을 처음 나온 순서로 모은다(quote-table displayOrder).
-const KIND_ORDER: Record<string, number> = { quote: 0, out_of_quote: 1, adjustment: 2 };
+const KIND_ORDER: Record<string, number> = { quote: 0, out_of_quote: 1, commission: 2, adjustment: 3 };
 export function lineDisplayNumbers(lines: readonly { id: string; lineKind: string; subcategory: string }[]): Map<string, number> {
   const groups = new Map<string, string[]>();
   const sorted = [...lines].sort((a, b) => (KIND_ORDER[a.lineKind] ?? 0) - (KIND_ORDER[b.lineKind] ?? 0));

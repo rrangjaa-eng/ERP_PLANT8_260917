@@ -117,20 +117,20 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     await page.keyboard.type("2000000");
     await page.keyboard.press("Enter");
 
-    await gridcell(7).focus();
+    await gridcell(8).focus();
     await page.keyboard.press("Enter");
     await page.keyboard.press("Control+a");
     await page.keyboard.type("1200000");
     await page.keyboard.press("Enter");
-    await expect(gridcell(7)).toHaveText("1,200,000");
+    await expect(gridcell(8)).toHaveText("1,200,000");
 
-    await gridcell(7).focus();
+    await gridcell(8).focus();
     await page.keyboard.press("Control+s");
     await expect(page.getByText(/저장됨/)).toBeVisible();
 
     await page.reload();
     await expect(page.locator("tbody tr").nth(1)).toBeVisible();
-    await expect(gridcell(7)).toHaveText("1,200,000");
+    await expect(gridcell(8)).toHaveText("1,200,000");
     // 차익 = 견적가 2,000,000 - 실행가 1,200,000 = 800,000(서버 재계산). 폰
     // 전용 접힌 요약 행에도 같은 값이 "· 800,000"로 나와 두 곳이 걸린다
     // (strict mode) — 그리드 셀 쪽으로 좁힌다.

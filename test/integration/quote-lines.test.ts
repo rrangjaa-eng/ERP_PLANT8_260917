@@ -1219,7 +1219,7 @@ describe("원화 밖 숫자 컬럼 범위(04-40 검토 SF-1)", () => {
 
 // 04-40(DR-9) — 수량 × 단가의 계산 견적가가 quote_amount_krw 상한을 넘으면 수량·단가 두 칸 셀 오류로 쓰기 전에 거부한다.
 describe("계산 견적가 상한(04-40 · DR-9)", () => {
-  const OVER = "견적가 상한 초과 · 수량이나 단가 수정";
+  const OVER = "견적가 상한 초과 · 수량 · 단가 · 일수 수정";
 
   function overBatch(subcategory: string) {
     const ok = newRow(subcategory, { unitPrice: krw(100_000) });
@@ -1229,7 +1229,7 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
 
   function expectTwoCells(error: SaveRejectedError, rowId: string) {
     const cells = error.formatErrors.filter((cell) => cell.rowId === rowId);
-    expect(cells.map((cell) => cell.field).sort()).toEqual(["quantity", "unitPrice"]);
+    expect(cells.map((cell) => cell.field).sort()).toEqual(["days", "quantity", "unitPrice"]);
     expect(cells.every((cell) => cell.reason === OVER)).toBe(true);
   }
 
@@ -1272,7 +1272,7 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
     expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(0);
   });
 
-  it("(d3) saveProjectLedgerAction의 봉투가 { rejected: { summary: 「오류 2칸 · 전부 거부」, cells } }이고 그 줄의 quantity·unitPrice 두 칸이 있다(W3)", async () => {
+  it("(d3) saveProjectLedgerAction의 봉투가 { rejected: { summary: 「오류 3칸 · 전부 거부」, cells } }이고 그 줄의 quantity·unitPrice·days 세 칸이 있다(W3 · 07.2 D-7230)", async () => {
     const { project, revision, subcategoryValue } = await setupProject();
     const over = { id: randomUUID(), isNew: true as const, subcategory: subcategoryValue, itemName: `상한-${randomUUID()}`, quantity: 3, unitPrice: krw(500_000_000_000), execution: krw(10_000) };
 
@@ -1280,11 +1280,12 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
 
     const data = result?.data;
     if (!data || !("rejected" in data)) throw new Error(`거부 봉투가 아니다: ${JSON.stringify(result)}`);
-    expect(data.rejected.summary).toBe("오류 2칸 · 전부 거부");
+    expect(data.rejected.summary).toBe("오류 3칸 · 전부 거부");
     expect(data.rejected.cells).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ rowId: over.id, field: "quantity", kind: "error", reason: OVER }),
         expect.objectContaining({ rowId: over.id, field: "unitPrice", kind: "error", reason: OVER }),
+        expect.objectContaining({ rowId: over.id, field: "days", kind: "error", reason: OVER }),
       ]),
     );
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
@@ -1433,7 +1434,9 @@ describe("견적 줄 저장 로그의 줄 전후(07.1-13 S8)", () => {
     expect(created).toMatchObject({ kind: "quote", no: 4, name: "새 영상" });
     expect(created.changes).toMatchObject({ itemName: [null, "새 영상"], unitPrice: [null, "30,000원"], execution: [null, "10,000원"], note: [null, "새 비고"] });
     for (const pair of Object.values(created.changes)) expect(pair[0]).toBeNull();
-    for (const key of Object.keys(created.changes)) expect(["subcategory", "itemName", "vendorId", "quantity", "unitPrice", "execution", "lineStatus", "note"]).toContain(key);
+    for (const key of Object.keys(created.changes)) {
+      expect(["subcategory", "itemName", "vendorId", "quantity", "days", "unitPrice", "execution", "lineStatus", "note", "clientRemark", "midCategory", "majorCategory"]).toContain(key);
+    }
 
     const removed = byId.get(light.id)!;
     expect(removed).toMatchObject({ kind: "quote", no: 3, name: "조명" });
@@ -1478,5 +1481,73 @@ describe("견적 줄 저장 로그의 줄 전후(07.1-13 S8)", () => {
     const detail = await lastLineLog(revision.id);
     expect(detail.lineIds).toEqual([]);
     expect(detail).not.toHaveProperty("lineChanges");
+  });
+});
+
+// 07.2 PU6(D-7230 · D-7231 · D-7232) — 일수 · 고객 비고 · 대 · 중분류. 견적가 = 수량 × 단가 × 일수를 서버가 다시 계산한다.
+describe("일수 · 고객 비고 · 분류 칸(07.2-06)", () => {
+  const krwMoney = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+
+  it("일수 3 줄 저장 → quote_amount_krw 6,000 · 고객 비고 · 중분류 · 대분류 저장", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const id = randomUUID();
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [
+        {
+          id, isNew: true, subcategory: subcategoryValue, itemName: "조명 임대",
+          quantity: 2, days: 3, unitPrice: krwMoney(1_000), execution: krwMoney(0),
+          clientRemark: "3일 사용", midCategory: "조명", majorCategory: "Venue",
+        },
+      ],
+    });
+    const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, id));
+    expect(row?.quoteAmountKrw).toBe(6_000);
+    expect(row?.days).toBe("3.00");
+    expect(row).toMatchObject({ clientRemark: "3일 사용", midCategory: "조명", majorCategory: "Venue" });
+    const [dto] = await listQuoteLines(SYSTEM_VIEWER, revision.id, { status: "bidding", canWrite: true });
+    expect(dto).toMatchObject({ days: 3, clientRemark: "3일 사용", midCategory: "조명", majorCategory: "Venue", quoteAmountKrw: 6_000 });
+  });
+
+  it("일수 없이 저장 → 일수 1 · 견적가 = 수량 × 단가", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const id = randomUUID();
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [{ id, isNew: true, subcategory: subcategoryValue, itemName: "무대", quantity: 2, unitPrice: krwMoney(1_000), execution: krwMoney(0) }],
+    });
+    const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, id));
+    expect(row?.days).toBe("1.00");
+    expect(row?.quoteAmountKrw).toBe(2_000);
+  });
+
+  // PR #367 검토 M1 — 일수 · 고객 비고를 싣지 않는 옛 모양 입력(asInput)으로 기존 줄을 저장해도 저장값이 그대로다.
+  it("기존 줄을 일수 · 고객 비고 없이 저장 → 일수 · 고객 비고 · 견적가 그대로", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const id = randomUUID();
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [
+        {
+          id, isNew: true, subcategory: subcategoryValue, itemName: "조명 임대",
+          quantity: 2, days: 3, unitPrice: krwMoney(1_000), execution: krwMoney(0), clientRemark: "3일 사용",
+        },
+      ],
+    });
+    const saved = await reloadLine(id);
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(saved, { itemName: "조명 임대 고침" })] });
+    const after = await reloadLine(id);
+    expect(after.itemName).toBe("조명 임대 고침");
+    expect(after.days).toBe("3.00");
+    expect(after.clientRemark).toBe("3일 사용");
+    expect(after.quoteAmountKrw).toBe(6_000);
+  });
+
+  it("수량 2 · 단가 4,000억 · 일수 2 → 견적가 상한 오류가 수량 · 단가 · 일수 칸에", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const error = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [
+        { id: randomUUID(), isNew: true, subcategory: subcategoryValue, itemName: "큰 줄", quantity: 2, days: 2, unitPrice: krwMoney(400_000_000_000), execution: krwMoney(0) },
+      ],
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SaveRejectedError);
+    expect((error as SaveRejectedError).formatErrors.map((issue) => issue.field).sort()).toEqual(["days", "quantity", "unitPrice"]);
   });
 });

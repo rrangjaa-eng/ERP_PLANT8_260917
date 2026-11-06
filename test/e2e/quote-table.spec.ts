@@ -103,13 +103,13 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await page.keyboard.press("Enter");
 
     // 실행가(7).
-    await gridcell(7).focus();
+    await gridcell(8).focus();
     await page.keyboard.press("Enter");
     await page.keyboard.type("800000");
     await page.keyboard.press("Enter");
 
     // 저장 — Ctrl+S(그리드에 포커스가 있는 채로).
-    await gridcell(7).focus();
+    await gridcell(8).focus();
     await page.keyboard.press("Control+s");
 
     await expect(page.getByText(/저장됨/)).toBeVisible();
@@ -705,16 +705,16 @@ test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 �
     await expect(quoteDataRows(pageB)).toHaveCount(2);
 
     // B가 첫 줄 실행가를 9,800,000으로 저장한다.
-    await editTextCell(pageB, 0, 7, "9800000");
-    await saveWithKeyboard(pageB, 0, 7);
+    await editTextCell(pageB, 0, 8, "9800000");
+    await saveWithKeyboard(pageB, 0, 8);
     await expect(pageB.getByText(/저장됨/)).toBeVisible();
 
     // A가 같은 줄 실행가와 다른 줄 항목을 고쳐 저장 → 전부 거부.
-    await editTextCell(page, 0, 7, "7000000");
+    await editTextCell(page, 0, 8, "7000000");
     await editTextCell(page, 1, 2, "다른 줄 수정");
-    await saveWithKeyboard(page, 0, 7);
+    await saveWithKeyboard(page, 0, 8);
 
-    const conflictCell = quoteCell(page, 0, 7);
+    const conflictCell = quoteCell(page, 0, 8);
     await expect(conflictCell).toHaveAttribute("aria-invalid", "true");
     await expect(conflictCell).toContainText(/다른 사람이 \d{2}:\d{2}에 9,800,000으로 바꿈 · 덮어쓰기 \/ 그 값으로/);
     await expect(quoteTable(page).locator("tfoot")).toContainText("충돌 1줄 · 전부 거부");
@@ -743,22 +743,22 @@ test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 �
     await expect(conflictCell).not.toHaveAttribute("aria-invalid", "true");
     await expect(conflictCell).toBeFocused();
 
-    await saveWithKeyboard(page, 0, 7);
+    await saveWithKeyboard(page, 0, 8);
     await expect(page.getByText(/저장됨/)).toBeVisible();
     await page.reload();
-    await expect(quoteCell(page, 0, 7)).toHaveText("9,800,000");
+    await expect(quoteCell(page, 0, 8)).toHaveText("9,800,000");
     await expect(quoteCell(page, 1, 2)).toHaveText("다른 줄 수정");
 
     // 다른 줄로 한 번 더 — 이번엔 「덮어쓰기」(A의 값이 남는다).
     await pageB.reload();
     await expect(quoteDataRows(pageB)).toHaveCount(2);
-    await editTextCell(pageB, 1, 7, "600000");
-    await saveWithKeyboard(pageB, 1, 7);
+    await editTextCell(pageB, 1, 8, "600000");
+    await saveWithKeyboard(pageB, 1, 8);
     await expect(pageB.getByText(/저장됨/)).toBeVisible();
 
-    await editTextCell(page, 1, 7, "650000");
-    await saveWithKeyboard(page, 1, 7);
-    const secondConflict = quoteCell(page, 1, 7);
+    await editTextCell(page, 1, 8, "650000");
+    await saveWithKeyboard(page, 1, 8);
+    const secondConflict = quoteCell(page, 1, 8);
     await expect(secondConflict).toHaveAttribute("aria-invalid", "true");
     await expect(secondConflict).toContainText("600,000으로 바꿈");
     await secondConflict.focus();
@@ -769,10 +769,10 @@ test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 �
     await expect(secondConflict).toHaveText("650,000");
     await expect(secondConflict).toBeFocused();
 
-    await saveWithKeyboard(page, 1, 7);
+    await saveWithKeyboard(page, 1, 8);
     await expect(page.getByText(/저장됨/)).toBeVisible();
     await page.reload();
-    await expect(quoteCell(page, 1, 7)).toHaveText("650,000");
+    await expect(quoteCell(page, 1, 8)).toHaveText("650,000");
 
     await contextB.close();
   });
@@ -792,8 +792,8 @@ test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 �
     await expect(pageB).toHaveURL(/\/account$/);
     await pageB.goto(`/projects/${opened.projectId}`);
     await expect(quoteDataRows(pageB)).toHaveCount(2);
-    await editTextCell(pageB, 0, 7, "9800000");
-    await saveWithKeyboard(pageB, 0, 7);
+    await editTextCell(pageB, 0, 8, "9800000");
+    await saveWithKeyboard(pageB, 0, 8);
     await expect(pageB.getByText(/저장됨/)).toBeVisible();
     await contextB.close();
 
@@ -801,9 +801,9 @@ test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 �
     await quoteCell(page, 0, 2).focus();
     await page.keyboard.press("Alt+ArrowDown");
     await expect(quoteCell(page, 1, 2)).toHaveText("옮길 줄");
-    await editTextCell(page, 1, 7, "7000000");
-    await saveWithKeyboard(page, 1, 7);
-    const conflictCell = quoteCell(page, 1, 7);
+    await editTextCell(page, 1, 8, "7000000");
+    await saveWithKeyboard(page, 1, 8);
+    const conflictCell = quoteCell(page, 1, 8);
     await expect(conflictCell).toHaveAttribute("aria-invalid", "true");
 
     await conflictCell.getByRole("button", { name: "그 값으로" }).click();
@@ -867,7 +867,7 @@ test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () =>
     const lastHeaderOnFirstPage = (await table.locator("tbody").last().locator("tr").first().textContent())?.trim();
 
     // DR-23 — 1쪽 실행가 셀(7열)을 활성 열로 만든 뒤 번호 2를 누르면 2쪽 첫 줄의 같은 열로 포커스가 간다.
-    await quoteCell(page, 3, 7).focus();
+    await quoteCell(page, 3, 8).focus();
     const two = nav.getByRole("button", { name: "2", exact: true });
     expect(await two.evaluate((element) => element.getAttribute("type"))).toBe("button");
     await two.click();
@@ -881,7 +881,7 @@ test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () =>
     await expect(nav).toContainText("31–45 / 45줄");
     await expect(nav.locator('[aria-current="page"]').first()).toHaveText("2");
     expect(page.url()).toBe(url);
-    await expect(quoteCell(page, 0, 7)).toBeFocused();
+    await expect(quoteCell(page, 0, 8)).toBeFocused();
     // 캡션 옆(표 바로 앞) 시각적으로 숨긴 aria-live가 새 범위를 담는다.
     const live = await table.evaluate((element) => {
       const previous = element.previousElementSibling;
@@ -906,26 +906,26 @@ test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () =>
   test("(금지 항목) 1쪽 한 줄과 2쪽 한 줄의 실행가를 고쳐 Control+s → 새로 고친 뒤 두 값이 다 저장돼 있다", async ({ page }) => {
     await openProjectWithSavedLines(page, fortyFiveLines());
     await expect(quoteDataRows(page)).toHaveCount(30);
-    await editNumberCell(page, 0, 7, "123456");
-    await expect(quoteCell(page, 0, 7)).toHaveText("123,456");
+    await editNumberCell(page, 0, 8, "123456");
+    await expect(quoteCell(page, 0, 8)).toHaveText("123,456");
 
     await pageNav(page).getByRole("button", { name: "2", exact: true }).click();
     await expect(quoteCell(page, 0, 0)).toHaveText("31");
-    await editNumberCell(page, 0, 7, "654321");
-    await expect(quoteCell(page, 0, 7)).toHaveText("654,321");
+    await editNumberCell(page, 0, 8, "654321");
+    await expect(quoteCell(page, 0, 8)).toHaveText("654,321");
     await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
 
-    await quoteCell(page, 0, 7).focus();
+    await quoteCell(page, 0, 8).focus();
     const saved = page.waitForResponse((response) => isServerAction(response.request()));
     await page.keyboard.press("Control+s");
     await saved;
     await expect(page.getByText(/저장됨/)).toBeVisible();
 
     await page.reload();
-    await expect(quoteCell(page, 0, 7)).toHaveText("123,456");
+    await expect(quoteCell(page, 0, 8)).toHaveText("123,456");
     await pageNav(page).getByRole("button", { name: "2", exact: true }).click();
     await expect(quoteCell(page, 0, 0)).toHaveText("31");
-    await expect(quoteCell(page, 0, 7)).toHaveText("654,321");
+    await expect(quoteCell(page, 0, 8)).toHaveText("654,321");
   });
 
   test("(공백 5) 31줄 2쪽에서 31번째 줄을 지우면 1쪽 30줄이 보이고 페이지 줄이 사라진다", async ({ page }) => {
@@ -1090,7 +1090,8 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     await expect(itemCell).toHaveText("Tab으로 확정");
     await expect(quoteCell(page, 29, 3).locator("select, input").first()).toBeFocused();
 
-    const noteCell = quoteCell(page, 29, 10);
+    // 07.2 S4 — 쪽 마지막 편집 셀은 중분류(13)다.
+    const noteCell = quoteCell(page, 29, 13);
     await expect(async () => {
       await noteCell.focus();
       await page.keyboard.press("Enter");
@@ -1102,14 +1103,15 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     await expect(quoteCell(page, 0, 1).locator("select")).toBeFocused();
     await page.keyboard.press("Escape");
     await pageNav(page).getByRole("button", { name: "1", exact: true }).click();
-    await expect(quoteCell(page, 29, 10)).toHaveText("비고 확정");
+    await expect(quoteCell(page, 29, 13)).toHaveText("비고 확정");
   });
 
   test("편집 중 Tab을 마지막 쪽 마지막 편집 셀에서 누르면 값을 확정하고 그 셀에 포커스가 남는다(다음 편집 셀 없음)", async ({ page }) => {
     await openProjectWithSavedLines(page, fortyFiveLines());
     await pageNav(page).getByRole("button", { name: "2", exact: true }).click();
     await expect(currentPage(page)).toHaveText("2");
-    const noteCell = quoteCell(page, 14, 10);
+    // 07.2 S4 — 마지막 편집 셀은 중분류(13)다.
+    const noteCell = quoteCell(page, 14, 13);
     await expect(async () => {
       await noteCell.focus();
       await page.keyboard.press("Enter");
@@ -1315,7 +1317,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     });
   }
 
-  test("(ENG-D5) 앱 형식 없는 엑셀 6열을 소분류 칸에 → 실행가 값이 떨어진 견적가 칸 둘이 오류 · 합계 행 `오류 2칸` · `계산 열` 조각 없음", async ({ page }) => {
+  test("(ENG-D5) 앱 형식 없는 엑셀 7열을 소분류 칸에 → 실행가 값이 떨어진 견적가 칸 둘이 오류 · 합계 행 `오류 2칸` · `계산 열` 조각 없음", async ({ page }) => {
     const stamp = randomUUID().slice(0, 8);
     const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E엑셀거래처-${stamp}`, normalizedName: `e2e엑셀거래처-${stamp}` });
     await openProjectWithSavedLines(page, [
@@ -1324,14 +1326,14 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     ]);
     await quoteCell(page, 0, 1).focus();
     await pasteWithFormats(page, quoteCell(page, 0, 1), {
-      "text/plain": `무대·시공\t엑셀 항목1\t${vendor.name}\t2\t1000\t800\r\n무대·시공\t엑셀 항목2\t${vendor.name}\t3\t2000\t900\r\n`,
+      "text/plain": `무대·시공\t엑셀 항목1\t${vendor.name}\t2\t1000\t1\t800\r\n무대·시공\t엑셀 항목2\t${vendor.name}\t3\t2000\t1\t900\r\n`,
     });
 
     await expect(quoteCell(page, 0, 2)).toHaveText("엑셀 항목1");
     await expect(invalidCells(page)).toHaveCount(2);
-    await expect(quoteCell(page, 0, 6)).toHaveAttribute("aria-invalid", "true");
-    await expect(quoteCell(page, 1, 6)).toHaveAttribute("aria-invalid", "true");
-    await expect(quoteCell(page, 0, 6)).toContainText("읽기 전용·잠김 셀에 값 떨어짐");
+    await expect(quoteCell(page, 0, 7)).toHaveAttribute("aria-invalid", "true");
+    await expect(quoteCell(page, 1, 7)).toHaveAttribute("aria-invalid", "true");
+    await expect(quoteCell(page, 0, 7)).toContainText("읽기 전용·잠김 셀에 값 떨어짐");
     await expect.poll(() => footerPieces(page)).toEqual([{ tone: "danger", text: "오류 2칸" }]);
   });
 
@@ -1537,12 +1539,12 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "소수원화", amount: 100_000, execution: 50_000 }]);
     await quoteCell(page, 0, 5).focus();
     await pasteWithFormats(page, quoteCell(page, 0, 5), { "text/plain": "12.345" });
-    await quoteCell(page, 0, 7).focus();
-    await pasteWithFormats(page, quoteCell(page, 0, 7), { "text/plain": "1,234.5" });
+    await quoteCell(page, 0, 8).focus();
+    await pasteWithFormats(page, quoteCell(page, 0, 8), { "text/plain": "1,234.5" });
 
     await expect(invalidCells(page)).toHaveCount(2);
     await expect(quoteCell(page, 0, 5)).toContainText("원화는 소수점 없이");
-    await expect(quoteCell(page, 0, 7)).toContainText("원화는 소수점 없이");
+    await expect(quoteCell(page, 0, 8)).toContainText("원화는 소수점 없이");
 
     let serverCalls = 0;
     page.on("request", (request) => {
@@ -1557,9 +1559,9 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
   // 코디네이터 대리 결정 2026-09-26 /qa ISSUE-011 (a) — `—`는 빈 비고로 읽는다.
   test("(ISSUE-011) 비고 칸에 `—`를 붙이면 빈 비고로 읽어, 저장 뒤 비고가 없다", async ({ page }) => {
     const { revisionId } = await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "빈비고", amount: 1000 }]);
-    await quoteCell(page, 0, 10).focus();
-    await expect(quoteCell(page, 0, 10)).toHaveAttribute("data-grid-focus", "");
-    await pasteWithFormats(page, quoteCell(page, 0, 10), { "text/plain": "—" });
+    await quoteCell(page, 0, 11).focus();
+    await expect(quoteCell(page, 0, 11)).toHaveAttribute("data-grid-focus", "");
+    await pasteWithFormats(page, quoteCell(page, 0, 11), { "text/plain": "—" });
 
     await expect(invalidCells(page)).toHaveCount(0);
     await saveAndWait(page);
@@ -1779,16 +1781,16 @@ test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽
   test("2쪽에서 고친 칸의 dirty 표시가 1쪽 → 2쪽 왕복 뒤에도 남는다", async ({ page }) => {
     await openProjectWithSavedLines(page, fortyFiveLines());
     await pageNav(page).getByRole("button", { name: "2", exact: true }).first().click();
-    await editNumberCell(page, 2, 7, "5555");
-    await expect(quoteCell(page, 2, 7)).toHaveCSS("background-image", /linear-gradient/);
+    await editNumberCell(page, 2, 8, "5555");
+    await expect(quoteCell(page, 2, 8)).toHaveCSS("background-image", /linear-gradient/);
     // 저장 안 한 칸 표시는 고친 칸의 모서리 삼각형뿐 — 같은 줄의 다른 칸은 표시가 없다.
-    await expect(quoteCell(page, 2, 6)).toHaveCSS("background-image", "none");
-    await expect(quoteCell(page, 2, 7)).toHaveCSS("box-shadow", "none");
+    await expect(quoteCell(page, 2, 7)).toHaveCSS("background-image", "none");
+    await expect(quoteCell(page, 2, 8)).toHaveCSS("box-shadow", "none");
     await pageNav(page).getByRole("button", { name: "1", exact: true }).first().click();
     await expect(currentPage(page)).toHaveText("1");
     await pageNav(page).getByRole("button", { name: "2", exact: true }).first().click();
-    await expect(quoteCell(page, 2, 7)).toHaveText("5,555");
-    await expect(quoteCell(page, 2, 7)).toHaveCSS("background-image", /linear-gradient/);
+    await expect(quoteCell(page, 2, 8)).toHaveText("5,555");
+    await expect(quoteCell(page, 2, 8)).toHaveCSS("background-image", /linear-gradient/);
   });
 
   test("(R2) 발행 줄 금액만 범위 밖으로 1차 저장 → 견적 표 합계 행 한 줄 `전부 거부 · 다른 칸 오류 1칸` · 발행 표 `오류 1칸 · 전부 거부` · 포커스는 그 발행 금액 · 고쳐 저장하면 `저장됨`만", async ({ page }) => {
@@ -1884,12 +1886,12 @@ test.describe("견적 줄 표 — 거부 뒤 오류 수 · 숨은 열 오류 · 
       { subcategory: "stage_construction", itemName: "숨은열1", amount: 1000 },
       { subcategory: "stage_construction", itemName: "숨은열2", amount: 1000 },
     ]);
-    // 숨은 칸(display: none)은 접근성 트리에 없다 — 논리 열 순서(번호 0 · 항목 2 · 실행가 7 · 차익 8)로 td를 센다.
+    // 숨은 칸(display: none)은 접근성 트리에 없다 — 논리 열 순서(번호 0 · 항목 2 · 실행가 8 · 차익 9)로 td를 센다.
     const cells = (rowIndex: number) => quoteDataRows(page).nth(rowIndex).locator("td");
-    await cells(1).nth(7).focus();
-    await pasteWithFormats(page, cells(1).nth(7), { "text/plain": "800\t900" });
-    await expect(cells(1).nth(8)).toHaveAttribute("aria-invalid", "true");
-    await expect(cells(1).nth(8)).toBeHidden();
+    await cells(1).nth(8).focus();
+    await pasteWithFormats(page, cells(1).nth(8), { "text/plain": "800\t900" });
+    await expect(cells(1).nth(9)).toHaveAttribute("aria-invalid", "true");
+    await expect(cells(1).nth(9)).toBeHidden();
     await expect(invalidCells(page)).toHaveCount(1);
 
     const actions = countServerActions(page);
@@ -1923,9 +1925,9 @@ test.describe("견적 줄 표 — 저장됨 N줄(FINDING-012)", () => {
       { subcategory: "stage_construction", itemName: "지울줄", amount: 2000 },
       { subcategory: "stage_construction", itemName: "둘줄", amount: 3000 },
     ]);
-    await quoteCell(page, 0, 10).focus();
-    await expect(quoteCell(page, 0, 10)).toHaveAttribute("data-grid-focus", "");
-    await pasteWithFormats(page, quoteCell(page, 0, 10), { "text/plain": "비고바꿈" });
+    await quoteCell(page, 0, 11).focus();
+    await expect(quoteCell(page, 0, 11)).toHaveAttribute("data-grid-focus", "");
+    await pasteWithFormats(page, quoteCell(page, 0, 11), { "text/plain": "비고바꿈" });
     await quoteCell(page, 1, 2).focus();
     await page.keyboard.press("Delete");
     await page.getByRole("dialog").getByRole("button", { name: "견적 줄 삭제" }).click();
@@ -2004,5 +2006,49 @@ test.describe("견적 줄 표 — 묶음 ④ /qa 포커스", () => {
     const actual = await header.evaluate((th) => ({ bg: getComputedStyle(th).backgroundColor, color: getComputedStyle(th).color }));
     expect(actual.bg, "머리글 면").toBe(await resolved("backgroundColor", "--surface-selected"));
     expect(actual.color, "머리글 글자").toBe(await resolved("color", "--g-950"));
+  });
+});
+
+// 07.2 PU6(D-7230 · D-7233 · S4) — 일수 열. 열은 머리글 이름으로 찾는다(열 순서 = 논리 순서 = 붙여넣기 순서).
+async function headerIndex(page: Page, name: string): Promise<number> {
+  const headers = await quoteTable(page).locator("thead th").allInnerTexts();
+  const index = headers.findIndex((text) => text.trim() === name);
+  if (index === -1) throw new Error(`머리글 ${name} 없음: ${headers.join(" | ")}`);
+  return index;
+}
+
+test.describe("견적 줄 표 — 일수 · 고객 비고 · 중분류 열(07.2-06 S4)", () => {
+  test("머리글 순서가 번호 · 소분류 · 항목 · 거래처 · 수량 · 단가 · 일수 · 견적가 · 실행가 · 차익 · 상태 · 내부 비고 · 고객 비고 · 중분류", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "머리글 줄", amount: 1000 }]);
+    const headers = (await quoteTable(page).locator("thead th").allInnerTexts()).map((text) => text.trim()).filter((text) => text !== "" && text !== "행동");
+    expect(headers).toEqual(["번호", "소분류", "항목", "거래처", "수량", "단가", "일수", "견적가", "실행가", "차익", "상태", "내부 비고", "고객 비고", "중분류"]);
+  });
+
+  test("수량 2 · 단가 1,000 · 일수 3 → 일괄 저장 뒤 견적가 `6,000` · 다시 열어도 일수 3 · 일수 `abc`는 `숫자 아님 · 1.5처럼`", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "일수 줄", amount: 1000 }]);
+    const days = await headerIndex(page, "일수");
+    const quantity = await headerIndex(page, "수량");
+    const quoteAmount = await headerIndex(page, "견적가");
+
+    await editNumberCell(page, 0, quantity, "2");
+    await editNumberCell(page, 0, days, "3");
+    await saveWithKeyboard(page, 0, days);
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    await expect(quoteCell(page, 0, quoteAmount)).toHaveText("6,000");
+
+    await page.reload();
+    await expect(quoteCell(page, 0, await headerIndex(page, "일수"))).toHaveText("3");
+
+    const daysCell = quoteCell(page, 0, days);
+    await expect(async () => {
+      await daysCell.focus();
+      await page.keyboard.press("Enter");
+      await expect(daysCell.locator("input")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("abc");
+    await page.keyboard.press("Enter");
+    await expect(daysCell).toHaveAttribute("aria-invalid", "true");
+    await expect(daysCell).toContainText("숫자 아님 · 1.5처럼");
   });
 });

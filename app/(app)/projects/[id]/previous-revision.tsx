@@ -16,7 +16,7 @@ import { TableSkeleton } from "@/ui/table/TableSkeleton";
 import type { TableColumn } from "@/ui/table/types";
 import { toTsv } from "@/ui/table/parse-tsv";
 import { carrySharedEdits, clearDirtyEdits, findOtherRevisionDrafts, loadDirtyEdits, type EnumerableDirtyStorage } from "@/ui/table/use-dirty-storage";
-import { byKind, lineStatusLabel, PROJECT_EDIT_OWNERS, quoteLineGroupLabel, restoredCellPatch, type QuoteTableCodeOption, type QuoteTableOption } from "./quote-table";
+import { byKind, lineStatusLabel, PROJECT_EDIT_OWNERS, quoteLineGroupHeader, quoteLineGroupLabel, restoredCellPatch, type QuoteTableCodeOption, type QuoteTableOption } from "./quote-table";
 import styles from "./project-detail.module.css";
 
 // 04-24(DR-13 · S5 · W1) — 이전 차수 읽기 섹션과 견적 줄 읽기 열. 원장(QuoteLedger)과 상태를 나누지 않는다 —
@@ -31,6 +31,8 @@ export type QuoteLineCopyRow = {
   /** /qa ISSUE-001 — 서버가 실은 저장된 거래처(보관 · 숨김이면 선택지에 없다). 그 id일 때만 이름을 쓴다. */
   savedVendor?: QuoteTableOption | null;
   quantity: number;
+  /** 07.2 PU6(D-7230) — 견적가 = 수량 × 단가 × 일수. */
+  days: number;
   unitPriceAmount: number;
   unitPriceCurrency: string;
   unitPriceFxRate: number;
@@ -40,6 +42,9 @@ export type QuoteLineCopyRow = {
   profitKrw: number;
   lineStatus: string;
   note: string | null;
+  clientRemark: string | null;
+  midCategory: string | null;
+  majorCategory: string | null;
 };
 
 // vendorShown — quick 261001-85g: 거래처 정보가 가려진 계급이면 거짓, 거래처 열을 그리지 않는다(가려진 정보의 열은 그리지 않는다).
@@ -111,7 +116,7 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
         header: "단가",
         priority: "p2",
         align: "right",
-        text: (row) => (row.lineKind === "quote" ? formatKrw(row.unitPriceAmountKrw) : "—"),
+        text: (row) => (row.lineKind === "quote" || row.lineKind === "commission" ? formatKrw(row.unitPriceAmountKrw) : "—"),
       }),
       secondaryLine: (row: Row) => {
         if (row.lineKind !== "quote") return null;
@@ -125,8 +130,15 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
         );
       },
     },
+    column({
+      key: "days",
+      header: "일수",
+      priority: "p2",
+      align: "right",
+      text: (row) => (row.lineKind === "quote" ? formatQuantity(row.days) : "—"),
+    }),
     column({ key: "quoteAmount", header: "견적가", priority: "p2", align: "right", text: (row) => formatKrw(row.quoteAmountKrw) }),
-    column({ key: "execution", header: "실행가", priority: "p1", align: "right", text: (row) => formatKrw(row.executionAmount) }),
+    column({ key: "execution", header: "실행가", priority: "p1", align: "right", text: (row) => (row.lineKind === "commission" ? "—" : formatKrw(row.executionAmount)) }),
     column({ key: "profit", header: "차익", priority: "p2", collapseBelow: 1280, align: "right", text: (row) => formatKrw(row.profitKrw) }),
     {
       ...column({ key: "status", header: "상태", priority: "p1", text: (row) => (row.lineKind === "adjustment" ? "—" : lineStatusLabel(row.lineStatus)) }),
@@ -134,7 +146,9 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
       cell: (row: Row) =>
         row.lineKind === "adjustment" ? "—" : <StatusTag variant="text" status={lineStatusWord({ lineStatus: row.lineStatus, linkedStatus: null })} />,
     },
-    column({ key: "note", header: "비고", priority: "p3", collapseBelow: 1024, text: (row) => row.note ?? "—" }),
+    column({ key: "note", header: "내부 비고", priority: "p3", collapseBelow: 1024, text: (row) => row.note ?? "—" }),
+    column({ key: "clientRemark", header: "고객 비고", priority: "p3", collapseBelow: 1024, text: (row) => row.clientRemark ?? "—" }),
+    column({ key: "midCategory", header: "중분류", priority: "p3", collapseBelow: 1024, text: (row) => row.midCategory ?? "—" }),
   ];
   return references.vendorShown ? columns : columns.filter((entry) => entry.key !== "vendor");
 }
@@ -150,6 +164,7 @@ function readRow(dto: QuoteLineDto): ReadRow {
     vendorId: dto.vendorId,
     savedVendor: dto.vendorId && dto.vendorName ? { id: dto.vendorId, name: dto.vendorName } : null,
     quantity: dto.quantity,
+    days: dto.days,
     unitPriceAmount: dto.unitPrice?.amount ?? 0,
     unitPriceCurrency: dto.unitPrice?.currency ?? "KRW",
     unitPriceFxRate: dto.unitPrice?.fxRate ?? 1,
@@ -159,6 +174,9 @@ function readRow(dto: QuoteLineDto): ReadRow {
     profitKrw: dto.profitKrw,
     lineStatus: dto.lineStatus,
     note: dto.note,
+    clientRemark: dto.clientRemark,
+    midCategory: dto.midCategory,
+    majorCategory: dto.majorCategory,
   };
 }
 
@@ -271,7 +289,7 @@ function PreviousRevisionTable({
       columns={columns}
       rows={rows}
       getRowId={(row) => row.id}
-      groupBy={(row) => quoteLineGroupLabel(row, subcategoryLabel)}
+      groupBy={(row) => quoteLineGroupHeader(row, subcategoryLabel)}
       emptyMessage="이 차수에 견적 줄이 없습니다"
       // 04-19(DR-13 · W2) — 쪽 나눔은 Table 한 구현. 쪽을 바꾸면 포커스는 섹션 제목으로.
       pagination={{ pageSize: QUOTE_TABLE_PAGE_SIZE, unit: "줄", label: `상세 견적 ${seq}차 견적 줄`, resetKey: seq, focusHeadingId: headingId }}
@@ -312,10 +330,14 @@ const NEW_LINE_FIELDS = [
   ["itemName", "itemName"],
   ["vendorId", "vendor"],
   ["quantity", "quantity"],
+  ["days", "days"],
   ["unitPrice", "unitPrice"],
   ["execution", "execution"],
   ["lineStatus", "status"],
   ["note", "note"],
+  ["clientRemark", "clientRemark"],
+  ["midCategory", "midCategory"],
+  ["majorCategory", "majorCategory"],
 ] as const;
 
 // 보관본(D-68 모양)을 그 차수 줄 위에 덮는다 — 보관된 편집이 있는 줄만, 보관본에만 있는 새 줄은 보관값만.
@@ -336,6 +358,7 @@ export function draftCopyRows(rows: ReadRow[], edits: Record<string, unknown>): 
         itemName: "",
         vendorId: null,
         quantity: 1,
+        days: 1,
         unitPriceAmount: 0,
         unitPriceCurrency: "KRW",
         unitPriceFxRate: 1,
@@ -345,6 +368,9 @@ export function draftCopyRows(rows: ReadRow[], edits: Record<string, unknown>): 
         profitKrw: 0,
         lineStatus: "not_started",
         note: null,
+        clientRemark: null,
+        midCategory: null,
+        majorCategory: null,
       };
       for (const [field, storedColumn] of NEW_LINE_FIELDS) row = { ...row, ...restoredCellPatch(storedColumn, stored[field]) };
       added.push({ ...row, savedVendor: savedVendorFrom(rows, row.vendorId) });

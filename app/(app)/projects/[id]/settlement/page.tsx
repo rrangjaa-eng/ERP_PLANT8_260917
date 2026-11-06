@@ -12,6 +12,7 @@ import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
+import { PcOnly } from "@/app/(app)/admin/pc-only";
 import { leaveStatusWord, routeListSteps, toLeaveStatusKey, withdrawResultLines } from "@/app/(app)/leave/status-display";
 import { preSettleBlockReason } from "@/domain/pre-settle-check/summary";
 import { SettlementActions } from "./settlement-actions";
@@ -100,6 +101,20 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
         title={doc.projectName ? `정산 결재 — ${doc.projectName}` : "정산 결재"}
         status={statusKey ? <StatusTag status={leaveStatusWord(statusKey)} /> : undefined}
         meta={doc.projectNumber ? <Num value={doc.projectNumber} /> : undefined}
+        // 07.4-03 D-7409: 결재 인스턴스가 있을 때만 머리 줄 2차 「인쇄」(새 탭). 폰(<700)에서는 PcOnly가 숨긴다.
+        actions={
+          view?.instanceId
+            ? {
+                secondary: (
+                  <PcOnly>
+                    <Link href={`/print/settlements/${id}`} target="_blank" rel="noopener" prefetch={false} className={`${buttonStyles.btn} ${buttonStyles.secondary}`}>
+                      인쇄
+                    </Link>
+                  </PcOnly>
+                ),
+              }
+            : undefined
+        }
       >
         <KvList items={items} />
         {forcedLine ? <p className={styles.muted}>{forcedLine}</p> : null}

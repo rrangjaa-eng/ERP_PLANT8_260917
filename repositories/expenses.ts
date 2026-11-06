@@ -606,7 +606,8 @@ export type ExpenseSearch = { query: string; fields: readonly ExpenseSearchField
 
 // 07.1-09(PF4 · C-36 · E-P1-08): 목록 거르개 — 팀(문서의 팀 docTeamId, 행 범위와 같은 칸 · 기안자 발령 팀 아님) · 월(문서 등록 시각의 서울 월) · 내 것(기안자).
 // 검색어와 같은 자리에 AND로 걸린다(합계 FILTER · 쪽 · 승인 정렬 공용). scopeCondition에는 섞지 않는다 — 문서 하나 판정(isExpenseInScope)이 같이 쓰므로 거름이 보임을 바꾸면 안 된다.
-export type ExpenseListFilter = { teamId: string | null; month: string | null; drafterId: string | null };
+// 07.4-03 D-7414: projectId — 정산서의 그 프로젝트 지출결의(선택 칸 · 기존 호출은 넘기지 않는다).
+export type ExpenseListFilter = { teamId: string | null; month: string | null; drafterId: string | null; projectId?: string | null };
 
 // created_at은 시간대 없는 UTC 값 — UTC로 읽은 뒤 서울로 한 번 더 바꿔야 서울 날짜다(`at time zone 'Asia/Seoul'` 한 번이면 9시간 틀린다 · projects.ts CREATED_ON_KST 선례).
 const createdMonthKst = sql`to_char((${expenses.createdAt} at time zone 'UTC') at time zone 'Asia/Seoul', 'YYYY-MM')`;
@@ -631,6 +632,10 @@ export function expenseListFilterCondition(viewer: Viewer, filter: ExpenseListFi
     parts.push(sql`(${expenses.createdAt} >= ${startUtc} and ${expenses.createdAt} < ${endUtc})`);
   }
   if (filter.drafterId !== null) parts.push(sql`${expenses.drafterId} = ${filter.drafterId}`);
+  // 프로젝트 — uuid 모양이 아닌 값은 Postgres 형식 오류(500) 대신 결과 0(팀 거름과 같은 꼴).
+  if (filter.projectId !== undefined && filter.projectId !== null) {
+    parts.push(UUID_SHAPE.test(filter.projectId) ? sql`${expenses.projectId} = ${filter.projectId}::uuid` : sql`false`);
+  }
   return parts.length === 0 ? null : sql`(${sql.join(parts, sql` and `)})`;
 }
 

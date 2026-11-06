@@ -923,7 +923,7 @@ describe("상세 손익은 목록 손익과 같은 정의다 (07-18, 실제 Post
     expect(row.profitBasis).toBe("issued");
 
     const detail = await loadProjectProfit(SYSTEM_VIEWER, project.id);
-    expect(detail).toEqual({ kind: "ok", profitKrw: 1_100_000, ratePct: (row.profitRate ?? 0) * 100 });
+    expect(detail).toEqual({ kind: "ok", basisKrw: 1_500_000, profitKrw: 1_100_000, ratePct: (row.profitRate ?? 0) * 100 });
     expect(detail).toMatchObject({ profitKrw: row.netProfitKrw });
   });
 
@@ -935,7 +935,7 @@ describe("상세 손익은 목록 손익과 같은 정의다 (07-18, 실제 Post
     expect(row.profitBasis).toBe("quote");
 
     const detail = await loadProjectProfit(SYSTEM_VIEWER, project.id);
-    expect(detail).toEqual({ kind: "ok", profitKrw: 600_000, ratePct: (row.profitRate ?? 0) * 100 });
+    expect(detail).toEqual({ kind: "ok", basisKrw: 1_000_000, profitKrw: 600_000, ratePct: (row.profitRate ?? 0) * 100 });
     expect(detail).toMatchObject({ profitKrw: row.netProfitKrw });
   });
 
@@ -947,7 +947,7 @@ describe("상세 손익은 목록 손익과 같은 정의다 (07-18, 실제 Post
     expect(row.profitBasis).toBe("quote");
 
     const detail = await loadProjectProfit(SYSTEM_VIEWER, project.id);
-    expect(detail).toEqual({ kind: "ok", profitKrw: 1_500_000, ratePct: (row.profitRate ?? 0) * 100 });
+    expect(detail).toEqual({ kind: "ok", basisKrw: 2_000_000, profitKrw: 1_500_000, ratePct: (row.profitRate ?? 0) * 100 });
   });
 
   it("기준이 0이면 목록 수익률은 비고 상세는 계산 불가 · 견적 없음이다", async () => {
@@ -957,7 +957,7 @@ describe("상세 손익은 목록 손익과 같은 정의다 (07-18, 실제 Post
     const row = await listRow(marker, project.id);
     expect(row.profitRate).toBeNull();
 
-    expect(await loadProjectProfit(SYSTEM_VIEWER, project.id)).toEqual({ kind: "unavailable", reason: "견적 없음" });
+    expect(await loadProjectProfit(SYSTEM_VIEWER, project.id)).toEqual({ kind: "unavailable", basisKrw: 0, reason: "견적 없음" });
   });
 
   // 07-18 /review P1 — 상세 손익은 목록 손익 열과 같은 정보 항목(견적 금액 + 발행 금액 모두)을 볼 때만 서버가 싣는다.

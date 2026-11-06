@@ -1,7 +1,7 @@
-import { and, asc, eq, inArray, max, min, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, max, min, or, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { approvalInstances, leaveRequests, users } from "@/db/schema";
+import { approvalInstances, leaveRequests, teamMemberships, teams, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 04.1(LEAV-01): 연차 신청 표. 결재 상태는 approval_instances에 있어 목록은
@@ -136,4 +136,37 @@ export async function updateLeaveRequestFields(
 ): Promise<void> {
   void viewer;
   await tx.update(leaveRequests).set({ ...input, updatedAt: new Date() }).where(eq(leaveRequests.id, id));
+}
+
+// 07.2-08(PU12 · D-7260): 사람별 연차 잔여 표의 대상 — 퇴직일이 그해 1월 1일 이후인 사람은 보관 여부와 무관하게 넣고, 그 밖의 보관된
+// 사람은 빼고, 입사일이 그해 말 뒤면 뺀다. 팀 = 기준일(퇴직일과 오늘 중 이른 날) 이하의 가장 늦은 발령 팀 — 퇴직자는 마지막 발령 팀.
+// 쿼리 두 번(사람 · 발령) — 사람마다 읽지 않는다.
+export type LeaveBalancePersonRow = { user: InferSelectModel<typeof users>; teamId: string | null; teamName: string | null };
+
+export async function listLeaveBalancePeople(
+  viewer: Viewer,
+  input: { yearStart: string; yearEnd: string; today: string },
+): Promise<LeaveBalancePersonRow[]> {
+  void viewer;
+  const people = await db
+    .select()
+    .from(users)
+    .where(
+      and(
+        or(gte(users.resignationDate, input.yearStart), and(isNull(users.resignationDate), isNull(users.archivedAt))),
+        or(isNull(users.hireDate), lte(users.hireDate, input.yearEnd)),
+      ),
+    );
+  if (people.length === 0) return [];
+  const memberships = await db
+    .select({ userId: teamMemberships.userId, effectiveFrom: teamMemberships.effectiveFrom, teamId: teams.id, teamName: teams.name })
+    .from(teamMemberships)
+    .innerJoin(teams, eq(teams.id, teamMemberships.teamId))
+    .where(and(inArray(teamMemberships.userId, people.map((person) => person.id)), lte(teamMemberships.effectiveFrom, input.today)))
+    .orderBy(desc(teamMemberships.effectiveFrom));
+  return people.map((user) => {
+    const asOf = user.resignationDate && user.resignationDate < input.today ? user.resignationDate : input.today;
+    const membership = memberships.find((row) => row.userId === user.id && row.effectiveFrom <= asOf);
+    return { user, teamId: membership?.teamId ?? null, teamName: membership?.teamName ?? null };
+  });
 }

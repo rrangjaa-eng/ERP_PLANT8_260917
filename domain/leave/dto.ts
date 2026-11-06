@@ -107,6 +107,39 @@ export const LEAVE_ADJUSTMENT_DTO_SPEC: DtoSpec<LeaveAdjustmentDto, LeaveAdjustm
   ],
 };
 
+// 07.2-08(PU12 · D-7260): 사람별 연차 잔여 표 한 행 — 숫자 칸은 leave.value, 이름 · 퇴직 표시는 사람 정보, 팀 이름은 팀 정보.
+// 부여 = 연차 부여 + 조정(남음 = 부여 − 사용 − 결재 중). 월차 남음은 월차 줄이 없으면 null. **두 잔고를 더한 칸은 두지 않는다.**
+export type PeopleLeaveBalanceDto = {
+  userId: string;
+  name: string;
+  resigned: boolean;
+  teamName: string | null;
+  grantedQuarters: number;
+  usedQuarters: number;
+  pendingQuarters: number;
+  remainingQuarters: number;
+  monthlyRemainingQuarters: number | null;
+};
+
+export const PEOPLE_LEAVE_BALANCE_DTO_SPEC: DtoSpec<PeopleLeaveBalanceDto, PeopleLeaveBalanceDto> = {
+  fields: [
+    { key: "userId", from: "userId", infoItem: "person.value" },
+    { key: "name", from: "name", infoItem: "person.value" },
+    { key: "resigned", from: "resigned", infoItem: "person.value" },
+    { key: "teamName", from: "teamName", infoItem: "team.value" },
+    { key: "grantedQuarters", from: "grantedQuarters", infoItem: "leave.value" },
+    { key: "usedQuarters", from: "usedQuarters", infoItem: "leave.value" },
+    { key: "pendingQuarters", from: "pendingQuarters", infoItem: "leave.value" },
+    { key: "remainingQuarters", from: "remainingQuarters", infoItem: "leave.value" },
+    { key: "monthlyRemainingQuarters", from: "monthlyRemainingQuarters", infoItem: "leave.value" },
+  ],
+};
+
+registerDto({
+  name: "peopleLeaveBalance",
+  fields: PEOPLE_LEAVE_BALANCE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
 registerDto({
   name: "leaveRequest",
   fields: LEAVE_REQUEST_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),

@@ -15,9 +15,9 @@ import { findUserById, type UserRow } from "@/repositories/users";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findEffectiveValue } from "@/repositories/settings";
 import { listLeaveUsage, type LeaveUsageRow } from "@/repositories/leave-usage";
-import { findLeaveRequestsByIds, type LeaveRequestRow } from "@/repositories/leave-requests";
+import { findLeaveRequestsByIds, listLeaveBalancePeople, type LeaveRequestRow } from "@/repositories/leave-requests";
 import { insertLeaveAdjustment, listLeaveAdjustments, type LeaveAdjustmentWithAuthor } from "@/repositories/leave-adjustments";
-import { assertLeaveWrite, canSeeLeaveDocument, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
+import { assertLeaveWrite, canSeeLeaveDocument, LEAVE_DOCUMENT_KIND, peopleLeaveScopeOf } from "@/domain/leave/access";
 import type { HolidayLookup } from "@/domain/holidays/business-day";
 import { countLeaveQuarters, leaveYearRange, type LeaveDaysInput } from "@/domain/leave/days";
 import { legalTotalQuartersByHireDate } from "@/domain/leave/tenure";
@@ -44,9 +44,11 @@ import {
   LEAVE_ADJUSTMENT_DTO_SPEC,
   LEAVE_BALANCE_DTO_SPEC,
   LEAVE_REQUEST_BALANCE_DTO_SPEC,
+  PEOPLE_LEAVE_BALANCE_DTO_SPEC,
   type LeaveAdjustmentDto,
   type LeaveBalanceDto,
   type LeaveRequestBalanceDto,
+  type PeopleLeaveBalanceDto,
 } from "@/domain/leave/dto";
 
 // 04.1-03(LEAV-01): 연차 잔고 조회 · 조정 — 저장된 잔고가 없다. 매번 부여 목록(설정 · 입사일 ·
@@ -196,6 +198,42 @@ export async function getLeaveBalanceForUser(
   const user = await findUserById(viewer, userId);
   if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
   return balanceDto(viewer, user, input.fiscalYear, today);
+}
+
+// 07.2-08(PU12 · D-7260 · D-7261): 사람별 연차 잔여 표(`/leave?view=all`) — 범위(peopleLeaveScopeOf)가 null이면 ForbiddenError,
+// 팀장 범위는 그 팀 사람만. 숫자는 getLeaveBalanceForUser와 같은 computeBalance 사슬(07.2-04 근속 가산 포함 — summarizeLeaveBalance를
+// 직접 부르지 않는다)이고, 읽기 메모 하나(createBalanceReads)를 사람들이 나눠 쓴다(연차 일수 설정은 연도마다 한 번). 사람마다 사용 ·
+// 조정 읽기가 직렬이다(30~50명이면 쿼리 수십~백여 번 — 받아들인 비용). 정렬 = 팀 → 이름. 새 계산식 없음.
+export async function listPeopleLeaveBalances(
+  viewer: Viewer,
+  fiscalYear: number,
+  deps?: BalanceDeps,
+): Promise<{ rows: Partial<PeopleLeaveBalanceDto>[]; count: number }> {
+  const scope = await peopleLeaveScopeOf(viewer, deps);
+  if (!scope) throw new ForbiddenError("연차 잔여 열람 권한 없음");
+  const today = seoulToday(deps?.now);
+  const people = await listLeaveBalancePeople(viewer, { yearStart: `${fiscalYear}-01-01`, yearEnd: `${fiscalYear}-12-31`, today });
+  const inScope = scope.kind === "company" ? people : people.filter((person) => person.teamId !== null && scope.teamIds.includes(person.teamId));
+  const collator = new Intl.Collator("ko");
+  inScope.sort((a, b) => collator.compare(a.teamName ?? "", b.teamName ?? "") || collator.compare(a.user.name, b.user.name));
+  const reads = createBalanceReads(viewer);
+  const sources: PeopleLeaveBalanceDto[] = [];
+  for (const person of inScope) {
+    const { summary } = await computeBalance(viewer, person.user, fiscalYear, today, undefined, reads);
+    sources.push({
+      userId: person.user.id,
+      name: person.user.name,
+      resigned: person.user.resignationDate !== null && person.user.resignationDate <= today,
+      teamName: person.teamName,
+      grantedQuarters: summary.annual.grantQuarters + summary.annual.adjustmentQuarters,
+      usedQuarters: summary.annual.usedQuarters,
+      pendingQuarters: summary.annual.pendingQuarters,
+      remainingQuarters: summary.annual.remainingQuarters,
+      monthlyRemainingQuarters: summary.monthly?.status === "active" ? summary.monthly.remainingQuarters : null,
+    });
+  }
+  const rows = await projectMany(viewer, sources, PEOPLE_LEAVE_BALANCE_DTO_SPEC);
+  return { rows, count: rows.length };
 }
 
 export type LeaveShortfall = { shortfallQuarters: number };

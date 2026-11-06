@@ -10,6 +10,7 @@ import { submitLeave } from "@/domain/leave";
 import { peopleLeaveScopeOf } from "@/domain/leave/access";
 import { getLeaveBalanceForUser, listPeopleLeaveBalances } from "@/domain/leave/balance-service";
 import { makePerson, NOW_2026, teamIdByName } from "./approvals-fixtures";
+import { makeDelegatedRole } from "./admin-cap-fixtures";
 
 // 07.2-08(PU12 · D-7260 · D-7261 · 07.2 D-7308): 사람별 연차 잔여 — 범위 판정은 서버. `admin.people` 보기 = 전사, 그 밖은
 // seat-rules 팀장 자리(TEAM_LEAD_ROLE_ID 계급 + 오늘 발령 팀)의 그 팀만, 둘 다 아니면 null(→ ForbiddenError · 화면 404).
@@ -17,10 +18,10 @@ import { makePerson, NOW_2026, teamIdByName } from "./approvals-fixtures";
 
 const deps = { now: NOW_2026 };
 
+// 경영관리 fixture 계급 — 사원 권한 · 정보 노출을 복사하고 admin.people 보기만 더한다(새 계급은 노출표 행이 없어 이름 · 숫자가 숨는다).
 async function peopleAdmin(name: string): Promise<Viewer> {
-  const role = await createRole(SYSTEM_VIEWER, { name: `경영관리-${name}` });
-  await setPermissionCell(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.people", action: "view", allowed: true });
-  return makePerson(name, role.id, "경영관리팀");
+  const roleId = await makeDelegatedRole({ name: "경영관리", menus: [{ menu: "admin.people", action: "view" }] });
+  return makePerson(name, roleId, "경영관리팀");
 }
 
 async function setDates(userId: string, input: { hireDate?: string | null; resignationDate?: string | null; archived?: boolean }) {

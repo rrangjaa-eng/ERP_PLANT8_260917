@@ -936,6 +936,17 @@ function keepHiddenVendor(
   return { ...row, vendorId, baseline: row.baseline && current ? { ...row.baseline, vendorId: current.vendorId } : row.baseline };
 }
 
+// PR #367 검토 M1 — 07.2에서 더한 일수 · 고객 비고를 싣지 않는 옛 모양 입력도 받는다(입력 스키마가 optional). 기존 줄에서 칸이
+// 빠졌으면 저장값 그대로 둔다 — 빈 칸을 일수 1 · 고객 비고 null로 쓰면 견적가가 말없이 바뀐다. 새 줄은 그대로(비면 일수 1).
+function keepOmittedStored(row: QuoteLineWriteRow, current: QuoteLineRow | undefined): QuoteLineWriteRow {
+  if (!current) return row;
+  return {
+    ...row,
+    days: row.days === undefined ? Number(current.days) : row.days,
+    clientRemark: row.clientRemark === undefined ? current.clientRemark : row.clientRemark,
+  };
+}
+
 // 04-13(엔지 리뷰 B §2 · T-04-64) — 판정·저장이 보는 종류. 새 줄은 요청 값(없으면 quote), 기존 줄은 잠근 tx로 다시 읽은
 // DB 행의 종류다. 기존 줄에 다른 종류가 실려 오면 종류 변경 요청이라 null(거부).
 export function resolveLineKind(row: Pick<QuoteLineWriteRow, "isNew" | "lineKind">, storedKind: QuoteLineKind | undefined): QuoteLineKind | null {
@@ -1300,7 +1311,8 @@ export async function writeQuoteLinesInTx(
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
       const current = received.isNew ? undefined : currentById.get(received.id);
       // /review 적대 검토 — 가려진 채 그린 줄은 그 사이 거래처가 보이게 바뀌었어도 거래처를 본 적이 없다.
-      const requested = prepared.vendorShown && !received.vendorHidden ? received : keepHiddenVendor(received, current, currentById);
+      const shown = prepared.vendorShown && !received.vendorHidden ? received : keepHiddenVendor(received, current, currentById);
+      const requested = keepOmittedStored(shown, current);
       const resolved = resolveLineKind(requested, current && lineKindOf(current));
       if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
       const kind = resolved ?? lineKindOf(current!);

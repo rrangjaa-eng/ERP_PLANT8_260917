@@ -8,7 +8,7 @@ import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
 import { Num } from "@/ui/num/Num";
 import { commissionAmount } from "@/domain/money";
-import { commissionBase, commissionMajors, type CommissionBaseRow, type CommissionBasis } from "@/domain/quotes/commission";
+import { commissionBase, commissionMajors, parseCommissionRate, type CommissionBaseRow, type CommissionBasis } from "@/domain/quotes/commission";
 import styles from "./project-detail.module.css";
 
 // 07.2-06(PU3 · D-7223 · UI-SPEC S5) — 수수료 줄 「계산」 옆 패널. 율 · 기준을 적으면 지금 표 값으로 기준 합 · 수수료를 보이고,
@@ -22,14 +22,6 @@ function basisFromValue(value: string): CommissionBasis {
   if (value.startsWith("only:")) return { kind: "only", major: value.slice("only:".length) };
   if (value.startsWith("except:")) return { kind: "except", major: value.slice("except:".length) };
   return { kind: "all" };
-}
-
-// 율 글자 — 비면 null, 숫자가 아니거나 0 ~ 100 밖이면 NaN.
-function parseRate(text: string): number | null {
-  const trimmed = text.trim();
-  if (trimmed === "") return null;
-  const rate = Number(trimmed);
-  return Number.isFinite(rate) && rate >= 0 && rate <= 100 ? rate : Number.NaN;
 }
 
 export function CommissionPanel({
@@ -46,7 +38,7 @@ export function CommissionPanel({
   const [rateText, setRateText] = useState("");
   const [basisValue, setBasisValue] = useState("all");
   const majors = commissionMajors(rows, subcategoryLabel);
-  const rate = parseRate(rateText);
+  const rate = parseCommissionRate(rateText);
   const base = commissionBase(rows, basisFromValue(basisValue), subcategoryLabel);
   const fee = rate !== null && !Number.isNaN(rate) ? commissionAmount(base, rate) : null;
 

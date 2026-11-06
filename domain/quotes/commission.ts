@@ -45,3 +45,14 @@ export function commissionBase(rows: readonly CommissionBaseRow[], basis: Commis
 export function commissionMajors(rows: readonly CommissionBaseRow[], label: SubcategoryLabel = sameValue): string[] {
   return [...new Set(rows.filter(counted).map((row) => majorOf(row, label)))];
 }
+
+// 「계산」 패널 율 글자 — 비면 null, 숫자가 아니거나 0 ~ 100 밖이거나 소수 2자리를 넘으면 NaN. commissionAmount가 율을 bp(소수
+// 2자리)로 반올림하므로 그보다 긴 율은 받지 않는다(PR #367 검토 P2 — 0.005%가 0.01%로, 12.345%가 12.35%로 계산된 채 비고에
+// 12.345%로 남지 않게).
+export function parseCommissionRate(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  const rate = Number(trimmed);
+  const withinTwoDecimals = Number.isFinite(rate) && Number(rate.toFixed(2)) === rate;
+  return withinTwoDecimals && rate >= 0 && rate <= 100 ? rate : Number.NaN;
+}

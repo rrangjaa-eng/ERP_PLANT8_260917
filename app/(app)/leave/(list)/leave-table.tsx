@@ -93,7 +93,7 @@ export function LeaveTable({ rows }: { rows: LeaveListRow[] }) {
 
 // 필터 줄 칸(`ListScreen.filters`) — 연도 select(옵션이 둘 이상일 때 · 200) 또는 보는 연도 글자(옵션이 하나일 때, 연도는 화면에 한 자리만).
 // 1차 `연차 신청`은 `ListScreen.primaryAction`이 그린다. select 제어값 = 보여 주는 연도(`—`로 열리지 않는다). `—`를 고르면 `?year` 없이 = 올해(D6 · #1).
-export function LeaveYearFilter({ year, yearOptions }: { year: number; yearOptions: number[] | null }) {
+export function LeaveYearFilter({ year, yearOptions, allView }: { year: number; yearOptions: number[] | null; allView?: boolean }) {
   const router = useRouter();
   if (!yearOptions) return <span className={styles.yearLabel}>{`${year} 회계연도`}</span>;
   return (
@@ -105,7 +105,11 @@ export function LeaveYearFilter({ year, yearOptions }: { year: number; yearOptio
         id="leave-year"
         value={String(year)}
         options={yearOptions.map((option) => ({ value: String(option), label: String(option) }))}
-        onChange={(event) => router.push(event.target.value ? `/leave?year=${event.target.value}` : "/leave")}
+        // 07.2-08 S20: 「전체」 보기에서는 `view=all`을 지킨 채 연도만 바꾼다.
+        onChange={(event) => {
+          const query = [allView ? "view=all" : "", event.target.value ? `year=${event.target.value}` : ""].filter(Boolean).join("&");
+          router.push(query ? `/leave?${query}` : "/leave");
+        }}
       />
     </span>
   );

@@ -275,3 +275,46 @@ tr:has(.foldLink) {
 .dayNumber {
   font-weight: var(--fw-bold);
 }
+
+/* 07.2-08 S20 선택 링크 줄(SYSTEM §6-1 DC-11) — 필터 줄 맨 앞 `내 연차` · `전체`. 3차 링크 글자(.link와 같은 값), 현재 항목은 강한 글자 700 +
+   두꺼운 밑줄(aria-current). 항목 둘이라 폰도 한 줄 흐름 — 터치 영역만 44로 키운다. */
+.viewLinks {
+  display: inline-flex;
+  gap: var(--s-3);
+}
+
+.viewLink {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.viewLink:hover {
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
+.viewLink[aria-current="page"] {
+  color: var(--text-strong);
+  font-weight: var(--fw-bold);
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
+/* 사람별 연차 잔여 — 퇴직자 이름 뒤 muted 글자 · 필터 줄 끝 결과 글자 `{N}명`. */
+.resignedTag {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.resultCount {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+@media (max-width: 699.98px) {
+  .viewLink {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-min);
+  }
+}

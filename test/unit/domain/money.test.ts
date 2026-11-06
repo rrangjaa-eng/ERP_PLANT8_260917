@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   round,
+  commissionAmount,
   toKrw,
   moneyFromRow,
   quoteAmount,
@@ -427,5 +428,27 @@ describe("grossFromSignedTotal", () => {
   it("음수를 grossFromTotal에 그대로 넘기면 비대칭이 나는 자리(올림)에서도 대칭", () => {
     expect(grossFromTotal(-12_500, 0.1, 1, "ceil")).toBe(-11_363);
     expect(grossFromSignedTotal(-12_500, 0.1, 1, "ceil")).toBe(-11_364);
+  });
+});
+
+// 07.2 PU3(D-7223) — 수수료 = 기준 합 × 율. 율은 bp 정수로 바꿔 원 미만에서 한 번만 반올림한다.
+describe("commissionAmount", () => {
+  it.each([
+    [120_000_000, 5, 6_000_000],
+    [1_000_000, 12.5, 125_000],
+    [12_345, 5, 617],
+    [11, 50, 6],
+    [1_000_000, 0.07, 700],
+    [0, 5, 0],
+    [3_000_000, 0, 0],
+    [3_000_000, 100, 3_000_000],
+  ])("기준 %s × 율 %s%% → %s", (base, rate, fee) => {
+    expect(commissionAmount(base, rate)).toBe(fee);
+  });
+
+  it("율이 0 미만 · 100 초과 · 숫자 아님이면 오류", () => {
+    expect(() => commissionAmount(1_000, -1)).toThrow();
+    expect(() => commissionAmount(1_000, 100.5)).toThrow();
+    expect(() => commissionAmount(1_000, Number.NaN)).toThrow();
   });
 });

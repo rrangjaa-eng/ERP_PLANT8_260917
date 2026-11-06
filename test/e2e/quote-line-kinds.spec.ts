@@ -4,7 +4,7 @@ import { test, expect, type Locator, type Page, type Request } from "@playwright
 import { waitForCardUsageSection } from "./fixtures";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, projects } from "@/db/schema";
+import { codeItems, projects, quoteLines } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
@@ -65,7 +65,7 @@ async function login(page: Page, account: Account) {
   await expect(page).toHaveURL(/\/account$/);
 }
 
-type SeedLine = { itemName: string; unitPrice: number; execution: number; lineKind?: "quote" | "adjustment" };
+type SeedLine = { itemName: string; unitPrice: number; execution: number; lineKind?: "quote" | "adjustment" | "commission"; majorCategory?: string; quantity?: number; days?: number };
 
 // 줄은 수주중(생성 직후)일 때 도메인 함수로 넣고, 그 뒤 상태를 DB에 둔다(quote-edit-scope.spec.ts와 같은 준비).
 // 조정 줄은 시스템 뷰어(모든 권한)로 넣는다 — 줄 순서는 넣은 순서다.
@@ -93,9 +93,11 @@ async function makeProject(input: { teamId: string; pmUserId: string; status: st
         id: randomUUID(),
         isNew: true as const,
         lineKind: line.lineKind ?? "quote",
-        subcategory: line.lineKind === "adjustment" ? "" : subcategory.value,
+        subcategory: line.lineKind === "adjustment" || line.lineKind === "commission" ? "" : subcategory.value,
         itemName: line.itemName,
-        quantity: 1,
+        quantity: line.quantity ?? 1,
+        ...(line.days !== undefined ? { days: line.days } : {}),
+        ...(line.majorCategory !== undefined ? { majorCategory: line.majorCategory } : {}),
         unitPrice: { currency: "KRW" as const, amount: line.lineKind === "adjustment" ? 0 : line.unitPrice, fxRate: 1 },
         execution: { currency: "KRW" as const, amount: line.execution, fxRate: 1 },
       })),
@@ -598,4 +600,88 @@ test.describe("수수료 줄 (07.2-06, D-7222)", () => {
     await expect(dataRows(page)).toHaveCount(1);
     await expect(page.getByRole("button", { name: "수수료 줄 추가" })).toHaveCount(0);
   });
+});
+
+// 07.2-06 PU3(D-7223 · UI-SPEC S5) — 「계산」 옆 패널: 율 · 기준 → 기준 합 · 수수료 → 금액 채우기(율은 저장하지 않는다).
+test.describe("수수료 계산 패널 (07.2-06, D-7223)", () => {
+  // 샘플(시트1 H116-H118) 꼴 — Venue 합 10,000,000(2 × 1,000,000 × 3일 + 4,000,000) · Agency 5,000,000.
+  const SAMPLE_LINES: SeedLine[] = [
+    { itemName: "계산 Venue 대관", unitPrice: 1_000_000, execution: 0, majorCategory: "Venue", quantity: 2, days: 3 },
+    { itemName: "계산 Venue 장비", unitPrice: 4_000_000, execution: 0, majorCategory: "Venue" },
+    { itemName: "계산 Agency 운영", unitPrice: 5_000_000, execution: 0, majorCategory: "Agency" },
+    { itemName: "Venue Commission", unitPrice: 0, execution: 0, lineKind: "commission" },
+  ];
+
+  function commissionRow(page: Page): Locator {
+    return dataRows(page).filter({ hasText: "Venue Commission" });
+  }
+
+  test("1280 — 「계산」 → 율 5 · Venue만 → 기준 합 · 수수료 → 금액 채우기 → 단가 · 고객 비고 · 포커스 · 저장 뒤 견적가, 율은 저장하지 않는다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const project = await openProject(page, { as: "pm", status: "in_progress", endDate: addDays(TODAY, 10), lines: SAMPLE_LINES });
+    const row = commissionRow(page);
+    await row.getByRole("button", { name: "계산" }).click();
+
+    const panel = page.getByRole("dialog", { name: "수수료 계산" });
+    await expect(panel).toBeVisible();
+    // 패널이 열린 동안 뒤 표는 inert(네이티브 모달).
+    await expect(page.locator("dialog:modal")).toHaveCount(1);
+    const rate = panel.getByRole("textbox", { name: "율(%)" });
+    await expect(rate).toBeFocused();
+    const fill = panel.getByRole("button", { name: /금액 채우기/ });
+    await expect(fill).toHaveAttribute("aria-disabled", "true");
+    await expect(panel.getByText("율 없음 · 율 적기")).toBeVisible();
+
+    await rate.fill("5");
+    await panel.getByRole("combobox", { name: "기준" }).selectOption({ label: "Venue만" });
+    await expect(panel.getByText("기준 합 10,000,000 · 수수료 500,000")).toBeVisible();
+    await expect(fill).not.toHaveAttribute("aria-disabled", "true");
+    await fill.click();
+
+    await expect(panel).toHaveCount(0);
+    const unitPriceCell = row.locator("> td").nth(COL.unitPrice);
+    await expect(unitPriceCell).toHaveText("500,000");
+    await expect(unitPriceCell).toBeFocused();
+    await expect(row.locator("> td").nth(12)).toHaveText("5%");
+
+    const saved = waitForSaveResponse(page);
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+    await page.reload();
+    await expect(commissionRow(page).locator("> td").nth(COL.quoteAmount)).toHaveText("500,000");
+
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    const [stored] = await db.select().from(quoteLines).where(and(eq(quoteLines.revisionId, revision.id), eq(quoteLines.lineKind, "commission")));
+    if (!stored) throw new Error("수수료 줄이 없습니다");
+    expect(stored.unitPriceAmountKrw).toBe(500_000);
+    expect(stored.clientRemark).toBe("5%");
+    // 율은 어디에도 저장하지 않는다 — 줄 칸에 율 · 수수료 칸이 없다.
+    expect(Object.keys(stored).filter((key) => /commission|^rate$/i.test(key))).toEqual([]);
+  });
+
+  test("1280 — Esc로 닫으면 단가 그대로 · 포커스는 그 줄 단가 칸 · 숫자 아닌 율은 칸 아래 오류", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openProject(page, { as: "pm", status: "in_progress", endDate: addDays(TODAY, 10), lines: SAMPLE_LINES });
+    const row = commissionRow(page);
+    await row.getByRole("button", { name: "계산" }).click();
+    const panel = page.getByRole("dialog", { name: "수수료 계산" });
+    await panel.getByRole("textbox", { name: "율(%)" }).fill("오");
+    await expect(panel.getByText("숫자 아님 · 5처럼")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    const unitPriceCell = row.locator("> td").nth(COL.unitPrice);
+    await expect(unitPriceCell).toHaveText("0");
+    await expect(unitPriceCell).toBeFocused();
+  });
+
+  for (const width of [768, 375]) {
+    test(`${width} — 「계산」이 DOM에 없다`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openProject(page, { as: "pm", status: "in_progress", endDate: addDays(TODAY, 10), lines: SAMPLE_LINES });
+      await expect(page.getByText("Venue Commission").first()).toBeAttached();
+      await expect(page.getByRole("button", { name: "계산" })).toHaveCount(0);
+    });
+  }
 });

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import "@/domain/leave";
 import { approveDocument, rejectDocument, withdrawDocument } from "@/domain/approvals";
-import { submitLeave } from "@/domain/leave";
+import { getLeave, submitLeave } from "@/domain/leave";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
 import { documentLabel, documentTitle, loginPage, makePerson, setupLeaveOrg, waitForHydration, type LeaveOrg } from "./leave-org";
@@ -296,6 +296,65 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
 
 
 // 04.6-18 — 연차 세 화면을 스킨 A 틀(ListScreen · DetailScreen + Form page)로. 글자 크기·폭은 리터럴이 아니라 계산된 역할 토큰 값과 비교한다.
+// 07.2-08(PU11 · D-7257 · D-7258 · UI-SPEC S17): 반반차 = 날짜 + 시작 시각(type=time · 기본 09:00) — 오전/오후 칸 없음.
+// 문서 화면 · 제목은 `반반차 HH:MM`, 반려 뒤 다시 신청 폼의 시각 칸은 저장된 시각.
+test.describe("반반차 시작 시각 (07.2-08 PU11)", () => {
+  test("반반차 → 시각 칸 기본 09:00 · 오전/오후 칸 0 · 비우면 오류 · 제출 → 문서 화면 반반차 09:00", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const day = leaveWeekdayRange(today, { week: 14, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+
+    const page = await loginPage(browser, baseURL, org.drafter);
+    await page.goto("/leave/new");
+    const kind = page.locator("select#kind");
+    await waitForHydration(kind);
+    await kind.selectOption("quarter_day");
+    const time = page.locator('input[type="time"]');
+    await expect(time).toHaveCount(1);
+    await expect(time).toHaveValue("09:00");
+    await expect(page.getByLabel("시작 시각")).toHaveCount(1);
+    await expect(page.locator("select#half")).toHaveCount(0);
+    for (const other of ["full_day", "half_day"]) {
+      await kind.selectOption(other);
+      await expect(page.locator('input[type="time"]')).toHaveCount(0);
+    }
+    await expect(page.locator("select#half")).toHaveCount(1);
+    await kind.selectOption("quarter_day");
+    await expect(time).toHaveValue("09:00");
+
+    await page.getByLabel("날짜").fill(day.startDate);
+    await time.fill("");
+    await expect(time).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByText("시작 시각 형식 오류 · ").filter({ visible: true }).first()).toBeVisible();
+    await time.fill("09:00");
+    await expect(time).not.toHaveAttribute("aria-invalid", "true");
+
+    await page.getByRole("button", { name: /^연차 신청/ }).click();
+    await page.waitForURL(/\/leave\/[0-9a-f-]{36}/);
+    await expect(page.locator('[data-ui="screen-title"]:visible')).toHaveText(`연차 — 반반차 09:00 ${day.startDate.slice(5)}`);
+    await expect(kv(page, "종류").locator("xpath=following-sibling::dd[1]")).toHaveText("반반차 09:00");
+    expect(await countText(page, "오전")).toBe(0);
+    await page.context().close();
+  });
+
+  test("반려된 반반차 — 다시 신청 폼의 시각 칸 = 저장된 시각 · 오전/오후 칸 0", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const day = leaveWeekdayRange(today, { week: 15, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    const doc = await submitLeave(org.drafter.viewer, { kind: "quarter_day", startDate: day.startDate, endDate: day.startDate, half: "", startTime: "14:30" });
+    const saved = await getLeave(org.drafter.viewer, doc.leaveId);
+    expect(saved?.startTime).toBe("14:30");
+    await rejectDocument(org.teamLead.viewer, { instanceId: doc.instanceId, expectedVersion: doc.version, reason: "시각 조정" });
+
+    const page = await loginPage(browser, baseURL, org.drafter);
+    await page.goto(`/leave/${doc.leaveId}`);
+    await expect(page.locator('[data-ui="screen-title"]:visible')).toHaveText(`연차 — 반반차 14:30 ${day.startDate.slice(5)}`);
+    await expect(page.locator('input[type="time"]')).toHaveValue("14:30");
+    await expect(page.locator("select#half")).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
 test.describe("연차 목록 · 신청 틀 (04.6-18)", () => {
   test("목록 — 틀 제목 · 부제 없음 · 머리 1차 하나(연차 신청) · 상태 글자", async ({ browser, baseURL }) => {
     const today = seoulToday();

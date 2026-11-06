@@ -42,7 +42,7 @@ export function leaveYearRange(today: string): LeaveYearRange {
 }
 
 export type LeaveDaysInput = { kind: string; startDate: string; endDate: string; half: string };
-export type LeaveFieldError = { field: "kind" | "startDate" | "endDate" | "half"; message: string };
+export type LeaveFieldError = { field: "kind" | "startDate" | "endDate" | "half" | "startTime"; message: string };
 export type LeaveDaysResult =
   | {
       ok: true;
@@ -104,8 +104,9 @@ export function countLeaveQuarters(input: LeaveDaysInput, range?: LeaveYearRange
   const endMs = endDate === "" ? null : parseDate(endDate);
   if (endDate !== "" && endMs === null) errors.push({ field: "endDate", message: DATE_FORMAT_ERROR });
 
+  // 07.2-08(PU11 · D-7258): 반반차는 시작 시각(index.ts leaveStartTimeOf)이 오전/오후를 대신한다 — half는 반차만 받는다.
   let half: HalfPeriod | null = null;
-  if (singleDay) {
+  if (kind === "half_day") {
     if (isHalfPeriod(input.half)) half = input.half;
     else errors.push({ field: "half", message: LEAVE_HALF_EMPTY_ERROR });
   }

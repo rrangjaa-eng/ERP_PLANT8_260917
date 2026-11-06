@@ -1071,3 +1071,36 @@ describe("resetPersonPasswordAction — 검토 목록의 DTO 없는 비밀 액�
     expect(typeof result.tempPassword).toBe("string");
   });
 });
+
+// 07.2-08(PU12 · T-07.2-08-03): 사람별 연차 잔여 DTO — 숫자 칸(부여 · 사용 · 결재 중 · 남음 · 월차 남음)은 `leave.value`를 보는 계급의
+// 직렬화에만 키가 있다. 시드는 모든 계급에 leave.value를 켜므로 음성 쪽은 노출표 행이 없는 계급(새 계급의 기본 숨김)으로 단언한다.
+import { PEOPLE_LEAVE_BALANCE_DTO_SPEC, type PeopleLeaveBalanceDto } from "@/domain/leave/dto";
+
+describe("사람별 연차 잔여 DTO 축 — 숫자 칸은 leave.value를 보는 계급에만 (07.2-08)", () => {
+  it("시드 계급 · 노출표 행 없는 계급마다 숫자 칸 키의 유무가 leave.value 노출과 같다 · 두 잔고를 더한 칸은 명세에 없다", async () => {
+    const numberKeys = ["grantedQuarters", "usedQuarters", "pendingQuarters", "remainingQuarters", "monthlyRemainingQuarters"];
+    for (const key of numberKeys) expect(PEOPLE_LEAVE_BALANCE_DTO_SPEC.fields.find((field) => field.key === key)?.infoItem, key).toBe("leave.value");
+    expect(PEOPLE_LEAVE_BALANCE_DTO_SPEC.fields.map((field) => field.key).filter((key) => /total|sum/i.test(key))).toEqual([]);
+    const source: PeopleLeaveBalanceDto = {
+      userId: "00000000-0000-4000-8000-000000000708",
+      name: "누수잔여",
+      resigned: false,
+      teamName: "기획1팀",
+      grantedQuarters: 60,
+      usedQuarters: 14,
+      pendingQuarters: 4,
+      remainingQuarters: 42,
+      monthlyRemainingQuarters: 8,
+    };
+    const hiddenProbe = "leak-scan-no-visibility-rows";
+    const hidden: string[] = [];
+    for (const roleId of [...SEED_ROLES.map((role) => role.id), hiddenProbe]) {
+      const viewer: Viewer = { id: "leak-scan-probe", roleId };
+      const leaveVisible = await visible(viewer, "leave.value");
+      const dto = await project(viewer, source, PEOPLE_LEAVE_BALANCE_DTO_SPEC);
+      for (const key of numberKeys) expect(key in dto, `${roleId}·${key}`).toBe(leaveVisible);
+      if (!leaveVisible) hidden.push(roleId);
+    }
+    expect(hidden).toContain(hiddenProbe);
+  });
+});

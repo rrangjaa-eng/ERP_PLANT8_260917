@@ -24,7 +24,16 @@ import { DayNumbers } from "../day-numbers";
 import { HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
 import { previewLeaveAction, resubmitLeaveAction, submitLeaveAction } from "../actions";
 import { usePhoneWidth } from "../use-phone-width";
-import { formBlocked, sameLeaveInput, shownSubmitErrors } from "./form-state";
+import {
+  formBlocked,
+  initialStartTime,
+  leaveFieldsOf,
+  sameLeaveInput,
+  shownSubmitErrors,
+  toLeaveInput,
+  type LeaveFormValues,
+  type LeaveInput,
+} from "./form-state";
 import styles from "../leave.module.css";
 
 // 04.1-02 S2 첫 형태 → 04.1-06 완성형(S2): 종류에 따라 칸이 바뀐다(종일·재택 = 시작 · 종료, 반차·반반차 = 날짜 하나 +
@@ -44,30 +53,19 @@ const CANCEL_HREF = "/leave";
 export type LeaveFormResubmit = {
   leaveId: string;
   expectedVersion: number;
-  initial: { kind: string; startDate: string; endDate: string; half: string | null; note: string | null };
+  initial: { kind: string; startDate: string; endDate: string; half: string | null; startTime: string | null; note: string | null };
   route: ReactNode;
   onResubmitted: (toast: string) => void;
 };
 
-type Values = { kind: string; half: string; startDate: string; endDate: string; note: string };
-type LeaveInput = { kind: string; startDate: string; endDate: string; half: string; note: string };
+type Values = LeaveFormValues;
 type Blocked = { field: LeaveFieldError["field"]; message: string };
 
-const FIELD_LABELS: Record<LeaveFieldError["field"], string> = { kind: "종류", startDate: "시작일", endDate: "종료일", half: "시간" };
+const FIELD_LABELS: Record<LeaveFieldError["field"], string> = { kind: "종류", startDate: "시작일", endDate: "종료일", half: "시간", startTime: "시작 시각" };
 
+// 하루짜리(반차 · 반반차) — 종료일 칸이 없다(칸 집합은 form-state leaveFieldsOf 한 곳).
 function isSingleDay(kind: string): boolean {
-  return kind === "half_day" || kind === "quarter_day";
-}
-
-function toInput(values: Values): LeaveInput {
-  const singleDay = isSingleDay(values.kind);
-  return {
-    kind: values.kind,
-    startDate: values.startDate,
-    endDate: singleDay ? values.startDate : values.endDate,
-    half: singleDay ? values.half : "",
-    note: values.note,
-  };
+  return !leaveFieldsOf(kind).includes("endDate");
 }
 
 // 종료일 = 시작일로 채우는 규칙(T10) — 종료일이 비었거나 시작일보다 빠르면. 종료일 칸에 「비어 있음」 상태가 없다.
@@ -79,9 +77,11 @@ function withEndFilled(values: Values): Values {
 // 사용자가 바꾼 칸 수(T10) — 제어 기본값 · 자동으로 채운 종료일(= 시작일)은 세지 않는다.
 function changedFieldCount(initial: Values, current: Values): number {
   const singleDay = isSingleDay(current.kind);
+  const fields = leaveFieldsOf(current.kind);
   let count = 0;
   if (current.kind !== initial.kind) count++;
-  if (singleDay && current.half !== initial.half) count++;
+  if (fields.includes("half") && current.half !== initial.half) count++;
+  if (fields.includes("startTime") && current.startTime !== initial.startTime) count++;
   if (current.startDate !== initial.startDate) count++;
   if (!singleDay && current.endDate !== initial.endDate && current.endDate !== current.startDate) count++;
   if (current.note !== initial.note) count++;
@@ -91,7 +91,7 @@ function changedFieldCount(initial: Values, current: Values): number {
 function blockedOf(values: Values): Blocked | null {
   const singleDay = isSingleDay(values.kind);
   if (values.kind === "") return { field: "kind", message: LEAVE_KIND_EMPTY_ERROR };
-  if (singleDay && values.half === "") return { field: "half", message: LEAVE_HALF_EMPTY_ERROR };
+  if (leaveFieldsOf(values.kind).includes("half") && values.half === "") return { field: "half", message: LEAVE_HALF_EMPTY_ERROR };
   if (values.startDate === "") return { field: "startDate", message: singleDay ? LEAVE_DATE_EMPTY_ERROR : LEAVE_START_EMPTY_ERROR };
   return null;
 }
@@ -113,6 +113,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   const [initial] = useState<Values>(() => ({
     kind: resubmit?.initial.kind ?? "full_day",
     half: resubmit?.initial.half ?? DEFAULT_HALF_PERIOD,
+    startTime: initialStartTime(resubmit?.initial),
     startDate: resubmit?.initial.startDate ?? "",
     endDate: resubmit?.initial.endDate ?? "",
     note: resubmit?.initial.note ?? "",
@@ -171,7 +172,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   useEffect(() => {
     if (previewedOnce.current) return;
     previewedOnce.current = true;
-    previewed.execute(toInput(initial));
+    previewed.execute(toLeaveInput(initial));
   });
 
   function change(next: Values, refreshPreview = true) {
@@ -179,14 +180,15 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
     setValues(filled);
     if (!refreshPreview) return;
     previewedOnce.current = true;
-    previewed.execute(toInput(filled));
+    previewed.execute(toLeaveInput(filled));
   }
 
   const singleDay = isSingleDay(values.kind);
+  const fields = leaveFieldsOf(values.kind);
   const blocked = formBlocked(blockedOf(values), preview);
   // 06.3-02(리뷰 A1 · eng R2-W2): 입력이 마지막 제출값과 달라지면 낡은 칸 · 비고 오류를 숨긴다(되돌리면 다시 보인다) — 서버 오류는 그대로.
   const sent = resubmit ? resubmitted.input?.input : submitted.input;
-  const stale = sent !== undefined && !sameLeaveInput(sent, toInput(values));
+  const stale = sent !== undefined && !sameLeaveInput(sent, toLeaveInput(values));
   const { fieldErrors, noteError, serverError } = shownSubmitErrors(stale, {
     fieldErrors: result.data && "rejected" in result.data ? result.data.rejected.errors : [],
     noteError: resubmit ? resubmitted.result.validationErrors?.input?.note?._errors?.[0] : submitted.result.validationErrors?.note?._errors?.[0],
@@ -209,7 +211,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
 
   function submit() {
     if (submittingRef.current || blocked) return;
-    run(toInput(values));
+    run(toLeaveInput(values));
   }
 
   // 네트워크 실패 뒤 3차 `다시 신청` = 지금 칸의 값으로 같은 제출을 한 번 더(ref 가드 그대로, #24). 실패 뒤 고친
@@ -294,6 +296,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
 
   const startError = errorOf("startDate");
   const endError = errorOf("endDate");
+  const timeError = errorOf("startTime");
   const hintLine = hint ? (
     <div data-testid="leave-days-hint">
       <Form.Hint>
@@ -350,7 +353,21 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
           {singleDay ? hintLine : null}
         </Form.Field>
 
-        {singleDay ? (
+        {fields.includes("startTime") ? (
+          <Form.Field id="startTime" label="시작 시각" width="short">
+            <input
+              id="startTime"
+              name="startTime"
+              type="time"
+              value={values.startTime}
+              onChange={(event) => change({ ...values, startTime: event.target.value })}
+              className={styles.textInput}
+              aria-invalid={timeError || blocked?.field === "startTime" ? true : undefined}
+              aria-describedby={describedBy(timeError ? "startTime-error" : null, blocked?.field === "startTime" ? "leave-blocked" : null)}
+            />
+            {timeError ? <Form.Error id="startTime-error">{timeError}</Form.Error> : null}
+          </Form.Field>
+        ) : fields.includes("half") ? (
           <Form.Field id="half" label="시간" width="select">
             <Select
               id="half"

@@ -2,7 +2,7 @@ import { test, expect, type Browser, type Page } from "@playwright/test";
 import { rejectDocument } from "@/domain/approvals";
 import { submitLeave } from "@/domain/leave";
 import { leaveWeekdayRange, onStableSeoulDay } from "./leave-dates";
-import { setupLeaveOrg, type Person } from "./leave-org";
+import { makePerson, setupLeaveOrg, type Person } from "./leave-org";
 
 // 04.1-06(S1 · S10 폰 375): 「더보기」 시트 계정 그룹 「연차」 → 목록(P1 세 열 · 접힌 줄 `신청 MM-DD`) → 신청.
 // 날짜는 onStableSeoulDay가 준 오늘에서 leaveWeekdayRange(오늘, {week 10~20})로만 만든다(Codex HIGH 06 · CEO-15).
@@ -123,4 +123,50 @@ test.describe("폰 375 연차 목록 (04.1-06 · S1 · S10)", () => {
       await page.context().close();
     });
   });
+});
+
+// 07.2-08 Task 3(S20 폰 375 · 320): 사람별 연차 잔여 — P1 이름 + 남음 · 접힌 줄 라벨 없이 `{팀} · {n}일` · 행 탭 → 시트 라벨 6 ·
+// 가로 넘침 0 · 접힌 줄 높이 ≥ 44 · 40자 이름은 표에서 한 줄 말줄임, 시트에는 전체 글자.
+test.describe("폰 사람별 연차 잔여 (07.2-08 · S20)", () => {
+  for (const width of [375, 320]) {
+    test(`${width}: 팀장 「전체」 — P1 두 열 · 접힌 줄 · 시트 라벨 6 · 넘침 0`, async ({ browser, baseURL }) => {
+      await onStableSeoulDay(async (today) => {
+        const org = await setupLeaveOrg(today);
+        const longName = await makePerson("가나다라마바사아자차카타파하가나다라마바사아자차카타파하가나다라마바사아", "role-pm", org.teamId, `${today.slice(0, 4)}-01-01`);
+        expect(longName.name.length).toBe(40);
+        const context = await browser.newContext({ baseURL, viewport: { width, height: 800 } });
+        const page = await context.newPage();
+        await page.goto("/login");
+        await page.getByLabel("이메일").fill(org.teamLead.email);
+        await page.getByLabel("비밀번호").fill(org.teamLead.password);
+        await page.getByRole("button", { name: "로그인" }).click();
+        await expect(page).toHaveURL(/\/account$/);
+        await page.goto("/leave");
+        await page.getByRole("navigation", { name: "연차 보기" }).getByRole("link", { name: "전체" }).click();
+        await expect(page).toHaveURL(/\/leave\?view=all$/);
+
+        const table = page.getByRole("table", { name: "사람별 연차 잔여" });
+        await expect(table.locator("thead th").filter({ visible: true })).toHaveText(["이름", "남음"]);
+        const tap = table.getByRole("button", { name: `${org.drafter.name} 상세 보기` });
+        await expect(tap).toHaveText(/^[^·]+ · -?\d+(\.\d+)?일$/);
+        await expect(tap).not.toContainText("사용");
+        await expect(tap).not.toContainText("결재 중");
+        expect((await tap.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+        // 40자 이름 — 표 칸은 한 줄(말줄임), 시트 제목은 전체 글자.
+        const longCell = table.getByRole("cell", { name: new RegExp(`^${longName.name}`) });
+        const lineHeight = await longCell.evaluate((node) => parseFloat(getComputedStyle(node).lineHeight));
+        const textBox = await longCell.locator("[data-cell-text]").boundingBox();
+        expect(textBox?.height ?? 0).toBeLessThan(lineHeight * 2);
+        await noHorizontalScroll(page);
+
+        await table.getByRole("button", { name: `${longName.name} 상세 보기` }).click();
+        const sheet = page.getByRole("dialog", { name: longName.name });
+        await expect(sheet).toBeVisible();
+        await expect(sheet.locator("dt")).toHaveText(["팀", "부여", "사용", "결재 중", "남음", "월차 남음"]);
+        await noHorizontalScroll(page);
+        await context.close();
+      });
+    });
+  }
 });

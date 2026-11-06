@@ -34,7 +34,7 @@ describe("제출 — 휴일 제외(06.3-01 Task 1)", () => {
     const half = await submitLeave(drafter, { kind: "half_day", startDate: "2026-09-25", endDate: "2026-09-25", half: "am" }, deps).catch(
       (error: unknown) => error,
     );
-    const quarter = await submitLeave(drafter, { kind: "quarter_day", startDate: "2026-06-03", endDate: "2026-06-03", half: "pm" }, deps).catch(
+    const quarter = await submitLeave(drafter, { kind: "quarter_day", startDate: "2026-06-03", endDate: "2026-06-03", half: "", startTime: "14:00" }, deps).catch(
       (error: unknown) => error,
     );
     for (const error of [half, quarter]) {

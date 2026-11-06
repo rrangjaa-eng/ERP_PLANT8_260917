@@ -13,6 +13,8 @@ export type LeaveRequestDto = {
   startDate: string;
   endDate: string;
   half: HalfPeriod | null;
+  // 07.2-08(PU11): 반반차 시작 시각 `HH:MM` — 반반차가 아니거나 시각 없는 기존 행은 null.
+  startTime: string | null;
   daysQuarters: number;
   days: string;
   fiscalYear: number;
@@ -34,6 +36,7 @@ export const LEAVE_REQUEST_DTO_SPEC: DtoSpec<LeaveRequestSource, LeaveRequestDto
     { key: "startDate", from: "startDate", infoItem: "leave.value" },
     { key: "endDate", from: "endDate", infoItem: "leave.value" },
     { key: "half", from: "half", infoItem: "leave.value" },
+    { key: "startTime", from: "startTime", infoItem: "leave.value" },
     { key: "daysQuarters", from: "daysQuarters", infoItem: "leave.value" },
     { key: "days", from: "days", infoItem: "leave.value" },
     { key: "fiscalYear", from: "fiscalYear", infoItem: "leave.value" },
@@ -103,6 +106,39 @@ export const LEAVE_ADJUSTMENT_DTO_SPEC: DtoSpec<LeaveAdjustmentDto, LeaveAdjustm
     { key: "createdByName", from: "createdByName", infoItem: "leave.value" },
   ],
 };
+
+// 07.2-08(PU12 · D-7260): 사람별 연차 잔여 표 한 행 — 숫자 칸은 leave.value, 이름 · 퇴직 표시는 사람 정보, 팀 이름은 팀 정보.
+// 부여 = 연차 부여 + 조정(남음 = 부여 − 사용 − 결재 중). 월차 남음은 월차 줄이 없으면 null. **두 잔고를 더한 칸은 두지 않는다.**
+export type PeopleLeaveBalanceDto = {
+  userId: string;
+  name: string;
+  resigned: boolean;
+  teamName: string | null;
+  grantedQuarters: number;
+  usedQuarters: number;
+  pendingQuarters: number;
+  remainingQuarters: number;
+  monthlyRemainingQuarters: number | null;
+};
+
+export const PEOPLE_LEAVE_BALANCE_DTO_SPEC: DtoSpec<PeopleLeaveBalanceDto, PeopleLeaveBalanceDto> = {
+  fields: [
+    { key: "userId", from: "userId", infoItem: "person.value" },
+    { key: "name", from: "name", infoItem: "person.value" },
+    { key: "resigned", from: "resigned", infoItem: "person.value" },
+    { key: "teamName", from: "teamName", infoItem: "team.value" },
+    { key: "grantedQuarters", from: "grantedQuarters", infoItem: "leave.value" },
+    { key: "usedQuarters", from: "usedQuarters", infoItem: "leave.value" },
+    { key: "pendingQuarters", from: "pendingQuarters", infoItem: "leave.value" },
+    { key: "remainingQuarters", from: "remainingQuarters", infoItem: "leave.value" },
+    { key: "monthlyRemainingQuarters", from: "monthlyRemainingQuarters", infoItem: "leave.value" },
+  ],
+};
+
+registerDto({
+  name: "peopleLeaveBalance",
+  fields: PEOPLE_LEAVE_BALANCE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
 
 registerDto({
   name: "leaveRequest",

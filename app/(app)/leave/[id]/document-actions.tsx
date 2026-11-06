@@ -31,7 +31,7 @@ export type DocumentActionsProps = {
   resubmit: {
     leaveId: string;
     expectedVersion: number;
-    initial: { kind: string; startDate: string; endDate: string; half: string | null; note: string | null };
+    initial: { kind: string; startDate: string; endDate: string; half: string | null; startTime: string | null; note: string | null };
   } | null;
   resubmitRoute: ReactNode;
   /** 05-11(E3): 종류가 준 승인 막힘 이유(예: 정산 결재 `진행으로 바뀜 · 반려`) — 있으면 `승인`이 aria-disabled + 이유, `반려`는 산다. */

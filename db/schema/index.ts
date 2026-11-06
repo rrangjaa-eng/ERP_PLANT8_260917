@@ -30,6 +30,7 @@ export * from "./notifications";
 export * from "./holidays";
 export * from "./reserve-entries";
 export * from "./expenses";
+export * from "./expense-date-change-requests";
 export * from "./expense-payments";
 export * from "./purchase-requests";
 export * from "./corp-card-usages";

@@ -620,7 +620,7 @@ test.describe("수수료 계산 패널 (07.2-06, D-7223)", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     const project = await openProject(page, { as: "pm", status: "in_progress", endDate: addDays(TODAY, 10), lines: SAMPLE_LINES });
     const row = commissionRow(page);
-    await row.getByRole("button", { name: "계산" }).click();
+    await row.getByRole("button", { name: "계산", exact: true }).click();
 
     const panel = page.getByRole("dialog", { name: "수수료 계산" });
     await expect(panel).toBeVisible();
@@ -665,7 +665,7 @@ test.describe("수수료 계산 패널 (07.2-06, D-7223)", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await openProject(page, { as: "pm", status: "in_progress", endDate: addDays(TODAY, 10), lines: SAMPLE_LINES });
     const row = commissionRow(page);
-    await row.getByRole("button", { name: "계산" }).click();
+    await row.getByRole("button", { name: "계산", exact: true }).click();
     const panel = page.getByRole("dialog", { name: "수수료 계산" });
     await panel.getByRole("textbox", { name: "율(%)" }).fill("오");
     await expect(panel.getByText("숫자 아님 · 5처럼")).toBeVisible();
@@ -676,12 +676,33 @@ test.describe("수수료 계산 패널 (07.2-06, D-7223)", () => {
     await expect(unitPriceCell).toBeFocused();
   });
 
+  // DC-5(조건부) 판정 — 새 열 셋 · 수수료 줄 · 행동 열이 선 견적 표가 1280(레일 기본) · 1024 · 768에서 표 본문 폭을 넘지 않고 문서도 가로로 넘치지 않는다.
+  test("DC-5 실측 — 1280 · 1024 · 768에서 견적 표 폭 ≤ 본문 폭 · 문서 가로 넘침 없음", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const lines: SeedLine[] = SAMPLE_LINES.map((line) => ({ ...line, itemName: `${line.itemName} 고객 안내용 긴 항목 이름` }));
+    await openProject(page, { as: "pm", status: "in_progress", endDate: addDays(TODAY, 10), lines });
+    for (const width of [1280, 1024, 768]) {
+      await page.setViewportSize({ width, height: 900 });
+      const table = page.getByRole("grid", { name: "견적 줄" }).or(page.getByRole("table", { name: "견적 줄" }));
+      await expect(table).toBeVisible();
+      const measured = await table.evaluate((element) => ({
+        table: Math.ceil(element.getBoundingClientRect().width),
+        body: element.parentElement?.clientWidth ?? 0,
+        docScroll: document.documentElement.scrollWidth,
+        viewport: window.innerWidth,
+      }));
+      console.log(`DC-5 ${width}: table ${measured.table} · body ${measured.body} · doc ${measured.docScroll}/${measured.viewport}`);
+      expect(measured.table).toBeLessThanOrEqual(measured.body);
+      expect(measured.docScroll).toBeLessThanOrEqual(measured.viewport);
+    }
+  });
+
   for (const width of [768, 375]) {
     test(`${width} — 「계산」이 DOM에 없다`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await openProject(page, { as: "pm", status: "in_progress", endDate: addDays(TODAY, 10), lines: SAMPLE_LINES });
       await expect(page.getByText("Venue Commission").first()).toBeAttached();
-      await expect(page.getByRole("button", { name: "계산" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "계산", exact: true })).toHaveCount(0);
     });
   }
 });

@@ -192,6 +192,15 @@ export function quoteAmountWithinBound(quantity: number | null | undefined, unit
   return withinKrwColumn(quoteAmountFromKrw(quantity, toKrw(unitPrice), days));
 }
 
+// 07.2 PU3(D-7223) — 수수료 = 기준 합 × 율(%). 율을 bp 정수(Math.round(율 × 100))로 바꿔 기준 × bp / 10000을 원 미만에서 한 번만
+// 반올림한다 — 율의 부동소수 오차(0.07 × 100 = 7.000…01)가 금액에 번지지 않는다. 기준 합은 견적 줄 견적가 합이라 0 이상을
+// 전제한다(음수 수수료 줄은 기준에 들지 않는다). 율은 0 이상 100 이하만.
+export function commissionAmount(baseKrw: number, ratePercent: number): number {
+  if (!Number.isFinite(ratePercent) || ratePercent < 0 || ratePercent > 100) throw new RangeError("율은 0 이상 100 이하");
+  const basisPoints = Math.round(ratePercent * 100);
+  return round((baseKrw * basisPoints) / 10_000, 1, "round");
+}
+
 // 차익 = 견적가 − 실행가. 실행가가 음수면(EXP-14 회수·환불) 차익이 견적가보다
 // 커진다 — 별도 분기 없이 뺄셈 그대로다.
 export function profit(quoteAmountKrw: number, execution: Money): number {

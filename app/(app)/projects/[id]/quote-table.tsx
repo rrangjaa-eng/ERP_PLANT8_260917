@@ -65,6 +65,7 @@ import {
 } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { SettlementButton, type SettlementHeaderProps } from "./settlement-button";
+import { CommissionPanel } from "./commission-panel";
 import { lineCellDirty, unsavedEditsReason } from "./unsaved-edits";
 import { CUSTOMER_APPROVAL_TRIGGER_ID, CustomerApprovalItems, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import type { ProjectProfitSummary } from "@/domain/projects/profit-summary";
@@ -1224,6 +1225,9 @@ export function QuoteLedger({
   const [issueTarget, setIssueTarget] = useState<{ signal: number; table: "quote" | "request" | "issued" | "paid" } | null>(null);
   // 04-26(D-86 · DR-16) — 상한에서 막힌 키(Ctrl+Enter·Ctrl+D)·붙여넣기의 이유. 다음 저장 시도·다음 붙여넣기 때 지운다.
   const [lineCapNotice, setLineCapNotice] = useState<string | null>(null);
+  // 07.2-06(PU3 · D-7223) — 「계산」 패널을 연 수수료 줄(clientKey). 닫히면 그 줄 단가 칸으로 포커스를 돌린다.
+  const [commissionFor, setCommissionFor] = useState<string | null>(null);
+  const commissionFocusRef = useRef<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     clientKey: string;
     itemName: string;
@@ -1334,6 +1338,27 @@ export function QuoteLedger({
     router.push(`/expenses?${params.toString()}`);
   }
   // 05-15 — PC 셀 · Ctrl+E의 문 열기. 미저장 편집이 있으면 이동하지 않고 한 줄(DR-6 같은 함수)만 남긴다.
+  // 07.2-06(PU3 · D-7223) — 「계산」 패널. ≥1024 · 단가를 고칠 수 있는 수수료 줄만 연다.
+  function openCommissionPanel(row: DraftLine): void {
+    if (!editableWidth || row.lineKind !== "commission" || row.cells.unitPrice !== "edit") return;
+    setCommissionFor(row.clientKey);
+  }
+
+  function closeCommissionPanel(): void {
+    commissionFocusRef.current = commissionFor;
+    setCommissionFor(null);
+  }
+
+  // 채운 금액은 원화 단가(저장 전 칸) — 서버가 수량 · 일수 1로 견적가 = 단가를 다시 계산한다. 율은 보내지 않고, 고객 비고가 비었을 때만 `{율}%`.
+  function fillCommission(amountKrw: number, ratePercent: number): void {
+    const row = lines.find((line) => line.clientKey === commissionFor);
+    if (row) {
+      commitCell(row.clientKey, "unitPrice", { unitPriceAmount: amountKrw, unitPriceCurrency: "KRW", unitPriceFxRate: 1, unitPriceAmountKrw: amountKrw });
+      if (!row.clientRemark) commitCell(row.clientKey, "clientRemark", { clientRemark: `${ratePercent}%` });
+    }
+    closeCommissionPanel();
+  }
+
   function requestLineExpense(row: DraftLine, rangeRows: DraftLine[] = [row]): void {
     if (rangeRows.length > 1) {
       void openLinesExpense(rangeRows);
@@ -2525,6 +2550,16 @@ export function QuoteLedger({
             priority: "p3" as const,
             pasteRole: "computed" as const,
             cell: (row: DraftLine) => {
+              // 07.2-06(PU3 · D-7223) — 수수료 줄은 3차 「계산」(≥1024 · 단가를 고칠 수 있는 줄만 — 승인 차수는 단가가 잠겨 그리지 않는다).
+              if (row.lineKind === "commission") {
+                return editableWidth && row.cells.unitPrice === "edit" ? (
+                  <RowActions noWrap>
+                    <RowAction tabIndex={-1} describedBy={`quote-item-${row.clientKey}`} onClick={() => openCommissionPanel(row)}>
+                      계산
+                    </RowAction>
+                  </RowActions>
+                ) : null;
+              }
               const lineId = row.id;
               const door = lineId ? lineDoors.cells[lineId] : undefined;
               if (!lineId || !door) return null;
@@ -2647,6 +2682,15 @@ export function QuoteLedger({
   ];
   // quick 261001-85g — 가려진 정보의 열은 그리지 않는다(거래처 정보가 가려진 계급).
   const columns = vendorShown ? allColumns : allColumns.filter((column) => column.key !== "vendor");
+  // 07.2-06 — 「계산」 패널이 닫히면(채움 · 취소 · Esc) 그 수수료 줄의 단가 칸으로 포커스(셀 focus가 격자 활성 셀을 맞춘다).
+  const unitPriceColumnIndex = columns.findIndex((column) => column.key === "unitPrice");
+  useEffect(() => {
+    if (commissionFor !== null) return;
+    const key = commissionFocusRef.current;
+    commissionFocusRef.current = null;
+    if (!key) return;
+    document.getElementById(`quote-item-${key}`)?.closest("tr")?.querySelectorAll<HTMLElement>(":scope > td")[unitPriceColumnIndex]?.focus();
+  }, [commissionFor, unitPriceColumnIndex]);
   // 04-19 — 격자 Ctrl+C 글자는 04-24 읽기 열의 copyText(견적 줄 복사 글자의 유일한 정의)를 열 키로 붙인다.
   const copyTextByKey = new Map(
     quoteLineReadColumns<DraftLine>({ subcategories: subcategoryLabels, vendors, vendorShown }, (row) => lines.indexOf(row) + 1).map((column) => [column.key, column.copyText]),
@@ -3326,7 +3370,10 @@ export function QuoteLedger({
               : undefined,
           onMoveRow: structural.reorder && editableWidth ? (row, direction) => moveLine(row.clientKey, direction) : undefined,
           // 05-15 — 편집 중이 아닐 때 Ctrl+E = 활성 셀 줄의 셀 동작, 05-08 — 범위 선택이 여러 줄이면 여러 줄 만들기. 행동 열이 서는 사람에게만 키를 가로챈다.
-          onOpenRow: lineDoors.showColumn ? requestLineExpense : undefined,
+          // 07.2-06 — 수수료 줄 한 줄의 Ctrl+E는 「계산」 패널이다(셀 3차는 로빙 밖이라 키보드 경로가 이것이다).
+          onOpenRow: lineDoors.showColumn
+            ? (row, rangeRows) => (row.lineKind === "commission" && rangeRows.length <= 1 ? openCommissionPanel(row) : requestLineExpense(row, rangeRows))
+            : undefined,
           onSave: () => {
             clearAttemptNotices();
             setSaveRequests((count) => count + 1);
@@ -3432,6 +3479,10 @@ export function QuoteLedger({
             </Button>
           ) : null}
         </div>
+      ) : null}
+
+      {commissionFor !== null ? (
+        <CommissionPanel rows={lines} subcategoryLabel={subcategoryLabel} onFill={fillCommission} onClose={closeCommissionPanel} />
       ) : null}
 
       {/* 04-23(DR-12) — 조정 줄 삭제도 같은 확인 모달이다(제목·부제의 금액·1차만 다르다 — 부제는 실행가). */}

@@ -9,6 +9,7 @@ import { ForbiddenError } from "@/domain/people";
 import { submitLeave } from "@/domain/leave";
 import { peopleLeaveScopeOf } from "@/domain/leave/access";
 import { getLeaveBalanceForUser, listPeopleLeaveBalances } from "@/domain/leave/balance-service";
+import { insertMembership } from "@/repositories/team-memberships";
 import { makePerson, NOW_2026, teamIdByName } from "./approvals-fixtures";
 import { makeDelegatedRole } from "./admin-cap-fixtures";
 
@@ -140,5 +141,74 @@ describe("listPeopleLeaveBalances — 행 · 숫자 · 범위", () => {
   it("범위가 null인 계정(사원)은 ForbiddenError", async () => {
     const pm = await makePerson("박사원", DEFAULT_ROLE_ID, "기획1팀");
     await expect(listPeopleLeaveBalances(pm, 2026, deps)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+// PR #368 리뷰 P2-1 ①~⑤: 범위 판정의 갈림길을 고정한다. 오늘 = 2026-09-18(서울).
+describe("peopleLeaveScopeOf — 자리 구간 · 메뉴 보기 권한", () => {
+  it("예정 발령(내일 시작)만 있는 팀장 계급은 null — 아직 자리가 아니다", async () => {
+    const lead = await makePerson("내일팀장", TEAM_LEAD_ROLE_ID, null);
+    await insertMembership(SYSTEM_VIEWER, { userId: lead.id, teamId: await teamIdByName("기획1팀"), effectiveFrom: "2026-09-19" });
+    expect(await peopleLeaveScopeOf(lead, deps)).toBeNull();
+  });
+
+  it("자리가 끝난 팀장(어제 퇴직)은 null", async () => {
+    const lead = await makePerson("어제퇴직팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    await setDates(lead.id, { resignationDate: "2026-09-17" });
+    expect(await peopleLeaveScopeOf(lead, deps)).toBeNull();
+  });
+
+  it("오늘 팀을 옮긴 팀장은 새 팀만", async () => {
+    const lead = await makePerson("이동팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    await insertMembership(SYSTEM_VIEWER, { userId: lead.id, teamId: await teamIdByName("경영관리팀"), effectiveFrom: "2026-09-18" });
+    expect(await peopleLeaveScopeOf(lead, deps)).toEqual({ kind: "teams", teamIds: [await teamIdByName("경영관리팀")] });
+  });
+
+  // D-7261: 「전체」는 `/leave` 안 탭 — 연차 메뉴 보기 권한자만. admin.people 보기만으로는 열리지 않는다(도메인도 막는다).
+  it("admin.people 보기는 있고 leave 보기가 꺼진 계급은 null · listPeopleLeaveBalances는 ForbiddenError", async () => {
+    const admin = await peopleAdmin("연차끔경영");
+    if (!admin.roleId) throw new Error("계급 없음");
+    await setPermissionCell(SYSTEM_VIEWER, { roleId: admin.roleId, menu: "leave", action: "view", allowed: false });
+    expect(await peopleLeaveScopeOf(admin, deps)).toBeNull();
+    await expect(listPeopleLeaveBalances(admin, 2026, deps)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("listPeopleLeaveBalances — 팀장 범위의 퇴직 · 보관 · 지난 연도", () => {
+  // D-7260: 보관된 사람은 빼되 그해 퇴직자는 (보관돼도) 넣는다 — 팀은 마지막 발령 팀. 팀장은 자기 팀 퇴직자만 본다.
+  it("팀장: 자기 팀 올해 퇴직자(보관돼도)는 퇴직 표시로 보이고, 다른 팀 퇴직자 · 퇴직 아닌 보관자는 없다", async () => {
+    const lead = await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    const ownRetiree = await makePerson("가우리퇴직", DEFAULT_ROLE_ID, "기획1팀");
+    await setDates(ownRetiree.id, { resignationDate: "2026-05-31", archived: true });
+    const otherRetiree = await makePerson("나남퇴직", DEFAULT_ROLE_ID, "경영관리팀");
+    await setDates(otherRetiree.id, { resignationDate: "2026-05-31" });
+    const archived = await makePerson("다보관", DEFAULT_ROLE_ID, "기획1팀");
+    await setDates(archived.id, { archived: true });
+
+    const { rows } = await listPeopleLeaveBalances(lead, 2026, deps);
+    const names = rows.map((row) => row.name);
+    expect(rows.find((row) => row.name === "가우리퇴직")?.resigned).toBe(true);
+    expect(names).not.toContain("나남퇴직");
+    expect(names).not.toContain("다보관");
+  });
+
+  // 지난 연도를 골라도 팀 판정은 오늘 소속(repositories/leave-requests.ts listLeaveBalancePeople의 asOf = 오늘) — 지금 동작을 고정한다.
+  it("팀장이 year = 작년을 보면 팀은 오늘 소속 기준 — 작년에 다른 팀이던 지금 팀원은 있고, 작년 팀원이던 지금 다른 팀 사람은 없다", async () => {
+    const lead = await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    const plan = await teamIdByName("기획1팀");
+    const office = await teamIdByName("경영관리팀");
+    const joined = await makePerson("가전입", DEFAULT_ROLE_ID, null);
+    await insertMembership(SYSTEM_VIEWER, { userId: joined.id, teamId: office, effectiveFrom: "2025-01-01" });
+    await insertMembership(SYSTEM_VIEWER, { userId: joined.id, teamId: plan, effectiveFrom: "2026-03-01" });
+    const left = await makePerson("나전출", DEFAULT_ROLE_ID, null);
+    await insertMembership(SYSTEM_VIEWER, { userId: left.id, teamId: plan, effectiveFrom: "2025-01-01" });
+    await insertMembership(SYSTEM_VIEWER, { userId: left.id, teamId: office, effectiveFrom: "2026-03-01" });
+    for (const person of [joined, left]) await setDates(person.id, { hireDate: "2024-01-02" });
+
+    const { rows } = await listPeopleLeaveBalances(lead, 2025, deps);
+    const names = rows.map((row) => row.name);
+    expect(names).toContain("가전입");
+    expect(names).not.toContain("나전출");
+    expect(rows.every((row) => row.teamName === "기획1팀")).toBe(true);
   });
 });

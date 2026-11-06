@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LeaveFieldError } from "@/domain/leave/days";
-import { DEFAULT_START_TIME, formBlocked, leaveFieldsOf, sameLeaveInput, shownSubmitErrors, toLeaveInput } from "@/app/(app)/leave/new/form-state";
+import { DEFAULT_START_TIME, formBlocked, initialStartTime, leaveFieldsOf, sameLeaveInput, shownSubmitErrors, toLeaveInput } from "@/app/(app)/leave/new/form-state";
 
 // 06.3-01(확정 K-D1 · 리뷰 F1 · A2): 신청 폼 막힘 = 폼 빈 칸 먼저, 없으면 미리보기 응답 `blockedReason`.
 // 대기 중에는 next-safe-action 8.7.3 `useAction`이 새 응답 전까지 이전 `result`를 두므로 이전 막힘이 남고,
@@ -111,5 +111,25 @@ describe("반반차 시작 시각 — 칸 집합 · 보내는 값", () => {
   it("시각만 다르면 다른 입력(stale)", () => {
     const sent = toLeaveInput(values);
     expect(sameLeaveInput(sent, toLeaveInput({ ...values, startTime: "14:00" }))).toBe(false);
+  });
+});
+
+// PR #368 리뷰 P3-1: 시각 없이 저장된 기존 반반차(이 PR 전)를 다시 신청할 때 09:00을 채우면 오후 반반차가 말없이 09:00으로 바뀐다 —
+// 시각 칸을 비워 사람이 고르게 한다(빈 칸은 서버 형식 검사가 막는다). 새 신청 · 다른 종류는 기본 09:00 그대로.
+describe("initialStartTime — 시작 시각 칸의 처음 값", () => {
+  it("새 신청은 09:00", () => {
+    expect(initialStartTime(undefined)).toBe("09:00");
+  });
+
+  it("다시 신청 — 저장된 시각이 있으면 그 시각", () => {
+    expect(initialStartTime({ kind: "quarter_day", startTime: "14:00" })).toBe("14:00");
+  });
+
+  it("다시 신청 — 시각 없는 기존 반반차는 빈 칸", () => {
+    expect(initialStartTime({ kind: "quarter_day", startTime: null })).toBe("");
+  });
+
+  it("다시 신청 — 반반차가 아닌 문서는 09:00(종류를 반반차로 바꿀 때의 기본값)", () => {
+    expect(initialStartTime({ kind: "full_day", startTime: null })).toBe("09:00");
   });
 });

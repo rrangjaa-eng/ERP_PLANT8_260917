@@ -960,10 +960,16 @@ test.describe("사람별 연차 잔여 /leave?view=all (07.2-08 Task 3 · S20 ·
         await page.goto("/leave");
         await expect(page.getByRole("heading", { name: "연차", exact: true })).toBeVisible();
         await expect(page.getByRole("link", { name: "전체" })).toHaveCount(0);
-        await page.goto("/leave?view=all");
+        const response = await page.goto("/leave?view=all");
         await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
         await expect(peopleTable(page)).toHaveCount(0);
         await expect(page.getByText(org.teamLead.name)).toHaveCount(0);
+        // PR #368 리뷰 P2-1 ⑦: 보이는 글자만이 아니라 응답 원문(HTML + 스트리밍 RSC 페이로드)에도 남의 이름 · 잔여 숫자 0.
+        const body = (await response?.text()) ?? "";
+        expect(body).toContain("페이지 찾을 수 없음");
+        for (const other of [org.drafter, org.teamLead, org.divisionHead, org.ceo].filter((candidate) => candidate !== person)) expect(body).not.toContain(other.name);
+        expect(body).not.toContain("사람별 연차 잔여");
+        expect(body).not.toMatch(/>-?\d+(\.\d+)?일</);
         await page.context().close();
       }
     });

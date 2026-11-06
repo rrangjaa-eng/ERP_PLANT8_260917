@@ -25,7 +25,8 @@ import {
 } from "@/domain/leave/balance";
 import { createFixtureUser } from "./fixtures";
 import { leaveWeekdayRange, onStableSeoulDay } from "./leave-dates";
-import { delayServerActions, setupLeaveOrg } from "./leave-org";
+import { delayServerActions, makePerson as makeLeavePerson, setupLeaveOrg, type Person as LeavePerson } from "./leave-org";
+import { makeDelegatedRole } from "../integration/admin-cap-fixtures";
 
 // 04.1-06 Task 1(S1 · S10 · A1 · A4): 계정 그룹 「연차」 → `/leave` 잔고 줄 · 상태 그룹 · 연도 규칙(D6).
 // 잔고를 단언하는 사례는 이 스펙이 만든 전용 사용자(입사일 없음 · 신청 기록 없음)만 쓴다(CEO-15). 연도 · 날짜는
@@ -865,3 +866,120 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
   });
 });
 
+
+// ── 07.2-08 Task 3: 사람별 연차 잔여 「전체」(S20 · PU12 · DC-11) ────────────────────────────────────────────
+
+// 경영관리 fixture 계급 — 사원(role-pm) 권한 · 정보 노출을 복사하고 admin.people 보기만 더한다(기본 시드 계급에는 권한을 켜지 않는다).
+async function peopleAdminPerson(teamId: string, effectiveFrom: string): Promise<LeavePerson> {
+  const roleId = await makeDelegatedRole({ name: "E2E경영관리", menus: [{ menu: "admin.people", action: "view" }] });
+  return makeLeavePerson("경영관리", roleId, teamId, effectiveFrom);
+}
+
+function peopleTable(page: Page) {
+  return page.getByRole("table", { name: "사람별 연차 잔여" });
+}
+
+function viewLinks(page: Page) {
+  return page.getByRole("navigation", { name: "연차 보기" });
+}
+
+// 표 한 행(이름 칸이 그 이름으로 시작하는 보이는 행)의 보이는 칸 글자.
+async function rowCells(page: Page, name: string): Promise<string[]> {
+  const row = peopleTable(page).locator("tbody tr").filter({ visible: true }).filter({ has: page.getByRole("cell", { name: new RegExp(`^${name}`) }) });
+  await expect(row).toHaveCount(1);
+  return (await row.locator("td").filter({ visible: true }).allTextContents()).map((text) => text.trim());
+}
+
+test.describe("사람별 연차 잔여 /leave?view=all (07.2-08 Task 3 · S20 · PU12)", () => {
+  test("경영관리(admin.people 보기): `전체` 링크 1 · 활성 + 올해 퇴직자 · `월차 남음` 열 1 · 합산 열 0 · `{N}명` · 연도 바꾸면 숫자 바뀜", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const year = yearOf(today);
+      const org = await setupLeaveOrg(today);
+      const admin = await peopleAdminPerson(org.teamId, `${year}-01-01`);
+      const veteran = await makeLeavePerson("작년입사", "role-pm", org.teamId, `${year}-01-01`);
+      await setHireDate(SYSTEM_VIEWER, veteran.viewer.id, `${year - 1}-01-02`);
+      const resigned = await makeLeavePerson("올해퇴직", "role-pm", org.teamId, `${year}-01-01`);
+      await setResignationDate(SYSTEM_VIEWER, resigned.viewer.id, `${year}-01-01`);
+
+      const page = await login(browser, baseURL, admin);
+      await page.goto("/leave");
+      const links = viewLinks(page);
+      await expect(links.getByRole("link", { name: "전체" })).toHaveCount(1);
+      await expect(links.getByRole("link", { name: "내 연차" })).toHaveAttribute("aria-current", "page");
+      await links.getByRole("link", { name: "전체" }).click();
+      await expect(page).toHaveURL(/\/leave\?view=all$/);
+      await expect(viewLinks(page).getByRole("link", { name: "전체" })).toHaveAttribute("aria-current", "page");
+
+      const table = peopleTable(page);
+      await expect(table.locator("thead th").filter({ visible: true })).toHaveText(["이름", "팀", "부여", "사용", "결재 중", "남음", "월차 남음"]);
+      await expect(table.locator("thead th").filter({ hasText: "월차 남음" })).toHaveCount(1);
+      await expect(table.locator("thead th").filter({ hasText: /합|총/ })).toHaveCount(0);
+      for (const person of [org.drafter, org.teamLead, admin, veteran, resigned]) {
+        await expect(table.getByRole("cell", { name: new RegExp(`^${person.name}`) })).toHaveCount(1);
+      }
+      await expect(table.getByRole("cell", { name: new RegExp(`^${resigned.name}`) })).toHaveText(`${resigned.name} 퇴직`);
+      const rowCount = await table.locator("tbody tr").filter({ visible: true }).count();
+      await expect(page.getByText(/^\d+명$/)).toHaveText(`${rowCount}명`);
+
+      const thisYearCells = await rowCells(page, veteran.name);
+      await page.getByLabel("연도").selectOption(String(year - 1));
+      await expect(page).toHaveURL(new RegExp(`/leave\\?view=all&year=${year - 1}$`));
+      await expect(viewLinks(page).getByRole("link", { name: "전체" })).toHaveAttribute("aria-current", "page");
+      await expect.poll(() => rowCells(page, veteran.name)).not.toEqual(thisYearCells);
+      await page.context().close();
+    });
+  });
+
+  test("팀장(seat-rules 팀장 자리): 행 전부 자기 팀 · 다른 팀 사람 0", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const org = await setupLeaveOrg(today);
+      const other = await setupLeaveOrg(today);
+      const page = await login(browser, baseURL, org.teamLead);
+      await page.goto("/leave");
+      await expect(viewLinks(page).getByRole("link", { name: "전체" })).toHaveCount(1);
+      await page.goto("/leave?view=all");
+      const table = peopleTable(page);
+      const rows = table.locator("tbody tr").filter({ visible: true });
+      await expect(rows).toHaveCount(4);
+      for (const person of [org.drafter, org.teamLead, org.divisionHead, org.ceo]) {
+        await expect(table.getByRole("cell", { name: new RegExp(`^${person.name}`) })).toHaveCount(1);
+      }
+      await expect(table.getByRole("cell", { name: new RegExp(`^${other.drafter.name}`) })).toHaveCount(0);
+      const teams = new Set((await rows.locator("td:nth-child(2)").allTextContents()).map((text) => text.trim()));
+      expect(teams.size).toBe(1);
+      await expect(page.getByText(/^\d+명$/)).toHaveText("4명");
+      await page.context().close();
+    });
+  });
+
+  test("대표 · 본부 책임자(기본 시드) · 사원(role-pm): `전체` 링크 DOM 0 · `/leave?view=all`은 404", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const org = await setupLeaveOrg(today);
+      for (const person of [org.ceo, org.divisionHead, org.drafter]) {
+        const page = await login(browser, baseURL, person);
+        await page.goto("/leave");
+        await expect(page.getByRole("heading", { name: "연차", exact: true })).toBeVisible();
+        await expect(page.getByRole("link", { name: "전체" })).toHaveCount(0);
+        await page.goto("/leave?view=all");
+        await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
+        await expect(peopleTable(page)).toHaveCount(0);
+        await expect(page.getByText(org.teamLead.name)).toHaveCount(0);
+        await page.context().close();
+      }
+    });
+  });
+
+  test("대상 0명 연도: `조건에 맞는 사람이 없습니다` · `연도 바꾸기`", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const year = yearOf(today);
+      const org = await setupLeaveOrg(today);
+      for (const person of [org.drafter, org.teamLead, org.divisionHead, org.ceo]) await setHireDate(SYSTEM_VIEWER, person.viewer.id, `${year}-01-01`);
+      const page = await login(browser, baseURL, org.teamLead);
+      await page.goto(`/leave?view=all&year=${year - 1}`);
+      await expect(page.getByText("조건에 맞는 사람이 없습니다", { exact: true })).toBeVisible();
+      await expect(page.getByRole("link", { name: "연도 바꾸기" })).toHaveAttribute("href", "/leave?view=all");
+      await expect(peopleTable(page)).toHaveCount(0);
+      await page.context().close();
+    });
+  });
+});

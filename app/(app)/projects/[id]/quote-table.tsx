@@ -152,8 +152,9 @@ type DraftLine = {
 type LineCells = Record<QuoteLineField, QuoteCellEditability>;
 
 // 04-23(D-83) — 표의 줄은 늘 견적 줄 → 견적 외 비용 → 조정 순서다(조정은 맨 아래 고정 그룹). 같은 종류 안의 순서는 그대로.
-const KIND_ORDER: Record<QuoteLineKind, number> = { quote: 0, out_of_quote: 1, adjustment: 2 };
-const KIND_GROUP_LABELS: Record<Exclude<QuoteLineKind, "quote">, string> = { out_of_quote: "견적 외 비용", adjustment: "조정" };
+// 07.2 D-7222 — 수수료 줄은 조정 앞(견적 외 비용 뒤) 그룹이다.
+const KIND_ORDER: Record<QuoteLineKind, number> = { quote: 0, out_of_quote: 1, commission: 2, adjustment: 3 };
+const KIND_GROUP_LABELS: Record<Exclude<QuoteLineKind, "quote">, string> = { out_of_quote: "견적 외 비용", commission: "수수료", adjustment: "조정" };
 
 // 07-18(SC-22 · S4) — 문 칸에 버튼이 서지 않는 줄의 이유 낱말. `expenseLineDoor` 사유(none · closed)를 표(UI-SPEC SC-22 고정)의 낱말로 옮긴다 — 표에 없는 사유는 null(빈 칸)이고 새 낱말을 짓지 않는다.
 // 문 열 권한이 없는 계급은 열 자체가 없다(showColumn) — 여기까지 오지 않는다. 표 전체 게이트(고객 승인 전 · 완료)는 표 위 한 줄이 맡는다.
@@ -1100,6 +1101,7 @@ export function QuoteLedger({
   adjustmentStructural,
   adjustmentLineCells,
   outOfQuoteLineCells,
+  commissionLineCells,
   lineCap,
   lockReason,
   emptyState,
@@ -1168,6 +1170,8 @@ export function QuoteLedger({
   adjustmentLineCells: LineCells;
   /** 04-23(D-48) — 저장 전 새 견적 외 비용 줄의 칸별 편집 단계(서버 lineCellEditability). */
   outOfQuoteLineCells: LineCells;
+  /** 07.2-06(D-7222) — 저장 전 새 수수료 줄의 칸별 편집 단계(서버 lineCellEditability). */
+  commissionLineCells: LineCells;
   /** 04-26(D-86) — 차수당 견적 줄 상한(서버 설정 quote_line.max_per_revision). */
   lineCap: number;
   /** 04-30(DR-2 · DR-35) — 잠긴 셀 편집 시도의 이유(서버 quoteLockReason). */
@@ -1750,7 +1754,7 @@ export function QuoteLedger({
     setDiscardedEdits(null);
     setLines((prev) =>
       prev.map((line) => {
-        if (line.isNew) return line.lineKind === "quote" ? { ...line, cells: newLineCells } : line;
+        if (line.isNew) return line.lineKind === "quote" ? { ...line, cells: newLineCells } : line.lineKind === "commission" ? { ...line, cells: commissionLineCells } : line;
         const dto = initialLines.find((row) => row.id === line.id);
         return dto ? { ...line, cells: dto.cellEditability } : line;
       }),
@@ -1763,6 +1767,7 @@ export function QuoteLedger({
       quote: newLineCells,
       out_of_quote: outOfQuoteLineCells,
       adjustment: adjustmentLineCells,
+      commission: commissionLineCells,
     });
     setLines(restored.lines);
     // 07-18(D-P1-1 · D-P3-2) — 복원한 값이 있으면 면을 펼치고 세 칸 묶음을 연다. 고치지 않은 칸은 기준값에서 시작한 초안이다.
@@ -1886,8 +1891,9 @@ export function QuoteLedger({
 
   // 04-23(ENG-D10 · B-24) — 그룹을 정해 줄을 더하는 처리 지점 하나. 표의 새 줄 생성 함수(newDraftLine — 화면 uuid ·
   // isNew)를 그대로 거치고 종류만 덧씌운다. 소분류는 빈 값으로 보낸다(서버가 종류 값을 적는다). 새 줄 id를 돌려준다.
-  function addLineToGroup(lineKind: "out_of_quote" | "adjustment"): string {
-    const line: DraftLine = { ...newDraftLine("", lineKind === "adjustment" ? adjustmentLineCells : outOfQuoteLineCells), lineKind };
+  function addLineToGroup(lineKind: "out_of_quote" | "adjustment" | "commission"): string {
+    const cells = lineKind === "adjustment" ? adjustmentLineCells : lineKind === "commission" ? commissionLineCells : outOfQuoteLineCells;
+    const line: DraftLine = { ...newDraftLine("", cells), lineKind };
     persistPendingRef.current = true;
     setLines((prev) => [...prev, line]);
     setRevealRowId(line.clientKey);
@@ -1907,7 +1913,7 @@ export function QuoteLedger({
           : source.subcategory;
       const copy: DraftLine = {
         // 04-23(D-48) — 견적 외 비용 줄의 복제는 같은 종류다.
-        ...newDraftLine(subcategory, source.lineKind === "out_of_quote" ? outOfQuoteLineCells : newLineCells),
+        ...newDraftLine(subcategory, source.lineKind === "out_of_quote" ? outOfQuoteLineCells : source.lineKind === "commission" ? commissionLineCells : newLineCells),
         lineKind: source.lineKind,
         // Codex 리뷰 P1(PR #125) — 저장되지 않은 줄의 복제는 그 줄의 원본을 잇는다.
         duplicatedFrom: source.isNew ? source.duplicatedFrom : source.id,
@@ -2323,7 +2329,8 @@ export function QuoteLedger({
       priority: "p2",
       align: "right",
       editability: (row) => atWidth(row.cells.unitPrice),
-      cell: (row) => (row.lineKind === "quote" ? formatKrw(row.unitPriceAmountKrw) : "—"),
+      // 07.2 D-7222 — 수수료 줄의 금액은 단가 칸 하나다.
+      cell: (row) => (row.lineKind === "quote" || row.lineKind === "commission" ? formatKrw(row.unitPriceAmountKrw) : "—"),
       editCell: (row, ctx) => (
         <UnitPriceEditCell
           rowKey={row.clientKey}
@@ -2421,7 +2428,8 @@ export function QuoteLedger({
       priority: "p1",
       align: "right",
       editability: (row) => atWidth(row.cells.execution),
-      cell: (row) => formatKrw(row.executionAmount),
+      // 07.2 D-7222 — 수수료 줄은 실행가가 없다(청구 전용 줄).
+      cell: (row) => (row.lineKind === "commission" ? "—" : formatKrw(row.executionAmount)),
       editCell: (row, ctx) => (
         <NumericEditCell
           ariaLabel="실행가"
@@ -2713,7 +2721,9 @@ export function QuoteLedger({
     const newRow = (sourceKind: string | null): DraftLine =>
       sourceKind === "out_of_quote"
         ? { ...newDraftLine("", outOfQuoteLineCells), lineKind: "out_of_quote" }
-        : newDraftLine(subcategories[0]?.value ?? "", newLineCells);
+        : sourceKind === "commission"
+          ? { ...newDraftLine("", commissionLineCells), lineKind: "commission" }
+          : newDraftLine(subcategories[0]?.value ?? "", newLineCells);
     // 04-47(ENG-D5) — 계산 열은 열 정의의 pasteRole을 따른다(앱에서 복사한 붙여넣기에서만 무시).
     const roledColumns = pasteColumns.map((column, index) => ({ ...column, pasteRole: columns[index]?.pasteRole }));
     const applied = applyPaste({
@@ -2733,7 +2743,7 @@ export function QuoteLedger({
     const kindFixed = (cell: { rowIndex: number; columnKey: string }) => {
       const target = created[cell.rowIndex - lines.length];
       const column = pasteColumns.find((candidate) => candidate.key === cell.columnKey);
-      return target?.lineKind === "out_of_quote" && column !== undefined && !column.isEditable(target);
+      return (target?.lineKind === "out_of_quote" || target?.lineKind === "commission") && column !== undefined && !column.isEditable(target);
     };
     const result = { ...applied, cells: applied.cells.filter((cell) => !outsideRights(cell) && !kindFixed(cell)) };
     // 04-26(D-86) — 상한을 넘기는 붙여넣기는 견적을 자르지 않고 한 칸도 바꾸지 않은 채 전부 거부한다.
@@ -3378,6 +3388,7 @@ export function QuoteLedger({
               disabled={atLineCap || saveLocked}
               // 04-23 검토 S-3 — 「조정 줄 추가」도 그려지면 상한 이유 글자는 그 옆 한 번만, 이 버튼은 그 글자를 가리킨다.
               disabledReason={atLineCap && !adjustmentStructural.insert ? lineCapReason : undefined}
+              reasonId={capReasonId}
               aria-describedby={atLineCap && adjustmentStructural.insert ? capReasonId : !atLineCap && saveLocked ? saveButtonId : undefined}
               onClick={() => (saveLocked ? undefined : addLine())}
             >
@@ -3394,6 +3405,17 @@ export function QuoteLedger({
               onClick={() => (saveLocked ? undefined : setOpenCell({ rowId: addLineToGroup("out_of_quote"), columnKey: "itemName" }))}
             >
               견적 외 비용 줄 추가
+            </Button>
+          ) : null}
+          {/* 07.2-06(D-7222 · UI-SPEC S5) — 2차. 같은 자리 · 같은 폭 규칙, 승인 차수 · 정산이면 그리지 않는다. 상한이면 비활성이고 이유 글자를 가리킨다. 새 줄의 항목 칸이 열린다. */}
+          {structural.insert && approvedSeq === null && status !== "settling" ? (
+            <Button
+              variant="secondary"
+              disabled={atLineCap || saveLocked}
+              aria-describedby={atLineCap ? capReasonId : saveLocked ? saveButtonId : undefined}
+              onClick={() => (saveLocked ? undefined : setOpenCell({ rowId: addLineToGroup("commission"), columnKey: "itemName" }))}
+            >
+              수수료 줄 추가
             </Button>
           ) : null}
           {/* 04-23(D-83 · DR-36) — 조정 권한자에게 상태와 무관하게, 1024 이상에서만. 새 줄의 실행가 칸이 열린다. */}

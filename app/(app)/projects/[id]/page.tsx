@@ -102,6 +102,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     isNewLine: true,
     lineKind: "out_of_quote",
   });
+  // 07.2-06(D-7222) — 수수료 새 줄은 견적 줄 구조로 만들고 수량 · 일수 · 거래처 · 실행가가 늘 잠긴다(승인 차수면 단가도).
+  const commissionLineCells = lineCellEditability({
+    status: project.status,
+    canWrite: canEditLines,
+    hasLinkedDocuments: false,
+    isNewLine: true,
+    lineKind: "commission",
+    approvedSeq,
+  });
   const canAdjustLines = canAdjust && canSeeAmount;
   const adjustmentStructural = structuralEditability({ status: project.status, canWrite: canEditLines, lineKind: "adjustment", canAdjust: canAdjustLines });
   const adjustmentLineCells = lineCellEditability({
@@ -316,6 +325,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       adjustmentStructural={adjustmentStructural}
       adjustmentLineCells={adjustmentLineCells}
       outOfQuoteLineCells={outOfQuoteLineCells}
+      commissionLineCells={commissionLineCells}
       lineCap={lineCap}
       lockReason={quoteLockReason({ status: project.status, approvedSeq })}
       emptyState={quoteTableEmptyState({

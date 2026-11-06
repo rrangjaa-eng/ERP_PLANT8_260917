@@ -10,7 +10,8 @@ export const QUOTE_LINE_STATUSES = ["not_started", "cancelled"] as const;
 export type QuoteLineStatus = (typeof QUOTE_LINE_STATUSES)[number];
 
 // 04-13(D-48 · D-83) — 줄 종류. 새 줄에서만 정해지고 바뀌지 않는다(`quote_lines.line_kind`).
-export const QUOTE_LINE_KINDS = ["quote", "out_of_quote", "adjustment"] as const;
+// 07.2 D-7222 — 수수료(commission): 청구 전용 줄(대행 수수료 · 감액). 금액은 단가 칸 하나다.
+export const QUOTE_LINE_KINDS = ["quote", "out_of_quote", "adjustment", "commission"] as const;
 export type QuoteLineKind = (typeof QUOTE_LINE_KINDS)[number];
 
 export const QUOTE_LINE_FIELDS = [
@@ -43,6 +44,14 @@ const ADJUSTMENT_EDIT_FIELDS: readonly QuoteLineField[] = ["itemName", "vendorId
 // 07.2 D-7232 — 일수 · 고객 비고도 고객이 승인한 견적서 내용이라 잠근다.
 const APPROVED_LOCKED_FIELDS: readonly QuoteLineField[] = ["quantity", "days", "unitPrice", "lineStatus", "subcategory", "clientRemark"];
 
+// 07.2 D-7222 — 수수료 줄에서 서버가 고정값으로 쓰는 칸(소분류 = 종류 값 · 수량 · 일수 1 · 거래처 없음 · 실행가 0).
+const COMMISSION_FIXED_FIELDS: readonly QuoteLineField[] = ["subcategory", "quantity", "days", "vendorId", "execution"];
+
+// 04-40 · 07.2 D-7222 — 고객 승인 금액에 드는 줄 종류(승인 잠금 · 승인 기준 합 · 내용 토큰이 같은 집합을 본다).
+export function approvableKind(kind: QuoteLineKind): boolean {
+  return kind === "quote" || kind === "commission";
+}
+
 export type LineEditScopeInput = {
   status: string;
   canWrite: boolean;
@@ -65,6 +74,8 @@ function cellLevel(input: LineEditScopeInput, field: QuoteLineField): QuoteCellE
   // 04-13(D-48) — 견적 외 비용은 견적가 0인 견적 줄이다: 수량·단가는 늘 잠김, 나머지는 견적 줄의 상태 규칙 그대로.
   // 04-23 검토 S-2 — 소분류는 종류 값(`견적 외 비용`)을 읽기 전용 글자로만 그린다.
   if (input.lineKind === "out_of_quote" && (field === "subcategory" || field === "quantity" || field === "days" || field === "unitPrice")) return "locked";
+  // 07.2 D-7222 — 수수료 줄은 수량 · 일수 1 · 거래처 없음 · 실행가 0 고정(서버 normalizeForKind) · 소분류는 종류 값이라 늘 잠김.
+  if (input.lineKind === "commission" && COMMISSION_FIXED_FIELDS.includes(field)) return "locked";
   if (input.hasLinkedDocuments && LINKED_READONLY_FIELDS.includes(field)) return "readonly";
   if (input.status === "settling") {
     if (input.isNewLine) {
@@ -72,7 +83,8 @@ function cellLevel(input: LineEditScopeInput, field: QuoteLineField): QuoteCellE
     }
     return field === "execution" ? "edit" : "locked";
   }
-  if (input.approvedSeq != null && (input.lineKind ?? "quote") === "quote") {
+  // 07.2 D-7222 — 수수료 줄도 고객이 승인한 견적 금액이라 견적 줄과 같이 잠근다.
+  if (input.approvedSeq != null && approvableKind(input.lineKind ?? "quote")) {
     const locked: readonly QuoteLineField[] = input.isNewLine ? QUOTE_FIELDS_LOCKED_IN_SETTLING_INSERT : APPROVED_LOCKED_FIELDS;
     if (locked.includes(field)) return "locked";
   }

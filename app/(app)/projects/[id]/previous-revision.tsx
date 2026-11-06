@@ -116,7 +116,7 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
         header: "단가",
         priority: "p2",
         align: "right",
-        text: (row) => (row.lineKind === "quote" ? formatKrw(row.unitPriceAmountKrw) : "—"),
+        text: (row) => (row.lineKind === "quote" || row.lineKind === "commission" ? formatKrw(row.unitPriceAmountKrw) : "—"),
       }),
       secondaryLine: (row: Row) => {
         if (row.lineKind !== "quote") return null;
@@ -138,7 +138,7 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
       text: (row) => (row.lineKind === "quote" ? formatQuantity(row.days) : "—"),
     }),
     column({ key: "quoteAmount", header: "견적가", priority: "p2", align: "right", text: (row) => formatKrw(row.quoteAmountKrw) }),
-    column({ key: "execution", header: "실행가", priority: "p1", align: "right", text: (row) => formatKrw(row.executionAmount) }),
+    column({ key: "execution", header: "실행가", priority: "p1", align: "right", text: (row) => (row.lineKind === "commission" ? "—" : formatKrw(row.executionAmount)) }),
     column({ key: "profit", header: "차익", priority: "p2", collapseBelow: 1280, align: "right", text: (row) => formatKrw(row.profitKrw) }),
     {
       ...column({ key: "status", header: "상태", priority: "p1", text: (row) => (row.lineKind === "adjustment" ? "—" : lineStatusLabel(row.lineStatus)) }),

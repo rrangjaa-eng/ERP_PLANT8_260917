@@ -5,6 +5,7 @@ import {
   linkedDocumentReason,
   quoteLockReason,
   structuralEditability,
+  approvableKind,
   type QuoteLineField,
   type QuoteLineKind,
 } from "@/domain/quotes/edit-scope";
@@ -91,7 +92,8 @@ registerGateRule<unknown, ProjectLineEditCtx>({
     const approvedSeq = ctx.approvedSeq ?? null;
     const lockReason = quoteLockReason({ status: ctx.status, approvedSeq });
     // 04-40 — 승인 차수의 견적 줄은 합계를 바꾸는 조작을 막는다(이유는 quoteLockReason — 리터럴 없음, W5).
-    const approvalLocks = approvedSeq !== null && ctx.lineKind === "quote" && lockReason !== null;
+    // 07.2 D-7222 — 수수료 줄(commission)도 견적 줄과 같이 승인 금액이다(approvableKind).
+    const approvalLocks = approvedSeq !== null && approvableKind(ctx.lineKind) && lockReason !== null;
     if (ctx.change.kind === "update") {
       const cells = lineCellEditability({
         status: ctx.status,

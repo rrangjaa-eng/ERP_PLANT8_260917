@@ -98,7 +98,8 @@ export async function insertRevision(
 // 04-14(ENG-D9 · Codex #2) — 승인 기준값의 내용 토큰: 견적 줄·견적 외 비용(보관 포함)의 (id · version · 보관 여부)를
 // id 순으로 이은 문자열의 md5. 줄 추가·수정·보관·복원이 모두 바꾸고 조정 줄은 들어가지 않는다(줄 0개면 빈 문자열의
 // md5). approvalBasis와 summarizeRevisions가 이 한 조각을 쓴다 — 두 쿼리의 식이 갈라지지 않는다.
-const APPROVABLE_KIND = sql`${quoteLines.lineKind} IN ('quote', 'out_of_quote')`;
+// 07.2 D-7222 — 수수료 줄도 고객 승인 금액이다(승인 뒤 바꾸면 기준 합 · 토큰이 바뀐다).
+const APPROVABLE_KIND = sql`${quoteLines.lineKind} IN ('quote', 'out_of_quote', 'commission')`;
 const APPROVABLE_ACTIVE = sql`${APPROVABLE_KIND} AND ${quoteLines.archivedAt} IS NULL`;
 const CONTENT_TOKEN = sql<string>`md5(coalesce(string_agg(${quoteLines.id}::text || ':' || ${quoteLines.version}::text || ':' || (${quoteLines.archivedAt} IS NULL)::text, ',' ORDER BY ${quoteLines.id}) FILTER (WHERE ${APPROVABLE_KIND}), ''))`;
 const APPROVABLE_TOTAL = sql<number>`coalesce(sum(${quoteLines.quoteAmountKrw}) FILTER (WHERE ${APPROVABLE_ACTIVE}), 0)::bigint`;

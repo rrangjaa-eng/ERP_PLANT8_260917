@@ -916,6 +916,10 @@ export async function prepareQuoteLineSave(
 // 적는다(요청의 그 칸들은 읽지 않는다). 조정 줄은 상태도 미착수로 고정한다(상태 칸이 없다).
 function normalizeForKind(row: QuoteLineWriteRow, kind: QuoteLineKind): QuoteLineWriteRow {
   if (kind === "quote") return row;
+  // 07.2 D-7222 — 수수료 줄: 단가(원화 · 음수 허용)가 곧 견적가다. 0으로 덮지 않고, 수량 · 일수 1 · 거래처 없음 · 실행가 0으로 고정한다.
+  if (kind === "commission") {
+    return { ...row, subcategory: kind, quantity: 1, days: 1, vendorId: undefined, execution: { currency: "KRW", amount: 0, fxRate: 1 } };
+  }
   const zeroQuote = { ...row, subcategory: kind, quantity: 1, days: 1, unitPrice: { currency: "KRW" as const, amount: 0, fxRate: 1 }, unitPriceFxRateTouched: false };
   return kind === "adjustment" ? { ...zeroQuote, lineStatus: "not_started" } : zeroQuote;
 }
@@ -1015,7 +1019,7 @@ function lineChangeView(source: QuoteLineRow | QuoteLineWritePayload, fields: re
 
 // 07.1-13 S8: 로그 줄 순번 = 견적 표 번호 열(app/(app)/projects/[id]/quote-table.tsx `displayOrder` — 클라이언트 파일이라 가져올 수 없어
 // 같은 규칙을 둔다): 종류(견적 줄 → 견적 외 비용 → 조정) 안정 정렬 뒤, 견적 줄은 소분류 · 나머지는 종류로 처음 나온 차례대로 묶는다.
-const DISPLAY_KIND_ORDER: Record<QuoteLineKind, number> = { quote: 0, out_of_quote: 1, adjustment: 2 };
+const DISPLAY_KIND_ORDER: Record<QuoteLineKind, number> = { quote: 0, out_of_quote: 1, commission: 2, adjustment: 3 };
 
 function displayNumbers(rows: readonly QuoteLineRow[]): Map<string, number> {
   const groups = new Map<string, QuoteLineRow[]>();
@@ -1075,7 +1079,11 @@ export function quoteLineFormatErrors(input: QuoteLineWriteRow, rowIndex: number
   if ((input.majorCategory ?? "").length > CATEGORY_LIMIT) {
     errors.push({ rowIndex, rowId: input.id, field: "majorCategory", label: "대분류", reason: MAJOR_CATEGORY_TOO_LONG });
   }
-  if (input.unitPrice.amount < 0) {
+  // 07.2 D-7222 — 수수료 줄은 음수 단가(감액)를 받고, 원화만 받는다(조용히 환산하지 않는다).
+  if (input.unitPrice.amount < 0 && kind !== "commission") {
+    errors.push({ rowIndex, rowId: input.id, field: "unitPrice", label: "단가", reason: "숫자 형식 오류 · 12,400,000처럼" });
+  }
+  if (kind === "commission" && input.unitPrice.currency !== "KRW") {
     errors.push({ rowIndex, rowId: input.id, field: "unitPrice", label: "단가", reason: "숫자 형식 오류 · 12,400,000처럼" });
   }
   if (input.execution.amount < 0 && kind === "quote") {

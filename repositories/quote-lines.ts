@@ -316,7 +316,8 @@ export async function updateQuoteLineIfVersionMatches(
 }
 
 // 04-14(D-53 · D-48) — 새 차수가 복사하는 줄: 보관되지 않은 견적 줄·견적 외 비용(조정 줄은 옮긴다).
-const COPYABLE_KINDS = ["quote", "out_of_quote"];
+// 07.2 D-7222 — 수수료 줄도 견적 내용이라 새 차수 · 프로젝트 복사에 따라간다.
+const COPYABLE_KINDS = ["quote", "out_of_quote", "commission"];
 
 // 04-15(CEO 리뷰 B-32) — 프로젝트 복사는 취소 상태 줄을 빼고 센다(`excludeCancelled`). 새 차수는 취소 줄도 센다.
 function copyableLineConditions(revisionId: string, excludeCancelled: boolean) {

@@ -591,7 +591,7 @@ test.describe("수수료 줄 (07.2-06, D-7222)", () => {
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
     const seen = await readApprovalBasis(SYSTEM_VIEWER, revision.id);
-    await setCustomerApproval(SYSTEM_VIEWER, revision.id, { approvalBasis: "verbal", approvedOn: TODAY, seenTotalKrw: seen.totalKrw, contentToken: seen.contentToken });
+    await setCustomerApproval({ id: pm.userId, roleId: DEFAULT_ROLE_ID }, revision.id, { approvalBasis: "verbal", approvedOn: TODAY, seenTotalKrw: seen.totalKrw, contentToken: seen.contentToken });
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
     await expect(page.getByRole("heading", { name: project.name })).toBeVisible();

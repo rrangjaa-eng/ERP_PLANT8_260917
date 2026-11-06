@@ -241,7 +241,10 @@ export async function searchLinesForCardLink(
   const revision = await findLatestQuoteRevision(viewer, project.id);
   const lines = revision ? await listQuoteLinesByRevisions(viewer, [revision.id]) : [];
   lines.sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
-  const numbered = lines.map((line, index) => ({ line, lineNo: index + 1 })).filter(({ line }) => line.lineKind !== "adjustment" && line.lineStatus !== "cancelled");
+  // 07.2 D-7221 — 수수료 줄(청구 전용)도 후보가 아니다.
+  const numbered = lines
+    .map((line, index) => ({ line, lineNo: index + 1 }))
+    .filter(({ line }) => line.lineKind !== "adjustment" && line.lineKind !== "commission" && line.lineStatus !== "cancelled");
   const lineIds = numbered.map(({ line }) => line.id);
 
   const links = await findLineLinks(viewer, lineIds);

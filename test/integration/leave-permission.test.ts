@@ -3,13 +3,14 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { approvalInstances, approvalRoutes } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, createRole } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, createRole } from "@/domain/permissions/roles";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { getApprovalView, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { submitLeave, LEAVE_DOCUMENT_KIND, LeaveValidationError } from "@/domain/leave";
 import { resubmitLeave } from "@/domain/leave/resubmit";
-import { previewLeaveBalance } from "@/domain/leave/balance-service";
+import { listPeopleLeaveBalances, previewLeaveBalance } from "@/domain/leave/balance-service";
+import { ForbiddenError as PeopleForbiddenError } from "@/domain/people";
 import { countRows, makePerson, NOW_2026 } from "./approvals-fixtures";
 
 // 04.1-02 Task 2 ③(Codex HIGH 02): leave write 판정은 페이지만이 아니라 도메인 첫 줄에서도 한다 —
@@ -96,5 +97,22 @@ describe("연차 날짜 연도 범위 — 제출 · 다시 신청", () => {
       (error: unknown) => error,
     );
     expect(resubmitError).toBeInstanceOf(LeaveValidationError);
+  });
+});
+
+// 07.2-08(PU12 · D-7261 · 07.2 D-7308 · T-07.2-08-01/02): 사람별 연차 잔여는 화면이 아니라 도메인이 막는다 — 기본 시드 권한 그대로
+// 사원(role-pm) · 대표 · 본부 책임자, 그리고 projects.status 쓰기만 켠 커스텀 계급(팀장 자리 아님)은 직접 불러도 ForbiddenError.
+describe("사람별 연차 잔여 읽기의 도메인 강제(07.2-08)", () => {
+  it("사원 · 대표 · 본부 책임자 · 쓰기 권한만 켠 커스텀 계급은 listPeopleLeaveBalances가 ForbiddenError", async () => {
+    const pm = await makePerson("박사원", DEFAULT_ROLE_ID, "기획1팀");
+    const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
+    const head = await makePerson("이본부", DIVISION_HEAD_ROLE_ID, "기획1팀");
+    const role = await createRole(SYSTEM_VIEWER, { name: "부팀장" });
+    await setPermissionCell(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.status", action: "write", allowed: true });
+    const vice = await makePerson("한부팀장", role.id, "기획1팀");
+    for (const viewer of [pm, ceo, head, vice]) {
+      const error = await listPeopleLeaveBalances(viewer, 2026, deps).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(PeopleForbiddenError);
+    }
   });
 });

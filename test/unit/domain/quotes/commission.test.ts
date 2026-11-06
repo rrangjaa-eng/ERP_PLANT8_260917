@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commissionBase, commissionMajors, type CommissionBaseRow } from "@/domain/quotes/commission";
+import { commissionBase, commissionMajors, parseCommissionRate, type CommissionBaseRow } from "@/domain/quotes/commission";
 import { commissionAmount } from "@/domain/money";
 
 // 07.2 PU3(D-7223) — 「계산」 패널의 기준 합. 견적 줄(quote)만 · 취소 줄 0 · 대분류는 저장값 ?? 소분류(이름표로 파생) ·
@@ -72,5 +72,31 @@ describe("commissionMajors", () => {
 
   it("견적 줄이 없으면 빈 배열", () => {
     expect(commissionMajors([], label)).toEqual([]);
+  });
+});
+
+// PR #367 검토 P2 — commissionAmount가 율을 소수 2자리(bp)로 반올림하므로, 패널은 그보다 긴 율을 받지 않는다(0.005%가 0.01%로
+// 계산되거나 12.345%가 12.35%로 계산된 채 비고에 12.345%로 남지 않게).
+describe("parseCommissionRate — 「계산」 패널 율 글자", () => {
+  it("비면 null", () => {
+    expect(parseCommissionRate("  ")).toBeNull();
+  });
+
+  it("소수 2자리까지의 0 ~ 100 숫자는 그 값", () => {
+    expect(parseCommissionRate("5")).toBe(5);
+    expect(parseCommissionRate(" 12.34 ")).toBe(12.34);
+    expect(parseCommissionRate("0.01")).toBe(0.01);
+    expect(parseCommissionRate("100")).toBe(100);
+  });
+
+  it("소수 3자리 이상이면 NaN(형식 오류)", () => {
+    expect(parseCommissionRate("0.005")).toBeNaN();
+    expect(parseCommissionRate("12.345")).toBeNaN();
+  });
+
+  it("숫자가 아니거나 0 ~ 100 밖이면 NaN", () => {
+    expect(parseCommissionRate("abc")).toBeNaN();
+    expect(parseCommissionRate("-1")).toBeNaN();
+    expect(parseCommissionRate("100.01")).toBeNaN();
   });
 });

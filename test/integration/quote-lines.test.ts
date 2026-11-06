@@ -1519,6 +1519,27 @@ describe("일수 · 고객 비고 · 분류 칸(07.2-06)", () => {
     expect(row?.quoteAmountKrw).toBe(2_000);
   });
 
+  // PR #367 검토 M1 — 일수 · 고객 비고를 싣지 않는 옛 모양 입력(asInput)으로 기존 줄을 저장해도 저장값이 그대로다.
+  it("기존 줄을 일수 · 고객 비고 없이 저장 → 일수 · 고객 비고 · 견적가 그대로", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const id = randomUUID();
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [
+        {
+          id, isNew: true, subcategory: subcategoryValue, itemName: "조명 임대",
+          quantity: 2, days: 3, unitPrice: krwMoney(1_000), execution: krwMoney(0), clientRemark: "3일 사용",
+        },
+      ],
+    });
+    const saved = await reloadLine(id);
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(saved, { itemName: "조명 임대 고침" })] });
+    const after = await reloadLine(id);
+    expect(after.itemName).toBe("조명 임대 고침");
+    expect(after.days).toBe("3.00");
+    expect(after.clientRemark).toBe("3일 사용");
+    expect(after.quoteAmountKrw).toBe(6_000);
+  });
+
   it("수량 2 · 단가 4,000억 · 일수 2 → 견적가 상한 오류가 수량 · 단가 · 일수 칸에", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const error = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {

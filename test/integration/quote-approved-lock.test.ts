@@ -359,4 +359,35 @@ describe("승인 차수 잠금 — 수수료 줄(commission · 07.2-06)", () => 
     expect((await reload(s.commission.id)).archivedAt).toBeNull();
     expect(await quoteTotal(s.revisionId)).toBe(approvedTotal);
   });
+
+  // PR #367 검토 L1 — 이미 맞는 동작을 못박는다: 승인 뒤 수수료 줄 복제 · 취소 · 보관 줄 복원은 거부, 수량 · 일수는 1로 고정.
+  it("승인 뒤 수수료 줄 복제와 취소는 각각 승인 문구로 거부 · 합계 그대로", async () => {
+    const s = await setupWithCommission();
+    const approvedTotal = await approve(s.pm, s.revisionId);
+    const copy = { ...asInput(s.commission), id: randomUUID(), isNew: true as const, duplicatedFrom: s.commission.id, version: undefined };
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [copy] })).rejects.toThrow(FIRST_LOCKED);
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.commission, { lineStatus: "cancelled" })] })).rejects.toThrow(FIRST_LOCKED);
+    expect((await reload(s.commission.id)).lineStatus).toBe(s.commission.lineStatus);
+    expect(await quoteTotal(s.revisionId)).toBe(approvedTotal);
+  });
+
+  it("승인 뒤 수수료 줄에 수량 3 · 일수 5를 실어도 1로 고정돼 거부 없이 그대로 · 합계 그대로", async () => {
+    const s = await setupWithCommission();
+    const approvedTotal = await approve(s.pm, s.revisionId);
+    await saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.commission, { quantity: 3, days: 5 })] });
+    const after = await reload(s.commission.id);
+    expect(after.quantity).toBe("1.00");
+    expect(after.days).toBe("1.00");
+    expect(after.quoteAmountKrw).toBe(50_000);
+    expect(await quoteTotal(s.revisionId)).toBe(approvedTotal);
+  });
+
+  it("승인 전에 보관한 수수료 줄의 복원은 승인 문구로 거부 · 합계 그대로", async () => {
+    const s = await setupWithCommission();
+    await db.update(quoteLines).set({ archivedAt: new Date(), archivedBy: SYSTEM_VIEWER.id }).where(eq(quoteLines.id, s.commission.id));
+    const approvedTotal = await approve(s.pm, s.revisionId);
+    await expect(restore(SYSTEM_VIEWER, "quote_line", s.commission.id)).rejects.toThrow(FIRST_LOCKED);
+    expect((await reload(s.commission.id)).archivedAt).not.toBeNull();
+    expect(await quoteTotal(s.revisionId)).toBe(approvedTotal);
+  });
 });

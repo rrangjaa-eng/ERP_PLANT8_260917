@@ -15,6 +15,9 @@ import { restore } from "@/domain/archive";
 import { listArchivedAcrossEntities } from "@/repositories/archive";
 import { log } from "@/lib/log";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
+import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
+import { searchLinesForPurchaseLink } from "@/domain/purchase-requests";
+import { searchLinesForCardLink } from "@/domain/corp-card-usages/link-targets";
 
 // 04-13(D-83 · D-48 · EXP-14) — 견적 줄의 종류 셋(견적 줄 · 견적 외 비용 · 조정). 조정 줄은 권한표
 // `projects.adjustment` 쓰기가 있는 사람만 상태와 무관하게 만들고 고친다.
@@ -156,7 +159,7 @@ describe("조정 줄 트레이서(04-13 Task 1 · D-83, 실제 Postgres)", () =>
 
 // ── Task 2 ────────────────────────────────────────────────────────────────────────────────────────────
 
-type SeedKind = "quote" | "out_of_quote" | "adjustment";
+type SeedKind = "quote" | "out_of_quote" | "adjustment" | "commission";
 
 // 줄을 DB에 바로 둔다(저장 경로와 무관한 준비). 조정·견적 외 비용 줄은 서버 저장 규칙대로 견적가 0.
 async function seedLine(revisionId: string, kind: SeedKind, opts: { subcategory?: string; execution?: number; archived?: boolean } = {}) {
@@ -522,5 +525,74 @@ describe("견적 외 비용 줄(04-13 Task 2 · D-48 · EXP-14 · 사용자 D10�
 
     await expect(saveQuoteLines(pm, revisionId, { rows: [newRow("quote", -1)] })).rejects.toThrow("[실행가]");
     expect(await activeCount(revisionId)).toBe(0);
+  });
+});
+
+// 07.2 PU3(D-7222 · D-7221) — 수수료 줄: 청구 전용 줄. 서버가 소분류 「commission」 · 수량 · 일수 1 · 거래처 null · 실행가 0으로
+// 고정하고 원화 단가는 그대로 둔다(0으로 덮지 않는다 — 저장 견적가 = 단가 · 07.2-10 시작 조건이 보는 시험).
+describe("수수료 줄(commission · 07.2-06)", () => {
+  it("(c1) 수수료 줄 단가 300,000 저장 → unit_price_amount_krw · quote_amount_krw 300,000 · 수량 · 일수 2로 보내도 1 · 거래처 null · 실행가 0", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await setStatus(project.id, "in_progress");
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `수수료거래처-${randomUUID()}`, normalizedName: `수수료거래처-${randomUUID()}` });
+    const line = newRow("commission", 50_000, { quantity: 2, days: 2, vendorId: vendor.id, unitPrice: { currency: "KRW", amount: 300_000, fxRate: 1 } });
+
+    await saveQuoteLines(pm, revisionId, { rows: [line] });
+
+    const row = await reload(line.id);
+    expect(row.lineKind).toBe("commission");
+    expect(row.subcategory).toBe("commission");
+    expect(row.quantity).toBe("1.00");
+    expect(row.days).toBe("1.00");
+    expect(row.unitPriceAmountKrw).toBe(300_000);
+    expect(row.quoteAmountKrw).toBe(300_000);
+    expect(row.vendorId).toBeNull();
+    expect(row.executionAmountKrw).toBe(0);
+    expect(row.profitKrw).toBe(300_000);
+  });
+
+  it("(c2) 수수료 줄 음수 단가 −50,000 저장 성공 · 견적가 −50,000", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await setStatus(project.id, "in_progress");
+    const line = newRow("commission", 0, { unitPrice: { currency: "KRW", amount: -50_000, fxRate: 1 } });
+
+    await saveQuoteLines(pm, revisionId, { rows: [line] });
+
+    const row = await reload(line.id);
+    expect(row.unitPriceAmountKrw).toBe(-50_000);
+    expect(row.quoteAmountKrw).toBe(-50_000);
+  });
+
+  it("(c3) 수수료 줄 단가 통화 USD는 단가 칸 형식 오류 · 저장 0(원화로 바꾸지 않는다)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await setStatus(project.id, "in_progress");
+
+    await expect(
+      saveQuoteLines(pm, revisionId, { rows: [newRow("commission", 0, { unitPrice: { currency: "USD", amount: 100, fxRate: 1300 } })] }),
+    ).rejects.toThrow("[단가]");
+    expect(await activeCount(revisionId)).toBe(0);
+  });
+
+  it("(c4) 새 차수 복사에 수수료 줄이 따라간다(COPYABLE_KINDS)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await seedLine(revisionId, "commission", { execution: 0 });
+
+    const { revisionId: nextId } = await createRevisionFromCurrent(pm, { projectId: project.id, fromRevisionId: revisionId });
+
+    expect((await linesOf(nextId)).map((row) => row.lineKind)).toContain("commission");
+  });
+
+  it("(c5) 구매요청 · 법인카드 연결 후보에 수수료 줄이 없다(D-7221 청구 전용 줄)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await setStatus(project.id, "in_progress");
+    const quote = await seedLine(revisionId, "quote");
+    const commission = await seedLine(revisionId, "commission", { execution: 0 });
+
+    const purchase = (await searchLinesForPurchaseLink(pm, { projectId: project.id, query: "" })).rows.map((row) => row.id);
+    const card = (await searchLinesForCardLink(pm, { projectId: project.id, query: "" })).rows.map((row) => row.id);
+    expect(purchase).toContain(quote.id);
+    expect(purchase).not.toContain(commission.id);
+    expect(card).toContain(quote.id);
+    expect(card).not.toContain(commission.id);
   });
 });

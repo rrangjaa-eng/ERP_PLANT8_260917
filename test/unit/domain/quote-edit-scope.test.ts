@@ -320,8 +320,8 @@ describe("줄 종류 축 결정표(04-13)", () => {
     expect(Object.values(structuralEditability({ status: "completed", canWrite: true, lineKind: "out_of_quote" })).some(Boolean)).toBe(false);
   });
 
-  it("QUOTE_LINE_KINDS는 견적 줄 · 견적 외 비용 · 조정 세 값", () => {
-    expect(QUOTE_LINE_KINDS).toEqual(["quote", "out_of_quote", "adjustment"]);
+  it("QUOTE_LINE_KINDS는 견적 줄 · 견적 외 비용 · 조정 · 수수료(07.2 D-7222) 네 값", () => {
+    expect(QUOTE_LINE_KINDS).toEqual(["quote", "out_of_quote", "adjustment", "commission"]);
   });
 });
 
@@ -482,5 +482,44 @@ describe("일수 · 고객 비고 · 대 · 중분류 칸(07.2-06)", () => {
     const zero = { unitPrice: { currency: "KRW", amount: 0, fxRate: 1 } };
     expect(quoteCellsZero({ ...zero, days: 1 })).toBe(true);
     expect(quoteCellsZero({ ...zero, days: 2 })).toBe(false);
+  });
+});
+
+// 07.2 PU3(D-7222 · D-7221) — 수수료 줄: 단가만 금액 칸(수량 · 일수 1 고정 · 거래처 · 실행가 없음 · 소분류는 종류 값),
+// 승인 · 내용 토큰은 견적 줄과 같다(edit-scope · register approvalLocks).
+describe("수수료 줄(commission · 07.2-06)", () => {
+  const commission = { ...base, status: "in_progress", lineKind: "commission" as const };
+
+  it("QUOTE_LINE_KINDS에 commission이 있다", () => {
+    expect(QUOTE_LINE_KINDS).toContain("commission");
+  });
+
+  it("미승인 차수: 수량 · 일수 · 거래처 · 실행가 · 소분류(대분류도) 늘 locked, 단가 · 항목 · 비고 · 고객 비고 · 중분류 · 상태 edit", () => {
+    const cells = lineCellEditability(commission);
+    expect(fieldsAt(cells, "locked")).toEqual(["days", "execution", "majorCategory", "quantity", "subcategory", "vendorId"]);
+    expect(fieldsAt(cells, "edit")).toEqual(["clientRemark", "itemName", "lineStatus", "midCategory", "note", "unitPrice"]);
+  });
+
+  it("승인 차수: 기존 줄 · 새 줄 모두 단가 locked(견적 줄과 같음)", () => {
+    expect(lineCellEditability({ ...commission, approvedSeq: 1 }).unitPrice).toBe("locked");
+    expect(lineCellEditability({ ...commission, approvedSeq: 1, isNewLine: true }).unitPrice).toBe("locked");
+    expect(lineCellEditability({ ...commission, approvedSeq: 1 }).clientRemark).toBe("locked");
+  });
+
+  it("project.line-edit — 승인 차수 수수료 줄 단가 수정 · 새 수수료 줄(단가 ≠ 0) · 보관은 승인 이유로 거부", async () => {
+    const ctx = (change: ProjectLineEditCtx["change"]) =>
+      gate({}, "project.line-edit", {
+        status: "in_progress",
+        lineKind: "commission",
+        actorCanWrite: true,
+        actorCanAdjust: false,
+        hasLinkedDocuments: false,
+        approvedSeq: 1,
+        change,
+      } satisfies ProjectLineEditCtx);
+    const denied = { allowed: false, reason: "1차 고객 승인됨 · 고치려면 새 차수" };
+    await expect(ctx({ kind: "update", fields: ["unitPrice"] })).resolves.toEqual(denied);
+    await expect(ctx({ kind: "insert", quoteCellsZero: false })).resolves.toEqual(denied);
+    await expect(ctx({ kind: "archive", quoteAmountZero: false })).resolves.toEqual(denied);
   });
 });

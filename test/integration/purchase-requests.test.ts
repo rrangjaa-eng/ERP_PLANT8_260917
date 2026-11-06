@@ -588,6 +588,8 @@ describe("잠금 뒤 줄 판정 · 서버 권한 문", () => {
 
   it.each([
     ["조정 줄", { lineKind: "adjustment" }],
+    // 07.2 PU3(D-7221 · eng r2 B N1) — 수수료 줄은 청구 전용 줄이라 줄 id를 직접 보낸 신청도 거부한다.
+    ["수수료 줄", { lineKind: "commission" }],
     ["취소 줄", { lineStatus: "cancelled" }],
     ["보관 줄", { archivedAt: new Date() }],
   ] as const)("[M9] %s → `연결 없음 · 연결 고르기` · 요청 0 · 카운터 그대로", async (_label, change) => {

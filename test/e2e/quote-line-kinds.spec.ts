@@ -7,6 +7,8 @@ import { db } from "@/db/client";
 import { codeItems, projects } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { setCustomerApproval } from "@/domain/quotes/revisions";
+import { approvalBasis as readApprovalBasis } from "@/repositories/quote-revisions";
 import { listArchive } from "@/domain/archive";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -539,5 +541,61 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
     await page.keyboard.press("Escape");
     await expect(page.getByRole("combobox", { name: "소분류" })).toHaveCount(0);
     await expect(page.getByText(description ?? "", { exact: true })).toHaveCount(0);
+  });
+});
+
+// 07.2-06 PU3(D-7222 · D-7221) — 수수료 줄: 2차 「수수료 줄 추가」 · 그룹 「수수료」 · 거래처 · 실행가 「—」 · 저장 견적가 = 단가.
+test.describe("수수료 줄 (07.2-06, D-7222)", () => {
+  test("PM — 진행에서 「수수료 줄 추가」로 만든 줄은 수수료 그룹 · 거래처 · 실행가 「—」 · 단가 300,000이 견적가 300,000으로 저장된다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openProject(page, {
+      as: "pm",
+      status: "in_progress",
+      endDate: addDays(TODAY, 10),
+      lines: [{ itemName: "수수료 견적 줄", unitPrice: 100_000, execution: 50_000 }],
+    });
+    await page.getByRole("button", { name: "수수료 줄 추가" }).click();
+    const itemInput = page.getByRole("textbox", { name: "항목", exact: true });
+    await expect(itemInput).toBeFocused();
+    await itemInput.fill("대행 수수료");
+    await page.keyboard.press("Enter");
+    await expect(groupHeaders(page).last()).toHaveText("수수료");
+    await expect(cell(page, 1, COL.vendor)).toHaveText("—");
+    await expect(cell(page, 1, COL.execution)).toHaveText("—");
+    await expect(cell(page, 1, COL.vendor)).toHaveAttribute("aria-readonly", "true");
+    await expect(cell(page, 1, COL.execution)).toHaveAttribute("aria-readonly", "true");
+
+    await focusGridCell(cell(page, 1, COL.unitPrice));
+    await page.keyboard.press("Enter");
+    await page.getByRole("textbox", { name: "단가", exact: true }).fill("300000");
+    await page.keyboard.press("Enter");
+
+    const saved = waitForSaveResponse(page);
+    await focusGridCell(cell(page, 1, COL.unitPrice));
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+
+    await page.reload();
+    await expect(groupHeaders(page).last()).toHaveText("수수료");
+    await expect(cell(page, 1, COL.itemName)).toHaveText("대행 수수료");
+    await expect(cell(page, 1, COL.quoteAmount)).toHaveText("300,000");
+    await expect(cell(page, 1, COL.execution)).toHaveText("—");
+  });
+
+  test("PM — 고객 승인 차수에는 「수수료 줄 추가」 버튼이 DOM에 없다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "in_progress", endDate: addDays(TODAY, 10), lines: [{ itemName: "승인 견적 줄", unitPrice: 100_000, execution: 50_000 }] });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    const seen = await readApprovalBasis(SYSTEM_VIEWER, revision.id);
+    await setCustomerApproval(SYSTEM_VIEWER, revision.id, { approvalBasis: "verbal", approvedOn: TODAY, seenTotalKrw: seen.totalKrw, contentToken: seen.contentToken });
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+    await expect(dataRows(page)).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "수수료 줄 추가" })).toHaveCount(0);
   });
 });

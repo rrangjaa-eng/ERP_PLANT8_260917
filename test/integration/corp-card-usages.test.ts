@@ -1478,3 +1478,32 @@ describe("[07.1-11 D-7112 · W12] 보관 카드 표시 · 거르개 옵션", () 
     expect(logs[0]?.detail).toMatchObject({ summary: `카드 고침 · 공용 옛 카드 · ${oldCard.issuer} 1111 → 공용 새 카드 · ${newCard.issuer} 2222` });
   });
 });
+
+// 07.2 PU3(D-7221 · eng r2 B N1) — 수수료 줄은 청구 전용 줄: 후보 목록 밖에서 줄 id를 직접 보낸 카드 사용 등록 · 다시 잇기도 서버가 거부한다.
+describe("수수료 줄 직접 연결 거부(07.2-06)", () => {
+  it("createCardUsage — 수수료 줄 lineId 직접 → `연결 없음 · 연결 고르기` · 카드 사용 0", async () => {
+    const fx = await cardProject();
+    const input = lineInput(fx, fx.lines[0] ?? "", 1_000);
+    const pre = await precheckCardUsage(fx.pm, input);
+    await db.update(quoteLines).set({ lineKind: "commission" }).where(eq(quoteLines.id, fx.lines[0] ?? ""));
+    const error = await caught(createCardUsage(fx.pm, input, pre));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((error as Error).message).toBe("연결 없음 · 연결 고르기");
+    expect(await usageCount()).toBe(0);
+  });
+
+  it("updateCardUsage — 기존 카드 사용을 수수료 줄로 새로 잇기 → 거부 · 원래 줄 그대로", async () => {
+    const fx = await cardProject([1_000_000, 1_000_000]);
+    const id = await cardOnLine(fx, fx.lines[0] ?? "", 10_000);
+    const [saved] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, id));
+    if (!saved) throw new Error("카드 사용 없음");
+    const input = resaveInput(fx, id, saved.version, fx.lines[1] ?? "", 10_000, "수수료 줄로");
+    const pre = await precheckCardUsageUpdate(fx.pm, input);
+    await db.update(quoteLines).set({ lineKind: "commission" }).where(eq(quoteLines.id, fx.lines[1] ?? ""));
+    const error = await caught(updateCardUsage(fx.pm, input, pre));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((error as Error).message).toBe("연결 없음 · 연결 고르기");
+    const [after] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, id));
+    expect(after?.quoteLineId).toBe(fx.lines[0]);
+  });
+});

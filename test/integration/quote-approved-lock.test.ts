@@ -309,3 +309,54 @@ describe("승인 차수 잠금 — 원장 합성 저장(04-40 · writeQuoteLines
     expect(await quoteTotal(s.revisionId)).toBe(s.approvedTotal);
   });
 });
+
+// 07.2 PU3(D-7222 · eng r2) — 수수료 줄은 승인 · 내용 토큰에서 견적 줄과 같다: 고객 승인 뒤 수수료를 고치거나 더하거나
+// 보관하면 거부하고, 승인 기준 합에 수수료 줄 견적가가 들고, 미승인 차수에서 수수료 단가를 바꾸면 내용 토큰이 바뀐다.
+describe("승인 차수 잠금 — 수수료 줄(commission · 07.2-06)", () => {
+  const FIRST_LOCKED = "1차 고객 승인됨 · 고치려면 새 차수";
+
+  async function setupWithCommission() {
+    const pm = await makePm();
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    const subcategory = await firstSelectableSubcategory();
+    const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.id, name: `수수료 잠금-${randomUUID()}` });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    await insertLine(revision.id, { subcategory: subcategory.value, sortOrder: 0 });
+    const commission = await insertLine(revision.id, {
+      lineKind: "commission",
+      subcategory: "commission",
+      itemName: "대행 수수료",
+      sortOrder: 1,
+      unitPriceAmountKrw: 50_000,
+      executionAmountKrw: 0,
+      quoteAmountKrw: 50_000,
+      profitKrw: 50_000,
+    });
+    return { pm, revisionId: revision.id, subcategory: subcategory.value, commission };
+  }
+
+  it("승인 기준 합에 수수료 줄 견적가가 든다 · 미승인 차수에서 수수료 단가를 바꾸면 내용 토큰이 바뀐다", async () => {
+    const s = await setupWithCommission();
+    const before = await approvalBasis(SYSTEM_VIEWER, s.revisionId);
+    expect(before.totalKrw).toBe(150_000);
+    await saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.commission, { unitPrice: krw(60_000) })] });
+    const after = await approvalBasis(SYSTEM_VIEWER, s.revisionId);
+    expect(after.totalKrw).toBe(160_000);
+    expect(after.contentToken).not.toBe(before.contentToken);
+  });
+
+  it("승인 뒤 수수료 줄 단가 수정 · 새 수수료 줄 · 수수료 줄 보관은 각각 승인 문구로 거부 · 합계 그대로", async () => {
+    const s = await setupWithCommission();
+    const approvedTotal = await approve(s.pm, s.revisionId);
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.commission, { unitPrice: krw(60_000) })] })).rejects.toThrow(FIRST_LOCKED);
+    await expect(
+      saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [newRow("", { lineKind: "commission", unitPrice: krw(30_000), execution: krw(0) })] }),
+    ).rejects.toThrow(FIRST_LOCKED);
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [], archivedLineIds: [s.commission.id] })).rejects.toThrow(FIRST_LOCKED);
+    expect((await reload(s.commission.id)).archivedAt).toBeNull();
+    expect(await quoteTotal(s.revisionId)).toBe(approvedTotal);
+  });
+});

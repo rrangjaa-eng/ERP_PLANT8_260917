@@ -29,4 +29,12 @@ describe("/leave?view=all — leave.value 숨김", () => {
     expect(cells.slice(1, 6)).toEqual(["—", "—", "—", "—", "—"]);
     expect(html).not.toMatch(/\d+(\.\d+)?일/);
   });
+
+  it("숫자 칸 다섯은 Num 칸(span.num) 안에 그려진다 (SYSTEM 숫자 열은 Num만)", async () => {
+    const { prelude } = await prerender(await LeaveListPage({ searchParams: Promise.resolve({ view: "all" }) }));
+    const html = await new Response(prelude).text();
+    const row = html.slice(html.indexOf("가숨김"));
+    const raw = [...row.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map((match) => match[1] ?? "");
+    for (const cell of raw.slice(1, 6)) expect(cell).toMatch(/^<span class="[^"]*num[^"]*">—<\/span>$/);
+  });
 });

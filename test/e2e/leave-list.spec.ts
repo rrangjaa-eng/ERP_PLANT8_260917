@@ -952,6 +952,26 @@ test.describe("사람별 연차 잔여 /leave?view=all (07.2-08 Task 3 · S20 ·
     });
   });
 
+  test("사람별 연차 잔여: 1280 미만(768 · 1024)에서 행을 눌러 시트를 열면 부여 · 결재 중 · 월차 남음이 보인다", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const org = await setupLeaveOrg(today);
+      const page = await login(browser, baseURL, org.teamLead);
+      await page.goto("/leave?view=all");
+      for (const width of [768, 1024]) {
+        await page.setViewportSize({ width, height: 900 });
+        const table = peopleTable(page);
+        await expect(table.locator("thead th").filter({ hasText: "월차 남음" }).filter({ visible: true })).toHaveCount(0);
+        await table.getByRole("button", { name: org.drafter.name }).click();
+        const sheet = page.getByRole("dialog", { name: org.drafter.name });
+        await expect(sheet).toBeVisible();
+        for (const label of ["부여", "결재 중", "월차 남음"]) await expect(sheet.getByText(label, { exact: true })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(sheet).toHaveCount(0);
+      }
+      await page.context().close();
+    });
+  });
+
   test("대표 · 본부 책임자(기본 시드) · 사원(role-pm): `전체` 링크 DOM 0 · `/leave?view=all`은 404", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const org = await setupLeaveOrg(today);

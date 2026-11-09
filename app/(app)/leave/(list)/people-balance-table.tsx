@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Num } from "@/ui/num/Num";
+import { Button } from "@/ui/button/Button";
 import { RowSheet } from "@/ui/table/RowSheet";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
@@ -22,14 +23,35 @@ export type PeopleBalanceRow = {
   monthlyRemaining: string;
 };
 
-const COLUMNS: TableColumn<PeopleBalanceRow>[] = [
+// 700~1279: 부여 · 결재 중 · 월차 남음이 숨는데 행 탭 자리(접힌 줄)는 폰에만 있다 — 이 폭에서는 이름 칸이 같은 시트를 여는 단추다.
+// 공유 훅(useMinWidth)에 700 단계를 더하지 않고 이 표 안에서 판정한다 — 서버 스냅숏은 거짓(수화 전에는 단추 없음, 폰 렌더와 같다).
+const TABLET = "(min-width: 700px) and (max-width: 1279.98px)";
+function useTabletWidth(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const media = window.matchMedia(TABLET);
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(TABLET).matches,
+    () => false,
+  );
+}
+
+const columnsOf = (openSheet: ((row: PeopleBalanceRow) => void) | null): TableColumn<PeopleBalanceRow>[] => [
   {
     key: "name",
     header: "이름",
     priority: "p1",
     cell: (row) => (
       <>
-        {row.name}
+        {openSheet ? (
+          <Button variant="tertiary" onClick={() => openSheet(row)}>
+            {row.name}
+          </Button>
+        ) : (
+          row.name
+        )}
         {row.resigned ? <span className={styles.resignedTag}> 퇴직</span> : null}
       </>
     ),
@@ -44,9 +66,10 @@ const COLUMNS: TableColumn<PeopleBalanceRow>[] = [
 
 export function PeopleBalanceTable({ rows }: { rows: PeopleBalanceRow[] }) {
   const [sheet, setSheet] = useState<PeopleBalanceRow | null>(null);
+  const columns = columnsOf(useTabletWidth() ? setSheet : null);
   return (
     <>
-      <Table caption="사람별 연차 잔여" columns={COLUMNS} rows={rows} getRowId={(row) => row.id} onRowTap={setSheet} rowLabel={(row) => row.name} />
+      <Table caption="사람별 연차 잔여" columns={columns} rows={rows} getRowId={(row) => row.id} onRowTap={setSheet} rowLabel={(row) => row.name} />
       <RowSheet
         open={sheet !== null}
         onClose={() => setSheet(null)}

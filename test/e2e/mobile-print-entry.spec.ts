@@ -6,6 +6,7 @@ import { submitLeave } from "@/domain/leave";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
 import { loginPage, setupLeaveOrg, type LeaveOrg } from "./leave-org";
+import { setupSettlementE2E, submitSettlementE2E, type SettlementE2E } from "./settlement-fixture";
 
 // 07.4-01 D-7409 E1 — 지출결의 상세의 「인쇄」 입구는 폰(<700)에서 접근성 트리에 없고 700부터 하나다. 폰에서 숨은 링크 때문에 빈 actions 상자가
 // DetailScreen 머리 줄에 둘째 줄 틈을 만들면 안 된다(머리 줄 높이 = 제목 블록 높이). 07.4-02 · 03이 같은 파일에 연차 · 정산 사례를 더한다.
@@ -147,6 +148,44 @@ test.describe("연차 상세의 「인쇄」 입구", () => {
       await waitForDetailTitle(page);
       await expect(printLink(page)).toHaveCount(1);
       await expect(printLink(page)).toHaveAttribute("href", `/print/leaves/${leaveId}`);
+    } finally {
+      await page.context().close();
+    }
+  });
+});
+
+// 07.4-03 D-7409 E3 — 정산 결재 화면의 「인쇄」 입구도 같은 규칙이다(폰 접근성 트리 0 · 700부터 1 · 인쇄가 유일한 2차라 빈 actions 틈 없음).
+test.describe("정산 결재 화면의 「인쇄」 입구", () => {
+  let settlement: SettlementE2E;
+
+  test.beforeAll(async () => {
+    settlement = await setupSettlementE2E();
+    await submitSettlementE2E(settlement);
+  });
+
+  for (const width of [375, 320]) {
+    test(`${width}px 폰에서는 「인쇄」 링크가 접근성 트리에 없고 머리 줄에 빈 actions 틈이 없다`, async ({ browser, baseURL }) => {
+      const page = await loginPage(browser, baseURL, settlement.pm, { width, height: 800 });
+      try {
+        await page.goto(`/projects/${settlement.projectId}/settlement`);
+        await waitForDetailTitle(page);
+        await expect(printLink(page)).toHaveCount(0);
+        const heights = await headHeights(page);
+        test.info().annotations.push({ type: "head-heights", description: JSON.stringify(heights) });
+        expect(heights.head, `머리 줄 ${JSON.stringify(heights)}`).toBeLessThanOrEqual(heights.heading + 1);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
+  test("700px부터 「인쇄」 링크가 하나다", async ({ browser, baseURL }) => {
+    const page = await loginPage(browser, baseURL, settlement.pm, { width: 700, height: 800 });
+    try {
+      await page.goto(`/projects/${settlement.projectId}/settlement`);
+      await waitForDetailTitle(page);
+      await expect(printLink(page)).toHaveCount(1);
+      await expect(printLink(page)).toHaveAttribute("href", `/print/settlements/${settlement.projectId}`);
     } finally {
       await page.context().close();
     }

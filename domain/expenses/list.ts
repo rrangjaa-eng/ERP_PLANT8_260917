@@ -274,3 +274,25 @@ export async function listExpenses(
     months,
   };
 }
+
+// 07.4-03 D-7414: 정산서의 그 프로젝트 지출결의 목록 — 지출결의 목록 화면과 같은 범위(visibleExpenseScope — 리포지토리 질의 안 판정) · 같은 상태 낱말 ·
+// 같은 투영. 작성 중(번호 없음)을 뺀 모든 그룹을 쪽 나눔 없이 번호 오름차순으로. expenses 보기 권한이 없으면 null(정산서에 절째 없다).
+// 항목에서 프로젝트 이름을 뺀다 — 종이 머리 「프로젝트」 행에 이미 있다.
+export async function listProjectExpenseRows(viewer: Viewer, projectId: string, deps?: { today?: string }): Promise<Partial<ExpenseListRowDto>[] | null> {
+  if (!(await can(viewer, "expenses", "view"))) return null;
+  const today = deps?.today ?? seoulToday();
+  const scope = await visibleExpenseScope(viewer, { today });
+  const ranks = Object.values(EXPENSE_GROUP_RANKS).filter((rank) => rank !== EXPENSE_GROUP_RANKS.draft);
+  const filter: ExpenseListFilter = { teamId: null, month: null, drafterId: null, projectId };
+  const summary = await summarizeExpenseList(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, filter });
+  if (summary.viewCount === 0) return [];
+  const rows = await listExpensePage(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, limit: summary.viewCount, offset: 0, filter });
+  // 숫자 비교 — 일련번호 자릿수 설정이 프로젝트 도중 바뀌어도(document-numbering seq_digits) 순서가 섞이지 않는다.
+  const sorted = [...rows].sort((a, b) => (a.number ?? "").localeCompare(b.number ?? "", "ko", { numeric: true }));
+  const [payments, loaded] = await Promise.all([paymentStatuses(viewer, sorted, today), loadExpenseSchedules(viewer, sorted)]);
+  return projectMany(
+    viewer,
+    sorted.map((row) => toSource({ ...row, projectName: null }, scheduleOf(loaded, row.id), scope.currentSteps, payments.get(row.id))),
+    EXPENSE_LIST_ROW_DTO_SPEC,
+  );
+}

@@ -60,7 +60,11 @@ export type PurchaseRequestFilter = {
   /** 요청일 범위 — 서울 월 첫날 0시(포함) · 다음 달 첫날 0시(제외). */
   from?: Date;
   to?: Date;
+  /** 07.4-03 D-7414 정산서의 그 프로젝트 요청(선택 칸 · 기존 호출은 넘기지 않는다). */
+  projectId?: string;
 };
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type PurchaseRequestListRow = PurchaseRequestRow & {
   requestedByName: string;
@@ -86,6 +90,8 @@ function filterConditions(scope: PurchaseRequestScope, filter: PurchaseRequestFi
   if (filter.status) conditions.push(eq(purchaseRequests.status, filter.status));
   if (filter.from) conditions.push(gte(purchaseRequests.createdAt, filter.from));
   if (filter.to) conditions.push(lt(purchaseRequests.createdAt, filter.to));
+  // uuid 모양이 아닌 값은 Postgres 형식 오류(500) 대신 결과 0.
+  if (filter.projectId !== undefined) conditions.push(UUID_SHAPE.test(filter.projectId) ? eq(purchaseRequests.projectId, filter.projectId) : sql`false`);
   return conditions;
 }
 

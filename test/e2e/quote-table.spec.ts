@@ -2062,4 +2062,30 @@ test.describe("견적 줄 표 — 일수 · 고객 비고 · 중분류 열(07.2-
     await expect(daysCell).toContainText("일수는 소수 2자리까지");
     await expect(daysCell).not.toContainText("수량은 소수 2자리까지");
   });
+
+  test("고객 비고를 적어 저장한 뒤 지우고 저장하면 다시 열어도 비어 있다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "비고 지우기 줄", amount: 1000 }]);
+    const remark = await headerIndex(page, "고객 비고");
+
+    await editTextCell(page, 0, remark, "3일 사용");
+    await saveWithKeyboard(page, 0, remark);
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    await page.reload();
+    await expect(quoteCell(page, 0, await headerIndex(page, "고객 비고"))).toHaveText("3일 사용");
+
+    // 빈 글자를 치면 입력이 그대로라 지우기는 Delete로 한다.
+    const remarkCell = quoteCell(page, 0, remark);
+    await expect(async () => {
+      await remarkCell.focus();
+      await page.keyboard.press("Enter");
+      await expect(remarkCell.locator("input")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Delete");
+    await page.keyboard.press("Enter");
+    await saveWithKeyboard(page, 0, remark);
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    await page.reload();
+    await expect(quoteCell(page, 0, await headerIndex(page, "고객 비고"))).toHaveText("—");
+  });
 });

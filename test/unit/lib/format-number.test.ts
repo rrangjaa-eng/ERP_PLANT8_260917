@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  DAYS_PRECISION_REASON,
   formatKrw,
   formatForeignAmount,
   formatFxRate,
@@ -306,6 +307,10 @@ describe("numberInputRejectionReason — UI-SPEC rev 5 Copywriting 원문", () =
 
   it("quantity · precision → 수량은 소수 2자리까지", () => {
     expect(numberInputRejectionReason("quantity", "precision")).toBe("수량은 소수 2자리까지");
+  });
+
+  it("일수 칸 소수 자리 초과 문구는 서버와 같은 한 곳(DAYS_PRECISION_REASON)에서 온다", () => {
+    expect(DAYS_PRECISION_REASON).toBe("일수는 소수 2자리까지");
   });
 
   it("아무 kind · not-number → 숫자 형식 오류 · 12,400,000처럼", () => {

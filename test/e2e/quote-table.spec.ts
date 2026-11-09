@@ -2051,4 +2051,18 @@ test.describe("견적 줄 표 — 일수 · 고객 비고 · 중분류 열(07.2-
     await expect(daysCell).toHaveAttribute("aria-invalid", "true");
     await expect(daysCell).toContainText("숫자 아님 · 1.5처럼");
   });
+
+  test("일수 칸에 소수 3자리를 치면 `일수는 소수 2자리까지`(수량 문구가 아니다)", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "일수 자리 줄", amount: 1000 }]);
+    const daysCell = quoteCell(page, 0, await headerIndex(page, "일수"));
+    await expect(async () => {
+      await daysCell.focus();
+      await page.keyboard.press("Enter");
+      await expect(daysCell.locator("input")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("1.234");
+    await expect(daysCell.getByText("일수는 소수 2자리까지")).toBeVisible();
+    await expect(daysCell.getByText("수량은 소수 2자리까지")).toHaveCount(0);
+  });
 });

@@ -546,7 +546,7 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
   });
 });
 
-// 07.2-06 PU3(D-7222 · D-7221) — 수수료 줄: 2차 「수수료 줄 추가」 · 그룹 「수수료」 · 거래처 · 실행가 「—」 · 저장 견적가 = 단가.
+// 07.2-06 PU3(D-7222 · D-7221) — 수수료 줄: 3차 「수수료 줄 추가」 · 그룹 「수수료」 · 거래처 · 실행가 「—」 · 저장 견적가 = 단가.
 test.describe("수수료 줄 (07.2-06, D-7222)", () => {
   test("PM — 진행에서 「수수료 줄 추가」로 만든 줄은 수수료 그룹 · 거래처 · 실행가 「—」 · 단가 300,000이 견적가 300,000으로 저장된다", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -556,6 +556,7 @@ test.describe("수수료 줄 (07.2-06, D-7222)", () => {
       endDate: addDays(TODAY, 10),
       lines: [{ itemName: "수수료 견적 줄", unitPrice: 100_000, execution: 50_000 }],
     });
+    await expect(page.getByRole("button", { name: "수수료 줄 추가" })).toHaveClass(/tertiary/);
     await page.getByRole("button", { name: "수수료 줄 추가" }).click();
     const itemInput = page.getByRole("textbox", { name: "항목", exact: true });
     await expect(itemInput).toBeFocused();

@@ -891,6 +891,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             header: "행동",
             headerHidden: true,
             priority: "p3" as const,
+            // 서버·수화 중에는 editableWidth가 참이라 이 열이 1024 미만 SSR HTML에도 그려진다 — CSS가 수화 전에 숨겨 가로 넘침(770)을 막는다.
+            collapseBelow: 1024 as const,
             cell: (row: Row) =>
               row.rowAction || row.canAttach || row.canProxy || row.actionBlockedReason ? (
                 <RowActions noWrap>

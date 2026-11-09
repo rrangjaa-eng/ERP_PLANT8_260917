@@ -267,6 +267,20 @@ async function serverAmounts(id: string): Promise<{ supply: number; vat: number;
 const URL = "/expenses/evidence?state=all";
 const ROLE = "①경영관리";
 
+// 수화 전 SSR 화면도 넘치면 안 된다 — useMinWidth의 서버 스냅샷이 참이라 700~1023에서도 PC 행 행동 열이 먼저 그려졌다(scrollWidth 770).
+// JS 청크를 막아 수화가 안 일어나게 하고 스트리밍된 HTML 그대로 잰다(수화가 늦은 CI에서만 보이던 깜박임을 늘 재현).
+for (const width of [768, 700] as const) {
+  test(`${width} — 수화 전 목록 가로 넘침 0(①경영관리)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await loginAs(page, seed.managerRole);
+    await page.route(/\/_next\/static\/chunks\/.*\.js/, (route) => route.abort());
+    await page.goto(URL);
+    await expect(opener(page, seed.names.s1)).toBeVisible();
+    const [sw, cw] = await docOverflow(page);
+    expect(sw, `수화 전 scrollWidth ${sw} / clientWidth ${cw}`).toBeLessThanOrEqual(cw);
+  });
+}
+
 for (const width of WIDTHS) {
   test(`${width} — 목록 · 상태 여섯 · 60자 · 충돌(①경영관리)`, async ({ page }) => {
     test.setTimeout(300_000);

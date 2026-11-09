@@ -23,7 +23,7 @@ import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { savedNoticeText, type FooterNoticeItem } from "@/ui/table/footer-notice";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
-import { formatKrw, formatForeignLine, formatPercent, formatQuantity, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
+import { DAYS_PRECISION_REASON, formatKrw, formatForeignLine, formatPercent, formatQuantity, numberInputRejectionReason, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { kstToday } from "@/lib/kst-date";
 import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
 import { useCommaInput } from "@/ui/input/use-comma-input";
@@ -829,7 +829,9 @@ function NumericEditCell({
   kind: NumberInputKind;
   onCommit: (value: string) => void;
 }) {
-  const { inputRef, value, onChange, error, rawValue } = useCommaInput(kind, initialValue);
+  const { inputRef, value, onChange, error: rawError, rawValue } = useCommaInput(kind, initialValue);
+  // 일수 칸은 수량과 같은 자리 규칙이지만 문구는 「일수는 …」(서버와 같은 글자).
+  const error = ariaLabel === "일수" && rawError === numberInputRejectionReason("quantity", "precision") ? DAYS_PRECISION_REASON : rawError;
 
   return (
     <>
@@ -2837,7 +2839,11 @@ export function QuoteLedger({
         if (cell.result.status === "error") {
           cellErrors[cell.columnKey] =
             blockedReasons.get(`${cell.rowIndex}:${cell.columnKey}`) ??
-            (cell.columnKey === "days" && cell.result.reason === numericCellError("quantity") ? numericCellError("days") : cell.result.reason);
+            (cell.columnKey === "days" && cell.result.reason === numericCellError("quantity")
+              ? numericCellError("days")
+              : cell.columnKey === "days" && cell.result.reason === numberInputRejectionReason("quantity", "precision")
+                ? DAYS_PRECISION_REASON
+                : cell.result.reason);
           next[cell.rowIndex] = { ...target, cellErrors, cellConflicts, dirty: true };
           continue;
         }
@@ -3454,10 +3460,10 @@ export function QuoteLedger({
               견적 외 비용 줄 추가
             </Button>
           ) : null}
-          {/* 07.2-06(D-7222 · UI-SPEC S5) — 2차. 같은 자리 · 같은 폭 규칙, 승인 차수 · 정산이면 그리지 않는다. 상한이면 비활성이고 이유 글자를 가리킨다. 새 줄의 항목 칸이 열린다. */}
+          {/* 07.2-06(D-7222 · UI-SPEC S5 · 사용자 카드 답) — 3차(「줄 추가」 형제와 같다). 같은 자리 · 같은 폭 규칙, 승인 차수 · 정산이면 그리지 않는다. 상한이면 비활성이고 이유 글자를 가리킨다. 새 줄의 항목 칸이 열린다. */}
           {structural.insert && approvedSeq === null && status !== "settling" ? (
             <Button
-              variant="secondary"
+              variant="tertiary"
               disabled={atLineCap || saveLocked}
               aria-describedby={atLineCap ? capReasonId : saveLocked ? saveButtonId : undefined}
               onClick={() => (saveLocked ? undefined : setOpenCell({ rowId: addLineToGroup("commission"), columnKey: "itemName" }))}

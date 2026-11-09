@@ -41,7 +41,7 @@ import {
 import { rememberFxRate as defaultRememberFxRate } from "@/domain/money/currency";
 import { log } from "@/lib/log";
 import { withTransaction } from "@/lib/db-transaction";
-import { formatKrw, MAX_DECIMALS, numberInputRejectionReason } from "@/lib/format-number";
+import { DAYS_PRECISION_REASON, formatKrw, MAX_DECIMALS, numberInputRejectionReason } from "@/lib/format-number";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
   listQuoteLinesByRevision as repoListQuoteLinesByRevision,
@@ -1057,7 +1057,6 @@ function sameCustomFields(stored: unknown, next: Record<string, unknown>): boole
 // 04-40 검토 SF-1 — quantity numeric(12,2)의 정수부 한계(db/schema/quote-lines.ts). 저장은 toFixed(2) 뒤 값이다.
 // 07.2 D-7230 — days도 같은 numeric(12,2)라 같은 상수를 쓴다.
 const QUANTITY_COLUMN_LIMIT = 1e10;
-const DAYS_PRECISION = "일수는 소수 2자리까지";
 
 // EXP-14 — 실행가 음수는 견적 외 비용·조정 줄만 받는다.
 export function quoteLineFormatErrors(input: QuoteLineWriteRow, rowIndex: number, kind: QuoteLineKind): CellFormatError[] {
@@ -1079,7 +1078,7 @@ export function quoteLineFormatErrors(input: QuoteLineWriteRow, rowIndex: number
     errors.push({ rowIndex, rowId: input.id, field: "days", label: "일수", reason: "일수 상한 초과 · 일수 수정" });
   }
   if (input.days !== undefined && input.days > 0 && Number(input.days.toFixed(MAX_DECIMALS.quantity)) !== input.days) {
-    errors.push({ rowIndex, rowId: input.id, field: "days", label: "일수", reason: DAYS_PRECISION });
+    errors.push({ rowIndex, rowId: input.id, field: "days", label: "일수", reason: DAYS_PRECISION_REASON });
   }
   if ((input.clientRemark ?? "").length > CLIENT_REMARK_LIMIT) {
     errors.push({ rowIndex, rowId: input.id, field: "clientRemark", label: "고객 비고", reason: CLIENT_REMARK_TOO_LONG });

@@ -2154,7 +2154,7 @@ export function QuoteLedger({
                 // 04-12(A-37) — 서버가 줄 상태를 QUOTE_LINE_STATUSES로 검증한다(화면 타입 좁히기는 04-30).
                 lineStatus: line.lineStatus as QuoteLineStatus,
                 note: line.note ?? undefined,
-                clientRemark: line.clientRemark ?? undefined,
+                clientRemark: line.clientRemark,
                 midCategory: line.midCategory ?? undefined,
                 majorCategory: line.majorCategory ?? undefined,
                 baseline: line.isNew ? undefined : { ...line.baseline, lineStatus: line.baseline.lineStatus as QuoteLineStatus },

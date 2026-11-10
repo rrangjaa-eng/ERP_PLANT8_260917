@@ -102,6 +102,8 @@ describe("loadLeaveRouteConfig(hint) — 반반차 · 재택 결재 단계(PU9)"
     for (const ok of [1, 2, 3, 4]) expect(schema.safeParse(ok).success).toBe(true);
     expect(schema.safeParse("2")).toEqual({ success: true, data: 2 });
     for (const bad of [0, 5, 2.5, -1, "0", "5"]) expect(schema.safeParse(bad).success).toBe(false);
+    // L-1: z.coerce는 true → 1 · [2] → 2처럼 숫자가 아닌 것도 받았다(깨진 저장 값이 가장 짧은 결재선으로 읽힘).
+    for (const bad of [true, false, [2], ["2"], null, "", " 2", "2.5", "1e0", {}]) expect(schema.safeParse(bad).success).toBe(false);
     expect(APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER.optionLabels).toEqual({ "1": "1단까지", "2": "2단까지", "3": "3단까지", "4": "4단까지" });
   });
 });

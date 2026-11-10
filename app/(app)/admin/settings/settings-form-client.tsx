@@ -107,6 +107,8 @@ function SimpleFieldEditor({
   // 07.2-13(UI-SPEC S19 ERROR): select 저장이 실패하면(서버 거부 · 통신 실패) 고르기 전 값으로 되돌린다 — 통신 실패는 result에
   // 글자가 없어 이 줄을 칸 아래에 단다.
   const [selectFailed, setSelectFailed] = useState(false);
+  // 빠른 연속 변경(A→B→C)에서 낡은 요청(B)의 늦은 실패가 화면을 A로 되돌리지 않게, 마지막 요청만 되돌린다.
+  const selectRequestRef = useRef(0);
   const [checked, setChecked] = useState(initialValue === true);
   const [selected, setSelected] = useState(
     typeof initialValue === "string"
@@ -168,13 +170,16 @@ function SimpleFieldEditor({
             onChange={(event) => {
               const previous = selected;
               const next = event.target.value;
+              const requestId = ++selectRequestRef.current;
               setSelected(next);
               setSelectFailed(false);
               executeAsync({ key: fieldKey, value: next }).then(
                 (saved) => {
+                  if (requestId !== selectRequestRef.current) return;
                   if (saved?.serverError !== undefined || saved?.validationErrors !== undefined) setSelected(previous);
                 },
                 () => {
+                  if (requestId !== selectRequestRef.current) return;
                   setSelected(previous);
                   setSelectFailed(true);
                 },

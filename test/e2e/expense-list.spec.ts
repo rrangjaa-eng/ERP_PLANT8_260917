@@ -539,6 +539,25 @@ test.describe("목록 종결 숨김 (07.2-11 S22)", () => {
     await page.context().close();
   });
 
+  // 07.2-11 /review P2: 보기 안 문서가 전부 종결이면 행 0 — 합계 줄의 제외 조각은 남고, 빈 자리 행동은 같은 화면으로 도는 `전체 보기`가 아니라 `종결 보기`(closed=1)다.
+  test("보기 안 문서가 전부 종결 — 합계 줄 `종결 2건 제외` · 빈 자리 `종결 보기` → closed=1 · 행 2", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const closed = [await closedDoc(fx.pm.viewer, `종결만-하나-${randomUUID().slice(0, 4)}`), await closedDoc(fx.pm.viewer, `종결만-둘-${randomUUID().slice(0, 4)}`)];
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/expenses?status=${encodeURIComponent("전체")}`);
+    const totals = page.getByRole("region", { name: "합계" });
+    await expect(totals.getByText("종결 2건 제외", { exact: true })).toBeVisible();
+    await expect(page.getByText("조건에 맞는 건이 없습니다", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "전체 보기" })).toHaveCount(0);
+    const action = page.getByRole("link", { name: "종결 보기" });
+    await expect(action).toHaveCount(1);
+    await action.click();
+    await expect(page).toHaveURL((url) => url.searchParams.get("closed") === "1" && url.searchParams.get("status") === "전체");
+    for (const id of closed) await expect(rowOf(page, id)).toHaveCount(1);
+    await expect(totals.getByText(/^종결 \d+건 제외$/)).toHaveCount(0);
+    await page.context().close();
+  });
+
   test("375 체크박스 래퍼 44 · 375 · 320 가로 넘침 0 · 폰에서 제외 조각은 합계 아래 줄", async ({ browser, baseURL }) => {
     const { fx } = await closedWorld();
     for (const width of [375, 320]) {

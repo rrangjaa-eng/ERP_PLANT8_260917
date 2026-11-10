@@ -177,7 +177,8 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
         ) : undefined
       }
       summary={
-        list.total && list.total.count > 0 ? (
+        // 07.2-11 /review P2: 보기 안 문서가 전부 종결이어도 합계 줄을 그려 `종결 N건 제외`를 남긴다(숨긴 문서가 사라진 것처럼 보이지 않게).
+        list.total && (list.total.count > 0 || list.closedExcluded > 0) ? (
           <section aria-label="합계" className={styles.totals}>
             <p className={styles.totalsTitle}>{`합계 (${view} · ${list.total.count}건)`}</p>
             <p className={styles.totalsAmount}>
@@ -210,6 +211,9 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     >
       {rows.length > 0 ? (
         <ExpensesTable rows={rows} drafterColumn={list.drafterColumn} amountColumn={list.amountColumn} />
+      ) : list.closedExcluded > 0 ? (
+        // 07.2-11 /review P2: 조건에 맞는 문서가 종결뿐이면 빈 자리 행동은 `종결 보기`(closed=1, 검색어 · 거르개 유지) — `전체 보기`가 같은 화면으로 돌던 자리.
+        <ListEmpty message="조건에 맞는 건이 없습니다" action={{ label: "종결 보기", href: viewHref(view, undefined, q, { ...filters, closed: true }) }} />
       ) : q || filtered ? (
         // 06.5 D-6508(EP1-13): 문서는 있는데 검색으로 0건 — 필터 줄 · 검색어는 그대로 서고 표 자리에서 검색을 지우고 빠져나간다.
         // 07.1-09(W11): 팀 · 월 · 내 것만으로 0건이어도 같은 갈래 — `필터 지우기`가 검색어와 셋을 모두 지운다.

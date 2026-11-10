@@ -521,6 +521,21 @@ describe("지출결의 목록 종결 숨김 (07.2-11 D-7280)", () => {
     expect(approved.hasAny).toBe(true);
   }, 90_000);
 
+  // /review P2: 보기 안 문서가 전부 종결이면 행 0인데도 hasAny는 참이고(필터 줄 · `종결 보기`가 남는다) 제외 수가 화면 빈 자리 갈래의 근거가 된다.
+  it("보기 안 문서가 전부 종결 — 행 0 · hasAny 참 · 합계 0건 · 제외 2건, includeClosed는 2행 · 제외 0", async () => {
+    const fx = await setupExpenseProject();
+    const vendor = (await insertVendor(SYSTEM_VIEWER, { name: `종결만거래처-${randomUUID().slice(0, 6)}`, normalizedName: `종결만거래처-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() })).id;
+    const closed = [await closedDoc(fx.pm, "종결만 하나", vendor), await closedDoc(fx.pm, "종결만 둘", vendor)].sort();
+    const base = await listExpenses(fx.pm, { status: "all" }, { today: seoulToday() });
+    expect(rowCount(base)).toBe(0);
+    expect(base.hasAny).toBe(true);
+    expect(base.closedExcluded).toBe(2);
+    if (base.total) expect(base.total.count).toBe(0);
+    const withClosed = await listExpenses(fx.pm, { status: "all", includeClosed: true }, { today: seoulToday() });
+    expect(ids(withClosed)).toEqual(closed);
+    expect(withClosed.closedExcluded).toBe(0);
+  }, 90_000);
+
   it("알림 링크 범위(listExpenseIdsInScope)는 종결 문서도 그대로 연다(D-7280 영향 0)", async () => {
     const { fx, closed } = await closedWorld();
     const scope = await visibleExpenseScope(fx.pm);

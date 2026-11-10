@@ -72,6 +72,17 @@ export type AttachmentsProps = {
   confirmRemove?: (file: AttachmentFile) => Promise<boolean>;
 };
 
+// 07.2-10 Task 3 (DC-6 · S9) — `variant="logo"`: 파일 하나 · 미리보기 · `바꾸기` · `삭제`(확인 없이 즉시 + `로고 삭제됨` + `되돌리기`). 올리기 파이프(준비 → 선언 → PUT → 완료)는
+// 기본 갈래와 같은 `actions`를 쓴다. 처리기가 없는 단축키 글자는 싣지 않는다 — 화면 값(파일 · 미리보기 주소 · 쓰기 권리)은 부모가 서버 값으로 준다.
+export type LogoProps = {
+  variant: "logo";
+  file: AttachmentFile | null;
+  previewUrl: string | null;
+  canEdit: boolean;
+  actions: Pick<AttachmentActions, "request" | "complete"> & { remove: (fileId: string) => Promise<boolean>; restore: (fileId: string) => Promise<boolean> };
+  uploadFailedText: string;
+};
+
 /** 결과 행 2행의 숫자 조각 — value 0이면 그리지 않는다. `kind`는 숫자 색(상태 토큰), `href`가 있으면 조각이 3차 링크다. `unit`은 숫자 뒤 단위(`상쇄 2쌍`의 `쌍`). */
 export type BulkImportCount = { label: string; value: number; kind: StatusKind; href?: string; unit?: string };
 
@@ -632,7 +643,177 @@ function BulkImport({ rows, onFiles, openSignal, pickerId }: BulkImportProps) {
   );
 }
 
-export function Attachments(props: AttachmentsProps | BulkImportProps) {
+type LogoShown = { file: AttachmentFile; previewUrl: string | null };
+
+function Logo({ file, previewUrl, canEdit, actions, uploadFailedText }: LogoProps) {
+  const [shown, setShown] = useState<LogoShown | null>(file ? { file, previewUrl } : null);
+  const [removedFile, setRemovedFile] = useState<AttachmentFile | null>(null);
+  const [state, setState] = useState<{ kind: "idle" } | { kind: "uploading" } | { kind: "failed"; message: string }>({ kind: "idle" });
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const previews = useRef<string[]>([]);
+  useEffect(() => {
+    const urls = previews.current;
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, []);
+
+  async function upload(list: FileList | File[]) {
+    const picked = Array.from(list)[0];
+    if (!picked) return;
+    setState({ kind: "uploading" });
+    try {
+      const prepared = await prepareEvidenceFile(picked);
+      const requested = await actions.request({ size: prepared.size, contentType: prepared.contentType, sha256: prepared.sha256, name: prepared.name });
+      if (!requested.ok) {
+        setState({ kind: "failed", message: requested.message });
+        return;
+      }
+      const put = await fetch(requested.intent.url, { method: requested.intent.method, headers: requested.intent.headers, body: prepared.blob });
+      if (!put.ok) {
+        setState({ kind: "failed", message: uploadFailedText });
+        return;
+      }
+      const completed = await actions.complete(requested.intent.intentId);
+      if (!completed.ok) {
+        setState({ kind: "failed", message: completed.message });
+        return;
+      }
+      if (prepared.previewUrl) previews.current.push(prepared.previewUrl);
+      setShown({ file: completed.file, previewUrl: prepared.previewUrl });
+      setRemovedFile(null);
+      setState({ kind: "idle" });
+    } catch {
+      setState({ kind: "failed", message: uploadFailedText });
+    }
+  }
+
+  async function remove(target: LogoShown) {
+    let removedOnServer = false;
+    try {
+      removedOnServer = await actions.remove(target.file.id);
+    } catch {
+      removedOnServer = false;
+    }
+    if (!removedOnServer) {
+      setState({ kind: "failed", message: "삭제 실패 · 다시 시도" });
+      return;
+    }
+    setRemovedFile(target.file);
+    setShown(null);
+    setState({ kind: "idle" });
+  }
+
+  async function restore(target: AttachmentFile) {
+    let restored = false;
+    try {
+      restored = await actions.restore(target.id);
+    } catch {
+      restored = false;
+    }
+    if (!restored) {
+      setState({ kind: "failed", message: uploadFailedText });
+      return;
+    }
+    // 되돌린 로고의 읽기 주소는 새로 고침 때 서버가 준다 — 지금은 파일 행만 되살린다.
+    setShown({ file: target, previewUrl: null });
+    setRemovedFile(null);
+    setState({ kind: "idle" });
+  }
+
+  function onDrop(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setDragging(false);
+    if (event.dataTransfer.files.length > 0) void upload(event.dataTransfer.files);
+  }
+
+  const dropProps = canEdit
+    ? {
+        onDragOver: (event: DragEvent<HTMLElement>) => {
+          event.preventDefault();
+          setDragging(true);
+        },
+        onDragLeave: () => setDragging(false),
+        onDrop,
+      }
+    : {};
+  const uploading = state.kind === "uploading";
+
+  return (
+    <div className={styles.root} data-ui="attachments" data-variant="logo" {...dropProps}>
+      {canEdit ? (
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg"
+          hidden
+          data-testid="attachments-input"
+          onChange={(event) => {
+            if (event.target.files) void upload(event.target.files);
+            event.target.value = "";
+          }}
+        />
+      ) : null}
+
+      {removedFile ? (
+        <p className={styles.logoNotice} role="status">
+          <span>로고 삭제됨</span>
+          {canEdit ? (
+            <Button variant="tertiary" onClick={() => void restore(removedFile)}>
+              되돌리기
+            </Button>
+          ) : null}
+        </p>
+      ) : null}
+
+      {shown ? (
+        <>
+          <div className={styles.logoPreview}>
+            {shown.previewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- 서명 주소 · 로컬 blob 미리보기 — 최적화 대상이 아니다.
+              <img src={shown.previewUrl} alt="" className={styles.logoImage} />
+            ) : (
+              <span className={styles.meta}>{shown.file.name}</span>
+            )}
+          </div>
+          <div className={styles.item} data-state="done">
+            <span className={styles.clipBox}>
+              <Paperclip />
+            </span>
+            <span className={styles.text}>
+              <span className={styles.name} title={shown.file.name}>
+                {shown.file.name}
+              </span>
+              <span className={styles.meta}>{uploading ? "올리는 중…" : [sizeOf(shown.file.sizeBytes), dayOf(shown.file.createdAt)].join(" · ")}</span>
+            </span>
+            {canEdit ? (
+              <span className={styles.logoActions}>
+                <Button variant="tertiary" disabled={uploading} onClick={() => inputRef.current?.click()}>
+                  바꾸기
+                </Button>
+                <Button variant="tertiary" disabled={uploading} onClick={() => void remove(shown)}>
+                  삭제
+                </Button>
+              </span>
+            ) : null}
+          </div>
+        </>
+      ) : canEdit ? (
+        <button type="button" className={styles.drop} data-dragging={dragging ? "true" : undefined} disabled={uploading} onClick={() => inputRef.current?.click()}>
+          {uploading ? "올리는 중…" : "파일을 끌어 놓거나 눌러 고르기 · PNG·JPG 2MB"}
+        </button>
+      ) : null}
+
+      {state.kind === "failed" ? (
+        <p className={styles.error} role="alert">
+          {state.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export function Attachments(props: AttachmentsProps | BulkImportProps | LogoProps) {
   if (props.variant === "bulk-import") return <BulkImport {...props} />;
+  if (props.variant === "logo") return <Logo {...props} />;
   return <FileAttachments {...props} />;
 }

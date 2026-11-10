@@ -73,6 +73,8 @@ const DESKTOP_SETTINGS_SPECS = [
   "print-company-settings.spec.ts",
   "design-capture-07.4-01.spec.ts",
   "permissions-fund-note-unset.spec.ts",
+  // 07.2-10 — 회사 로고는 전역 상태라 다른 인쇄 스펙과 겹치면 서로의 견적서 머리를 바꾼다(print-company-settings와 같은 까닭).
+  "settings-company-logo.spec.ts",
 ];
 // 증빙 표 셋(기록 · 붙임 · 묶음)을 통째로 비우고(clearEvidence) 회사 전체 목록을 세는 스펙 — 두 워커에서 겹치면 서로의 기록을
 // 지우고 남의 기록을 센다(PR #253 CI e2e (1): 표 없음 · 11줄 대 1줄 · 묶음 FK 위반). desktop에서 빼고 desktop-evidence에서 한 워커로 돈다.

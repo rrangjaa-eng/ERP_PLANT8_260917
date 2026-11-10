@@ -69,6 +69,14 @@
   font-size: 12px;
 }
 
+/* 07.2-10 Task 3 — 고객 견적서 머리 로고 이미지(워드마크 자리). 원색 그대로(필터 없음, DC-3) · 머리 한 줄을 넘지 않게 상자만 정한다. */
+.logo {
+  display: block;
+  max-width: 50mm;
+  max-height: 14mm;
+  object-fit: contain;
+}
+
 .mark {
   font-weight: var(--fw-mark);
   font-size: 15px;

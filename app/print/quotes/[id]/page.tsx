@@ -1,14 +1,15 @@
 import { notFound, redirect } from "next/navigation";
 import { loadPrintCompany } from "@/domain/print/company";
+import { getCompanyLogoUrl } from "@/domain/settings/company-logo";
 import { kstDateOf } from "@/lib/kst-date";
 import { getSessionId } from "@/lib/viewer";
 import { PrintBar } from "@/app/print/_frame/PrintBar";
 import { PrintFields } from "@/app/print/_frame/PrintFields";
 import { PrintFrame } from "@/app/print/_frame/PrintFrame";
-import { PrintHeader } from "@/app/print/_frame/PrintHeader";
 import { PrintTable } from "@/app/print/_frame/PrintTable";
 import { PrintTitle } from "@/app/print/_frame/PrintTitle";
 import { loadQuoteForPrint } from "./load";
+import { QuoteHeader } from "./quote-logo";
 import { quoteRows } from "./quote-rows";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export default async function QuotePrintPage({ params }: { params: Promise<{ id:
 
   return (
     <PrintFrame bar={<PrintBar kind="quote" id={id} autoPrint={false} failureToast closeHref={`/projects/${quote.projectId}`} />}>
-      <PrintHeader company={company} printedAt={null} infoLabels={false} />
+      <QuoteHeader company={company} logoUrl={await getCompanyLogoUrl()} printedAt={null} infoLabels={false} />
       <PrintTitle title="QUOTATION" />
       <PrintFields
         rows={[

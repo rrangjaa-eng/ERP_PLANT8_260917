@@ -1289,7 +1289,8 @@ async function quoteLinesFilled(): Promise<SeedResult> {
   });
   // 고객 승인 표시는 하지 않는다 — 미승인 차수(편집 · 「수수료 줄 추가」 · 「계산」이 보이는 상태)가 이 시나리오다.
   await changeProjectStatus(teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
-  return { vars: { projectId: project.id }, viewer: pm };
+  // revisionId: 고객 견적서 인쇄 화면 /print/quotes/{revisionId}(07.2-10)도 이 시나리오 데이터로 찍는다.
+  return { vars: { projectId: project.id, revisionId: revision.id }, viewer: pm };
 }
 
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {

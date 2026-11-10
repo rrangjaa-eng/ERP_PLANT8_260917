@@ -80,12 +80,12 @@ async function revisionRow(revisionId: string) {
 
 async function filled() {
   const fx = await setupProject();
-  await insertLine(fx.revisionId, { itemName: "무대 설치", quantity: "2.00", days: "3.00", unitPriceAmountKrw: 100_000, quoteAmountKrw: 600_000, clientRemark: "고객 비고 글자", note: "내부 비고 글자", executionAmountKrw: 333_333 });
-  await insertLine(fx.revisionId, { itemName: "진행요원", subcategory: "staffing", quoteAmountKrw: 250_000, unitPriceAmountKrw: 250_000 });
-  await insertLine(fx.revisionId, { itemName: "카드 쓴 견적 외", lineKind: "out_of_quote", quoteAmountKrw: 0, unitPriceAmountKrw: 0, executionAmountKrw: 70_000 });
-  await insertLine(fx.revisionId, { itemName: "조정 줄", lineKind: "adjustment", subcategory: "adjustment", quoteAmountKrw: 0, unitPriceAmountKrw: 0, executionAmountKrw: -5_000 });
-  await insertLine(fx.revisionId, { itemName: "취소 줄", lineStatus: "cancelled", quoteAmountKrw: 0 });
-  await insertLine(fx.revisionId, { itemName: "대행 수수료", lineKind: "commission", subcategory: "commission", unitPriceAmountKrw: 85_000, quoteAmountKrw: 85_000, executionAmountKrw: 0 });
+  await insertLine(fx.revisionId, { itemName: "무대 설치", sortOrder: 0, quantity: "2.00", days: "3.00", unitPriceAmountKrw: 100_000, quoteAmountKrw: 600_000, clientRemark: "고객 비고 글자", note: "내부 비고 글자", executionAmountKrw: 333_333 });
+  await insertLine(fx.revisionId, { itemName: "진행요원", sortOrder: 1, subcategory: "staffing", quoteAmountKrw: 250_000, unitPriceAmountKrw: 250_000 });
+  await insertLine(fx.revisionId, { itemName: "카드 쓴 견적 외", sortOrder: 2, lineKind: "out_of_quote", quoteAmountKrw: 0, unitPriceAmountKrw: 0, executionAmountKrw: 70_000 });
+  await insertLine(fx.revisionId, { itemName: "조정 줄", sortOrder: 3, lineKind: "adjustment", subcategory: "adjustment", quoteAmountKrw: 0, unitPriceAmountKrw: 0, executionAmountKrw: -5_000 });
+  await insertLine(fx.revisionId, { itemName: "취소 줄", sortOrder: 4, lineStatus: "cancelled", quoteAmountKrw: 0 });
+  await insertLine(fx.revisionId, { itemName: "대행 수수료", sortOrder: 5, lineKind: "commission", subcategory: "commission", unitPriceAmountKrw: 85_000, quoteAmountKrw: 85_000, executionAmountKrw: 0 });
   return fx;
 }
 

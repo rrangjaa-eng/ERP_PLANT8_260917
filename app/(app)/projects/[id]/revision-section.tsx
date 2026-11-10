@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import type { RevisionSummaryDto } from "@/domain/quotes/revisions";
 import { formatKrw } from "@/lib/format-number";
-import { Button } from "@/ui/button/Button";
+import { kstYear } from "@/lib/kst-date";
+import { PcOnly } from "@/app/(app)/admin/pc-only";
+import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { Table } from "@/ui/table/Table";
@@ -47,6 +50,27 @@ export function RevisionSection({
   const evidenceRow = rows.find((row) => row.seq === latestSeq && evidenceShown(row));
   const openEvidenceRow = open?.mode === "evidence" ? rows.find((row) => row.seq === open.seq) : undefined;
 
+  // 07.2-10 PU4(D-7228) — 출력 기록이 있는 차수의 상태 칸 `보냄 MM-DD`(다른 해 `YYYY-MM-DD`). 서버가 만든 KST 날짜 글자를 자르기만 한다.
+  const thisYear = kstYear(new Date());
+  const sentText = (printedOn: string) => (Number(printedOn.slice(0, 4)) === thisYear ? printedOn.slice(5) : printedOn);
+  // 07.2-10 PU3(D-7229) — 3차 `견적서 인쇄`: 서버 요약의 printable이 참인 차수만(client는 권리를 다시 세지 않는다), PC만. 줄 0이면 비활성 + 이유.
+  const printEntrance = (row: SummaryRow) => {
+    if (row.printable !== true || row.revisionId === undefined) return null;
+    return (
+      <PcOnly>
+        {row.lineCount === 0 ? (
+          <Button type="button" variant="tertiary" disabled disabledReason="줄 없음 · 줄 만들기">
+            견적서 인쇄
+          </Button>
+        ) : (
+          <Link href={`/print/quotes/${row.revisionId}`} target="_blank" rel="noopener" prefetch={false} className={buttonLinkClassName("tertiary")}>
+            견적서 인쇄
+          </Link>
+        )}
+      </PcOnly>
+    );
+  };
+
   const columns: TableColumn<SummaryRow>[] = [
     { key: "seq", header: "차수", priority: "p1", cell: (row) => `${row.seq}차` },
     // /design-review P-6 — 노출 투영으로 모든 행에서 빠진 열은 채우지 않고 열째 뺀다(SYSTEM 762-765).
@@ -64,12 +88,17 @@ export function RevisionSection({
       header: "상태",
       priority: "p2",
       // U-2 — 최신 미승인 `현재` · 승인 `승인`(최신이어도 승인만) · 승인 없이 지나간 차수는 빈 칸(`—` 아님).
-      cell: (row) =>
-        row.statusWord ? (
-          <StatusTag status={row.statusWord} variant="text" />
-        ) : (
-          ""
-        ),
+      // 둘 다 없으면 빈 글자 그대로 — 조각(fragment)을 돌려주면 폰 접힌 줄이 빈 칸을 채워진 값으로 보고 ` ·`를 남긴다.
+      cell: (row) => {
+        if (!row.printedOn) return row.statusWord ? <StatusTag status={row.statusWord} variant="text" /> : "";
+        return (
+          <>
+            {row.statusWord ? <StatusTag status={row.statusWord} variant="text" /> : null}
+            {row.statusWord ? " · " : ""}
+            <StatusTag status="보냄" variant="text" /> {sentText(row.printedOn)}
+          </>
+        );
+      },
     },
     {
       key: "action",
@@ -78,36 +107,42 @@ export function RevisionSection({
       // 현재 행은 빈 칸(06-16: 승인된 차수 · 승인 증빙이 있는 차수만 3차 `승인 증빙 {N}`). 이전 차수는 읽기 섹션을 펼치는 버튼(이동이 아니라 링크가 아니다 — DR-13).
       cell: (row) => {
         if (row.seq === latestSeq) {
-          if (!evidenceShown(row)) return "";
+          if (!evidenceShown(row)) return printEntrance(row) ?? "";
           const count = row.approvalEvidenceCount ?? 0;
           const expanded = open?.mode === "evidence" && open.seq === row.seq;
           return (
-            <Button
-              id={evidenceButtonId}
-              type="button"
-              variant="tertiary"
-              aria-expanded={expanded}
-              aria-controls={expanded ? evidenceHeadingId : undefined}
-              aria-label={count > 0 ? `${row.seq}차 승인 증빙 ${count}` : `${row.seq}차 승인 증빙`}
-              onClick={() => {
-                if (expanded) closedEvidenceRef.current = true;
-                setOpen(expanded ? null : { mode: "evidence", seq: row.seq });
-              }}
-            >
-              {count > 0 ? `승인 증빙 ${count}` : "승인 증빙"}
-            </Button>
+            <>
+              <Button
+                id={evidenceButtonId}
+                type="button"
+                variant="tertiary"
+                aria-expanded={expanded}
+                aria-controls={expanded ? evidenceHeadingId : undefined}
+                aria-label={count > 0 ? `${row.seq}차 승인 증빙 ${count}` : `${row.seq}차 승인 증빙`}
+                onClick={() => {
+                  if (expanded) closedEvidenceRef.current = true;
+                  setOpen(expanded ? null : { mode: "evidence", seq: row.seq });
+                }}
+              >
+                {count > 0 ? `승인 증빙 ${count}` : "승인 증빙"}
+              </Button>
+              {printEntrance(row)}
+            </>
           );
         }
         return (
-          <Button
-            type="button"
-            variant="tertiary"
-            aria-expanded={openSeq === row.seq}
-            aria-controls={headingId}
-            onClick={() => setOpen((current) => (current?.mode === "lines" && current.seq === row.seq ? null : { mode: "lines", seq: row.seq }))}
-          >
-            {openSeq === row.seq ? "차수 닫기" : "차수 열기"}
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="tertiary"
+              aria-expanded={openSeq === row.seq}
+              aria-controls={headingId}
+              onClick={() => setOpen((current) => (current?.mode === "lines" && current.seq === row.seq ? null : { mode: "lines", seq: row.seq }))}
+            >
+              {openSeq === row.seq ? "차수 닫기" : "차수 열기"}
+            </Button>
+            {printEntrance(row)}
+          </>
         );
       },
     },

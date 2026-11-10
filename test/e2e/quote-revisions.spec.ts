@@ -665,7 +665,8 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     const rows = await dataRowTexts(table);
     expect(rows.map((cells) => cells[0])).toEqual(["3차", "2차", "1차"]);
     expect(rows.map((cells) => cells[4])).toEqual(["현재", "", "승인"]);
-    expect(rows[0]?.[5]).toBe("");
+    // 07.2-10 — 최신 차수 동작 칸은 입구 `견적서 인쇄`만(줄 0이면 비활성 + 이유). 「승인 증빙」 · 「차수 열기」는 여전히 없다.
+    expect(rows[0]?.[5]).toBe("견적서 인쇄줄 없음 · 줄 만들기");
     const openButtons = table.getByRole("button", { name: "차수 열기" });
     await expect(openButtons).toHaveCount(2);
     await expect(openButtons.first()).toHaveAttribute("aria-expanded", "false");
@@ -688,7 +689,7 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     const rows = await dataRowTexts(table);
     expect(rows.map((cells) => cells[4])).toEqual(["승인", ""]);
     // 06-16 04 S5 개정 ⒜ — 승인된 최신 차수 행의 동작 칸은 quote.amount 노출자에게 3차 `승인 증빙` 하나(「차수 열기」 없음).
-    expect(rows[0]?.[5]).toBe("승인 증빙");
+    expect(rows[0]?.[5]).toMatch(/^승인 증빙/);
     await expect(table.getByRole("button", { name: "차수 열기" })).toHaveCount(1);
     await expect(table.getByText("현재", { exact: true })).toHaveCount(0);
 
@@ -1364,7 +1365,9 @@ test.describe("고객 견적서 입구 · 보냄 배지 (07.2-10)", () => {
 
     await db.update(quoteRevisions).set({ printedAt: new Date() }).where(eq(quoteRevisions.id, project.revisionId));
     await page.reload();
-    await expect(revisionTable(page).getByText(`보냄 ${TODAY.slice(5)}`)).toHaveCount(1);
+    // 폰 접힌 줄(칸 하나)에도 같은 글자가 있어 getByText는 둘을 센다 — 데이터 행의 상태 칸만 잰다.
+    const rows = await dataRowTexts(revisionTable(page));
+    expect(rows.map((cells) => cells[4])).toEqual([`현재 · 보냄 ${TODAY.slice(5)}`]);
   });
 
   test("금액(quote.amount)을 볼 수 없는 계급 · 메뉴 읽기만 계정에는 입구 DOM이 없다", async ({ page }) => {

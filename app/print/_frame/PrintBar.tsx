@@ -7,11 +7,15 @@ import { recordDocumentPrintAction } from "./actions";
 import styles from "./print-frame.module.css";
 
 // 닫히지 않는 창(로그인 리디렉트 등으로 열린 창)에서는 그 서류의 상세 화면으로 간다.
-const DETAIL_HREF: Record<PrintDocumentKind, (id: string) => string> = {
+const DETAIL_HREF: Record<Exclude<PrintDocumentKind, "quote">, (id: string) => string> = {
   expense: (id) => `/expenses/${id}`,
   leave: (id) => `/leave/${id}`,
   settlement: (id) => `/projects/${id}/settlement`,
 };
+
+// 07.2-10: 견적서는 라우트 id가 차수 id라 상세 주소를 id로 만들 수 없다 — 닫기 대체 주소를 호출부가 준다(kind="quote"면 필수).
+// autoPrint(기본 true)가 false면 열 때 기록 · 인쇄를 하지 않는다(D-7227 열기만으로는 보냄 아님) — 버튼 · beforeprint만 남는다.
+type PrintBarProps = { id: string; autoPrint?: boolean } & ({ kind: Exclude<PrintDocumentKind, "quote">; closeHref?: string } | { kind: "quote"; closeHref: string });
 
 // 5초 안의 beforeprint 재발생 · 재클릭은 한 번의 인쇄로 합친다(D-7415). 모듈 변수라 한 탭 안에서만 유지된다.
 const COALESCE_MS = 5000;
@@ -27,7 +31,7 @@ function record(kind: PrintDocumentKind, id: string): void {
 
 // 07.4-01 D-7409: 인쇄 시작 갈래 A — 열면 자동으로 한 번 인쇄한다(SYSTEM §6-6 트리거 줄). 서버 액션 요청이 인쇄 미리보기가
 // 렌더러를 멈추기 전에 나가도록 window.print()는 동기로 부르지 않고 다음 틱에 부른다.
-export function PrintBar({ kind, id }: { kind: PrintDocumentKind; id: string }) {
+export function PrintBar({ kind, id, autoPrint = true, closeHref }: PrintBarProps) {
   const started = useRef(false);
 
   useEffect(() => {
@@ -38,11 +42,11 @@ export function PrintBar({ kind, id }: { kind: PrintDocumentKind; id: string }) 
 
   // 개발 모드 이중 효과에도 한 번이다 — ref는 재마운트에도 남는다.
   useEffect(() => {
-    if (started.current) return;
+    if (!autoPrint || started.current) return;
     started.current = true;
     record(kind, id);
     setTimeout(() => window.print(), 0);
-  }, [kind, id]);
+  }, [kind, id, autoPrint]);
 
   function print() {
     record(kind, id);
@@ -52,7 +56,7 @@ export function PrintBar({ kind, id }: { kind: PrintDocumentKind; id: string }) 
   function close() {
     window.close();
     setTimeout(() => {
-      if (!window.closed) window.location.assign(DETAIL_HREF[kind](id));
+      if (!window.closed) window.location.assign(closeHref ?? (kind === "quote" ? "/" : DETAIL_HREF[kind](id)));
     }, 0);
   }
 

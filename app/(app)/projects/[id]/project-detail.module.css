@@ -248,6 +248,26 @@
   align-items: flex-start;
 }
 
+/* 07.2-12(PU23 · DC-2) — 견적 줄 `삭제 예정` · `취소 예정`: DOM 순서 = 상태 낱말 → 항목명(취소선 + muted) → 3차 `되돌리기`. 취소선은 이 줄과 무효 행에만(SYSTEM §7-10). */
+.pendingDeleteItem {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.pendingDeleteName {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* 07.2-12(UI-SPEC S11) — 조정 쌍 줄의 상대 프로젝트 2행 · 짝도 지워진다는 한 줄. */
+.counterpartLine {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
 .restoreAction {
   border: 0;
   background: none;

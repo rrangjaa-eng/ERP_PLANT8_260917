@@ -429,7 +429,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(requestTable.getByRole("button", { name: /발행 요청/ })).toHaveText(/발행 요청 추가/);
   });
 
-  test("(e) 수주중에서 저장된 줄 삭제 → 확인 모달 → 일괄 저장 1 → 새로 고쳐도 없다", async ({ page }) => {
+  test("(e) 수주중에서 저장된 줄 삭제 → 확인 창 없이 `삭제 예정` → 일괄 저장 1 → 새로 고쳐도 없다(07.2-12 D-7238)", async ({ page }) => {
     await openAsPm(page, "bidding", addDays(TODAY, 30), [
       { itemName: "남길 줄", unitPrice: 100_000, execution: 50_000 },
       { itemName: "지울 줄", unitPrice: 200_000, execution: 100_000 },
@@ -437,11 +437,8 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
 
     await cell(page, 1, COL.itemName).focus();
     await page.keyboard.press("Delete");
-    const dialog = page.getByRole("dialog", { name: "견적 줄 삭제" });
-    await expect(dialog.getByText("보관함으로 옮겨짐 · 복원은 관리자")).toBeVisible();
-    await dialog.getByRole("button", { name: "견적 줄 삭제" }).click();
-    await expect(dialog).toBeHidden();
-    expect(await itemNames(page)).toEqual(["남길 줄"]);
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    await expect(cell(page, 1, COL.itemName)).toContainText("삭제 예정");
 
     const saved = waitForSaveResponse(page);
     await page.getByRole("button", { name: "일괄 저장 1" }).click();
@@ -512,7 +509,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
 
     await cell(page, 1, COL.itemName).focus();
     await page.keyboard.press("Delete");
-    await page.getByRole("dialog", { name: "견적 줄 삭제" }).getByRole("button", { name: "견적 줄 삭제" }).click();
+    await expect(cell(page, 1, COL.itemName)).toContainText("삭제 예정");
     await page.getByRole("button", { name: "줄 추가", exact: true }).click();
     await typeInto(page, dataRows(page).last().getByRole("gridcell").nth(COL.itemName), "항목", "새 끝 줄");
     const appended = page.waitForRequest((req) => isSaveAction(req));

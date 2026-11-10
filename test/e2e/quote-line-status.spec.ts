@@ -347,7 +347,7 @@ test.describe("견적 줄 상태 (06-13)", () => {
     await page.context().close();
   });
 
-  test("카드 붙잡은 줄 — 삭제 → 확인 창 `견적 줄 취소` → 저장 뒤 행이 남고 상태 `취소`", async ({ browser, baseURL }) => {
+  test("카드 붙잡은 줄 — 삭제 → 확인 창 없이 `취소 예정` → 저장 뒤 행이 남고 상태 `취소`(07.2-12 D-7237)", async ({ browser, baseURL }) => {
     const fx = await cardHeldProject();
 
     const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
@@ -355,14 +355,16 @@ test.describe("견적 줄 상태 (06-13)", () => {
     const row = rowOf(page, fx.lines[0]);
     const item = row.getByRole("gridcell").nth(ITEM_COLUMN);
     await waitForHydration(item);
-    const dialog = page.getByRole("dialog", { name: "견적 줄 취소" });
+    // Delete는 토글이라 이미 표시가 섰으면 다시 누르지 않는다(하이드레이션 전 키만 다시 보낸다).
     await expect(async () => {
-      await item.focus();
-      await page.keyboard.press("Delete");
-      await expect(dialog).toBeVisible({ timeout: 1000 });
+      if (!((await item.textContent()) ?? "").includes("취소 예정")) {
+        await item.focus();
+        await page.keyboard.press("Delete");
+      }
+      await expect(item).toContainText("취소 예정", { timeout: 1000 });
     }).toPass();
-    await dialog.getByRole("button", { name: "견적 줄 취소" }).click();
-    await expect(dialog).toBeHidden();
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    await expect(item).not.toContainText("삭제 예정");
     await page.getByRole("button", { name: /^일괄 저장 1/ }).click();
     await expect(page.getByRole("button", { name: /^일괄 저장 1/ })).toHaveCount(0);
 

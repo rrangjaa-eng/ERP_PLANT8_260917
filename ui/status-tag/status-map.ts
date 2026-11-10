@@ -105,6 +105,9 @@ export const STATUS_KIND = {
   "수금 지연": "warning",
   // 07.2-10 PU4(D-7228): 고객 견적서를 출력한 차수 — 상태 칸에 `보냄 MM-DD`(상태를 늘리지 않는 표지)
   보냄: "muted",
+  // 07.2-12 PU23(D-7238 · D-7237): 견적 줄 지우기 — 확인 창 대신 저장 전 표시 + 되돌리기(연결 문서가 있는 줄은 취소)
+  "삭제 예정": "muted",
+  "취소 예정": "muted",
 } as const satisfies Record<string, StatusKind>;
 
 /** 표의 낱말 + 단계 이름이 붙은 `{단계} 결재 중`(accent) + 조직 화면 중복 개수(warning). */

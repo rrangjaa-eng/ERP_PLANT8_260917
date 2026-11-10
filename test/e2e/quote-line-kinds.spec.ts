@@ -325,7 +325,7 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
     await expect(page.locator("tfoot")).toContainText("조정 줄 2칸 건너뜀");
   });
 
-  test("경영관리 — 조정 행 Delete는 `ui/confirm-dialog` 조정 줄 삭제 확인이고, 1차 뒤 저장하면 보관함에 견적 줄로 간다(DR-12)", async ({ page }) => {
+  test("경영관리 — 조정 행 Delete는 확인 창 없이 `삭제 예정` + 되돌리기이고, 저장하면 보관함에 견적 줄로 간다(07.2-12 D-7238)", async ({ page }) => {
     const itemName = `삭제할 조정 줄 ${randomUUID().slice(0, 6)}`;
     await openProject(page, {
       as: "adjuster",
@@ -339,24 +339,18 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
     const trigger = cell(page, 1, COL.execution);
     await focusGridCell(trigger);
     await page.keyboard.press("Delete");
-    const dialog = page.getByRole("dialog", { name: "조정 줄 삭제" });
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText(`${itemName} · 45,000`);
-    await expect(dialog).toContainText("보관함으로 옮겨짐 · 복원은 관리자");
-    const primary = dialog.getByRole("button", { name: "조정 줄 삭제" });
-    await expect(primary).toBeFocused();
-    await expect(dialog.getByRole("button", { name: /취소/ })).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(dialog).toHaveCount(0);
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    const itemCell = cell(page, 1, COL.itemName);
+    await expect(itemCell).toContainText("삭제 예정");
+    await expect(itemCell.getByText(itemName, { exact: true })).toHaveCSS("text-decoration-line", "line-through");
+    await expect(itemCell.getByRole("button", { name: `${itemName} 삭제 되돌리기` })).toHaveCount(1);
     await expect(trigger).toBeFocused();
 
-    await page.keyboard.press("Delete");
-    await dialog.getByRole("button", { name: "조정 줄 삭제" }).click();
-    await expect(dataRows(page)).toHaveCount(1);
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
     const saved = waitForSaveResponse(page);
     await page.getByRole("button", { name: /일괄 저장 1/ }).click();
     await saved;
+    await expect(dataRows(page)).toHaveCount(1);
     await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
 
     const archived = await listArchive(SYSTEM_VIEWER);

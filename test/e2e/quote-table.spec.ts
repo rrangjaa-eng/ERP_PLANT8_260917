@@ -16,7 +16,7 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertTempRole } from "./temp-roles";
 import { saveRevenue } from "@/domain/revenue";
 import { addDays, kstToday } from "@/lib/kst-date";
-import { and, eq, isNull, sum } from "drizzle-orm";
+import { and, eq, isNull, sql, sum } from "drizzle-orm";
 import { openProjectInfoEdit } from "./project-info-helpers";
 
 // 04-04 Task 3 — 견적 줄 표의 키보드 계약·범위 선택·붙여넣기·전부 거부를
@@ -303,116 +303,86 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await expect(page.locator("tbody tr").nth(1)).toBeVisible();
     await assertValues();
   });
-  test("(h) 저장된 줄에서 Delete → ui/confirm-dialog 확인 → 포커스·Tab 가두기·Esc 복귀 → 재삭제로 삭제 확정(04-46)", async ({ page }) => {
-    const client = await insertVendor(SYSTEM_VIEWER, {
-      name: `E2E삭제확인-${Date.now()}`,
-      normalizedName: `e2e삭제확인-${Date.now()}`,
-    });
-    const email = `e2e-delete-${randomUUID()}@example.test`;
-    const { userId: pmUserId, tempPassword } = await createAccount(SYSTEM_VIEWER, {
-      email,
-      name: "E2E Delete",
-      roleId: DEFAULT_ROLE_ID,
-    });
-    const [team] = await db.select().from(teams).limit(1);
-    if (!team) throw new Error("시드된 팀이 없습니다");
-
-    const projectName = `E2E삭제확인프로젝트-${Date.now()}`;
-    const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: projectName });
-    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
-    if (!revision) throw new Error("1차 차수가 없습니다");
-    // 저장된 줄(id가 있는 줄)을 도메인 함수로 미리 만든다 — UI로 만들면
-    // 아직 dirty·id 없는 새 줄이라 "저장된 줄에서 Delete" 전제와 다르다.
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
-      {
-        id: randomUUID(), isNew: true, subcategory: "stage_construction",
-        itemName: "삭제 대상 줄",
-        unitPrice: { currency: "KRW", amount: 1000000, fxRate: 1 },
-        execution: { currency: "KRW", amount: 0, fxRate: 1 },
-      },
-    ] });
-
-    await page.goto("/login");
-    await page.getByLabel("이메일").fill(email);
-    await page.getByLabel("비밀번호").fill(tempPassword);
-    await page.getByRole("button", { name: "로그인" }).click();
-    await expect(page).toHaveURL(/\/account$/);
-
-    await page.goto(`/projects/${project.id}`);
-    await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
-
-    const dataRow = page.locator("tbody tr").nth(1);
-    const gridcell = (index: number) => dataRow.getByRole("gridcell").nth(index);
-    const itemCell = gridcell(2);
+  test("(h · 07.2-12 S6) 저장된 줄 Delete → 확인 창 0 · `삭제 예정` + 취소선 + 되돌리기 · N +1 · 합계에서 빠짐 → 되돌리기 · Delete 두 번 = 원래대로 → 저장 → 보관", async ({ page }) => {
+    const { revisionId } = await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "남는 줄", amount: 1_000_000 },
+      { subcategory: "stage_construction", itemName: "삭제 대상 줄", amount: 2_000_000 },
+    ]);
+    const row = quoteDataRows(page).nth(1);
+    const itemCell = quoteCell(page, 1, 2);
+    const footer = quoteTable(page).locator("tfoot");
+    const undo = row.getByRole("button", { name: "삭제 대상 줄 삭제 되돌리기" });
+    await expect(footer).toContainText("(공급가액 · 2줄)");
+    await expect(footer).toContainText("3,000,000");
 
     await itemCell.focus();
     await page.keyboard.press("Delete");
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    await expect(itemCell).toContainText("삭제 예정");
+    await expect(row.getByText("삭제 대상 줄", { exact: true })).toHaveCSS("text-decoration-line", "line-through");
+    await expect(undo).toHaveCount(1);
+    // 취소선만으로 뜻을 전하지 않는다 — 상태 낱말이 항목명보다 DOM 앞이다.
+    expect(await itemCell.evaluate((cell) => (cell.textContent ?? "").indexOf("삭제 예정") < (cell.textContent ?? "").indexOf("삭제 대상 줄"))).toBe(true);
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    await expect(footer).toContainText("(공급가액 · 1줄)");
+    await expect(footer).not.toContainText("3,000,000");
 
-    const dialog = page.getByRole("dialog", { name: "견적 줄 삭제" });
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByText("보관함으로 옮겨짐 · 복원은 관리자")).toBeVisible();
-    const primaryButton = dialog.getByRole("button", { name: "견적 줄 삭제" });
-    await expect(primaryButton).toBeFocused();
+    await undo.click();
+    await expect(itemCell).not.toContainText("삭제 예정");
+    await expect(undo).toHaveCount(0);
+    await expect(row.getByText("삭제 대상 줄", { exact: true })).toHaveCSS("text-decoration-line", "none");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toHaveCount(0);
+    await expect(footer).toContainText("3,000,000");
 
-    // Tab이 다이얼로그 밖의 다른 인터랙션 요소로 나가지 않는다 — 네이티브
-    // showModal()의 포커스 가두기를 확인한다. Chromium은 마지막 포커스
-    // 가능 요소 다음 Tab에서 잠깐 activeElement를 <body>(포커스 없음 상태)로
-    // 돌렸다가 그다음 Tab에서 다이얼로그 첫 요소로 되돌아온다(실측 확인,
-    // 최소 재현 `<dialog><button>a</button><button>b</button></dialog>`도
-    // 같다) — 이 한 단계는 트랩이 깨진 것이 아니라 body는 인터랙션 요소가
-    // 아니므로 허용한다. 실제로 지켜야 할 계약은 "다이얼로그 밖의 다른
-    // 버튼·링크·입력으로 넘어가지 않는다"이다.
-    // body에 머무는 것은 한 단계뿐이다 — body 다음 Tab은 반드시 다이얼로그 안으로
-    // 돌아와야 하고, 다이얼로그 밖의 요소는 한 번도 포커스되지 않는다.
-    let previous: "inside" | "body" | "outside" = "inside";
-    let insideSteps = 0;
-    for (let i = 0; i < 6; i++) {
-      await page.keyboard.press("Tab");
-      const where = await dialog.evaluate((node) =>
-        node.contains(document.activeElement) ? "inside" : document.activeElement === document.body ? "body" : "outside",
-      );
-      expect(where).not.toBe("outside");
-      if (where === "body") expect(previous).toBe("inside");
-      if (where === "inside") insideSteps++;
-      previous = where;
-    }
-    expect(insideSteps).toBeGreaterThanOrEqual(4);
-
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
-    await expect(itemCell).toBeFocused();
-
-    // 다시 Delete → 1차 확인.
+    // 같은 줄 Delete 두 번 = 원래대로(토글).
+    await itemCell.focus();
     await page.keyboard.press("Delete");
-    await expect(dialog).toBeVisible();
-    await expect(primaryButton).toBeFocused();
+    await expect(itemCell).toContainText("삭제 예정");
+    await page.keyboard.press("Delete");
+    await expect(itemCell).not.toContainText("삭제 예정");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toHaveCount(0);
 
-    // Esc 직후 곧바로 Delete(CI 실패 재현) — 브라우저는 close()에서 포커스를
-    // 셀로 바로 돌려주지만 close 이벤트는 따로 줄 선 작업이라, 입력 작업이
-    // 먼저 처리되면 Delete가 닫힘 이벤트보다 앞선다. 그래도 확인은 다시 열려야 한다.
-    await dialog.evaluate(async (node) => {
-      node.dispatchEvent(new Event("cancel", { cancelable: true }));
-      await new Promise<void>((resolve) => queueMicrotask(resolve));
-      const cell = document.activeElement;
-      if (!(cell instanceof HTMLElement) || node.contains(cell)) throw new Error("포커스가 셀로 돌아오지 않았다");
-      cell.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }));
-    });
-    await expect(dialog).toBeVisible();
-    await expect(primaryButton).toBeFocused();
+    // 다시 Delete → 일괄 저장 → 줄이 보관되어 사라진다.
+    await page.keyboard.press("Delete");
+    await expect(itemCell).toContainText("삭제 예정");
+    await saveAndWait(page);
+    await expect(quoteDataRows(page)).toHaveCount(1);
+    await expect(quoteCell(page, 0, 2)).toHaveText("남는 줄");
+    expect(await quoteTotalKrw(revisionId)).toBe(1_000_000);
+  });
 
-    // 04-46 편차(SUMMARY 「계약 1 편차」 옆에 별도로 기록) — behavior 원문은
-    // "일괄 저장 건수 +1"을 요구하지만, 이 플랜은 ④에서 confirmDeleteLine을
-    // "기존 확인 처리기" 그대로 재사용한다(plan action ④). 그 함수는 줄을
-    // 로컬 상태에서 지울 뿐 dirty로 표시하지 않고, 삭제를 서버에 보내는
-    // 경로(quote_lines.archivedAt/archivedBy 컬럼은 있으나 saveQuoteLines에
-    // 쓰는 곳이 없다)도 이 플랜의 파일 목록(ui/app만)에 없다 — 실측 확인:
-    // 확정 클릭 뒤 "일괄 저장"은 여전히 비활성(dirtyCount 0)이다. 견적 줄
-    // 삭제의 실제 서버 반영(archivedAt 기록)은 이 플랜 밖의 새 도메인 작업
-    // 이라 여기서는 계약(모달 UI·포커스·Esc)만 굳히고 dirty 집계는 손대지
-    // 않는다.
-    await primaryButton.click();
-    await expect(dialog).toBeHidden();
-    await expect(itemCell).toBeHidden();
+  test("(07.2-12 S6) 저장 안 한 새 줄 Delete → 취소선 없이 즉시 사라진다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "기존 줄", amount: 1000 }]);
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(quoteDataRows(page)).toHaveCount(2);
+    await quoteCell(page, 1, 2).focus();
+    await page.keyboard.press("Delete");
+    await expect(quoteDataRows(page)).toHaveCount(1);
+    await expect(quoteTable(page).getByText("삭제 예정")).toHaveCount(0);
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+  });
+
+  test("(07.2-12 S6 error) 저장이 거부되면 `삭제 예정` 표시가 남고 합계 행에 오류 요약", async ({ page }) => {
+    const { revisionId } = await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "고칠 줄", amount: 1000, execution: 100 },
+      { subcategory: "stage_construction", itemName: "지울 줄", amount: 2000 },
+    ]);
+    await editTextCell(page, 0, 8, "500");
+    await quoteCell(page, 1, 2).focus();
+    await page.keyboard.press("Delete");
+    await expect(quoteCell(page, 1, 2)).toContainText("삭제 예정");
+    await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
+    // 다른 사람이 같은 줄을 먼저 고친 상태(서버 거부 흉내) — version을 올린다.
+    await db
+      .update(quoteLines)
+      .set({ executionAmountKrw: 300, profitKrw: 700, version: sql`${quoteLines.version} + 1` })
+      .where(and(eq(quoteLines.revisionId, revisionId), eq(quoteLines.itemName, "고칠 줄")));
+    await saveAndWait(page);
+    await expect(quoteTable(page).locator("tfoot")).toContainText("전부 거부");
+    await expect(quoteDataRows(page)).toHaveCount(2);
+    await expect(quoteCell(page, 1, 2)).toContainText("삭제 예정");
+    await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
   });
 
   test("금액을 볼 수 없는 직급은 상세 화면이 오류 없이 열리고 금액은 —, 표는 편집할 수 없다(/ship 리뷰)", async ({ page }) => {
@@ -938,7 +908,9 @@ test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () =>
     await expect(quoteDataRows(page)).toHaveCount(1);
     await quoteCell(page, 0, 2).focus();
     await page.keyboard.press("Delete");
-    await page.getByRole("dialog").getByRole("button", { name: "견적 줄 삭제" }).click();
+    // 07.2-12(D-7238) — 확인 창 없이 `삭제 예정`, 저장 때 보관된다.
+    await expect(quoteCell(page, 0, 2)).toContainText("삭제 예정");
+    await saveAndWait(page);
 
     await expect(quoteDataRows(page)).toHaveCount(30);
     await expect(quoteCell(page, 0, 2)).toHaveText("줄1");
@@ -954,7 +926,8 @@ test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () =>
     await expect(quoteCell(page, 0, 2)).toHaveText("B줄26");
     await quoteCell(page, 0, 2).focus();
     await page.keyboard.press("Delete");
-    await page.getByRole("dialog").getByRole("button", { name: "견적 줄 삭제" }).click();
+    await expect(quoteCell(page, 0, 2)).toContainText("삭제 예정");
+    await saveAndWait(page);
     await expect(pageNav(page)).toHaveCount(0);
 
     await quoteCell(page, 4, 2).focus();
@@ -1029,9 +1002,9 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     await expect(quoteCell(page, 4, 2)).toHaveText("B줄15");
     await quoteCell(page, 4, 2).focus();
     await page.keyboard.press("Delete");
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText("B줄15");
-    await dialog.getByRole("button", { name: "견적 줄 삭제" }).click();
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    await expect(quoteCell(page, 4, 2)).toContainText("삭제 예정");
+    await saveAndWait(page);
 
     await expect(quoteTable(page).getByText("B줄15", { exact: true })).toHaveCount(0);
     await expect(quoteDataRows(page)).toHaveCount(14);
@@ -1930,8 +1903,7 @@ test.describe("견적 줄 표 — 저장됨 N줄(FINDING-012)", () => {
     await pasteWithFormats(page, quoteCell(page, 0, 11), { "text/plain": "비고바꿈" });
     await quoteCell(page, 1, 2).focus();
     await page.keyboard.press("Delete");
-    await page.getByRole("dialog").getByRole("button", { name: "견적 줄 삭제" }).click();
-    await expect(quoteDataRows(page)).toHaveCount(2);
+    await expect(quoteCell(page, 1, 2)).toContainText("삭제 예정");
     await expect(invalidCells(page)).toHaveCount(0);
 
     await saveAndWait(page);

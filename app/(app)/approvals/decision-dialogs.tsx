@@ -100,6 +100,7 @@ export function RejectDialog({
             id={fieldId}
             options={reasonOptions}
             value={reason}
+            maxLength={messages.max}
             locked={pending}
             onChange={(next) => {
               setReason(next);

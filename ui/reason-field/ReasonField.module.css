@@ -50,10 +50,6 @@
 }
 
 @media (max-width: 699.98px) {
-  .field select {
-    min-height: var(--touch-min);
-  }
-
   .text {
     min-height: max(var(--touch-min), calc(2lh + var(--s-1) * 2 + var(--line-w) * 2));
   }

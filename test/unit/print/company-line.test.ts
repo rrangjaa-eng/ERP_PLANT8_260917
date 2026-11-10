@@ -23,6 +23,30 @@ describe("companyInfoLine (D-7405 B줄)", () => {
   });
 });
 
+// 07.2-10 결정 d — 값만 모드(고객 견적서 B줄: 한글 라벨 없이 값만 ` · `로 잇는다). 기본 호출은 위 사례 그대로다.
+describe("companyInfoLine 값만 모드 (07.2-10)", () => {
+  it("라벨 없이 값만 잇는다", () => {
+    expect(companyInfoLine(full, { labels: false })).toBe("서울시 강남구 · 123-45-67890 · 홍길동 · 02-123-4567");
+  });
+
+  it("전화가 비면 이름째 빠진다", () => {
+    expect(companyInfoLine({ ...full, phone: "" }, { labels: false })).toBe("서울시 강남구 · 123-45-67890 · 홍길동");
+  });
+
+  it("라벨 글자가 한 글자도 없다", () => {
+    const line = companyInfoLine(full, { labels: false }) ?? "";
+    for (const label of ["사업자번호", "대표", "전화"]) expect(line).not.toContain(label);
+  });
+
+  it("전부 비면 null이다", () => {
+    expect(companyInfoLine(empty, { labels: false })).toBeNull();
+  });
+
+  it("labels: true는 기본 호출과 같다", () => {
+    expect(companyInfoLine(full, { labels: true })).toBe(companyInfoLine(full));
+  });
+});
+
 describe("companyWordmark (D-7406 · 사용자 카드 F3)", () => {
   it("회사명 앞뒤 공백을 걷는다", () => {
     expect(companyWordmark(" 플랜트 ")).toBe("플랜트");

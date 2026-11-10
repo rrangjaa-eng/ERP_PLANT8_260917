@@ -11,8 +11,44 @@ export function formBlocked(
   return own ?? preview?.blockedReason ?? null;
 }
 
+// 07.2-08(PU11 · D-7257 · D-7258 · UI-SPEC S17): 반반차 = 날짜 + 시작 시각(기본 09:00 — 채워져 있어 안 바꿔도 제출된다).
+// 오전/오후 칸은 반차만. 종류별 칸 집합과 보내는 값이 여기 한 곳이다(폼은 이 결과대로 그린다).
+export const DEFAULT_START_TIME = "09:00";
+
+// 시작 시각 칸의 처음 값 — 새 신청은 09:00, 다시 신청은 저장된 시각. 시각 없이 저장된 기존 반반차(07.2-08 전)는 빈 칸으로 두어
+// 사람이 고르게 한다(09:00을 채우면 오후 반반차가 말없이 09:00으로 바뀐다 · PR #368 리뷰 P3-1). 빈 칸은 서버 형식 검사가 막는다.
+export function initialStartTime(resubmit: { kind: string; startTime: string | null } | undefined): string {
+  if (!resubmit) return DEFAULT_START_TIME;
+  return resubmit.startTime ?? (resubmit.kind === "quarter_day" ? "" : DEFAULT_START_TIME);
+}
+
+export type LeaveFormField = "startDate" | "endDate" | "half" | "startTime";
+
+export function leaveFieldsOf(kind: string): LeaveFormField[] {
+  if (kind === "quarter_day") return ["startDate", "startTime"];
+  if (kind === "half_day") return ["startDate", "half"];
+  return ["startDate", "endDate"];
+}
+
+export type LeaveFormValues = { kind: string; half: string; startTime: string; startDate: string; endDate: string; note: string };
+export type LeaveInput = { kind: string; startDate: string; endDate: string; half: string; startTime?: string; note: string };
+
+// 보내는 값 — 하루짜리(반차 · 반반차)는 종료일 = 날짜, half는 반차만, startTime은 반반차만.
+export function toLeaveInput(values: LeaveFormValues): LeaveInput {
+  const fields = leaveFieldsOf(values.kind);
+  const singleDay = !fields.includes("endDate");
+  return {
+    kind: values.kind,
+    startDate: values.startDate,
+    endDate: singleDay ? values.startDate : values.endDate,
+    half: fields.includes("half") ? values.half : "",
+    ...(fields.includes("startTime") ? { startTime: values.startTime } : {}),
+    note: values.note,
+  };
+}
+
 // 06.3-02(리뷰 A1): 마지막 제출 입력(next-safe-action `useAction`의 `input`)과 지금 입력이 같은가 — 비고는 없으면 빈 문자열.
-type LeaveInputLike = { kind: string; startDate: string; endDate: string; half: string; note?: string };
+type LeaveInputLike = { kind: string; startDate: string; endDate: string; half: string; startTime?: string; note?: string };
 
 export function sameLeaveInput(a: LeaveInputLike, b: LeaveInputLike): boolean {
   return (
@@ -20,6 +56,7 @@ export function sameLeaveInput(a: LeaveInputLike, b: LeaveInputLike): boolean {
     a.startDate === b.startDate &&
     a.endDate === b.endDate &&
     a.half === b.half &&
+    (a.startTime ?? "") === (b.startTime ?? "") &&
     (a.note ?? "") === (b.note ?? "")
   );
 }

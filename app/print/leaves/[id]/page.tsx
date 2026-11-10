@@ -8,7 +8,7 @@ import { loadPrintCompany } from "@/domain/print/company";
 import { getLeavePrint } from "@/domain/print/leave";
 import { kstDateOf, kstDateTimeOf } from "@/lib/kst-date";
 import { getSessionId, requireSession } from "@/lib/viewer";
-import { HALF_LABELS, LEAVE_KIND_LABELS } from "@/app/(app)/leave/labels";
+import { formatLeaveKind } from "@/app/(app)/leave/labels";
 import { toApprovalBoxes } from "@/app/print/_frame/approval-boxes";
 import { PrintApproval } from "@/app/print/_frame/PrintApproval";
 import { PrintBar } from "@/app/print/_frame/PrintBar";
@@ -40,8 +40,8 @@ export default async function LeavePrintPage({ params }: { params: Promise<{ id:
   const currentStep = view?.steps?.find((step) => step.state === "current");
   const statusText = documentStatusText(view?.status, currentStep ? statusStepLabel(currentStep.label) : null);
 
-  // 연차 상세 화면의 종류 · 기간과 같은 식(시작 시각 꼬리 없음).
-  const kind = leave.kind ? `${LEAVE_KIND_LABELS[leave.kind] ?? leave.kind}${leave.half ? ` ${HALF_LABELS[leave.half] ?? leave.half}` : ""}` : null;
+  // 연차 상세 화면의 종류 · 기간과 같은 식 — 07.2-08(PU11): 같은 함수 formatLeaveKind라 반반차는 `반반차 14:00`.
+  const kind = formatLeaveKind(leave) || null;
   const period = leave.startDate && leave.endDate ? `${leave.startDate}${leave.endDate !== leave.startDate ? ` ~ ${leave.endDate}` : ""}` : null;
   const affiliation = [print?.divisionName, print?.teamName, print?.roleName].filter(Boolean).join(" · ");
   // 잔고 줄 글자는 화면 잔고 행과 같은 함수의 text 그대로다(줄 색은 싣지 않는다).

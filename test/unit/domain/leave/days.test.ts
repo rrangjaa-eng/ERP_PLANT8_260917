@@ -9,6 +9,7 @@ import {
   leaveYearRange,
   MIN_LEAVE_YEAR,
 } from "@/domain/leave/days";
+import { leaveStartTimeOf } from "@/domain/leave";
 
 // LEAV-01: 일수는 정수 1/4일(쿼터). 종일 = 기간 안 영업일 × 4, 반차 = 2, 반반차 = 1,
 // 재택 = 0. 휴일 판정은 셋째 인자 — 없으면 주말만(06.3 D-6301 · D-6302).
@@ -73,8 +74,20 @@ describe("countLeaveQuarters — 단위", () => {
     ]);
   });
 
-  it("반반차 시간이 목록 밖(`x`)이면 칸 half 오류", () => {
-    expect(errors({ kind: "quarter_day", startDate: "2026-09-22", endDate: "2026-09-22", half: "x" })).toEqual([
+  // 07.2-08(PU11 · D-7258): 반반차는 시작 시각이 오전/오후를 대신한다 — half를 보지 않고 null로 저장한다.
+  it("반반차는 half가 비거나 목록 밖이어도 통과하고 검증된 half가 null", () => {
+    for (const half of ["", "x", "am"]) {
+      const result = countLeaveQuarters({ kind: "quarter_day", startDate: "2026-09-22", endDate: "2026-09-22", half });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.half).toBeNull();
+        expect(result.quarters).toBe(1);
+      }
+    }
+  });
+
+  it("반차 + half 빈 값은 지금처럼 칸 half 오류", () => {
+    expect(errors({ kind: "half_day", startDate: "2026-09-22", endDate: "2026-09-22", half: "" })).toEqual([
       { field: "half", message: LEAVE_HALF_EMPTY_ERROR },
     ]);
   });
@@ -206,5 +219,24 @@ describe("formatLeaveDays", () => {
     expect(formatLeaveDays(12)).toBe("3일");
     expect(formatLeaveDays(2)).toBe("0.5일");
     expect(formatLeaveDays(1)).toBe("0.25일");
+  });
+});
+
+// 07.2-08(PU11 · D-7257 · D-7258): 새 반반차는 시작 시각 필수 · 형식만(근무시간 검사 없음). 반반차가 아니면 시각을 버린다(null 저장).
+describe("leaveStartTimeOf — 반반차 시작 시각", () => {
+  const FORMAT_ERROR = { field: "startTime", message: "시작 시각 형식 오류 · 14:00처럼" };
+
+  it("반반차 14:00 · 00:00 · 23:59는 통과", () => {
+    for (const time of ["14:00", "00:00", "23:59"]) expect(leaveStartTimeOf("quarter_day", time)).toEqual({ ok: true, startTime: time });
+  });
+
+  it("반반차에 시각 없음 · 빈 값 · 25:00 · 9:0 · 09:60은 오류", () => {
+    for (const time of [undefined, null, "", "25:00", "9:0", "09:60", "14:00:00"]) {
+      expect(leaveStartTimeOf("quarter_day", time)).toEqual({ ok: false, error: FORMAT_ERROR });
+    }
+  });
+
+  it("종일 · 반차 · 재택에 온 시각은 무시하고 null", () => {
+    for (const kind of ["full_day", "half_day", "remote"]) expect(leaveStartTimeOf(kind, "14:00")).toEqual({ ok: true, startTime: null });
   });
 });

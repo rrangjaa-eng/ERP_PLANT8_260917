@@ -71,8 +71,9 @@ describe("제출 겹침(06.3 D-6307~D-6309)", () => {
     await submitLeave(drafter, HALF_22_AM, deps);
     await expect(submitLeave(drafter, HALF_22_PM, deps)).resolves.toMatchObject({ version: 1 });
 
-    const quarterAm: SubmitLeaveInput = { kind: "quarter_day", startDate: "2026-09-29", endDate: "2026-09-29", half: "am" };
-    const quarterPm: SubmitLeaveInput = { ...quarterAm, half: "pm" };
+    // 07.2-08(D-7258 · D-7259): 반반차는 시작 시각이 오전/오후를 대신하고, 시각이 달라도 같은 날 둘은 막힌다(시각 겹침 셈 없음).
+    const quarterAm: SubmitLeaveInput = { kind: "quarter_day", startDate: "2026-09-29", endDate: "2026-09-29", half: "", startTime: "09:00" };
+    const quarterPm: SubmitLeaveInput = { ...quarterAm, startTime: "14:00" };
     await submitLeave(drafter, quarterAm, deps);
     expect((await refusal(submitLeave(drafter, quarterPm, deps))).fieldErrors).toEqual([
       { field: "startDate", message: "9월 29일 반반차 신청과 겹침 · 날짜 바꾸기" },

@@ -4,12 +4,12 @@ import { withTransaction } from "@/lib/db-transaction";
 import { NOT_HOLDER_MESSAGE, NotCurrentHolderError, prepareSubmission, resubmitDocument } from "@/domain/approvals";
 import type { TxLogDeps } from "@/domain/approvals/tx-log";
 import { findLeaveRequestById, lockLeaveDrafter, updateLeaveRequestFields } from "@/repositories/leave-requests";
-import { countLeaveQuarters, leaveYearRange } from "@/domain/leave/days";
+import { leaveYearRange } from "@/domain/leave/days";
 import { seoulToday } from "@/lib/dates";
 import { assertLeaveWrite, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { findLiveLeaveOverlap, loadLeaveHolidays } from "@/domain/leave/guard";
 import { overlapMessage } from "@/domain/leave/overlap";
-import { LeaveValidationError, type SubmitLeaveInput } from "@/domain/leave";
+import { LeaveValidationError, validateLeaveInput, type SubmitLeaveInput } from "@/domain/leave";
 
 // 04.1-02(EXP-04 ordering): 반려된 연차의 다시 신청 — 번호는 그대로, 새 차수(round + 1)의 결재선은 다시
 // 신청한 시점의 설정 · 소속으로 고정된다. 이전 차수의 단계 · 반려 사유는 지워지지 않는다. 맨 위 `./index`
@@ -24,11 +24,10 @@ export async function resubmitLeave(
   deps?: ResubmitLeaveDeps,
 ): Promise<{ leaveId: string; instanceId: string; version: number; round: number; nextHolderNames: string | null }> {
   await assertLeaveWrite(viewer);
-  // 검증된 값만 저장한다 — countLeaveQuarters가 돌려준 {kind, half}와 날짜(입력 원문을 쓰지 않는다).
+  // 검증된 값만 저장한다 — validateLeaveInput이 돌려준 {kind, half, startTime}과 날짜(입력 원문을 쓰지 않는다).
   const range = leaveYearRange(seoulToday(deps?.now));
   const holidays = await loadLeaveHolidays(input.input.startDate, range);
-  const days = countLeaveQuarters(input.input, range, holidays);
-  if (!days.ok) throw new LeaveValidationError(days.errors);
+  const days = validateLeaveInput(input.input, range, holidays);
   const note = input.input.note?.trim() ? input.input.note.trim() : null;
 
   const leave = await findLeaveRequestById(viewer, { id: input.leaveId, documentKind: LEAVE_DOCUMENT_KIND });
@@ -55,6 +54,7 @@ export async function resubmitLeave(
         startDate: days.startDate,
         endDate: days.endDate,
         half: days.half,
+        startTime: days.startTime,
         daysQuarters: days.quarters,
         fiscalYear: days.fiscalYear,
         note,

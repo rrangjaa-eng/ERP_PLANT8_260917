@@ -18,6 +18,7 @@ let org: LeaveOrg;
 let inProgressId: string;
 let approvedId: string;
 let remoteId: string;
+let quarterId: string;
 const FULL_DAY = { kind: "full_day", half: "" } as const;
 
 test.beforeAll(async () => {
@@ -35,6 +36,8 @@ test.beforeAll(async () => {
   }
   const third = leaveWeekdayRange(today, { week: 28, weekdays: 1 });
   remoteId = (await submitLeave(org.drafter.viewer, { kind: "remote", half: "", ...third })).leaveId;
+  const fourth = leaveWeekdayRange(today, { week: 29, weekdays: 1 });
+  quarterId = (await submitLeave(org.drafter.viewer, { kind: "quarter_day", half: "", startTime: "14:00", ...fourth })).leaveId;
 });
 
 // 「인쇄」가 새 탭을 여므로 탭이 생기기 전에 컨텍스트에 건다(page.addInitScript는 새 탭에 닿지 않는다).
@@ -144,6 +147,16 @@ test.describe("입구 · 종이 · 기록", () => {
     await waitForPaper(page);
     await expect(page.locator("article dl dt")).toHaveCount(7);
     expect(normalize(await valueOf(page, "잔고").innerText())).toBe("—");
+    await context.close();
+  });
+
+  test("반반차 연차는 종류 행이 상세 화면과 같은 `반반차 14:00`이다", async ({ browser, baseURL }) => {
+    const { context, page } = await loggedIn(browser, baseURL, org.teamLead);
+    const screenKind = await screenValue(page, quarterId, "종류");
+    expect(screenKind).toBe("반반차 14:00");
+    await page.goto(printPath(quarterId));
+    await waitForPaper(page);
+    expect(normalize(await valueOf(page, "종류").innerText())).toBe("반반차 14:00");
     await context.close();
   });
 

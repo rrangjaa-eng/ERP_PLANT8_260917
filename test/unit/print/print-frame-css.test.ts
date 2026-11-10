@@ -104,6 +104,50 @@ describe("손익 칸 틀 CSS (07.4-03이 쓴다 — eng 검토 C1 · B3)", () =>
   });
 });
 
+// 07.2-10 결정 f — 고객 견적서가 쓰는 폭 · 행 변형 클래스. 기존 규칙은 그대로이고 클래스만 더해진다.
+describe("고객 견적서 확장 CSS (07.2-10)", () => {
+  it("새 폭 클래스 .w14 .w18 .w26", () => {
+    expect(rule(".w14")).toMatch(/width:\s*14mm/);
+    expect(rule(".w18")).toMatch(/width:\s*18mm/);
+    expect(rule(".w26")).toMatch(/width:\s*26mm/);
+  });
+
+  it(".table th.wrapLabel은 .table th의 nowrap을 이긴다(특정도 더 높음)", () => {
+    expect(rule(".table th")).toMatch(/white-space:\s*nowrap/);
+    expect(rule(".table th.wrapLabel")).toMatch(/white-space:\s*normal/);
+  });
+
+  it("대분류 머리 12px 굵게 · 중분류 머리 11px 600 + 들여쓰기 · 둘 다 쪽 끝에 홀로 남지 않는다", () => {
+    expect(rule(".groupRow")).toMatch(/break-after:\s*avoid/);
+    expect(rule(".groupRow td")).toMatch(/font-size:\s*12px/);
+    expect(rule(".groupRow td")).toMatch(/font-weight:\s*var\(--fw-bold\)/);
+    expect(rule(".subgroupRow")).toMatch(/break-after:\s*avoid/);
+    expect(rule(".subgroupRow td")).toMatch(/font-size:\s*11px/);
+    expect(rule(".subgroupRow td")).toMatch(/font-weight:\s*var\(--fw-medium\)/);
+    expect(rule(".subgroupRow td")).toMatch(/padding-left:\s*var\(--s-4\)/);
+  });
+
+  it("계산 행은 굵고 뒤 행과 쪽을 나누지 않으며, 합계 행 위에는 2px 구조 선이다", () => {
+    expect(rule(".sumRow")).toMatch(/break-after:\s*avoid/);
+    expect(rule(".sumRow td")).toMatch(/font-weight:\s*var\(--fw-bold\)/);
+    expect(rule(".grandRow td")).toMatch(/border-top:\s*var\(--print-rule-w\) solid var\(--print-rule\)/);
+  });
+
+  // 07.2-10 Task 3 — 로고 이미지 틀. 원색 그대로(필터 없음 — DC-3), 머리 한 줄을 넘지 않게 상자만 정한다.
+  it(".logo는 최대 높이 14mm · 최대 폭 50mm · object-fit: contain이고 필터가 없다", () => {
+    const logo = rule(".logo");
+    expect(logo).toMatch(/max-height:\s*14mm/);
+    expect(logo).toMatch(/max-width:\s*50mm/);
+    expect(logo).toMatch(/object-fit:\s*contain/);
+    expect(logo).not.toMatch(/filter/);
+  });
+
+  it("PrintTable은 변형 클래스와 wrapLabel을 쓴다", () => {
+    const source = readFileSync(resolve(DIR, "PrintTable.tsx"), "utf8");
+    for (const name of ["groupRow", "subgroupRow", "sumRow", "grandRow", "wrapLabel", "w14", "w18", "w26"]) expect(source, name).toContain(name);
+  });
+});
+
 describe("TSX 소스", () => {
   it("PrintTable은 실제 thead · caption · tfoot을 쓴다", () => {
     const source = readFileSync(resolve(DIR, "PrintTable.tsx"), "utf8");

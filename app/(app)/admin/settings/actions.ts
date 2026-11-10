@@ -12,6 +12,7 @@ import { setSimpleSettingValue } from "@/domain/document-numbering";
 import { saveCostRateSetting } from "@/domain/projects/budget";
 import { can } from "@/domain/permissions/can";
 import { isRouteStepSettingKey, saveRouteStepSettings } from "@/domain/approvals/route-step-settings";
+import { CompanyLogoUploadRefusedError, confirmCompanyLogoUpload, deleteCompanyLogo, requestCompanyLogoUpload, restoreCompanyLogo } from "@/domain/settings/company-logo";
 import "./actions.registry";
 
 // ADMN-05: 화면 코드에 설정 키 문자열이 하드코딩돼 있지 않다 — 클라이언트가
@@ -87,4 +88,42 @@ export const cancelHistorizedSettingAction = authedActionClient
 // docs/OPERATIONS.md §12).
 export const exportSettingsAction = authedActionClient.schema(z.object({})).action(async ({ ctx }) => {
   return exportSettings(ctx.viewer);
+});
+
+// 07.2-10 Task 3 (S9): 「회사 정보」 묶음 로고 — 올리기 선언 · 완료 통보 · 삭제 · 되돌리기. 판정(admin.settings 쓰기 · 형식 · 크기)은 domain/settings/company-logo가 한다.
+// 완료 통보 거부는 Attachments가 읽는 갈래(failed + retry)로 돌려주고, 선언 거부 문구는 UserFacingError 그대로 serverError로 간다.
+export const requestCompanyLogoUploadAction = authedActionClient
+  .schema(
+    z.object({
+      size: z.number().int().min(0),
+      contentType: z.string().min(1).max(100),
+      sha256: z.string().max(64),
+      name: z.string().min(1).max(255),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const intent = await requestCompanyLogoUpload(ctx.viewer, parsedInput);
+    return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });
+
+export const completeCompanyLogoUploadAction = authedActionClient
+  .schema(z.object({ intentId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      const file = await confirmCompanyLogoUpload(ctx.viewer, parsedInput);
+      return { file };
+    } catch (error) {
+      if (error instanceof CompanyLogoUploadRefusedError) return { failed: true as const, message: error.message, retry: error.retry };
+      throw error;
+    }
+  });
+
+export const deleteCompanyLogoAction = authedActionClient.schema(z.object({ fileId: z.string().uuid() })).action(async ({ parsedInput, ctx }) => {
+  await deleteCompanyLogo(ctx.viewer, parsedInput);
+  return { removed: true as const };
+});
+
+export const restoreCompanyLogoAction = authedActionClient.schema(z.object({ fileId: z.string().uuid() })).action(async ({ parsedInput, ctx }) => {
+  await restoreCompanyLogo(ctx.viewer, parsedInput);
+  return { restored: true as const };
 });

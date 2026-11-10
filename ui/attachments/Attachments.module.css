@@ -247,9 +247,51 @@
   background: var(--accent);
 }
 
+/* 07.2-10 variant="logo"(S9 · DC-6): 올리기 영역은 .drop 그대로, 올린 뒤 미리보기 상자 · 삭제 결과 줄만 더한다. */
+.logoPreview {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: calc(var(--s-12) * 2);
+  padding: var(--s-2);
+  border: var(--line-w) solid var(--border-surface);
+  border-radius: var(--radius-surface);
+  background: var(--surface-base);
+}
+
+.logoImage {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.logoNotice {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.logoActions {
+  display: flex;
+  gap: var(--s-2);
+}
+
 @media (max-width: 699.98px) {
   .drop {
     height: calc(var(--s-6) * 3);
+  }
+
+  .logoPreview {
+    height: calc(var(--s-6) * 3);
+  }
+
+  .logoActions button {
+    min-height: var(--touch-min);
   }
 
   .bulkDrop button {

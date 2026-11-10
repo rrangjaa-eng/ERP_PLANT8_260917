@@ -2667,3 +2667,12 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 - **반반차 시각** — 260907은 반반차 ⇔ 시각 있음을 DB가 강제한다(O:db/schema/010_tables.sql:3143 · :3171 `leave_requests_quarter_time`). 우리 DB는 `start_time IS NULL OR kind = 'quarter_day'`만 강제해 기존 반반차 행과 호환하고 신규 필수는 도메인이 강제한다(D-7258 · 07.2-01 대조 줄).
 - **조정 쌍** — 260907은 `quote_adjustments` 별도 표(from/to 프로젝트 · 금액 늘 양수, O:db/schema/010_tables.sql:4346-4368 · O:server/src/quotes.ts:2780-2840). 우리는 별도 표 없이 `quote_lines` 조정 줄 둘을 공유 키 `adjustment_pair_id`로 묶는다 — 줄 종류 · 합계 · 잠금이 이미 줄을 본다(D-7300 · 07.2-01 대조 줄).
 **결정자**: 사용자(D-7205 「260907과 다른 곳은 사유를 남긴다」).
+
+## 2026-11-10 — 07.2-10 고객 견적서 공용 틀 이탈 여섯 (§6-6)
+**결정**: 고객 견적서(`app/print/quotes/**`)는 §6-6 공용 틀과 여섯 곳이 다르다 — ① 머리 출력 일시 없음 ② 머리 B줄 값만(라벨 없음) ③ 로고 이미지가 워드마크 자리를 대신하고 못 읽으면 워드마크 ④ 화면 바 보냄 기록 실패 토스트(`보냄 기록 실패` · `인쇄 다시`) ⑤ 표 행 변형(대분류 · 중분류 머리, `Sub Total` · `Total` · `Grand Total`)과 열 폭 14 · 18 · 26mm · `Grand Total` 숫자 칸 합침 ⑥ 상세 화면 입구가 최신 차수(3차) `견적서 인쇄`. 공용 틀에는 선택 prop · 클래스만 더했고 기본값이 지금 동작이라 지출결의서 · 연차 · 정산서 · 확인증은 그대로다.
+**이유**: D-7224(고객에게 가는 종이는 감추는 것을 아예 싣지 않는다 — 출력 일시 · 한글 회사 정보 라벨은 고객 문서에 맞지 않는다) · D-7227(보냄은 출력 기록 — 실패하면 사용자가 알아야 하는 업무 기록이라 세 서류와 달리 토스트로 알린다) · D-7225(로고) · 07.4 D-7406(워드마크 자리). 260907도 고객용 견적서에 머리 라벨 없이 값만 싣는다(O:server/src/client-quotation.ts:1747-1753).
+**바뀐 규칙**: `PrintHeader` `printedAt: string | null` · `infoLabels`, `PrintTable` 폭 `14mm` `18mm` `26mm` · 행 `variant` · 열 `wrapLabel`, `PrintBar` `failureToast`, 클래스 `.w14` `.w18` `.w26` `.wrapLabel` `.groupRow` `.subgroupRow` `.sumRow` `.grandRow`. 합계 셋은 `tfoot`이 아니라 tbody 끝 행이다 — `tfoot`은 여러 쪽에서 쪽마다 되풀이될 수 있다.
+**버린 대안**: 견적서 전용 인쇄 CSS 복제(공용 틀을 포크하면 세 서류와 갈라진다) · 합계를 `tfoot`에 두기(쪽마다 되풀이 위험) · 기록 실패를 조용히 삼키기(보냄 배지가 거짓이 된다).
+**범위**: `app/print/quotes/**`와 공용 틀의 선택 prop · 클래스 — 세 서류 불변. 입구 ⑥은 `app/(app)/projects/[id]/revision-section.tsx`.
+**결정자**: 사용자 확정(D-7224 · D-7225 · D-7227). 계획 결정 k.
+**영향**: SYSTEM §6-6(07.2-10 고객 견적서 줄 · 공용 틀 서류 목록) · §7-7 인쇄 라우트 행.

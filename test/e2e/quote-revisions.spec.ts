@@ -665,7 +665,8 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     const rows = await dataRowTexts(table);
     expect(rows.map((cells) => cells[0])).toEqual(["3차", "2차", "1차"]);
     expect(rows.map((cells) => cells[4])).toEqual(["현재", "", "승인"]);
-    expect(rows[0]?.[5]).toBe("");
+    // 07.2-10 — 최신 차수 동작 칸은 입구 `견적서 인쇄`만(줄 0이면 비활성 + 이유). 「승인 증빙」 · 「차수 열기」는 여전히 없다.
+    expect(rows[0]?.[5]).toBe("견적서 인쇄줄 없음 · 줄 만들기");
     const openButtons = table.getByRole("button", { name: "차수 열기" });
     await expect(openButtons).toHaveCount(2);
     await expect(openButtons.first()).toHaveAttribute("aria-expanded", "false");
@@ -688,7 +689,7 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     const rows = await dataRowTexts(table);
     expect(rows.map((cells) => cells[4])).toEqual(["승인", ""]);
     // 06-16 04 S5 개정 ⒜ — 승인된 최신 차수 행의 동작 칸은 quote.amount 노출자에게 3차 `승인 증빙` 하나(「차수 열기」 없음).
-    expect(rows[0]?.[5]).toBe("승인 증빙");
+    expect(rows[0]?.[5]).toMatch(/^승인 증빙/);
     await expect(table.getByRole("button", { name: "차수 열기" })).toHaveCount(1);
     await expect(table.getByText("현재", { exact: true })).toHaveCount(0);
 
@@ -1340,5 +1341,108 @@ test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」
       expect.soft(look.head?.fontSize, `${label} 번호 머리글 글자 크기`).toBe(await tokenAsFontSize(page, "--text-aux"));
       expect.soft(look.head?.color, `${label} 번호 머리글 색은 faint 아님`).not.toBe(await tokenAsColor(page, "--text-faint"));
     }
+  });
+});
+
+// 07.2-10 PU4(D-7228 · D-7229) — 차수 상태 칸 `보냄 MM-DD` · 3차 `견적서 인쇄` 입구(금액 노출 + 프로젝트 쓰기 + 열린 프로젝트 · PC만).
+test.describe("고객 견적서 입구 · 보냄 배지 (07.2-10)", () => {
+  const lines = [{ itemName: "인쇄 입구 줄", unitPrice: 1_000_000, execution: 400_000 }];
+  const entrance = (page: Page) => page.locator('a[href^="/print/quotes/"]');
+
+  test("출력 전에는 `보냄`이 없고 입구가 새 탭 링크 하나이며, 출력 뒤 새로 고침하면 `보냄 {MM-DD}`가 상태 칸에 붙는다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines });
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    const link = revisionTable(page).getByRole("link", { name: "견적서 인쇄" });
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("href", `/print/quotes/${project.revisionId}`);
+    await expect(link).toHaveAttribute("rel", /noopener/);
+    await expect(revisionTable(page).getByText(/보냄/)).toHaveCount(0);
+
+    await db.update(quoteRevisions).set({ printedAt: new Date() }).where(eq(quoteRevisions.id, project.revisionId));
+    await page.reload();
+    // 폰 접힌 줄(칸 하나)에도 같은 글자가 있어 getByText는 둘을 센다 — 데이터 행의 상태 칸만 잰다.
+    const rows = await dataRowTexts(revisionTable(page));
+    expect(rows.map((cells) => cells[4])).toEqual([`현재 · 보냄 ${TODAY.slice(5)}`]);
+  });
+
+  test("새 탭에서 출력한 뒤 원 탭으로 돌아오면(포커스) 새로 고침 없이 `보냄 {MM-DD}`가 붙는다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines });
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    const popupPromise = page.context().waitForEvent("page");
+    await revisionTable(page).getByRole("link", { name: "견적서 인쇄" }).click();
+    const popup = await popupPromise;
+    await popup.waitForLoadState("domcontentloaded");
+    await expect(revisionTable(page).getByText(/보냄/)).toHaveCount(0);
+
+    await db.update(quoteRevisions).set({ printedAt: new Date() }).where(eq(quoteRevisions.id, project.revisionId));
+    await popup.close();
+    // 헤드리스는 창 포커스 이벤트를 보장하지 않아 원 탭에 직접 쏜다. 재요청 간격(1초) 안의 호출은 건너뛰므로 간격을 두고 다시 쏜다.
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+          return (await dataRowTexts(revisionTable(page))).map((cells) => cells[4]);
+        },
+        { timeout: 15_000, intervals: [1_200] },
+      )
+      .toEqual([`현재 · 보냄 ${TODAY.slice(5)}`]);
+  });
+
+  test("금액(quote.amount)을 볼 수 없는 계급 · 메뉴 읽기만 계정에는 입구 DOM이 없다", async ({ page }) => {
+    const team = await makeTeam();
+    const noAmount = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E인쇄금액없음-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: noAmount.id, menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: noAmount.id, menu: "projects", action: "write", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: noAmount.id, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: noAmount.id, infoItem: "quote.amount", visible: false });
+    const readOnly = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E인쇄읽기-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: readOnly.id, menu: "projects", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: readOnly.id, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: readOnly.id, infoItem: "quote.amount", visible: true });
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    for (const roleId of [noAmount.id, readOnly.id]) {
+      const viewer = await makeAccount(roleId, team.id, "E2E 입구 없음");
+      await page.context().clearCookies();
+      await login(page, viewer);
+      await page.goto(`/projects/${project.id}`);
+      await expect(revisionTable(page)).toBeVisible();
+      await expect(entrance(page)).toHaveCount(0);
+    }
+  });
+
+  test("375 폭에서는 입구가 보이지 않는다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines });
+    await login(page, pm);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    await expect(revisionTable(page)).toBeVisible();
+    await expect(entrance(page)).toBeHidden();
+  });
+
+  test("완료 프로젝트 차수에는 입구가 없고 그 인쇄 주소는 공용 404 변종이다(결정 j)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, status: "completed", lines });
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    await expect(revisionTable(page)).toBeVisible();
+    await expect(entrance(page)).toHaveCount(0);
+    const response = await page.goto(`/print/quotes/${project.revisionId}`);
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
   });
 });

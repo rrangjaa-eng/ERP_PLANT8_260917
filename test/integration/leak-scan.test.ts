@@ -34,6 +34,7 @@ import "@/domain/projects/documents";
 import "@/domain/projects/budget";
 import "@/domain/quotes/lines";
 import "@/domain/quotes/revisions";
+import "@/domain/quotes/client-print";
 import "@/domain/revenue";
 import "@/domain/issue-requests";
 import "@/domain/reserves";
@@ -1102,5 +1103,25 @@ describe("사람별 연차 잔여 DTO 축 — 숫자 칸은 leave.value를 보�
       if (!leaveVisible) hidden.push(roleId);
     }
     expect(hidden).toContain(hiddenProbe);
+  });
+});
+
+// 07.2-10 PU3(D-7221 · T-07.2-10-01): 고객 견적서 인쇄 DTO는 실행가 · 협력사 · 차익 · 내부 비고 · 조정 칸이 명세에 아예 없고, 금액 칸은 quote.amount 뒤에 있다.
+describe("고객 견적서 인쇄 DTO — 내부 칸 0 (07.2-10)", () => {
+  const INTERNAL_KEY = /vendor|execution|profit|note|adjust|cost/i;
+  const dto = DTO_REGISTRY.find((entry) => entry.name === "QuoteClientPrintDto");
+
+  it("검출기가 살아 있다 — 인쇄 DTO가 등록돼 있고 칸이 있다", () => {
+    expect(dto?.fields.length).toBeGreaterThan(5);
+  });
+
+  it("어떤 칸 이름에도 내부 칸 계열이 없다", () => {
+    expect((dto?.fields ?? []).filter((field) => INTERNAL_KEY.test(field.key)).map((field) => field.key)).toEqual([]);
+  });
+
+  it("금액이 든 칸은 quote.amount 뒤에 있어 금액을 못 보는 계급에게는 키째 없다", () => {
+    for (const key of ["lines", "groups", "totalKrw", "commissionLines", "commissionKrw", "grandTotalKrw"]) {
+      expect(dto?.fields.find((field) => field.key === key)?.infoItem, key).toBe("quote.amount");
+    }
   });
 });

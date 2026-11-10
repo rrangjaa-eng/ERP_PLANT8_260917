@@ -17,6 +17,7 @@ import { loadProjectForGate } from "@/domain/projects/auto-transition";
 import { ProjectNotFoundError } from "@/domain/projects/status";
 import { budgetBasisKrw, recordBudgetEvent } from "@/domain/projects/budget";
 import { structuralEditability } from "@/domain/quotes/edit-scope";
+import { canPrintQuoteRevision } from "@/domain/quotes/client-print";
 import { getCurrentQuoteRevision, linkedDocumentsByLine, listQuoteLines, type QuoteLineDto } from "@/domain/quotes/lines";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
@@ -30,6 +31,7 @@ import {
   findQuoteRevisionByProjectAndSeq as repoFindQuoteRevisionByProjectAndSeq,
   insertRevision as repoInsertRevision,
   setRevisionApproval as repoSetRevisionApproval,
+  setRevisionPrinted as repoSetRevisionPrinted,
   summarizeRevisions as repoSummarizeRevisions,
   type RevisionSummaryRow,
 } from "@/repositories/quote-revisions";
@@ -326,6 +328,9 @@ export type RevisionSummaryDto = {
   contentToken: string;
   // 06-16(D-56) — 이 차수의 승인 증빙 파일 수(살아 있는 파일). 합계를 볼 수 있는 사람(quote.amount)에게만 싣는다.
   approvalEvidenceCount: number;
+  // 07.2-10 PU4(D-7228) — 고객 견적서를 마지막으로 출력한 KST 날짜(서버가 글자로 만든다 — 화면은 자르지 않는다) · 인쇄 입구를 그려도 되는가(금액 + 프로젝트 쓰기 + 열린 프로젝트).
+  printedOn: string | null;
+  printable: boolean;
 };
 
 type RevisionSummaryProjectable = RevisionSummaryDto;
@@ -344,6 +349,8 @@ export const REVISION_SUMMARY_DTO_SPEC: DtoSpec<RevisionSummaryProjectable, Revi
     { key: "approvalMemo", from: "approvalMemo", infoItem: "project.value" },
     { key: "contentToken", from: "contentToken", infoItem: "project.value" },
     { key: "approvalEvidenceCount", from: "approvalEvidenceCount", infoItem: "quote.amount" },
+    { key: "printedOn", from: "printedOn", infoItem: "quote.amount" },
+    { key: "printable", from: "printable", infoItem: "quote.amount" },
   ],
 };
 
@@ -352,7 +359,7 @@ registerDto({
   fields: REVISION_SUMMARY_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
 
-function toSummaryProjectable(row: RevisionSummaryRow, latestSeq: number, evidenceCounts: ReadonlyMap<string, number>): RevisionSummaryProjectable {
+function toSummaryProjectable(row: RevisionSummaryRow, latestSeq: number, evidenceCounts: ReadonlyMap<string, number>, printable: boolean): RevisionSummaryProjectable {
   return {
     revisionId: row.id,
     seq: row.seq,
@@ -366,6 +373,8 @@ function toSummaryProjectable(row: RevisionSummaryRow, latestSeq: number, eviden
     approvalMemo: row.customerApprovalMemo,
     contentToken: row.contentToken,
     approvalEvidenceCount: evidenceCounts.get(row.id) ?? 0,
+    printedOn: row.printedAt === null ? null : kstDateOf(row.printedAt),
+    printable,
   };
 }
 
@@ -379,9 +388,11 @@ export async function listRevisionSummaries(viewer: Viewer, projectId: string): 
   for (const file of await listAliveByOwners(viewer, { ownerKind: APPROVAL_EVIDENCE_KIND, ownerIds: rows.map((row) => row.id) })) {
     evidenceCounts.set(file.ownerId, (evidenceCounts.get(file.ownerId) ?? 0) + 1);
   }
+  // 인쇄 권리는 프로젝트 단위 사실이라 차수마다 같다 — 한 번만 묻는다.
+  const printable = rows[0] ? await canPrintQuoteRevision(viewer, rows[0].id) : false;
   return projectMany(
     viewer,
-    rows.map((row) => toSummaryProjectable(row, latestSeq, evidenceCounts)),
+    rows.map((row) => toSummaryProjectable(row, latestSeq, evidenceCounts, printable)),
     REVISION_SUMMARY_DTO_SPEC,
   );
 }
@@ -411,6 +422,31 @@ export async function listRevisionLines(viewer: Viewer, projectId: string, input
     defaultVisible(viewer, "quote.amount"),
   ]);
   return listQuoteLines(viewer, current.id, { status: project.status, canWrite: canWrite && canSeeAmount, canAdjust: canAdjust && canSeeAmount });
+}
+
+// ── 고객 견적서 출력 기록(07.2-10 PU4 · D-7226 · D-7227) ───────────────────────────────────────────────────────
+// 인쇄 화면을 열기만 해서는 부르지 않는다 — 출력 버튼 · beforeprint가 공용 recordDocumentPrint를 거쳐 부른다(5초 합치기는 그쪽).
+// 프로젝트 행 잠금 · 게이트 없음: 출력 기록은 돈 · 상태를 바꾸지 않는다. 권리는 읽기와 같은 판정(canPrintQuoteRevision)을 tx 앞에서 한 번 더 본다.
+// 차수 printed_at · printed_by와 공용 행동 로그 document_print 한 행이 한 트랜잭션이다(새 행동 종류 0).
+export const QUOTE_PRINT_DENIED = "견적서 인쇄 권한 없음";
+
+export async function markQuotePrinted(
+  viewer: Viewer,
+  revisionId: string,
+  input: { number: string },
+  deps?: Partial<{ recordAction: typeof defaultRecordAction; now: () => Date }>,
+): Promise<void> {
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  const now = deps?.now ?? (() => new Date());
+  if (!(await canPrintQuoteRevision(viewer, revisionId))) denyWrite(viewer, "quote.print", { revisionId }, new UserFacingError(QUOTE_PRINT_DENIED));
+  await withTransaction(async (tx) => {
+    await repoSetRevisionPrinted(viewer, revisionId, { printedAt: now(), printedBy: viewer.id }, tx);
+    await recordAction(
+      viewer,
+      { actionType: "document_print", entity: REVISION_ENTITY, entityId: revisionId, documentId: revisionId, detail: { kind: "quote", number: input.number } },
+      { tx },
+    );
+  });
 }
 
 // ── 승인 증빙 주인(06-16 · D-56) ───────────────────────────────────────────────────────────────────────────────

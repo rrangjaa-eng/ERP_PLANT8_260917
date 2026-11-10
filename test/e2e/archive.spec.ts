@@ -207,6 +207,8 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     // 행 바로 뒤는 폰 접힌 줄(PC에서는 숨김)이고 그다음이 이유 줄이다 — 다음 두 행 안의 detail 줄만 본다.
     const reason = row.locator("xpath=following-sibling::tr[position() <= 2][@data-ui='static-table-detail']");
     await expect(reason).toHaveText("사용중지 본부 아래 팀 · 본부 먼저 복원");
+    // 서버 거부 글자는 보조 기술이 듣는다 — 다른 화면의 거부 줄과 같은 role="alert"(토스트는 원인 앞부분만 싣는다).
+    await expect(reason.getByRole("alert")).toHaveText("사용중지 본부 아래 팀 · 본부 먼저 복원");
     await expect(row.getByRole("button", { name: "복원" })).toHaveCount(0);
     await expect(row.getByRole("cell").last()).toHaveText("—");
     await expect(page.getByText("복원 · 실패 · 사용중지 본부 아래 팀", { exact: true })).toBeVisible();

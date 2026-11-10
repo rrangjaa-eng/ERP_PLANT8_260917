@@ -63,7 +63,7 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
           columns={COLUMNS}
           rows={rows.map((item) => ({
             key: `${item.entity}:${item.id}`,
-            detail: rejected.has(`${item.entity}:${item.id}`) ? <p className={styles.rowReason}>{rejected.get(`${item.entity}:${item.id}`)}</p> : undefined,
+            detail: rejected.has(`${item.entity}:${item.id}`) ? <p role="alert" className={styles.rowReason}>{rejected.get(`${item.entity}:${item.id}`)}</p> : undefined,
             // §7-3 폰 전략 — P1(종류·이름·동작)만 열로 남고 보관 시각·보관한 사람은 `StaticTable`이 행 아래 접힌 줄 하나로 넣는다.
             cells: [
               item.label,

@@ -69,6 +69,8 @@ const PHASE7_WORDS: [string, StatusKind][] = [
   ["계산 불가", "muted"],
   // 07-23 DOM 감사 #3: 지급 목록 지급 방식 칸의 거래처 표지 — 같은 행 증빙 칸 `확인 전`과 가른다.
   ["거래처 확인 전", "accent"],
+  // 07.2-10 PU4(D-7228): 고객 견적서를 출력한 차수의 상태 칸 낱말(`보냄 MM-DD`).
+  ["보냄", "muted"],
 ];
 
 describe("status-map — 낱말 → 색 한 표", () => {

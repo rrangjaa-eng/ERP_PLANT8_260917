@@ -1342,3 +1342,77 @@ test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」
     }
   });
 });
+
+// 07.2-10 PU4(D-7228 · D-7229) — 차수 상태 칸 `보냄 MM-DD` · 3차 `견적서 인쇄` 입구(금액 노출 + 프로젝트 쓰기 + 열린 프로젝트 · PC만).
+test.describe("고객 견적서 입구 · 보냄 배지 (07.2-10)", () => {
+  const lines = [{ itemName: "인쇄 입구 줄", unitPrice: 1_000_000, execution: 400_000 }];
+  const entrance = (page: Page) => page.locator('a[href^="/print/quotes/"]');
+
+  test("출력 전에는 `보냄`이 없고 입구가 새 탭 링크 하나이며, 출력 뒤 새로 고침하면 `보냄 {MM-DD}`가 상태 칸에 붙는다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines });
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    const link = revisionTable(page).getByRole("link", { name: "견적서 인쇄" });
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("href", `/print/quotes/${project.revisionId}`);
+    await expect(link).toHaveAttribute("rel", /noopener/);
+    await expect(revisionTable(page).getByText(/보냄/)).toHaveCount(0);
+
+    await db.update(quoteRevisions).set({ printedAt: new Date() }).where(eq(quoteRevisions.id, project.revisionId));
+    await page.reload();
+    await expect(revisionTable(page).getByText(`보냄 ${TODAY.slice(5)}`)).toHaveCount(1);
+  });
+
+  test("금액(quote.amount)을 볼 수 없는 계급 · 메뉴 읽기만 계정에는 입구 DOM이 없다", async ({ page }) => {
+    const team = await makeTeam();
+    const noAmount = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E인쇄금액없음-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: noAmount.id, menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: noAmount.id, menu: "projects", action: "write", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: noAmount.id, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: noAmount.id, infoItem: "quote.amount", visible: false });
+    const readOnly = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E인쇄읽기-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: readOnly.id, menu: "projects", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: readOnly.id, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: readOnly.id, infoItem: "quote.amount", visible: true });
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    for (const roleId of [noAmount.id, readOnly.id]) {
+      const viewer = await makeAccount(roleId, team.id, "E2E 입구 없음");
+      await page.context().clearCookies();
+      await login(page, viewer);
+      await page.goto(`/projects/${project.id}`);
+      await expect(revisionTable(page)).toBeVisible();
+      await expect(entrance(page)).toHaveCount(0);
+    }
+  });
+
+  test("375 폭에서는 입구가 보이지 않는다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines });
+    await login(page, pm);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    await expect(revisionTable(page)).toBeVisible();
+    await expect(entrance(page)).toBeHidden();
+  });
+
+  test("완료 프로젝트 차수에는 입구가 없고 그 인쇄 주소는 공용 404 변종이다(결정 j)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, status: "completed", lines });
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    await expect(revisionTable(page)).toBeVisible();
+    await expect(entrance(page)).toHaveCount(0);
+    const response = await page.goto(`/print/quotes/${project.revisionId}`);
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
+  });
+});

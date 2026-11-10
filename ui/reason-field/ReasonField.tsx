@@ -58,6 +58,7 @@ export function ReasonField({ id, options, value, onChange, error, maxLength, au
         maxLength={maxLength}
         autoComplete="off"
         autoFocus={autoFocus}
+        data-initial-focus="" // ConfirmDialog 첫 포커스 — 고르개가 앞에 있어도 글 칸이 받는다
         value={value}
         readOnly={locked}
         aria-disabled={locked ? "true" : undefined}

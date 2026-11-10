@@ -3,6 +3,7 @@ import { createExpenseFromLines } from "@/domain/expenses";
 import { loginPage, waitForHydration } from "./leave-org";
 import { setupExpenseE2E, submitLineExpense, type ExpenseE2E, type LineKey } from "./expense-fixture";
 import { addDays, payCalendar } from "./pay-schedule-e2e";
+import { seedReasonOptions } from "./reason-options";
 
 // 07.2-07 X3 — 사유 코드표(반려 · 선결제 · 희망 지급일)에 활성 항목이 0건이면 고르개 DOM 0 · 글 칸 1.
 // 세 표는 전역 코드표라 desktop의 다른 워커가 항목을 등록해 둔 동안에는 0건이 아니다(reason-options.ts) —
@@ -54,5 +55,30 @@ test.describe("사유 항목 0건 (07.2-07 X3 · 직렬)", () => {
     await expect(page.locator("#prepaidReason-pick")).toHaveCount(0);
     await expect(page.locator("textarea#prepaidReason")).toHaveCount(1);
     await page.context().close();
+  });
+
+  // 첫 포커스 계약 — 고르개가 글 칸 앞에 있어도 반려 창은 사유 글 칸에 포커스를 둔다. 항목이 있는 상태를 결정적으로 만들려고 직렬 스펙에 둔다
+  // (병렬 워커의 시드 유무에 기대면 간헐로 갈린다 — PR #369 CI e2e (1)). 위 세 시험은 이 시험이 항목을 되돌린 뒤에 돈다(파일 순서 · 워커 1) — 마지막에 둔다.
+  test("반려 창 — 사유 항목이 있어도 첫 포커스는 사유 글 칸이다", async ({ browser, baseURL }) => {
+    const seeded = await seedReasonOptions("reject_reason", ["내용 보완 필요"]);
+    try {
+      const fx = await setupExpenseE2E();
+      const line = fx.lines.retry;
+      await submitLineExpense(browser, baseURL, fx, "retry");
+
+      const lead = await loginPage(browser, baseURL, fx.lead);
+      await lead.goto("/approvals");
+      const row = lead.getByRole("row").filter({ hasText: `지출결의 · ${fx.projectName} · ${line.itemName}` });
+      const reject = row.getByRole("button", { name: "반려" });
+      await waitForHydration(reject);
+      await reject.click();
+
+      const dialog = lead.getByRole("dialog");
+      await expect(dialog.locator("select")).toHaveCount(1);
+      await expect(dialog.getByLabel("사유")).toBeFocused();
+      await lead.context().close();
+    } finally {
+      await seeded.restore();
+    }
   });
 });

@@ -360,6 +360,18 @@ export async function listRecordsForScope(
   return page ? ordered.limit(page.limit).offset(page.offset) : ordered;
 }
 
+// 07.2-09 — `묶음 전체 고르기`용 좁은 읽기: 목록과 같은 범위 · 거르개(listWhere)에 보관 안 됨 · 안 붙음을 SQL로 더하고 id · version만 limit까지 읽는다.
+export async function listArchivableIdsForScope(viewer: Viewer, scope: EvidenceScope, filters: EvidenceRecordFilters, limit: number): Promise<{ id: string; version: number }[]> {
+  void viewer;
+  if (scope.rows === "none") return [];
+  return db
+    .select({ id: evidenceRecords.id, version: evidenceRecords.version })
+    .from(evidenceRecords)
+    .where(and(listWhere(scope, filters), isNull(evidenceRecords.archivedAt), sql`not exists (select 1 from ${evidenceRecordLinks} where ${evidenceRecordLinks.evidenceRecordId} = ${evidenceRecords.id} and ${evidenceRecordLinks.detachedAt} is null)`))
+    .orderBy(...LIST_ORDER)
+    .limit(limit);
+}
+
 // 단건 — 목록과 같은 범위(범위 밖 · 보관 = 없음). 06.1-06 · 07 · 08이 이 함수만 부른다.
 // cardFormats는 선택이다(07.1-01) — 빈 배열이면 카드 미등록 거름만 빠지고 나머지 갈래는 선다(붙이기 경로가 카드 미등록을 스스로 다시 거부한다).
 export async function findRecordForScope(viewer: Viewer, scope: EvidenceScope, id: string, cardFormats: readonly string[] = []): Promise<EvidenceRecordListRow | null> {

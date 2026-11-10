@@ -165,6 +165,39 @@ test.describe("증빙 일괄 보관 (07.2-09)", () => {
     await expect(rowBoxes(page)).toHaveCount(50);
   });
 
+  test("쪽 밖 줄이 막히면 포커스는 `되돌리기` 버튼으로 간다 (body로 떨어지지 않는다)", async ({ page }) => {
+    test.setTimeout(240_000);
+    const { ids, url } = await seed(page, 60);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await open(page, url, 50);
+
+    await evidenceTable(page).getByRole("checkbox", { name: "이 쪽 전체 고르기" }).check();
+    await bar(page).getByRole("button", { name: "묶음 전체 고르기 60" }).click();
+    await expect(bar(page).getByText("선택 60건")).toBeVisible();
+    // 정렬의 마지막 줄 = 2쪽 줄(같은 서식 · 같은 날짜면 id 오름차순). 그 줄만 그새 바뀌어 막힌다.
+    const lastId = [...ids].sort().at(-1) as string;
+    await bumpRecordVersion(lastId);
+    await bar(page).getByRole("button", { name: "보관 60" }).click();
+
+    await expect(status(page)).toContainText(/^\d{2}:\d{2} 보관 59건 · 막힘 1건/, { timeout: 90_000 });
+    await expect(status(page).getByRole("button", { name: /^되돌리기/ })).toBeFocused();
+  });
+
+  test("필터를 옮겼다 돌아오면 예전 선택이 다시 켜지지 않는다", async ({ page }) => {
+    const { url } = await seed(page, 3);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await open(page, url, 3);
+    await rowBoxes(page).nth(0).check();
+    await expect(bar(page).getByText("선택 1건")).toBeVisible();
+
+    await page.getByRole("combobox", { name: "상태", exact: true }).selectOption({ label: "보관됨" });
+    await expect(page).toHaveURL(/state=archived/);
+    await page.getByRole("combobox", { name: "상태", exact: true }).selectOption({ label: "전체" });
+    await expect(page).toHaveURL(/state=all/);
+    await expect(rowBoxes(page)).toHaveCount(3);
+    await expect(bar(page)).toHaveCount(0);
+  });
+
   test("?batch= 301건 → 묶음 전체 고르기는 비활성 + `300건까지`", async ({ page }) => {
     const { url } = await seed(page, 301);
     await page.setViewportSize({ width: 1280, height: 900 });

@@ -35,14 +35,20 @@ async function runBatch(
 
   const processed: EvidenceArchiveInput[] = [];
   const blocked: EvidenceBatchBlocked[] = [];
+  let rejected = 0;
   for (const row of rows) {
     try {
       processed.push(await one(viewer, row));
     } catch (error) {
-      if (!(error instanceof EvidenceArchiveConflictError)) log.error(label, { id: row.id, error: error instanceof Error ? error.name : "unknown" });
+      // 범위 밖 · 없는 줄(UserFacingError)은 예상된 거부라 행마다 오류로 남기지 않고 아래에서 한 줄로 묶는다.
+      if (error instanceof EvidenceArchiveConflictError) {
+        // 붙음 · 다른 사람이 바꿈은 이유 글자로 결과에 실린다 — 로그 없음.
+      } else if (error instanceof UserFacingError) rejected += 1;
+      else log.error(label, { id: row.id, error: error instanceof Error ? error.name : "unknown" });
       blocked.push({ id: row.id, reason: reasonOf(error) });
     }
   }
+  if (rejected > 0) log.warn(`${label} · 거부된 줄`, { count: rejected });
   return { processed, blocked };
 }
 

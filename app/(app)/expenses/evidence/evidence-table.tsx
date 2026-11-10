@@ -793,6 +793,15 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions, batchItems
   const chosenSet = new Set(chosen);
   const batchOver = batchItems.length > batchLimit;
   const batchRemaining = filters.batch !== null && batchItems.some((item) => !chosenSet.has(item.id));
+  // 쪽 · 필터가 바뀌면 지금 보이지 않는 줄의 예전 선택을 버린다(`chosen` = 이 쪽 보관 가능 줄 + `?batch=` 묶음 줄 — 묶음 전체 고르기는 쪽을 넘어 유지된다).
+  const viewKey = `${list.page.page}|${filters.state}|${filters.type}|${filters.period}|${filters.batch ?? ""}`;
+  const [selectionViewKey, setSelectionViewKey] = useState(viewKey);
+  if (selectionViewKey !== viewKey) {
+    setSelectionViewKey(viewKey);
+    setSelectedIds(chosen);
+  }
+  const outcomeRef = useRef<HTMLParagraphElement>(null);
+  const blockedOnPage = rows.some((row) => batchFocus.blockedIds.includes(row.id));
 
   function selectIds(ids: readonly string[]) {
     if (batching) return;
@@ -840,7 +849,11 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions, batchItems
   // 포커스(확인 창이 없어 SYSTEM.md:1072 결과 줄 3차) — 막힌 줄이 목록에 남았으면 첫 막힌 줄 체크박스, 아니면 `되돌리기`(autoFocus).
   const focusFirstBlocked = useEffectEvent(() => {
     const firstBlocked = rows.map((row) => row.id).find((id) => batchFocus.blockedIds.includes(id));
-    if (firstBlocked === undefined) return;
+    if (firstBlocked === undefined) {
+      // 막힌 줄이 이 쪽에 없으면: 되돌리기 버튼이 포커스를 받고(autoFocus), 보관된 줄이 없어 버튼도 없으면 결과 글자가 받는다.
+      if (batchLine?.kind === "archived" && batchLine.processed.length === 0) outcomeRef.current?.focus();
+      return;
+    }
     document.getElementById(counterpartyId(firstBlocked))?.closest("tr")?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus();
   });
   useEffect(() => {
@@ -1151,7 +1164,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions, batchItems
               </>
             ) : null}
             {/* 07.2-09 D-7284 — 일괄 보관 결과 글자(필터 다음 자리 · 묶음 칩 뒤): 처음부터 DOM에 있는 `aria-live` 영역에 쓴다. 토스트 · 확인 창 없음. */}
-            <p aria-live="polite" className={styles.outcome}>
+            <p ref={outcomeRef} tabIndex={-1} aria-live="polite" className={styles.outcome}>
               {batchLine?.kind === "archived" ? (
                 <>
                   <span className={batchLine.undoFailed ? styles.undoFailed : expenseStyles.batchDone}>{batchLine.undoFailed ? COPY.undoFailed : `${batchLine.time} 보관 ${formatCount(batchLine.processed.length)}건`}</span>
@@ -1160,7 +1173,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions, batchItems
                     <>
                       {" "}
                       <RowActions>
-                        <RowAction key={batchFocus.seq} autoFocus={batchLine.blocked === 0} pending={batching} onClick={() => void undoBatch()}>
+                        <RowAction key={batchFocus.seq} autoFocus={!blockedOnPage} pending={batching} onClick={() => void undoBatch()}>
                           {COPY.undo}
                         </RowAction>
                       </RowActions>

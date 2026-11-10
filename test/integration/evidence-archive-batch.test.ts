@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, evidenceRecords } from "@/db/schema";
@@ -10,6 +10,7 @@ import { archiveEvidenceBatch, EVIDENCE_BATCH_LIMIT, restoreEvidenceBatch } from
 import { ForbiddenError } from "@/domain/permissions/can";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { log } from "@/lib/log";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { createIntakeViewer, insertLiveLinkFixture, insertRecordFixture, registerFixtureFile, setRecordArchivedFixture } from "./fixtures/evidence";
 
@@ -170,6 +171,30 @@ describe("domain/evidence-records/batch — 일괄 보관 · 되돌리기 (07.2-
 
     expect(items.map((row) => row.id).sort()).toEqual([ok1.id, ok2.id].sort());
     expect(items.find((row) => row.id === ok1.id)).toEqual({ id: ok1.id, version: ok1.version });
+  });
+
+  it("`?batch=` 묶음이 301줄을 넘어도 읽기는 301줄에서 멈춘다", async () => {
+    const intake = await createIntakeViewer();
+    const { batchId } = await registerFixtureFile(intake, lotteFixture([{ 카드번호: "9999000011119201", 승인번호: "93010001" }]), "큰 묶음.xls");
+    const [template] = await db.select().from(evidenceRecords).where(eq(evidenceRecords.batchId, batchId));
+    if (!template) throw new Error("묶음 없음");
+    await db.insert(evidenceRecords).values(Array.from({ length: 304 }, () => ({ ...template, id: randomUUID(), dedupeKey: `test:${randomUUID()}` })));
+
+    const items = await listArchivableEvidence(intake, { state: "all", batch: batchId });
+
+    expect(items).toHaveLength(301);
+  });
+
+  it("없는 id 300건을 일괄 보관해도 행마다 오류 로그를 남기지 않는다", async () => {
+    const intake = await createIntakeViewer();
+    const spy = vi.spyOn(log, "error").mockImplementation(() => undefined);
+    try {
+      const result = await archiveEvidenceBatch(intake, Array.from({ length: 5 }, () => ({ id: randomUUID(), version: 1 })));
+      expect(result.blocked).toHaveLength(5);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("`?batch=` 읽기도 `evidence.intake` 쓰기가 없으면 빈 목록", async () => {

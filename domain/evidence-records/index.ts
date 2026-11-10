@@ -42,6 +42,7 @@ import {
   hasAnyRecordForScope,
   listProposalTargets,
   listRecordsByIdsForScope,
+  listArchivableIdsForScope,
   listRecordsForScope,
   lockRecordsForUpdate,
   setRecordArchivedIfVersionMatches,
@@ -502,11 +503,7 @@ export async function listArchivableEvidence(viewer: Viewer, query: EvidenceList
   if (!(await can(viewer, "evidence.intake", "write"))) return [];
   const { scope, filters, repoFilters } = await listInputsFor(viewer, query);
   if (filters.batch === null) return [];
-  const rows = await listRecordsForScope(viewer, scope, repoFilters, null);
-  return rows
-    .filter((row) => row.archivedAt === null && !row.attached)
-    .slice(0, EVIDENCE_ARCHIVABLE_READ_MAX)
-    .map((row) => ({ id: row.id, version: row.version }));
+  return listArchivableIdsForScope(viewer, scope, repoFilters, EVIDENCE_ARCHIVABLE_READ_MAX);
 }
 
 // 07.1-05 D-7113(E-P2-19) — 파일 받기의 읽기 전 건수. 목록과 같은 앞 단계(listInputsFor — 범위 · 거르개)와 같은 합계 질의라

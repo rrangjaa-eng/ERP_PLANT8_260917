@@ -15,7 +15,7 @@ import {
   restoreEvidenceRecord,
 } from "@/domain/evidence-records";
 import { EvidenceAmountConflictError, clearRecordNeedsCheck, previewEvidenceAmount, updateEvidenceAmount } from "@/domain/evidence-records/amount";
-import { archiveEvidenceBatch, EVIDENCE_BATCH_LIMIT, restoreEvidenceBatch } from "@/domain/evidence-records/batch";
+import { archiveEvidenceBatch, restoreEvidenceBatch } from "@/domain/evidence-records/batch";
 import { exportEvidenceRecords } from "@/domain/evidence-records/export";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { SaveRejectedError } from "@/domain/quotes/lines";
@@ -90,7 +90,8 @@ export const restoreEvidenceRecordAction = authedActionClient.schema(archiveInpu
 
 // 07.2-09(X1 · D-7281~7283) — 일괄 보관 · 한 번 되돌리기. 부분 성공은 결과다(processed = 줄 id · 새 version, blocked = 줄 id · 이유) — 행마다
 // 단건 함수가 판정하고 이 액션은 모양만 바꾼다. 결과 글자 시각은 서버가 한국 시각으로 만든다(화면은 시계를 읽지 않는다).
-const batchInputSchema = z.object({ items: z.array(archiveInputSchema).max(EVIDENCE_BATCH_LIMIT) });
+// 300 상한은 도메인(runBatch)이 `300건까지`로 거부한다 — 여기서 .max로 먼저 거르면 일반 실패 글자가 된다.
+const batchInputSchema = z.object({ items: z.array(archiveInputSchema) });
 
 export const archiveEvidenceBatchAction = authedActionClient.schema(batchInputSchema).action(async ({ parsedInput, ctx }) => ({
   ...(await archiveEvidenceBatch(ctx.viewer, parsedInput.items)),

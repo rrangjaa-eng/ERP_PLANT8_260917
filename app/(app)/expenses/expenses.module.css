@@ -124,6 +124,19 @@
   font-weight: var(--fw-bold);
 }
 
+/* 07.2-11(D-7280 · UI-SPEC S22): 합계 줄 오른쪽 `종결 {N}건 제외` — 보조 글자 · 흐린 색. 폰(<700)에서는 아래 줄로 내린다. */
+.totalsExcluded {
+  margin: 0;
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+@media (max-width: 699.98px) {
+  .totalsExcluded {
+    flex-basis: 100%;
+  }
+}
+
 /* 「프로젝트 · 항목」 — 긴 문자 열(§6-1 min-width · keep-all). */
 .titleCell {
   display: block;

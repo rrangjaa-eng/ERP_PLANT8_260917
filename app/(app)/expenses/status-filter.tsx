@@ -16,12 +16,14 @@ export type FilterSelect = { name: string; label: string; value: string; options
 // 06.1-05(P-3 · SP-6105): `endLink`가 있으면 폼 끝에 하위 목록 3차 링크(`증빙 {N}` — SYSTEM §6-1 「하위 목록」, 카드 사용 `구매 요청 {N}` 꼴).
 // 없으면 마크업은 그대로다.
 // 07.1-09(PF4 · U-7 · W11): `mine`이 있으면 select들 뒤에 네이티브 체크박스 `내 것만`(꺼짐이 기본 — 켜면 `mine=1`) — 같은 GET 폼이라 바꾸면 바로 제출되고 쪽은 1로 간다.
+// 07.2-11(D-7280 · S22): `closed`가 있으면 `내 것만` 뒤에 같은 모양 체크박스 `종결 보기`(꺼짐이 기본 — 켜면 `closed=1`).
 export function StatusFilter({
   value,
   views = EXPENSE_STATUS_VIEWS,
   selects = [],
   searchValue,
   mine,
+  closed,
   endLink,
 }: {
   value: string;
@@ -29,6 +31,7 @@ export function StatusFilter({
   selects?: readonly FilterSelect[];
   searchValue?: string;
   mine?: { checked: boolean };
+  closed?: { checked: boolean };
   endLink?: { label: string; href: string };
 }) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -82,6 +85,12 @@ export function StatusFilter({
         <label className={styles.checkboxLabel}>
           <input key={String(mine.checked)} id="expense-filter-mine" name="mine" type="checkbox" value="1" defaultChecked={mine.checked} onChange={() => formRef.current?.requestSubmit()} />
           내 것만
+        </label>
+      ) : null}
+      {closed ? (
+        <label className={styles.checkboxLabel}>
+          <input key={String(closed.checked)} id="expense-filter-closed" name="closed" type="checkbox" value="1" defaultChecked={closed.checked} onChange={() => formRef.current?.requestSubmit()} />
+          종결 보기
         </label>
       ) : null}
       {endLink ? (

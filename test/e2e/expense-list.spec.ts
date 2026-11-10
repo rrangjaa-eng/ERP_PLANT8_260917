@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
-import { createTeamExpenseDraft, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
+import { closeExpense, createTeamExpenseDraft, listExpenseFormOptions, saveExpenseDraft, withdrawExpense } from "@/domain/expenses";
 import { approveDocument } from "@/domain/approvals";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
@@ -12,7 +12,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { teams } from "@/db/schema";
+import { expenses, teams } from "@/db/schema";
 import { createTeam } from "@/domain/org";
 import { orgUnitIdByName } from "../integration/approvals-fixtures";
 import { submitReadyDraft, testVendorAccount } from "../integration/fixtures/expenses";
@@ -404,7 +404,7 @@ test.describe("목록 팀 · 월 · 내 것만 (07.1-09 W11)", () => {
     await page.goto("/expenses?page=2");
     const form = filterForm(page);
     await waitForHydration(form.getByRole("combobox", { name: "상태" }));
-    expect((await filterLine(page)).map((item) => item.name)).toEqual(["q", "status", "team", "month", "mine"]);
+    expect((await filterLine(page)).map((item) => item.name)).toEqual(["q", "status", "team", "month", "mine", "closed"]);
     const teamOptions = await form.getByRole("combobox", { name: "팀" }).locator("option").allTextContents();
     expect(teamOptions[0]).toBe("팀 전체");
     expect(teamOptions).toContain(fx.teamName);
@@ -482,16 +482,85 @@ test.describe("목록 팀 · 월 · 내 것만 (07.1-09 W11)", () => {
   });
 
   for (const width of [1280, 1024]) {
-    test(`${width} — 필터 칸 다섯(검색 · 상태 · 팀 · 월 · 내 것만)이 한 줄이다`, async ({ browser, baseURL }) => {
+    test(`${width} — 필터 칸 여섯(검색 · 상태 · 팀 · 월 · 내 것만 · 종결 보기)이 한 줄이다`, async ({ browser, baseURL }) => {
       const fx = await setupExpenseE2E();
       await submitTeamCost(fx.pm.viewer, `한줄-${randomUUID().slice(0, 4)}`);
       const page = await loginPage(browser, baseURL, fx.ceo, { width, height: 800 });
       await page.goto("/expenses");
       await waitForHydration(filterForm(page).getByRole("combobox", { name: "상태" }));
       const line = await filterLine(page);
-      expect(line.map((item) => item.name)).toEqual(["q", "status", "team", "month", "mine"]);
+      expect(line.map((item) => item.name)).toEqual(["q", "status", "team", "month", "mine", "closed"]);
       expect(new Set(line.map((item) => item.bottom)).size, JSON.stringify(line)).toBe(1);
       await page.context().close();
     });
   }
+});
+
+// 07.2-11(D-7280 · UI-SPEC S22): 종결 문서는 기본 목록 · 합계에서 빠지고 합계 줄에 `종결 {N}건 제외`, `종결 보기`(closed=1)를 켜면 섞여 보인다.
+// 보는 사람 = 픽스처의 새 기안자(본인 범위) — 공유 DB의 다른 종결 문서가 수에 섞이지 않는다.
+test.describe("목록 종결 숨김 (07.2-11 S22)", () => {
+  async function closedDoc(viewer: Viewer, content: string): Promise<string> {
+    const doc = await submitTeamCost(viewer, content);
+    await withdrawExpense(viewer, { expenseId: doc.expenseId, expectedInstanceVersion: doc.version });
+    const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, doc.expenseId));
+    await closeExpense(viewer, { expenseId: doc.expenseId, expectedVersion: row?.version ?? 0, reason: "업체 취소" });
+    return doc.expenseId;
+  }
+
+  async function closedWorld() {
+    const fx = await setupExpenseE2E();
+    const open = [];
+    for (const name of ["하나", "둘", "셋"]) open.push((await submitTeamCost(fx.pm.viewer, `종결목록열림-${name}-${randomUUID().slice(0, 4)}`)).expenseId);
+    const closed = [await closedDoc(fx.pm.viewer, `종결목록닫힘-하나-${randomUUID().slice(0, 4)}`), await closedDoc(fx.pm.viewer, `종결목록닫힘-둘-${randomUUID().slice(0, 4)}`)];
+    return { fx, open, closed };
+  }
+
+  test("기본 표에 종결 행 0 · 합계 줄 `종결 2건 제외` → `종결 보기` 체크 → URL closed=1 · 행 +2 · 조각 없음", async ({ browser, baseURL }) => {
+    const { fx, open, closed } = await closedWorld();
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/expenses?status=${encodeURIComponent("전체")}`);
+    const totals = page.getByRole("region", { name: "합계" });
+    await expect(totals).toContainText("합계 (전체 · 3건)");
+    await expect(totals.getByText("종결 2건 제외", { exact: true })).toBeVisible();
+    for (const id of open) await expect(rowOf(page, id)).toHaveCount(1);
+    for (const id of closed) await expect(rowOf(page, id)).toHaveCount(0);
+
+    const form = page.getByRole("form", { name: "지출결의 보기" });
+    await waitForHydration(form.getByRole("combobox", { name: "상태" }));
+    const toggle = form.getByRole("checkbox", { name: "종결 보기" });
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await expect(page).toHaveURL((url) => url.searchParams.get("closed") === "1" && url.searchParams.get("status") === "전체");
+    await expect(totals).toContainText("합계 (전체 · 5건)");
+    await expect(totals.getByText(/^종결 \d+건 제외$/)).toHaveCount(0);
+    for (const id of [...open, ...closed]) await expect(rowOf(page, id)).toHaveCount(1);
+    for (const id of closed) await expect(rowOf(page, id).getByText("종결", { exact: true })).toBeVisible();
+    await expect(form.getByRole("checkbox", { name: "종결 보기" })).toBeChecked();
+    await page.context().close();
+  });
+
+  test("375 체크박스 래퍼 44 · 375 · 320 가로 넘침 0 · 폰에서 제외 조각은 합계 아래 줄", async ({ browser, baseURL }) => {
+    const { fx } = await closedWorld();
+    for (const width of [375, 320]) {
+      const page = await loginPage(browser, baseURL, fx.pm, { width, height: 800 });
+      await page.goto(`/expenses?status=${encodeURIComponent("전체")}`);
+      const totals = page.getByRole("region", { name: "합계" });
+      const excluded = totals.getByText("종결 2건 제외", { exact: true });
+      await expect(excluded).toBeVisible();
+      const measure = await page.evaluate(() => {
+        const label = document.querySelector("#expense-filter-closed")?.closest("label")?.getBoundingClientRect();
+        const amount = document.querySelector('section[aria-label="합계"] p:nth-of-type(2)')?.getBoundingClientRect();
+        const fragment = Array.from(document.querySelectorAll('section[aria-label="합계"] p')).find((node) => node.textContent === "종결 2건 제외")?.getBoundingClientRect();
+        return {
+          labelHeight: label?.height ?? 0,
+          belowAmount: amount && fragment ? fragment.top >= amount.bottom - 0.5 : false,
+          overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        };
+      });
+      expect(measure.labelHeight).toBeGreaterThanOrEqual(44);
+      expect(measure.belowAmount).toBe(true);
+      expect(measure.overflow).toBe(false);
+      await page.context().close();
+    }
+  });
 });

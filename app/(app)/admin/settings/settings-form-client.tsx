@@ -103,10 +103,19 @@ function SimpleFieldEditor({
   disabled?: boolean;
   warning?: string;
 }) {
-  const { execute, result } = useAction(setSimpleSettingAction);
+  const { execute, executeAsync, result } = useAction(setSimpleSettingAction);
+  // 07.2-13(UI-SPEC S19 ERROR): select 저장이 실패하면(서버 거부 · 통신 실패) 고르기 전 값으로 되돌린다 — 통신 실패는 result에
+  // 글자가 없어 이 줄을 칸 아래에 단다.
+  const [selectFailed, setSelectFailed] = useState(false);
   const [checked, setChecked] = useState(initialValue === true);
   const [selected, setSelected] = useState(
-    typeof initialValue === "string" ? initialValue : descriptor.kind === "enum" ? (descriptor.options[0] ?? "") : "",
+    typeof initialValue === "string"
+      ? initialValue
+      : typeof initialValue === "number" && options
+        ? String(initialValue)
+        : descriptor.kind === "enum"
+          ? (descriptor.options[0] ?? "")
+          : "",
   );
   const [multiValue, setMultiValue] = useState<string[]>(
     descriptor.kind === "multi-enum" && Array.isArray(initialValue) ? (initialValue as string[]) : [],
@@ -155,10 +164,21 @@ function SimpleFieldEditor({
             hideEmptyOption
             aria-describedby={hint ? hintId : undefined}
             options={options ?? (descriptor.kind === "enum" ? descriptor.options.map((option) => ({ value: option, label: option })) : [])}
-            error={error ?? undefined}
+            error={error ?? (selectFailed ? "저장 실패 · 다시 시도" : undefined)}
             onChange={(event) => {
-              setSelected(event.target.value);
-              execute({ key: fieldKey, value: event.target.value });
+              const previous = selected;
+              const next = event.target.value;
+              setSelected(next);
+              setSelectFailed(false);
+              executeAsync({ key: fieldKey, value: next }).then(
+                (saved) => {
+                  if (saved?.serverError !== undefined || saved?.validationErrors !== undefined) setSelected(previous);
+                },
+                () => {
+                  setSelected(previous);
+                  setSelectFailed(true);
+                },
+              );
             }}
           />
         </Form.Field>

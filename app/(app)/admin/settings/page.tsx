@@ -80,6 +80,10 @@ function optionsFor(
   if (def.optionLabels && descriptor.kind === "enum") {
     return descriptor.options.map((option) => ({ value: option, label: def.optionLabels?.[option] ?? option }));
   }
+  // 07.2-13(S19): 선택지 글자가 있는 숫자 칸(반반차 · 재택 결재 단계 1~4)은 select — 값은 숫자 글자, 저장은 z.coerce가 숫자로 바꾼다.
+  if (def.optionLabels && descriptor.kind === "number") {
+    return Object.entries(def.optionLabels).map(([option, label]) => ({ value: option, label }));
+  }
   return undefined;
 }
 

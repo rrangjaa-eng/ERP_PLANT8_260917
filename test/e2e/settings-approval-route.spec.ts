@@ -5,7 +5,7 @@ import { settingsSimple } from "@/db/schema";
 import { createFixtureUser } from "./fixtures";
 import "@/domain/leave";
 import { submitLeave } from "@/domain/leave";
-import { approveDocument, getApprovalView } from "@/domain/approvals";
+import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
 import { documentLabel, loginPage, setupLeaveOrg } from "./leave-org";
@@ -13,6 +13,7 @@ import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import {
+  APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER,
   APPROVAL_ROUTE_LEAVE_SELF_APPROVAL,
   APPROVAL_ROUTE_LEAVE_STEP1_ENABLED,
   APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID,
@@ -761,6 +762,90 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       await expect(lead.getByRole("button", { name: /^승인/ })).toHaveCount(0);
     } finally {
       await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, original);
+    }
+  });
+
+  // 07.2-13(PU9 · S19): 연차 결재선 섹션 1~4단 블록 아래 `반반차 · 재택 결재 단계` — 기본 `4단까지` · change 즉시 저장 · 힌트 0.
+  // 값 2면 /leave/new 미리보기가 반반차 2단 · 종일 4단(미리보기 = 제출은 통합 시험 approvals-lifecycle이 고정).
+  test("반반차 · 재택 결재 단계: 4단 블록 아래 기본 4단까지 · 2단까지로 바꾸면 즉시 저장 · 반반차 미리보기 2단 / 종일 4단", async ({ page, browser, baseURL }) => {
+    const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER);
+    try {
+      await openSettings(page);
+      const light = leaveRoute(page).getByLabel("반반차 · 재택 결재 단계");
+      await expect(light).toHaveValue("4");
+      await expect(checkedText(page, "반반차 · 재택 결재 단계")).toHaveText("4단까지");
+      await expect(light.locator("option")).toHaveText(["1단까지", "2단까지", "3단까지", "4단까지"]);
+      // 자리 — 4단 저장 버튼 뒤(문서 순서), 힌트 문장 없음.
+      const after = await leaveRoute(page).evaluate((section) => {
+        const button = [...section.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "4단 저장");
+        const select = section.querySelector("select[id*='light_kinds_stop_after']");
+        return Boolean(button && select && button.compareDocumentPosition(select) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+      expect(after).toBe(true);
+      await expect(light).not.toHaveAttribute("aria-describedby");
+
+      const saved = page.waitForResponse((response) => response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined);
+      await light.selectOption({ label: "2단까지" });
+      await saved;
+      await expect(async () => {
+        await page.reload();
+        await expect(checkedText(page, "반반차 · 재택 결재 단계")).toHaveText("2단까지");
+      }).toPass();
+
+      const org = await setupLeaveOrg(seoulToday());
+      const drafter = await loginPage(browser, baseURL, org.drafter);
+      await drafter.goto("/leave/new");
+      const line = drafter.getByTestId("approval-route-line");
+      await expect(line).toBeVisible();
+      const steps = () => line.locator('span[class*="arrow"]').count();
+      await expect.poll(steps).toBe(4);
+      await drafter.getByLabel("종류").selectOption("quarter_day");
+      await expect.poll(steps).toBe(2);
+      await expect(line).toContainText(org.teamLead.name);
+      await expect(line).not.toContainText(org.ceo.name);
+      await drafter.getByLabel("종류").selectOption("remote");
+      await expect.poll(steps).toBe(2);
+      await drafter.getByLabel("종류").selectOption("full_day");
+      await expect.poll(steps).toBe(4);
+
+      // 반려 뒤 다시 신청: 저장된 종류(종일)는 4단, 반반차로 바꾸면 그 자리 결재선이 2단 — 제출 · 재상신과 같은 힌트.
+      const range = leaveWeekdayRange(seoulToday(), { week: 10, weekdays: 1 });
+      const doc = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+      await rejectDocument(org.teamLead.viewer, { instanceId: doc.instanceId, expectedVersion: doc.version, reason: "일정 겹침" });
+      await drafter.goto(`/leave/${doc.leaveId}`);
+      await expect(line).toBeVisible();
+      await expect.poll(steps).toBe(4);
+      await drafter.getByLabel("종류").selectOption("quarter_day");
+      await expect.poll(steps).toBe(2);
+      await drafter.context().close();
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER, original);
+    }
+  });
+
+  test("반반차 · 재택 결재 단계: 저장 실패면 칸 아래 `저장 실패 · 다시 시도` · 값이 바꾸기 전으로 되돌아온다 · 320 넘침 0", async ({ page }) => {
+    const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER);
+    try {
+      await openSettings(page);
+      const light = leaveRoute(page).getByLabel("반반차 · 재택 결재 단계");
+      await expect(light).toHaveValue(String(original));
+      await page.route(
+        (url) => url.pathname === "/admin/settings",
+        (route) => (route.request().method() === "POST" ? route.fulfill({ status: 500, body: "" }) : route.continue()),
+      );
+      await light.selectOption({ label: "1단까지" });
+      await expect(leaveRoute(page).getByText("저장 실패 · 다시 시도", { exact: true })).toBeVisible();
+      await expect(light).toHaveValue(String(original));
+      await page.unroute((url) => url.pathname === "/admin/settings");
+      expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER)).toBe(original);
+
+      await page.setViewportSize({ width: 320, height: 800 });
+      const box = await light.boundingBox();
+      expect(box).not.toBeNull();
+      expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(320);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER, original);
     }
   });
 

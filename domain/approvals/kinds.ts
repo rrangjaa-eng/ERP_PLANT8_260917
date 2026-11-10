@@ -7,6 +7,7 @@ import type { ExpenseRouteScopeValue } from "@/domain/settings/keys";
 import type { DbOrTx } from "@/repositories/document-counters";
 import type { BlockedCandidateFilter, RejectedCandidateFilter } from "@/repositories/approvals";
 import type { Currency } from "@/domain/money/currency";
+import type { LeaveKind } from "@/domain/leave/days";
 
 // 04.1(ROADMAP 기준 1): 문서 종류 등록부 — 결재 모듈은 문서 종류를 하드코딩하지
 // 않는다. 종류 모듈(domain/leave 등)이 적재될 때 registerDocumentKind로 자기를
@@ -26,6 +27,11 @@ export type RouteConfigStep = {
 };
 
 export type RouteConfig = { selfApproval: SelfApproval; steps: RouteConfigStep[] };
+
+// 07.2-13(PU9 · D-7251): 결재선 조립 힌트 — 엔진이 planRoute · previewRoute · prepareSubmission에서 받은 그대로
+// loadRouteConfig에 넘긴다(미리보기 = 제출). 연차 종류만 leaveKind를 보고, 다른 종류는 인자를 무시한다.
+// 호출부는 검증된 값만 넘긴다(입력 원문 0). LeaveKind는 타입만 — 결재 모듈은 종류 모듈을 런타임 import하지 않는다.
+export type RouteHint = { leaveKind?: LeaveKind };
 
 // 결재선 설정 키 묶음 — 04.1-04의 설정 화면 경고가 등록된 종류를 순회할 때 쓴다.
 export type RouteSettingDefs = {
@@ -86,7 +92,7 @@ export type ResubmittableStatus = "rejected" | "withdrawn";
 export type DocumentKindDef = {
   kind: string;
   label: string;
-  loadRouteConfig: () => Promise<RouteConfig>;
+  loadRouteConfig: (hint?: RouteHint) => Promise<RouteConfig>;
   href: (documentId: string) => string;
   // 결재함 요약 — id 목록을 한 번에 읽어 종류의 DTO로 투영한 값을 돌려준다.
   describeDocuments: (viewer: Viewer, documentIds: string[], deps?: DescribeDeps) => Promise<Map<string, DocumentSummary>>;

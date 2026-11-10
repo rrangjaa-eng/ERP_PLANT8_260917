@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER } from "@/domain/settings/keys";
+import { upsertSimpleValue } from "@/repositories/settings";
 import { setUserArchived } from "@/repositories/users";
 import { submitLeave } from "@/domain/leave";
 import { seoulToday } from "@/lib/dates";
@@ -161,5 +163,27 @@ describe("previewLeaveAction — 겹침 줄(06.3 D-6313)", () => {
     const data = (await previewLeaveAction(input({ kind: "remote", startDate: dates.t })))?.data;
     expect(data?.blockedReason).toEqual({ field: "startDate", message: dates.blocked });
     expect(data?.balance).toBeNull();
+  });
+});
+
+// 07.2-13(PU9 · D-7251): 폼 미리보기 액션은 고른 종류를 힌트로 엔진 미리보기를 부른다 — 날짜를 아직 안 골라도
+// 종류만으로 결재선이 바뀐다(UI-SPEC S17 「종류를 바꿀 때마다 즉시 갱신」). 목록 밖 종류는 힌트 없음(현행 결재선).
+describe("previewLeaveAction — 반반차 · 재택 결재 단계(PU9)", () => {
+  it("값 2: 반반차 · 재택은 2단 · 종일 · 반차는 4단 · 날짜 없어도 종류만으로 · 목록 밖 종류는 4단", async () => {
+    const drafter = await makePerson("경량미리보기", DEFAULT_ROLE_ID, "기획1팀");
+    await makePerson("경량미리보기팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    await makePerson("경량미리보기본부장", DIVISION_HEAD_ROLE_ID, "기획1팀");
+    await makePerson("경량미리보기경영", DIVISION_HEAD_ROLE_ID, "경영관리팀");
+    await makePerson("경량미리보기대표", CEO_ROLE_ID, null);
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER.key, 2, null);
+    session.viewer = drafter;
+    const stepsOf = async (fields: Parameters<typeof input>[0]) => (await previewLeaveAction(input(fields)))?.data?.route?.steps.length;
+
+    expect(await stepsOf({ kind: "quarter_day", startDate: "2026-09-22" })).toBe(2);
+    expect(await stepsOf({ kind: "quarter_day", startDate: "" })).toBe(2);
+    expect(await stepsOf({ kind: "remote", startDate: "2026-09-22" })).toBe(2);
+    expect(await stepsOf({ kind: "full_day", startDate: "2026-09-22" })).toBe(4);
+    expect(await stepsOf({ kind: "half_day", startDate: "2026-09-22", half: "am" })).toBe(4);
+    expect(await stepsOf({ kind: "", startDate: "" })).toBe(4);
   });
 });

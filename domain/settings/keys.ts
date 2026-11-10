@@ -718,6 +718,22 @@ export const APPROVAL_ROUTE_LEAVE_STEP4_ORG_UNIT_ID: SettingDef<string> = {
   default: "",
 };
 
+// 07.2-13(PU9 · D-7250 · D-7251): 반반차 · 재택 결재 단계 — 설정 슬롯 번호 ≤ 이 값인 단계만 남긴다(켜진 단계 수가 아니라
+// 슬롯 번호). 기본 4 = 지금과 같음. 종일 · 반차는 이 값을 보지 않는다. 진행 중 문서는 제출 때 굳은 결재선 그대로.
+// 260907은 경로 두 벌을 데이터로 뒀다(O: db/schema/010_tables.sql:478 · :520) — 경로를 복제하지 않고 숫자 하나로.
+// 값은 정수 1~4(문서 번호 연도 자릿수와 같은 꼴 — z.coerce: 설정 화면 select가 글자 "2"로 보내도 숫자 2로 저장한다).
+// 숫자 글자 enum은 jsonb 읽기가 JSON.parse로 숫자로 되돌려 스키마가 거부한다(drizzle mapFromDriverValue).
+// 설정 화면은 optionLabels가 있는 number를 네이티브 select로 그린다(SYSTEM §7-2 · DECISIONS 2026-11-10 07.2-13).
+export const APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER: SettingDef<number> = {
+  key: "approval_route.leave.light_kinds_stop_after",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(4),
+  label: "반반차 · 재택 결재 단계",
+  namespace: ROUTE_NAMESPACE,
+  optionLabels: { "1": "1단까지", "2": "2단까지", "3": "3단까지", "4": "4단까지" },
+  default: 4,
+};
+
 // 연차 문서 번호(계획 가정 1 — UI-SPEC Assumptions #16): 기본 `LV26-0001`.
 export const DOCUMENT_NUMBER_LEAVE_PREFIX: SettingDef<string> = {
   key: "document_number.leave.prefix",
@@ -788,6 +804,7 @@ SETTING_DEFS.push(
   APPROVAL_ROUTE_LEAVE_STEP4_ROLE_ID,
   APPROVAL_ROUTE_LEAVE_STEP4_SCOPE,
   APPROVAL_ROUTE_LEAVE_STEP4_ORG_UNIT_ID,
+  APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER,
   DOCUMENT_NUMBER_LEAVE_PREFIX,
   DOCUMENT_NUMBER_LEAVE_YEAR_DIGITS,
   DOCUMENT_NUMBER_LEAVE_SEQ_DIGITS,

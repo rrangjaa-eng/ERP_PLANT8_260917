@@ -34,7 +34,12 @@ export async function resubmitLeave(
   if (!leave?.instanceId) throw new NotCurrentHolderError(NOT_HOLDER_MESSAGE);
   const instanceId = leave.instanceId;
   // 트랜잭션 전 읽기(CEO-2) — 다시 신청 시점의 결재선 설정 · 기안자 소속 · 스냅숏 · 로그 켜짐.
-  const prepared = await prepareSubmission(viewer, { kind: LEAVE_DOCUMENT_KIND, drafterId: leave.drafterId }, { now: deps?.now });
+  // 07.2-13(PU9): 새 차수 결재선은 다시 신청한 종류(검증된 days.kind) · 지금 설정으로 조립한다.
+  const prepared = await prepareSubmission(
+    viewer,
+    { kind: LEAVE_DOCUMENT_KIND, drafterId: leave.drafterId, hint: { leaveKind: days.kind } },
+    { now: deps?.now },
+  );
 
   return withTransaction(async (tx) => {
     // 06.3(D-6311): 기안자 키로 줄 세운다 — 기안자가 아니면 다음 전이가 `not_drafter`로 막는다.

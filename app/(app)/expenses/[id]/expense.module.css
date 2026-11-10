@@ -50,6 +50,7 @@
   font-size: var(--text-body);
   overflow-wrap: anywhere;
   word-break: keep-all;
+  white-space: pre-line;
 }
 
 /* 값 + 3차(`바꾸기` · `고르기`) 한 줄 — 값 줄 오른쪽 끝에 3차, 부제는 값 아래 한 줄(폰도 같다). */

@@ -30,8 +30,21 @@ describe("pickReason — 항목 고르기(D-7288)", () => {
     });
   });
 
-  it("기타는 글을 비운다", () => {
-    expect(pickReason({ text: "예산 초과 · 3월분", prevLabel: "예산 초과" }, OTHER_LABEL)).toEqual({ text: "", prevLabel: null });
+  it("기타: 직접 쓴 글은 남긴다", () => {
+    expect(pickReason({ text: "직접 쓴 긴 사유", prevLabel: null }, OTHER_LABEL)).toEqual({ text: "직접 쓴 긴 사유", prevLabel: null });
+    expect(pickReason({ text: "직접 쓴 글", prevLabel: "예산 초과" }, OTHER_LABEL)).toEqual({ text: "직접 쓴 글", prevLabel: null });
+  });
+
+  it("기타: 자동으로 넣은 항목 문구만 지우고 덧붙인 글은 남긴다", () => {
+    expect(pickReason({ text: "예산 초과", prevLabel: "예산 초과" }, OTHER_LABEL)).toEqual({ text: "", prevLabel: null });
+    expect(pickReason({ text: "예산 초과 3월분", prevLabel: "예산 초과" }, OTHER_LABEL)).toEqual({ text: "3월분", prevLabel: null });
+  });
+
+  it("maxLength를 넘기면 글을 상한까지 자른다(문구 교체 · 빈 글 채움)", () => {
+    expect(pickReason({ text: "짧은 · 뒤쪽 글입니다", prevLabel: "짧은" }, "아주아주긴항목", 12).text).toHaveLength(12);
+    const filled = pickReason({ text: "", prevLabel: null }, "열두자를넘는항목문구", 5);
+    expect(filled.text).toBe("열두자를넘");
+    expect(filled.prevLabel).toBe("열두자를넘");
   });
 });
 

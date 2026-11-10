@@ -31,7 +31,7 @@ export function ReasonField({ id, options, value, onChange, error, maxLength, au
 
   function pick(label: string) {
     if (locked || label === "") return;
-    const next = pickReason({ text: value, prevLabel }, label);
+    const next = pickReason({ text: value, prevLabel }, label, maxLength);
     setSelected(label);
     setPrevLabel(next.prevLabel);
     if (next.text !== value) onChange(next.text);
@@ -64,7 +64,14 @@ export function ReasonField({ id, options, value, onChange, error, maxLength, au
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
         className={styles.text}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          // 글을 모두 지우면 고르개도 처음 상태로 — 같은 항목을 다시 골라도 채워지게 한다.
+          if (event.target.value === "") {
+            setSelected("");
+            setPrevLabel(null);
+          }
+          onChange(event.target.value);
+        }}
       />
       {error ? (
         <p id={errorId} className={styles.error}>

@@ -17,7 +17,7 @@ import { addHoliday, deleteHoliday } from "@/domain/holidays/admin";
 import { queryActionLog } from "@/domain/action-log";
 import { db } from "@/db/client";
 import { corpCards, holidays, vendors } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findRoleById, insertRole } from "@/repositories/roles";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
@@ -510,6 +510,19 @@ describe("팀 복원 — 사용중지 본부 아래 팀 막기 (07.2-11 PU22 ③
     await expect(restore(SYSTEM_VIEWER, "team", teamId)).resolves.toEqual({ restored: true });
   });
 
+  // 다른 연결이 이 advisory 키(`pg_advisory_xact_lock(hashtextextended(key, 0))`)를 아직 못 잡고 기다리는지 — bigint 키는 classid(위 32비트) · objid(아래 32비트)로 나뉜다.
+  async function waitForAdvisoryWaiter(key: string): Promise<void> {
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+      const [row] = await db.execute<{ waiting: number }>(sql`
+        select count(*)::int as waiting from pg_locks
+        where locktype = 'advisory' and not granted and objsubid = 1
+          and ((classid::bigint << 32) | objid::bigint) = hashtextextended(${key}, 0)`).then((result) => result.rows);
+      if ((row?.waiting ?? 0) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`advisory 대기 없음: ${key}`);
+  }
+
   it("팀 복원이 본부 자리 키를 기다리는 사이 본부 보관이 끝나면 잠금 뒤 다시 읽어 막는다", async () => {
     const { unitId, teamId } = await archivedPair();
     let release: () => void = () => {};
@@ -529,7 +542,9 @@ describe("팀 복원 — 사용중지 본부 아래 팀 막기 (07.2-11 PU22 ③
     });
     await lockTaken;
     const restoring = caught(restore(SYSTEM_VIEWER, "team", teamId));
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // 시간이 아니라 순서로 고정한다 — 복원 tx가 이 본부 자리 키를 기다리는 것(pg_locks 미허가 advisory)을 본 뒤에야 보관을 커밋한다.
+    // 그래서 복원이 tx 밖에서 본부를 읽었다면 그 값은 보관 전이고, 거부는 잠금 뒤 다시 읽어야만 나온다.
+    await waitForAdvisoryWaiter(`seat:division:${unitId}`);
     release();
     await archiving;
     const error = await restoring;

@@ -129,6 +129,18 @@ describe("회사 로고 — 검사", () => {
   });
 });
 
+describe("회사 로고 — 서명 실패", () => {
+  it("읽기 주소 서명이 실패해도 설정 화면용 getCompanyLogo는 파일을 주고 미리보기 주소만 null이다", async () => {
+    const viewer = await admin();
+    const storage = createMemoryStorage();
+    await upload(viewer, storage);
+    const failing = { ...storage, createSignedGet: () => Promise.reject(new Error("sign failed")) } as MemoryStorage;
+    const result = await getCompanyLogo(viewer, { storage: failing });
+    expect(result.file).not.toBeNull();
+    expect(result.url).toBeNull();
+  });
+});
+
 describe("회사 로고 — 권리(admin.settings write)", () => {
   it("쓰기 권리가 없는 계정은 올리기 · 삭제 · 되돌리기에서 ForbiddenError다", async () => {
     const owner = await admin();

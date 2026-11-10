@@ -213,15 +213,25 @@ async function currentLogo(viewer: Viewer, deps?: CompanyLogoDeps): Promise<{ fi
   const rows = await listActiveByOwner(viewer, COMPANY_LOGO_OWNER_KIND, COMPANY_LOGO_OWNER_ID);
   const file = rows.at(-1);
   if (!file) return null;
-  const signed = await storageOf(deps).createSignedGet(file.objectKey, { expiresSec: VIEW_URL_EXPIRES_SEC, filename: file.originalName, disposition: "inline" });
-  return { file, url: signed.url };
+  return { file, url: (await signLogo(file, deps)).url };
+}
+
+function signLogo(file: FileRow, deps?: CompanyLogoDeps) {
+  return storageOf(deps).createSignedGet(file.objectKey, { expiresSec: VIEW_URL_EXPIRES_SEC, filename: file.originalName, disposition: "inline" });
 }
 
 // 설정 화면: 지금 로고 파일 행 + 미리보기 읽기 주소. 설정 보기 권리가 있어야 한다.
 export async function getCompanyLogo(viewer: Viewer, deps?: CompanyLogoDeps): Promise<{ file: CompanyLogoFile | null; url: string | null }> {
   if (!(await can(viewer, SETTINGS_MENU, "view"))) throw new ForbiddenError("회사 정보 설정 보기 권한 없음");
-  const current = await currentLogo(viewer, deps);
-  return current ? { file: toFile(current.file), url: current.url } : { file: null, url: null };
+  const file = (await listActiveByOwner(viewer, COMPANY_LOGO_OWNER_KIND, COMPANY_LOGO_OWNER_ID)).at(-1);
+  if (!file) return { file: null, url: null };
+  // 서명이 실패하면 미리보기만 없다 — 회사명 · 주소 칸 편집은 막지 않는다(인쇄 갈래와 같은 처리).
+  try {
+    return { file: toFile(file), url: (await signLogo(file, deps)).url };
+  } catch (error) {
+    log.warn("company_logo.preview_failed", { reason: error instanceof Error ? error.name : "unknown" });
+    return { file: toFile(file), url: null };
+  }
 }
 
 // 고객 견적서 머리 logo 자리 — 호출한 인쇄 화면이 이미 견적서 읽기 권리를 판정했다. 서명이 안 되면(저장소 미설정 등) 로고 없음으로 본다: 인쇄는 회사명 글자로 대신한다.

@@ -9,7 +9,7 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import { db, pool } from "@/db/client";
-import { actionLog, corpCards, corpCardUsages, expenses, projects, purchaseRequests, quoteLines, vendors } from "@/db/schema";
+import { actionLog, corpCards, corpCardUsages, expenses, projects, purchaseRequests, quoteLines, teams, vendors } from "@/db/schema";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { createProject, CompletedProjectError } from "@/domain/projects";
 import { ProjectNotFoundError } from "@/domain/projects/status";
@@ -41,6 +41,7 @@ import {
   listProjectCardUsages,
   loadCardUsageForEdit,
   precheckCardUsage,
+  precheckCardUsageRemoval,
   precheckCardUsageUpdate,
   previewCardAmounts,
   searchMerchantsForCard,
@@ -1505,5 +1506,52 @@ describe("수수료 줄 직접 연결 거부(07.2-06)", () => {
     expect((error as Error).message).toBe("연결 없음 · 연결 고르기");
     const [after] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, id));
     expect(after?.quoteLineId).toBe(fx.lines[0]);
+  });
+});
+
+// 07.2-11 PU19(D-7275 · D-7276 「지금대로」): 카드 사용 권리표(domain/corp-card-usages/rights.ts)를 실제 DB 경로로 확인 — 코드 변경 없음.
+// 수정 열기(loadCardUsageForEdit)와 삭제 사전 조회(precheckCardUsageRemoval)가 같은 권리를 쓴다. 구매 완료로 생긴 건의 연결 변경 · 삭제
+// 불가(rights.ts 「registeredVia === purchase」 행)는 purchase-requests.test.ts 「구매 완료 건의 연결 변경 · 삭제 → ForbiddenError」가 덮는다.
+describe("[07.2-11 PU19] 권리표 지금대로", () => {
+  async function pmTeamName(fx: CardFx): Promise<string> {
+    const [row] = await db.select({ name: teams.name }).from(projects).innerJoin(teams, eq(teams.id, projects.teamId)).where(eq(projects.id, fx.projectId));
+    if (!row) throw new Error("팀 없음");
+    return row.name;
+  }
+
+  async function removable(viewer: Viewer, id: string): Promise<boolean> {
+    return precheckCardUsageRemoval(viewer, { id }).then(
+      () => true,
+      () => false,
+    );
+  }
+
+  it("등록한 사람은 수정 · 삭제 열림, 같은 팀의 다른 직원(대리 등록 권한 없음)은 둘 다 닫힘", async () => {
+    const fx = await cardProject();
+    const id = await cardOnLine(fx, fx.lines[0] ?? "", 100_000);
+    expect(await loadCardUsageForEdit(fx.pm, id)).not.toBeNull();
+    expect(await removable(fx.pm, id)).toBe(true);
+    const colleague = await makePerson("같은팀직원", DEFAULT_ROLE_ID, await pmTeamName(fx));
+    expect(await loadCardUsageForEdit(colleague, id)).toBeNull();
+    expect(await removable(colleague, id)).toBe(false);
+  });
+
+  it("대리 등록 권한자는 남이 등록한 건도 수정 · 삭제 열림", async () => {
+    const fx = await cardProject();
+    const id = await cardOnLine(fx, fx.lines[0] ?? "", 100_000);
+    const proxy = await makeProxyRegistrant(await pmTeamName(fx));
+    expect(await loadCardUsageForEdit(proxy, id)).not.toBeNull();
+    expect(await removable(proxy, id)).toBe(true);
+  });
+
+  it("완료 프로젝트 줄에 이은 건은 대리 등록 권한자만 — 등록한 사람은 수정 · 삭제 닫힘", async () => {
+    const fx = await cardProject();
+    const id = await cardOnLine(fx, fx.lines[0] ?? "", 100_000);
+    await setStatus(fx.projectId, "completed");
+    expect(await loadCardUsageForEdit(fx.pm, id)).toBeNull();
+    expect(await removable(fx.pm, id)).toBe(false);
+    const proxy = await makeProxyRegistrant(await pmTeamName(fx));
+    expect(await loadCardUsageForEdit(proxy, id)).not.toBeNull();
+    expect(await removable(proxy, id)).toBe(true);
   });
 });

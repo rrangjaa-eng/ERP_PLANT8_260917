@@ -105,7 +105,7 @@ export async function requestCompanyLogoUpload(viewer: Viewer, raw: CompanyLogoU
 
 // 현재 로고를 모두 보관으로 돌린다(바꾸기 · 되돌리기가 같은 tx 안에서 부른다) — 회사 로고는 한 번에 하나만 살아 있다.
 async function retireActive(viewer: Viewer, tx: Parameters<typeof markRemoved>[2]): Promise<void> {
-  for (const row of await listActiveByOwner(viewer, COMPANY_LOGO_OWNER_KIND, COMPANY_LOGO_OWNER_ID)) {
+  for (const row of await listActiveByOwner(viewer, COMPANY_LOGO_OWNER_KIND, COMPANY_LOGO_OWNER_ID, tx)) {
     await markRemoved(viewer, { id: row.id, removedBy: viewer.id }, tx);
   }
 }

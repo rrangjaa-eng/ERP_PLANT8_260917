@@ -91,9 +91,9 @@ export async function countActiveByOwner(viewer: Viewer, ownerKind: string, owne
 }
 
 // 삭제되지 않은 행 전부 — 무효 행도 싣는다(화면이 취소선 · 배지로 그린다). 올린 순. 05-09: 무효 처리한 사람 이름을 붙인다.
-export async function listActiveByOwner(viewer: Viewer, ownerKind: string, ownerId: string): Promise<(FileRow & { voidedByName: string | null })[]> {
+export async function listActiveByOwner(viewer: Viewer, ownerKind: string, ownerId: string, tx: DbOrTx = db): Promise<(FileRow & { voidedByName: string | null })[]> {
   void viewer;
-  const rows = await db
+  const rows = await tx
     .select({ file: files, voidedByName: users.name })
     .from(files)
     .leftJoin(users, eq(users.id, files.voidedBy))

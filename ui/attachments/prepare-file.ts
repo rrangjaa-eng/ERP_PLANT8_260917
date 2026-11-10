@@ -85,3 +85,16 @@ export async function prepareEvidenceFile(file: File): Promise<PreparedEvidence>
     previewUrl: contentType.startsWith("image/") && !HEIC_TYPES.includes(contentType) ? URL.createObjectURL(blob) : null,
   };
 }
+
+// 회사 로고(07.2-10): 고객 종이에 찍히는 그림이라 증빙처럼 JPEG로 줄이지 않는다 — 원본 형식 · 이름 · 바이트 그대로(PNG 투명도 유지)이고 2MB 검사는 실제 파일 크기에 걸린다.
+export async function prepareLogoFile(file: File): Promise<PreparedEvidence> {
+  const contentType = declaredType(file);
+  return {
+    blob: file,
+    name: file.name,
+    size: file.size,
+    contentType,
+    sha256: await sha256Hex(file),
+    previewUrl: contentType.startsWith("image/") ? URL.createObjectURL(file) : null,
+  };
+}

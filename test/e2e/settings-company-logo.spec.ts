@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { files, quoteLines } from "@/db/schema";
 import { getSettingValue, setSettingValue, type SettingDef } from "@/domain/settings/registry";
@@ -61,6 +61,17 @@ function solidPng(width: number, height: number): Buffer {
   const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3, 0x33)]);
   const raw = Buffer.concat(Array.from({ length: height }, () => row));
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+}
+
+// 압축이 안 되는 무작위 RGB PNG — 실제로 디코딩되는 2MB 넘는 그림(줄이지 않는 로고 업로드가 원본 크기로 걸리는지 본다).
+function noisePng(width: number, height: number): Buffer {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 2;
+  const raw = Buffer.concat(Array.from({ length: height }, () => Buffer.concat([Buffer.from([0]), randomBytes(width * 3)])));
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", deflateSync(raw, { level: 0 })), chunk("IEND", Buffer.alloc(0))]);
 }
 
 const LOGO_PNG = solidPng(400, 200);
@@ -182,7 +193,8 @@ test("PNG를 올리면 미리보기 1 · 파일 행 · 살아 있는 DB 행 1이
     await page.getByTestId("attachments-input").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: LOGO_PNG });
     const group = logoGroup(page);
     await expect(group.locator("img")).toHaveCount(1);
-    await expect(group.getByText("logo.jpg")).toBeVisible();
+    await expect(group.getByText("logo.png")).toBeVisible();
+    await expect.poll(async () => (await db.select({ contentType: files.contentType, originalName: files.originalName, sizeBytes: files.sizeBytes }).from(files).where(and(eq(files.ownerKind, COMPANY_LOGO_OWNER_KIND), eq(files.ownerId, COMPANY_LOGO_OWNER_ID), isNull(files.removedAt))))[0]).toEqual({ contentType: "image/png", originalName: "logo.png", sizeBytes: LOGO_PNG.length });
     await expect(group.getByRole("button", { name: "바꾸기" })).toBeVisible();
     await expect(group.getByRole("button", { name: "삭제" })).toBeVisible();
     await expect.poll(aliveLogoRows).toBe(1);
@@ -242,6 +254,20 @@ test("3MB 파일은 `3.0MB · 2MB 초과 · 줄여 다시`로 막히고 로고�
     const group = logoGroup(page);
     await page.getByTestId("attachments-input").setInputFiles({ name: "big.png", mimeType: "image/png", buffer: Buffer.alloc(3 * 1024 * 1024, 7) });
     await expect(group.getByRole("alert")).toHaveText("3.0MB · 2MB 초과 · 줄여 다시");
+    await expect.poll(aliveLogoRows).toBe(1);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test("디코딩되는 실제 2MB 넘는 그림도 줄지 않고 `2MB 초과`로 막히며 로고는 그대로다", async ({ browser, baseURL }) => {
+  const page = await openSettings(browser, baseURL);
+  try {
+    const group = logoGroup(page);
+    const big = noisePng(1000, 700);
+    expect(big.length).toBeGreaterThan(2 * 1024 * 1024);
+    await page.getByTestId("attachments-input").setInputFiles({ name: "real-big.png", mimeType: "image/png", buffer: big });
+    await expect(group.getByRole("alert")).toHaveText(`${(big.length / (1024 * 1024)).toFixed(1)}MB · 2MB 초과 · 줄여 다시`);
     await expect.poll(aliveLogoRows).toBe(1);
   } finally {
     await page.context().close();

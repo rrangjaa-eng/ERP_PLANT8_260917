@@ -8,7 +8,7 @@ import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import actionStyles from "@/ui/row-actions/RowActions.module.css";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import type { StatusKind } from "@/ui/status-tag/status-map";
-import { prepareEvidenceFile, type PreparedEvidence } from "./prepare-file";
+import { prepareEvidenceFile, prepareLogoFile, type PreparedEvidence } from "./prepare-file";
 import styles from "./Attachments.module.css";
 
 // 05-05(UI-SPEC S4 · EVID-01): 증빙 첨부 영역 — 파일 고르기 · 끌어 놓기 → 브라우저 축소 · 해시 → 서버 선언(요청) → 서명 PUT → 완료 통보.
@@ -662,7 +662,7 @@ function Logo({ file, previewUrl, canEdit, actions, uploadFailedText }: LogoProp
     if (!picked) return;
     setState({ kind: "uploading" });
     try {
-      const prepared = await prepareEvidenceFile(picked);
+      const prepared = await prepareLogoFile(picked);
       const requested = await actions.request({ size: prepared.size, contentType: prepared.contentType, sha256: prepared.sha256, name: prepared.name });
       if (!requested.ok) {
         setState({ kind: "failed", message: requested.message });

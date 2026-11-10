@@ -9,6 +9,7 @@ import { attachEvidence } from "../integration/fixtures/expenses";
 import { delayServerActions, loginPage, waitForHydration } from "./leave-org";
 import { setupExpenseE2E, type ExpenseE2E, type LineKey } from "./expense-fixture";
 import { addDays, payCalendar } from "./pay-schedule-e2e";
+import { seedReasonOptions } from "./reason-options";
 
 // 07-16 Task 3(SC-02 · D-714 · K19 · D-731 · AQ-10): 기안자는 지급 예정일을 적지 않는다 — 희망 지급일 · 희망 사유 한 쌍만 적고, 예정일은
 // 읽기 줄(자동 · 수동 지정) + 바로 아래 규칙 줄(07-01 payRuleLine 그대로)로 본다. 값은 첫 그림 = 폼 data, 그 뒤 = 미리보기(화면 계산 없음).
@@ -146,6 +147,51 @@ test.describe("지출결의 폼 — 지급 예정일 읽기 줄 · 희망 지급
     await expect(page.locator("#requestedPaymentDate-error")).toHaveText(REQUESTED_DATE_PASSED);
     await expect(page.getByLabel("희망 지급일")).toHaveAttribute("aria-invalid", "true");
     expect((await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, id)))[0]?.number).toBeNull();
+    await page.context().close();
+  });
+});
+
+// 07.2-07 X3(D-7289) — 희망 지급일 사유도 같은 ReasonField: 항목 뒤에 덧붙여 저장하면 다시 열 때 `기타`(문구와 다름) · 글 그대로.
+test.describe("지출결의 폼 — 희망 지급일 사유 고르기 (07.2-07)", () => {
+  test("항목 1개 → 고르개 옵션 = 자리표시 + 1 + 기타 · 덧붙여 저장하면 다시 열 때 기타가 골라지고 글은 그대로다", async ({ browser, baseURL }) => {
+    const restore = await seedReasonOptions("requested_payment_reason", ["행사 전 선금"]);
+    try {
+      const cal = await payCalendar();
+      const fx = await setupExpenseE2E();
+      const page = await loginPage(browser, baseURL, fx.pm);
+      const id = await openDraft(page, fx, "hold");
+      await page.getByLabel("희망 지급일").fill(addDays(cal.today, 7));
+      const pick = page.locator("#requestedPaymentReason-pick");
+      await expect(pick.locator("option")).toHaveText(["사유 고르기", "행사 전 선금", "기타"]);
+      await pick.selectOption("행사 전 선금");
+      const reason = page.getByLabel("희망 사유");
+      await expect(reason).toHaveValue("행사 전 선금");
+      await reason.press("End");
+      await reason.pressSequentially(" · 3월 행사");
+      await expect(pick).toHaveValue("행사 전 선금");
+      await page.getByRole("button", { name: /^임시 저장/ }).click();
+      await expect
+        .poll(async () => (await db.select({ reason: expenses.requestedPaymentReason }).from(expenses).where(eq(expenses.id, id)))[0]?.reason)
+        .toBe("행사 전 선금 · 3월 행사");
+
+      await page.goto(`/expenses/${id}`);
+      await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+      await expect(page.locator("#requestedPaymentReason-pick")).toHaveValue("기타");
+      await expect(page.getByLabel("희망 사유")).toHaveValue("행사 전 선금 · 3월 행사");
+      await page.context().close();
+    } finally {
+      await restore();
+    }
+  });
+
+  test("희망 지급일 사유 항목이 0건이면 고르개 DOM 0 · 글 칸 1 · 기존 오류 문구는 그대로", async ({ browser, baseURL }) => {
+    const cal = await payCalendar();
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "retry");
+    await page.getByLabel("희망 지급일").fill(addDays(cal.today, 7));
+    await expect(page.locator("#requestedPaymentReason-pick")).toHaveCount(0);
+    await expect(page.locator("textarea#requestedPaymentReason")).toHaveCount(1);
     await page.context().close();
   });
 });

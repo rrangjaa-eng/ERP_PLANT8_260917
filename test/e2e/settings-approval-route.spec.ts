@@ -8,8 +8,8 @@ import { submitLeave } from "@/domain/leave";
 import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
-import { documentLabel, loginPage, setupLeaveOrg } from "./leave-org";
-import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { documentLabel, loginPage, makePerson as makeLeavePerson, setupLeaveOrg } from "./leave-org";
+import { SYSADMIN_ROLE_ID, createRole } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import {
@@ -22,6 +22,7 @@ import {
   APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID,
 } from "@/domain/settings/keys";
 import { CEO_ROLE_ID } from "@/domain/permissions/roles";
+import { randomUUID } from "node:crypto";
 
 // 04.1-04(ADMN-04 · CEO-14): 설정 화면 `연차 결재선` 섹션. 결재선은 공유 erp_test의
 // 전역 값이라 이 스펙은 `desktop-settings` 프로젝트(다른 모든 스펙 뒤)에서만 돌고,
@@ -846,6 +847,40 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     } finally {
       await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER, original);
+    }
+  });
+
+  // 07.2-13(D-7299 · D7298-A): 커스텀 계급 단계 — 보유자 0명이면 `보유자 없음 · 대표가 대신 승인`, 2명이면 `보유자 2명 · 한 명이 승인`
+  // (단계 계급 칸 아래 · 저장 막지 않음). 미리보기 단계 이름은 이미 구현된 모양 그대로 `A · B {계급}`(C-4 — 공용 결재선 변경 0).
+  test("커스텀 계급 2단(전사): 0명 경고 `보유자 없음 · 대표가 대신 승인` → 2명 경고 `보유자 2명 · 한 명이 승인` · 미리보기 `A · B 계급`", async ({ page, browser, baseURL }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    const originalScope = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE);
+    try {
+      const roleName = `부팀장${randomUUID().slice(0, 4)}`;
+      const role = await createRole(SYSTEM_VIEWER, { name: roleName });
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, role.id);
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_SCOPE, "company");
+
+      await openSettings(page);
+      const step2Role = leaveRoute(page).getByLabel("2단 담당 계급");
+      const field = step2Role.locator("xpath=ancestor::div[3]");
+      await expect(field.getByText("보유자 없음 · 대표가 대신 승인", { exact: true })).toBeVisible();
+
+      const org = await setupLeaveOrg(seoulToday());
+      const first = await makeLeavePerson("부팀", role.id, org.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+      const second = await makeLeavePerson("부팀", role.id, org.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+      await page.reload();
+      await expect(field.getByText("보유자 2명 · 한 명이 승인", { exact: true })).toBeVisible();
+      await expect(field.getByText("보유자 없음 · 대표가 대신 승인")).toHaveCount(0);
+
+      const drafter = await loginPage(browser, baseURL, org.drafter);
+      await drafter.goto("/leave/new");
+      const line = drafter.getByTestId("approval-route-line");
+      await expect(line).toContainText(new RegExp(`(${first.name} · ${second.name}|${second.name} · ${first.name}) ${roleName}`));
+      await drafter.context().close();
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, originalRole);
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_SCOPE, originalScope);
     }
   });
 

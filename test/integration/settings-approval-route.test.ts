@@ -563,3 +563,21 @@ describe("반반차 · 재택 결재 단계 저장(PU9 · S19)", () => {
     expect(await stored()).toBe(3);
   });
 });
+
+// 07.2-13(D-7299 · D7298-A): 커스텀 계급 단계 보유자 경고 — 실제 조직 스냅숏으로 센다.
+describe("커스텀 계급 단계 보유자 경고(D-7299)", () => {
+  const step2 = LEAVE_ROUTE_SETTINGS.steps[1]!;
+
+  it("2단 = 커스텀 계급 × 전사: 0명이면 보유자 없음 · 2명이면 보유자 2명 · 한 명이 승인 · 1명이면 경고 없음", async () => {
+    const role = await createRole(SYSTEM_VIEWER, { name: "부팀장" });
+    await upsertSimpleValue(SYSTEM_VIEWER, step2.roleId.key, role.id, null);
+    await upsertSimpleValue(SYSTEM_VIEWER, step2.scope.key, "company", null);
+    const warnings = () => listApprovalRouteSettingWarnings(SYSTEM_VIEWER);
+
+    expect((await warnings())[step2.roleId.key]).toBe("보유자 없음 · 대표가 대신 승인");
+    await makePerson("부팀장하나", role.id, "기획1팀");
+    expect((await warnings())[step2.roleId.key]).toBeUndefined();
+    await makePerson("부팀장둘", role.id, "경영관리팀");
+    expect((await warnings())[step2.roleId.key]).toBe("보유자 2명 · 한 명이 승인");
+  });
+});

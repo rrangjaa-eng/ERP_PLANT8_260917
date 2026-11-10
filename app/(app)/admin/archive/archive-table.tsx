@@ -8,6 +8,7 @@ import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { StaticTable, type StaticTableColumn } from "@/ui/table/StaticTable";
+import styles from "./archive.module.css";
 
 export type ArchiveTableRow = {
   entity: string;
@@ -46,7 +47,8 @@ const COLUMNS: StaticTableColumn[] = [
 export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
   const [toast, setToast] = useState<{ message: string; tone: "default" | "error" } | null>(null);
   // /design-review(#138) — 도메인이 거부한 행(원인 있음)은 다시 눌러도 같은 실패라 「복원」을 치운다(공휴일 되돌리기 거부와 같은 처리).
-  const [rejected, setRejected] = useState<ReadonlySet<string>>(() => new Set());
+  // 07.2-11(UI-SPEC S22): 행 → 서버 원인 전문 — 그 행 아래 이유 줄로 그린다(토스트는 원인을 마지막 「 · 」 앞까지 자른다).
+  const [rejected, setRejected] = useState<ReadonlyMap<string, string>>(() => new Map());
 
   return (
     <>
@@ -61,6 +63,7 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
           columns={COLUMNS}
           rows={rows.map((item) => ({
             key: `${item.entity}:${item.id}`,
+            detail: rejected.has(`${item.entity}:${item.id}`) ? <p className={styles.rowReason}>{rejected.get(`${item.entity}:${item.id}`)}</p> : undefined,
             // §7-3 폰 전략 — P1(종류·이름·동작)만 열로 남고 보관 시각·보관한 사람은 `StaticTable`이 행 아래 접힌 줄 하나로 넣는다.
             cells: [
               item.label,
@@ -78,7 +81,7 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
                     onFailed={(reason) => {
                       // 원인은 마지막 「 · 」 앞까지 — 이름에 「 · 」가 있어도 잘리지 않게.
                       const cut = reason ? reason.lastIndexOf(" · ") : -1;
-                      if (reason) setRejected((prev) => new Set(prev).add(`${item.entity}:${item.id}`));
+                      if (reason) setRejected((prev) => new Map(prev).set(`${item.entity}:${item.id}`, reason));
                       setToast({ message: `복원 · 실패 · ${reason ? (cut < 0 ? reason : reason.slice(0, cut)) : "다시 시도"}`, tone: "error" });
                     }}
                   />

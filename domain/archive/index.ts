@@ -29,7 +29,7 @@ import { lockSeatKeys } from "@/repositories/seats";
 import { setUserArchived } from "@/repositories/users";
 import { countActiveMembersOfRole, findRoleById, lockRoleForUpdate, setRoleArchived } from "@/repositories/roles";
 import { findTeamById, listTeamIdsOfOrgUnit, setTeamArchived } from "@/repositories/teams";
-import { setOrgUnitArchived } from "@/repositories/org-units";
+import { findOrgUnitById, setOrgUnitArchived } from "@/repositories/org-units";
 import { activeTeamMembers } from "@/repositories/team-memberships";
 import { assertNoSeatDuplicates, SeatTakenError, seatDuplicateBaseline } from "@/domain/people/seat-rules";
 import { withTransaction } from "@/lib/db-transaction";
@@ -246,6 +246,10 @@ async function vendorRestoreBlock(viewer: Viewer, id: string): Promise<UserFacin
   return new VendorBusinessNoTakenError(`같은 사업자번호 거래처 있음${name} · 복원 불가`);
 }
 
+const ARCHIVED_PARENT_ORG_UNIT = "사용중지 본부 아래 팀 · 본부 먼저 복원";
+// 보관함 액션이 원인을 루트 오류로 실어 행 이유 줄 · 토스트에 보이도록 따로 둔 클래스(거래처 · 카드 복원 거부와 같은 꼴).
+export class ParentOrgUnitArchivedError extends UserFacingError {}
+
 // 06.4 /review: 팀 · 본부를 되살리면 그 안의 팀장 · 본부 책임자 자리가 다시 생긴다 — 보관 동안 자리 검사가 그 팀 · 본부를
 // 보지 않아 둘째 보유자가 생겼을 수 있다. 팀 · 본부 키를 잡고 보관을 푼 뒤 겹치면 tx째 되돌린다(자동 강등 없음 · 사람 복원과
 // 같은 꼴). 팀은 그 팀의 본부 책임자 자리도 되살아나므로 본부 키 · 검사까지. 날짜 · 이름 노출은 tx 전에(풀에서 따로 빌리지 않게).
@@ -258,6 +262,13 @@ async function restoreSeatedOrg(viewer: Viewer, entity: "team" | "org_unit", id:
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   return withTransaction(async (tx) => {
     await lockSeatKeys(viewer, { teamIds, orgUnitIds }, tx);
+    // 07.2-11 PU22 ③(D-7279): 위 본부가 사용중지(보관)면 팀을 되살리지 않는다 — 본부 보관도 이 본부 키를 잡으므로 잠금 뒤 tx에서
+    // 팀의 본부를 다시 읽어 판정한다(tx 밖 값은 잠금 키용). 본부 이름은 넣지 않는다(이름 노출 판정 회피 · UI-SPEC S22 문구).
+    if (entity === "team") {
+      const parentId = (await findTeamById(viewer, id, tx))?.orgUnitId ?? null;
+      const parent = parentId === null ? null : await findOrgUnitById(viewer, parentId, tx);
+      if (parent?.archivedAt) throw new ParentOrgUnitArchivedError(ARCHIVED_PARENT_ORG_UNIT);
+    }
     const baseline = await seatDuplicateBaseline(viewer, today, tx);
     const reactivated = entity === "team" ? await setTeamArchived(viewer, id, false, tx) : await setOrgUnitArchived(viewer, id, false, tx);
     if (!reactivated) return { restored: false };

@@ -149,6 +149,10 @@ const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
 const ARCHIVED_ROW = RESERVE_ARCHIVED_ROW_REASON;
 const CLIENT_LOCKED = "클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적기";
 const CLIENT_NOT_FOUND = "클라이언트 없음 · 클라이언트 다시 고르기";
+// 07.2-11 PU22 ②(D-7309): 사용중지(보관) 거래처 — 새 줄(vendor.value를 보는 사람에게만) · 지운 줄 복원의 거부 이유.
+const CLIENT_ARCHIVED = "거래처 사용중지 · 다른 거래처 고르기";
+// 보관함 액션이 복원 거부 원인을 루트 오류로 실어 행 이유 줄 · 토스트에 보이도록 따로 둔 클래스.
+export class ReserveClientArchivedError extends UserFacingError {}
 const PROJECT_CLIENT_MISMATCH = "다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기";
 const PROJECT_ARCHIVED = "보관된 프로젝트 · 프로젝트 다시 고르기";
 const EVIDENCE_NOT_IN_TABLE = "코드표에 없는 증빙 종류 · 증빙 종류 고르기";
@@ -318,10 +322,11 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
     const lockedClients = await repoLockReserveClients(viewer, lockIds, tx);
     const locked = new Set(lockedClients.map((client) => client.id));
     const selectable = new Set(lockedClients.filter((client) => client.selectable).map((client) => client.id));
+    const archivedClients = new Set(lockedClients.filter((client) => client.archived).map((client) => client.id));
     const notClient = new Set(lockedClients.filter((client) => !servesSide(client.kind, "client")).map((client) => client.id));
     await deps?.afterLock?.();
     const storedById = new Map((await repoFindEntriesByIds(viewer, entryIds, tx)).map((row) => [row.id, row]));
-    const plan = await planBatch(viewer, prepared, archived, storedById, selectable, notClient, evidence.active, pickable, tx);
+    const plan = await planBatch(viewer, prepared, archived, storedById, selectable, archivedClients, notClient, evidence.active, pickable, tx);
 
     const ledger = new Map((await repoListActiveEntriesByClients(viewer, [...locked], tx)).map((row) => [row.id, toBalanceRow(row)]));
     for (const { row, stored } of plan.updates) {
@@ -347,6 +352,8 @@ async function planBatch(
   storedById: Map<string, ReserveEntryRow>,
   /** 잠근 클라이언트 중 새 줄이 고를 수 있는 것(보관·숨김 아님 — 리뷰 R10). */
   selectable: Set<string>,
+  /** 07.2-11 PU22 ②(D-7309) — 잠근 클라이언트 중 사용중지(보관)된 것. 새 줄의 이유 글자만 가른다(판정은 selectable 그대로). */
+  archivedClients: Set<string>,
   /** 261006 「바뀔 때만 막기」 — 잠근 클라이언트 중 클라이언트 · 둘 다 갈래가 아닌 것. 새 줄만 막는다(기존 줄은 클라이언트 잠김). */
   notClient: Set<string>,
   /** Codex B — 활성·보관 아닌 증빙 코드(트랜잭션 앞에서 읽음). */
@@ -384,7 +391,9 @@ async function planBatch(
       }
       // Codex ③ — 새 줄 클라이언트는 선택지와 같은 vendor.value 게이트.
       if (!pickable.clients || !selectable.has(input.clientId)) {
-        errors.push(cellError(index, input.id, "clientId", "클라이언트", CLIENT_NOT_FOUND));
+        // 07.2-11(T-07.2-11-05): 사용중지 글자는 거래처를 볼 수 있는 사람에게만 — 그 밖(못 보는 계정 · 숨김 · 없는 id)은 존재를 숨기는 지금 글자.
+        const reason = pickable.clients && archivedClients.has(input.clientId) ? CLIENT_ARCHIVED : CLIENT_NOT_FOUND;
+        errors.push(cellError(index, input.id, "clientId", "클라이언트", reason));
         continue;
       }
       if (notClient.has(input.clientId)) {
@@ -552,11 +561,13 @@ export async function restoreReserve(
     const [before] = await repoFindEntriesByIds(viewer, [id], tx);
     if (!before) denyWrite(viewer, "reserve.restore", { entryIds: [id] }, new UserFacingError(ENTRY_NOT_FOUND));
     // 클라이언트는 첫 저장 뒤 바뀌지 않으므로 잠금 전에 읽어도 된다(사용자 D6).
-    await repoLockReserveClients(viewer, [before.clientId], tx);
+    const [client] = await repoLockReserveClients(viewer, [before.clientId], tx);
     await deps?.afterLock?.();
     const [current] = await repoFindEntriesByIds(viewer, [id], tx);
     // quick 261002-4jn — 이미 활성(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
     if (!current || current.archivedAt === null) return { restored: false };
+    // 07.2-11 PU22 ②(D-7309): 사용중지(보관) 거래처의 지운 줄 복원은 사실상 새로 넣기라 거부한다 — 잠근 값의 archivedAt만 본다(숨김은 사용중지가 아니다).
+    if (client?.archived) denyWrite(viewer, "reserve.restore", { clientIds: [current.clientId], entryIds: [id] }, new ReserveClientArchivedError(CLIENT_ARCHIVED));
     const ledger = (await repoListActiveEntriesByClients(viewer, [current.clientId], tx)).map(toBalanceRow);
     const negative = runningBalance([...ledger, toBalanceRow(current)]).firstNegative;
     if (negative) {

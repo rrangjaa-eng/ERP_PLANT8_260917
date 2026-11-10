@@ -4,7 +4,8 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
-import { restore, VendorBusinessNoTakenError, CorpCardLast4TakenError, type RestoreResult } from "@/domain/archive";
+import { restore, VendorBusinessNoTakenError, CorpCardLast4TakenError, ParentOrgUnitArchivedError, type RestoreResult } from "@/domain/archive";
+import { ReserveClientArchivedError } from "@/domain/reserves";
 import { HolidayNotRestorableError } from "@/domain/holidays/admin";
 import { PersonNotRestorableError, PersonRestoreForbiddenError } from "@/domain/people/restore";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
@@ -27,6 +28,7 @@ export const restoreArchivedAction = authedActionClient
       // PR #178: 거래처 복원 거부(같은 사업자번호 거래처가 살아 있음)도 같다.
       // 06.4(D-6406 · N1): 사람 복원 거부(사람 쓰기 없음 · 없는 사람 · 권한 상한 · 자리)도 같다 — 문구가 ` · 복원 불가`로 끝난다.
       // 06-37(G-06-A): 법인카드 복원 거부(같은 발급사 · 뒤 4자리의 살아 있는 카드)도 같다.
+      // 07.2-11(PU22 ② · ③): 사용중지 본부 아래 팀 · 사용중지 거래처 리저브 줄 복원 거부도 같다 — 행 아래 이유 줄(S22).
       if (
         error instanceof HolidayNotRestorableError ||
         error instanceof VendorBusinessNoTakenError ||
@@ -34,7 +36,9 @@ export const restoreArchivedAction = authedActionClient
         error instanceof PersonRestoreForbiddenError ||
         error instanceof PersonNotRestorableError ||
         error instanceof RoleGrantForbiddenError ||
-        error instanceof SeatTakenError
+        error instanceof SeatTakenError ||
+        error instanceof ParentOrgUnitArchivedError ||
+        error instanceof ReserveClientArchivedError
       ) {
         returnValidationErrors(restoreArchivedSchema, { _errors: [error.message] });
       }

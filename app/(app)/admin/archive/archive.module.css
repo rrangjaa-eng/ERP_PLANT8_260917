@@ -18,3 +18,10 @@
   font-size: var(--text-aux);
   color: var(--status-danger);
 }
+
+/* 07.2-11(UI-SPEC S22): 복원이 거부된 행 아래 이유 줄(StaticTable `detail`) — 서버 원인 전문. */
+.rowReason {
+  margin: 0;
+  font-size: var(--text-aux);
+  color: var(--status-danger);
+}

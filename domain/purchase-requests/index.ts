@@ -942,6 +942,19 @@ async function listAccess(viewer: Viewer, today: string, purpose: "view" | "writ
   return { scope: { kind: "own", userId: viewer.id }, privileged: false };
 }
 
+// 07.4-03 D-7414(사용자 카드 Q5 「구매 요청 목록 화면과 같게」): 정산서의 그 프로젝트 구매 요청 — 목록 화면과 같은 범위(listAccess · 추가 판정 없음) ·
+// 같은 재료 · 같은 투영. 취소된 요청은 싣지 않는다(정산서는 그 프로젝트에 쓰인 · 쓰일 돈의 서류). 쪽 나눔 없이 전부, 요청일 오름차순.
+export async function listProjectPurchaseRequests(viewer: Viewer, projectId: string, today: string = seoulToday()): Promise<Partial<PurchaseRequestListItemDto>[]> {
+  const { scope } = await listAccess(viewer, today);
+  // 저장소는 최근 요청이 첫 줄이다 — 뒤집어 오래된 요청이 첫 줄.
+  const rows = (await withTransaction((tx) => listPurchaseRequestRows(viewer, { scope, filter: { projectId } }, tx))).filter((row) => row.status !== "cancelled").reverse();
+  const lineNo = await lineNumbers(viewer, rows.flatMap((row) => (row.lineRevisionId ? [row.lineRevisionId] : [])));
+  const linkCounts = new Map(
+    (await countLiveLinksByOwners(viewer, { ownerKind: "purchase_request", ownerIds: rows.map((row) => row.id) })).map((count) => [count.ownerId, count.linkCount]),
+  );
+  return projectMany(viewer, rows.map((row) => toProjectable(row, lineNo, linkCounts)), PURCHASE_REQUEST_LIST_DTO_SPEC);
+}
+
 export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequestListFilters, today: string = seoulToday()): Promise<PurchaseRequestList> {
   const { scope, privileged } = await listAccess(viewer, today);
   const filter: PurchaseRequestFilter = {

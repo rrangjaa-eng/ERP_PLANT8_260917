@@ -59,6 +59,7 @@ import {
 } from "@/repositories/quote-lines";
 import { findCounterpartLabels as repoFindCounterpartLabels, lockProjectForWrite as repoLockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import {
+  ADJUSTMENT_PAIR_ARCHIVED,
   ADJUSTMENT_PAIR_CHANGED,
   ADJUSTMENT_PAIR_LOCKED,
   ADJUSTMENT_PAIR_NOT_VISIBLE,
@@ -1519,6 +1520,11 @@ export async function writeQuoteLinesInTx(
         deny(ADJUSTMENT_PAIR_RULE, new UserFacingError(ADJUSTMENT_PAIR_NOT_VISIBLE));
         continue;
       }
+      // 보관 여부는 잠근 행으로 다시 본다(자기 프로젝트의 ledger.ts 잠금 뒤 판정과 같은 자리) — 보관된 프로젝트에 짝 줄을 쓰지 않는다.
+      if (counterpart.archivedAt !== null) {
+        deny(ADJUSTMENT_PAIR_RULE, new UserFacingError(ADJUSTMENT_PAIR_ARCHIVED));
+        continue;
+      }
       const counterpartCtx = (change: ProjectLineEditCtx["change"]): ProjectLineEditCtx => ({
         status: counterpart.status,
         lineKind: "adjustment",
@@ -1651,10 +1657,20 @@ export async function writeQuoteLinesInTx(
     if (archived) writtenChanges.push({ id, name: archived.itemName, archived: true, changes: buildChanges(lineChangeView(archived, QUOTE_LINE_FIELDS), {}) });
   }
 
-  // 07.2-12(D7298-B · D-7300) — 상대 쪽 짝 줄: 같은 트랜잭션에서 만들고 · 따라 고치고 · 보관한다. 상대 차수마다 행동 로그 한 건.
+  // 07.2-12(D7298-B · D-7300) — 상대 쪽 짝 줄: 같은 트랜잭션에서 만들고 · 따라 고치고 · 보관한다. 짝 쓰기 한 건마다 상대 차수에
+  // 행동 로그 한 건(detail의 adjustmentPairId가 그 쌍 하나를 가리킨다 — 같은 상대에 쌍이 둘이면 두 건).
   // 재전송한 새 줄(자기 줄이 이미 있었다)은 짝도 이미 있다. 판정 뒤 짝이 달라졌으면(잠금 아래라 드물다) 전부 되돌린다.
+  // 로그에는 자기 쪽과 같은 lineChanges 원소(07.1-13 S8)를 싣는다 — 순번은 상대 차수 화면 번호(보관한 짝은 쓰기 전 번호)라
+  // 짝을 보관하는 상대 차수는 쓰기 전 활성 줄을 먼저 읽고, 로그는 짝 쓰기를 다 끝낸 뒤 남긴다(같은 tx).
+  const counterpartBefore = new Map<string, QuoteLineRow[]>();
+  for (const { write, counterpartRevisionId } of partnerWrites) {
+    if (write.kind === "archive" && !counterpartBefore.has(counterpartRevisionId)) {
+      counterpartBefore.set(counterpartRevisionId, await repoListQuoteLinesByRevision(viewer, counterpartRevisionId, tx));
+    }
+  }
+  const partnerLogs: { counterpartRevisionId: string; pairId: string; change: (typeof writtenChanges)[number] }[] = [];
   for (const { write, pairId, counterpartRevisionId, partner, source, money } of partnerWrites) {
-    let partnerId: string;
+    let partnerChange: (typeof writtenChanges)[number];
     if (write.kind === "insert") {
       if (!insertedIds.has(write.lineId) || !source || !money) continue;
       const counterpartActive = await repoListQuoteLinesByRevision(viewer, counterpartRevisionId, tx);
@@ -1678,7 +1694,7 @@ export async function writeQuoteLinesInTx(
         tx,
       );
       if (!inserted) throw new UserFacingError(ADJUSTMENT_PAIR_CHANGED);
-      partnerId = inserted.id;
+      partnerChange = { id: inserted.id, name: inserted.itemName, archived: false, changes: buildChanges({}, lineChangeView(inserted, QUOTE_LINE_FIELDS)) };
     } else if (write.kind === "sync") {
       if (!partner || !source || !money) continue;
       const updated = await repoUpdateQuoteLineIfVersionMatches(
@@ -1702,13 +1718,29 @@ export async function writeQuoteLinesInTx(
         tx,
       );
       if (!updated) throw new UserFacingError(ADJUSTMENT_PAIR_CHANGED);
-      partnerId = partner.id;
+      partnerChange = {
+        id: partner.id,
+        name: updated.itemName,
+        archived: false,
+        changes: buildChanges(lineChangeView(partner, QUOTE_LINE_FIELDS), lineChangeView(updated, QUOTE_LINE_FIELDS)),
+      };
     } else {
       if (!partner) continue;
       const count = await repoArchiveQuoteLines(viewer, { ids: [partner.id], revisionId: counterpartRevisionId, archivedBy: viewer.id, archivedAt: new Date() }, tx);
       if (count !== 1) throw new UserFacingError(ADJUSTMENT_PAIR_CHANGED);
-      partnerId = partner.id;
+      partnerChange = { id: partner.id, name: partner.itemName, archived: true, changes: buildChanges(lineChangeView(partner, QUOTE_LINE_FIELDS), {}) };
     }
+    partnerLogs.push({ counterpartRevisionId, pairId, change: partnerChange });
+  }
+  const counterpartAfter = new Map<string, QuoteLineRow[]>();
+  for (const { counterpartRevisionId, pairId, change } of partnerLogs) {
+    let after = counterpartAfter.get(counterpartRevisionId);
+    if (!after) {
+      after = await repoListQuoteLinesByRevision(viewer, counterpartRevisionId, tx);
+      counterpartAfter.set(counterpartRevisionId, after);
+    }
+    const no = displayNumbers(change.archived ? counterpartBefore.get(counterpartRevisionId)! : after).get(change.id) ?? 0;
+    const lineChange: LineChange = { id: change.id, kind: "quote", no, name: change.name === "" ? null : change.name, changes: change.changes };
     await recordAction(
       viewer,
       {
@@ -1716,9 +1748,10 @@ export async function writeQuoteLinesInTx(
         entity: QUOTE_LINE_ENTITY,
         entityId: counterpartRevisionId,
         detail: {
-          ...(write.kind === "archive" ? { lineIds: [partnerId], archivedLineIds: [partnerId] } : { lineIds: [partnerId] }),
+          ...(change.archived ? { lineIds: [change.id], archivedLineIds: [change.id] } : { lineIds: [change.id] }),
           counterpartProjectId: projectId,
           adjustmentPairId: pairId,
+          ...(Object.keys(change.changes).length > 0 ? { lineChanges: [lineChange] } : {}),
         },
       },
       { tx },
@@ -1847,6 +1880,9 @@ export async function restoreQuoteLine(
     const counterpart = counterpartId ? locked.counterparts.get(counterpartId) : undefined;
     if (counterpartId && (!counterpart || pairLocked(projectRow.status) || pairLocked(counterpart.status))) {
       denyWrite(viewer, ADJUSTMENT_PAIR_RULE, pairDenyIds, new UserFacingError(ADJUSTMENT_PAIR_LOCKED));
+    }
+    if (counterpart && counterpart.archivedAt !== null) {
+      denyWrite(viewer, ADJUSTMENT_PAIR_RULE, pairDenyIds, new UserFacingError(ADJUSTMENT_PAIR_ARCHIVED));
     }
 
     const firstLinked = (await linkedDocumentsByLine(viewer, current.revisionId, tx)).get(id)?.[0];

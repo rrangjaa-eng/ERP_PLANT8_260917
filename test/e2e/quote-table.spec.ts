@@ -385,6 +385,35 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
   });
 
+  test("(07.2-12 S6 · 리뷰 P2-3) `삭제 예정` 줄은 칸이 읽기 전용이고, 그 줄의 칸 오류는 저장을 막지 않는다 → 저장 → 보관", async ({ page }) => {
+    const { revisionId } = await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "남길 줄", amount: 1000 },
+      { subcategory: "stage_construction", itemName: "오류 난 지울 줄", amount: 2000 },
+    ]);
+    const itemCell = quoteCell(page, 1, 2);
+    const unitPriceCell = quoteCell(page, 1, 5);
+    await expect(itemCell).toHaveAttribute("aria-readonly", "false");
+    await unitPriceCell.focus();
+    await pasteIntoFocusedCell(page, unitPriceCell, "숫자아님");
+    await expect(unitPriceCell).toHaveAttribute("aria-invalid", "true");
+
+    await itemCell.focus();
+    await page.keyboard.press("Delete");
+    await expect(itemCell).toContainText("삭제 예정");
+    // 저장 때 빠질 줄이라 고칠 수 없다 — 칸이 읽기 전용이고 Enter가 편집기를 열지 않는다.
+    await expect(itemCell).toHaveAttribute("aria-readonly", "true");
+    await expect(quoteCell(page, 1, 8)).toHaveAttribute("aria-readonly", "true");
+    await itemCell.focus();
+    await page.keyboard.press("Enter");
+    await expect(itemCell.locator("input")).toHaveCount(0);
+
+    // 지울 줄의 오류는 저장을 막지 않는다 — 서버를 불러 보관한다.
+    await saveAndWait(page);
+    await expect(quoteDataRows(page)).toHaveCount(1);
+    await expect(quoteCell(page, 0, 2)).toHaveText("남길 줄");
+    expect(await quoteTotalKrw(revisionId)).toBe(1000);
+  });
+
   test("금액을 볼 수 없는 직급은 상세 화면이 오류 없이 열리고 금액은 —, 표는 편집할 수 없다(/ship 리뷰)", async ({ page }) => {
     // 전용 전사 범위 계급에 프로젝트 보기·쓰기와 project.value만 주고 quote.amount는 주지 않는다 — 공유 시드 계급(role-ceo)의
     // quote.amount를 끄면 같은 샤드 뒤 스펙(settlement-approval 대표의 견적가 합)이 깨진다.

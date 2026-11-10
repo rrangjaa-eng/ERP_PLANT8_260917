@@ -20,6 +20,8 @@ import { deferred, waitForLockWaiter } from "./lock-race";
 // 생기고 · 따라 고쳐지고 · 함께 보관 · 복원된다. 어느 쪽이든 완료면 전부 거부, 반대 방향 동시 저장에서도 교착(40P01)이 없다.
 
 const LOCKED = "상대 프로젝트 완료 · 조정 불가";
+const ARCHIVED = "상대 프로젝트 보관됨 · 조정 불가";
+const ARCHIVE_VIEW = { menu: "admin.archive", action: "view" as const };
 const CAP_KEY = "quote_line.max_per_revision";
 
 async function makeProject(label: string) {
@@ -144,6 +146,11 @@ describe("조정 줄 쌍 — 한 트랜잭션 · 따라 고치기 · 짝 보관(
     const logs = await logsFor(b.revisionId, "document_update");
     expect(logs).toHaveLength(1);
     expect(logs[0]!.detail).toMatchObject({ counterpartProjectId: a.projectId, adjustmentPairId: own.adjustmentPairId, lineIds: [partner!.id] });
+    // B 이력에도 줄 전후가 남는다(A 쪽 로그와 같은 lineChanges 꼴 — 순번은 B 차수 화면 번호).
+    const created = (logs[0]!.detail as { lineChanges: { changes: Record<string, [unknown, unknown]> }[] }).lineChanges;
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ id: partner!.id, kind: "quote", no: 1, name: "프로젝트 간 비용 이전" });
+    expect(created[0]!.changes).toMatchObject({ itemName: [null, "프로젝트 간 비용 이전"], execution: [null, "1,000,000원"] });
 
     // DTO — 양쪽 표가 상대를 2행으로 그린다(번호 · 이름).
     const listedB = await listQuoteLines(adjuster, b.revisionId, { status: "in_progress", canWrite: false, canAdjust: true });
@@ -165,6 +172,37 @@ describe("조정 줄 쌍 — 한 트랜잭션 · 따라 고치기 · 짝 보관(
     expect(await liveAdjustments(a.revisionId)).toHaveLength(0);
     expect(await liveAdjustments(b.revisionId)).toHaveLength(0);
     expect((await lineById(partner!.id)).archivedAt).toBeInstanceOf(Date);
+
+    // B 차수 로그: 생성 · 따라 고침 · 보관 세 저장에 한 건씩, 고침은 바뀐 칸만 · 보관은 이전 값만.
+    const logs = (await logsFor(b.revisionId, "document_update")).sort((x, y) => x.occurredAt.getTime() - y.occurredAt.getTime());
+    expect(logs).toHaveLength(3);
+    const changesOf = (index: number) => (logs[index]!.detail as { lineChanges: { id: string; no: number; changes: Record<string, [unknown, unknown]> }[] }).lineChanges;
+    expect(changesOf(1)).toEqual([
+      { id: partner!.id, kind: "quote", no: 1, name: "이전 비용 수정", changes: { itemName: ["프로젝트 간 비용 이전", "이전 비용 수정"], execution: ["1,000,000원", "1,200,000원"] } },
+    ]);
+    expect(changesOf(2)).toHaveLength(1);
+    expect(changesOf(2)[0]).toMatchObject({ id: partner!.id, no: 1 });
+    expect(changesOf(2)[0]!.changes).toMatchObject({ itemName: ["이전 비용 수정", null], execution: ["1,200,000원", null] });
+  });
+
+  it("(p2b) 한 저장에서 같은 상대 B에 쌍 둘을 만들면 B 차수 로그는 짝 쓰기마다 한 건 · 각 로그가 제 쌍 하나와 그 줄 전후를 싣는다", async () => {
+    const a = await makeProject("쌍A");
+    const b = await makeProject("쌍B");
+    const adjuster = await makeAdjuster();
+    await saveQuoteLines(adjuster, a.revisionId, { rows: [pairRow(-1_000, b.projectId), pairRow(-2_000, b.projectId)] });
+
+    const partners = await liveAdjustments(b.revisionId);
+    expect(partners).toHaveLength(2);
+    const logs = await logsFor(b.revisionId, "document_update");
+    expect(logs).toHaveLength(2);
+    for (const log of logs) {
+      const detail = log.detail as { lineIds: string[]; adjustmentPairId: string; lineChanges: { id: string; no: number }[] };
+      const partner = partners.find((row) => row.id === detail.lineIds[0]);
+      expect(detail.adjustmentPairId).toBe(partner!.adjustmentPairId);
+      expect(detail.lineChanges.map((element) => element.id)).toEqual([partner!.id]);
+    }
+    const numbers = logs.flatMap((log) => (log.detail as { lineChanges: { no: number }[] }).lineChanges.map((element) => element.no));
+    expect(numbers.sort()).toEqual([1, 2]);
   });
 
   it("(p3) 외화 USD 쌍도 합 0 — 짝 줄은 저장 칸을 부호만 바꿔 복사한다(다시 환산하지 않는다)", async () => {
@@ -234,6 +272,42 @@ describe("조정 줄 쌍 — 한 트랜잭션 · 따라 고치기 · 짝 보관(
     expect(await liveAdjustments(b.revisionId)).toHaveLength(2);
   });
 
+  it("(p8) 보관된 상대 — 보관함 보기 권리가 있어 잠금 전 판정을 지나도 잠근 행이 보관이면 생성 거부 `상대 프로젝트 보관됨 · 조정 불가` · 행 변경 0", async () => {
+    const a = await makeProject("쌍A");
+    const b = await makeProject("쌍B");
+    const adjuster = await makeAdjuster([ARCHIVE_VIEW]);
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, b.projectId));
+
+    await expect(saveQuoteLines(adjuster, a.revisionId, { rows: [pairRow(-1_000_000, b.projectId)] })).rejects.toThrow(ARCHIVED);
+    expect(await liveAdjustments(a.revisionId)).toHaveLength(0);
+    expect(await liveAdjustments(b.revisionId)).toHaveLength(0);
+  });
+
+  it("(p9) 상대 B가 잠금 전 판정과 잠금 사이에 보관되면 수정 거부 `상대 프로젝트 보관됨 · 조정 불가` · 짝 그대로", async () => {
+    const a = await makeProject("쌍A");
+    const b = await makeProject("쌍B");
+    const adjuster = await makeAdjuster();
+    const own = await createPair(adjuster, a, b);
+    const [partner] = await liveAdjustments(b.revisionId);
+
+    // B를 보관하는 트랜잭션이 B 행을 잡은 채로 있는 동안 A 저장이 잠금 전 판정(보관 전 값)을 지나 B 잠금에서 기다린다.
+    const archived = deferred();
+    const release = deferred();
+    const archiving = db.transaction(async (tx) => {
+      await tx.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, b.projectId));
+      archived.resolve();
+      await release.promise;
+    });
+    await archived.promise;
+    const editing = saveQuoteLines(adjuster, a.revisionId, { rows: [editOf(own, { itemName: "늦은 수정" })] });
+    await waitForLockWaiter(pool);
+    release.resolve();
+    await archiving;
+    await expect(editing).rejects.toThrow(ARCHIVED);
+    expect((await lineById(own.id)).itemName).toBe("프로젝트 간 비용 이전");
+    expect((await lineById(partner!.id)).itemName).toBe("프로젝트 간 비용 이전");
+  });
+
   it("(p7) 상대 고르기 목록 — 자기 프로젝트는 빠지고 완료 프로젝트는 고를 수 없다 · 조정 권리 없으면 빈 목록", async () => {
     const a = await makeProject("쌍A");
     const b = await makeProject("쌍B");
@@ -279,6 +353,20 @@ describe("조정 줄 쌍 — 복원(07.2 D-7307 · eng r2 B N3)", () => {
     await db.update(projects).set({ status: "completed" }).where(eq(projects.id, b.projectId));
 
     await expect(restore(adjuster, "quote_line", own.id)).rejects.toThrow(LOCKED);
+    expect((await lineById(own.id)).archivedAt).toBeInstanceOf(Date);
+    expect((await lineById(partner!.id)).archivedAt).toBeInstanceOf(Date);
+  });
+
+  it("(r4) B가 보관됐으면 보관함 권리가 있어도 복원 거부 `상대 프로젝트 보관됨 · 조정 불가` · 양쪽 보관 그대로", async () => {
+    const a = await makeProject("쌍A");
+    const b = await makeProject("쌍B");
+    const adjuster = await makeAdjuster([archiveMenu, ARCHIVE_VIEW]);
+    const own = await createPair(adjuster, a, b);
+    const [partner] = await liveAdjustments(b.revisionId);
+    await saveQuoteLines(adjuster, a.revisionId, { rows: [], archivedLineIds: [own.id] });
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, b.projectId));
+
+    await expect(restore(adjuster, "quote_line", own.id)).rejects.toThrow(ARCHIVED);
     expect((await lineById(own.id)).archivedAt).toBeInstanceOf(Date);
     expect((await lineById(partner!.id)).archivedAt).toBeInstanceOf(Date);
   });

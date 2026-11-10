@@ -10,6 +10,8 @@ import { listCounterpartCandidates as repoListCounterpartCandidates } from "@/re
 // from→to 한 행 대신 줄 두 개 — 양쪽 손익이 같은 견적 줄 합으로 읽힌다). 판정은 이 파일의 순수 함수, 쓰기는 domain/quotes/lines.ts.
 
 export const ADJUSTMENT_PAIR_LOCKED = "상대 프로젝트 완료 · 조정 불가";
+// 잠근 상대 행이 보관이다 — 잠금 전 판정(풀 읽기) 뒤에 보관됐거나 보관함 보기 권리로 보관 프로젝트를 상대로 실었다.
+export const ADJUSTMENT_PAIR_ARCHIVED = "상대 프로젝트 보관됨 · 조정 불가";
 // 잠금 전에 읽은 쌍과 잠근 뒤 다시 읽은 쌍이 다르다(그 사이 다른 사람이 쌍을 지웠다).
 export const ADJUSTMENT_PAIR_CHANGED = "다른 사람이 먼저 바꿈 · 새로 고침";
 // 쌍은 새 조정 줄로만 만든다 — 기존 줄(규칙 줄 06.5 D-6502 포함) · 다른 종류 · 자기 프로젝트는 상대가 될 수 없다.

@@ -1852,7 +1852,10 @@ export function QuoteLedger({
   }
   // 04-47(DR-5) — 남은 고정 오류·해소되지 않은 충돌. 1차는 이것 때문에 비활성이 되지 않고, 누르면 서버를 부르지 않고 첫 오류로 간다.
   const hasEntryError = (entries: EntryDraft[] | undefined) => (entries ?? []).some((entry) => Object.keys(entry.cellErrors ?? {}).length > 0);
-  const quoteHasIssue = lines.some((line) => Object.keys(line.cellErrors).length > 0 || Object.keys(line.cellConflicts).length > 0);
+  // 07.2-12 리뷰 P2-3 — 삭제 예정 줄은 저장 때 보관되고 칸 값은 보내지 않으므로, 그 줄의 오류 · 충돌은 저장을 막지 않는다.
+  const quoteHasIssue = lines.some(
+    (line) => line.pendingDelete !== "delete" && (Object.keys(line.cellErrors).length > 0 || Object.keys(line.cellConflicts).length > 0),
+  );
 
   // 표 밖 칸(기간 → 총 매출 예상가) → 견적 줄 표 → 발행 표 → 입금 표 순서로 첫 오류에 포커스한다. 오류가 없으면 false.
   function goToFirstIssue(): boolean {
@@ -2744,7 +2747,11 @@ export function QuoteLedger({
       : []),
   ];
   // quick 261001-85g — 가려진 정보의 열은 그리지 않는다(거래처 정보가 가려진 계급).
-  const columns = vendorShown ? allColumns : allColumns.filter((column) => column.key !== "vendor");
+  // 07.2-12 리뷰 P2-3 — 삭제 예정 줄은 저장 때 칸 값을 보내지 않는다(보관) — 고친 값이 말없이 버려지지 않게 칸을 읽기 전용으로 둔다(붙여넣기도 같다).
+  const columns = (vendorShown ? allColumns : allColumns.filter((column) => column.key !== "vendor")).map((column) => {
+    const editability = column.editability;
+    return editability ? { ...column, editability: (row: DraftLine) => (row.pendingDelete === "delete" ? "readonly" : editability(row)) } : column;
+  });
   // 07.2-06 — 「계산」 패널이 닫히면(채움 · 취소 · Esc) 그 수수료 줄의 단가 칸으로 포커스(셀 focus가 격자 활성 셀을 맞춘다).
   const unitPriceColumnIndex = columns.findIndex((column) => column.key === "unitPrice");
   useEffect(() => {
@@ -2795,7 +2802,10 @@ export function QuoteLedger({
       { key: "door", kind: "text", isEditable: () => false },
     ];
     // quick 261001-85g — columns에 없는 열(거래처 숨김 · 행동 열 없음)은 빠진다(colIndex로 함께 참조).
-    return columnKeyList.split(" ").flatMap((key) => byKey.filter((column) => column.key === key));
+    return columnKeyList
+      .split(" ")
+      .flatMap((key) => byKey.filter((column) => column.key === key))
+      .map((column) => ({ ...column, isEditable: (row: DraftLine) => row.pendingDelete !== "delete" && column.isEditable(row) }));
   }, [subcategories, vendors, columnKeyList, lines]);
 
   // 04-30(DR-35) — 잠긴 셀은 표 위 한 줄과 같은 이유(quoteLockReason), 읽기 전용 셀은 연결 문서 이유(DTO).
@@ -2810,7 +2820,12 @@ export function QuoteLedger({
     return null;
   }
 
-  function showBlockedReason(row: DraftLine, columnKey: string) {
+  function showBlockedReason(row: DraftLine, columnKey: string, key: string) {
+    // 07.2-12 리뷰 P2-3 — `삭제 예정` 줄은 칸이 읽기 전용이라 Delete가 이 길로 온다. 다시 Delete = 되돌리기(토글)는 그대로 둔다.
+    if ((key === "Delete" || key === "Backspace") && row.pendingDelete === "delete") {
+      if (editableWidth && canDeleteRow(row)) toggleDeleteLine(row.clientKey);
+      return;
+    }
     const message = blockedReasonFor(row, columnKey);
     if (!message) return;
     setBlockedReason({ clientKey: row.clientKey, columnKey, message });

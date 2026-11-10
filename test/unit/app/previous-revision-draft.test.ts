@@ -19,6 +19,7 @@ describe("다른 차수 보관본 복사 줄 — 보관 거래처 이름", () =>
       vendorId: archived.id,
       savedVendor: archived,
       quantity: 1,
+      days: 1,
       unitPriceAmount: 1000,
       unitPriceCurrency: "KRW",
       unitPriceFxRate: 1,
@@ -28,6 +29,9 @@ describe("다른 차수 보관본 복사 줄 — 보관 거래처 이름", () =>
       profitKrw: 1000,
       lineStatus: "not_started",
       note: null,
+      clientRemark: null,
+      midCategory: null,
+      majorCategory: null,
     };
 
     const rows = draftCopyRows([saved], { "new-1:new": { lineKind: "quote", vendorId: archived.id } });

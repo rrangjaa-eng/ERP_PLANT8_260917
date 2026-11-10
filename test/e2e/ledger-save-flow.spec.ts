@@ -63,7 +63,7 @@ test.describe("저장 흐름 (04-22, S19)", () => {
     await expect(page.getByText("수주중", { exact: true }).filter({ visible: true })).toBeVisible();
 
     const firstRow = page.locator("tbody tr").filter({ hasText: firstItem });
-    const executionCell = firstRow.getByRole("gridcell").nth(7);
+    const executionCell = firstRow.getByRole("gridcell").nth(8);
     await executionCell.focus();
     await page.keyboard.press("Enter");
     await page.keyboard.press("Control+a");
@@ -135,8 +135,8 @@ test.describe("저장 중 잠금(DR-3)", () => {
 
     const grid = page.getByRole("grid", { name: "견적 줄" });
     const dataRows = grid.locator('tbody tr:has(> td[role="gridcell"])');
-    const firstExecution = dataRows.nth(0).getByRole("gridcell").nth(7);
-    const secondExecution = dataRows.nth(1).getByRole("gridcell").nth(7);
+    const firstExecution = dataRows.nth(0).getByRole("gridcell").nth(8);
+    const secondExecution = dataRows.nth(1).getByRole("gridcell").nth(8);
 
     await firstExecution.focus();
     await page.keyboard.press("Enter");
@@ -233,7 +233,7 @@ async function openLockProject(page: Page) {
 
   const grid = page.getByRole("grid", { name: "견적 줄" });
   const dataRows = grid.locator('tbody tr:has(> td[role="gridcell"])');
-  const execution = (row: number) => dataRows.nth(row).getByRole("gridcell").nth(7);
+  const execution = (row: number) => dataRows.nth(row).getByRole("gridcell").nth(8);
 
   // 붙잡은 요청은 release(응답 그대로) 또는 fail(500)로 푼다.
   let settle: (mode: "continue" | "fail") => void = () => {};
@@ -352,7 +352,7 @@ test.describe("복원 줄 수화(#418)", () => {
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
     await expect(page.getByRole("heading", { name })).toBeVisible();
-    const executionCell = page.locator("tbody tr").filter({ hasText: "수화 줄" }).getByRole("gridcell").nth(7);
+    const executionCell = page.locator("tbody tr").filter({ hasText: "수화 줄" }).getByRole("gridcell").nth(8);
     await executionCell.focus();
     await page.keyboard.press("Enter");
     await page.getByRole("textbox", { name: "실행가" }).fill("777000");

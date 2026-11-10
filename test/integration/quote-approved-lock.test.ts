@@ -175,6 +175,20 @@ describe("승인 차수 잠금 — 단독 저장(04-40 · 사용자 D7 · ENG-D7
     expect((await reload(s.krwLine.id)).subcategory).toBe(s.krwLine.subcategory);
   });
 
+  // 07.2 PU6(D-7232) — 일수 · 고객 비고는 수량 · 단가처럼 잠긴다.
+  it("일수 변경은 승인 문구로 거부 · 합계 그대로(07.2-06)", async () => {
+    const s = await setupApproved();
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.krwLine, { days: 2 })] })).rejects.toThrow(LOCKED);
+    expect((await reload(s.krwLine.id)).days).toBe("1.00");
+    expect(await quoteTotal(s.revisionId)).toBe(s.approvedTotal);
+  });
+
+  it("고객 비고 변경은 승인 문구로 거부(07.2-06 · D-7232)", async () => {
+    const s = await setupApproved();
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.krwLine, { clientRemark: "바꿈" })] })).rejects.toThrow(LOCKED);
+    expect((await reload(s.krwLine.id)).clientRemark).toBeNull();
+  });
+
   it("실행가만 바꾼 저장은 통과하고 합계가 그대로다", async () => {
     const s = await setupApproved();
     await saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.krwLine, { execution: krw(55_000) })] });
@@ -293,5 +307,87 @@ describe("승인 차수 잠금 — 원장 합성 저장(04-40 · writeQuoteLines
     await saveProjectLedger(SYSTEM_VIEWER, s.projectId, { seenStatus: "bidding", quoteLines: { revisionId: s.revisionId, rows: [asInput(s.krwLine, { execution: krw(60_000) })] } });
     expect((await reload(s.krwLine.id)).executionAmountKrw).toBe(60_000);
     expect(await quoteTotal(s.revisionId)).toBe(s.approvedTotal);
+  });
+});
+
+// 07.2 PU3(D-7222 · eng r2) — 수수료 줄은 승인 · 내용 토큰에서 견적 줄과 같다: 고객 승인 뒤 수수료를 고치거나 더하거나
+// 보관하면 거부하고, 승인 기준 합에 수수료 줄 견적가가 들고, 미승인 차수에서 수수료 단가를 바꾸면 내용 토큰이 바뀐다.
+describe("승인 차수 잠금 — 수수료 줄(commission · 07.2-06)", () => {
+  const FIRST_LOCKED = "1차 고객 승인됨 · 고치려면 새 차수";
+
+  async function setupWithCommission() {
+    const pm = await makePm();
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    const subcategory = await firstSelectableSubcategory();
+    const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.id, name: `수수료 잠금-${randomUUID()}` });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    await insertLine(revision.id, { subcategory: subcategory.value, sortOrder: 0 });
+    const commission = await insertLine(revision.id, {
+      lineKind: "commission",
+      subcategory: "commission",
+      itemName: "대행 수수료",
+      sortOrder: 1,
+      unitPriceAmountKrw: 50_000,
+      executionAmountKrw: 0,
+      quoteAmountKrw: 50_000,
+      profitKrw: 50_000,
+    });
+    return { pm, revisionId: revision.id, subcategory: subcategory.value, commission };
+  }
+
+  it("승인 기준 합에 수수료 줄 견적가가 든다 · 미승인 차수에서 수수료 단가를 바꾸면 내용 토큰이 바뀐다", async () => {
+    const s = await setupWithCommission();
+    const before = await approvalBasis(SYSTEM_VIEWER, s.revisionId);
+    expect(before.totalKrw).toBe(150_000);
+    await saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.commission, { unitPrice: krw(60_000) })] });
+    const after = await approvalBasis(SYSTEM_VIEWER, s.revisionId);
+    expect(after.totalKrw).toBe(160_000);
+    expect(after.contentToken).not.toBe(before.contentToken);
+  });
+
+  it("승인 뒤 수수료 줄 단가 수정 · 새 수수료 줄 · 수수료 줄 보관은 각각 승인 문구로 거부 · 합계 그대로", async () => {
+    const s = await setupWithCommission();
+    const approvedTotal = await approve(s.pm, s.revisionId);
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.commission, { unitPrice: krw(60_000) })] })).rejects.toThrow(FIRST_LOCKED);
+    await expect(
+      saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [newRow("", { lineKind: "commission", unitPrice: krw(30_000), execution: krw(0) })] }),
+    ).rejects.toThrow(FIRST_LOCKED);
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [], archivedLineIds: [s.commission.id] })).rejects.toThrow(FIRST_LOCKED);
+    expect((await reload(s.commission.id)).archivedAt).toBeNull();
+    expect(await quoteTotal(s.revisionId)).toBe(approvedTotal);
+  });
+
+  // PR #367 검토 L1 — 이미 맞는 동작을 못박는다: 승인 뒤 수수료 줄 복제 · 취소 · 보관 줄 복원은 거부, 수량 · 일수는 1로 고정.
+  it("승인 뒤 수수료 줄 복제와 취소는 각각 승인 문구로 거부 · 합계 그대로", async () => {
+    const s = await setupWithCommission();
+    const approvedTotal = await approve(s.pm, s.revisionId);
+    const copy = { ...asInput(s.commission), id: randomUUID(), isNew: true as const, duplicatedFrom: s.commission.id, version: undefined };
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [copy] })).rejects.toThrow(FIRST_LOCKED);
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.commission, { lineStatus: "cancelled" })] })).rejects.toThrow(FIRST_LOCKED);
+    expect((await reload(s.commission.id)).lineStatus).toBe(s.commission.lineStatus);
+    expect(await quoteTotal(s.revisionId)).toBe(approvedTotal);
+  });
+
+  it("승인 뒤 수수료 줄에 수량 3 · 일수 5를 실어도 1로 고정돼 거부 없이 그대로 · 합계 그대로", async () => {
+    const s = await setupWithCommission();
+    const approvedTotal = await approve(s.pm, s.revisionId);
+    await saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.commission, { quantity: 3, days: 5 })] });
+    const after = await reload(s.commission.id);
+    expect(after.quantity).toBe("1.00");
+    expect(after.days).toBe("1.00");
+    expect(after.quoteAmountKrw).toBe(50_000);
+    expect(await quoteTotal(s.revisionId)).toBe(approvedTotal);
+  });
+
+  it("승인 전에 보관한 수수료 줄의 복원은 승인 문구로 거부 · 합계 그대로", async () => {
+    const s = await setupWithCommission();
+    await db.update(quoteLines).set({ archivedAt: new Date(), archivedBy: SYSTEM_VIEWER.id }).where(eq(quoteLines.id, s.commission.id));
+    const approvedTotal = await approve(s.pm, s.revisionId);
+    await expect(restore(SYSTEM_VIEWER, "quote_line", s.commission.id)).rejects.toThrow(FIRST_LOCKED);
+    expect((await reload(s.commission.id)).archivedAt).not.toBeNull();
+    expect(await quoteTotal(s.revisionId)).toBe(approvedTotal);
   });
 });

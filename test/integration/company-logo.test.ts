@@ -129,6 +129,21 @@ describe("회사 로고 — 검사", () => {
   });
 });
 
+describe("회사 로고 — 내용 검사", () => {
+  it("메타데이터는 맞는데 머리 바이트가 PNG가 아니면 완료를 거부하고 객체를 지운다", async () => {
+    const viewer = await admin();
+    const storage = createMemoryStorage();
+    const input = declared(1 * MB);
+    const intent = await requestCompanyLogoUpload(viewer, input, { storage });
+    storage.put(intent.url, { size: input.size, contentType: input.contentType, sha256: input.sha256, head: Uint8Array.from([0x4d, 0x5a, 0x90, 0, 3, 0, 0, 0, 4, 0, 0, 0, 0xff, 0xff, 0, 0]) });
+    await expect(confirmCompanyLogoUpload(viewer, { intentId: intent.intentId }, { storage })).rejects.toThrow();
+    expect(storage.deletes.length).toBe(1);
+    expect(storage.moves).toHaveLength(0);
+    expect(await alive()).toHaveLength(0);
+  });
+
+});
+
 describe("회사 로고 — 서명 실패", () => {
   it("읽기 주소 서명이 실패해도 설정 화면용 getCompanyLogo는 파일을 주고 미리보기 주소만 null이다", async () => {
     const viewer = await admin();

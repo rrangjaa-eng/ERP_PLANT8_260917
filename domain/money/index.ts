@@ -172,6 +172,21 @@ export function moneyToColumns(input: MoneyInput): {
   };
 }
 
+// 07.2-12(D7298-B · D-7300) — 조정 쌍의 상대 줄 금액: 저장된 칸 넷을 부호만 바꿔 복사한다. 다시 환산하면 외화 −x.5원
+// 반올림(+∞ 쪽)이 양쪽에서 달라 합이 ±1원이 된다 — 복사는 합 0을 지킨다. 결과가 원화 칸 범위 밖이면 형식 오류(range).
+export function negateMoneyColumns(columns: { currency: Currency; foreignAmount: string | null; fxRate: string; amountKrw: number }): {
+  currency: Currency;
+  foreignAmount: string | null;
+  fxRate: string;
+  amountKrw: number;
+} {
+  const amountKrw = 0 - columns.amountKrw;
+  if (!withinKrwColumn(amountKrw)) throw new MoneyInputError("range", `금액 상한 초과 · ${formatKrw(KRW_COLUMN_MAX)}원 이하`);
+  const foreign = columns.foreignAmount;
+  const foreignAmount = foreign === null || Number(foreign) === 0 ? foreign : foreign.startsWith("-") ? foreign.slice(1) : `-${foreign}`;
+  return { currency: columns.currency, foreignAmount, fxRate: columns.fxRate, amountKrw };
+}
+
 // D-63(07.2 D-7230 개정): 견적가 = 수량(기본 1) × 단가 × 일수(기본 1). 서버 계산·저장, 브라우저 계산값은
 // 버린다(PROJ-02). 수량 · 일수가 비었거나 0 이하이면 기본 1이라 일수가 없는 기존 줄의 견적가는 그대로다(D-7231).
 export function quoteAmount(quantity: number | null | undefined, unitPrice: Money, days: number | null | undefined = 1): number {

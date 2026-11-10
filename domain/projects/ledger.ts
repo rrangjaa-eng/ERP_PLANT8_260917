@@ -2,6 +2,7 @@ import type { Viewer } from "@/domain/viewer";
 import { withTransaction, withTimeoutConversion } from "@/lib/db-transaction";
 import {
   finishQuoteLineSave,
+  lockProjectsForQuoteSave,
   prepareQuoteLineSave,
   rememberFxAfterCommit,
   writeQuoteLinesInTx,
@@ -62,7 +63,7 @@ import {
 // 중복하지 않는다.
 //
 // 04-22(D-80 · D-82 · ENG-D6 · ENG-D3 ① · CEO A-01·A-13·A-14·A-16) — 기간 칸이 같은 저장에
-// 합류한다. 트랜잭션 안의 순서는 고정이다: ① 잠금 읽기·자동 전환 선판정(loadProjectForGate)
+// 합류한다. 트랜잭션 안의 순서는 고정이다: ① 잠금 읽기·자동 전환 선판정(loadProjectForGate · 07.2-12: 자기 + 상대 정렬 잠금)
 // ② 기간 판정·쓰기(정산→진행 되돌리기 포함) ③ 재판정 ④ 견적 줄 ⑤ 매출 — ④·⑤는 ③의 새 행으로
 // 판정된다. 기간 권리의 사실은 트랜잭션을 열기 전에 읽는다(잠근 트랜잭션 안 풀 호출 금지).
 export type PeriodInput = {
@@ -195,7 +196,7 @@ export async function saveProjectLedger(
     }
 
     // 04-12(ENG-D3 ①): 견적 줄 저장의 트랜잭션 전 단계(권한·금액 노출·사용자 정의 필드 스키마).
-    const preparedQuoteLines = input.quoteLines ? await prepareQuoteLineSave(viewer, input.quoteLines.revisionId) : null;
+    const preparedQuoteLines = input.quoteLines ? await prepareQuoteLineSave(viewer, input.quoteLines.revisionId, undefined, input.quoteLines) : null;
     // 04-41(B §1) — 매출 줄 쓰기 권한도 잠그기 전에 읽는다(잠근 트랜잭션 안 풀 호출 금지).
     const revenueRights = input.revenue ? await revenueWriteRights(viewer) : undefined;
     // 06-18 — 발행 요청 쓰기 권리(프로젝트 쓰기)도 잠그기 전에 읽는다. 없으면 트랜잭션을 열지 않고 거부한다.
@@ -224,8 +225,14 @@ export async function saveProjectLedger(
 
 
     const inTx = await withTransaction(async (tx) => {
-      // ① 잠금 읽기 + 자동 전환 선판정 — 같은 tx(A-13).
-      const locked = await loadProjectForGate(viewer, projectId, { now, tx, afterLock: deps?.afterLock }, { recordAction });
+      // ① 잠금 읽기 + 자동 전환 선판정 — 같은 tx(A-13). 07.2-12(D7298-B (나)): 조정 쌍의 상대 프로젝트도 id 오름차순 한 순서로 함께 잠근다.
+      const { own: locked } = await lockProjectsForQuoteSave(
+        viewer,
+        projectId,
+        preparedQuoteLines?.counterpartIds ?? [],
+        { now, tx, afterLock: deps?.afterLock },
+        { recordAction },
+      );
       if (!locked || (locked.archivedAt !== null && !scope.includeArchived)) {
         throw new UserFacingError("존재하지 않는 프로젝트");
       }

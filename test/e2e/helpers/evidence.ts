@@ -203,7 +203,8 @@ export function evidenceRows(page: Page): Locator {
 export const EVIDENCE_COL = { date: 0, ageDays: 1, counterparty: 2, supply: 3, vat: 4, total: 5, visibility: 6, status: 7, actions: 8 } as const;
 
 export function evidenceCell(page: Page, rowIndex: number, colIndex: number): Locator {
-  return evidenceRows(page).nth(rowIndex).locator(":scope > td").nth(colIndex);
+  // 07.2-09: 편집 폭에는 앞에 선택 열(체크박스 칸)이 선다 — 열 순서 EVIDENCE_COL은 데이터 칸 기준이라 선택 칸을 세지 않는다.
+  return evidenceRows(page).nth(rowIndex).locator(':scope > td:not([class*="selectCell"])').nth(colIndex);
 }
 
 // 수화 전에 준 포커스는 격자가 받지 못한다 — 그 셀이 탭 정지가 될 때까지 다시 준다(리저브 대장 · quote-edit-scope 선례).

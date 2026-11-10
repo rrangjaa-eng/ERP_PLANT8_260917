@@ -36,7 +36,7 @@ import type {
   EvidenceTeamOption,
 } from "@/domain/evidence-records";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
-import { archiveEvidenceRecordAction, getEvidenceDetailAction, publishEvidenceRecordsAction, restoreEvidenceRecordAction } from "./actions";
+import { archiveEvidenceBatchAction, archiveEvidenceRecordAction, getEvidenceDetailAction, publishEvidenceRecordsAction, restoreEvidenceBatchAction, restoreEvidenceRecordAction } from "./actions";
 import { EvidenceExportButton } from "./export-button";
 import { IntakeZone } from "./intake-zone";
 import { PickDocumentDialog, type PickDocumentTarget } from "./pick-document-dialog";
@@ -110,6 +110,13 @@ const COPY = {
   undo: "되돌리기",
   undoFailed: "되돌리기 실패 · 다시 시도",
   unknownResult: "결과를 받지 못함 · 새로 고침",
+  // 07.2-09 X1 — 일괄 보관(선택 열 · 막대 · 필터 줄 결과 글자). 단건의 `unknownResult`와 글자를 섞지 않는다.
+  selectBar: "고른 증빙",
+  batchFailed: "보관 실패 · 다시 시도",
+  attachedReason: "붙은 문서 있음 · 먼저 떼기",
+  archivedState: "보관됨",
+  unsavedCells: "저장 안 한 칸 · 먼저 저장",
+  pickBatch: "묶음 전체 고르기",
   draftOwner: "작성 중 문서",
   attach: "붙이기",
   proxy: "대리 등록",
@@ -121,6 +128,7 @@ const ROW_ACTION_LABEL = { archive: "보관", restore: "되살리기" } as const
 // 저장은 1차의 kbd가 말한다.
 const HINT_ITEMS = [
   { label: "이동", keys: "Tab ↑↓←→" },
+  { label: "고르기", keys: "Space" },
   { label: "복사", keys: "Ctrl+C" },
   { label: "붙여넣기", keys: "Ctrl+V" },
   { label: "취소", keys: "Esc" },
@@ -371,12 +379,27 @@ type ArchiveOutcome = Awaited<ReturnType<typeof archiveEvidenceRecordAction>>;
 // `되돌리기`는 남는다(SYSTEM.md:1008). 거부(충돌 · 그사이 붙음)는 서버 글자 + 3차 `새로 고침` — 그때 본 목록과 묶어 다시 받으면 지운다.
 type ArchiveLine = { kind: "archived"; record: { id: string; version: number }; undoFailed: boolean } | { kind: "conflict"; message: string; list: EvidenceRecordList };
 
-export type EvidenceTableProps = { viewerId: string; list: EvidenceRecordList; teams: readonly EvidenceTeamOption[]; filterOptions: EvidenceFilterOptions };
+// 07.2-09 X1 — 일괄 보관의 결과 글자(필터 줄 `aria-live` 영역). 마지막 한 번만. `archived`의 processed는 `되돌리기`가 한 번에 되살릴 줄(보관이 돌려준 새 version).
+type BatchLine =
+  | { kind: "archived"; time: string; processed: { id: string; version: number }[]; blocked: number; undoFailed: boolean }
+  | { kind: "restored"; count: number; blocked: number }
+  | { kind: "failed" };
+
+export type EvidenceTableProps = {
+  viewerId: string;
+  list: EvidenceRecordList;
+  teams: readonly EvidenceTeamOption[];
+  filterOptions: EvidenceFilterOptions;
+  /** 07.2-09 D-7284 — `?batch=` 보기의 보관 가능 줄(id · version, 최대 상한+1). 묶음 보기가 아니면 빈 목록. */
+  batchItems: readonly { id: string; version: number }[];
+  /** 07.2-09 — 한 번에 보관할 수 있는 건수 상한(서버 값 EVIDENCE_BATCH_LIMIT — 클라이언트는 domain 런타임 값을 import하지 않는다). */
+  batchLimit: number;
+};
 
 // 주소는 라우터가 바꾼 뒤 렌더로 다시 읽힌다 — 구독할 바깥 저장소가 없다.
 const noSubscribe = () => () => undefined;
 
-export function EvidenceTable({ viewerId, list, teams, filterOptions }: EvidenceTableProps) {
+export function EvidenceTable({ viewerId, list, teams, filterOptions, batchItems, batchLimit }: EvidenceTableProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -493,9 +516,11 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
 
   // DA-21 — 끌어 놓기 영역이 파일을 올리는 동안 1차를 막는다(올린 줄이 목록에 들어오는 중이라 제안이 바뀐다).
   const [uploading, setUploading] = useState(false);
+  // 07.2-09 — 일괄 보관 · 되돌리기 서버 부름 중(공개 범위 저장 · 선택 변경 · 단건 행동을 잠근다).
+  const [batching, setBatching] = useState(false);
 
   function handleSave() {
-    if (savingRef.current || isExecuting || pending === 0 || uploading) return;
+    if (savingRef.current || isExecuting || pending === 0 || uploading || batching) return;
     // §7-3 (아) DR-5 — 보이는 줄에 고정 오류(`전부 거부`)가 남았으면 서버를 부르지 않고 첫 오류 칸으로 간다(견적 표 goToFirstIssue 꼴).
     // 06.1-13 PA-G2-BLOCK — 붙여넣기 오류 칸(글자를 공개 값으로 옮길 수 없다)도 같고, 합계 행은 06.1-05 거부 글자(DA-18)다(blockSignal).
     if (Object.keys(cellErrors).some((id) => displayedIds.has(id))) {
@@ -719,7 +744,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
 
   async function runRowAction(row: Row) {
     const kind = row.rowAction;
-    if (kind === null || rowActionPending !== null) return;
+    if (kind === null || rowActionPending !== null || batching) return;
+    setBatchLine(null);
     const outcome = await callArchive(kind === "archive" ? archiveEvidenceRecordAction : restoreEvidenceRecordAction, { id: row.id, version: row.version });
     const data = outcome?.data;
     if (data?.record) {
@@ -750,6 +776,75 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
     }
     setArchiveLine({ kind: "archived", record, undoFailed: true });
   }
+
+  // ── 07.2-09 X1 일괄 보관 · 한 번 되돌리기 ─────────────────────────────────────────────────────────────────────
+  // 선택 열 · 막대는 편집 폭(≥1024)에서만 선다(DR-36 — 보기 전용 폭에는 쓰기 행동이 없다). 고른 줄은 지금 화면에서 보관할 수 있는 줄
+  // (안 붙고 보관 안 된 줄 — 서버 판정 rowAction) 또는 `?batch=` 묶음의 보관 가능 줄이다. 확인 창 없이 바로 보관하고 필터 줄 결과 글자가 되돌리기를 준다.
+  const selecting = editableWidth && rows.length > 0;
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchLine, setBatchLine] = useState<BatchLine | null>(null);
+  // 서버가 막은 줄의 이유(줄 id → 글자) — 그 줄은 목록에 자리를 유지하고 행 아래에 이유가 선다. 다음 일괄 · 되돌리기에서 바뀐다.
+  const [batchBlocked, setBatchBlocked] = useState<Record<string, string>>({});
+  const [batchFocus, setBatchFocus] = useState<{ seq: number; blockedIds: string[] }>({ seq: 0, blockedIds: [] });
+  const archivableOnPage = new Map(rows.filter((row) => row.rowAction === "archive").map((row) => [row.id, row.version]));
+  const batchVersions = new Map(batchItems.map((item) => [item.id, item.version]));
+  const chosen = selecting ? selectedIds.filter((id) => archivableOnPage.has(id) || batchVersions.has(id)) : [];
+  const chosenSet = new Set(chosen);
+  const batchOver = batchItems.length > batchLimit;
+  const batchRemaining = filters.batch !== null && batchItems.some((item) => !chosenSet.has(item.id));
+
+  function selectIds(ids: readonly string[]) {
+    if (batching) return;
+    setSelectedIds(ids.slice(0, batchLimit));
+  }
+
+  async function runBatchArchive() {
+    if (batching || chosen.length === 0 || editCount > 0) return;
+    setBatching(true);
+    setArchiveLine(null);
+    setBatchLine(null);
+    const items = chosen.map((id) => ({ id, version: archivableOnPage.get(id) ?? batchVersions.get(id) ?? 0 }));
+    const outcome = await archiveEvidenceBatchAction({ items }).catch(() => undefined);
+    setBatching(false);
+    const data = outcome?.data;
+    if (!data) {
+      setBatchBlocked({});
+      setBatchLine({ kind: "failed" });
+      return;
+    }
+    const done = new Set(data.processed.map((item) => item.id));
+    setBatchBlocked(Object.fromEntries(data.blocked.map((item) => [item.id, item.reason])));
+    setSelectedIds((current) => current.filter((id) => !done.has(id)));
+    setBatchLine({ kind: "archived", time: data.time, processed: data.processed, blocked: data.blocked.length, undoFailed: false });
+    setBatchFocus((current) => ({ seq: current.seq + 1, blockedIds: data.blocked.map((item) => item.id) }));
+    router.refresh();
+  }
+
+  async function undoBatch() {
+    if (batchLine?.kind !== "archived" || batching) return;
+    const line = batchLine;
+    setBatching(true);
+    const outcome = await restoreEvidenceBatchAction({ items: line.processed }).catch(() => undefined);
+    setBatching(false);
+    const data = outcome?.data;
+    if (!data) {
+      setBatchLine({ ...line, undoFailed: true });
+      return;
+    }
+    setBatchBlocked({});
+    setBatchLine({ kind: "restored", count: data.processed.length, blocked: data.blocked.length });
+    router.refresh();
+  }
+
+  // 포커스(확인 창이 없어 SYSTEM.md:1072 결과 줄 3차) — 막힌 줄이 목록에 남았으면 첫 막힌 줄 체크박스, 아니면 `되돌리기`(autoFocus).
+  const focusFirstBlocked = useEffectEvent(() => {
+    const firstBlocked = rows.map((row) => row.id).find((id) => batchFocus.blockedIds.includes(id));
+    if (firstBlocked === undefined) return;
+    document.getElementById(counterpartyId(firstBlocked))?.closest("tr")?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus();
+  });
+  useEffect(() => {
+    if (batchFocus.seq > 0) focusFirstBlocked();
+  }, [batchFocus.seq]);
 
   // 06.1-07 S3 — 상세를 받아 패널(≥1024) · 행 시트(<1024)를 연다. 받지 못하면 표 위 결과 줄(보관 충돌과 같은 자리 · 꼬리 `새로 고침`).
   async function loadDetail(rowId: string, onFail = (message: string) => setArchiveLine({ kind: "conflict", message, list })): Promise<EvidenceDetailView | null> {
@@ -974,7 +1069,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   // 07.1-19 PC6(SP-71-4): 힌트 낱말 = 포커스 행의 행동 — 포커스 행이 없으면 행동이 있는 첫 행(위), 포커스 행에 행동이 없으면 `Ctrl+E` 항목도 없다.
   const focusedRow = focusedRowId === null ? undefined : rows.find((row) => row.id === focusedRowId);
   const hintKeyAction = focusedRow ? keyActionOf(focusedRow) : shownKeyAction;
-  const hintItems = hintKeyAction ? [...HINT_ITEMS, { label: hintKeyAction === "restore" ? ROW_ACTION_LABEL.restore : COPY[hintKeyAction], keys: "Ctrl+E" }] : HINT_ITEMS;
+  const baseHints = selecting ? HINT_ITEMS : HINT_ITEMS.filter((item) => item.label !== "고르기");
+  const hintItems = hintKeyAction ? [...baseHints, { label: hintKeyAction === "restore" ? ROW_ACTION_LABEL.restore : COPY[hintKeyAction], keys: "Ctrl+E" }] : baseHints;
 
   // 쿼리 링크 갈래 — 클라이언트 이동이라 표가 다시 마운트되지 않고 편집 맵이 남는다(리저브 대장 · 카드 사용 필터 선례). 쪽은 1로 돌아간다.
   function go(key: "state" | "type" | "period", value: string) {
@@ -1053,6 +1149,32 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                 </RowActions>
               </>
             ) : null}
+            {/* 07.2-09 D-7284 — 일괄 보관 결과 글자(필터 다음 자리 · 묶음 칩 뒤): 처음부터 DOM에 있는 `aria-live` 영역에 쓴다. 토스트 · 확인 창 없음. */}
+            <p aria-live="polite" className={styles.outcome}>
+              {batchLine?.kind === "archived" ? (
+                <>
+                  <span className={batchLine.undoFailed ? styles.undoFailed : expenseStyles.batchDone}>{batchLine.undoFailed ? COPY.undoFailed : `${batchLine.time} 보관 ${formatCount(batchLine.processed.length)}건`}</span>
+                  {batchLine.blocked > 0 ? <span className={expenseStyles.batchBlocked}>{` · 막힘 ${formatCount(batchLine.blocked)}건`}</span> : null}
+                  {batchLine.processed.length > 0 ? (
+                    <>
+                      {" "}
+                      <RowActions>
+                        <RowAction key={batchFocus.seq} autoFocus={batchLine.blocked === 0} pending={batching} onClick={() => void undoBatch()}>
+                          {COPY.undo}
+                        </RowAction>
+                      </RowActions>
+                    </>
+                  ) : null}
+                </>
+              ) : batchLine?.kind === "restored" ? (
+                <>
+                  <span className={expenseStyles.batchDone}>{`되돌림 ${formatCount(batchLine.count)}건`}</span>
+                  {batchLine.blocked > 0 ? <span className={expenseStyles.batchBlocked}>{` · 막힘 ${formatCount(batchLine.blocked)}건`}</span> : null}
+                </>
+              ) : batchLine?.kind === "failed" ? (
+                <span className={expenseStyles.batchBlocked}>{COPY.batchFailed}</span>
+              ) : null}
+            </p>
           </div>
           {showPrimary ? (
             <Button
@@ -1106,7 +1228,40 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           <ListEmpty message={emptyState.message} action={emptyState.action} />
         </div>
       ) : (
-        <div onKeyDownCapture={pressCellAction} onFocus={trackFocusedRow} onBlur={releaseFocusedRow}>
+        <>
+        {/* 07.2-09 — 막대는 DOM에서도 표 바로 앞(보이는 순서 = 탭 순서, SYSTEM.md:1392): 표 안에서 Space로 고른 뒤 Shift+Tab으로 머리글 → 막대 `보관 N`.
+            막대에는 고른 건 요약과 2차만 둔다(DC-8) — 이 화면 1차는 필터 줄의 `공개 범위 저장`이라 `보관 N`은 2차 · 단축키 없음. */}
+        {selecting && chosen.length > 0 ? (
+          <div role="group" aria-label={COPY.selectBar} className={styles.selectBar}>
+            <span className={styles.selectBarCount}>{`선택 ${formatCount(chosen.length)}건`}</span>
+            <span className={styles.selectBarActions}>
+              {batchRemaining ? (
+                <Button
+                  type="button"
+                  variant="tertiary"
+                  disabled={batchOver}
+                  disabledReason={batchOver ? `${batchLimit}건까지` : undefined}
+                  reasonTone="info"
+                  onClick={() => (batchOver || batching ? undefined : selectIds(batchItems.map((item) => item.id)))}
+                >
+                  {batchOver ? COPY.pickBatch : `${COPY.pickBatch} ${formatCount(batchItems.length)}`}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                pending={batching}
+                disabled={editCount > 0}
+                disabledReason={editCount > 0 ? COPY.unsavedCells : undefined}
+                reasonTone="info"
+                onClick={() => void runBatchArchive()}
+              >
+                {`보관 ${formatCount(chosen.length)}`}
+              </Button>
+            </span>
+          </div>
+        ) : null}
+        <div className={styles.selectScope} onKeyDownCapture={pressCellAction} onFocus={trackFocusedRow} onBlur={releaseFocusedRow}>
         <Table
           caption={COPY.caption}
           columns={columns}
@@ -1118,8 +1273,28 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           enableGridKeyboard
           rowLabel={(row) => `${row.issuedOn} ${row.counterparty ?? ""}`}
           onRowTap={openSheet}
-          saveLocked={isExecuting}
+          saveLocked={isExecuting || batching}
           onEditingChange={setCellEditing}
+          {...(selecting
+            ? {
+                selection: {
+                  selectedIds: chosen,
+                  // 붙은 줄은 이유(행 아래 줄 — Table 첫 칸 2행)와 함께 못 고른다 · 보관된 줄은 칸이 비어 있다(hidden) · 상한에 닿으면 안 고른 줄은 `N건까지`.
+                  selectable: (row: Row): true | { reason: string } => {
+                    if (row.rowAction === "archive") return chosenSet.has(row.id) || chosen.length < batchLimit ? true : { reason: `${batchLimit}건까지` };
+                    return { reason: row.rowAction === "restore" ? COPY.archivedState : COPY.attachedReason };
+                  },
+                  hidden: (row: Row) => row.rowAction === "restore",
+                  onChange: selectIds,
+                  rowLabel: (row: Row) => `${row.issuedOn} ${row.counterparty ?? ""}`.trim(),
+                  // 서버가 막은 줄의 이유. 붙은 줄은 고르기 막힘 이유와 같은 글자라 한 번만 쓴다.
+                  blockedReason: (row: Row) => {
+                    const reason = batchBlocked[row.id];
+                    return reason === undefined || (row.rowAction !== "archive" && reason === COPY.attachedReason) ? null : reason;
+                  },
+                },
+              }
+            : {})}
           onCellCommit={commitVisibility}
           // 1024 미만은 편집 칸이 없어 붙여넣기도 없다(06.1-05 보기 전용 그대로).
           onPasteAtCell={editableWidth ? handlePasteAtCell : undefined}
@@ -1131,7 +1306,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           footerSuccess={savedNotice}
           footer={(notice) => (
             <tr>
-              <td colSpan={columns.length} className={styles.footerCell}>
+              <td colSpan={columns.length + (selecting ? 1 : 0)} className={styles.footerCell}>
                 {footerLabel}
                 {notice}
               </td>
@@ -1139,6 +1314,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           )}
         />
         </div>
+        </>
       )}
 
       {/* DA-22 — 50건 번호 페이지(링크 갈래 — 범위 글자 · `이전` · 숫자 · `다음`). 클라이언트 이동이라 편집 맵이 남는다. */}

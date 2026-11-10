@@ -163,3 +163,65 @@
 .undoFailed {
   color: var(--status-danger);
 }
+
+/* 07.2-09(X1 · DC-8) — 일괄 보관 선택 막대: 표 위 한 줄(DOM에서도 표 바로 앞 — 보이는 순서 = 탭 순서). 왼쪽 고른 건 요약, 오른쪽 3차 `묶음 전체 고르기` · 2차 `보관 N`.
+   값은 필터 줄(.filterRow)과 같은 간격 토큰만(새 색 · 서체 · radius 없음). */
+.selectBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin: 0 0 var(--s-2);
+}
+
+.selectBarCount {
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+.selectBarActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2) var(--s-3);
+  min-width: 0;
+}
+
+/* 선택 열 · 막대는 편집 폭(≥1024)에서만 선다 — 렌더 판정은 editableWidth(서버 스냅숏이 참이라 수화 전 첫 화면은 이 CSS가 숨긴다 — 힌트 줄 · 행동 열 선례).
+   선택 열 칸은 ui/table 모듈 클래스(.selectHead · .selectCell)라 해시된 이름의 로컬 이름으로 잡는다(ui/ 무변경). 수화 뒤 1024 미만은 selection이 없어 칸 자체가 없다. */
+@media (max-width: 1023.98px) {
+  .selectBar,
+  .selectScope [class*="selectHead"],
+  .selectScope [class*="selectCell"] {
+    display: none;
+  }
+}
+
+/* 큰 터치(pointer: coarse — 가로 태블릿 1024+) 체크박스 눌림 면 44×44. 본문은 라벨을 44로 키우되 위아래 음수 여백으로 행 높이를 그대로 두고,
+   머리글은 투명 ::after로만 넓힌다(머리글 높이는 글자가 정한다 — ui/table 폰 규칙 · 07.1-18 W19와 같은 방식, 보이는 체크박스 크기는 그대로). */
+@media (pointer: coarse) {
+  .selectScope tbody [class*="selectLabel"] {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    margin-block: calc(-1 * var(--cell-pad-y));
+  }
+
+  .selectScope thead [class*="selectLabel"] {
+    position: relative;
+  }
+
+  .selectScope thead [class*="selectLabel"]::after {
+    content: "";
+    position: absolute;
+    inset: calc((100% - var(--touch-min)) / 2) calc((100% - var(--touch-min)) / 2);
+  }
+}
+
+/* 07.2-09 — 일괄 보관 결과 글자(필터 줄 `aria-live` 영역). 지급 대상 `.batchResult`(expenses.module.css)와 같은 값 — 필터 줄 마지막 기준선에 선다.
+   이 줄의 `.batchResult`는 묶음 파일 이름 글자라 같은 이름을 쓰지 않는다. 성공 · 위험 글자 색은 expenses.module.css의 `.batchDone` · `.batchBlocked`를 부른다. */
+.outcome {
+  margin: 0;
+  font-size: var(--text-aux);
+  align-self: last baseline;
+}

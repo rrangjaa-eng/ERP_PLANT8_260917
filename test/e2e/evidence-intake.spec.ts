@@ -399,7 +399,7 @@ function intakeRows(page: Page) {
 }
 
 function visibilityCells(page: Page) {
-  return evidenceRows(page).locator(`:scope > td:nth-child(${EVIDENCE_COL.visibility + 1})`);
+  return evidenceRows(page).locator(`:scope > td:nth-child(${EVIDENCE_COL.visibility + 2})`);
 }
 
 // 서버 액션 POST(`next-action` 머리)만 가로챈다 — 목록 다시 읽기(RSC GET)는 그대로 지난다.
@@ -644,7 +644,7 @@ test("(DA-7) `?state=archived` 보기의 행 행동은 `되살리기`만 — 누
   await expect(evidenceTable(page).getByRole("button", { name: "보관", exact: true })).toHaveCount(2);
   const attachedRow = evidenceRows(page).filter({ hasText: "붙음" });
   await expect(attachedRow).toHaveCount(1);
-  await expect(attachedRow.locator(`:scope > td:nth-child(${EVIDENCE_COL.actions + 1})`)).toBeEmpty();
+  await expect(attachedRow.locator(`:scope > td:nth-child(${EVIDENCE_COL.actions + 2})`)).toBeEmpty();
 
   const archived = waitForServerAction(page);
   await evidenceTable(page).getByRole("button", { name: "보관", exact: true }).first().click();

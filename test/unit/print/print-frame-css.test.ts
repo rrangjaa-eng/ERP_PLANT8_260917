@@ -133,6 +133,15 @@ describe("고객 견적서 확장 CSS (07.2-10)", () => {
     expect(rule(".grandRow td")).toMatch(/border-top:\s*var\(--print-rule-w\) solid var\(--print-rule\)/);
   });
 
+  // 07.2-10 Task 3 — 로고 이미지 틀. 원색 그대로(필터 없음 — DC-3), 머리 한 줄을 넘지 않게 상자만 정한다.
+  it(".logo는 최대 높이 14mm · 최대 폭 50mm · object-fit: contain이고 필터가 없다", () => {
+    const logo = rule(".logo");
+    expect(logo).toMatch(/max-height:\s*14mm/);
+    expect(logo).toMatch(/max-width:\s*50mm/);
+    expect(logo).toMatch(/object-fit:\s*contain/);
+    expect(logo).not.toMatch(/filter/);
+  });
+
   it("PrintTable은 변형 클래스와 wrapLabel을 쓴다", () => {
     const source = readFileSync(resolve(DIR, "PrintTable.tsx"), "utf8");
     for (const name of ["groupRow", "subgroupRow", "sumRow", "grandRow", "wrapLabel", "w14", "w18", "w26"]) expect(source, name).toContain(name);

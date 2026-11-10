@@ -177,7 +177,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
 
   // 작성 중 — 폼. 결재선은 제출 전 한 줄(기안자 · 문서 종류의 결재선 설정으로 해석 — 막히면 이유 한 줄).
   // 서로 기대지 않는 읽기 넷을 동시에(05 /review A13).
-  const [{ route, routeBlocked }, { evidence: evidenceItems, payment: paymentItems, prepaidDueDays, companyBorne }, currencies, initialBlock, formLinked, formPick] = await Promise.all([
+  const [{ route, routeBlocked }, { evidence: evidenceItems, payment: paymentItems, prepaidDueDays, companyBorne }, currencies, initialBlock, formLinked, formPick, prepaidReasonOptions, hopeReasonOptions] = await Promise.all([
     // 06.2-09(S5 · D-6215 · D-6224): 작성 중 문서는 문서 팀으로 담당자를 푼다 — 기안자가 아니거나 쓰기 권한이 없으면 문서 팀을 풀지 않는다(단계 이름만).
     previewExpenseRoute(viewer, { expenseId: id })
       .catch((error: unknown) => {
@@ -205,6 +205,9 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     // 06.1-08(S5): 작성 중 · 반려 · 회수 폼도 붙은 증빙 읽기 행과 증빙 고르기 트리거를 폼 안 「증빙」 칸(05 첨부 바로 아래)에 그린다 — §6-3 칸 순서.
     listLinkedEvidence(viewer, { kind: "expense", id }).catch(() => ({ items: [], lockLine: null, linkCount: 0 })),
     readEvidencePick(viewer, id),
+    // 07.2-07 X3(D-7289): 선결제 · 희망 지급일 사유 목록 — 로그인만 되면 읽는 좁은 reader.
+    listReasonOptions(viewer, "prepaid_reason"),
+    listReasonOptions(viewer, "requested_payment_reason"),
   ]);
   const optionsOf = (items: { value: string; label: string; description: string | null }[], current: string | null | undefined, currentLabel: string | null | undefined): SelectOption[] => {
     const options: SelectOption[] = items.map((item) => ({ value: item.value, label: item.label, description: item.description }));
@@ -329,6 +332,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           files={files}
           maxMb={maxMb}
           linkedEvidenceCount={formLinked.linkCount}
+          prepaidReasonOptions={prepaidReasonOptions}
+          hopeReasonOptions={hopeReasonOptions}
           evidenceRecords={<EvidenceRecordsSection items={linkedItemsOf(formLinked)} lockLine={formLinked.lockLine} number={expense.number ?? null} lockLineShownAbove={false} pick={formPick} />}
           route={
             route ? (

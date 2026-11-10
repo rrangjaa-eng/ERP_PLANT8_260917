@@ -1370,6 +1370,33 @@ test.describe("고객 견적서 입구 · 보냄 배지 (07.2-10)", () => {
     expect(rows.map((cells) => cells[4])).toEqual([`현재 · 보냄 ${TODAY.slice(5)}`]);
   });
 
+  test("새 탭에서 출력한 뒤 원 탭으로 돌아오면(포커스) 새로 고침 없이 `보냄 {MM-DD}`가 붙는다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines });
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    const popupPromise = page.context().waitForEvent("page");
+    await revisionTable(page).getByRole("link", { name: "견적서 인쇄" }).click();
+    const popup = await popupPromise;
+    await popup.waitForLoadState("domcontentloaded");
+    await expect(revisionTable(page).getByText(/보냄/)).toHaveCount(0);
+
+    await db.update(quoteRevisions).set({ printedAt: new Date() }).where(eq(quoteRevisions.id, project.revisionId));
+    await popup.close();
+    // 헤드리스는 창 포커스 이벤트를 보장하지 않아 원 탭에 직접 쏜다. 재요청 간격(1초) 안의 호출은 건너뛰므로 간격을 두고 다시 쏜다.
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+          return (await dataRowTexts(revisionTable(page))).map((cells) => cells[4]);
+        },
+        { timeout: 15_000, intervals: [1_200] },
+      )
+      .toEqual([`현재 · 보냄 ${TODAY.slice(5)}`]);
+  });
+
   test("금액(quote.amount)을 볼 수 없는 계급 · 메뉴 읽기만 계정에는 입구 DOM이 없다", async ({ page }) => {
     const team = await makeTeam();
     const noAmount = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E인쇄금액없음-${randomUUID().slice(0, 8)}`, workScope: "company" });

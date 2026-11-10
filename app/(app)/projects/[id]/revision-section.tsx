@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import type { RevisionSummaryDto } from "@/domain/quotes/revisions";
 import { formatKrw } from "@/lib/format-number";
@@ -35,8 +36,27 @@ export function RevisionSection({
   const evidenceHeadingId = useId();
   const evidenceButtonId = useId();
   const closedEvidenceRef = useRef(false);
+  const router = useRouter();
   const rows = summaries.filter((row): row is SummaryRow => row.seq !== undefined);
   const latestSeq = Math.max(...rows.map((row) => row.seq));
+
+  // 07.2-10 PU4 — 새 탭에서 출력하고 돌아오면 `보냄` 배지가 새로 고침 없이 붙는다: 탭이 다시 보이거나 창이 포커스를 받으면 서버 요약을 다시 받는다(1초 안 겹침 호출은 건너뜀).
+  useEffect(() => {
+    let last = 0;
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - last < 1000) return;
+      last = now;
+      router.refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [router]);
 
   // 닫히면 포커스 = 그 3차(S21). 접힌 뒤 3차가 다시 그려진 다음에 옮긴다.
   useEffect(() => {

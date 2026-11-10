@@ -276,7 +276,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       if (focusTarget === "resultValue") {
         selectValue(resultValueRef.current);
       } else if (focusTarget === "evidence") {
-        evidenceRef.current?.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
+        (evidenceRef.current?.querySelector<HTMLElement>("[data-initial-focus]") ?? evidenceRef.current?.querySelector<HTMLElement>("input, select, textarea, button"))?.focus();
       } else if (focusTarget === "firstOption") {
         firstOptionRef.current?.focus();
       } else {

@@ -5,6 +5,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration } from "./leave-org";
+import { expectSeededReasonOptions, seedReasonOptions } from "./reason-options";
 import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, uniqueReceipt } from "./expense-fixture";
 
 // 05-10 Task 2 — 결재함의 지출결의: PC 행 승인은 확인 없이 즉시(토스트 `승인 · 결재 요청됨 → {다음}`) · 0건 빈 화면의 행동은 expenses 보기 권한이 있을 때만 ·
@@ -30,6 +31,59 @@ test.describe("결재함 — 지출결의 (05-10)", () => {
     await expect(lead.getByRole("dialog")).toHaveCount(0);
     await expect(lead.getByRole("status").filter({ hasText: "승인 · " })).toContainText(`승인 · 결재 요청됨 → ${fx.divisionHead.name}`);
     await expect(lead.getByRole("row").filter({ hasText: label }).getByRole("button", { name: /^승인/ })).toHaveCount(0);
+  });
+
+  // 07.2-07 X3(D-7285 · D-7288) — 반려 확인 창이 관리자가 등록한 사유를 고르게 하고, 덧붙인 글이 그대로 저장된다.
+  test("반려 창 — 등록한 사유 3개가 자리표시 + 3 + 기타로 보이고, 고른 문구에 덧붙여 반려하면 기안자 화면에 그 글이 보인다", async ({ browser, baseURL }) => {
+    const { labels, restore } = await seedReasonOptions("reject_reason", ["예산 초과", "증빙 누락", "금액 오류"]);
+    const [budget, missing] = labels as [string, string, string];
+    try {
+      const fx = await setupExpenseE2E();
+      const line = fx.lines.hold;
+      const expenseId = await submitLineExpense(browser, baseURL, fx, "hold");
+
+      const lead = await loginPage(browser, baseURL, fx.lead);
+      await lead.goto("/approvals");
+      const label = `지출결의 · ${fx.projectName} · ${line.itemName}`;
+      const row = lead.getByRole("row").filter({ hasText: label });
+      const reject = row.getByRole("button", { name: "반려" });
+      await waitForHydration(reject);
+      await reject.click();
+
+      const dialog = lead.getByRole("dialog");
+      const select = dialog.locator("select");
+      await expectSeededReasonOptions(select.locator("option"), labels);
+      await expect(dialog.getByRole("button", { name: /^반려/ })).toHaveAttribute("aria-disabled", "true");
+
+      await select.selectOption(budget);
+      const reason = dialog.getByLabel("사유");
+      await expect(reason).toHaveValue(budget);
+      await reason.press("End");
+      await reason.pressSequentially(" · 3월분");
+      await expect(select).toHaveValue(budget);
+
+      await select.selectOption(missing);
+      await expect(reason).toHaveValue(`${missing} · 3월분`);
+
+      // 글을 모두 지우면 고르개도 처음으로 · 직접 쓴 글은 기타를 골라도 남는다(2026-11-10 사용자 카드 답).
+      await reason.fill("");
+      await expect(select).toHaveValue("");
+      await reason.fill("직접 쓴 글");
+      await select.selectOption("기타");
+      await expect(reason).toHaveValue("직접 쓴 글");
+      await reason.fill(`${missing} · 3월분`);
+
+      await dialog.getByRole("button", { name: /^반려/ }).click();
+      await expect(lead.getByRole("status").filter({ hasText: "반려 · " })).toBeVisible();
+      await lead.context().close();
+
+      const pm = await loginPage(browser, baseURL, fx.pm);
+      await pm.goto(`/expenses/${expenseId}`);
+      await expect(pm.getByText(`사유 · ${missing} · 3월분`)).toBeVisible();
+      await pm.context().close();
+    } finally {
+      await restore();
+    }
   });
 
   test("0건 빈 화면 — expenses 보기 권한이 있으면 `지출결의 목록 보기`(→ /expenses), 없으면 문장만", async ({ browser, baseURL }) => {

@@ -7,6 +7,7 @@ import styles from "../../../app/(app)/approvals/inbox-table.module.css";
 // 결재가 멈추지 않아야 한다 — PC 행에 승인 · 반려가 있고, 폰에서도 문서 링크(주 행 · 접힌 줄)로 문서 화면에 간다.
 vi.mock("@/lib/viewer", () => ({ requireSession: () => Promise.resolve({ viewer: { id: "viewer" } }) }));
 vi.mock("@/app/(app)/document-kinds", () => ({}));
+vi.mock("@/domain/code-tables", () => ({ listReasonOptions: () => Promise.resolve([]) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined, push: () => undefined }) }));
 vi.mock("next-safe-action/hooks", () => ({ useAction: () => ({ execute: () => undefined, isExecuting: false, result: {} }) }));
 vi.mock("@/app/(app)/approvals/actions", () => ({ approveAction: () => undefined, rejectAction: () => undefined, withdrawAction: () => undefined }));

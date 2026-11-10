@@ -49,6 +49,7 @@ export function ExpenseDocument({
   submitted,
   paymentView = null,
   projectOpenable,
+  reasonOptions,
 }: {
   expense: Partial<ExpenseDocumentDto>;
   view: ApprovalView | null;
@@ -64,6 +65,8 @@ export function ExpenseDocument({
   paymentView?: Partial<PaymentViewDto> | "error" | null;
   /** 06.2-09(S6 · D-6206) — 서버가 「열 수 있음」을 판정한다. 거짓이면 링크 없이 글자만(죽은 링크 금지). */
   projectOpenable: boolean;
+  /** 07.2-07 X3 — 반려 사유 코드표의 활성 항목 label(서버 page가 읽어 내린다). */
+  reasonOptions: string[];
 }) {
   const id = expense.id ?? "";
   // 팀 비용 문서(프로젝트 · 견적 줄 없음 · 사용일 있음) — 머리 줄은 `지출결의 — {팀} · {내용}`, 프로젝트 칸은 `프로젝트 미연결 · {종류}`.
@@ -299,6 +302,7 @@ export function ExpenseDocument({
               : null
           }
           rejectMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
+          reasonOptions={reasonOptions}
           resubmit={null}
           resubmitRoute={null}
         />

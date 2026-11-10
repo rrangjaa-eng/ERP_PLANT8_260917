@@ -4,6 +4,7 @@ import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { previewRoute, RouteBlockedError } from "@/domain/approvals";
 import { EXPENSE_DOCUMENT_KIND, getNewExpenseDefaults, listExpenseCurrencies, listExpenseFormOptions } from "@/domain/expenses";
+import { listReasonOptions } from "@/domain/code-tables";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -30,7 +31,14 @@ export default async function NewExpensePage() {
     if (!(error instanceof RouteBlockedError)) throw error;
     routeBlocked = error.message;
   }
-  const [{ evidence, payment, prepaidDueDays, companyBorne }, currencies, maxMb] = await Promise.all([listExpenseFormOptions(viewer), listExpenseCurrencies(), getSettingValue(EVIDENCE_MAX_SIZE_MB)]);
+  const [{ evidence, payment, prepaidDueDays, companyBorne }, currencies, maxMb, prepaidReasonOptions, hopeReasonOptions] = await Promise.all([
+    listExpenseFormOptions(viewer),
+    listExpenseCurrencies(),
+    getSettingValue(EVIDENCE_MAX_SIZE_MB),
+    // 07.2-07 X3(D-7289): 선결제 · 희망 지급일 사유 목록 — 로그인만 되면 읽는 좁은 reader.
+    listReasonOptions(viewer, "prepaid_reason"),
+    listReasonOptions(viewer, "requested_payment_reason"),
+  ]);
   const options = (items: { value: string; label: string; description: string | null }[]) => items.map((item) => ({ value: item.value, label: item.label, description: item.description }));
   const skipped = route?.steps.filter((step) => step.skipped).map((step) => `${step.label ?? ""} 단계 건너뜀(자기 승인 없음)`) ?? [];
 
@@ -39,6 +47,8 @@ export default async function NewExpensePage() {
       <DetailScreen title={defaults.teamName ? `지출결의 — ${defaults.teamName}` : "지출결의"}>
         <ExpenseForm
           today={seoulToday()}
+          prepaidReasonOptions={prepaidReasonOptions}
+          hopeReasonOptions={hopeReasonOptions}
           data={{
             id: "",
             version: 0,

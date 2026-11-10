@@ -13,6 +13,7 @@ import { normalizeVendorName } from "@/domain/vendors";
 import { seoulToday } from "@/lib/dates";
 import { delayServerActions, loginPage, waitForHydration } from "./leave-org";
 import { addDays } from "./pay-schedule-e2e";
+import { expectSeededReasonOptions, seedReasonOptions } from "./reason-options";
 import { addPayeeCandidates, addPayeeEmployee, setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 05-07(EXP-08 · UX-06 · UI-SPEC S3 두 입구 · S14 골라내기): `/expenses/new` 팀 비용 지출결의 — 종류 · 사용일 · 팀 · 내용 → 거래처 고르기 →
@@ -577,4 +578,36 @@ test.describe("지급처 고르기 — 직원 지급처 (06.5 V12)", () => {
     expect(titles.some((title) => title.includes("-u"))).toBe(true);
     expect(titles.some((title) => title.includes("-v"))).toBe(true);
   });
+});
+
+// 07.2-07 X3(D-7289) — 선결제 사유도 같은 ReasonField: 등록한 항목을 고르면 저장 글 = 문구, 다시 열면 그 항목이 골라져 있다.
+test.describe("지출결의 폼 — 선결제 사유 고르기 (07.2-07)", () => {
+  test("선결제 사유 항목 2개 → 고르개 옵션 = 자리표시 + 2 + 기타 · 골라 저장하면 글 = 문구 · 다시 열면 그 항목이 골라진다", async ({ browser, baseURL }) => {
+    const { labels, restore } = await seedReasonOptions("prepaid_reason", ["행사장 선입금 요구", "해외 결제"]);
+    const [, overseas] = labels as [string, string];
+    try {
+      const fx = await setupExpenseE2E();
+      const page = await loginPage(browser, baseURL, fx.pm);
+      const expenseId = await openDraft(page, fx, "hold");
+      await page.getByLabel("선결제", { exact: true }).check();
+      const reason = page.getByLabel("선결제 사유");
+      const pick = page.locator("#prepaidReason-pick");
+      await expectSeededReasonOptions(pick.locator("option"), labels);
+      await pick.selectOption(overseas);
+      await expect(reason).toHaveValue(overseas);
+      await page.getByRole("button", { name: /^임시 저장/ }).click();
+      await expect
+        .poll(async () => (await db.select({ reason: expenses.prepaidReason }).from(expenses).where(eq(expenses.id, expenseId)))[0]?.reason)
+        .toBe(overseas);
+
+      await page.goto(`/expenses/${expenseId}`);
+      await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+      await expect(page.locator("#prepaidReason-pick")).toHaveValue(overseas);
+      await expect(page.getByLabel("선결제 사유")).toHaveValue(overseas);
+      await page.context().close();
+    } finally {
+      await restore();
+    }
+  });
+
 });

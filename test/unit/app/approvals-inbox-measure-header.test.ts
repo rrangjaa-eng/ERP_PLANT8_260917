@@ -8,6 +8,7 @@ const inbox = vi.hoisted((): { current: unknown } => ({ current: null }));
 
 vi.mock("@/lib/viewer", () => ({ requireSession: () => Promise.resolve({ viewer: { id: "viewer" } }) }));
 vi.mock("@/app/(app)/document-kinds", () => ({}));
+vi.mock("@/domain/code-tables", () => ({ listReasonOptions: () => Promise.resolve([]) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined, push: () => undefined }) }));
 vi.mock("next-safe-action/hooks", () => ({ useAction: () => ({ execute: () => undefined, isExecuting: false, result: {} }) }));
 vi.mock("@/app/(app)/approvals/actions", () => ({ approveAction: () => undefined, rejectAction: () => undefined, withdrawAction: () => undefined }));

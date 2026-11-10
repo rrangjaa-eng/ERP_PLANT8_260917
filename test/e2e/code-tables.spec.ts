@@ -3,7 +3,14 @@ import { createFixtureUser } from "./fixtures";
 import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin } from "./row-actions-helpers";
 import { randomUUID } from "node:crypto";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { insertCodeItem, setCodeItemActive } from "@/repositories/code-tables";
+import { insertCodeItem, listCodeItems, setCodeItemActive } from "@/repositories/code-tables";
+import { submitLeave } from "@/domain/leave";
+import { createExpenseFromLines } from "@/domain/expenses";
+import { seoulToday } from "@/lib/dates";
+import { leaveWeekdayRange } from "./leave-dates";
+import { loginPage, setupLeaveOrg, waitForHydration } from "./leave-org";
+import { setupExpenseE2E } from "./expense-fixture";
+import { seedReasonOptions } from "./reason-options";
 
 // 04.6-15 — 「코드 추가」는 옆 패널이고 등록에 성공하면 패널이 열린 채 칸이 비고 결과 한 줄이 뜬다(UQ-8 B). 목록을 이어 보려면 Esc로 닫는다
 // (칸이 비어 확인 없이 닫힘 — DR1 A).
@@ -73,7 +80,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
   // 하나뿐인 「숨김 포함」 줄에서는 드러나지 않았지만, 코드표 선택 nav는 링크가
   // 둘이라 두 이름이 한 덩어리로 읽힌다.
   // quick 261001-hfi(MAST-04) — 견적 분류가 세 번째 표로 늘었다. 이웃한 링크 쌍마다 간격을 본다(05-03 — 지급 방식이 네 번째).
-  test("코드표 선택 링크 넷이 서로 붙어 있지 않다", async ({ page }) => {
+  test("코드표 선택 링크 일곱이 서로 붙어 있지 않다", async ({ page }) => {
     const admin = await createFixtureUser({ roleId: "role-sysadmin" });
 
     await page.goto("/login");
@@ -86,16 +93,21 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
 
     const nav = page.getByRole("navigation", { name: "코드표 선택" });
     const links = nav.getByRole("link");
-    await expect(links).toHaveCount(4);
+    await expect(links).toHaveCount(7);
     await expect(links.nth(2)).toHaveText("견적 분류");
     await expect(links.nth(3)).toHaveText("지급 방식");
+    await expect(links.nth(4)).toHaveText("반려 사유");
+    await expect(links.nth(5)).toHaveText("선결제 사유");
+    await expect(links.nth(6)).toHaveText("희망 지급일 사유");
 
-    for (const index of [0, 1, 2]) {
+    // 07.2-07: 일곱 링크가 한 줄이 아닐 수 있다 — 같은 줄끼리만 가로 간격을 잰다.
+    for (const index of [0, 1, 2, 3, 4, 5]) {
       const left = await links.nth(index).boundingBox();
       const right = await links.nth(index + 1).boundingBox();
       expect(left).not.toBeNull();
       expect(right).not.toBeNull();
       // 두 상자 사이의 가로 간격. 붙어 있으면 0이다.
+      if (Math.abs(right!.y - left!.y) > 1) continue;
       const gap = right!.x - (left!.x + left!.width);
       expect(gap).toBeGreaterThan(0);
     }
@@ -134,7 +146,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     const current = nav.locator("a[aria-current='page']");
     const sibling = nav.locator("a:not([aria-current='page'])");
     await expect(current).toHaveCount(1);
-    await expect(sibling).toHaveCount(3);
+    await expect(sibling).toHaveCount(6);
 
     // 현재 표 링크 색 = 역할 토큰 --text-strong(04.6-15: 스킨 A 역할 토큰). 토큰 값은 hex라 브라우저가 계산하는 rgb() 문자열과 직접
     // 비교하려고 임시 요소에 먹여 같은 방식으로 정규화한다.
@@ -634,4 +646,123 @@ test.describe("증빙 종류 세금 규칙 구역 폭 (07.1-02 PF8)", () => {
       expect(measured.scrollWidth).toBeLessThanOrEqual(measured.innerWidth);
     });
   }
+});
+
+// 07.2-07 X3(D-7286) — 사유 목록 3종은 기존 코드표 화면 그대로(화면 신설 0): 전환 링크 · 항목 추가 · 설명 40자 상한 규칙 공유.
+test.describe("사유 코드표 3종 (07.2-07 X3)", () => {
+  const REASON_TABLES = [
+    ["reject_reason", "반려 사유"],
+    ["prepaid_reason", "선결제 사유"],
+    ["requested_payment_reason", "희망 지급일 사유"],
+  ] as const;
+
+  test("전환 링크 `반려 사유` · `선결제 사유` · `희망 지급일 사유`가 각 1개이고 눌러서 그 표로 간다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/code-tables");
+    const nav = page.getByRole("navigation", { name: "코드표 선택" });
+    for (const [tableKey, label] of REASON_TABLES) {
+      await expect(nav.getByRole("link", { name: label, exact: true })).toHaveCount(1);
+      await nav.getByRole("link", { name: label, exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`tableKey=${tableKey}`));
+    }
+  });
+
+  test("`반려 사유` 표에 항목을 추가하면 목록에 보이고, 41자 설명은 서버 문구로 거부된다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const stamp = Date.now();
+    const value = `e2e-reason-${stamp}`;
+    try {
+      await page.goto("/admin/code-tables?tableKey=reject_reason&new=1");
+      const dialog = page.locator(PANEL);
+      await expect(dialog).toBeVisible();
+      await dialog.getByLabel("값", { exact: true }).fill(value);
+      await dialog.getByLabel("이름", { exact: true }).fill(`사유-${stamp}`);
+      await dialog.getByLabel("설명", { exact: true }).fill("가".repeat(41));
+      await dialog.getByRole("button", { name: "코드 추가" }).click();
+      await expect(dialog).toContainText("설명 40자 초과 · 한 문장으로 축약");
+      await dialog.getByLabel("설명", { exact: true }).fill("가".repeat(40));
+      await dialog.getByRole("button", { name: "코드 추가" }).click();
+      await expect(dialog.getByRole("status")).toHaveText("코드 추가됨");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("cell", { name: value })).toBeVisible();
+    } finally {
+      const scope = { rows: "all", includeArchived: false } as const;
+      const rows = await listCodeItems(SYSTEM_VIEWER, { tableKey: "reject_reason", scope, includeInactive: true });
+      for (const row of rows.filter((item) => item.value === value)) await setCodeItemActive(SYSTEM_VIEWER, row.id, false);
+    }
+  });
+
+  test("폰 375: 사유 표 화면도 가로로 넘치지 않는다", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await loginAsSysadmin(page);
+    for (const [tableKey] of REASON_TABLES) {
+      const response = await page.goto(`/admin/code-tables?tableKey=${tableKey}`);
+      expect(response?.status()).toBe(200);
+      const { scrollWidth, clientWidth } = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
+      expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    }
+  });
+});
+
+// 07.2-07 S15 long-text · 320: 사유 칸(반려 확인 창 · 지출결의 폼)이 가로로 넘치지 않는다. 긴 항목 문구도 select `max-width: 100%`로 담긴다.
+test.describe("사유 칸 320 가로 넘침 0 (07.2-07 S15)", () => {
+  const LONG = "아주 긴 사유 문구 ".repeat(8).trim();
+
+  test("연차 문서 반려 창의 고르개와 글 칸이 320에서 창 안에 담긴다", async ({ browser, baseURL }) => {
+    const { labels, restore } = await seedReasonOptions("reject_reason", [LONG, "짧은 사유"]);
+    try {
+      const today = seoulToday();
+      const range = leaveWeekdayRange(today, { week: 4, weekdays: 1 });
+      const org = await setupLeaveOrg(today);
+      const submitted = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+      const lead = await loginPage(browser, baseURL, org.teamLead, { width: 320, height: 700 });
+      await lead.goto(`/leave/${submitted.leaveId}`);
+      const reject = lead.getByRole("button", { name: "반려" });
+      await waitForHydration(reject);
+      await reject.click();
+      const dialog = lead.getByRole("dialog");
+      await expect(dialog.locator("select")).toBeVisible();
+      await dialog.locator("select").selectOption(labels[0] ?? LONG);
+      const overflow = await lead.evaluate(() => {
+        const dlg = document.querySelector("dialog[open]") as HTMLElement;
+        const select = dlg.querySelector("select") as HTMLElement;
+        const text = dlg.querySelector("textarea") as HTMLElement;
+        const box = dlg.getBoundingClientRect();
+        const inside = (element: HTMLElement) => element.getBoundingClientRect().right <= box.right + 1;
+        return {
+          doc: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          dialog: dlg.scrollWidth - dlg.clientWidth,
+          select: inside(select),
+          text: inside(text),
+        };
+      });
+      expect(overflow.doc).toBeLessThanOrEqual(0);
+      expect(overflow.dialog).toBeLessThanOrEqual(0);
+      expect(overflow.select).toBe(true);
+      expect(overflow.text).toBe(true);
+      await lead.context().close();
+    } finally {
+      await restore();
+    }
+  });
+
+  test("지출결의 폼 선결제 사유 칸이 320에서 넘치지 않는다", async ({ browser, baseURL }) => {
+    const { labels, restore } = await seedReasonOptions("prepaid_reason", [LONG]);
+    try {
+      const fx = await setupExpenseE2E();
+      const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+      const expenseId = created.created[0]?.expenseId;
+      if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+      const page = await loginPage(browser, baseURL, fx.pm, { width: 320, height: 700 });
+      await page.goto(`/expenses/${expenseId}`);
+      await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+      await page.getByLabel("선결제", { exact: true }).check();
+      await page.locator("#prepaidReason-pick").selectOption(labels[0] ?? LONG);
+      const gap = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(gap).toBeLessThanOrEqual(0);
+      await page.context().close();
+    } finally {
+      await restore();
+    }
+  });
 });

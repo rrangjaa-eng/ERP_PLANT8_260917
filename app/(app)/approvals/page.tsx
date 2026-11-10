@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
 import { can } from "@/domain/permissions/can";
+import { listReasonOptions } from "@/domain/code-tables";
 import "@/app/(app)/document-kinds";
 import {
   listMyInbox,
@@ -83,6 +84,7 @@ export default async function ApprovalsPage() {
   const { viewer } = await requireSession();
   // 상세까지 한 번에 — 같은 노출 메모 · 종류마다 loadDetails 한 번(CEO-17).
   const inbox = await listMyInbox(viewer, { withDetails: true });
+  const reasonOptions = await listReasonOptions(viewer, "reject_reason");
   const rows = [...inbox.mine.map((item) => toRow(item, "mine")), ...inbox.processed.map((item) => toRow(item, "processed"))];
   // 05-10: 빈 화면의 다음 한 수는 지출결의 목록 — 목록을 볼 권한이 없으면 문장만(DECISIONS 2026-10-05).
   const canViewExpenses = rows.length === 0 && (await can(viewer, "expenses", "view"));
@@ -96,6 +98,7 @@ export default async function ApprovalsPage() {
           rows={rows}
           measureHeader={inbox.measureHeader}
           rejectMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
+          reasonOptions={reasonOptions}
         />
       )}
     </ListScreen>

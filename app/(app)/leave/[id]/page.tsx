@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
 import "@/app/(app)/document-kinds";
+import { listReasonOptions } from "@/domain/code-tables";
 import { formatLeaveTitle, formatRequestBalanceRow, getLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
 import { getLeaveBalanceForRequest } from "@/domain/leave/balance-service";
 import {
@@ -153,6 +154,7 @@ export default async function LeaveDocumentPage({
             : null
         }
         rejectMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
+        reasonOptions={await listReasonOptions(viewer, "reject_reason")}
         resubmit={
           resubmitting && leave.id && leave.kind && leave.startDate && leave.endDate && view?.version !== undefined
             ? {

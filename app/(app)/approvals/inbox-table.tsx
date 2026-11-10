@@ -70,10 +70,13 @@ async function approveFromSheet(target: { instanceId: string; version: number })
 export function InboxTable({
   rows,
   rejectMessages,
+  reasonOptions,
   measureHeader,
 }: {
   rows: InboxRow[];
   rejectMessages: RejectMessages;
+  // 07.2-07 X3: 반려 사유 코드표의 활성 항목 label(서버 page가 읽어 내린다).
+  reasonOptions: string[];
   // 05-01 E5: 숫자 열 머리글(서버 listMyInbox) — null이면 숫자 열을 통째로 그리지 않는다.
   measureHeader: string | null;
 }) {
@@ -244,7 +247,7 @@ export function InboxTable({
           else setWithdrawTarget(row.decision);
         }}
       />
-      <RejectDialog target={rejectTarget} messages={rejectMessages} onClose={() => setRejectTarget(null)} onDone={showToast} />
+      <RejectDialog target={rejectTarget} messages={rejectMessages} reasonOptions={reasonOptions} onClose={() => setRejectTarget(null)} onDone={showToast} />
       <WithdrawDialog target={withdrawTarget} onClose={() => setWithdrawTarget(null)} onDone={showToast} />
       {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}
     </>

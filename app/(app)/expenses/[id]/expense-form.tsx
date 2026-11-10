@@ -34,6 +34,7 @@ import { LinePickDialog } from "./pick-line";
 import { EvidenceAttachments } from "./evidence-attachments";
 import { NEW_DOC_BLOCK, submitBlockReason, type ServerBlock } from "./submit-block";
 import { TaxParts } from "./tax-parts";
+import { ReasonField } from "@/ui/reason-field/ReasonField";
 import styles from "./expense.module.css";
 
 // 05-05(S3 · UI-SPEC): 지출결의 폼 — `Form layout="page"` 한 열. 알 수 있는 값은 서버가 채워 보낸다(견적 줄 · 거래처 · 증빙 종류 · 공급가액 · 통화 ·
@@ -129,6 +130,9 @@ export type ExpenseFormProps = {
   evidenceRecords?: ReactNode;
   /** 06.1-08 붙은 증빙 기록(살아 있는 붙임) 수 — 붙이기 · 떼기 뒤 제출 막힘을 다시 잰다(G-06.1-29). 새 문서는 0. */
   linkedEvidenceCount?: number;
+  /** 07.2-07 X3(D-7289) — 선결제 · 희망 지급일 사유 코드표의 활성 항목 label. 0건이면 ReasonField가 자유 입력으로 선다. */
+  prepaidReasonOptions: string[];
+  hopeReasonOptions: string[];
 };
 
 const DATE_EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
@@ -166,7 +170,7 @@ function FxField({ initial, error, onRaw, below }: { initial: number; error: str
   );
 }
 
-export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords, linkedEvidenceCount = 0 }: ExpenseFormProps) {
+export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route, evidenceRecords, linkedEvidenceCount = 0, prepaidReasonOptions, hopeReasonOptions }: ExpenseFormProps) {
   const router = useRouter();
   const [evidenceType, setEvidenceType] = useState(data.evidenceType ?? "");
   const [paymentMethod, setPaymentMethod] = useState(data.paymentMethod ?? "");
@@ -1125,21 +1129,17 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
         </Form.Field>
         {hopeDate !== "" ? (
           <Form.Field id="requestedPaymentReason" label="희망 사유" width="long">
-            <input
+            <ReasonField
               id="requestedPaymentReason"
-              type="text"
+              options={hopeReasonOptions}
               maxLength={480}
-              autoComplete="off"
               value={hopeReason}
-              onChange={(event) => {
-                setHopeReason(event.target.value);
+              onChange={(next) => {
+                setHopeReason(next);
                 if (errors.requestedPaymentReason) setErrors((current) => ({ ...current, requestedPaymentReason: undefined }));
               }}
-              className={styles.textInput}
-              aria-invalid={errors.requestedPaymentReason ? true : undefined}
-              aria-describedby={errors.requestedPaymentReason ? "requestedPaymentReason-error" : undefined}
+              error={errors.requestedPaymentReason}
             />
-            {errors.requestedPaymentReason ? <Form.Error id="requestedPaymentReason-error">{errors.requestedPaymentReason}</Form.Error> : null}
           </Form.Field>
         ) : null}
         {/* K19 · D-731: 읽기 줄 — 입력 테두리 없는 KvList 한 줄. 미리보기 동안 값 · 규칙 줄 둘 다 `…`(이전 문구를 남기지 않는다 — U16). */}
@@ -1207,21 +1207,17 @@ export function ExpenseForm({ data, today, evidenceOptions, companyBorneEvidence
         </Form.Field>
         {prepaid ? (
           <Form.Field id="prepaidReason" label="선결제 사유" width="long">
-            <input
+            <ReasonField
               id="prepaidReason"
-              type="text"
+              options={prepaidReasonOptions}
               maxLength={480}
-              autoComplete="off"
               value={prepaidReason}
-              onChange={(event) => {
-                setPrepaidReason(event.target.value);
+              onChange={(next) => {
+                setPrepaidReason(next);
                 if (errors.prepaidReason) setErrors((current) => ({ ...current, prepaidReason: undefined }));
               }}
-              className={styles.textInput}
-              aria-invalid={errors.prepaidReason ? true : undefined}
-              aria-describedby={errors.prepaidReason ? "prepaidReason-error" : undefined}
+              error={errors.prepaidReason}
             />
-            {errors.prepaidReason ? <Form.Error id="prepaidReason-error">{errors.prepaidReason}</Form.Error> : null}
             <Form.Hint>{`증빙 기한 지급일부터 ${data.prepaidDueDays}일`}</Form.Hint>
           </Form.Field>
         ) : null}

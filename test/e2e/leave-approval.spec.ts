@@ -10,6 +10,7 @@ import { leaveWeekdayRange } from "./leave-dates";
 import { documentLabel, documentTitle, expectSheetDocumentLink, loginPage as loginAsPerson, makeMgmtHead, setupLeaveOrg, waitForHydration } from "./leave-org";
 import { isStrict } from "./design-principles";
 import { checkPrinciples } from "./principles-check";
+import { expectSeededReasonOptions, seedReasonOptions } from "./reason-options";
 
 // 04.1-02 Task 1 화면 트레이서(EXP-05): /leave/new 신청 → /leave/[id] → /approvals 승인 × 4 → 최종 승인.
 // 다른 스펙의 픽스처와 섞이지 않게 전용 본부 · 팀을 도메인 함수로 만들고 기안자 · 팀장 · 본부 책임자를
@@ -272,6 +273,28 @@ test.describe("결재함 — 결재 시트 PC 모양 · 뼈대 · 원칙 (04.6-1
     await expect(dialogs).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await lead.context().close();
+  });
+
+  // 07.2-07 X3 — 연차 문서 화면의 반려 창도 같은 사유 옵션(홈 · 연차 쪽만 자유 입력으로 남지 않게).
+  test("연차 문서 화면의 반려 창에도 등록한 사유 3개가 자리표시 + 3 + 기타로 보인다", async ({ browser, baseURL }) => {
+    const { labels, restore } = await seedReasonOptions("reject_reason", ["일정 겹침", "인원 부족", "기간 조정"]);
+    try {
+      const today = seoulToday();
+      const range = leaveWeekdayRange(today, { week: 4, weekdays: 1 });
+      const org = await setupLeaveOrg(today);
+      const submitted = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+      const lead = await loginAsPerson(browser, baseURL, org.teamLead, { width: 1280, height: 800 });
+      await lead.goto(`/leave/${submitted.leaveId}`);
+      const reject = lead.getByRole("button", { name: "반려" });
+      await waitForHydration(reject);
+      await reject.click();
+      const dialog = lead.getByRole("dialog");
+      await expectSeededReasonOptions(dialog.locator("select option"), labels);
+      await lead.context().close();
+    } finally {
+      await restore();
+    }
   });
 
   test("결재함을 느리게 불러오면 300ms 뒤 진짜 열 이름의 뼈대만 보이고 1차 버튼은 없다(D10)", async ({ browser, baseURL }) => {

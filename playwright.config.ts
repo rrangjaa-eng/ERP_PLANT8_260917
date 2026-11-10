@@ -63,6 +63,7 @@ const VISUAL_SPEC_PATTERNS = ["visual.spec.ts", "visual-390.spec.ts"];
 // 한쪽이 끈 창에 다른 쪽 결재자 화면이 파일 행을 본다(PR #254 CI e2e (1): 파일 행 1 대 0).
 // 07.3-04: permissions-fund-note-unset은 공용 자금 본부 설정 행(permissions.fund.division_org_unit)을 잠깐 지운다 — desktop 병렬이면 fund-scope 스펙이 fail-closed로 깨진다.
 // 07.4 회사 정보 다섯 키를 채우고 비운다 — 다른 워커가 인쇄 머리를 읽는 도중 값이 바뀌지 않게 print-company-settings · design-capture-07.4-01도 여기서 돈다.
+// 07.2-07: reason-options-empty는 전역 사유 코드표 3종이 「활성 0건」일 때만 성립하는 단언(고르개 DOM 0)이라, 병렬 스펙이 항목을 등록해 둔 동안 겹치지 않게 여기서 돈다.
 const DESKTOP_SETTINGS_SPECS = [
   "settings-approval-route.spec.ts",
   "phase6-keys.spec.ts",
@@ -73,6 +74,7 @@ const DESKTOP_SETTINGS_SPECS = [
   "print-company-settings.spec.ts",
   "design-capture-07.4-01.spec.ts",
   "permissions-fund-note-unset.spec.ts",
+  "reason-options-empty.spec.ts",
   // 07.2-10 — 회사 로고는 전역 상태라 다른 인쇄 스펙과 겹치면 서로의 견적서 머리를 바꾼다(print-company-settings와 같은 까닭).
   "settings-company-logo.spec.ts",
 ];

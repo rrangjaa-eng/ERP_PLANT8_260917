@@ -38,7 +38,17 @@ export const CODE_TABLES = [
   { key: "evidence_type", label: "증빙 종류" },
   { key: "quote_subcategory", label: "견적 분류" },
   { key: "payment_method", label: "지급 방식" },
+  // 07.2-07 X3(D-7285 · D-7286): 사유 목록 셋 — 시드 문구 없음(사용자가 정한다). 저장은 글만이라 항목 id를 어디에도 남기지 않는다(D-7287).
+  { key: "reject_reason", label: "반려 사유" },
+  { key: "prepaid_reason", label: "선결제 사유" },
+  { key: "requested_payment_reason", label: "희망 지급일 사유" },
 ] as const;
+
+// 07.2-07: 사유 고르기(ReasonField)가 읽는 표 키 셋. listReasonOptions는 이 셋만 읽는다.
+export const REASON_TABLE_KEYS = ["reject_reason", "prepaid_reason", "requested_payment_reason"] as const;
+export type ReasonTableKey = (typeof REASON_TABLE_KEYS)[number];
+
+const REASON_OTHER_LABEL = "기타";
 
 // 04-10(D-93): 코드표 설명 40자 상한 — 서버 판정, DB CHECK 아님(설정 hint와
 // 같은 결). .length(UTF-16 단위)로 센다 — 한글은 글자당 1. 값 자체는
@@ -106,6 +116,21 @@ export async function listCodeItems(
   });
   const dtos = await Promise.all(rows.map((row) => project(viewer, row, CODE_ITEM_DTO_SPEC)));
   return dtos as CodeItemDto[];
+}
+
+// 07.2-07 X3: 로그인만 되면 읽는 좁은 reader — 기안자 · 결재자는 코드표 관리 권리(admin.code-tables)가 없어도 사유 옵션을 봐야 한다.
+// 인증은 호출부 세션(RSC 페이지)이 한다. domain listCodeItems · scopeFor("code_items")를 거치면 권리 없는 계정은 행 0이 되어 조용히
+// 자유 입력으로 떨어지고, 정보 노출표 투영도 label을 가려 버린다(UI-SPEC S15 「좁은 reader」) — 그래서 repo를 고정 범위로 직접 부른다.
+// 사유 표 셋 밖의 키는 빈 배열(다른 코드표를 읽는 길이 아니다) · label만 돌려준다(id · value · 설명 없음).
+export async function listReasonOptions(viewer: Viewer, tableKey: ReasonTableKey): Promise<string[]> {
+  if (!REASON_TABLE_KEYS.includes(tableKey)) return [];
+  const rows = await repoListCodeItems(viewer, {
+    tableKey,
+    scope: { rows: "all", includeArchived: false },
+    includeInactive: false,
+  });
+  // 고정 `기타`와 겹치거나 앞 항목과 같은 label은 걸러 select value가 겹치지 않게 한다.
+  return [...new Set(rows.map((row) => row.label))].filter((label) => label !== REASON_OTHER_LABEL);
 }
 
 // 쓰기는 코드표 메뉴의 쓰기 권한을 먼저 확인하고 실패 시 ForbiddenError, 성공

@@ -4,6 +4,7 @@ import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, getDocumentKind, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
+import { listReasonOptions } from "@/domain/code-tables";
 import { getSettlement, getSettlementPreSettleSummary, isSettlementResubmitWaiting, periodText, SETTLEMENT_DOCUMENT_KIND } from "@/domain/settlements";
 // Button.tsx는 클라이언트 모듈이라 서버 컴포넌트가 buttonLinkClassName을 부를 수 없다 — 같은 3차 클래스를 직접 쓴다(지출결의 문서 화면 선례).
 import buttonStyles from "@/ui/button/Button.module.css";
@@ -142,6 +143,7 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
               : null
           }
           rejectMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
+          reasonOptions={await listReasonOptions(viewer, "reject_reason")}
         />
       </DetailScreen>
     </div>

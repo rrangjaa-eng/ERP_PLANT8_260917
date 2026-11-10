@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { getApprovalView, rejectDocument } from "@/domain/approvals";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
+import { expenses, permissionMatrix, users, visibilityMatrix } from "@/db/schema";
 import { createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
 import { detachOwnEvidence } from "@/domain/evidence-records/attach";
 import { createIntakeManager, insertLinkFixture, insertRecordFixture, setRecordVisibilityFixture } from "@/test/integration/fixtures/evidence";
@@ -536,20 +536,24 @@ test.describe("결재 정보를 끈 기안자의 반려 문서 (05 /qa I3)", () 
     const id = await submitLineExpense(browser, baseURL, fx, "retry");
     const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: id });
     await rejectDocument(fx.lead.viewer, { instanceId: view!.instanceId, expectedVersion: view!.version, reason: "QA 숨김 사유" });
-    const roleId = String(fx.pm.viewer.roleId);
-    try {
-      await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "approval.value", visible: false });
-      const page = await loginPage(browser, baseURL, fx.pm);
-      await page.goto(`/expenses/${id}`);
-      await waitForHydration(page.getByRole("button", { name: /^지출결의 다시 제출/ }));
-      const main = page.locator("main");
-      await expect(main).not.toContainText(fx.lead.name);
-      await expect(main).not.toContainText("QA 숨김 사유");
-      await expect(main.locator("dt", { hasText: /^반려$/ })).toHaveCount(0);
-      await page.context().close();
-    } finally {
-      await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "approval.value", visible: true });
-    }
+    // 공용 role-pm의 approval.value를 끄면 같은 순간 다른 워커의 role-pm 기안자(expense-inbox 반려 사유 등)가 결재 정보를 잃는다 —
+    // role-pm 칸 · 노출을 그대로 옮긴 임시 계급으로 기안자를 옮긴 뒤 그 계급에서만 끈다.
+    const suffix = randomUUID().slice(0, 8);
+    const role = await insertTempRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E결재정보끔-${suffix}`, workScope: "team", viewScope: "team" });
+    const cells = await db.select({ menu: permissionMatrix.menu, action: permissionMatrix.action }).from(permissionMatrix).where(and(eq(permissionMatrix.roleId, "role-pm"), eq(permissionMatrix.allowed, true)));
+    for (const { menu, action } of cells) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
+    const items = await db.select({ infoItem: visibilityMatrix.infoItem }).from(visibilityMatrix).where(and(eq(visibilityMatrix.roleId, "role-pm"), eq(visibilityMatrix.visible, true)));
+    for (const { infoItem } of items) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: infoItem !== "approval.value" });
+    await db.update(users).set({ roleId: role.id }).where(eq(users.id, fx.pm.viewer.id));
+    fx.pm.viewer = { ...fx.pm.viewer, roleId: role.id };
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${id}`);
+    await waitForHydration(page.getByRole("button", { name: /^지출결의 다시 제출/ }));
+    const main = page.locator("main");
+    await expect(main).not.toContainText(fx.lead.name);
+    await expect(main).not.toContainText("QA 숨김 사유");
+    await expect(main.locator("dt", { hasText: /^반려$/ })).toHaveCount(0);
+    await page.context().close();
   });
 });
 

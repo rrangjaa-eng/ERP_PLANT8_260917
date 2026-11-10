@@ -10,7 +10,7 @@ import { leaveWeekdayRange } from "./leave-dates";
 import { documentLabel, documentTitle, expectSheetDocumentLink, loginPage as loginAsPerson, makeMgmtHead, setupLeaveOrg, waitForHydration } from "./leave-org";
 import { isStrict } from "./design-principles";
 import { checkPrinciples } from "./principles-check";
-import { seedReasonOptions } from "./reason-options";
+import { expectSeededReasonOptions, seedReasonOptions } from "./reason-options";
 
 // 04.1-02 Task 1 화면 트레이서(EXP-05): /leave/new 신청 → /leave/[id] → /approvals 승인 × 4 → 최종 승인.
 // 다른 스펙의 픽스처와 섞이지 않게 전용 본부 · 팀을 도메인 함수로 만들고 기안자 · 팀장 · 본부 책임자를
@@ -277,7 +277,7 @@ test.describe("결재함 — 결재 시트 PC 모양 · 뼈대 · 원칙 (04.6-1
 
   // 07.2-07 X3 — 연차 문서 화면의 반려 창도 같은 사유 옵션(홈 · 연차 쪽만 자유 입력으로 남지 않게).
   test("연차 문서 화면의 반려 창에도 등록한 사유 3개가 자리표시 + 3 + 기타로 보인다", async ({ browser, baseURL }) => {
-    const restore = await seedReasonOptions("reject_reason", ["일정 겹침", "인원 부족", "기간 조정"]);
+    const { labels, restore } = await seedReasonOptions("reject_reason", ["일정 겹침", "인원 부족", "기간 조정"]);
     try {
       const today = seoulToday();
       const range = leaveWeekdayRange(today, { week: 4, weekdays: 1 });
@@ -290,7 +290,7 @@ test.describe("결재함 — 결재 시트 PC 모양 · 뼈대 · 원칙 (04.6-1
       await waitForHydration(reject);
       await reject.click();
       const dialog = lead.getByRole("dialog");
-      await expect(dialog.locator("select option")).toHaveText(["사유 고르기", "일정 겹침", "인원 부족", "기간 조정", "기타"]);
+      await expectSeededReasonOptions(dialog.locator("select option"), labels);
       await lead.context().close();
     } finally {
       await restore();

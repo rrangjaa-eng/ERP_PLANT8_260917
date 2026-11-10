@@ -709,7 +709,7 @@ test.describe("사유 칸 320 가로 넘침 0 (07.2-07 S15)", () => {
   const LONG = "아주 긴 사유 문구 ".repeat(8).trim();
 
   test("연차 문서 반려 창의 고르개와 글 칸이 320에서 창 안에 담긴다", async ({ browser, baseURL }) => {
-    const restore = await seedReasonOptions("reject_reason", [LONG, "짧은 사유"]);
+    const { labels, restore } = await seedReasonOptions("reject_reason", [LONG, "짧은 사유"]);
     try {
       const today = seoulToday();
       const range = leaveWeekdayRange(today, { week: 4, weekdays: 1 });
@@ -722,7 +722,7 @@ test.describe("사유 칸 320 가로 넘침 0 (07.2-07 S15)", () => {
       await reject.click();
       const dialog = lead.getByRole("dialog");
       await expect(dialog.locator("select")).toBeVisible();
-      await dialog.locator("select").selectOption(LONG);
+      await dialog.locator("select").selectOption(labels[0] ?? LONG);
       const overflow = await lead.evaluate(() => {
         const dlg = document.querySelector("dialog[open]") as HTMLElement;
         const select = dlg.querySelector("select") as HTMLElement;
@@ -747,7 +747,7 @@ test.describe("사유 칸 320 가로 넘침 0 (07.2-07 S15)", () => {
   });
 
   test("지출결의 폼 선결제 사유 칸이 320에서 넘치지 않는다", async ({ browser, baseURL }) => {
-    const restore = await seedReasonOptions("prepaid_reason", [LONG]);
+    const { labels, restore } = await seedReasonOptions("prepaid_reason", [LONG]);
     try {
       const fx = await setupExpenseE2E();
       const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
@@ -757,7 +757,7 @@ test.describe("사유 칸 320 가로 넘침 0 (07.2-07 S15)", () => {
       await page.goto(`/expenses/${expenseId}`);
       await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
       await page.getByLabel("선결제", { exact: true }).check();
-      await page.locator("#prepaidReason-pick").selectOption(LONG);
+      await page.locator("#prepaidReason-pick").selectOption(labels[0] ?? LONG);
       const gap = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(gap).toBeLessThanOrEqual(0);
       await page.context().close();

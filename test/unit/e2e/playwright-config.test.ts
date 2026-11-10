@@ -50,6 +50,7 @@ describe("playwright.config.ts — 규약 C4 확인증 프로젝트 격리(백�
       "print-company-settings.spec.ts",
       "design-capture-07.4-01.spec.ts",
       "permissions-fund-note-unset.spec.ts",
+      "reason-options-empty.spec.ts",
     ];
     expect(byName("desktop")?.testIgnore).toEqual(expect.arrayContaining(shared));
     expect(byName("desktop-settings")?.testMatch).toEqual(shared);

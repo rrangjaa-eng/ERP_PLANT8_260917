@@ -15,7 +15,7 @@ function sumRow(key: string, label: string, amountKrw: number): PrintTableRow {
 }
 
 export function quoteRows(dto: QuoteClientPrintDto): PrintTableRow[] {
-  if (dto.lines.length === 0) return [];
+  if (dto.lines.length === 0 && dto.commissionLines.length === 0) return [];
   const subtotalOf = (major: string) => dto.groups.find((group) => group.major === major)?.subtotalKrw ?? 0;
   const rows: PrintTableRow[] = [];
   let major: string | null = null;

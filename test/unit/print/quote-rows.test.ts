@@ -84,6 +84,12 @@ describe("quoteRows — 순서", () => {
   it("줄 0이면 빈 배열이다", () => {
     expect(quoteRows(dto({}))).toEqual([]);
   });
+
+  it("견적 줄이 0이어도 수수료 줄이 있으면 수수료 · Grand Total을 싣는다", () => {
+    const only = quoteRows(dto({ commissionLines: [{ id: "c-1", item: "대행 수수료", amountKrw: 100000, remark: null }], commissionKrw: 100000, grandTotalKrw: 100000 }));
+    expect(only.some((row) => row.key === "grand")).toBe(true);
+    expect(only.some((row) => row.cells.some((cell) => cell === "대행 수수료"))).toBe(true);
+  });
 });
 
 describe("quoteRows — 칸", () => {

@@ -64,6 +64,14 @@ test.describe("결재함 — 지출결의 (05-10)", () => {
       await select.selectOption("증빙 누락");
       await expect(reason).toHaveValue("증빙 누락 · 3월분");
 
+      // 글을 모두 지우면 고르개도 처음으로 · 직접 쓴 글은 기타를 골라도 남는다(2026-11-10 사용자 카드 답).
+      await reason.fill("");
+      await expect(select).toHaveValue("");
+      await reason.fill("직접 쓴 글");
+      await select.selectOption("기타");
+      await expect(reason).toHaveValue("직접 쓴 글");
+      await reason.fill("증빙 누락 · 3월분");
+
       await dialog.getByRole("button", { name: /^반려/ }).click();
       await expect(lead.getByRole("status").filter({ hasText: "반려 · " })).toBeVisible();
       await lead.context().close();

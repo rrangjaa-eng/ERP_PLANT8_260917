@@ -147,11 +147,17 @@ export async function setRevisionApproval(
     .where(eq(quoteRevisions.id, revisionId));
 }
 
+// 07.2-10 PU4(D-7226) — 고객 견적서 출력 기록: 마지막 출력 시각 · 출력한 사람. 출력마다 덮는다(재출력은 마지막 시각).
+export async function setRevisionPrinted(viewer: Viewer, revisionId: string, input: { printedAt: Date; printedBy: string }, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx.update(quoteRevisions).set({ printedAt: input.printedAt, printedBy: input.printedBy }).where(eq(quoteRevisions.id, revisionId));
+}
+
 // 04-14(S5 · CEO 리뷰 §7 · B-18 · ENG-D9) — 차수별 줄 수(견적 줄 + 견적 외 비용, 보관 제외) · 견적 합계 · 내용 토큰을
 // GROUP BY 한 번으로. 합계는 bigint를 JS 숫자로 바꿔 돌려준다(node-pg는 bigint를 문자열로 준다 — 04-17 C-01과 같은 규칙).
 export type RevisionSummaryRow = Pick<
   QuoteRevisionRow,
-  "id" | "seq" | "createdAt" | "customerApprovedAt" | "customerApprovedBy" | "customerApprovalBasis" | "customerApprovalMemo"
+  "id" | "seq" | "createdAt" | "customerApprovedAt" | "customerApprovedBy" | "customerApprovalBasis" | "customerApprovalMemo" | "printedAt"
 > &
   ApprovalBasis & { lineCount: number };
 
@@ -166,6 +172,7 @@ export async function summarizeRevisions(viewer: Viewer, projectId: string, tx: 
       customerApprovedBy: quoteRevisions.customerApprovedBy,
       customerApprovalBasis: quoteRevisions.customerApprovalBasis,
       customerApprovalMemo: quoteRevisions.customerApprovalMemo,
+      printedAt: quoteRevisions.printedAt,
       totalKrw: APPROVABLE_TOTAL.mapWith(Number),
       contentToken: CONTENT_TOKEN,
       approvableLineCount: APPROVABLE_COUNT,

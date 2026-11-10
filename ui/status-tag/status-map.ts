@@ -103,6 +103,8 @@ export const STATUS_KIND = {
   초과: "danger",
   // 07 개정 1 (N22): 수금 기일을 넘긴 건
   "수금 지연": "warning",
+  // 07.2-10 PU4(D-7228): 고객 견적서를 출력한 차수 — 상태 칸에 `보냄 MM-DD`(상태를 늘리지 않는 표지)
+  보냄: "muted",
 } as const satisfies Record<string, StatusKind>;
 
 /** 표의 낱말 + 단계 이름이 붙은 `{단계} 결재 중`(accent) + 조직 화면 중복 개수(warning). */

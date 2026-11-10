@@ -1,6 +1,9 @@
 import { recordAction } from "@/domain/action-log/record";
 import { getExpense } from "@/domain/expenses";
 import { getLeave } from "@/domain/leave";
+import { getQuoteClientPrint } from "@/domain/quotes/client-print";
+import { markQuotePrinted } from "@/domain/quotes/revisions";
+import { ForbiddenError } from "@/domain/quotes/lines";
 import { getSettlement } from "@/domain/settlements";
 import type { Viewer } from "@/domain/viewer";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -8,7 +11,7 @@ import { hasDocumentPrintWithin } from "@/repositories/action-log";
 
 // 07.4-01 D-7415: 서류 인쇄 기록. 열람은 서류 읽기 함수로 매번 다시 판정한다(클라이언트가 보낸 kind · id를 믿지 않는다).
 // 성능: 기록 한 번에 서류 읽기 함수 한 번(정산은 getSettlement가 두 합까지 읽는다 — 30명 규모에서 받아들인다, eng 검토 P3).
-export type PrintDocumentKind = "expense" | "leave" | "settlement";
+export type PrintDocumentKind = "expense" | "leave" | "settlement" | "quote";
 
 // 클라이언트 합치기 창(PrintBar COALESCE_MS 5000)과 같다 — 서버도 같은 사람 · 종류 · 서류의 5초 안 재호출은 한 행으로 합친다.
 export const PRINT_RECORD_WINDOW_SECONDS = 5;
@@ -24,6 +27,14 @@ async function findDocument(viewer: Viewer, kind: PrintDocumentKind, id: string)
     const leave = await getLeave(viewer, id);
     return leave ? { entity: "leave_request", number: typeof leave.number === "string" ? leave.number : null } : null;
   }
+  if (kind === "quote") {
+    // 07.2-10: 고객 견적서 — id는 차수 id. 금액 못 보는 계정(ForbiddenError)에게도 차수가 있다는 사실을 알리지 않는다(다른 서류와 같은 없는 서류).
+    const quote = await getQuoteClientPrint(viewer, id).catch((error: unknown) => {
+      if (error instanceof ForbiddenError) return null;
+      throw error;
+    });
+    return quote ? { entity: "quote_revision", number: quote.ref } : null;
+  }
   const settlement = await getSettlement(viewer, { projectId: id });
   // 정산서의 번호는 프로젝트 번호다 — 투영으로 빠진 계급은 `{}`가 온다.
   return settlement ? { entity: "project", number: typeof settlement.projectNumber === "string" ? settlement.projectNumber : null } : null;
@@ -34,6 +45,11 @@ export async function recordDocumentPrint(viewer: Viewer, input: { kind: PrintDo
   const found = await findDocument(viewer, input.kind, input.id);
   if (!found) throw new UserFacingError("없는 서류 · 새로 고침");
   if (await hasDocumentPrintWithin(viewer, { actorId: viewer.id, documentId: input.id, kind: input.kind, windowSeconds: deps?.windowSeconds ?? PRINT_RECORD_WINDOW_SECONDS })) return;
+  // 견적서는 차수 printed_at 갱신과 document_print 행이 한 트랜잭션이다 — 같은 행을 두 번 남기지 않고 돌아간다.
+  if (input.kind === "quote") {
+    await markQuotePrinted(viewer, input.id, { number: found.number ?? "" });
+    return;
+  }
   await recordAction(viewer, {
     actionType: "document_print",
     entity: found.entity,

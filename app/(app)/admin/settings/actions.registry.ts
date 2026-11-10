@@ -40,6 +40,35 @@ registerAction({
   dtoName: null,
 });
 
+// 07.2-10 Task 3: 회사 로고 네 액션 — 게이트는 설정 메뉴 쓰기 권리이고 행 Dto가 없다(파일 id · 이름 · 크기뿐).
+registerAction({
+  name: "requestCompanyLogoUploadAction",
+  menu: "admin.settings",
+  action: "write",
+  dtoName: null,
+});
+
+registerAction({
+  name: "completeCompanyLogoUploadAction",
+  menu: "admin.settings",
+  action: "write",
+  dtoName: null,
+});
+
+registerAction({
+  name: "deleteCompanyLogoAction",
+  menu: "admin.settings",
+  action: "write",
+  dtoName: null,
+});
+
+registerAction({
+  name: "restoreCompanyLogoAction",
+  menu: "admin.settings",
+  action: "write",
+  dtoName: null,
+});
+
 // 03-04: 설정 JSON 내보내기 — dtoName이 null인 이유는 이 내보내기가 행
 // Dto가 아니라 설정 키-값 스냅샷이라 사람 단위 정보 항목이 없고, 게이트가
 // 노출표가 아니라 설정 메뉴 보기 권한이기 때문이다(03-03 T2 ⑤가 이 경우를

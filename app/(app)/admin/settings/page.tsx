@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import type { Viewer } from "@/domain/viewer";
-import { SETTING_DEFS } from "@/domain/settings/keys";
+import { PRINT_COMPANY_NAME, SETTING_DEFS } from "@/domain/settings/keys";
+import { getCompanyLogo } from "@/domain/settings/company-logo";
 import {
   getSettingValue,
   listSettingHistory,
@@ -20,6 +21,7 @@ import type { HistoryEntry } from "@/ui/history-list/HistoryList";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { pairGridAxis } from "./pair-grid-axes";
 import { resolveSettingsGroup } from "./group-param";
+import { CompanyLogoField } from "./company-logo-field";
 import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel } from "./settings-form-client";
 
 // D-36 계약: 화면 코드에 계급 이름 분기가 없다. 캐시 없음 — 화면 로드마다
@@ -181,11 +183,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const sections = await buildSections(session.viewer);
   const { group } = await searchParams;
   const currentGroup = resolveSettingsGroup(sections.map((section) => section.namespace), group);
+  // 07.2-10 Task 3: 로고 칸은 「회사 정보」 묶음에서만 읽는다(다른 묶음은 서명 주소를 만들지 않는다).
+  const logo = currentGroup === PRINT_COMPANY_NAME.namespace ? await getCompanyLogo(session.viewer) : { file: null, url: null };
 
   return (
     <DetailScreen title="설정">
       <div className="single-column">
         <SettingsFormClient sections={sections} currentGroup={currentGroup} viewerId={session.viewer.id} />
+        {currentGroup === PRINT_COMPANY_NAME.namespace ? <CompanyLogoField file={logo.file} previewUrl={logo.url} canEdit={await can(session.viewer, "admin.settings", "write")} /> : null}
       </div>
     </DetailScreen>
   );

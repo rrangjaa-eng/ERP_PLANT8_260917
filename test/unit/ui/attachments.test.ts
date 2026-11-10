@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Attachments, type AttachmentsProps, type BulkImportRow, type DoneRow, visibleFiles, withUploaded } from "../../../ui/attachments/Attachments";
+import { Attachments, type AttachmentsProps, type BulkImportRow, type DoneRow, type LogoProps, visibleFiles, withUploaded } from "../../../ui/attachments/Attachments";
 
 // 06.1-03 Task 2 (SP-6103 · G-1 · D-6115) — 첨부 영역 「엑셀 일괄 등록」 변형. 컴포넌트는 서버 DTO를 그리기만 한다(판정 · 계산 · 크기 검사 없음).
 // jsdom 없이(environment: "node") 정적 렌더로 마크업을 단언한다 — 포커스 · 끌어 놓기 · 키는 E2E(dev-components) 몫이다.
@@ -213,5 +213,63 @@ describe("Attachments single — 교체 뒤 그릴 파일", () => {
   it("여러 파일 갈래는 이번 업로드를 쌓는다(서버 값에 없는 것만 뒤에)", () => {
     const done = withUploaded(withUploaded([], A, false), B, false);
     expect(names(visibleFiles([A], done, [], false))).toEqual(["등록증1.pdf", "등록증2.pdf"]);
+  });
+});
+
+// 07.2-10 Task 3 (DC-6 · S9) — `variant="logo"`: 파일 하나 · 미리보기 · `바꾸기` · `삭제`. 처리기 없는 단축키 글자(Ctrl+U)는 싣지 않는다.
+describe("Attachments variant=logo", () => {
+  const actions: LogoProps["actions"] = {
+    request: () => Promise.resolve({ ok: false, message: "표본" }),
+    complete: () => Promise.resolve({ ok: false, message: "표본", retry: "restart" }),
+    remove: () => Promise.resolve(true),
+    restore: () => Promise.resolve(true),
+  };
+  const FILE = { id: "f1", name: "회사로고.png", sizeBytes: 1_258_291, createdAt: "2026-11-10T01:00:00.000Z" };
+  const render = (patch: Partial<LogoProps>) =>
+    renderToStaticMarkup(createElement(Attachments, { variant: "logo", file: null, previewUrl: null, canEdit: true, actions, uploadFailedText: "올리지 못함 · 다시 올리기", ...patch }));
+
+  it("빈 상태: 올리기 영역 한 줄(PNG·JPG 2MB)이고 파일 입력은 PNG · JPG만 받으며 단축키 글자가 없다", () => {
+    const markup = render({});
+    expect(markup).toContain("파일을 끌어 놓거나 눌러 고르기 · PNG·JPG 2MB");
+    expect(markup).toContain('accept="image/png,image/jpeg"');
+    expect(markup).not.toContain("Ctrl+U");
+    expect(markup).not.toContain("<kbd");
+    expect(markup).not.toContain("교체");
+    expect(markup).not.toMatch(/<img/);
+  });
+
+  it("파일이 있으면 미리보기 img 하나 + 파일 행(이름 · 크기 · 날짜) + `바꾸기` · `삭제`가 있고 올리기 영역은 없다", () => {
+    const markup = render({ file: FILE, previewUrl: "https://example.test/logo.png" });
+    expect((markup.match(/<img/g) ?? []).length).toBe(1);
+    expect(markup).toContain("https://example.test/logo.png");
+    expect(markup).toContain("회사로고.png");
+    expect(markup).toContain("1.2MB");
+    expect(markup).toContain("11-10");
+    expect(markup).toContain("바꾸기");
+    expect(markup).toContain("삭제");
+    expect(markup).not.toContain("파일을 끌어 놓거나");
+    expect(markup).not.toContain("Ctrl+U");
+  });
+
+  it("쓰기 권리가 없으면(canEdit 거짓) 미리보기만 있고 바꾸기 · 삭제 · 올리기 입력이 없다", () => {
+    const markup = render({ file: FILE, previewUrl: "https://example.test/logo.png", canEdit: false });
+    expect(markup).toMatch(/<img/);
+    expect(markup).not.toContain("바꾸기");
+    expect(markup).not.toContain("삭제");
+    expect(markup).not.toContain('type="file"');
+  });
+
+  it("기존 갈래(variant 없음)의 빈 영역 마크업은 그대로 Ctrl+U를 쓴다", () => {
+    const markup = renderToStaticMarkup(
+      createElement(Attachments, {
+        mode: "edit",
+        files: [],
+        maxMb: 10,
+        uploadFailedText: "올리지 못함 · 다시 올리기",
+        actions: { request: actions.request, complete: actions.complete, remove: () => Promise.resolve(false), viewUrl: () => Promise.resolve(null) },
+      }),
+    );
+    expect(markup).toContain("Ctrl+U");
+    expect(markup).not.toContain("PNG·JPG");
   });
 });

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { listCodeItems as domainListCodeItems, createCodeItem, setCodeItemActive, setEvidenceTypePrivateToOwner, CODE_TABLES } from "@/domain/code-tables";
+import { listCodeItems as domainListCodeItems, createCodeItem, setCodeItemActive, setEvidenceTypePrivateToOwner, CODE_TABLES, listReasonOptions } from "@/domain/code-tables";
 import { archive } from "@/domain/archive";
 import { insertCodeItem, listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { upsertPermission } from "@/repositories/permissions";
@@ -185,5 +185,55 @@ describe("증빙 종류 「올린 사람 · 경영관리만 보기」(06.1-14 G1
     const other = await createCodeItem(SYSTEM_VIEWER, { tableKey: TABLE_KEY, value: `g15-${randomUUID()}`, label: "다른 표" });
 
     await expect(setEvidenceTypePrivateToOwner(SYSTEM_VIEWER, other.id, true)).rejects.toThrow("증빙 종류");
+  });
+});
+
+// 07.2-07 X3(D-7285 · D-7286) — 사유 목록 3종과 로그인만 되면 읽는 좁은 reader.
+describe("listReasonOptions (X3, 실제 Postgres)", () => {
+  const PM_VIEWER = { id: "pm-reason-reader", roleId: DEFAULT_ROLE_ID };
+
+  it("CODE_TABLES에 사유 표 셋이 더해진다(4 → 7)", () => {
+    expect(CODE_TABLES.map((t) => t.key)).toEqual(
+      expect.arrayContaining(["reject_reason", "prepaid_reason", "requested_payment_reason"]),
+    );
+    expect(CODE_TABLES).toHaveLength(7);
+  });
+
+  it("관리자가 사유 표에 항목을 추가할 수 있다", async () => {
+    const dto = await createCodeItem(SYSTEM_VIEWER, { tableKey: "reject_reason", value: "r-add", label: "추가됨" });
+    expect(dto.tableKey).toBe("reject_reason");
+  });
+
+  it("활성 항목의 label만 정렬 순서로 준다 — 비활성 · 보관 제외", async () => {
+    await createCodeItem(SYSTEM_VIEWER, { tableKey: "reject_reason", value: "b", label: "둘째", sortOrder: 2 });
+    await createCodeItem(SYSTEM_VIEWER, { tableKey: "reject_reason", value: "a", label: "첫째", sortOrder: 1 });
+    const off = await createCodeItem(SYSTEM_VIEWER, { tableKey: "reject_reason", value: "c", label: "꺼짐", sortOrder: 3 });
+    await setCodeItemActive(SYSTEM_VIEWER, off.id, false);
+    const archived = await createCodeItem(SYSTEM_VIEWER, { tableKey: "reject_reason", value: "d", label: "보관됨", sortOrder: 4 });
+    await archive(SYSTEM_VIEWER, "code_items", archived.id);
+
+    expect(await listReasonOptions(SYSTEM_VIEWER, "reject_reason")).toEqual(["첫째", "둘째"]);
+  });
+
+  it("코드표 보기 권리가 없는 계급(기본 계급)도 옵션을 읽는다", async () => {
+    await createCodeItem(SYSTEM_VIEWER, { tableKey: "prepaid_reason", value: "p1", label: "선결제 하나" });
+    expect(await domainListCodeItems(PM_VIEWER, "prepaid_reason")).toEqual([]);
+    expect(await listReasonOptions(PM_VIEWER, "prepaid_reason")).toEqual(["선결제 하나"]);
+  });
+
+  it("사유 표가 아닌 키는 빈 목록 — 다른 코드표를 읽는 길이 아니다", async () => {
+    await createCodeItem(SYSTEM_VIEWER, { tableKey: "project_status", value: "x-reason", label: "다른 표" });
+    // @ts-expect-error 사유 표 키가 아닌 값은 타입이 막고, 런타임에서도 빈 배열이어야 한다
+    expect(await listReasonOptions(PM_VIEWER, "project_status")).toEqual([]);
+    // @ts-expect-error 같은 이유
+    expect(await listReasonOptions(PM_VIEWER, "evidence_type")).toEqual([]);
+  });
+
+  it("label이 기타인 항목과 중복 label(둘째부터)은 걸러진다", async () => {
+    await createCodeItem(SYSTEM_VIEWER, { tableKey: "requested_payment_reason", value: "q1", label: "같은 말", sortOrder: 1 });
+    await createCodeItem(SYSTEM_VIEWER, { tableKey: "requested_payment_reason", value: "q2", label: "같은 말", sortOrder: 2 });
+    await createCodeItem(SYSTEM_VIEWER, { tableKey: "requested_payment_reason", value: "q3", label: "기타", sortOrder: 3 });
+    await createCodeItem(SYSTEM_VIEWER, { tableKey: "requested_payment_reason", value: "q4", label: "다른 말", sortOrder: 4 });
+    expect(await listReasonOptions(PM_VIEWER, "requested_payment_reason")).toEqual(["같은 말", "다른 말"]);
   });
 });

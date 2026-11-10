@@ -2,7 +2,8 @@
    인쇄 템플릿은 색 토큰 셋(--print-ink · --print-rule · --print-line)만 쓴다. 화면 바탕은 --surface-canvas, 종이 면은
    --surface-base, 종이 외곽은 1px --border-surface. 인쇄 미디어에서는 바탕 · 외곽 · 화면 바가 없다.
    여러 쪽 서류의 여백은 .sheet padding이 아니라 @page margin으로 준다(2쪽부터도 위 · 아래 여백이 유지된다).
-   글자 크기(px)와 2px 구조 선(--print-rule-w)은 인쇄 템플릿 자체의 값이다(app/print/** 인쇄 영구 예외). */
+   글자 크기(px)와 2px 구조 선(--print-rule-w)은 인쇄 템플릿 자체의 값이다(app/print/** 인쇄 영구 예외).
+   07.2-10: 고객 견적서가 열 폭 14 · 18 · 26mm · 열 머리 줄바꿈 · 행 변형(묶음 머리 · 소계 · 합계) 클래스를 더했다. */
 
 @page {
   size: A4 portrait;
@@ -273,12 +274,24 @@
   width: 8mm;
 }
 
+.w14 {
+  width: 14mm;
+}
+
+.w18 {
+  width: 18mm;
+}
+
 .w20 {
   width: 20mm;
 }
 
 .w22 {
   width: 22mm;
+}
+
+.w26 {
+  width: 26mm;
 }
 
 .w28 {
@@ -295,6 +308,42 @@
 
 .w40 {
   width: 40mm;
+}
+
+/* 07.2-10 고객 견적서 확장 — 열 머리 줄바꿈 · 묶음 머리 · 소계 · 합계 행(선택 클래스, 기존 규칙은 그대로). 선택자 .table th.wrapLabel(0,2,1)이 .table th(0,1,1)의 nowrap을 이긴다. */
+.table th.wrapLabel {
+  white-space: normal;
+}
+
+.groupRow {
+  break-after: avoid;
+}
+
+.groupRow td {
+  font-size: 12px;
+  font-weight: var(--fw-bold);
+}
+
+.subgroupRow {
+  break-after: avoid;
+}
+
+.subgroupRow td {
+  padding-left: var(--s-4);
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+}
+
+.sumRow {
+  break-after: avoid;
+}
+
+.sumRow td {
+  font-weight: var(--fw-bold);
+}
+
+.grandRow td {
+  border-top: var(--print-rule-w) solid var(--print-rule);
 }
 
 /* 표 안 보조줄(외화 원금 · 회사 대납 세금) 11px. */

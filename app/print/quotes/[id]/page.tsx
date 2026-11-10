@@ -1,16 +1,15 @@
 import { notFound, redirect } from "next/navigation";
 import { loadPrintCompany } from "@/domain/print/company";
-import { formatKrw, formatQuantity } from "@/lib/format-number";
-import { kstDateOf, kstDateTimeOf } from "@/lib/kst-date";
+import { kstDateOf } from "@/lib/kst-date";
 import { getSessionId } from "@/lib/viewer";
 import { PrintBar } from "@/app/print/_frame/PrintBar";
 import { PrintFields } from "@/app/print/_frame/PrintFields";
 import { PrintFrame } from "@/app/print/_frame/PrintFrame";
 import { PrintHeader } from "@/app/print/_frame/PrintHeader";
-import { PrintTable, type PrintTableRow } from "@/app/print/_frame/PrintTable";
+import { PrintTable } from "@/app/print/_frame/PrintTable";
 import { PrintTitle } from "@/app/print/_frame/PrintTitle";
-import styles from "@/app/print/_frame/print-frame.module.css";
 import { loadQuoteForPrint } from "./load";
+import { quoteRows } from "./quote-rows";
 
 export const dynamic = "force-dynamic";
 
@@ -23,32 +22,9 @@ export default async function QuotePrintPage({ params }: { params: Promise<{ id:
   if (!quote) notFound();
   const company = await loadPrintCompany();
 
-  const rows: PrintTableRow[] = [
-    ...quote.lines.map((line) => ({
-      key: line.id,
-      cells: [line.item, formatQuantity(line.quantity), formatKrw(line.unitPriceKrw), formatQuantity(line.days), formatKrw(line.amountKrw), line.remark ?? ""],
-    })),
-    ...quote.commissionLines.map((line) => ({ key: line.id, cells: [line.item, "", "", "", formatKrw(line.amountKrw), line.remark ?? ""] })),
-    {
-      key: "grand",
-      cells: [
-        <span key="label" className={styles.totalLabel}>
-          Grand Total
-        </span>,
-        {
-          span: 4,
-          content: (
-            <span className={`${styles.num} ${styles.totalAmount}`}>{formatKrw(quote.grandTotalKrw)}</span>
-          ),
-        },
-        "",
-      ],
-    },
-  ];
-
   return (
-    <PrintFrame bar={<PrintBar kind="quote" id={id} autoPrint={false} closeHref={`/projects/${quote.projectId}`} />}>
-      <PrintHeader company={company} printedAt={kstDateTimeOf(new Date())} />
+    <PrintFrame bar={<PrintBar kind="quote" id={id} autoPrint={false} failureToast closeHref={`/projects/${quote.projectId}`} />}>
+      <PrintHeader company={company} printedAt={null} infoLabels={false} />
       <PrintTitle title="QUOTATION" />
       <PrintFields
         rows={[
@@ -63,13 +39,13 @@ export default async function QuotePrintPage({ params }: { params: Promise<{ id:
         caption="Items"
         columns={[
           { label: "ITEM" },
-          { label: "QTY", align: "end" },
-          { label: "COST/UNIT", align: "end" },
-          { label: "NO. of DAY/SET", align: "end" },
-          { label: "AMOUNT", align: "end" },
-          { label: "REMARK" },
+          { label: "QTY", width: "14mm", align: "end" },
+          { label: "COST/UNIT", width: "26mm", align: "end" },
+          { label: "NO. of DAY/SET", width: "18mm", align: "end", wrapLabel: true },
+          { label: "AMOUNT", width: "36mm", align: "end" },
+          { label: "REMARK", width: "30mm" },
         ]}
-        rows={rows}
+        rows={quoteRows(quote)}
       />
     </PrintFrame>
   );

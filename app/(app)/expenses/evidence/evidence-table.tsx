@@ -117,6 +117,7 @@ const COPY = {
   archivedState: "보관됨",
   unsavedCells: "저장 안 한 칸 · 먼저 저장",
   pickBatch: "묶음 전체 고르기",
+  // 상한은 서버 값(EVIDENCE_BATCH_LIMIT = 300)이라 이유 글자는 `${batchLimit}건까지` — 지금 값은 「300건까지」(UI-SPEC S23 overflow).
   draftOwner: "작성 중 문서",
   attach: "붙이기",
   proxy: "대리 등록",

@@ -4,6 +4,7 @@ import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
+import { ReasonField } from "@/ui/reason-field/ReasonField";
 import { rejectAction, withdrawAction } from "./actions";
 import styles from "./decision-dialogs.module.css";
 
@@ -31,17 +32,22 @@ export type DecisionTarget = {
 export function RejectDialog({
   target,
   messages,
+  reasonOptions,
   onClose,
   onDone,
 }: {
   target: DecisionTarget | null;
   messages: RejectMessages;
+  // 07.2-07 X3: 반려 사유 코드표의 활성 항목 label. 필수 — 기본값을 두지 않아 호출부가 빠뜨리면 타입 검사가 잡는다.
+  reasonOptions: string[];
   onClose: () => void;
   onDone: (toast: string) => void;
 }) {
   const router = useRouter();
   const fieldId = useId();
   const [reason, setReason] = useState("");
+  // 닫을 때 ReasonField를 새로 세워 고른 항목 상태도 비운다(글만 setReason("")으로는 select가 남는다).
+  const [fieldKey, setFieldKey] = useState(0);
   const [serverError, setServerError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const submittingRef = useRef(false);
@@ -63,6 +69,7 @@ export function RejectDialog({
 
   function close() {
     setReason("");
+    setFieldKey((key) => key + 1);
     setServerError(null);
     onClose();
   }
@@ -88,15 +95,14 @@ export function RejectDialog({
       evidenceField={
         <div className={styles.reason}>
           <label htmlFor={fieldId}>사유</label>
-          <textarea
+          <ReasonField
+            key={fieldKey}
             id={fieldId}
-            rows={2}
-            autoComplete="off"
+            options={reasonOptions}
             value={reason}
-            aria-disabled={pending ? "true" : undefined}
-            readOnly={pending}
-            onChange={(event) => {
-              setReason(event.target.value);
+            locked={pending}
+            onChange={(next) => {
+              setReason(next);
               setServerError(null);
             }}
           />

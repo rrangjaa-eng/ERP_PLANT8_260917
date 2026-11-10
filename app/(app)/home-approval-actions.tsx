@@ -70,9 +70,11 @@ export type HomeApprovalRowProps = {
   sheet: ApprovalSheetItem;
   decision: DecisionTarget | null;
   rejectMessages: RejectMessages;
+  // 07.2-07 X3: 반려 사유 코드표의 활성 항목 label.
+  reasonOptions: string[];
 };
 
-export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, decision, rejectMessages }: HomeApprovalRowProps) {
+export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, decision, rejectMessages, reasonOptions }: HomeApprovalRowProps) {
   const { showToast, refreshThenFocus } = useContext(HomeApprovalsContext);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<DecisionTarget | null>(null);
@@ -149,7 +151,7 @@ export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, 
         }}
       />
       <WithdrawDialog target={withdrawTarget} onClose={() => setWithdrawTarget(null)} onDone={showToast} />
-      <RejectDialog target={rejectTarget} messages={rejectMessages} onClose={() => setRejectTarget(null)} onDone={showToast} />
+      <RejectDialog target={rejectTarget} messages={rejectMessages} reasonOptions={reasonOptions} onClose={() => setRejectTarget(null)} onDone={showToast} />
     </>
   );
 }

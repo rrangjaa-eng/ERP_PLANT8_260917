@@ -1,0 +1,56 @@
+/* SYSTEM.md §7-2 ReasonField — 네이티브 select 위 · 여러 줄 글 칸 아래. 값은 역할 토큰만(새 토큰 0). */
+
+.field {
+  display: grid;
+  gap: var(--s-1);
+  min-width: 0;
+}
+
+.field select {
+  max-width: 100%;
+}
+
+/* 사유는 여러 줄(사용자 결정 2026-09-29 — 04.1-07 DOM 감사 ②): 글자에 따라 2~4줄로 늘고, 넘치면 칸 안에서 세로로 스크롤한다. */
+.text {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(2lh + var(--s-1) * 2 + var(--line-w) * 2);
+  max-height: calc(4lh + var(--s-1) * 2 + var(--line-w) * 2);
+  padding: var(--s-1) var(--s-2);
+  field-sizing: content;
+  resize: none;
+  line-height: var(--lh-body);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.text:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.text[aria-invalid="true"] {
+  border-color: var(--status-danger);
+}
+
+.text[aria-disabled="true"] {
+  background: var(--surface-muted);
+  color: var(--text-faint);
+}
+
+.error {
+  margin: 0;
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+}
+
+@media (max-width: 699.98px) {
+  .text {
+    min-height: max(var(--touch-min), calc(2lh + var(--s-1) * 2 + var(--line-w) * 2));
+  }
+}

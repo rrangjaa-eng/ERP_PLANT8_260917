@@ -5,6 +5,7 @@ import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, previewRoute, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE, RouteBlockedError } from "@/domain/approvals";
 import { can, ForbiddenError } from "@/domain/permissions/can";
+import { listReasonOptions } from "@/domain/code-tables";
 import { EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError, getExpense, listExpenseCurrencies, listExpenseFormOptions, previewExpense } from "@/domain/expenses";
 import { previewExpenseRoute } from "@/domain/expenses/route-doc";
 import { canOpenProject } from "@/domain/projects/visibility";
@@ -109,7 +110,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     // 06.2-09(S6 · D-6206): 프로젝트 칸 링크는 서버가 「열 수 있음」을 판정한 때만 — 결재 차례로 문서만 보이는 사람에게 죽은 링크를 그리지 않는다.
     // 06.1-06(E21): 붙은 증빙 기록 읽기 행 · 행 끝 행동 · 잠김 줄(서버 권리). 못 읽으면 섹션만 비운다(문서는 이미 읽기 판정을 지났다).
     // 06.1-14(G15 · PA-G15-NOTICE): 숨긴 「올린 사람 · 경영관리만 보기」 파일 · 붙은 기록이 있으면 05 잠김 줄 자리의 한 줄(서버 판정).
-    const [evidenceActions, paymentView, projectOpenable, linked, pick, privateNotice] = await Promise.all([
+    const [evidenceActions, paymentView, projectOpenable, linked, pick, privateNotice, rejectReasonOptions] = await Promise.all([
       getEvidenceActions(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id }),
       view?.status === "approved"
         ? getPaymentView(viewer, id).catch((error: unknown) => {
@@ -122,6 +123,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
       listLinkedEvidence(viewer, { kind: "expense", id }).catch(() => ({ items: [], lockLine: null, linkCount: 0 })),
       readEvidencePick(viewer, id),
       privateEvidenceNotice(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id }),
+      listReasonOptions(viewer, "reject_reason"),
     ]);
     const linkedEvidence = { lockLine: linked.lockLine, items: linkedItemsOf(linked), pick };
     const documentFiles: AttachmentFile[] = evidence.flatMap((file) =>
@@ -168,6 +170,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         submitted={submitted}
         paymentView={documentPaymentView}
         projectOpenable={projectOpenable}
+        reasonOptions={rejectReasonOptions}
       />
     );
   }

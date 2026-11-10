@@ -28,6 +28,8 @@ export type DocumentActionsProps = {
   actions: Action[];
   decision: DecisionTarget | null;
   rejectMessages: RejectMessages;
+  // 07.2-07 X3: 반려 사유 코드표의 활성 항목 label — 이 행동 줄을 쓰는 모든 문서 화면(연차 · 지출결의 · 정산)이 내려준다.
+  reasonOptions: string[];
   resubmit: {
     leaveId: string;
     expectedVersion: number;
@@ -46,6 +48,7 @@ export function DocumentActions({
   actions,
   decision,
   rejectMessages,
+  reasonOptions,
   resubmit,
   resubmitRoute,
   approveBlockedReason = null,
@@ -162,7 +165,7 @@ export function DocumentActions({
           <div className={styles.spacer} style={phone && barHeight !== null ? { height: barHeight } : undefined} aria-hidden="true" />
         </>
       ) : null}
-      <RejectDialog target={rejectTarget} messages={rejectMessages} onClose={() => setRejectTarget(null)} onDone={showToast} />
+      <RejectDialog target={rejectTarget} messages={rejectMessages} reasonOptions={reasonOptions} onClose={() => setRejectTarget(null)} onDone={showToast} />
       <WithdrawDialog target={withdrawTarget} onClose={() => setWithdrawTarget(null)} onDone={showToast} />
       {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}
     </>

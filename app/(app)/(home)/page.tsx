@@ -2,6 +2,7 @@ import "@/app/(app)/document-kinds";
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
+import { listReasonOptions } from "@/domain/code-tables";
 import { REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
 import type { NextTurnEntry } from "@/domain/next-turn";
 import { listNextTurnItemsForRequest } from "@/app/(app)/next-turn-request";
@@ -45,6 +46,7 @@ export default async function HomePage() {
   const view = buildNextTurnView(items);
 
   // [결재] 행 행동 — 결재 시트 재료가 있는 행만 승인 · 반려 / 폰 시트 노드로 바꾸고, 없으면(결재 정보가 꺼진 계급) 기본 링크가 남는다.
+  const reasonOptions = await listReasonOptions(session.viewer, "reject_reason");
   const rejectMessages = { empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX };
   const actionSlots: Record<string, ReactNode> = {};
   if (view.visible) {
@@ -61,6 +63,7 @@ export default async function HomePage() {
           sheet={sheet}
           decision={toDecision(approval, approval.summary ?? {})}
           rejectMessages={rejectMessages}
+          reasonOptions={reasonOptions}
         />
       );
     }

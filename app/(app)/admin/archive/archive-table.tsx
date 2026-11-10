@@ -77,7 +77,11 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
                     entity={item.entity}
                     id={item.id}
                     name={item.name}
-                    onRestored={(name, restored) => setToast({ message: `복원 · ${name} ${restored ? "복원됨" : "이미 복원됨"}`, tone: "default" })}
+                    onRestored={(name, restored) => {
+                      // 복원 하나가 다른 행의 의존 거부(본부 → 팀 · 거래처 → 리저브 줄)를 풀 수 있다 — 거부 기록을 비운다. 아직 막힌 행은 다시 눌러 다시 거부된다.
+                      setRejected(new Map());
+                      setToast({ message: `복원 · ${name} ${restored ? "복원됨" : "이미 복원됨"}`, tone: "default" });
+                    }}
                     onFailed={(reason) => {
                       // 원인은 마지막 「 · 」 앞까지 — 이름에 「 · 」가 있어도 잘리지 않게.
                       const cut = reason ? reason.lastIndexOf(" · ") : -1;

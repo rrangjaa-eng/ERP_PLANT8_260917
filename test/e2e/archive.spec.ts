@@ -215,6 +215,35 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     expect((await findTeamById(SYSTEM_VIEWER, team.id))?.archivedAt).not.toBeNull();
   });
 
+  // 07.2-11 /review(Codex): 본부 복원이 팀의 의존 거부를 풀 수 있다 — 같은 표에서 본부를 복원하면 팀 행은 새로고침 없이 「복원」이 돌아와야 한다.
+  test("거부된 팀 행은 같은 표에서 본부를 복원하면 새로고침 없이 「복원」이 돌아오고 복원된다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const unique = randomUUID().slice(0, 8);
+    const unitName = `E2E재시도본부-${unique}`;
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: unitName });
+    const teamName = `E2E재시도팀-${unique}`;
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: teamName });
+    await archive(SYSTEM_VIEWER, "team", team.id);
+    await archive(SYSTEM_VIEWER, "org_unit", orgUnit.id);
+
+    await page.goto("/admin/archive");
+    const teamRow = page.locator("tr", { hasText: teamName }).first();
+    await waitForHydration(teamRow.getByRole("button", { name: "복원" }));
+    await teamRow.getByRole("button", { name: "복원" }).click();
+    await expect(teamRow.locator("xpath=following-sibling::tr[position() <= 2][@data-ui='static-table-detail']")).toHaveText("사용중지 본부 아래 팀 · 본부 먼저 복원");
+    await expect(teamRow.getByRole("button", { name: "복원" })).toHaveCount(0);
+
+    // 같은 표에서 본부를 복원한다 — 전체 새로고침 없음.
+    const unitRow = page.locator("tr", { hasText: unitName }).first();
+    await unitRow.getByRole("button", { name: "복원" }).click();
+    await expect(page.locator("tr", { hasText: unitName })).toHaveCount(0);
+
+    await expect(teamRow.getByRole("button", { name: "복원" })).toBeVisible();
+    await teamRow.getByRole("button", { name: "복원" }).click();
+    await expect(page.locator("tr", { hasText: teamName })).toHaveCount(0);
+    expect((await findTeamById(SYSTEM_VIEWER, team.id))?.archivedAt).toBeNull();
+  });
+
   // 07.2-11 PU22 ②(07.2 D-7309 · UI-SPEC S22): 사용중지(보관) 거래처의 지운 리저브 줄 복원은 거부 — 같은 행 아래 이유 줄 · 「—」.
   // 리저브 줄은 pnl 보기 · 쓰기 + reserve.amount가 있는 보관함 권한자에게만 보이고 복원된다 — 이 테스트가 만든 임시 계급으로 연다(공용 계급 불변).
   test("사용중지 거래처의 리저브 줄 복원은 행 아래 `거래처 사용중지 · 다른 거래처 고르기` · 동작 칸 「—」 · 줄은 보관 그대로", async ({ page }) => {

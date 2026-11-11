@@ -14,9 +14,9 @@ import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { findUserById, type UserRow } from "@/repositories/users";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findEffectiveValue } from "@/repositories/settings";
-import { listLeaveUsage, type LeaveUsageRow } from "@/repositories/leave-usage";
+import { listLeaveUsage, listLeaveUsageForDrafters, type LeaveUsageRow } from "@/repositories/leave-usage";
 import { findLeaveRequestsByIds, listLeaveBalancePeople, type LeaveRequestRow } from "@/repositories/leave-requests";
-import { insertLeaveAdjustment, listLeaveAdjustments, type LeaveAdjustmentWithAuthor } from "@/repositories/leave-adjustments";
+import { insertLeaveAdjustment, listLeaveAdjustments, listLeaveAdjustmentsForUsers, type LeaveAdjustmentWithAuthor } from "@/repositories/leave-adjustments";
 import { assertLeaveWrite, canSeeLeaveDocument, LEAVE_DOCUMENT_KIND, peopleLeaveScopeOf } from "@/domain/leave/access";
 import type { HolidayLookup } from "@/domain/holidays/business-day";
 import { countLeaveQuarters, leaveYearRange, type LeaveDaysInput } from "@/domain/leave/days";
@@ -200,6 +200,28 @@ export async function getLeaveBalanceForUser(
   return balanceDto(viewer, user, input.fiscalYear, today);
 }
 
+// 07.2-15(CI: /leave?view=all 5초 초과): 사람별 잔여의 읽기 메모 — 사용 · 조정을 사람 수와 무관한 묶음 읽기 두 번으로 미리 받는다.
+// 사람마다 직렬로 읽으면 왕복이 사람 수에 비례한다(1,700명 ≈ 3,400번). 연도 창은 사람마다 다르니(balanceFiscalYears) 합집합으로 받고
+// 그 사람의 창으로 거른다 — 행 · 정렬은 한 사람 읽기와 같다(listLeaveUsage · listLeaveAdjustments와 같은 조건 · 정렬).
+async function createPeopleBalanceReads(viewer: Viewer, people: UserRow[], fiscalYear: number): Promise<BalanceReads> {
+  const base = createBalanceReads(viewer);
+  const ids = people.map((user) => user.id);
+  const years = [...new Set(people.flatMap((user) => balanceFiscalYears(user.hireDate, fiscalYear)))];
+  const [usageRows, adjustmentRows] = await Promise.all([
+    listLeaveUsageForDrafters(viewer, { drafterIds: ids, fiscalYears: years, documentKind: LEAVE_DOCUMENT_KIND }),
+    listLeaveAdjustmentsForUsers(viewer, ids),
+  ]);
+  const usageBy = new Map<string, LeaveUsageRow[]>();
+  for (const { drafterId, ...row } of usageRows) usageBy.set(drafterId, [...(usageBy.get(drafterId) ?? []), row]);
+  const adjustmentsBy = new Map<string, LeaveAdjustmentWithAuthor[]>();
+  for (const row of adjustmentRows) adjustmentsBy.set(row.userId, [...(adjustmentsBy.get(row.userId) ?? []), row]);
+  return {
+    ...base,
+    usage: (drafterId, wanted) => Promise.resolve((usageBy.get(drafterId) ?? []).filter((row) => wanted.includes(row.fiscalYear))),
+    adjustments: (userId) => Promise.resolve(adjustmentsBy.get(userId) ?? []),
+  };
+}
+
 // 07.2-08(PU12 · D-7260 · D-7261): 사람별 연차 잔여 표(`/leave?view=all`) — 범위(peopleLeaveScopeOf)가 null이면 ForbiddenError,
 // 팀장 범위는 그 팀 사람만. 숫자는 getLeaveBalanceForUser와 같은 computeBalance 사슬(07.2-04 근속 가산 포함 — summarizeLeaveBalance를
 // 직접 부르지 않는다)이고, 읽기 메모 하나(createBalanceReads)를 사람들이 나눠 쓴다(연차 일수 설정은 연도마다 한 번). 사람마다 사용 ·
@@ -216,7 +238,7 @@ export async function listPeopleLeaveBalances(
   const inScope = scope.kind === "company" ? people : people.filter((person) => person.teamId !== null && scope.teamIds.includes(person.teamId));
   const collator = new Intl.Collator("ko");
   inScope.sort((a, b) => collator.compare(a.teamName ?? "", b.teamName ?? "") || collator.compare(a.user.name, b.user.name));
-  const reads = createBalanceReads(viewer);
+  const reads = await createPeopleBalanceReads(viewer, inScope.map((person) => person.user), fiscalYear);
   const sources: PeopleLeaveBalanceDto[] = [];
   for (const person of inScope) {
     const { summary } = await computeBalance(viewer, person.user, fiscalYear, today, undefined, reads);

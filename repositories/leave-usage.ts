@@ -71,6 +71,41 @@ export async function listLeaveUsage(
   return rows.map((row) => ({ ...row, status: row.status === "approved" ? "approved" : "pending" }));
 }
 
+// 07.2-15(CI: /leave?view=all 5초 초과): 사람별 잔여의 사용 재료를 여러 기안자 한 번에 — 사람마다 listLeaveUsage를 직렬로 부르면
+// 사람 수에 비례해 왕복이 는다. 조건 · 정렬은 listLeaveUsage와 같고(취소 승인 제외 포함) 기안자 칸만 더 싣는다.
+export async function listLeaveUsageForDrafters(
+  viewer: Viewer,
+  input: { drafterIds: string[]; fiscalYears: number[]; documentKind: string },
+  tx: DbOrTx = db,
+): Promise<(LeaveUsageRow & { drafterId: string })[]> {
+  void viewer;
+  if (input.drafterIds.length === 0 || input.fiscalYears.length === 0) return [];
+  const rows = await tx
+    .select({
+      drafterId: leaveRequests.drafterId,
+      id: leaveRequests.id,
+      startDate: leaveRequests.startDate,
+      daysQuarters: leaveRequests.daysQuarters,
+      fiscalYear: leaveRequests.fiscalYear,
+      status: approvalInstances.status,
+    })
+    .from(leaveRequests)
+    .innerJoin(
+      approvalInstances,
+      and(eq(approvalInstances.documentKind, input.documentKind), eq(approvalInstances.documentId, leaveRequests.id)),
+    )
+    .where(
+      and(
+        inArray(leaveRequests.drafterId, input.drafterIds),
+        inArray(leaveRequests.fiscalYear, input.fiscalYears),
+        inArray(approvalInstances.status, ["approved", ...PENDING_STATUSES]),
+        cancelledLeaveFilter(),
+      ),
+    )
+    .orderBy(asc(leaveRequests.startDate), asc(leaveRequests.id));
+  return rows.map((row) => ({ ...row, status: row.status === "approved" ? "approved" : "pending" }));
+}
+
 // 06.3-02(D-6307): 겹침 재료 — 같은 기안자의 살아 있는 신청(결재 중 · 승인, 잔고와 같은 3값) 중 날짜 구간이
 // 닿는 것. 회수 · 반려는 뺀다 — 260907 `O: server/src/leave.ts:559-562`(pending · approved)와 같다. 신청은 해를
 // 넘지 않으므로(days.ts 회계연도 검사) 해 하나만 본다(색인 leave_requests_drafter_year_idx).

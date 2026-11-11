@@ -7,7 +7,8 @@ import { approveDocument, currentHolderNames, NotCurrentHolderError, rejectDocum
 import { getLeave, LeaveValidationError, submitLeave, type SubmitLeaveInput } from "@/domain/leave";
 import { LEAVE_CANCEL_KIND, previewLeaveCancel, requestLeaveCancel, resubmitLeaveCancel } from "@/domain/leave/cancel";
 import { getMyLeaveBalance } from "@/domain/leave/balance-service";
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { listDocumentTitles } from "@/repositories/notify-sources";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 
 // 07.2-15(PU10 · D-7252~7256 · 07.2 D-7310): 승인된 연차의 취소 요청 — 새 문서 종류 leave_cancel(결재 엔진 재사용 · 1단).
@@ -278,5 +279,18 @@ describe("원 연차 문서 보임 — 취소 결재 참여자(Codex PR #335)", 
     expect((await getLeave(newLead, leave.leaveId, deps))?.cancelState).toBe("cancelled");
     const stranger = await makePerson("무관", DEFAULT_ROLE_ID, null);
     expect(await getLeave(stranger, leave.leaveId, deps)).toBeNull();
+  });
+});
+
+describe("알림 문서 제목 — leave_cancel도 연차 행으로(게이트 지적 P3)", () => {
+  it("결재 대기 알림 제목: 원 연차 `연차 MM-DD` · 취소 결재 `연차 취소 MM-DD`(대체 글자 「결재 문서」로 떨어지지 않는다)", async () => {
+    const { drafter, lead, ceo } = await world();
+    const leave = await approvedLeave(drafter, [lead, ceo]);
+    const titles = await listDocumentTitles(SYSTEM_VIEWER, [
+      { kind: "leave", id: leave.leaveId },
+      { kind: LEAVE_CANCEL_KIND, id: leave.leaveId },
+    ]);
+    expect(titles.get(`leave:${leave.leaveId}`)).toBe("연차 09-21");
+    expect(titles.get(`${LEAVE_CANCEL_KIND}:${leave.leaveId}`)).toBe("연차 취소 09-21");
   });
 });

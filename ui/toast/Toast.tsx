@@ -18,6 +18,8 @@ export type ToastProps = {
   /** 실행 취소 등 3차 행동 — 둘 다 있어야 렌더된다. */
   actionLabel?: string;
   onAction?: () => void;
+  /** 처음 그릴 때 3차 행동 버튼으로 포커스 — 누른 컨트롤이 사라져 되돌릴 길이 토스트뿐일 때(§7-8 사라진 컨트롤 대신 남는 컨트롤). */
+  focusAction?: boolean;
   /** 자동 소멸(기본) 또는 닫기 버튼(오류) 시 호출된다 — 호출부가 인스턴스를 치운다. */
   onDismiss: () => void;
 };
@@ -39,7 +41,7 @@ function fixedBarTop(): number | null {
   return top;
 }
 
-export function Toast({ message, tone = "default", actionLabel, onAction, onDismiss }: ToastProps) {
+export function Toast({ message, tone = "default", actionLabel, onAction, focusAction = false, onDismiss }: ToastProps) {
   // WR-05: onDismiss를 의존성에 두면 안 된다. 호출부는 거의 항상 인라인 클로저를
   // 넘기고(onDismiss={() => setToast(null)}) 그 정체성은 렌더마다 바뀐다 — 4초보다
   // 자주 리렌더되는 부모 아래에서 타이머가 계속 재시작돼 토스트가 영원히 남는다.
@@ -54,6 +56,11 @@ export function Toast({ message, tone = "default", actionLabel, onAction, onDism
     const timer = setTimeout(() => onDismissRef.current(), AUTO_DISMISS_MS);
     return () => clearTimeout(timer);
   }, [tone]);
+
+  const actionRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (focusAction) actionRef.current?.focus();
+  }, [focusAction]);
 
   // 고정 행동 줄 위로 — 처음 그리기 전에 한 번, 화면 내용 · 창 크기가 바뀌면 다시(값이 같으면 쓰지 않는다).
   const toastRef = useRef<HTMLDivElement>(null);
@@ -81,7 +88,7 @@ export function Toast({ message, tone = "default", actionLabel, onAction, onDism
     <div ref={toastRef} className={styles.toast} role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"}>
       <span>{message}</span>
       {actionLabel && onAction ? (
-        <button type="button" onClick={onAction} className={styles.action}>
+        <button ref={actionRef} type="button" onClick={onAction} className={styles.action}>
           {actionLabel}
         </button>
       ) : null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { DateChangeView } from "@/domain/expenses/date-change";
@@ -22,6 +22,14 @@ import styles from "./expense.module.css";
 const NO_RESPONSE = "결과를 받지 못함 · 새로 고침";
 const MEMO_EMPTY = "거절 메모 없음 · 메모 적기";
 const MEMO_MAX = 500;
+// 거절 뒤 포커스 자리 — date-change-history.tsx의 표 감싸개 id(서버 부품이라 상수를 가져오지 않고 같은 글자를 쓴다).
+const HISTORY_ID = "date-change-history";
+
+// §7-8 사라진 컨트롤 대신 남는 컨트롤 — 누른 3차가 다시 받은 화면에서 사라졌을 때(포커스가 body로 빠졌을 때)만 옮긴다.
+function focusIfLost(target: HTMLElement | null) {
+  const active = document.activeElement;
+  if (active === null || active === document.body) target?.focus();
+}
 
 // 승인 착지 — 처리 줄은 승인 뒤 사라지므로 토스트는 주소(`?dateApproved=…`)로 상세가 띄운다(제출 착지 `?submitted=` 선례). 되돌리기 재료(승인 전 값 · 새 version)도 함께 싣는다.
 export function dateApprovedHref(expenseId: string, approved: { requestId: string; newDate: string; before: string | null; version: number }): string {
@@ -52,6 +60,22 @@ export function DateChangeRow({
   const [memo, setMemo] = useState("");
   const [rejectError, setRejectError] = useState<string | null>(null);
   const pending = view.pending;
+  // 철회 → 다시 선 `변경 요청`, 거절 → 이력 표. 다시 받은 화면이 그려진 뒤에 옮긴다 — 이 줄이 남으면 view가 바뀐 효과에서,
+  // 처리 줄과 함께 이 부품이 사라지면 해제 정리에서(정리는 새 화면이 붙은 뒤 돈다 — ConfirmDialog 「열린 채로 사라질 때」와 같은 꼴).
+  const linkRef = useRef<HTMLAnchorElement>(null);
+  const focusAfterRef = useRef<"entry" | "history" | null>(null);
+  useEffect(() => {
+    const target = focusAfterRef.current;
+    if (target === null) return;
+    focusAfterRef.current = null;
+    focusIfLost((target === "entry" ? linkRef.current : null) ?? document.getElementById(HISTORY_ID));
+  }, [view]);
+  useEffect(
+    () => () => {
+      if (focusAfterRef.current !== null) focusIfLost(document.getElementById(HISTORY_ID));
+    },
+    [],
+  );
 
   async function run<T>(call: () => Promise<{ data?: T; serverError?: string } | undefined>): Promise<T | null> {
     if (busyRef.current) return null;
@@ -74,7 +98,9 @@ export function DateChangeRow({
   async function withdraw() {
     if (!pending?.id) return;
     const requestId = pending.id;
-    if ((await run(() => withdrawDateChangeAction({ requestId }))) !== null) router.refresh();
+    if ((await run(() => withdrawDateChangeAction({ requestId }))) === null) return;
+    focusAfterRef.current = "entry";
+    router.refresh();
   }
 
   async function approve() {
@@ -102,6 +128,7 @@ export function DateChangeRow({
     if (response?.data) {
       setRejectOpen(false);
       setMemo("");
+      focusAfterRef.current = "history";
       router.refresh();
       return;
     }
@@ -126,9 +153,11 @@ export function DateChangeRow({
         <span className={`${styles.valueRow} ${styles.scheduleRow}`}>
           <span className={styles.fill}>{[pending.newDate, pending.requesterName, pending.requestedAt].filter(Boolean).join(" · ")}</span>
           <span>
-            <Button variant="tertiary" pending={busy} onClick={() => void approve()}>
-              요청 승인
-            </Button>
+            {view.canApprove ? (
+              <Button id="date-change-approve" variant="tertiary" pending={busy} onClick={() => void approve()}>
+                요청 승인
+              </Button>
+            ) : null}
             <Button variant="tertiary" disabled={busy} onClick={() => setRejectOpen(true)}>
               요청 거절
             </Button>
@@ -158,7 +187,7 @@ export function DateChangeRow({
       {view.entry === "can" ? (
         <span className={`${styles.valueRow} ${styles.scheduleRow}`}>
           <span className={styles.fill}>{dateText}</span>
-          <Link href={`/expenses/${expenseId}/date-request`} className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}>
+          <Link ref={linkRef} href={`/expenses/${expenseId}/date-request`} className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}>
             변경 요청
           </Link>
         </span>
@@ -219,6 +248,19 @@ export function DateApprovedToast({ expenseId, requestId, newDate, before, versi
     undo: true,
   });
   const busyRef = useRef(false);
+  // 되돌린 뒤 포커스 = 다시 선 `요청 승인`(새 화면이 붙은 뒤 — 이 토스트는 주소가 비면 사라진다, 해제 정리에서). 저절로 사라지면 화면 제목(§7-17).
+  const focusAfterRef = useRef<"approve" | "title" | null>(null);
+  useEffect(() => {
+    if (shown !== null || focusAfterRef.current !== "title") return;
+    focusAfterRef.current = null;
+    focusIfLost(document.querySelector<HTMLElement>('[data-ui="screen-title"]'));
+  }, [shown]);
+  useEffect(
+    () => () => {
+      if (focusAfterRef.current === "approve") focusIfLost(document.getElementById("date-change-approve"));
+    },
+    [],
+  );
 
   async function undo() {
     if (busyRef.current) return;
@@ -230,6 +272,7 @@ export function DateApprovedToast({ expenseId, requestId, newDate, before, versi
       response = undefined;
     }
     if (response?.data) {
+      focusAfterRef.current = "approve";
       setShown(null);
       router.replace(here);
       return;
@@ -245,7 +288,9 @@ export function DateApprovedToast({ expenseId, requestId, newDate, before, versi
       tone={shown.tone}
       actionLabel={shown.undo ? "되돌리기" : undefined}
       onAction={shown.undo ? () => void undo() : undefined}
+      focusAction={shown.undo}
       onDismiss={() => {
+        focusAfterRef.current = "title";
         setShown(null);
         router.replace(here);
       }}

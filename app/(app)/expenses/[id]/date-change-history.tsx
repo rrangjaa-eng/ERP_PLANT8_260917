@@ -20,33 +20,36 @@ function isStatusWord(word: string | undefined): word is StatusWord {
   return word !== undefined && (STATUS_WORDS as readonly string[]).includes(word);
 }
 
+// 거절 확정 뒤 포커스 자리(date-change-row.tsx) — 누른 `요청 거절`이 사라지므로 결과가 선 이 표로 옮긴다(탭 순서 밖 · §7-8).
 export function DateChangeHistory({ rows }: { rows: Partial<DateChangeHistoryDto>[] }) {
   const dash = <span className={styles.muted}>—</span>;
   return (
-    <StaticTable
-      caption="희망 지급일 변경 이력"
-      columns={COLUMNS}
-      rows={rows.map((row, index) => ({
-        key: row.id ?? String(index),
-        cells: [
-          <span key="date" className={styles.nowrap}>
-            {row.newDate ?? "—"}
-          </span>,
-          isStatusWord(row.status) ? <StatusTag key="status" status={row.status} variant="text" /> : dash,
-          <span key="request">
-            {[row.requesterName, row.requestedAt].filter(Boolean).join(" · ")}
-            {row.reason ? <span className={styles.subLine}>{row.reason}</span> : null}
-          </span>,
-          row.decidedAt ? (
-            <span key="decision">
-              {[row.deciderName, row.decidedAt].filter(Boolean).join(" · ")}
-              {row.rejectMemo ? <span className={styles.subLine}>{row.rejectMemo}</span> : null}
-            </span>
-          ) : (
-            dash
-          ),
-        ],
-      }))}
-    />
+    <div id="date-change-history" tabIndex={-1}>
+      <StaticTable
+        caption="희망 지급일 변경 이력"
+        columns={COLUMNS}
+        rows={rows.map((row, index) => ({
+          key: row.id ?? String(index),
+          cells: [
+            <span key="date" className={styles.nowrap}>
+              {row.newDate ?? "—"}
+            </span>,
+            isStatusWord(row.status) ? <StatusTag key="status" status={row.status} variant="text" /> : dash,
+            <span key="request">
+              {[row.requesterName, row.requestedAt].filter(Boolean).join(" · ")}
+              {row.reason ? <span className={styles.subLine}>{row.reason}</span> : null}
+            </span>,
+            row.decidedAt ? (
+              <span key="decision">
+                {[row.deciderName, row.decidedAt].filter(Boolean).join(" · ")}
+                {row.rejectMemo ? <span className={styles.subLine}>{row.rejectMemo}</span> : null}
+              </span>
+            ) : (
+              dash
+            ),
+          ],
+        }))}
+      />
+    </div>
   );
 }

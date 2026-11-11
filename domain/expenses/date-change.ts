@@ -316,6 +316,8 @@ export type DateChangeView = {
   pending: Partial<DateChangeHistoryDto> | null;
   // 처리 권한자(지급 예정일 바꾸기)에게만 참 — 요청 줄 끝 `요청 승인` · `요청 거절`.
   canDecide: boolean;
+  // 처리 줄 `요청 승인` — 새 희망일이 내일(KST) 이후일 때만. 지난 요청은 승인이 거부되므로(approveDateChange) 버튼을 숨기고 `요청 거절`만 남긴다(QA Q-1).
+  canApprove: boolean;
   // 승인 입력의 지출결의 version(화면이 읽은 값).
   version: number;
   history: Partial<DateChangeHistoryDto>[];
@@ -354,6 +356,7 @@ export async function listDateChangeView(viewer: Viewer, expenseId: string): Pro
     entry: eligibility.kind === "can" || eligibility.kind === "pending" ? eligibility.kind : null,
     pending,
     canDecide: canDecide && pending !== null,
+    canApprove: canDecide && pending !== null && facts.pending !== null && facts.pending.newDate > seoulToday(),
     version: facts.row.version,
     history: visibleHistory,
   };

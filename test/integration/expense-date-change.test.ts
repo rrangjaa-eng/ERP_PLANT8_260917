@@ -266,6 +266,13 @@ describe("경영관리 처리 — 승인 · 거절 · 되돌리기 (Task 2 · D-
     expect((await expenseRow(doc.expenseId)).version).toBe(fresh.version);
   });
 
+  it("처리 줄 승인 가능 — 새 희망일이 내일 이후면 canApprove 참, 오늘(KST) 이하로 당겨지면 거짓 · 거절은 그대로 (QA Q-1)", async () => {
+    expect(await listDateChangeView(payer, doc.expenseId)).toMatchObject({ canDecide: true, canApprove: true });
+    await db.update(expenseDateChangeRequests).set({ newDate: seoulToday() }).where(eq(expenseDateChangeRequests.id, requestId));
+    expect(await listDateChangeView(payer, doc.expenseId)).toMatchObject({ canDecide: true, canApprove: false });
+    expect((await listDateChangeView(fx.pm, doc.expenseId)).canApprove).toBe(false);
+  });
+
   it("새 희망일이 지난 뒤 승인(그날 · 이틀 뒤) → 거부 · 요청 pending · 지급 예정일 그대로 (review #1)", async () => {
     const before = await expenseRow(doc.expenseId);
     for (const day of [newDate, addDays(newDate, 2)]) {

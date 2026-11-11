@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
+import { expenseDateChangeRequests, expenses } from "@/db/schema";
 import { requestDateChange } from "@/domain/expenses/date-change";
 import { loadHolidayLookup } from "@/domain/holidays/calendar";
 import { isBusinessDay } from "@/domain/holidays/business-day";
@@ -130,6 +130,8 @@ test.describe("희망 지급일 변경 요청 — 기안자 (07.2-18 Task 1)", (
 
     await hope.getByRole("button", { name: "요청 철회" }).click();
     await expect(hope.getByRole("link", { name: "변경 요청", exact: true })).toBeVisible();
+    // 감사 결함 ① — 누른 3차가 사라지면 포커스는 다시 선 `변경 요청`으로(SYSTEM §7-8 사라진 컨트롤 대신 남는 컨트롤).
+    await expect(hope.getByRole("link", { name: "변경 요청", exact: true })).toBeFocused();
     await expect(page.getByRole("table", { name: "희망 지급일 변경 이력" })).toContainText("회수");
     await page.context().close();
   });
@@ -161,12 +163,16 @@ test.describe("희망 지급일 변경 요청 — 경영관리 처리 (07.2-18 T
     await decide.getByRole("button", { name: "요청 승인" }).click();
     const toast = page.getByRole("status").filter({ hasText: `변경 승인 · 지급 예정일 ${newDate.slice(5)}` });
     await expect(toast).toBeVisible();
+    // 감사 결함 ② — 처리 줄이 사라지므로 포커스는 토스트 `되돌리기`로(4초 안에 키보드로 닿는다).
+    await expect(toast.getByRole("button", { name: "되돌리기" })).toBeFocused();
     await expect(kvValue(page, "지급 예정일")).toContainText(newDate);
     await expect(hope).toContainText(HOPE.date);
     await expect(page.getByRole("table", { name: "희망 지급일 변경 이력" })).toContainText("승인");
     await page.screenshot({ path: `${SHOTS}/manager-approved-toast-1280.png`, fullPage: true });
-    await toast.getByRole("button", { name: "되돌리기" }).click();
+    await page.keyboard.press("Enter");
     await expect(hope.getByTestId("date-change-decide")).toBeVisible();
+    // 되돌린 뒤 포커스는 다시 선 `요청 승인`으로.
+    await expect(hope.getByRole("button", { name: "요청 승인" })).toBeFocused();
     await expect(kvValue(page, "지급 예정일")).not.toContainText(newDate);
     expect((await kvValue(page, "지급 예정일").innerText()).trim()).toBe(scheduleBefore);
     await expect(page.getByRole("table", { name: "희망 지급일 변경 이력" })).toContainText("대기");
@@ -185,7 +191,29 @@ test.describe("희망 지급일 변경 요청 — 경영관리 처리 (07.2-18 T
     await expect(history).toContainText("거절");
     await expect(history).toContainText("이번 주 지급 확정");
     await expect(hope.getByTestId("date-change-decide")).toHaveCount(0);
+    // 감사 결함 ① — 거절 확정 뒤 창이 돌려줄 `요청 거절`이 사라지므로 포커스는 결과가 선 이력 표 자리로.
+    await expect(history.locator("xpath=..")).toBeFocused();
     await shoot(page, "manager-history");
+    await page.context().close();
+  });
+});
+
+test.describe("희망 지급일 변경 요청 — 지난 새 희망일 (QA Q-1)", () => {
+  test("새 희망일이 오늘(KST) 이하인 대기 요청은 처리 줄에 `요청 거절`만 — `요청 승인` DOM 0", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const id = await approvedWithHope(fx, payer);
+    const { requestId } = await requestDateChange(fx.pm.viewer, { expenseId: id, newDate: await businessDayFrom(addDays(seoulToday(), 6)), reason: "행사 일정 연기" });
+    // 요청 뒤 날짜가 지난 꼴 — 저장된 새 희망일을 오늘로 당긴다(QA Q-1 재현과 같은 꼴).
+    await db.update(expenseDateChangeRequests).set({ newDate: seoulToday() }).where(eq(expenseDateChangeRequests.id, requestId));
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto(`/expenses/${id}`);
+    const decide = kvValue(page, "희망 지급일").getByTestId("date-change-decide");
+    await expect(decide).toContainText(seoulToday());
+    await expect(decide.getByRole("button", { name: "요청 거절" })).toHaveCount(1);
+    await expect(decide.getByRole("button", { name: "요청 승인" })).toHaveCount(0);
     await page.context().close();
   });
 });

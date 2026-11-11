@@ -18,3 +18,14 @@ export function sizeRefusalHeadline(bytes: number): string {
 export function rowRefusalHeadline(rows: number): string {
   return `${rows.toLocaleString("en-US")}줄 · ${EVIDENCE_IMPORT_MAX_ROWS.toLocaleString("en-US")}줄 초과 · ${SPLIT_AND_RETRY}`;
 }
+
+// 07.2-14(X2): 견적 엑셀 올리기 크기 거절 — 증빙 가져오기와 같은 상한 · 다음 한 수만 다르다(`sizeRefusalHeadline`의 꼬리는 기간을 나눠 다시 내려받기).
+export function quoteXlsxSizeRefusalHeadline(bytes: number): string {
+  return `${(bytes / 1_000_000).toFixed(1)}MB · ${EVIDENCE_IMPORT_MAX_BYTES / 1_000_000}MB 초과 · 줄여 다시`;
+}
+
+// 07.2-14 Codex P1 — 견적 엑셀 올리기 읽기 범위. 행: 줄 상한의 4배(줄마다 분류 머리 · 설명 둘째 줄 · 소계 · 빈 줄이 붙어도 넉넉) + 머리줄 탐색 100줄(import-xlsx HEADER_SCAN_ROWS).
+// 열: 견적 양식은 20열 안쪽이라 100열이면 충분하다. 먼 칸 하나(XFD1048576)로 선언 범위가 커진 작은 파일이 메모리를 쓰지 못하게 한다.
+export function quoteXlsxReadLimits(lineCap: number): { sheetRows: number; maxCols: number } {
+  return { sheetRows: lineCap * 4 + 100, maxCols: 100 };
+}

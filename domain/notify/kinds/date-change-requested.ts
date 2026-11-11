@@ -14,7 +14,7 @@ import { listDateChangeRequestsSince } from "@/repositories/expense-date-change-
 const KIND = "date-change-requested";
 
 export const dateChangeRequestedKind: ConditionKind = {
-  kind: KIND,
+  kind: "date-change-requested",
   label: "희망 지급일 변경 요청",
   dateUnit: "calendar",
   defaults: { enabled: true, emailEnabled: true },

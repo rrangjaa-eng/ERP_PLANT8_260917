@@ -862,6 +862,9 @@ function NumericEditCell({
         value={value}
         onChange={onChange}
         autoFocus
+        // QA(#372) — 끝에 캐럿을 두고 열리면 `0`에 친 `-`가 버려져(맨 앞만 부호) 음수 조정 실행가가 양수로 저장됐다.
+        // 열릴 때 값을 전체 선택해 친 글자가 값을 바꾼다(공급가액 `바꾸기` 칸과 같은 규칙).
+        onFocus={(event) => event.currentTarget.select()}
         className={styles.cellInputNumeric}
         onBlur={() => onCommit(rawValue)}
         onKeyDown={(event) => {

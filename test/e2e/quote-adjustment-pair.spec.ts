@@ -167,6 +167,47 @@ test.describe("조정 줄 쌍 — 상대 프로젝트 고르기 (07.2-12 S11)", 
     expect(await liveAdjustments(a.revisionId)).toHaveLength(0);
   });
 
+  // QA(#372) — 실행가 편집기가 `0` 끝에 캐럿을 두고 열려 키보드로 친 `-`가 버려졌다(`-7000` → `07,000` → 부호가 뒤집힌 짝).
+  // fill이 아니라 키를 하나씩 친다. 편집기는 열릴 때 값을 전체 선택해 친 글자가 값을 바꾼다.
+  test("경영관리 — 새 조정 줄 실행가에 키보드로 -7000 → -7,000 · 다시 Enter 후 -5 → -5 · 저장하면 A −5 · B +5", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team, "E2E 쌍 PM");
+    const a = await makeProject(team, pm.userId, "A");
+    const b = await makeProject(team, pm.userId, "B");
+    await login(page, await makeAdjuster(team));
+    await openProject(page, a);
+
+    await page.getByRole("button", { name: "조정 줄 추가" }).click();
+    const dialog = page.getByRole("dialog", { name: "상대 프로젝트 고르기" });
+    await dialog.getByRole("searchbox").or(dialog.getByRole("textbox")).first().fill(b.name);
+    await dialog.getByRole("option", { name: new RegExp(b.name) }).click();
+    await dialog.getByRole("button", { name: /이 프로젝트로/ }).click();
+    const execution = page.getByRole("textbox", { name: "실행가" });
+    await expect(execution).toBeFocused();
+    await page.keyboard.type("-7000");
+    await expect(execution).toHaveValue("-7,000");
+    await page.keyboard.press("Enter");
+    const executionCell = dataRows(page).nth(0).locator("> td").nth(COL.execution);
+    await expect(executionCell).toHaveText("-7,000");
+
+    await executionCell.focus();
+    await page.keyboard.press("Enter");
+    await expect(execution).toBeFocused();
+    await page.keyboard.type("-5");
+    await expect(execution).toHaveValue("-5");
+    await page.keyboard.press("Enter");
+    const itemCell = dataRows(page).nth(0).locator("> td").nth(COL.itemName);
+    await itemCell.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("부호 확인용 조정");
+    await page.keyboard.press("Enter");
+    await saveAndWait(page);
+
+    await expect.poll(async () => (await liveAdjustments(a.revisionId)).map((line) => line.executionAmountKrw)).toEqual([-5]);
+    expect((await liveAdjustments(b.revisionId)).map((line) => line.executionAmountKrw)).toEqual([5]);
+  });
+
   test("390 — 쌍 줄은 보기 전용 · 항목 2행 `상대 {번호} {이름}` · 「조정 줄 추가」 없음", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team, "E2E 쌍 PM");

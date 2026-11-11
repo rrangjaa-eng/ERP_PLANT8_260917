@@ -10,6 +10,7 @@ import { NOTIFY_KIND_EVAL_MAX } from "@/domain/notify/limits";
 import { paymentManagers } from "@/domain/notify/recipients";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { listDateChangeRequestsSince } from "@/repositories/expense-date-change-requests";
+import { listOrgSnapshot } from "@/repositories/org-snapshot";
 
 const KIND = "date-change-requested";
 
@@ -19,11 +20,14 @@ export const dateChangeRequestedKind: ConditionKind = {
   dateUnit: "calendar",
   defaults: { enabled: true, emailEnabled: true },
   defaultRecipientLabel: "경영관리",
+  // 본문의 문서 번호는 문서 DTO에서 expense.value 칸 — 받는 사람 계급이 그 항목을 볼 때만 행(tick 거르개 · G-61 · Codex P2).
+  recipientInfoItem: "expense.value",
   async evaluate(ctx) {
     if (!ctx.since) return [];
     const rows = capRows(KIND, await listDateChangeRequestsSince(SYSTEM_VIEWER, ctx.since, NOTIFY_KIND_EVAL_MAX, ctx.tx), NOTIFY_KIND_EVAL_MAX);
     if (rows.length === 0) return [];
     const recipients = await paymentManagers(ctx.today, ctx.tx);
+    const roles = new Map((await listOrgSnapshot(SYSTEM_VIEWER, ctx.today, ctx.tx)).map((person) => [person.id, person.roleId]));
     const candidates: NotificationCandidate[] = [];
     for (const row of rows) {
       for (const recipientId of recipients) {
@@ -32,6 +36,7 @@ export const dateChangeRequestedKind: ConditionKind = {
           entity: "expense",
           entityId: `${row.expenseId}:${row.requestId}`,
           recipientId,
+          recipientRoleId: roles.get(recipientId) ?? null,
           round: 1,
           referenceDate: toKstDate(row.at),
           message: `희망 지급일 변경 요청 도착 · ${row.number ?? "지출결의"}`,

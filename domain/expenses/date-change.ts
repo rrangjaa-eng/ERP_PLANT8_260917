@@ -11,11 +11,12 @@
 // ⑵ 이체 파일 만들기는 지출결의 행을 잠그지 않아 같은 순간의 승인과 둘 다 지날 수 있다(위협 T-07.2-18-08 · accept).
 import type { Viewer } from "@/domain/viewer";
 import { can, ForbiddenError } from "@/domain/permissions/can";
-import { project, type DtoSpec } from "@/domain/permissions/project";
+import { project, type DtoSpec, type InfoItemRef } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction } from "@/domain/action-log/record";
 import { buildChanges } from "@/domain/action-log/changes";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
+import { EXPENSE_DOCUMENT_DTO_SPEC, type ExpenseDocumentDto } from "@/domain/expenses/dto";
 import { assertSchedulePayer, writeScheduledPayDate } from "@/domain/payments";
 import { NOT_BUSINESS_DAY } from "@/domain/payments/action-row";
 import { loadPayCalendar } from "@/domain/payments/pay-schedule-load";
@@ -374,5 +375,18 @@ export async function getDateChangeRequestForm(
   if (!facts) return null;
   const eligibility = eligibilityOf(viewer, facts);
   if (eligibility.kind !== "can") return null;
-  return { expenseId: facts.row.id, number: facts.row.number, requestedPaymentDate: facts.row.requestedPaymentDate, today: seoulToday() };
+  // 문서 접근(canSeeExpense)만으로는 칸 보기가 걸리지 않는다 — 번호 · 희망 지급일은 상세 문서 DTO와 같은 칸 보기로 거른다(Codex P2).
+  const shown = await project(viewer, { number: facts.row.number, requestedPaymentDate: facts.row.requestedPaymentDate }, REQUEST_FORM_DOCUMENT_SPEC);
+  return { expenseId: facts.row.id, number: shown.number ?? null, requestedPaymentDate: shown.requestedPaymentDate ?? null, today: seoulToday() };
 }
+
+// 요청 화면 머리 · 현재 희망일 칸 — EXPENSE_DOCUMENT_DTO_SPEC의 같은 칸(정보 항목 expense.value)을 그대로 골라 쓴다(두 벌 금지).
+type RequestFormDocumentKey = "number" | "requestedPaymentDate";
+type RequestFormDocument = Pick<ExpenseDocumentDto, RequestFormDocumentKey>;
+const REQUEST_FORM_DOCUMENT_KEYS: readonly string[] = ["number", "requestedPaymentDate"];
+const REQUEST_FORM_DOCUMENT_SPEC: DtoSpec<RequestFormDocument, RequestFormDocument> = {
+  fields: EXPENSE_DOCUMENT_DTO_SPEC.fields.filter(
+    (field): field is { key: RequestFormDocumentKey; from: RequestFormDocumentKey; infoItem: InfoItemRef } =>
+      REQUEST_FORM_DOCUMENT_KEYS.includes(field.key) && field.from === field.key,
+  ),
+};

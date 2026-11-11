@@ -9,7 +9,8 @@ import { CONDITION_KINDS, type ConditionKind } from "@/domain/notify/condition-k
 import { dateChangeRequestedKind } from "@/domain/notify/kinds/date-change-requested";
 import { dateChangeResultKind } from "@/domain/notify/kinds/date-change-result";
 import { runTick } from "@/domain/notify/tick";
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
 import { setupExpenseProject, type ExpenseFixture } from "../fixtures/expenses";
 import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "../fixtures/payments";
@@ -90,6 +91,8 @@ describe("요청 도착 · 결과 알림 (tick)", () => {
     fx = await setupExpenseProject();
     doc = await approvedExpenseWithEvidence(fx);
     payer = await makePaymentManager();
+    if (!payer.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem: "expense.value", visible: true });
     newDate = await businessDayFrom(addDays(seoulToday(), 3));
   });
 
@@ -139,6 +142,18 @@ describe("요청 도착 · 결과 알림 (tick)", () => {
     const rows = await rowsOf(fx.pm, "date-change-result");
     expect(rows).toHaveLength(1);
     expect(rows[0]?.message).toBe("변경 요청 거절됨 · 이번 주 지급 확정");
+  });
+
+  it("받는 사람 계급이 expense.value를 못 보면 두 종류 모두 0 — 번호 · 새 희망일 · 메모가 알림 본문으로 새지 않는다 (Codex P2 · 문서 DTO와 같은 칸 보기)", async () => {
+    if (!payer.roleId || !fx.pm.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem: "expense.value", visible: false });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: fx.pm.roleId, infoItem: "expense.value", visible: false });
+    const { requestId } = await requestDateChange(fx.pm, { expenseId: doc.expenseId, newDate, reason: "행사 일정 연기" });
+    await tick();
+    expect(await rowsOf(payer, "date-change-requested")).toHaveLength(0);
+    await rejectDateChange(payer, { requestId, memo: "이번 주 지급 확정" });
+    await tick();
+    expect(await rowsOf(fx.pm, "date-change-result")).toHaveLength(0);
   });
 
   it("규칙을 끄면 두 종류 모두 0", async () => {

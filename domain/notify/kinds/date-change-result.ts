@@ -18,13 +18,15 @@ export const dateChangeResultKind: ConditionKind = {
   dateUnit: "calendar",
   defaults: { enabled: true, emailEnabled: true },
   defaultRecipientLabel: "기안자",
+  // 본문의 새 희망일 · 거절 메모는 이력 DTO에서 expense.value 칸 — 받는 사람 계급이 그 항목을 볼 때만 행(tick 거르개 · G-61 · Codex P2).
+  recipientInfoItem: "expense.value",
   async evaluate(ctx) {
     if (!ctx.since) return [];
     const rows = capRows(KIND, await listDateChangeDecisionsSince(SYSTEM_VIEWER, ctx.since, NOTIFY_KIND_EVAL_MAX, ctx.tx), NOTIFY_KIND_EVAL_MAX).filter(
       (row) => row.decidedBy !== row.requestedBy,
     );
     if (rows.length === 0) return [];
-    const active = new Set((await listOrgSnapshot(SYSTEM_VIEWER, ctx.today, ctx.tx)).map((person) => person.id));
+    const active = new Map((await listOrgSnapshot(SYSTEM_VIEWER, ctx.today, ctx.tx)).map((person) => [person.id, person.roleId]));
     const candidates: NotificationCandidate[] = [];
     for (const row of rows) {
       if (!active.has(row.requestedBy)) continue;
@@ -32,6 +34,7 @@ export const dateChangeResultKind: ConditionKind = {
         entity: "expense",
         entityId: `${row.expenseId}:${row.requestId}:${row.status}`,
         recipientId: row.requestedBy,
+        recipientRoleId: active.get(row.requestedBy) ?? null,
         round: 1,
         referenceDate: toKstDate(row.at),
         message: row.status === "approved" ? `변경 요청 승인됨 · ${row.newDate.slice(5)}` : `변경 요청 거절됨 · ${row.rejectMemo ?? ""}`,

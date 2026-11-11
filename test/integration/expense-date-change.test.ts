@@ -11,6 +11,7 @@ import {
   DATE_CHANGE_MEMO_REQUIRED,
   DATE_CHANGE_REASON_REQUIRED,
   DATE_CHANGE_STALE,
+  getDateChangeRequestForm,
   listDateChangeView,
   rejectDateChange,
   requestDateChange,
@@ -205,6 +206,19 @@ describe("요청 · 철회 (Task 1 · D-7291 · D-7294 · D-7295)", () => {
     expect((await requestDateChangeAction({ expenseId: doc.expenseId, newDate, reason: "사유" }))?.serverError).toBe(DATE_CHANGE_STALE);
     expect((await withdrawDateChangeAction({ requestId }))?.serverError).toBeUndefined();
     expect(JSON.stringify((await requestDateChangeAction({ expenseId: doc.expenseId, newDate: "2026-02-30", reason: "사유" }))?.validationErrors)).toContain("newDate");
+  });
+
+  it("기안자 계급이 expense.value를 못 보면 요청 폼 재료에 번호 · 희망 지급일 없음 (Codex P2 · 문서 DTO와 같은 칸 보기)", async () => {
+    const hope = await businessDayFrom(addDays(seoulToday(), 5));
+    await db.update(expenses).set({ requestedPaymentDate: hope, requestedPaymentReason: "행사 일정" }).where(eq(expenses.id, doc.expenseId));
+    const seen = await getDateChangeRequestForm(fx.pm, doc.expenseId);
+    expect(seen).toMatchObject({ expenseId: doc.expenseId, requestedPaymentDate: hope });
+    expect(seen?.number).toBeTruthy();
+
+    if (!fx.pm.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: fx.pm.roleId, infoItem: "expense.value", visible: false });
+    const hidden = await getDateChangeRequestForm(fx.pm, doc.expenseId);
+    expect(hidden).toMatchObject({ expenseId: doc.expenseId, number: null, requestedPaymentDate: null });
   });
 });
 

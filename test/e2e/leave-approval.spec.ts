@@ -305,7 +305,8 @@ test.describe("결재함 — 결재 시트 PC 모양 · 뼈대 · 원칙 (04.6-1
 
     const lead = await loginAsPerson(browser, baseURL, org.teamLead);
     await lead.goto("/approvals");
-    const headers = await lead.locator("main table thead th").allInnerTexts();
+    // 07.2-16: 일괄 고르기 선택 열(머리글 = 전체 고르기 체크박스 · 이름 없음)은 뼈대에 그리지 않는다 — 이름 있는 열만 맞댄다.
+    const headers = await lead.locator('main table thead th:not(:has(input[type="checkbox"]))').allInnerTexts();
     await lead.goto("/account");
     // 뼈대(loading 틀)는 라우터가 미리 가져온 경우에만 응답이 늦는 동안 보인다 — 먼저 미리 가져오고, 그다음에 응답을 늦춘다.
     const prefetched = lead.waitForResponse((response) => response.url().includes("/approvals") && response.request().headers()["next-router-prefetch"] === "1");

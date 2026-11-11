@@ -13,6 +13,9 @@ import {
   type DocumentMeasure,
   type DocumentSummary,
 } from "@/domain/approvals";
+import { BATCH_KIND_EXCLUDED, BATCH_KINDS } from "@/domain/approvals/batch";
+import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
+import { LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Num } from "@/ui/num/Num";
@@ -77,6 +80,13 @@ function toRow(item: Partial<ApprovalInboxItemDto>, group: InboxRow["group"]): I
     // 시트 행(증빙 evidence 갈래 포함)은 sheet-material이 만든다 — 첫 화면 「내 차례」와 같은 재료.
     sheet: group === "mine" ? toSheet(item) : null,
     decision: group === "mine" ? toDecision(item, summary) : null,
+    // 07.2-16(S13): 일괄 고르기 재료 — 종류 판정은 서버(BATCH_KINDS — 정산 제외, D-7271)가 하고 표는 이유 글자만 받는다.
+    batchBlock: item.kind !== undefined && BATCH_KINDS.includes(item.kind) ? null : BATCH_KIND_EXCLUDED,
+    // 막대 요약 조각(Open questions 14): 지출결의 원화 합 · 연차 일수(쿼터) — 연차 취소 요청은 일수 조각에 넣지 않는다(취소 승인은 잔고를 늘린다).
+    amountKrw: item.kind === EXPENSE_DOCUMENT_KIND && summary.measure?.kind === "money" ? summary.measure.money.amountKrw : null,
+    leaveQuarters: item.kind === LEAVE_DOCUMENT_KIND && summary.measure?.kind === "days" ? summary.measure.quarters : null,
+    // 07.2-16(PU7 · S12): 사후 추인 — 종류 요약이 준 판정(지출결의만 — domain/expenses/post-hoc.ts 하나).
+    postHoc: summary.postHoc === true,
   };
 }
 
@@ -89,18 +99,20 @@ export default async function ApprovalsPage() {
   // 05-10: 빈 화면의 다음 한 수는 지출결의 목록 — 목록을 볼 권한이 없으면 문장만(DECISIONS 2026-10-05).
   const canViewExpenses = rows.length === 0 && (await can(viewer, "expenses", "view"));
 
-  return (
-    <ListScreen title="결재">
-      {rows.length === 0 ? (
+  // 07.2-16(S13): 행이 있으면 선택 상태를 가진 표가 `ListScreen`(1차 버튼 갈래 `승인 N`)을 그린다 — 빈 화면에는 1차가 없다(DR5).
+  if (rows.length === 0) {
+    return (
+      <ListScreen title="결재">
         <ListEmpty message="결재할 건이 없습니다" {...(canViewExpenses ? { action: { label: "지출결의 목록 보기", href: "/expenses" } } : {})} />
-      ) : (
-        <InboxTable
-          rows={rows}
-          measureHeader={inbox.measureHeader}
-          rejectMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
-          reasonOptions={reasonOptions}
-        />
-      )}
-    </ListScreen>
+      </ListScreen>
+    );
+  }
+  return (
+    <InboxTable
+      rows={rows}
+      measureHeader={inbox.measureHeader}
+      rejectMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
+      reasonOptions={reasonOptions}
+    />
   );
 }

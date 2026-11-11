@@ -3,13 +3,17 @@
 import { useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
+import { Num } from "@/ui/num/Num";
+import { splitRefreshTail } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Table } from "@/ui/table/Table";
+import { formatKrw } from "@/lib/format-number";
 import type { TableColumn } from "@/ui/table/types";
 import { Button } from "@/ui/button/Button";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import type { StatusWord } from "@/ui/status-tag/status-map";
 import { Toast, type ToastTone } from "@/ui/toast/Toast";
-import { approveAction } from "./actions";
+import { approveAction, approveBatchAction, rejectBatchAction } from "./actions";
 import { approveToast } from "./approve-toast";
 import { APPROVE_FAILED_MESSAGE, APPROVE_UNKNOWN_MESSAGE, ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "./approval-sheet";
 import { ConflictLine } from "./conflict-line";
@@ -17,7 +21,7 @@ import { evidenceViewUrl } from "./evidence-url";
 import { INBOX_COLUMN_LABELS } from "./list-columns";
 import { rowApprovalActions } from "./row-actions";
 import { useRefreshThenFocus } from "./refresh-then-focus";
-import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "./decision-dialogs";
+import { BatchApproveDialog, BatchRejectDialog, RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "./decision-dialogs";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import styles from "./inbox-table.module.css";
 
@@ -48,11 +52,53 @@ export type InboxRow = {
   sheet: ApprovalSheetItem | null;
   // 반려 · 회수 확인 재료 — 처리함은 null.
   decision: DecisionTarget | null;
+  // 07.2-16(S13): 일괄로 고를 수 없는 종류면 이유 글자(서버 판정 — 정산 결재), 고를 수 있으면 null.
+  batchBlock: string | null;
+  // 막대 요약 조각 — 지출결의 원화 금액 · 연차 일수(쿼터). 해당 종류가 아니거나 투영에서 빠지면 null.
+  amountKrw: number | null;
+  leaveQuarters: number | null;
+  // 사후 추인(PU7) — 문서 칸 2행(잔여 초과 줄과 같은 자리), 폰은 접힌 줄 끝.
+  postHoc: boolean;
 };
+
+// 일괄 상한(D-7272) — 서버 APPROVAL_BATCH_LIMIT와 같은 값(액션 zod · 도메인이 다시 막는다).
+const BATCH_LIMIT = 100;
+const BATCH_LIMIT_REASON = `${BATCH_LIMIT}건까지`;
+
+type BatchVerb = "승인" | "반려";
+// 처리 결과 — 처리된 행은 사라지고 막힌 행은 자리를 지킨다(새로 고침 뒤 내 결재에서 빠진 행도 이유와 함께 남긴다).
+type BatchOutcome = { processed: ReadonlySet<string>; blocked: ReadonlyMap<string, string>; kept: InboxRow[]; order: string[] };
+type BatchResultLine = { time: string; verb: BatchVerb; processed: number; blocked: number };
+
+// 새로 받은 행에서 처리된 `내 결재` 행을 빼고, 막혀서 남겨 둔 행을 원래 순서 자리에 다시 끼운다(새로 들어온 행은 뒤).
+function mergeRows(rows: InboxRow[], outcome: BatchOutcome | null): InboxRow[] {
+  if (!outcome) return rows;
+  const present = rows.filter((row) => !(row.group === "mine" && row.instanceId !== null && outcome.processed.has(row.instanceId)));
+  const presentIds = new Set(present.map((row) => row.id));
+  const order = new Map(outcome.order.map((id, index) => [id, index]));
+  const rank = (row: InboxRow, index: number) => order.get(row.id) ?? outcome.order.length + index;
+  const mine = [...present.filter((row) => row.group === "mine"), ...outcome.kept.filter((row) => !presentIds.has(row.id))]
+    .map((row, index) => ({ row, at: rank(row, index) }))
+    .sort((a, b) => a.at - b.at)
+    .map((entry) => entry.row);
+  return [...mine, ...present.filter((row) => row.group !== "mine")];
+}
+
+// 막대 · 확인 창 요약 조각 — 해당할 때만(UI-SPEC S13 zero-one-many). 단위가 달라 금액과 일수를 합치지 않는다(Open questions 14).
+function batchSummary(chosen: InboxRow[]): { amountKrw: number | null; days: string | null; overdraw: number } {
+  const amounts = chosen.filter((row) => row.amountKrw !== null);
+  const quarters = chosen.reduce((total, row) => total + (row.leaveQuarters ?? 0), 0);
+  return {
+    amountKrw: amounts.length > 0 ? amounts.reduce((total, row) => total + (row.amountKrw ?? 0), 0) : null,
+    // 쿼터 → 일수(domain/leave/days.ts formatLeaveDays와 같은 식 — 4로 나눈 값은 0.25 단위로 정확하다).
+    days: quarters > 0 ? `연차 ${quarters / 4}일` : null,
+    overdraw: chosen.filter((row) => row.overdraw !== null).length,
+  };
+}
 
 const GROUP_HEADERS: Record<InboxRow["group"], string> = { mine: "내 결재", processed: "처리함" };
 
-function documentCellId(row: InboxRow): string {
+function documentCellId(row: { id: string }): string {
   return `inbox-doc-${row.id.replace(/[^a-zA-Z0-9-]/g, "-")}`;
 }
 
@@ -68,7 +114,7 @@ async function approveFromSheet(target: { instanceId: string; version: number })
 }
 
 export function InboxTable({
-  rows,
+  rows: serverRows,
   rejectMessages,
   reasonOptions,
   measureHeader,
@@ -80,6 +126,17 @@ export function InboxTable({
   // 05-01 E5: 숫자 열 머리글(서버 listMyInbox) — null이면 숫자 열을 통째로 그리지 않는다.
   measureHeader: string | null;
 }) {
+  // 07.2-16(S13): 일괄 — 고른 행 id · 마지막 처리 결과(막힌 행 유지) · 결과 글자 · 열린 확인 창.
+  const [outcome, setOutcome] = useState<BatchOutcome | null>(null);
+  const rows = mergeRows(serverRows, outcome);
+  const [chosenIds, setChosenIds] = useState<string[]>([]);
+  const [batchResult, setBatchResult] = useState<BatchResultLine | null>(null);
+  const [batchDialog, setBatchDialog] = useState<BatchVerb | null>(null);
+  const [batchPending, setBatchPending] = useState(false);
+  const [batchFailure, setBatchFailure] = useState<string | null>(null);
+  const [batchServerError, setBatchServerError] = useState<string | null>(null);
+  const batchSubmittingRef = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   // 행 승인이 동시 처리로 거부되면 그 행 행동 칸에 한 줄 + 3차 `새로 고침`(토스트가 아니다 — 누른 자리 옆).
   const [rowConflict, setRowConflict] = useState<{ rowId: string; message: string } | null>(null);
@@ -115,6 +172,84 @@ export function InboxTable({
     },
   });
 
+  const mineRows = rows.filter((row) => row.group === "mine");
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  // 지금 보이는 행 중 고른 것만(새로 고침으로 사라진 행은 센다에서 빠진다).
+  const chosen = chosenIds.map((id) => rowById.get(id)).filter((row): row is InboxRow => row !== undefined);
+  const summary = batchSummary(chosen);
+  const summaryPieces = [summary.amountKrw !== null ? `지출결의 ${formatKrw(summary.amountKrw)}` : null, summary.days].filter((piece): piece is string => piece !== null);
+
+  // 고를 수 있음 — 처리함 행은 칸을 비운다(hidden). 정산 결재는 서버 이유, 승인할 수 없는 행(종류 막힘 이유는 행동 칸이 이미 말한다)은 칸을 비운다.
+  function selectable(row: InboxRow): true | { reason: string } {
+    // 칸을 비운 행은 고를 수 없다(머리글 「이 쪽 전체 고르기」가 세지 않게) — 이유 글자는 그리지 않는다(ui/table hidden).
+    if (selectHidden(row)) return { reason: "" };
+    if (row.batchBlock) return { reason: row.batchBlock };
+    if (chosenIds.length >= BATCH_LIMIT && !chosenIds.includes(row.id)) return { reason: BATCH_LIMIT_REASON };
+    return true;
+  }
+  function selectHidden(row: InboxRow): boolean {
+    return row.group !== "mine" || row.instanceId === null || row.version === null || (!row.batchBlock && (!row.actions.includes("approve") || row.approveBlockedReason !== null));
+  }
+
+  function openBatch(verb: BatchVerb) {
+    if (chosen.length === 0) return;
+    setBatchFailure(null);
+    setBatchServerError(null);
+    setBatchDialog(verb);
+  }
+
+  function closeBatch() {
+    if (batchSubmittingRef.current) return;
+    setBatchDialog(null);
+    setBatchFailure(null);
+    setBatchServerError(null);
+  }
+
+  // 창이 닫힌 뒤(ConfirmDialog가 트리거로 포커스를 돌린 다음 차례) — 첫 막힌 행 체크박스, 없으면 필터 줄 1차(SYSTEM.md 결과 포커스 규칙).
+  // 확인 창이 닫히며 연 요소(1차)로 포커스를 돌리고 새로 고침이 행을 다시 그리므로, 새로 고침이 끝난 뒤에 옮긴다 — 첫 막힌 행의 체크박스, 막힘이 없으면 필터 줄 1차.
+  function batchFocusTarget(blockedRowId: string | null): HTMLElement | null {
+    const root = rootRef.current;
+    if (!root) return null;
+    const blockedCell = blockedRowId ? document.getElementById(documentCellId({ id: blockedRowId })) : null;
+    if (blockedCell) return blockedCell.closest("tr")?.querySelector<HTMLElement>('input[type="checkbox"]') ?? null;
+    return [...root.querySelectorAll<HTMLElement>('[data-ui="primary-button"]')].find((candidate) => !candidate.closest("dialog")) ?? null;
+  }
+
+  async function runBatch(verb: BatchVerb, reason?: string) {
+    if (batchSubmittingRef.current || chosen.length === 0) return;
+    batchSubmittingRef.current = true;
+    setBatchPending(true);
+    setBatchFailure(null);
+    const sent = chosen.filter((row) => row.instanceId !== null && row.version !== null);
+    const items = sent.map((row) => ({ instanceId: row.instanceId ?? "", expectedVersion: row.version ?? 0 }));
+    const failure = verb === "승인" ? "일괄 승인 실패 · 다시 시도" : "일괄 반려 실패 · 다시 시도";
+    try {
+      const response = verb === "승인" ? await approveBatchAction({ items }) : await rejectBatchAction({ items, reason: reason ?? "" });
+      const data = response?.data;
+      if (!data) {
+        // 반려 사유를 서버가 거부하면 그 글자를 1차 막힘 자리에, 그 밖의 거부 · 응답 없음은 전체 실패 한 줄.
+        if (verb === "반려" && response?.serverError) setBatchServerError(response.serverError);
+        else setBatchFailure(failure);
+        return;
+      }
+      const blocked = new Map(data.blocked.map((row) => [row.id, row.reason]));
+      const keptRows = rows.filter((row) => row.instanceId !== null && blocked.has(row.instanceId));
+      setOutcome({ processed: new Set(data.processedIds), blocked, kept: keptRows, order: rows.map((row) => row.id) });
+      const sentIds = new Set(sent.map((row) => row.id));
+      setChosenIds((ids) => ids.filter((id) => !sentIds.has(id)));
+      setBatchResult({ time: data.time, verb, processed: data.processedIds.length, blocked: data.blocked.length });
+      batchSubmittingRef.current = false;
+      setBatchDialog(null);
+      const blockedRowId = keptRows[0]?.id ?? null;
+      refreshThenFocus(() => batchFocusTarget(blockedRowId));
+    } catch {
+      setBatchFailure(failure);
+    } finally {
+      batchSubmittingRef.current = false;
+      setBatchPending(false);
+    }
+  }
+
   const columns: TableColumn<InboxRow>[] = [
     {
       key: "document",
@@ -140,6 +275,11 @@ export function InboxTable({
             <span>{row.document}</span>
           )}
           {row.overdraw ? <span className={styles.overdraw}>{row.overdraw}</span> : null}
+          {row.postHoc ? (
+            <span className={styles.overdraw}>
+              <StatusTag status="사후 추인" variant="text" />
+            </span>
+          ) : null}
         </span>
       ),
     },
@@ -160,10 +300,22 @@ export function InboxTable({
                 <span className={styles.overdrawInline}>{row.overdraw}</span>
               </>
             ) : null}
+            {row.postHoc ? (
+              <>
+                {" · "}
+                <StatusTag status="사후 추인" variant="text" />
+              </>
+            ) : null}
           </button>
         ) : row.href ? (
           <Link href={row.href} tabIndex={-1} className={styles.foldTap}>
             {row.drafter}
+            {row.postHoc ? (
+              <>
+                {" · "}
+                <StatusTag status="사후 추인" variant="text" />
+              </>
+            ) : null}
           </Link>
         ) : (
           row.drafter
@@ -228,9 +380,97 @@ export function InboxTable({
     },
   ];
 
+  const blockedOf = (row: InboxRow) => (row.instanceId !== null ? (outcome?.blocked.get(row.instanceId) ?? null) : null);
+  const batchSubtitle = [`${chosen.length}건`, ...summaryPieces].join(" · ");
+
   return (
-    <>
-      <Table caption="결재함" columns={columns} rows={rows} getRowId={(row) => row.id} groupBy={(row) => GROUP_HEADERS[row.group]} />
+    <div ref={rootRef}>
+    <ListScreen
+      title="결재"
+      // 결과 글자 — 필터 줄의 필터 자리(결재함은 필터 칸이 없어 첫 자리 · 1차와 떨어진 자리). 처음부터 DOM에 있는 aria-live 영역.
+      filters={
+        <p role="status" aria-live="polite" className={styles.batchResult}>
+          {batchResult ? (
+            <>
+              <span className={styles.batchDone}>{`${batchResult.time} ${batchResult.verb} ${batchResult.processed}건`}</span>
+              {batchResult.blocked > 0 ? (
+                <>
+                  {" · "}
+                  <span className={styles.batchBlocked}>{`막힘 ${batchResult.blocked}건`}</span>
+                </>
+              ) : null}
+            </>
+          ) : null}
+        </p>
+      }
+      // 1차 = 필터 줄 오른쪽 끝 버튼 갈래 — 늘 렌더(0건이면 aria-disabled + 이유), 폰(<700)은 숨김(DC-8 · D-7268).
+      primaryAction={{
+        label: chosen.length === 0 ? "승인" : `승인 ${chosen.length}`,
+        onClick: () => openBatch("승인"),
+        shortcut: "Ctrl+Enter",
+        phoneHidden: true,
+        ...(mineRows.length === 0
+          ? { disabledReason: "결재할 건 없음", reasonTone: "info" as const }
+          : chosen.length === 0
+            ? { disabledReason: "고른 건 없음", reasonTone: "info" as const }
+            : {}),
+      }}
+    >
+      {/* 선택 막대 — 요약과 2차만(DC-8). DOM에서도 필터 줄 뒤 · 표 앞(보이는 순서 = 탭 순서). */}
+      {chosen.length > 0 ? (
+        <div className={styles.bulkBar}>
+          <p className={styles.bulkSummary}>
+            {[
+              <span key="count">{`선택 ${chosen.length}건`}</span>,
+              summary.amountKrw !== null ? (
+                <span key="amount">
+                  {"지출결의 "}
+                  <Num value={summary.amountKrw} />
+                </span>
+              ) : null,
+              summary.days ? <span key="days">{summary.days}</span> : null,
+              summary.overdraw > 0 ? <span key="overdraw" className={styles.bulkWarning}>{`잔여 초과 ${summary.overdraw}건`}</span> : null,
+            ]
+              .filter((piece) => piece !== null)
+              .map((piece, index) => (
+                <span key={index} className={styles.bulkPiece}>
+                  {index > 0 ? " · " : null}
+                  {piece}
+                </span>
+              ))}
+          </p>
+          <Button variant="secondary" onClick={() => openBatch("반려")}>
+            {`반려 ${chosen.length}`}
+          </Button>
+        </div>
+      ) : null}
+      <div className={styles.bulk}>
+      <Table
+        caption="결재함"
+        columns={columns}
+        rows={rows}
+        getRowId={(row) => row.id}
+        groupBy={(row) => GROUP_HEADERS[row.group]}
+        // `내 결재` 행이 없으면(처리함만) 선택 열째 없다 — 머리글 체크박스도 없다(디자인 r6 N-2).
+        selection={mineRows.length === 0 ? undefined : {
+          selectedIds: chosenIds,
+          selectable,
+          hidden: selectHidden,
+          onChange: (ids) => setChosenIds(ids.slice(0, BATCH_LIMIT)),
+          rowLabel: (row) => row.document,
+          blockedReason: (row) => {
+            const reason = blockedOf(row);
+            return reason ? splitRefreshTail(reason).reason ?? reason : null;
+          },
+          blockedLink: (row) => {
+            const reason = blockedOf(row);
+            return reason && splitRefreshTail(reason).refresh ? { label: "새로 고침", href: "/approvals", newTab: false } : null;
+          },
+          onPrimary: () => openBatch("승인"),
+        }}
+      />
+      </div>
+    </ListScreen>
       <ApprovalSheet
         item={sheetItem}
         onClose={() => setSheetItem(null)}
@@ -249,7 +489,30 @@ export function InboxTable({
       />
       <RejectDialog target={rejectTarget} messages={rejectMessages} reasonOptions={reasonOptions} onClose={() => setRejectTarget(null)} onDone={showToast} />
       <WithdrawDialog target={withdrawTarget} onClose={() => setWithdrawTarget(null)} onDone={showToast} />
+      <BatchApproveDialog
+        open={batchDialog === "승인"}
+        count={chosen.length}
+        subtitle={batchSubtitle}
+        overdrawCount={summary.overdraw}
+        pending={batchPending}
+        failure={batchFailure}
+        onClose={closeBatch}
+        onConfirm={() => void runBatch("승인")}
+      />
+      <BatchRejectDialog
+        open={batchDialog === "반려"}
+        count={chosen.length}
+        subtitle={batchSubtitle}
+        pending={batchPending}
+        failure={batchFailure}
+        serverError={batchServerError}
+        onReasonChange={() => setBatchServerError(null)}
+        messages={rejectMessages}
+        reasonOptions={reasonOptions}
+        onClose={closeBatch}
+        onConfirm={(reason) => void runBatch("반려", reason)}
+      />
       {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}
-    </>
+    </div>
   );
 }

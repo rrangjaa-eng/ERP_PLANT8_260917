@@ -11,7 +11,13 @@ vi.mock("@/app/(app)/document-kinds", () => ({}));
 vi.mock("@/domain/code-tables", () => ({ listReasonOptions: () => Promise.resolve([]) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined, push: () => undefined }) }));
 vi.mock("next-safe-action/hooks", () => ({ useAction: () => ({ execute: () => undefined, isExecuting: false, result: {} }) }));
-vi.mock("@/app/(app)/approvals/actions", () => ({ approveAction: () => undefined, rejectAction: () => undefined, withdrawAction: () => undefined }));
+vi.mock("@/app/(app)/approvals/actions", () => ({
+  approveAction: () => undefined,
+  rejectAction: () => undefined,
+  withdrawAction: () => undefined,
+  approveBatchAction: () => undefined,
+  rejectBatchAction: () => undefined,
+}));
 vi.mock("@/app/(app)/leave/actions", () => ({ withdrawLeaveAction: () => undefined }));
 vi.mock("@/app/(app)/expenses/actions", () => ({ createEvidenceViewUrlAction: () => undefined }));
 vi.mock("@/domain/approvals", () => ({
@@ -52,7 +58,11 @@ async function render(value: unknown): Promise<string> {
   return renderToStaticMarkup(await ApprovalsPage());
 }
 
-const headers = (html: string) => [...html.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/g)].map((match) => (match[1] ?? "").replace(/<[^>]*>/g, "").trim());
+// 07.2-16: 일괄 고르기 선택 열 머리글(전체 고르기 체크박스 · 이름은 aria-label)은 숫자 열 판정 밖이다.
+const headers = (html: string) =>
+  [...html.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/g)]
+    .filter((match) => !(match[1] ?? "").includes('type="checkbox"'))
+    .map((match) => (match[1] ?? "").replace(/<[^>]*>/g, "").trim());
 const rowOf = (html: string, text: string) => [...html.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/g)].map((match) => match[0]).find((row) => row.includes(text)) ?? "";
 
 describe("결재함 숫자 열 — 숫자 없는 종류(정산 결재)", () => {

@@ -6,7 +6,9 @@ import { approveDocument, withdrawDocument, NotCurrentHolderError } from "@/doma
 import "@/domain/leave";
 import { submitLeave } from "@/domain/leave";
 import { requestLeaveCancel } from "@/domain/leave/cancel";
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
+import { APPROVAL_ROUTE_LEAVE_SELF_APPROVAL } from "@/domain/settings/keys";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
 import { documentLabel, loginPage, makePerson, setupLeaveOrg, waitForHydration, type Person } from "./leave-org";
@@ -178,6 +180,42 @@ test.describe("결재함 일괄 승인 · 반려 (07.2-16 S13)", () => {
 
     await expect(page.getByRole("status").filter({ hasText: /반려 \d+건/ })).toHaveText(RESULT("반려", 3));
     for (const doc of docs) expect(await reasonsOf(doc.instanceId)).toEqual(["일정 다시 맞춤"]);
+  });
+
+  // #377 리뷰 L1: 본인 기안(본인 승인 차례)은 승인만 되고 반려는 단건과 같이 막힌다 — 일괄 반려 수 · 창 · 보내는 행에서 빠진다.
+  test("본인 기안 + 다른 사람 문서 고르기 → 막대 `반려 1` · 반려는 다른 문서만 · 본인 기안은 고른 채 `승인 1`", async ({ browser, baseURL }) => {
+    const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_SELF_APPROVAL);
+    try {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, "self_approve");
+      const org = await setupLeaveOrg(seoulToday());
+      const own = await leave(org.teamLead, 7);
+      const other = await leave(org.drafter, 8);
+
+      const page = await loginPage(browser, baseURL, org.teamLead, DESKTOP);
+      await page.goto("/approvals");
+      const ownBox = page.getByRole("checkbox", { name: `${own.label} 고르기` });
+      const otherBox = page.getByRole("checkbox", { name: `${other.label} 고르기` });
+      await waitForHydration(ownBox);
+      await ownBox.check();
+      await expect(primary(page)).toContainText("승인 1");
+      await expect(bar(page).getByRole("button", { name: /^반려/ })).toHaveCount(0);
+
+      await otherBox.check();
+      await expect(primary(page)).toContainText("승인 2");
+      await bar(page).getByRole("button", { name: "반려 1" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toContainText("일괄 반려");
+      await dialog.getByLabel("사유").fill("일정 다시 맞춤");
+      await dialog.getByRole("button", { name: /^반려 1건/ }).click();
+
+      await expect(page.getByRole("status").filter({ hasText: /반려 \d+건/ })).toHaveText(RESULT("반려", 1));
+      expect(await reasonsOf(other.instanceId)).toEqual(["일정 다시 맞춤"]);
+      expect(await reasonsOf(own.instanceId)).toEqual([]);
+      await expect(ownBox).toBeChecked();
+      await expect(primary(page)).toContainText("승인 1");
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, original);
+    }
   });
 
   test("잔여 초과 연차 포함 — 막대 `잔여 초과 1건`(warning) · 승인 창 결과 줄 `잔여 초과 연차 1건 포함` · 승인됨", async ({ browser, baseURL }) => {

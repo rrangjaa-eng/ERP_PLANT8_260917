@@ -177,7 +177,12 @@ export function InboxTable({
   // 지금 보이는 행 중 고른 것만(새로 고침으로 사라진 행은 센다에서 빠진다).
   const chosen = chosenIds.map((id) => rowById.get(id)).filter((row): row is InboxRow => row !== undefined);
   const summary = batchSummary(chosen);
-  const summaryPieces = [summary.amountKrw !== null ? `지출결의 ${formatKrw(summary.amountKrw)}` : null, summary.days].filter((piece): piece is string => piece !== null);
+  // 일괄 반려는 단건 반려가 열린 행만(본인 기안 등 반려가 없는 행은 고른 채 승인에만 남는다 · #377 리뷰 L1).
+  const rejectable = chosen.filter((row) => row.actions.includes("reject"));
+  function subtitleOf(target: InboxRow[]): string {
+    const { amountKrw, days } = batchSummary(target);
+    return [`${target.length}건`, amountKrw !== null ? `지출결의 ${formatKrw(amountKrw)}` : null, days].filter((piece): piece is string => piece !== null).join(" · ");
+  }
 
   // 고를 수 있음 — 처리함 행은 칸을 비운다(hidden). 정산 결재는 서버 이유, 승인할 수 없는 행(종류 막힘 이유는 행동 칸이 이미 말한다)은 칸을 비운다.
   function selectable(row: InboxRow): true | { reason: string } {
@@ -192,7 +197,7 @@ export function InboxTable({
   }
 
   function openBatch(verb: BatchVerb) {
-    if (chosen.length === 0) return;
+    if ((verb === "승인" ? chosen : rejectable).length === 0) return;
     setBatchFailure(null);
     setBatchServerError(null);
     setBatchDialog(verb);
@@ -216,11 +221,12 @@ export function InboxTable({
   }
 
   async function runBatch(verb: BatchVerb, reason?: string) {
-    if (batchSubmittingRef.current || chosen.length === 0) return;
+    const targets = verb === "승인" ? chosen : rejectable;
+    if (batchSubmittingRef.current || targets.length === 0) return;
     batchSubmittingRef.current = true;
     setBatchPending(true);
     setBatchFailure(null);
-    const sent = chosen.filter((row) => row.instanceId !== null && row.version !== null);
+    const sent = targets.filter((row) => row.instanceId !== null && row.version !== null);
     const items = sent.map((row) => ({ instanceId: row.instanceId ?? "", expectedVersion: row.version ?? 0 }));
     const failure = verb === "승인" ? "일괄 승인 실패 · 다시 시도" : "일괄 반려 실패 · 다시 시도";
     try {
@@ -381,7 +387,6 @@ export function InboxTable({
   ];
 
   const blockedOf = (row: InboxRow) => (row.instanceId !== null ? (outcome?.blocked.get(row.instanceId) ?? null) : null);
-  const batchSubtitle = [`${chosen.length}건`, ...summaryPieces].join(" · ");
 
   return (
     <div ref={rootRef}>
@@ -439,9 +444,11 @@ export function InboxTable({
                 </span>
               ))}
           </p>
-          <Button variant="secondary" onClick={() => openBatch("반려")}>
-            {`반려 ${chosen.length}`}
-          </Button>
+          {rejectable.length > 0 ? (
+            <Button variant="secondary" onClick={() => openBatch("반려")}>
+              {`반려 ${rejectable.length}`}
+            </Button>
+          ) : null}
         </div>
       ) : null}
       <div className={styles.bulk}>
@@ -492,7 +499,7 @@ export function InboxTable({
       <BatchApproveDialog
         open={batchDialog === "승인"}
         count={chosen.length}
-        subtitle={batchSubtitle}
+        subtitle={subtitleOf(chosen)}
         overdrawCount={summary.overdraw}
         pending={batchPending}
         failure={batchFailure}
@@ -501,8 +508,8 @@ export function InboxTable({
       />
       <BatchRejectDialog
         open={batchDialog === "반려"}
-        count={chosen.length}
-        subtitle={batchSubtitle}
+        count={rejectable.length}
+        subtitle={subtitleOf(rejectable)}
         pending={batchPending}
         failure={batchFailure}
         serverError={batchServerError}

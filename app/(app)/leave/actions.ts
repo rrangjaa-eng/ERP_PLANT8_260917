@@ -109,18 +109,30 @@ export const requestLeaveCancelAction = authedActionClient
   .schema(z.object({ leaveId: z.string().uuid(), reason: cancelReason }))
   .action(async ({ parsedInput, ctx }) => {
     const requested = await requestLeaveCancel(ctx.viewer, parsedInput);
-    return {
-      result: await projectActionResult(ctx.viewer, { documentId: parsedInput.leaveId, final: false, nextHolderNames: requested.approverName }),
-    };
+    // 취소 요청은 이미 커밋됐다 — 토스트 재료 투영이 실패해도 성공으로(실패로 돌려주면 다시 눌러 「이미 요청」 가드에 걸린다, Codex P2).
+    try {
+      return {
+        result: await projectActionResult(ctx.viewer, { documentId: parsedInput.leaveId, final: false, nextHolderNames: requested.approverName }),
+      };
+    } catch (error) {
+      log.warn("leave.cancel_toast_material_failed", { leaveId: parsedInput.leaveId, error: error instanceof Error ? error.message : String(error) });
+      return { result: { documentId: parsedInput.leaveId, final: false } };
+    }
   });
 
 export const resubmitLeaveCancelAction = authedActionClient
   .schema(z.object({ leaveId: z.string().uuid(), expectedVersion: z.number().int().min(1), reason: cancelReason }))
   .action(async ({ parsedInput, ctx }) => {
     const resubmitted = await resubmitLeaveCancel(ctx.viewer, parsedInput);
-    return {
-      result: await projectActionResult(ctx.viewer, { documentId: parsedInput.leaveId, final: false, nextHolderNames: resubmitted.approverName }),
-    };
+    // 다시 요청도 이미 커밋됐다 — 투영 실패를 성공으로(실패로 돌려주면 다시 눌러 낡은 version에 걸린다).
+    try {
+      return {
+        result: await projectActionResult(ctx.viewer, { documentId: parsedInput.leaveId, final: false, nextHolderNames: resubmitted.approverName }),
+      };
+    } catch (error) {
+      log.warn("leave.cancel_resubmit_toast_material_failed", { leaveId: parsedInput.leaveId, error: error instanceof Error ? error.message : String(error) });
+      return { result: { documentId: parsedInput.leaveId, final: false } };
+    }
   });
 
 const DAY_MS = 24 * 60 * 60 * 1000;

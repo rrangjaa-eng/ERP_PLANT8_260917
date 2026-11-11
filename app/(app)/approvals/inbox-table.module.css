@@ -226,9 +226,10 @@ tr:has(.rowTap) {
   }
 }
 
-/* 터치 PC · 태블릿 — 선택 열 체크박스 눌림 면 44(보이는 체크박스는 그대로 · 행 높이는 음수 여백으로 유지 — ui/table 폰 규칙과 같은 식). */
+/* 터치 PC · 태블릿 — 선택 열 체크박스 눌림 면 44(보이는 체크박스는 그대로 · 행 높이는 음수 여백으로 유지 — ui/table 폰 규칙과 같은 식).
+   머리글 `이 쪽 전체 고르기`도 같은 규칙(독립 DOM 감사 결함 ① — 머리글만 44×13이었다). */
 @media (pointer: coarse) and (min-width: 700px) {
-  .bulk tbody label:has(> input[type="checkbox"]) {
+  .bulk label:has(> input[type="checkbox"]) {
     min-width: var(--touch-min);
     min-height: var(--touch-min);
     margin-block: calc(-1 * var(--cell-pad-y));

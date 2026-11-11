@@ -218,6 +218,39 @@ test.describe("결재함 일괄 승인 · 반려 (07.2-16 S13)", () => {
     }
   });
 
+  // 독립 DOM 감사 결함 ①: 터치(coarse) 태블릿에서 머리글 `이 쪽 전체 고르기` 눌림 면이 44×13이었다 — 행 체크박스 label과 같이 44×44.
+  test("터치 태블릿(768 · 700) — 머리글 · 행 체크박스 label 모두 44×44 이상", async ({ browser, baseURL }) => {
+    const org = await setupLeaveOrg(seoulToday());
+    const doc = await leave(org.drafter, 4);
+
+    const context = await browser.newContext({ baseURL, viewport: { width: 768, height: 900 }, hasTouch: true });
+    const page = await context.newPage();
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(org.teamLead.email);
+    await page.getByLabel("비밀번호").fill(org.teamLead.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/approvals");
+    const head = page.getByRole("checkbox", { name: "이 쪽 전체 고르기" });
+    const row = page.getByRole("checkbox", { name: `${doc.label} 고르기` });
+    await waitForHydration(row);
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+
+    for (const width of [768, 700]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const box of [head, row]) {
+        const size = await box.locator("xpath=..").evaluate((label) => {
+          const rect = label.getBoundingClientRect();
+          return { tag: label.tagName, width: rect.width, height: rect.height };
+        });
+        expect(size.tag).toBe("LABEL");
+        expect(size.width).toBeGreaterThanOrEqual(44);
+        expect(size.height).toBeGreaterThanOrEqual(44);
+      }
+    }
+    await context.close();
+  });
+
   test("잔여 초과 연차 포함 — 막대 `잔여 초과 1건`(warning) · 승인 창 결과 줄 `잔여 초과 연차 1건 포함` · 승인됨", async ({ browser, baseURL }) => {
     const org = await setupLeaveOrg(seoulToday());
     const over = await leave(org.drafter, 4, 20);

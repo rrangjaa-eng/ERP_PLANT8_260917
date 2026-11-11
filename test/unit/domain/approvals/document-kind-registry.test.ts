@@ -13,6 +13,7 @@ import {
 import { loadKindDetails } from "@/domain/approvals";
 import type { DtoSpec } from "@/domain/permissions/project";
 import type { Viewer } from "@/domain/viewer";
+import { LEAVE_CANCEL_DETAIL_DTO_SPEC, LEAVE_CANCEL_KIND } from "@/domain/leave/cancel";
 
 // 결재 모듈은 문서 종류를 하드코딩하지 않는다 — 등록된 종류만 쓴다. 테스트마다 새
 // 종류 키를 써서 등록부를 초기화하지 않고도 사례끼리 섞이지 않는다.
@@ -164,5 +165,26 @@ describe("종류 상세 — detailDto 투영 뒤 buildDetailRows(Codex MEDIUM ·
     expect(seen.now?.getTime()).toBe(now.getTime());
     await loadKindDetails(VIEWER, kind, ["a"], { visible: allowAll });
     expect(seen.now).toBeUndefined();
+  });
+});
+
+// 07.2-15(PU10): 연차 취소 요청 종류 — 레지스트리 규칙(라벨 · href · 요약 · 상세 명세 · 훅 짝 · 다시 요청 상태)을 지난다.
+describe("leave_cancel 등록(07.2-15)", () => {
+  it("라벨 `연차 취소 요청` · href = 원 연차 문서 · 반려 · 회수 뒤 다시 요청 · 최종 승인 훅 짝 · 상세 명세 = 연차 항목 + 취소 사유", () => {
+    expect(LEAVE_CANCEL_KIND).toBe("leave_cancel");
+    const def = getDocumentKind(LEAVE_CANCEL_KIND);
+    expect(def.label).toBe("연차 취소 요청");
+    expect(def.href("abc")).toBe("/leave/abc");
+    expect(resubmittableStatuses(def)).toEqual(["rejected", "withdrawn"]);
+    expect(typeof def.describeDocuments).toBe("function");
+    expect(Boolean(def.prepareFinalApproval) && Boolean(def.onFinalApprovalInTx)).toBe(true);
+    expect(def.detailDto).toBe(LEAVE_CANCEL_DETAIL_DTO_SPEC);
+    expect(LEAVE_CANCEL_DETAIL_DTO_SPEC.fields.map((field) => [field.key, field.infoItem])).toContainEqual(["cancelReason", "leave.value"]);
+    // 결재선 설정 화면 경고 대상이 아니다(설정 키 없음 — 원 연차 결재선을 복사한다).
+    expect(def.routeSettings).toBeUndefined();
+  });
+
+  it("원 연차 id 없이 결재선을 조립하면 호출 계약 오류(대표 결재로 조용히 떨어지지 않는다)", async () => {
+    await expect(getDocumentKind(LEAVE_CANCEL_KIND).loadRouteConfig()).rejects.toThrow("원 연차 id 없음");
   });
 });

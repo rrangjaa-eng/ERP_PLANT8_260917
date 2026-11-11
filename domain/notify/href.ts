@@ -5,7 +5,7 @@
 // 계급 없는 viewer는 can()이 기본 거부하듯 모든 줄에 링크가 없다(세션도 못 만드는 상태 — fail-closed).
 import { listVisibleCertEventIds } from "@/domain/certs/events";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
-import { canSeeLeaveDocument, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
+import { canSeeLeaveDocument, LEAVE_CANCEL_KIND, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { can } from "@/domain/permissions/can";
 import { projectRowScope } from "@/domain/projects/visibility";
 import { canSeeSettlementDocument, SETTLEMENT_DOCUMENT_KIND } from "@/domain/settlements";
@@ -67,7 +67,9 @@ async function stepHrefs(viewer: Viewer, keys: string[]): Promise<Map<string, st
     }
   }
   for (const doc of docs) {
-    if (doc.documentKind === LEAVE_DOCUMENT_KIND && (await canSeeLeaveDocument(viewer, { id: doc.documentId, drafterId: doc.drafterId }))) {
+    // 07.2-15(Codex PR #335): 연차 취소 결재 단계도 원 연차 문서로 간다(document_id = 원 연차 id · 기안자 같음 · 보임은 취소 결재 참여 포함).
+    const leaveLike = doc.documentKind === LEAVE_DOCUMENT_KIND || doc.documentKind === LEAVE_CANCEL_KIND;
+    if (leaveLike && (await canSeeLeaveDocument(viewer, { id: doc.documentId, drafterId: doc.drafterId }))) {
       found.set(doc.key, `/leave/${doc.documentId}`);
     }
     if (doc.documentKind === SETTLEMENT_DOCUMENT_KIND && doc.projectId && (await canSeeSettlementDocument(viewer, { projectId: doc.projectId }))) {

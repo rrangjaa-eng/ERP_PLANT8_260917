@@ -7,6 +7,7 @@ import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permis
 import { approveDocument, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { submitLeave, LeaveValidationError, type SubmitLeaveInput } from "@/domain/leave";
 import { resubmitLeave } from "@/domain/leave/resubmit";
+import { requestLeaveCancel } from "@/domain/leave/cancel";
 import { countRows, makePerson, NOW_2026 } from "./approvals-fixtures";
 
 // 06.3-02(D-6307 ~ D-6311): 같은 기안자의 결재 중 · 승인 연차와 영업일이 겹치는 신청은 시작일 칸 한 줄로 막힌다 —
@@ -245,5 +246,31 @@ describe("동시 제출(D-6311)", () => {
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     const loser = results.find((result) => result.status === "rejected");
     expect(loser?.status === "rejected" ? loser.reason : null).toBeInstanceOf(LeaveValidationError);
+  });
+});
+
+// 07.2-15(PU10 · eng r2 D N-P3-5): 겹침 조회도 잔고와 같은 cancelledLeaveFilter로 「취소가 승인된 연차」만 뺀다.
+describe("취소된 연차와 겹침(07.2-15)", () => {
+  async function approvedFull(drafter: Awaited<ReturnType<typeof world>>["drafter"], lead: Awaited<ReturnType<typeof world>>["lead"], ceo: Awaited<ReturnType<typeof world>>["ceo"]) {
+    const doc = await submitLeave(drafter, FULL_21_23, deps);
+    await approveDocument(lead, { instanceId: doc.instanceId, expectedVersion: 1 }, deps);
+    await approveDocument(ceo, { instanceId: doc.instanceId, expectedVersion: 2 }, deps);
+    return doc;
+  }
+
+  it("취소 요청 중 → 같은 날 거절 · 취소 반려 → 거절 · 취소 승인 → 같은 날 제출 성공", async () => {
+    const { drafter, lead, ceo } = await world();
+    const doc = await approvedFull(drafter, lead, ceo);
+    const cancel = await requestLeaveCancel(drafter, { leaveId: doc.leaveId, reason: "일정 바뀜" }, deps);
+    expect((await refusal(submitLeave(drafter, HALF_22_AM, deps))).fieldErrors).toEqual(OVERLAP_22_FULL);
+    const rejected = await rejectDocument(lead, { instanceId: cancel.instanceId, expectedVersion: cancel.version, reason: "행사 주간" }, deps);
+    expect((await refusal(submitLeave(drafter, HALF_22_AM, deps))).fieldErrors).toEqual(OVERLAP_22_FULL);
+
+    const other = await makePerson("김민수", DEFAULT_ROLE_ID, "기획1팀");
+    const second = await approvedFull(other, lead, ceo);
+    const approved = await requestLeaveCancel(other, { leaveId: second.leaveId, reason: "일정 바뀜" }, deps);
+    await approveDocument(lead, { instanceId: approved.instanceId, expectedVersion: approved.version }, deps);
+    await expect(submitLeave(other, HALF_22_AM, deps)).resolves.toMatchObject({ version: 1 });
+    expect(rejected.status).toBe("rejected");
   });
 });

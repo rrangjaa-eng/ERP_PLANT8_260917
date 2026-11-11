@@ -1,4 +1,5 @@
-import { and, asc, eq, gte, inArray, lte, ne } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, ne, notExists, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
 import { approvalInstances, leaveRequests } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -14,6 +15,29 @@ export type LeaveUsageRow = {
 };
 
 const PENDING_STATUSES = ["submitted", "in_review"];
+
+// 07.2-15(PU10 · D-7253): 연차 취소 문서 종류 키 — domain/leave/access.ts LEAVE_CANCEL_KIND와 같은 값(리포지토리는 domain을 import하지 않는다 ·
+// 통합 시험 leave-cancel이 두 값이 맞물리는지 고정한다).
+const LEAVE_CANCEL_KIND = "leave_cancel";
+const cancelInstances = alias(approvalInstances, "leave_cancel_instances");
+
+// 「취소가 최종 승인된 연차」를 빼는 조건 한 곳 — 잔고(listLeaveUsage)와 겹침(listLiveLeaveInRange)이 **둘 다** 이 함수를 쓴다.
+// 한쪽만 빼면 잔고는 돌아왔는데 같은 날 재신청이 겹침으로 막히거나(또는 반대) — RESEARCH F-PU10 · Pitfall 3. 취소 요청 중 · 반려 · 회수는
+// 빼지 않는다(승인된 취소만). 연차 행은 쓰지 않는다 — 취소 판정은 leave_cancel 인스턴스 상태로만.
+function cancelledLeaveFilter(): SQL {
+  return notExists(
+    db
+      .select({ one: sql`1` })
+      .from(cancelInstances)
+      .where(
+        and(
+          eq(cancelInstances.documentKind, LEAVE_CANCEL_KIND),
+          eq(cancelInstances.documentId, leaveRequests.id),
+          eq(cancelInstances.status, "approved"),
+        ),
+      ),
+  );
+}
 
 export async function listLeaveUsage(
   viewer: Viewer,
@@ -40,6 +64,7 @@ export async function listLeaveUsage(
         eq(leaveRequests.drafterId, input.drafterId),
         inArray(leaveRequests.fiscalYear, input.fiscalYears),
         inArray(approvalInstances.status, ["approved", ...PENDING_STATUSES]),
+        cancelledLeaveFilter(),
       ),
     )
     .orderBy(asc(leaveRequests.startDate), asc(leaveRequests.id));
@@ -77,6 +102,7 @@ export async function listLiveLeaveInRange(
         lte(leaveRequests.startDate, input.endDate),
         gte(leaveRequests.endDate, input.startDate),
         inArray(approvalInstances.status, ["approved", ...PENDING_STATUSES]),
+        cancelledLeaveFilter(),
         input.excludeId ? ne(leaveRequests.id, input.excludeId) : undefined,
       ),
     )

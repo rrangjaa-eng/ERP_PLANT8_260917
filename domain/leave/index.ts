@@ -63,13 +63,13 @@ import {
   type LeaveYearRange,
 } from "@/domain/leave/days";
 import type { HolidayLookup } from "@/domain/holidays/business-day";
-import { LEAVE_REQUEST_DTO_SPEC, type LeaveRequestBalanceDto, type LeaveRequestDto } from "@/domain/leave/dto";
+import { LEAVE_REQUEST_DTO_SPEC, type LeaveCancelState, type LeaveRequestBalanceDto, type LeaveRequestDto } from "@/domain/leave/dto";
 import { assertLeaveWrite, canSeeLeaveDocument, canWriteLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { getLeaveBalancesForRequests } from "@/domain/leave/balance-service";
 import { formatBalanceRow, formatBalanceRowBeforeDates, type BalanceLine, type RequestBalance } from "@/domain/leave/balance";
 
-export { LEAVE_DOCUMENT_KIND, canSeeLeaveDocument } from "@/domain/leave/access";
-export type { LeaveRequestDto } from "@/domain/leave/dto";
+export { LEAVE_CANCEL_KIND, LEAVE_DOCUMENT_KIND, canSeeLeaveDocument } from "@/domain/leave/access";
+export type { LeaveCancelState, LeaveRequestDto } from "@/domain/leave/dto";
 
 // 04.1(LEAV-01): 연차 — 결재 모듈에 문서 종류로 등록되고, 제출은 같은 결재
 // 엔진(domain/approvals)을 지난다. 결재 모듈은 이 파일을 import하지 않는다.
@@ -178,6 +178,13 @@ function hourMinuteOf(time: string | null): string | null {
   return time ? time.slice(0, 5) : null;
 }
 
+// 07.2-15(PU10): 취소 인스턴스 상태 → 연차 표시 재료. 반려 · 회수된 취소는 none(연차는 승인 그대로).
+export function leaveCancelStateOf(cancelStatus: string | null): LeaveCancelState {
+  if (cancelStatus === "approved") return "cancelled";
+  if (cancelStatus === "submitted" || cancelStatus === "in_review") return "requested";
+  return "none";
+}
+
 function toSource(row: LeaveRequestWithApproval): LeaveRequestDto {
   return {
     id: row.id,
@@ -196,6 +203,7 @@ function toSource(row: LeaveRequestWithApproval): LeaveRequestDto {
     status: row.status,
     version: row.version,
     createdAt: row.createdAt,
+    cancelState: leaveCancelStateOf(row.cancelStatus),
   };
 }
 
@@ -214,7 +222,7 @@ async function describeLeaveDocuments(viewer: Viewer, ids: string[], deps?: Desc
 
 // 05-01 E5(Round 4 Z2 · D8): 결재함이 종류를 모른 채 읽는 요약 필드 — 투영 뒤 값으로만(보이지 않으면 싣지 않는다).
 // 일수 칸 글자 = formatLeaveDays, 문서 칸 대상 조각 = 종류 · 반차 · 기간(04.1 결재함 글자와 같다). 번호는 투영 필드 number 그대로.
-function leaveSummaryFields(leave: Partial<LeaveRequestDto>): Pick<DocumentSummary, "measure" | "documentText"> {
+export function leaveSummaryFields(leave: Partial<LeaveRequestDto>): Pick<DocumentSummary, "measure" | "documentText"> {
   const fields: Pick<DocumentSummary, "measure" | "documentText"> = {};
   if (leave.daysQuarters !== undefined && leave.days !== undefined) {
     fields.measure = { kind: "days", quarters: leave.daysQuarters, text: leave.days };

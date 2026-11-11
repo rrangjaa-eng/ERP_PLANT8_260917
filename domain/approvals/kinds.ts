@@ -31,7 +31,8 @@ export type RouteConfig = { selfApproval: SelfApproval; steps: RouteConfigStep[]
 // 07.2-13(PU9 · D-7251): 결재선 조립 힌트 — 엔진이 planRoute · previewRoute · prepareSubmission에서 받은 그대로
 // loadRouteConfig에 넘긴다(미리보기 = 제출). 연차 종류만 leaveKind를 보고, 다른 종류는 인자를 무시한다.
 // 호출부는 검증된 값만 넘긴다(입력 원문 0). LeaveKind는 타입만 — 결재 모듈은 종류 모듈을 런타임 import하지 않는다.
-export type RouteHint = { leaveKind?: LeaveKind };
+// 07.2-15(PU10 · 07.2 D-7310): documentId — 다른 문서의 결재선을 읽어 단계를 고르는 종류(연차 취소 = 원 연차 id)만 본다. 서버가 검증한 id만.
+export type RouteHint = { leaveKind?: LeaveKind; documentId?: string };
 
 // 결재선 설정 키 묶음 — 04.1-04의 설정 화면 경고가 등록된 종류를 순회할 때 쓴다.
 export type RouteSettingDefs = {

@@ -5,7 +5,10 @@ import { db, pool } from "@/db/client";
 import { approvalRoutes, approvalSteps } from "@/db/schema";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { documentIdOf, notificationHref, type HrefRow } from "@/domain/notify/href";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { approveDocument } from "@/domain/approvals";
+import { submitLeave } from "@/domain/leave";
+import { requestLeaveCancel } from "@/domain/leave/cancel";
 import { setSettingValue } from "@/domain/settings/registry";
 import { CERT_ENABLED } from "@/domain/settings/keys";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -14,6 +17,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { createIntakeViewer } from "../fixtures/evidence";
 import { setupExpenseProject, submitReadyDraft } from "../fixtures/expenses";
 import { makePaymentManager } from "../fixtures/payments";
+import { makePerson, NOW_2026 } from "../approvals-fixtures";
 
 // 07-14 N25 착지 함수 — 갈래별 URL, 볼 수 없으면 undefined, entityId 첫 `:` 앞 = 문서 id(C-P3-3), 갈래별 묶음 조회(N+1 없음).
 
@@ -121,5 +125,25 @@ describe("notificationHref — 갈래별 (N25 · T-07-14-01)", () => {
     const fifty = [...big, ...big, ...big].slice(0, 50);
     expect(fifty).toHaveLength(50);
     expect(await count(fifty)).toBe(small);
+  });
+
+  it("(07.2-15 Codex PR #335) 연차 취소 결재 단계 → 원 연차 문서 `/leave/{원 연차 id}` · 무관한 사람은 undefined", async () => {
+    const deps = { now: NOW_2026 };
+    const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
+    const lead = await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
+    const leave = await submitLeave(drafter, { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-21", half: "" }, deps);
+    await approveDocument(lead, { instanceId: leave.instanceId, expectedVersion: 1 }, deps);
+    await approveDocument(ceo, { instanceId: leave.instanceId, expectedVersion: 2 }, deps);
+    const cancel = await requestLeaveCancel(drafter, { leaveId: leave.leaveId, reason: "일정 바뀜" }, deps);
+    const [step] = await db
+      .select({ id: approvalSteps.id })
+      .from(approvalSteps)
+      .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+      .where(eq(approvalRoutes.instanceId, cancel.instanceId));
+    if (!step) throw new Error("취소 단계 없음");
+    const rows: HrefRow[] = [{ entity: "approval-step", entityId: step.id }];
+    expect(await notificationHref(lead, rows)).toEqual([`/leave/${leave.leaveId}`]);
+    expect(await notificationHref(await stranger(), rows)).toEqual([undefined]);
   });
 });

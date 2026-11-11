@@ -19,6 +19,7 @@ import {
   diffKrw,
   formatRatePercent,
   sameAmountOn,
+  negateMoneyColumns,
   type Money,
   type MoneyInput,
 } from "@/domain/money";
@@ -450,5 +451,33 @@ describe("commissionAmount", () => {
     expect(() => commissionAmount(1_000, -1)).toThrow();
     expect(() => commissionAmount(1_000, 100.5)).toThrow();
     expect(() => commissionAmount(1_000, Number.NaN)).toThrow();
+  });
+});
+
+// 07.2-12(D7298-B · D-7300) — 조정 쌍의 상대 줄은 원 줄 저장 칸 넷을 부호만 바꿔 복사한다(다시 환산하지 않는다).
+describe("negateMoneyColumns", () => {
+  it("외화 USD 0.5원 경계 줄과 그 부정의 원화 칸 합은 0이다(다시 환산하면 1원이 남는다)", () => {
+    const columns = moneyToColumns({ currency: "USD", amount: -0.35, fxRate: 1350 });
+    expect(columns.amountKrw).toBe(-472);
+    const negated = negateMoneyColumns(columns);
+    expect(negated).toEqual({ currency: "USD", foreignAmount: "0.35", fxRate: "1350.0000", amountKrw: 472 });
+    expect(columns.amountKrw + negated.amountKrw).toBe(0);
+    expect(columns.amountKrw + moneyToColumns({ currency: "USD", amount: 0.35, fxRate: 1350 }).amountKrw).toBe(1);
+  });
+
+  it("원화 줄은 원화 칸만 부호가 바뀌고 0은 0이다(-0 아님)", () => {
+    expect(negateMoneyColumns({ currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: -1_000_000 })).toEqual({
+      currency: "KRW",
+      foreignAmount: null,
+      fxRate: "1.0000",
+      amountKrw: 1_000_000,
+    });
+    expect(Object.is(negateMoneyColumns({ currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: 0 }).amountKrw, 0)).toBe(true);
+    expect(negateMoneyColumns({ currency: "USD", foreignAmount: "0.00", fxRate: "1350.0000", amountKrw: 0 }).foreignAmount).toBe("0.00");
+  });
+
+  it("KRW_COLUMN_MIN(−1조) 줄의 짝(+1조)은 KRW_COLUMN_MAX 밖 — 형식 오류(range)로 거부한다", () => {
+    expect(() => negateMoneyColumns({ currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: KRW_COLUMN_MIN })).toThrow(MoneyInputError);
+    expect(negateMoneyColumns({ currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: -KRW_COLUMN_MAX }).amountKrw).toBe(KRW_COLUMN_MAX);
   });
 });

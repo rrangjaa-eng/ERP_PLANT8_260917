@@ -127,8 +127,9 @@ export type TableProps<Row> = {
   /**
    * 04-30(DR-35) — 편집 셀이 있는 격자에서 편집기가 있는 열의 `edit`이 아닌 셀에 Enter·글자 입력·Delete가 오면
    * 편집 모드를 열지 않고(줄 삭제도 하지 않고) 이것만 부른다. 이유 표시는 호출부가 cellIssue `reason`으로 한다.
+   * `key`는 누른 키 — 07.2-12: 줄 전체를 읽기 전용으로 둔 `삭제 예정` 줄의 Delete 되돌리기를 호출부가 가른다.
    */
-  onBlockedEdit?: (row: Row, columnKey: string) => void;
+  onBlockedEdit?: (row: Row, columnKey: string, key: string) => void;
   /**
    * 04-49(DR-3 · 계약 3) — 저장 요청 중. 격자 모양은 그대로 두고 `aria-busy`만 붙이며, 편집 진입·붙여넣기·구조·저장
    * 동작을 `isGridActionAllowed`로 거른다(방향키·범위 선택은 된다).
@@ -492,10 +493,10 @@ export function Table<Row>({
         if (pages) setFollowRowId(rowId);
       },
       onBlockedEdit: onBlockedEdit
-        ? (pos) => {
+        ? (pos, key) => {
             const row = flatRows[pos.row];
             const column = columns[pos.col];
-            if (row && column) onBlockedEdit(row, column.key);
+            if (row && column) onBlockedEdit(row, column.key, key);
           }
         : undefined,
       onSave: () => {

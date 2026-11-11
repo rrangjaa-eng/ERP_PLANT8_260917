@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeQuoteLineAmounts, quoteLineFormatErrors, quoteLineRowInputSchema, resolveLineKind } from "@/domain/quotes/lines";
+import { counterpartSet, lockOrder, pairedMoneyColumns, pairLocked, pairRequestError, planPairWrites } from "@/domain/quotes/adjustment-pair";
 
 // Phase 4 Task 2 ⑫ — PROJ-02: 클라이언트가 보낸 계산 필드가 무시되고 서버
 // 재계산값이 나온다. `computeQuoteLineAmounts`는 DB에 닿지 않는 순수
@@ -213,5 +214,67 @@ describe("quoteLineFormatErrors — 수수료 줄(07.2-06)", () => {
   it("행 스키마 — 새 수수료 줄은 소분류가 비어도 통과한다", () => {
     const parsed = quoteLineRowInputSchema.safeParse({ ...line({ currency: "KRW", amount: 300_000, fxRate: 1 }), id: undefined, isNew: true, lineKind: "commission", subcategory: "" });
     expect(parsed.success).toBe(true);
+  });
+});
+
+// 07.2-12(D7298-B · D-7300) — 프로젝트 사이 조정 쌍의 순수 판정.
+describe("조정 쌍 순수 판정 (D7298-B)", () => {
+  const base = { projectId: "a", isNew: true, kind: "adjustment" as const, storedCounterpartProjectId: null };
+
+  it("상대는 새 조정 줄에만 — 자기 프로젝트 · 견적 줄 · 기존 줄(규칙 줄 포함)에 새 상대를 실으면 거부", () => {
+    expect(pairRequestError({ ...base, counterpartProjectId: "b" })).toBeNull();
+    expect(pairRequestError({ ...base, counterpartProjectId: undefined })).toBeNull();
+    expect(pairRequestError({ ...base, counterpartProjectId: "a" })).toBe("조정 쌍은 새 조정 줄만 · 새로 고침");
+    expect(pairRequestError({ ...base, kind: "quote", counterpartProjectId: "b" })).toBe("조정 쌍은 새 조정 줄만 · 새로 고침");
+    expect(pairRequestError({ ...base, isNew: false, counterpartProjectId: "b" })).toBe("조정 쌍은 새 조정 줄만 · 새로 고침");
+    expect(pairRequestError({ ...base, isNew: false, counterpartProjectId: "b", storedCounterpartProjectId: "b" })).toBeNull();
+  });
+
+  it("상대 집합은 새 줄의 요청 상대 + 기존 쌍 줄의 저장 상대(정렬 · 중복 없음), 잠금 순서는 자기 포함 id 오름차순", () => {
+    expect(counterpartSet([{ counterpartProjectId: "c" }, {}], [{ counterpartProjectId: "b" }, { counterpartProjectId: null }, { counterpartProjectId: "c" }])).toEqual(["b", "c"]);
+    expect(lockOrder("m", ["z", "a", "m"])).toEqual(["a", "m", "z"]);
+  });
+
+  it("완료만 잠김 — 진행 · 정산 · 실주는 쌍을 고칠 수 있다", () => {
+    expect(pairLocked("completed")).toBe(true);
+    for (const status of ["in_progress", "settling", "lost", "sales"]) expect(pairLocked(status)).toBe(false);
+  });
+
+  it("짝 쓰기 — 새 쌍 줄은 만들고, 항목명 · 실행가가 바뀐 쌍 줄만 따라 고치고(비고는 따로), 보관한 쌍 줄은 짝도 보관", () => {
+    const writes = planPairWrites({
+      inserted: [{ id: "n1", counterpartProjectId: "b" }, { id: "n2" }],
+      updated: [
+        { id: "u1", adjustmentPairId: "p1", counterpartProjectId: "b", changed: ["execution"] },
+        { id: "u2", adjustmentPairId: "p2", counterpartProjectId: "b", changed: ["note"] },
+        { id: "u3", adjustmentPairId: null, counterpartProjectId: null, changed: ["itemName"] },
+      ],
+      archived: [{ id: "x1", adjustmentPairId: "p3", counterpartProjectId: "c" }, { id: "x2", adjustmentPairId: null, counterpartProjectId: null }],
+    });
+    expect(writes).toEqual([
+      { kind: "insert", lineId: "n1", counterpartProjectId: "b" },
+      { kind: "sync", lineId: "u1", pairId: "p1", counterpartProjectId: "b" },
+      { kind: "archive", lineId: "x1", pairId: "p3", counterpartProjectId: "c" },
+    ]);
+  });
+
+  it("짝 줄 돈 칸 — 저장 칸을 부호만 바꿔 복사한다(USD 외화 금액 · 환율 그대로, 원화 합 0)", () => {
+    const paired = pairedMoneyColumns({
+      unitPriceCurrency: "KRW",
+      unitPriceForeignAmount: null,
+      unitPriceFxRate: "1",
+      unitPriceAmountKrw: 0,
+      executionCurrency: "USD",
+      executionForeignAmount: "-0.35",
+      executionFxRate: "1350",
+      executionAmountKrw: -472,
+      quoteAmountKrw: 0,
+      profitKrw: 472,
+    });
+    expect(paired.executionForeignAmount).toBe("0.35");
+    expect(paired.executionFxRate).toBe("1350");
+    expect(paired.executionAmountKrw).toBe(472);
+    expect(paired.profitKrw).toBe(-472);
+    expect(Object.is(paired.unitPriceAmountKrw, -0)).toBe(false);
+    expect(Object.is(paired.quoteAmountKrw, -0)).toBe(false);
   });
 });

@@ -71,6 +71,9 @@ const PHASE7_WORDS: [string, StatusKind][] = [
   ["거래처 확인 전", "accent"],
   // 07.2-10 PU4(D-7228): 고객 견적서를 출력한 차수의 상태 칸 낱말(`보냄 MM-DD`).
   ["보냄", "muted"],
+  // 07.2-12 PU23(D-7238 · D-7237): 견적 줄 지우기 — 저장 전 표시(확인 창 대신 되돌리기)
+  ["삭제 예정", "muted"],
+  ["취소 예정", "muted"],
 ];
 
 describe("status-map — 낱말 → 색 한 표", () => {

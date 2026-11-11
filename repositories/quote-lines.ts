@@ -110,6 +110,17 @@ export async function findQuoteLineById(viewer: Viewer, id: string, tx: DbOrTx =
   return row ?? null;
 }
 
+// 07.2-12(D7298-B · D-7300) — 쌍의 짝 줄(보관된 줄 포함 — 짝 복원 · 짝 보관이 본다). 잠근 트랜잭션에서 부른다.
+export async function findPairLine(viewer: Viewer, pairId: string, exceptLineId: string, tx: DbOrTx = db): Promise<QuoteLineRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select()
+    .from(quoteLines)
+    .where(and(eq(quoteLines.adjustmentPairId, pairId), ne(quoteLines.id, exceptLineId)))
+    .limit(1);
+  return row ?? null;
+}
+
 export type QuoteLineInsertInput = {
   // 04-12(ENG-D10) — 화면이 만든 줄 id. 없으면 DB 기본값.
   id?: string;
@@ -142,6 +153,9 @@ export type QuoteLineInsertInput = {
   copiedFromLineId?: string | null;
   source?: string;
   customFields?: Record<string, unknown>;
+  // 07.2-12(D7298-B · D-7300) — 조정 쌍(두 칸은 함께 있거나 함께 없다 — CHECK quote_lines_adjustment_pair_check). 새 줄에서만 쓴다.
+  adjustmentPairId?: string | null;
+  counterpartProjectId?: string | null;
 };
 
 // 04-12(ENG-D10) — 새 줄 멱등 삽입. 같은 id가 이미 있으면 아무것도 쓰지 않고 null — 호출자가 그 id를 다시 읽어
@@ -182,6 +196,8 @@ export async function insertQuoteLineIfAbsent(
       copiedFromLineId: input.copiedFromLineId ?? null,
       source: input.source ?? "demo",
       customFields: input.customFields ?? {},
+      adjustmentPairId: input.adjustmentPairId ?? null,
+      counterpartProjectId: input.counterpartProjectId ?? null,
     })
     .onConflictDoNothing({ target: quoteLines.id })
     .returning();
@@ -268,7 +284,10 @@ export async function setQuoteLineArchived(viewer: Viewer, id: string, value: bo
 }
 
 // 04-12(A-03) — 순서는 셀 갱신이 쓰지 않는다(기존 줄의 sort_order는 그대로).
-export type QuoteLineUpdateInput = Omit<QuoteLineInsertInput, "id" | "revisionId" | "sortOrder" | "lineKind" | "copiedFromLineId" | "source">;
+export type QuoteLineUpdateInput = Omit<
+  QuoteLineInsertInput,
+  "id" | "revisionId" | "sortOrder" | "lineKind" | "copiedFromLineId" | "source" | "adjustmentPairId" | "counterpartProjectId"
+>;
 
 // D-65: 줄 버전 충돌 — 저장 요청이 읽은 버전과 다르면 UPDATE가 0행을
 // 돌려준다(WHERE version = expectedVersion). null은 "충돌 또는 존재하지

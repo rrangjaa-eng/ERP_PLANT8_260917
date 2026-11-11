@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
@@ -53,8 +54,23 @@ import {
   archiveQuoteLines as repoArchiveQuoteLines,
   restoreQuoteLineRow as repoRestoreQuoteLineRow,
   countActiveLinesByRevision as repoCountActiveLinesByRevision,
+  findPairLine as repoFindPairLine,
   type QuoteLineRow,
 } from "@/repositories/quote-lines";
+import { findCounterpartLabels as repoFindCounterpartLabels, lockProjectForWrite as repoLockProjectForWrite, type ProjectRow } from "@/repositories/projects";
+import {
+  ADJUSTMENT_PAIR_ARCHIVED,
+  ADJUSTMENT_PAIR_CHANGED,
+  ADJUSTMENT_PAIR_LOCKED,
+  ADJUSTMENT_PAIR_NOT_VISIBLE,
+  counterpartSet,
+  lockOrder,
+  pairedMoneyColumns,
+  pairLocked,
+  pairRequestError,
+  planPairWrites,
+  type PairWrite,
+} from "@/domain/quotes/adjustment-pair";
 import {
   findQuoteRevisionById as repoFindQuoteRevisionById,
   findLatestQuoteRevision as repoFindLatestQuoteRevision,
@@ -76,7 +92,7 @@ import { EVIDENCE_PREPAID_DUE_DAYS, QUOTE_LINE_MAX_PER_REVISION } from "@/domain
 import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { prepaidDueInfo } from "@/domain/evidence-reviews/prepaid";
 import { seoulToday } from "@/lib/dates";
-import { canOpenRevision } from "@/domain/projects/visibility";
+import { canOpenProject, canOpenRevision, projectRowScope } from "@/domain/projects/visibility";
 
 export class ForbiddenError extends UserFacingError {}
 export class RevisionNotFoundError extends UserFacingError {}
@@ -146,7 +162,11 @@ type QuoteLineProjectable = {
   prepaidOverdueDays: number | null;
   hasCardSideLinks: boolean;
   executionOverKrw: number | null;
+  counterpart: QuoteLineCounterpart | null;
 };
+
+// 07.2-12(D7298-B) — 조정 쌍 줄의 상대 프로젝트(번호 · 이름). 상대가 보는 범위 밖이면 이름은 null(번호만, T-07.2-12-04).
+export type QuoteLineCounterpart = { number: string; name: string | null };
 
 type LineEditFacts = {
   cellEditability: Record<QuoteLineField, QuoteCellEditability>;
@@ -158,7 +178,7 @@ type LineEditFacts = {
   executionOverKrw: number | null;
 };
 
-function toProjectable(row: QuoteLineRow, facts: LineEditFacts, vendorName: string | null): QuoteLineProjectable {
+function toProjectable(row: QuoteLineRow, facts: LineEditFacts, vendorName: string | null, counterpart: QuoteLineCounterpart | null): QuoteLineProjectable {
   return {
     id: row.id,
     revisionId: row.revisionId,
@@ -197,6 +217,7 @@ function toProjectable(row: QuoteLineRow, facts: LineEditFacts, vendorName: stri
     version: row.version,
     customFields: row.customFields as Record<string, unknown>,
     ...facts,
+    counterpart,
   };
 }
 
@@ -242,6 +263,8 @@ export type QuoteLineDto = {
   hasCardSideLinks: boolean;
   // 06-07(N-3) — 카드 쪽 연결 합이 실행가를 넘은 차액(넘지 않으면 null). 실행가를 못 보는 계급에는 키가 없다(quote.amount).
   executionOverKrw: number | null;
+  // 07.2-12(D7298-B · D-7300) — 조정 쌍 줄의 상대(항목 셀 2행 `상대 {번호} {프로젝트명}`). 쌍이 아니면 null.
+  counterpart: QuoteLineCounterpart | null;
 };
 
 export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = {
@@ -277,6 +300,7 @@ export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = 
     { key: "prepaidOverdueDays", from: "prepaidOverdueDays", infoItem: "project.value" },
     { key: "hasCardSideLinks", from: "hasCardSideLinks", infoItem: "project.value" },
     { key: "executionOverKrw", from: "executionOverKrw", infoItem: "quote.amount" },
+    { key: "counterpart", from: "counterpart", infoItem: "project.value" },
   ],
 };
 
@@ -440,6 +464,9 @@ async function projectLines(
   // 06-13 — 카드 쪽 연결(계보 사슬 — 06-07 findLineLinks, 보관 카드 사용 제외 H-4)과 선결제 기한(06-06). 커밋 뒤 · 목록 읽기라 기본 연결.
   const cardLinks = await repoFindLineLinks(viewer, rows.map((row) => row.id));
   const anyPrepaid = [...linked.values()].some((docs) => docs.some((doc) => doc.prepaid && doc.hasEvidence === false && doc.paid));
+  // 07.2-12(D7298-B) — 조정 쌍의 상대 번호 · 이름(보는 범위 밖이면 번호만).
+  const counterpartIds = [...new Set(rows.flatMap((row) => (row.counterpartProjectId ? [row.counterpartProjectId] : [])))];
+  const counterparts = counterpartIds.length > 0 ? await repoFindCounterpartLabels(viewer, await projectRowScope(viewer), counterpartIds) : new Map<string, QuoteLineCounterpart>();
   const dueDays = anyPrepaid ? await getSettingValue(EVIDENCE_PREPAID_DUE_DAYS) : 0;
   const today = seoulToday();
   const projectables = rows.map((row) => {
@@ -463,7 +490,7 @@ async function projectLines(
       prepaidOverdueDays: anyPrepaid ? prepaidOverdueDaysOf(linkedDocs, dueDays, today) : null,
       hasCardSideLinks: ctx.cardSideFacts?.get(row.id)?.linked ?? false,
       executionOverKrw: ctx.cardSideFacts?.get(row.id)?.overKrw ?? null,
-    }, row.vendorId ? (vendorNames.get(row.vendorId) ?? null) : null);
+    }, row.vendorId ? (vendorNames.get(row.vendorId) ?? null) : null, row.counterpartProjectId ? (counterparts.get(row.counterpartProjectId) ?? null) : null);
   });
   return (await projectMany(viewer, projectables, QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];
 }
@@ -529,6 +556,8 @@ export type QuoteLineWriteRow = {
   majorCategory?: string | null;
   customFields?: Record<string, unknown>;
   baseline?: QuoteLineBaseline;
+  /** 07.2-12(D7298-B · D-7300) — 새 조정 줄의 상대 프로젝트. 저장 때 상대 현재 차수에 반대 부호 짝이 같은 트랜잭션으로 생긴다. */
+  counterpartProjectId?: string;
 };
 
 type CompareField = keyof QuoteLineBaseline;
@@ -763,6 +792,7 @@ export const quoteLineRowInputSchema = z
     isNew: z.literal(true).optional(),
     duplicatedFrom: z.string().uuid().optional(),
     vendorHidden: z.literal(true).optional(),
+    counterpartProjectId: z.string().uuid().optional(),
     version: z.number().optional(),
     subcategory: z.string(),
     itemName: z.string().min(1, "항목명 필요 · 항목명 입력"),
@@ -832,6 +862,8 @@ const MEMBERSHIP_RULE = "quote.line-membership";
 const REPLAY_RULE = "quote.line-replay";
 const LINE_CAP_RULE = "quote.line-cap";
 const CURRENT_REVISION_RULE = "quote.current-revision";
+// 07.2-12(D7298-B) — 조정 쌍 판정(상대 열람 · 완료 · 잠금 전후 쌍 집합 · 새 줄만)의 거부 지점 이름(운영 로그 write.denied).
+const ADJUSTMENT_PAIR_RULE = "quote.adjustment-pair";
 // UI-SPEC rev 5 — 보낸 차수가 잠금 뒤 다시 읽은 최신 차수가 아니다(04-40 · B-01).
 const STALE_REVISION = "다른 사람이 새 차수를 만듦 · 새로 고침";
 // 보관함 복원(관리자 화면 — P0 예외) — 현재 차수가 아닌 차수의 줄.
@@ -865,12 +897,15 @@ export type PreparedQuoteLineSave = {
   vendorShown: boolean;
   /** quick 261002-3mx — 고를 수 있는 견적 소분류 값(활성 · 보관 아님). 견적 줄의 소분류는 이 값이거나 기존 줄의 저장 값이다. */
   selectableSubcategories: ReadonlySet<string>;
+  /** 07.2-12(D7298-B) — 잠금 전에 정한 상대 프로젝트 집합(정렬). 잠근 뒤 다시 읽어 다르면 전부 거부한다. */
+  counterpartIds: string[];
 };
 
 export async function prepareQuoteLineSave(
   viewer: Viewer,
   revisionId: string,
   deps?: Partial<Pick<QuoteLineWriteDeps, "can">>,
+  input?: Pick<QuoteLinesWriteInput, "rows" | "archivedLineIds">,
 ): Promise<PreparedQuoteLineSave> {
   const canFn = deps?.can ?? defaultCan;
   // 04-13(D-83) — 조정 권한만 있는 사람도 조정 줄을 저장한다. 두 권한은 여기서(트랜잭션 전) 읽는다(04-32).
@@ -890,6 +925,7 @@ export async function prepareQuoteLineSave(
   if (!inWriteScope && !(canAdjust && (await canOpenRevision(viewer, revisionId, ADJUSTMENT_OP)))) throw new RevisionNotFoundError("존재하지 않는 차수");
   const revision = await repoFindQuoteRevisionById(viewer, revisionId);
   if (!revision) throw new RevisionNotFoundError("존재하지 않는 차수");
+  const counterpartIds = await counterpartsBeforeLock(viewer, revision.projectId, revisionId, input, canAdjust);
 
   return {
     revisionId,
@@ -909,8 +945,58 @@ export async function prepareQuoteLineSave(
         })
       ).map((row) => row.value),
     ),
+    counterpartIds,
   };
 }
+
+// 07.2-12(D7298-B · D-7300 (가)) — 잠금 전(풀 읽기) 상대 프로젝트 집합: 새 쌍 줄은 요청의 상대, 기존 쌍 줄(수정 · 보관)은
+// 저장된 상대(바뀌지 않는 칸). 상대마다 조정 쓰기 행 범위(ADJUSTMENT_OP — 고르기 목록과 같은 용도) 안이어야 한다.
+async function counterpartsBeforeLock(
+  viewer: Viewer,
+  projectId: string,
+  revisionId: string,
+  input: Pick<QuoteLinesWriteInput, "rows" | "archivedLineIds"> | undefined,
+  canAdjust: boolean,
+): Promise<string[]> {
+  if (!input) return [];
+  const existingIds = [...new Set([...input.rows.filter((row) => !row.isNew).map((row) => row.id), ...(input.archivedLineIds ?? [])])];
+  const stored = existingIds.length > 0 ? await repoFindQuoteLinesByIds(viewer, existingIds, { revisionId }) : [];
+  const ids = counterpartSet(
+    input.rows.filter((row) => row.isNew),
+    stored.filter((row) => row.archivedAt === null),
+  ).filter((id) => id !== projectId);
+  for (const id of ids) {
+    if (!canAdjust || !(await canOpenProject(viewer, id, ADJUSTMENT_OP))) {
+      denyWrite(viewer, ADJUSTMENT_PAIR_RULE, { projectId, revisionId }, new UserFacingError(ADJUSTMENT_PAIR_NOT_VISIBLE));
+    }
+  }
+  return ids;
+}
+
+// 07.2-12(D7298-B (나) · T-07.2-12-03) — 자기 + 상대 프로젝트를 id 오름차순 한 순서로 잠근다(반대 방향 동시 저장의 교착 40P01 방지).
+// 자기 프로젝트는 지금처럼 loadProjectForGate(자동 정산 전이 포함), 상대는 잠금만 — 상대에 loadProjectForGate를 쓰면 상대의
+// 자동 정산 전이가 이 저장에서 일어난다(선례: evidence 정렬 잠금). 같은 트랜잭션에서 다시 부르면 이미 잡은 잠금이라 기다리지 않는다.
+export async function lockProjectsForQuoteSave(
+  viewer: Viewer,
+  projectId: string,
+  counterpartIds: readonly string[],
+  opts: { now?: () => Date; tx: DbOrTx; afterLock?: () => Promise<void> },
+  deps: { recordAction: typeof defaultRecordAction },
+): Promise<{ own: ProjectRow | null; counterparts: Map<string, ProjectRow> }> {
+  let own: ProjectRow | null = null;
+  const counterparts = new Map<string, ProjectRow>();
+  for (const id of lockOrder(projectId, counterpartIds)) {
+    if (id === projectId) {
+      own = await loadProjectForGate(viewer, projectId, opts, { recordAction: deps.recordAction });
+      continue;
+    }
+    const row = await repoLockProjectForWrite(viewer, id, opts.tx);
+    if (row) counterparts.set(id, row);
+  }
+  return { own, counterparts };
+}
+
+const sameIds = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id, index) => id === b[index]);
 
 // 04-13(D-83 · D-48) — 조정·견적 외 비용 줄은 견적가 0: 서버가 수량 1 · 원화 단가 0으로 쓰고, 소분류 칸에는 종류 값을
 // 적는다(요청의 그 칸들은 읽지 않는다). 조정 줄은 상태도 미착수로 고정한다(상태 칸이 없다).
@@ -1184,8 +1270,9 @@ export async function writeQuoteLinesInTx(
   const lineIds = input.rows.map((row) => row.id);
   const denyIds = { projectId, revisionId, lineIds: [...lineIds, ...archivedIds] };
 
-  // (a)
-  const projectRow = await loadProjectForGate(viewer, projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
+  // (a) 07.2-12(D7298-B (나)) — 자기 + 상대 프로젝트를 id 오름차순으로 잠근다.
+  const locked = await lockProjectsForQuoteSave(viewer, projectId, prepared.counterpartIds, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
+  const projectRow = locked.own;
   if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트 찾을 수 없음");
   // 04-40(B-01) — 현재 차수 재확인은 잠금 뒤 같은 tx로(단독 저장·합성 저장 공통). 아무것도 쓰기 전에 전부 거부한다.
   const latest = await repoFindLatestQuoteRevision(viewer, projectId, tx);
@@ -1239,12 +1326,29 @@ export async function writeQuoteLinesInTx(
       )
     : null;
 
+  // 07.2-12 — 판정을 지난 상대 쪽 쓰기((e) 끝에서 쓴다). 새 쌍의 id는 판정 때 정한다(자기 줄과 짝 줄이 나눠 갖는다).
+  const partnerWrites: {
+    write: PairWrite;
+    pairId: string;
+    counterpartRevisionId: string;
+    partner: QuoteLineRow | null;
+    source: QuoteLineWritePayload | null;
+    money: ReturnType<typeof pairedMoneyColumns> | null;
+  }[] = [];
   let denial = null as { rule: string; error: Error } | null;
   const deny = (rule: string, error: Error) => {
     denial ??= { rule, error };
   };
+  // 07.2-12(D7298-B (다)) — 잠근 뒤 다시 읽은 상대 집합이 잠금 전과 다르면(그 사이 다른 사람이 쌍을 지웠다) 전부 거부.
+  const counterpartsAfterLock = counterpartSet(
+    input.rows.filter((row) => row.isNew),
+    currentRows.filter((row) => row.archivedAt === null),
+  ).filter((id) => id !== projectId);
+  if (!sameIds(counterpartsAfterLock, prepared.counterpartIds)) deny(ADJUSTMENT_PAIR_RULE, new UserFacingError(ADJUSTMENT_PAIR_CHANGED));
   const missingSource = sourceIds.some((id) => !currentById.has(id));
-  if (currentRows.length !== existingIds.length || missingSource) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
+  // Codex 리뷰 P2(PR #372) — 같은 줄 id가 한 요청에 두 번이면 새 조정 줄의 짝이 두 번 생긴다(삽입은 멱등이지만 짝 쓰기는 아니다).
+  if (new Set(lineIds).size !== lineIds.length) deny(MEMBERSHIP_RULE, new UserFacingError(ORDER_MISMATCH));
+  else if (currentRows.length !== existingIds.length || missingSource) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
   else if (currentRows.some((row) => row.archivedAt !== null)) deny(MEMBERSHIP_RULE, new UserFacingError(ARCHIVED_LINE));
   else if (order === "mismatch") deny(MEMBERSHIP_RULE, new UserFacingError(ORDER_MISMATCH));
 
@@ -1315,6 +1419,14 @@ export async function writeQuoteLinesInTx(
       const resolved = resolveLineKind(requested, current && lineKindOf(current));
       if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
       const kind = resolved ?? lineKindOf(current!);
+      const pairError = pairRequestError({
+        projectId,
+        isNew: received.isNew === true,
+        kind,
+        counterpartProjectId: received.counterpartProjectId,
+        storedCounterpartProjectId: current?.counterpartProjectId ?? null,
+      });
+      if (pairError) deny(ADJUSTMENT_PAIR_RULE, new UserFacingError(pairError));
       const kindRow = normalizeForKind(requested, kind);
       formatErrors.push(...quoteLineFormatErrors(kindRow, rowIndex, kind));
       // quick 261002-3mx — 견적 줄의 소분류는 고를 수 있는 코드이거나 저장된 값 그대로다(기존 줄 · 재전송한 새 줄). 복제한 새 줄은 새 입력.
@@ -1379,6 +1491,95 @@ export async function writeQuoteLinesInTx(
     const capCtx: QuoteLineCapCtx = { newLines, countAfter: activeBefore.length - archivingActive + newLines, cap: lineCap };
     const capDecision = await gate(projectRow, LINE_CAP_RULE, capCtx);
     if (!capDecision.allowed) deny(LINE_CAP_RULE, new GateBlockedError(capDecision.reason));
+
+    // 07.2-12(D7298-B · D-7300) — 쌍 쓰기 판정: 어느 쪽이든 완료면 거부, 상대 쪽은 상대의 잠근 행 · 현재 차수로 줄 편집 · 줄 수 상한을 지난다.
+    const counterpartOf = new Map(input.rows.flatMap((row) => (row.isNew && row.counterpartProjectId ? [[row.id, row.counterpartProjectId] as const] : [])));
+    const pairWrites = planPairWrites({
+      inserted: planned
+        .filter((entry) => entry.input.isNew && !presentById.has(entry.input.id))
+        .map((entry) => ({ id: entry.input.id, counterpartProjectId: counterpartOf.get(entry.input.id) })),
+      updated: planned.flatMap((entry) =>
+        entry.current && !entry.unchanged
+          ? [{ id: entry.input.id, adjustmentPairId: entry.current.adjustmentPairId, counterpartProjectId: entry.current.counterpartProjectId, changed: entry.changed }]
+          : [],
+      ),
+      archived: archivedIds.flatMap((id) => {
+        const row = currentById.get(id);
+        return row ? [{ id, adjustmentPairId: row.adjustmentPairId, counterpartProjectId: row.counterpartProjectId }] : [];
+      }),
+    });
+    const touched = new Set([
+      ...pairWrites.map((write) => write.counterpartProjectId),
+      ...planned.flatMap((entry) => (entry.current?.counterpartProjectId && !entry.unchanged ? [entry.current.counterpartProjectId] : [])),
+    ]);
+    if (touched.size > 0 && (pairLocked(projectRow.status) || [...touched].some((id) => pairLocked(locked.counterparts.get(id)?.status ?? "")))) {
+      deny(ADJUSTMENT_PAIR_RULE, new UserFacingError(ADJUSTMENT_PAIR_LOCKED));
+    }
+    for (const counterpartId of touched) {
+      const counterpart = locked.counterparts.get(counterpartId);
+      const counterpartLatest = counterpart ? await repoFindLatestQuoteRevision(viewer, counterpartId, tx) : undefined;
+      if (!counterpart || !counterpartLatest) {
+        deny(ADJUSTMENT_PAIR_RULE, new UserFacingError(ADJUSTMENT_PAIR_NOT_VISIBLE));
+        continue;
+      }
+      // 보관 여부는 잠근 행으로 다시 본다(자기 프로젝트의 ledger.ts 잠금 뒤 판정과 같은 자리) — 보관된 프로젝트에 짝 줄을 쓰지 않는다.
+      if (counterpart.archivedAt !== null) {
+        deny(ADJUSTMENT_PAIR_RULE, new UserFacingError(ADJUSTMENT_PAIR_ARCHIVED));
+        continue;
+      }
+      const counterpartCtx = (change: ProjectLineEditCtx["change"]): ProjectLineEditCtx => ({
+        status: counterpart.status,
+        lineKind: "adjustment",
+        actorCanWrite: false,
+        actorCanAdjust: canAdjust,
+        approvedSeq: counterpartLatest.customerApprovedAt !== null ? counterpartLatest.seq : null,
+        hasLinkedDocuments: false,
+        change,
+      });
+      const writes = pairWrites.filter((write) => write.counterpartProjectId === counterpartId);
+      for (const write of writes) {
+        const partner = write.kind === "insert" ? null : await repoFindPairLine(viewer, write.pairId, write.lineId, tx);
+        if (write.kind !== "insert" && (!partner || partner.archivedAt !== null || partner.revisionId !== counterpartLatest.id)) {
+          deny(ADJUSTMENT_PAIR_RULE, new UserFacingError(ADJUSTMENT_PAIR_CHANGED));
+          continue;
+        }
+        const source = planned.find((entry) => entry.input.id === write.lineId)?.payload ?? null;
+        const change: ProjectLineEditCtx["change"] =
+          write.kind === "insert"
+            ? { kind: "insert", quoteCellsZero: true }
+            : write.kind === "sync"
+              ? { kind: "update", fields: ["itemName", "execution"], quoteAmountUnchanged: true }
+              : { kind: "archive", quoteAmountZero: partner?.quoteAmountKrw === 0 };
+        const decision = await gate(counterpart, LINE_EDIT_RULE, counterpartCtx(change));
+        if (!decision.allowed) deny(LINE_EDIT_RULE, new GateBlockedError(decision.reason));
+        let money: ReturnType<typeof pairedMoneyColumns> | null = null;
+        if (source) {
+          try {
+            money = pairedMoneyColumns(source);
+          } catch (error) {
+            if (!(error instanceof MoneyInputError)) throw error;
+            const rowIndex = input.rows.findIndex((row) => row.id === write.lineId);
+            formatErrors.push({ rowIndex, rowId: write.lineId, field: "execution", label: CELL_LABELS.execution, reason: error.message });
+          }
+        }
+        partnerWrites.push({
+          write,
+          pairId: write.kind === "insert" ? randomUUID() : write.pairId,
+          counterpartRevisionId: counterpartLatest.id,
+          partner,
+          source,
+          money,
+        });
+      }
+      const inserts = writes.filter((write) => write.kind === "insert").length;
+      if (inserts > 0) {
+        const archives = writes.filter((write) => write.kind === "archive").length;
+        const activeCount = await repoCountActiveLinesByRevision(viewer, counterpartLatest.id, tx);
+        const counterpartCap: QuoteLineCapCtx = { newLines: inserts, countAfter: activeCount - archives + inserts, cap: lineCap };
+        const counterpartCapDecision = await gate(counterpart, LINE_CAP_RULE, counterpartCap);
+        if (!counterpartCapDecision.allowed) deny(LINE_CAP_RULE, new GateBlockedError(counterpartCapDecision.reason));
+      }
+    }
   }
 
   // B-26 — 게이트·소속 거부의 한 지점(운영 로그 write.denied, 금액 없음). 뒤 플랜의 규칙도 이 지점을 지난다.
@@ -1391,6 +1592,7 @@ export async function writeQuoteLinesInTx(
   const fxToRemember: FxToRemember[] = [];
   // 실제로 쓴 것(삽입·갱신·순서·보관)이 없으면 로그도 남기지 않는다 — 재전송 no-op은 아무것도 하지 않는다.
   let wrote = false;
+  const insertedIds = new Set<string>();
   // 07.1-13 S8: 실제로 쓴 줄의 전후(새 줄 · 고친 줄 · 보관한 줄). 순번은 쓰기가 끝난 뒤 표시 순서로 붙인다.
   const writtenChanges: { id: string; name: string; archived: boolean; changes: Record<string, [unknown, unknown]> }[] = [];
 
@@ -1402,9 +1604,12 @@ export async function writeQuoteLinesInTx(
 
     if (row.isNew) {
       const sortOrder = position?.get(row.id) ?? nextSortOrder;
-      const inserted = await repoInsertQuoteLineIfAbsent(viewer, { id: row.id, revisionId, sortOrder, ...payload, lineKind: kind, customFields }, tx);
+      const pair = partnerWrites.find((entry) => entry.write.kind === "insert" && entry.write.lineId === row.id);
+      const pairColumns = pair ? { adjustmentPairId: pair.pairId, counterpartProjectId: pair.write.counterpartProjectId } : {};
+      const inserted = await repoInsertQuoteLineIfAbsent(viewer, { id: row.id, revisionId, sortOrder, ...payload, lineKind: kind, customFields, ...pairColumns }, tx);
       if (inserted) {
         wrote = true;
+        insertedIds.add(row.id);
         writtenChanges.push({ id: row.id, name: payload.itemName, archived: false, changes: buildChanges({}, lineChangeView(payload, QUOTE_LINE_FIELDS)) });
         if (!position) nextSortOrder += 1;
         continue;
@@ -1452,6 +1657,107 @@ export async function writeQuoteLinesInTx(
   for (const id of archivedIds) {
     const archived = currentById.get(id);
     if (archived) writtenChanges.push({ id, name: archived.itemName, archived: true, changes: buildChanges(lineChangeView(archived, QUOTE_LINE_FIELDS), {}) });
+  }
+
+  // 07.2-12(D7298-B · D-7300) — 상대 쪽 짝 줄: 같은 트랜잭션에서 만들고 · 따라 고치고 · 보관한다. 짝 쓰기 한 건마다 상대 차수에
+  // 행동 로그 한 건(detail의 adjustmentPairId가 그 쌍 하나를 가리킨다 — 같은 상대에 쌍이 둘이면 두 건).
+  // 재전송한 새 줄(자기 줄이 이미 있었다)은 짝도 이미 있다. 판정 뒤 짝이 달라졌으면(잠금 아래라 드물다) 전부 되돌린다.
+  // 로그에는 자기 쪽과 같은 lineChanges 원소(07.1-13 S8)를 싣는다 — 순번은 상대 차수 화면 번호(보관한 짝은 쓰기 전 번호)라
+  // 짝을 보관하는 상대 차수는 쓰기 전 활성 줄을 먼저 읽고, 로그는 짝 쓰기를 다 끝낸 뒤 남긴다(같은 tx).
+  const counterpartBefore = new Map<string, QuoteLineRow[]>();
+  for (const { write, counterpartRevisionId } of partnerWrites) {
+    if (write.kind === "archive" && !counterpartBefore.has(counterpartRevisionId)) {
+      counterpartBefore.set(counterpartRevisionId, await repoListQuoteLinesByRevision(viewer, counterpartRevisionId, tx));
+    }
+  }
+  const partnerLogs: { counterpartRevisionId: string; pairId: string; change: (typeof writtenChanges)[number] }[] = [];
+  for (const { write, pairId, counterpartRevisionId, partner, source, money } of partnerWrites) {
+    let partnerChange: (typeof writtenChanges)[number];
+    if (write.kind === "insert") {
+      if (!insertedIds.has(write.lineId) || !source || !money) continue;
+      const counterpartActive = await repoListQuoteLinesByRevision(viewer, counterpartRevisionId, tx);
+      const inserted = await repoInsertQuoteLineIfAbsent(
+        viewer,
+        {
+          id: randomUUID(),
+          revisionId: counterpartRevisionId,
+          sortOrder: counterpartActive.reduce((max, row) => Math.max(max, row.sortOrder), -1) + 1,
+          ...source,
+          ...money,
+          vendorId: null,
+          note: null,
+          clientRemark: null,
+          lineStatus: "not_started",
+          lineKind: "adjustment",
+          customFields: {},
+          adjustmentPairId: pairId,
+          counterpartProjectId: projectId,
+        },
+        tx,
+      );
+      if (!inserted) throw new UserFacingError(ADJUSTMENT_PAIR_CHANGED);
+      partnerChange = { id: inserted.id, name: inserted.itemName, archived: false, changes: buildChanges({}, lineChangeView(inserted, QUOTE_LINE_FIELDS)) };
+    } else if (write.kind === "sync") {
+      if (!partner || !source || !money) continue;
+      const updated = await repoUpdateQuoteLineIfVersionMatches(
+        viewer,
+        partner.id,
+        partner.version,
+        { revisionId: counterpartRevisionId },
+        {
+          subcategory: partner.subcategory,
+          itemName: source.itemName,
+          vendorId: partner.vendorId,
+          quantity: partner.quantity,
+          days: partner.days,
+          ...money,
+          lineStatus: partner.lineStatus,
+          note: partner.note,
+          clientRemark: partner.clientRemark,
+          midCategory: partner.midCategory,
+          majorCategory: partner.majorCategory,
+        },
+        tx,
+      );
+      if (!updated) throw new UserFacingError(ADJUSTMENT_PAIR_CHANGED);
+      partnerChange = {
+        id: partner.id,
+        name: updated.itemName,
+        archived: false,
+        changes: buildChanges(lineChangeView(partner, QUOTE_LINE_FIELDS), lineChangeView(updated, QUOTE_LINE_FIELDS)),
+      };
+    } else {
+      if (!partner) continue;
+      const count = await repoArchiveQuoteLines(viewer, { ids: [partner.id], revisionId: counterpartRevisionId, archivedBy: viewer.id, archivedAt: new Date() }, tx);
+      if (count !== 1) throw new UserFacingError(ADJUSTMENT_PAIR_CHANGED);
+      partnerChange = { id: partner.id, name: partner.itemName, archived: true, changes: buildChanges(lineChangeView(partner, QUOTE_LINE_FIELDS), {}) };
+    }
+    partnerLogs.push({ counterpartRevisionId, pairId, change: partnerChange });
+  }
+  const counterpartAfter = new Map<string, QuoteLineRow[]>();
+  for (const { counterpartRevisionId, pairId, change } of partnerLogs) {
+    let after = counterpartAfter.get(counterpartRevisionId);
+    if (!after) {
+      after = await repoListQuoteLinesByRevision(viewer, counterpartRevisionId, tx);
+      counterpartAfter.set(counterpartRevisionId, after);
+    }
+    const no = displayNumbers(change.archived ? counterpartBefore.get(counterpartRevisionId)! : after).get(change.id) ?? 0;
+    const lineChange: LineChange = { id: change.id, kind: "quote", no, name: change.name === "" ? null : change.name, changes: change.changes };
+    await recordAction(
+      viewer,
+      {
+        actionType: "document_update",
+        entity: QUOTE_LINE_ENTITY,
+        entityId: counterpartRevisionId,
+        detail: {
+          ...(change.archived ? { lineIds: [change.id], archivedLineIds: [change.id] } : { lineIds: [change.id] }),
+          counterpartProjectId: projectId,
+          adjustmentPairId: pairId,
+          ...(Object.keys(change.changes).length > 0 ? { lineChanges: [lineChange] } : {}),
+        },
+      },
+      { tx },
+    );
   }
 
   // (g) 엔지 리뷰 A §2 P2 — 결과는 차수의 활성 줄 전체(표시 순서). 07.1-13: 로그 줄 순번이 이 줄들로 정해지므로 로그 앞에서 읽는다(같은 tx).
@@ -1552,14 +1858,34 @@ export async function restoreQuoteLine(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   // 04-26(A-19 · ENG-D3 ①) — 상한 값은 트랜잭션 전에 읽는다. 복원도 줄 하나를 더하는 것이라 같은 상한을 지난다.
   const lineCap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
+  // 07.2-12(D7298-B · 07.2 D-7307) — 쌍 줄 복원은 짝도 함께: 상대는 조정 쓰기 행 범위 안이어야 한다(상대는 바뀌지 않는 칸).
+  const counterpartId = line.adjustmentPairId ? line.counterpartProjectId : null;
+  const pairDenyIds = { projectId: revision.projectId, revisionId: line.revisionId, lineIds: [id] };
+  if (counterpartId && !(canAdjust && (await canOpenProject(viewer, counterpartId, ADJUSTMENT_OP)))) {
+    denyWrite(viewer, ADJUSTMENT_PAIR_RULE, pairDenyIds, new UserFacingError(ADJUSTMENT_PAIR_NOT_VISIBLE));
+  }
 
   return withTransaction(async (tx) => {
-    const projectRow = await loadProjectForGate(viewer, revision.projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
+    const locked = await lockProjectsForQuoteSave(
+      viewer,
+      revision.projectId,
+      counterpartId ? [counterpartId] : [],
+      { now: deps?.now, tx, afterLock: deps?.afterLock },
+      { recordAction },
+    );
+    const projectRow = locked.own;
     if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트 찾을 수 없음");
     const current = await repoFindQuoteLineById(viewer, id, tx);
     if (!current || current.revisionId !== line.revisionId) throw new UserFacingError(MEMBERSHIP_MISMATCH);
     // quick 261002-4jn — 이미 활성(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
     if (current.archivedAt === null) return { restored: false };
+    const counterpart = counterpartId ? locked.counterparts.get(counterpartId) : undefined;
+    if (counterpartId && (!counterpart || pairLocked(projectRow.status) || pairLocked(counterpart.status))) {
+      denyWrite(viewer, ADJUSTMENT_PAIR_RULE, pairDenyIds, new UserFacingError(ADJUSTMENT_PAIR_LOCKED));
+    }
+    if (counterpart && counterpart.archivedAt !== null) {
+      denyWrite(viewer, ADJUSTMENT_PAIR_RULE, pairDenyIds, new UserFacingError(ADJUSTMENT_PAIR_ARCHIVED));
+    }
 
     const firstLinked = (await linkedDocumentsByLine(viewer, current.revisionId, tx)).get(id)?.[0];
     // 04-40(OV-2 · B-01) — 잠금 뒤 같은 tx로 읽은 현재 차수: 이전 차수 줄은 되살리지 않고, 승인 차수는 합계를 바꾸는 복원을 막는다.
@@ -1580,8 +1906,39 @@ export async function restoreQuoteLine(
       denyWrite(viewer, LINE_CAP_RULE, { projectId: revision.projectId, revisionId: current.revisionId, lineIds: [id] }, new GateBlockedError(capDecision.reason));
     }
 
+    // 짝 줄 — 보관돼 있으면 상대의 잠근 행 · 현재 차수로 같은 규칙(줄 편집 restore · 줄 수 상한)을 지나 함께 되살린다.
+    const partner = counterpart && current.adjustmentPairId ? await repoFindPairLine(viewer, current.adjustmentPairId, id, tx) : null;
+    if (counterpart && partner && partner.archivedAt !== null) {
+      const counterpartLatest = await repoFindLatestQuoteRevision(viewer, counterpart.id, tx);
+      const partnerIds = { projectId: counterpart.id, revisionId: partner.revisionId, lineIds: [partner.id] };
+      const partnerDecision =
+        counterpartLatest?.id !== partner.revisionId
+          ? { allowed: false, reason: PAST_REVISION_RESTORE }
+          : await gate(counterpart, LINE_EDIT_RULE, {
+              status: counterpart.status,
+              lineKind: "adjustment",
+              actorCanWrite: false,
+              actorCanAdjust: canAdjust,
+              approvedSeq: counterpartLatest.customerApprovedAt ? counterpartLatest.seq : null,
+              hasLinkedDocuments: false,
+              change: { kind: "restore", quoteAmountZero: partner.quoteAmountKrw === 0 },
+            } satisfies ProjectLineEditCtx);
+      if (!partnerDecision.allowed) denyWrite(viewer, LINE_EDIT_RULE, partnerIds, new GateBlockedError(partnerDecision.reason));
+      const partnerCount = await repoCountActiveLinesByRevision(viewer, partner.revisionId, tx);
+      const partnerCap = await gate(counterpart, LINE_CAP_RULE, { newLines: 1, countAfter: partnerCount + 1, cap: lineCap } satisfies QuoteLineCapCtx);
+      if (!partnerCap.allowed) denyWrite(viewer, LINE_CAP_RULE, partnerIds, new GateBlockedError(partnerCap.reason));
+    }
+
     if (!(await repoRestoreQuoteLineRow(viewer, id, tx))) throw new UserFacingError(MEMBERSHIP_MISMATCH);
     await recordAction(viewer, { actionType: "restore", entity: QUOTE_LINE_ENTITY, entityId: id }, { tx });
+    if (partner && partner.archivedAt !== null) {
+      if (!(await repoRestoreQuoteLineRow(viewer, partner.id, tx))) throw new UserFacingError(ADJUSTMENT_PAIR_CHANGED);
+      await recordAction(
+        viewer,
+        { actionType: "restore", entity: QUOTE_LINE_ENTITY, entityId: partner.id, detail: { adjustmentPairId: current.adjustmentPairId } },
+        { tx },
+      );
+    }
     return { restored: true };
   });
 }
@@ -1633,7 +1990,7 @@ export async function saveQuoteLines(
   input: QuoteLinesWriteInput,
   deps?: Partial<QuoteLineWriteDeps>,
 ): Promise<SaveQuoteLinesResult> {
-  const prepared = await prepareQuoteLineSave(viewer, revisionId, deps);
+  const prepared = await prepareQuoteLineSave(viewer, revisionId, deps, input);
   const written = await withTransaction((tx) => writeQuoteLinesInTx(viewer, prepared, input, tx, deps));
   await rememberFxAfterCommit(written.fxToRemember, deps?.rememberFxRate);
   return finishQuoteLineSave(viewer, written);

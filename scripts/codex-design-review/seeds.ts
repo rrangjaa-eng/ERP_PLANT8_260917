@@ -2,7 +2,7 @@ import { createHash, randomInt, randomUUID } from "node:crypto";
 import { expect, type Browser } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, files, purchaseRequests } from "@/db/schema";
+import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, files, projects, purchaseRequests } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -1293,6 +1293,48 @@ async function quoteLinesFilled(): Promise<SeedResult> {
   return { vars: { projectId: project.id, revisionId: revision.id }, viewer: pm };
 }
 
+// 07.2-12(UI-SPEC S11 · D7298-B) — 조정 줄 쌍: 경영관리(조정 쓰기 · 경영관리팀 — 조정 범위 회사 전체)로 본다. 진행 프로젝트 A · B, 완료 프로젝트 C
+// (고르기에서 고를 수 없는 행), A에 상대 B 쌍 하나(A −1,000,000 · B +1,000,000). vars = A · B.
+async function quoteAdjustmentPair(): Promise<SeedResult> {
+  const today = seoulToday();
+  const year = today.slice(0, 4);
+  const suffix = randomUUID().slice(0, 6);
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처쌍본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처쌍팀-${suffix}` });
+  const pm = await makePerson("담당", "role-pm", team.id, `${year}-01-01`);
+  const mgmtTeam = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.name === "경영관리팀");
+  if (!mgmtTeam) throw new Error("시드된 경영관리팀 없음");
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `캡처쌍경영관리-${suffix}`, workScope: "company", viewScope: "company" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.adjustment", action: "write", allowed: true });
+  for (const infoItem of ["project.value", "quote.amount", "vendor.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  const adjuster = await makePerson("경영관리", role.id, mgmtTeam.id, `${year}-01-01`);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처쌍클라이언트-${suffix}`, normalizedName: `캡처쌍클라이언트-${suffix}` });
+  const make = async (label: string) =>
+    createProject(pm.viewer, { clientId: client.id, teamId: team.id, pmUserId: pm.viewer.id, name: `캡처쌍${label}-${suffix}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` });
+  const a = await make("A");
+  const b = await make("B");
+  const c = await make("완료C");
+  for (const project of [a, b, c]) await db.update(projects).set({ status: project === c ? "completed" : "in_progress" }).where(eq(projects.id, project.id));
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, a.id);
+  if (!revision) throw new Error("프로젝트 A · 1차 차수가 없습니다");
+  await saveQuoteLines(adjuster.viewer, revision.id, {
+    rows: [
+      {
+        id: randomUUID(),
+        isNew: true,
+        lineKind: "adjustment",
+        subcategory: "",
+        itemName: "프로젝트 간 비용 이전",
+        counterpartProjectId: b.id,
+        unitPrice: { currency: "KRW", amount: 0, fxRate: 1 },
+        execution: { currency: "KRW", amount: -1_000_000, fxRate: 1 },
+      },
+    ],
+  });
+  return { vars: { projectId: a.id, counterpartProjectId: b.id }, viewer: adjuster };
+}
+
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
   switch (name) {
     case "pre-settle-evidence-pending":
@@ -1317,5 +1359,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return quoteLinesFilled();
     case "print-settlement":
       return printSettlement();
+    case "quote-adjustment-pair":
+      return quoteAdjustmentPair();
   }
 }

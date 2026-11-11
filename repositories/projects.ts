@@ -402,6 +402,45 @@ export async function listProjectIdsInScope(viewer: Viewer, scope: RowScope, ids
   return new Set(rows.map((row) => row.id));
 }
 
+// 07.2-12(D7298-B · D-7300) — 조정 쌍 상대 고르기 목록: 조정 쓰기 범위 안 · 보관 안 된 다른 프로젝트(번호 · 이름 · 팀 · 상태).
+export async function listCounterpartCandidates(
+  viewer: Viewer,
+  scope: RowScope,
+  exceptProjectId: string,
+): Promise<{ id: string; number: string; name: string; status: string; teamName: string | null }[]> {
+  if (scope.rows === "none") return [];
+  return db
+    .select({ id: projects.id, number: projects.number, name: projects.name, status: projects.status, teamName: teams.name })
+    .from(projects)
+    .leftJoin(teams, eq(teams.id, projects.teamId))
+    .where(
+      and(
+        sql`${projects.id} <> ${exceptProjectId}`,
+        isNull(projects.archivedAt),
+        rowScopeCondition(viewer, scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId }),
+      ),
+    )
+    .orderBy(desc(projects.number));
+}
+
+// 07.2-12(D7298-B) — 조정 쌍 줄의 상대 표시(번호 · 이름). 이름은 보는 범위 안일 때만 — 범위 밖은 번호만(T-07.2-12-04).
+export async function findCounterpartLabels(
+  viewer: Viewer,
+  scope: RowScope,
+  ids: string[],
+): Promise<Map<string, { number: string; name: string | null }>> {
+  if (ids.length === 0) return new Map();
+  const visible =
+    scope.rows === "none"
+      ? sql<boolean>`false`
+      : sql<boolean>`(${rowScopeCondition(viewer, scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId })})`;
+  const rows = await db
+    .select({ id: projects.id, number: projects.number, name: projects.name, visible })
+    .from(projects)
+    .where(inArray(projects.id, ids));
+  return new Map(rows.map((row) => [row.id, { number: row.number, name: row.visible ? row.name : null }] as const));
+}
+
 export async function findProjectByNumber(viewer: Viewer, number: string): Promise<ProjectRow | null> {
   void viewer;
   const [row] = await db.select().from(projects).where(eq(projects.number, number)).limit(1);

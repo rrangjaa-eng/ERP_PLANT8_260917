@@ -35,8 +35,8 @@ export type GridKeyboardHandlers = {
   onSave?: () => void;
   /** 04-19 리뷰 B-1 — 편집 중 Enter(편집기가 이미 확정했다) 뒤 아래로 옮겼다. 호출부는 편집기가 내려간 뒤 셀로 포커스를 돌려준다. */
   onCommitDown?: () => void;
-  /** 04-30(DR-35) — 막힌 셀(isBlockedCell)의 Enter·글자 입력·Delete. 편집·줄 삭제 대신 이것만 부른다. */
-  onBlockedEdit?: (pos: GridPosition) => void;
+  /** 04-30(DR-35) — 막힌 셀(isBlockedCell)의 Enter·글자 입력·Delete. 편집·줄 삭제 대신 이것만 부른다. key는 누른 키(07.2-12 — 호출부가 Delete를 가른다). */
+  onBlockedEdit?: (pos: GridPosition, key: string) => void;
 };
 
 export type UseGridKeyboardParams = {
@@ -312,7 +312,7 @@ export function useGridKeyboard({
           if (allowed("enterEdit")) handlers.onEnterEdit?.(pos);
         } else if (blocked) {
           event.preventDefault();
-          handlers.onBlockedEdit?.(pos);
+          handlers.onBlockedEdit?.(pos, event.key);
         }
         break;
       case "Escape":
@@ -323,14 +323,14 @@ export function useGridKeyboard({
       case "Delete":
       case "Backspace":
         event.preventDefault();
-        if (blocked) handlers.onBlockedEdit?.(pos);
+        if (blocked) handlers.onBlockedEdit?.(pos, event.key);
         else if (allowed("deleteRow") && rowIds[pos.row] !== undefined) handlers.onDeleteRow?.(rowIds[pos.row]!);
         break;
       default:
         // 글자 입력(한 글자 키, 조합 키 없음) — 막힌 셀이면 이유만.
         if (blocked && event.key.length === 1 && !event.ctrlKey && !event.altKey) {
           event.preventDefault();
-          handlers.onBlockedEdit?.(pos);
+          handlers.onBlockedEdit?.(pos, event.key);
         }
         break;
     }

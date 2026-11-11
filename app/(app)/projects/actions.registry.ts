@@ -74,6 +74,14 @@ registerAction({
   dtoName: "ProjectMemberDto",
 });
 
+// 07.2-12(D7298-B · UI-SPEC S11): 조정 쌍의 상대 프로젝트 고르기 — 고르는 것도 조정 쓰기 자리라 쓰기로 적는다. 행은 번호 · 이름 · 팀 · 고를 수 있음뿐(DTO 없음).
+registerAction({
+  name: "listCounterpartProjectsAction",
+  menu: "projects.adjustment",
+  action: "write",
+  dtoName: null,
+});
+
 // 06.2-05(D-6211): 참여자 후보 — 후보를 보는 것도 더하기 권리 자리라 쓰기로 적는다. 행은 ProjectMemberCandidateDto 투영.
 registerAction({
   name: "listMemberCandidatesAction",

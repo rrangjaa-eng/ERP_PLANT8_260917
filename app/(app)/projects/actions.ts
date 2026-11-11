@@ -13,6 +13,7 @@ import {
 } from "@/domain/projects/ledger";
 import { validatePreEstimateChange, type PreEstimateFieldError } from "@/domain/projects/pre-estimate";
 import { quoteLinesInputSchema, SaveRejectedError } from "@/domain/quotes/lines";
+import { listCounterpartProjects } from "@/domain/quotes/adjustment-pair";
 import {
   CUSTOMER_APPROVAL_BASES,
   createRevisionFromCurrent,
@@ -357,6 +358,14 @@ export const setCustomerApprovalAction = authedActionClient
 export const listRevisionLinesAction = authedActionClient.schema(revisionLinesInputSchema).action(async ({ parsedInput, ctx }) => {
   return listRevisionLines(ctx.viewer, parsedInput.projectId, { revisionSeq: parsedInput.revisionSeq });
 });
+
+// 07.2-12(D7298-B · UI-SPEC S11): 조정 쌍의 상대 프로젝트 고르기 목록 — 조정 쓰기 행 범위(ADJUSTMENT_OP)라 목록에 있으면 저장도 된다.
+// 조정 쓰기 권리가 없으면 빈 목록. 완료 프로젝트는 고를 수 없는 행(이유 한 줄)으로 온다. 검색은 화면이 이 목록 안에서 한다.
+export const listCounterpartProjectsAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    return listCounterpartProjects(ctx.viewer, parsedInput.projectId);
+  });
 
 // 06.2-12(S2): 프로젝트 상세 「참여자」 섹션 읽기 — 담당 PM 행 · 참여자 · 권리 불린. 범위 밖이면 없는 id와 같은 일반 문구(존재를 새지 않는다 — 260907 `visibleProject` → 404).
 export const listProjectMembersAction = authedActionClient

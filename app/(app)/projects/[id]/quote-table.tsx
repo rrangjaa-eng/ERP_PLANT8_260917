@@ -15,7 +15,6 @@ import { Table } from "@/ui/table/Table";
 import { Select } from "@/ui/select/Select";
 import { RowSheet } from "@/ui/table/RowSheet";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
-import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Toast } from "@/ui/toast/Toast";
 import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
@@ -66,6 +65,7 @@ import {
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { SettlementButton, type SettlementHeaderProps } from "./settlement-button";
 import { CommissionPanel } from "./commission-panel";
+import { CounterpartPicker, type PickedCounterpart } from "./counterpart-picker";
 import { lineCellDirty, unsavedEditsReason } from "./unsaved-edits";
 import { CUSTOMER_APPROVAL_TRIGGER_ID, CustomerApprovalItems, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import type { ProjectProfitSummary } from "@/domain/projects/profit-summary";
@@ -148,6 +148,10 @@ type DraftLine = {
   prepaidOverdueDays: number | null;
   hasCardSideLinks: boolean;
   executionOverKrw: number | null;
+  /** 07.2-12(PU23 · D-7238) — 저장 전 지우기 표시. 「delete」는 저장 때 보관, 「cancel」(연결 문서가 있는 줄)은 저장 때 취소(견적가 0). */
+  pendingDelete?: "delete" | "cancel";
+  /** 07.2-12(D7298-B · UI-SPEC S11) — 조정 쌍의 상대 프로젝트(항목 셀 2행). 새 줄은 고른 프로젝트 id를 저장 때 싣는다. */
+  counterpart?: { projectId?: string; number: string; name: string | null };
 };
 
 type LineCells = Record<QuoteLineField, QuoteCellEditability>;
@@ -402,7 +406,13 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     prepaidOverdueDays: dto.prepaidOverdueDays,
     hasCardSideLinks: dto.hasCardSideLinks,
     executionOverKrw: dto.executionOverKrw,
+    ...(dto.counterpart ? { counterpart: dto.counterpart } : {}),
   };
+}
+
+// 07.2-12(UI-SPEC S11) — 쌍 줄 항목 셀 2행. 상대를 볼 수 없으면 번호만.
+function counterpartLabel(counterpart: NonNullable<DraftLine["counterpart"]>): string {
+  return counterpart.name ? `상대 ${counterpart.number} ${counterpart.name}` : `상대 ${counterpart.number}`;
 }
 
 // 04-30(ENG-D10) — 새 줄은 만들 때 화면 uuid를 id로 붙인다(재전송·미저장 보관 키도 이 id). 복원은 보관된 id를 넘긴다.
@@ -484,6 +494,7 @@ type StoredNewLine = {
   clientRemark: string | null;
   midCategory: string | null;
   majorCategory: string | null;
+  counterpart?: { projectId: string; number: string; name: string | null };
 };
 
 export function editsSnapshot(
@@ -514,6 +525,7 @@ export function editsSnapshot(
         clientRemark: line.clientRemark,
         midCategory: line.midCategory,
         majorCategory: line.majorCategory,
+        ...(line.counterpart?.projectId ? { counterpart: { projectId: line.counterpart.projectId, number: line.counterpart.number, name: line.counterpart.name } } : {}),
       };
       edits[`${line.clientKey}:new`] = stored;
       continue;
@@ -531,8 +543,10 @@ export function editsSnapshot(
     if (line.clientRemark !== (base.clientRemark ?? null)) edits[`${line.id}:clientRemark`] = line.clientRemark;
     if (line.midCategory !== (base.midCategory ?? null)) edits[`${line.id}:midCategory`] = line.midCategory;
     if (line.majorCategory !== (base.majorCategory ?? null)) edits[`${line.id}:majorCategory`] = line.majorCategory;
+    // Codex 리뷰 P2(PR #372) — 저장 전 지우기 표시도 보관한다(취소 예정이 새로 고침 뒤 사라지면 저장 때 취소가 빠진다).
+    if (line.pendingDelete) edits[`${line.id}:pendingDelete`] = line.pendingDelete;
     // 검토 8(S18) — 칸이 하나라도 있으면 그 줄의 version·baseline을 함께 보관한다(복원 뒤 저장이 충돌 판정을 받는다).
-    if (lineDiffersFromBaseline(line) && line.version !== undefined) {
+    if ((lineDiffersFromBaseline(line) || line.pendingDelete) && line.version !== undefined) {
       const stored: StoredLineBase = { version: line.version, baseline: base, vendorHidden: line.vendorHidden };
       edits[`${line.id}:base`] = stored;
     }
@@ -648,12 +662,20 @@ export function restoredCellPatch(column: string, value: unknown): Partial<Draft
       return typeof value === "string" || value === null ? { midCategory: value } : null;
     case "majorCategory":
       return typeof value === "string" || value === null ? { majorCategory: value } : null;
+    case "pendingDelete":
+      return value === "delete" || value === "cancel" ? { pendingDelete: value } : null;
     default:
       return null;
   }
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// 07.2-12 — 보관한 새 조정 줄의 상대(고른 프로젝트). 모양이 어긋나면 상대 없이 되살린다(서버가 저장 때 다시 판정한다).
+function restoredCounterpart(value: unknown): Pick<DraftLine, "counterpart"> {
+  if (!isRecord(value) || typeof value.projectId !== "string" || !UUID_PATTERN.test(value.projectId) || typeof value.number !== "string") return {};
+  return { counterpart: { projectId: value.projectId, number: value.number, name: typeof value.name === "string" ? value.name : null } };
+}
 
 function restoredNewLine(value: unknown, subcategories: readonly string[], kindCells: Record<QuoteLineKind, LineCells>, storedId: string): DraftLine | null {
   if (!isRecord(value)) return null;
@@ -666,6 +688,7 @@ function restoredNewLine(value: unknown, subcategories: readonly string[], kindC
     lineKind,
     ...(typeof value.duplicatedFrom === "string" && UUID_PATTERN.test(value.duplicatedFrom) ? { duplicatedFrom: value.duplicatedFrom } : {}),
     ...(value.vendorHidden === true ? { vendorHidden: true as const } : {}),
+    ...(lineKind === "adjustment" ? restoredCounterpart(value.counterpart) : {}),
   };
   for (const [field, column] of [
     ["subcategory", "subcategory"],
@@ -754,7 +777,8 @@ export function mergeRestoredEdits(
             ...patch,
             ...stored,
             baseline: vendorHidden || line.vendorHidden ? { ...stored.baseline, vendorId: line.baseline.vendorId } : stored.baseline,
-            dirty: true,
+            // 지우기 표시만으로는 칸 편집이 아니다(표시를 끄면 dirty가 남지 않게 — toggleDeleteLine과 같다).
+            dirty: patch.pendingDelete ? line.dirty : true,
           }
         : line,
     );
@@ -843,6 +867,9 @@ function NumericEditCell({
         value={value}
         onChange={onChange}
         autoFocus
+        // QA(#372) — 끝에 캐럿을 두고 열리면 `0`에 친 `-`가 버려져(맨 앞만 부호) 음수 조정 실행가가 양수로 저장됐다.
+        // 열릴 때 값을 전체 선택해 친 글자가 값을 바꾼다(공급가액 `바꾸기` 칸과 같은 규칙).
+        onFocus={(event) => event.currentTarget.select()}
         className={styles.cellInputNumeric}
         onBlur={() => onCommit(rawValue)}
         onKeyDown={(event) => {
@@ -1229,17 +1256,9 @@ export function QuoteLedger({
   const [lineCapNotice, setLineCapNotice] = useState<string | null>(null);
   // 07.2-06(PU3 · D-7223) — 「계산」 패널을 연 수수료 줄(clientKey). 닫히면 그 줄 단가 칸으로 포커스를 돌린다.
   const [commissionFor, setCommissionFor] = useState<string | null>(null);
+  // 07.2-12(UI-SPEC S11) — 「조정 줄 추가」는 먼저 상대 프로젝트를 고른다.
+  const [counterpartPickerOpen, setCounterpartPickerOpen] = useState(false);
   const commissionFocusRef = useRef<string | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<{
-    clientKey: string;
-    itemName: string;
-    quoteAmountKrw: number;
-    executionKrw: number;
-    linked: boolean;
-    lineKind: QuoteLineKind;
-  } | null>(null);
-  // 04-30(D-56) — 보관할 저장된 줄 id. 한 줄이 dirty 한 건이고 일괄 저장 때 보관된다.
-  const [archivedLineIds, setArchivedLineIds] = useState<string[]>([]);
   // 04-30(DR-35) — 잠긴·읽기 전용 셀 편집 시도의 이유 한 줄(포커스가 셀을 떠나면 지운다).
   const [blockedReason, setBlockedReason] = useState<{ clientKey: string; columnKey: string; message: string } | null>(null);
   const [sheetRowKey, setSheetRowKey] = useState<string | null>(null);
@@ -1563,7 +1582,6 @@ export function QuoteLedger({
       }
       if (data?.quoteLines?.lines) {
         setLines(data.quoteLines.lines.map(fromDto));
-        setArchivedLineIds([]);
       }
       setResplitKey((key) => key + 1);
       if (data?.revenue) {
@@ -1717,7 +1735,8 @@ export function QuoteLedger({
     }
   }, [infoEditing]);
 
-  const quoteLinesDirtyCount = lines.filter((line) => line.dirty).length + archivedLineIds.length;
+  // 07.2-12(D-7238) — 삭제 예정 줄은 한 줄이 dirty 한 건이다(고친 칸이 있어도 한 건).
+  const quoteLinesDirtyCount = lines.filter((line) => line.dirty || line.pendingDelete).length;
   const issuedDirtyCount = (issuedEntries ?? []).filter((entry) => entry.dirty).length;
   const paidDirtyCount = (paidEntries ?? []).filter((entry) => entry.dirty).length;
   const issueRequestDirtyCount = issueRequestRows.filter((request) => request.dirty).length;
@@ -1753,7 +1772,6 @@ export function QuoteLedger({
     setRenderedRevisionId(revisionId);
     setSeenStatus(status);
     setLines(initialLines.map(fromDto));
-    setArchivedLineIds([]);
     setIssuedEntries(entriesFromDto(revenue.issuedEntries));
     setPaidEntries(entriesFromDto(revenue.paidEntries));
     setIssueRequestRows(issueRequestDraftsFromDto(issueRequests.rows));
@@ -1842,7 +1860,10 @@ export function QuoteLedger({
   }
   // 04-47(DR-5) — 남은 고정 오류·해소되지 않은 충돌. 1차는 이것 때문에 비활성이 되지 않고, 누르면 서버를 부르지 않고 첫 오류로 간다.
   const hasEntryError = (entries: EntryDraft[] | undefined) => (entries ?? []).some((entry) => Object.keys(entry.cellErrors ?? {}).length > 0);
-  const quoteHasIssue = lines.some((line) => Object.keys(line.cellErrors).length > 0 || Object.keys(line.cellConflicts).length > 0);
+  // 07.2-12 리뷰 P2-3 — 삭제 예정 줄은 저장 때 보관되고 칸 값은 보내지 않으므로, 그 줄의 오류 · 충돌은 저장을 막지 않는다.
+  const quoteHasIssue = lines.some(
+    (line) => line.pendingDelete !== "delete" && (Object.keys(line.cellErrors).length > 0 || Object.keys(line.cellConflicts).length > 0),
+  );
 
   // 표 밖 칸(기간 → 총 매출 예상가) → 견적 줄 표 → 발행 표 → 입금 표 순서로 첫 오류에 포커스한다. 오류가 없으면 false.
   function goToFirstIssue(): boolean {
@@ -1918,13 +1939,20 @@ export function QuoteLedger({
 
   // 04-23(ENG-D10 · B-24) — 그룹을 정해 줄을 더하는 처리 지점 하나. 표의 새 줄 생성 함수(newDraftLine — 화면 uuid ·
   // isNew)를 그대로 거치고 종류만 덧씌운다. 소분류는 빈 값으로 보낸다(서버가 종류 값을 적는다). 새 줄 id를 돌려준다.
-  function addLineToGroup(lineKind: "out_of_quote" | "adjustment" | "commission"): string {
+  function addLineToGroup(lineKind: "out_of_quote" | "adjustment" | "commission", counterpart?: PickedCounterpart): string {
     const cells = lineKind === "adjustment" ? adjustmentLineCells : lineKind === "commission" ? commissionLineCells : outOfQuoteLineCells;
-    const line: DraftLine = { ...newDraftLine("", cells), lineKind };
+    const line: DraftLine = { ...newDraftLine("", cells), lineKind, ...(counterpart ? { counterpart } : {}) };
     persistPendingRef.current = true;
     setLines((prev) => [...prev, line]);
     setRevealRowId(line.clientKey);
     return line.clientKey;
+  }
+
+  // 07.2-12(UI-SPEC S11) — 「조정 줄 추가」는 먼저 상대 프로젝트를 고른다. 완료 프로젝트는 쌍을 만들 수 없어(서버 「상대 프로젝트 완료 · 조정 불가」)
+  // 고르기 없이 지금처럼 한쪽 조정 줄(D-83 — 완료 뒤 비용 조정)을 바로 더한다. 새 줄의 실행가 칸이 열린다.
+  function addAdjustment() {
+    if (status === "completed") setOpenCell({ rowId: addLineToGroup("adjustment"), columnKey: "execution" });
+    else setCounterpartPickerOpen(true);
   }
 
   function duplicateLine(clientKey: string) {
@@ -1985,20 +2013,18 @@ export function QuoteLedger({
     });
   }
 
-  // 04-30(D-56 · DR-12) — 저장된 줄은 화면에서 빼고 보관할 id로(dirty 한 건), 연결 문서가 있는 줄은 상태만 취소,
-  // 아직 저장되지 않은 새 줄은 그냥 뺀다.
-  function confirmDeleteLine() {
-    if (!deleteConfirm) return;
+  // 07.2-12(PU23 · D-7238 · DC-2) — 확인 창 없이 지우기 표시를 켜고 끈다(같은 줄 Delete 다시 = 되돌리기). 저장된 줄은
+  // 저장 때 보관(D-56), 연결 문서가 있는 줄은 저장 때 취소(D-7237), 아직 저장되지 않은 새 줄은 지울 것이 없어 바로 뺀다.
+  function toggleDeleteLine(clientKey: string) {
     persistPendingRef.current = true;
-    const target = lines.find((line) => line.clientKey === deleteConfirm.clientKey);
-    if (target?.hasLinkedDocuments || target?.hasCardSideLinks) {
-      updateLine(target.clientKey, { lineStatus: "cancelled" });
-    } else {
-      setLines((prev) => prev.filter((line) => line.clientKey !== deleteConfirm.clientKey));
-      const archivedId = target?.isNew ? undefined : target?.id;
-      if (archivedId) setArchivedLineIds((prev) => [...prev, archivedId]);
-    }
-    setDeleteConfirm(null);
+    setLines((prev) =>
+      prev.flatMap((line) => {
+        if (line.clientKey !== clientKey) return [line];
+        if (line.isNew || !line.id) return [];
+        if (line.pendingDelete) return [{ ...line, pendingDelete: undefined }];
+        return [{ ...line, pendingDelete: line.hasLinkedDocuments || line.hasCardSideLinks ? ("cancel" as const) : ("delete" as const) }];
+      }),
+    );
   }
 
   // 04-16(B3) — 매출 칸을 고치면 그 칸의 오류만 지운다(04-04 견적 줄 규칙과 같다).
@@ -2091,7 +2117,9 @@ export function QuoteLedger({
     // /review R-2 — 저장을 시작하면 되돌리기를 거둔다. 저장 중·저장 뒤에 옛 편집이 덮이지 않게.
     setDiscardedEdits(null);
 
-    const dirtyLines = lines.filter((line) => line.dirty);
+    // 07.2-12(D-7238) — 삭제 예정 줄은 보관 id로, 취소 예정 줄은 상태 `취소`로 보낸다(서버 계약 그대로).
+    const archivedLineIds = lines.flatMap((line) => (line.pendingDelete === "delete" && line.id ? [line.id] : []));
+    const dirtyLines = lines.filter((line) => line.pendingDelete !== "delete" && (line.dirty || line.pendingDelete === "cancel"));
     sentLineKeysRef.current = dirtyLines.map((line) => line.clientKey);
     const dirtyIssued = (issuedEntries ?? []).filter((entry) => entry.dirty);
     const dirtyPaid = (paidEntries ?? []).filter((entry) => entry.dirty);
@@ -2100,11 +2128,12 @@ export function QuoteLedger({
 
     const hasRevenueChanges = dirtyIssued.length > 0 || dirtyPaid.length > 0;
     // 04-30(엔지 리뷰 A §2 P2) — 순서는 두 가지로만 보낸다: 줄 이동·가운데 삽입·복제가 있으면 활성 줄 전체의 표시
-    // 순서를 한 번, 아니면 싣지 않는다(서버가 새 줄을 끝에 붙인다). 보관할 줄은 이미 lines에서 빠져 있다.
-    const needsOrder = lines.some(
-      (line, index) => line.moved === true || (line.isNew === true && lines.slice(index + 1).some((after) => !after.isNew)),
+    // 순서를 한 번, 아니면 싣지 않는다(서버가 새 줄을 끝에 붙인다). 보관할(삭제 예정) 줄은 순서에서 뺀다.
+    const keptLines = lines.filter((line) => line.pendingDelete !== "delete");
+    const needsOrder = keptLines.some(
+      (line, index) => line.moved === true || (line.isNew === true && keptLines.slice(index + 1).some((after) => !after.isNew)),
     );
-    const order = needsOrder ? lines.flatMap((line) => (line.id ? [line.id] : [])) : undefined;
+    const order = needsOrder ? keptLines.flatMap((line) => (line.id ? [line.id] : [])) : undefined;
 
     execute({
       projectId,
@@ -2135,6 +2164,7 @@ export function QuoteLedger({
                 id: line.id,
                 isNew: line.isNew,
                 duplicatedFrom: line.isNew ? line.duplicatedFrom : undefined,
+                counterpartProjectId: line.isNew ? line.counterpart?.projectId : undefined,
                 // 가린 채 그린 줄에 거래처를 고르면(그 뒤 열이 보인 화면) 고른 값을 저장한다.
                 vendorHidden: line.vendorHidden && line.vendorId === null ? true : undefined,
                 version: line.isNew ? undefined : line.version,
@@ -2152,7 +2182,7 @@ export function QuoteLedger({
                 unitPriceFxRateTouched: line.unitPriceFxRateTouched,
                 execution: { currency: "KRW" as const, amount: line.executionAmount, fxRate: 1 },
                 // 04-12(A-37) — 서버가 줄 상태를 QUOTE_LINE_STATUSES로 검증한다(화면 타입 좁히기는 04-30).
-                lineStatus: line.lineStatus as QuoteLineStatus,
+                lineStatus: (line.pendingDelete === "cancel" ? "cancelled" : line.lineStatus) as QuoteLineStatus,
                 note: line.note ?? undefined,
                 clientRemark: line.clientRemark,
                 midCategory: line.midCategory ?? undefined,
@@ -2213,7 +2243,7 @@ export function QuoteLedger({
   const editableWidth = useEditableWidth() || cellEditing;
   const phone = usePhoneWidth();
   // 04-26(D-86) — 화면의 활성 줄(보관할 줄은 이미 빠져 있고 새 줄은 포함)이 상한이면 줄을 더하지 않는다.
-  const atLineCap = lines.length >= lineCap;
+  const atLineCap = lines.filter((line) => line.pendingDelete !== "delete").length >= lineCap;
   const lineCapReason = `${lineCap}줄 상한 · 상한은 관리자 설정`;
   const capReasonId = useId();
   // 04-47(DR-16) — 상한 이유는 합계 행 danger 항목이고, 직전 저장 결과(성공은 혼자 선다)를 지운다.
@@ -2242,6 +2272,16 @@ export function QuoteLedger({
 
   // 04-49(DR-36) — 1024 미만이면 셀 편집 가능성을 전부 거둬 캡션 있는 읽기 표로 그린다(dirty 인셋은 그대로).
   const atWidth = (level: CellEditability): CellEditability => (editableWidth ? level : "readonly");
+  // 04-23(DR-22 · B-31) — 조정 줄은 조정 권한으로, 나머지는 줄 구조 권한으로만 지운다.
+  const canDeleteRow = (row: DraftLine) => (row.lineKind === "adjustment" ? adjustmentStructural.archive : structural.archive);
+  // 07.2-12(D-7238) — 합계는 저장 뒤와 같은 값: 삭제 예정 줄은 빼고, 취소 예정 줄은 견적가 0(차익도 그만큼 준다)으로 센다.
+  const totalLines = lines.flatMap((line) =>
+    line.pendingDelete === "delete"
+      ? []
+      : line.pendingDelete === "cancel"
+        ? [{ ...line, quoteAmountKrw: 0, profitKrw: line.profitKrw - line.quoteAmountKrw }]
+        : [line],
+  );
 
   const allColumns: TableColumn<DraftLine>[] = [
     {
@@ -2293,7 +2333,39 @@ export function QuoteLedger({
       header: "항목",
       priority: "p1",
       editability: (row) => atWidth(row.cells.itemName),
-      cell: (row) => <span id={`quote-item-${row.clientKey}`}>{row.itemName}</span>,
+      // 07.2-12(PU23 · DC-2) — 지우기 표시: 상태 낱말이 먼저 읽히고(취소선만으로 뜻을 전하지 않는다) 항목명 취소선 · 3차 `되돌리기`.
+      cell: (row) =>
+        row.pendingDelete ? (
+          <span className={styles.pendingDeleteItem}>
+            <StatusTag variant="text" status={row.pendingDelete === "cancel" ? "취소 예정" : "삭제 예정"} />
+            <span id={`quote-item-${row.clientKey}`} className={styles.pendingDeleteName}>
+              {row.itemName}
+            </span>
+            {row.counterpart && !row.isNew ? <span className={styles.counterpartLine}>상대 줄도 삭제</span> : null}
+            {canDeleteRow(row) && editableWidth ? (
+              <RowActions noWrap>
+                <RowAction
+                  tabIndex={-1}
+                  onClick={(event) => {
+                    // 셀 클릭(편집 진입)으로 번지지 않게 하고, 누른 뒤 포커스는 그 셀로(Table 칸 오류 동작 버튼과 같다).
+                    event.stopPropagation();
+                    const cell = event.currentTarget.closest("td");
+                    toggleDeleteLine(row.clientKey);
+                    cell?.focus();
+                  }}
+                >
+                  <span className="sr-only">{`${row.itemName || "(항목명 없음)"} 삭제 `}</span>
+                  되돌리기
+                </RowAction>
+              </RowActions>
+            ) : null}
+          </span>
+        ) : (
+          <>
+            <span id={`quote-item-${row.clientKey}`}>{row.itemName}</span>
+            {row.counterpart ? <span className={styles.counterpartLine}>{counterpartLabel(row.counterpart)}</span> : null}
+          </>
+        ),
       editCell: (row, ctx) =>
         textEditCell({
           ariaLabel: "항목",
@@ -2683,7 +2755,11 @@ export function QuoteLedger({
       : []),
   ];
   // quick 261001-85g — 가려진 정보의 열은 그리지 않는다(거래처 정보가 가려진 계급).
-  const columns = vendorShown ? allColumns : allColumns.filter((column) => column.key !== "vendor");
+  // 07.2-12 리뷰 P2-3 — 삭제 예정 줄은 저장 때 칸 값을 보내지 않는다(보관) — 고친 값이 말없이 버려지지 않게 칸을 읽기 전용으로 둔다(붙여넣기도 같다).
+  const columns = (vendorShown ? allColumns : allColumns.filter((column) => column.key !== "vendor")).map((column) => {
+    const editability = column.editability;
+    return editability ? { ...column, editability: (row: DraftLine) => (row.pendingDelete === "delete" ? "readonly" : editability(row)) } : column;
+  });
   // 07.2-06 — 「계산」 패널이 닫히면(채움 · 취소 · Esc) 그 수수료 줄의 단가 칸으로 포커스(셀 focus가 격자 활성 셀을 맞춘다).
   const unitPriceColumnIndex = columns.findIndex((column) => column.key === "unitPrice");
   useEffect(() => {
@@ -2734,7 +2810,10 @@ export function QuoteLedger({
       { key: "door", kind: "text", isEditable: () => false },
     ];
     // quick 261001-85g — columns에 없는 열(거래처 숨김 · 행동 열 없음)은 빠진다(colIndex로 함께 참조).
-    return columnKeyList.split(" ").flatMap((key) => byKey.filter((column) => column.key === key));
+    return columnKeyList
+      .split(" ")
+      .flatMap((key) => byKey.filter((column) => column.key === key))
+      .map((column) => ({ ...column, isEditable: (row: DraftLine) => row.pendingDelete !== "delete" && column.isEditable(row) }));
   }, [subcategories, vendors, columnKeyList, lines]);
 
   // 04-30(DR-35) — 잠긴 셀은 표 위 한 줄과 같은 이유(quoteLockReason), 읽기 전용 셀은 연결 문서 이유(DTO).
@@ -2749,7 +2828,12 @@ export function QuoteLedger({
     return null;
   }
 
-  function showBlockedReason(row: DraftLine, columnKey: string) {
+  function showBlockedReason(row: DraftLine, columnKey: string, key: string) {
+    // 07.2-12 리뷰 P2-3 — `삭제 예정` 줄은 칸이 읽기 전용이라 Delete가 이 길로 온다. 다시 Delete = 되돌리기(토글)는 그대로 둔다.
+    if ((key === "Delete" || key === "Backspace") && row.pendingDelete === "delete") {
+      if (editableWidth && canDeleteRow(row)) toggleDeleteLine(row.clientKey);
+      return;
+    }
     const message = blockedReasonFor(row, columnKey);
     if (!message) return;
     setBlockedReason({ clientKey: row.clientKey, columnKey, message });
@@ -3343,7 +3427,7 @@ export function QuoteLedger({
           emptyState.action?.kind === "addLine" && editableWidth
             ? { label: emptyState.action.label, shortcut: "Ctrl+Enter", onClick: () => addLine() }
             : emptyState.action?.kind === "addAdjustment" && editableWidth
-              ? { label: emptyState.action.label, onClick: () => setOpenCell({ rowId: addLineToGroup("adjustment"), columnKey: "execution" }) }
+              ? { label: emptyState.action.label, onClick: addAdjustment }
               : emptyState.action?.kind === "openPeriodEnd"
                 ? { label: emptyState.action.label, onClick: () => openPeriodField("end") }
                 : undefined
@@ -3353,19 +3437,11 @@ export function QuoteLedger({
         onEditingChange={setCellEditing}
         // 04-30(사용자 D10) — 할 수 없는 구조 동작은 키도 무동작이다(서버 structuralEditability).
         keyboard={{
-          // 04-23(DR-22 · B-31) — 조정 줄은 조정 권한으로만 삭제 확인을 연다. 권한 밖 줄의 Delete는 아무 일도 하지 않는다.
+          // 04-23(DR-22 · B-31) — 조정 줄은 조정 권한으로만 지운다. 권한 밖 줄의 Delete는 아무 일도 하지 않는다.
+          // 07.2-12(D-7238) — 확인 창 없이 `삭제 예정` 토글.
           onDeleteRow: (structural.archive || adjustmentStructural.archive) && editableWidth
             ? (row) => {
-                const canArchive = row.lineKind === "adjustment" ? adjustmentStructural.archive : structural.archive;
-                if (!canArchive) return;
-                setDeleteConfirm({
-                  clientKey: row.clientKey,
-                  itemName: row.itemName,
-                  quoteAmountKrw: row.quoteAmountKrw,
-                  executionKrw: row.executionAmount,
-                  linked: row.hasLinkedDocuments || row.hasCardSideLinks,
-                  lineKind: row.lineKind,
-                });
+                if (canDeleteRow(row)) toggleDeleteLine(row.clientKey);
               }
             : undefined,
           // 04-26(D-86) — 상한에서는 줄을 만들지 않고 합계 행에 이유를 적는다.
@@ -3416,15 +3492,15 @@ export function QuoteLedger({
             <tr>
               <td colSpan={splitFooter ? phoneBefore : columns.length} className={styles.footerCell}>
                 {"합계"}
-                <span data-footer-subtitle="">{` (공급가액 · ${lines.length}줄)`}</span>
+                <span data-footer-subtitle="">{` (공급가액 · ${totalLines.length}줄)`}</span>
                 {/* 04-49(DR-14) — 숨은 금액 열의 합계는 그 폭에서만 라벨 뒤에(1024~1279 차익, 700~1023 견적 · 차익). */}
-                <span className={styles.footerQuoteSum}> {`견적 ${formatKrw(lines.reduce((sum, line) => sum + line.quoteAmountKrw, 0))} ·`}</span>
-                <span className={styles.footerProfitSum}> {`차익 ${formatKrw(lines.reduce((sum, line) => sum + line.profitKrw, 0))}`}</span>
+                <span className={styles.footerQuoteSum}> {`견적 ${formatKrw(totalLines.reduce((sum, line) => sum + line.quoteAmountKrw, 0))} ·`}</span>
+                <span className={styles.footerProfitSum}> {`차익 ${formatKrw(totalLines.reduce((sum, line) => sum + line.profitKrw, 0))}`}</span>
                 {notice}
               </td>
               {splitFooter ? (
                 <td className={styles.footerCell} data-footer-sum="">
-                  <Num value={formatKrw(lines.reduce((sum, line) => sum + line.executionAmount, 0))} />
+                  <Num value={formatKrw(totalLines.reduce((sum, line) => sum + line.executionAmount, 0))} />
                 </td>
               ) : null}
               {splitFooter && phoneAfter > 0 ? <td colSpan={phoneAfter} className={styles.footerCell} /> : null}
@@ -3479,7 +3555,7 @@ export function QuoteLedger({
               disabledReason={atLineCap ? lineCapReason : undefined}
               reasonId={capReasonId}
               aria-describedby={!atLineCap && saveLocked ? saveButtonId : undefined}
-              onClick={() => (saveLocked ? undefined : setOpenCell({ rowId: addLineToGroup("adjustment"), columnKey: "execution" }))}
+              onClick={() => (saveLocked ? undefined : addAdjustment())}
             >
               조정 줄 추가
             </Button>
@@ -3487,24 +3563,21 @@ export function QuoteLedger({
         </div>
       ) : null}
 
+      {adjustmentStructural.insert ? (
+        <CounterpartPicker
+          open={counterpartPickerOpen}
+          projectId={projectId}
+          onClose={() => setCounterpartPickerOpen(false)}
+          onPick={(picked) => {
+            setCounterpartPickerOpen(false);
+            setOpenCell({ rowId: addLineToGroup("adjustment", picked), columnKey: "execution" });
+          }}
+        />
+      ) : null}
+
       {commissionFor !== null ? (
         <CommissionPanel rows={lines} subcategoryLabel={subcategoryLabel} onFill={fillCommission} onClose={closeCommissionPanel} />
       ) : null}
-
-      {/* 04-23(DR-12) — 조정 줄 삭제도 같은 확인 모달이다(제목·부제의 금액·1차만 다르다 — 부제는 실행가). */}
-      <ConfirmDialog
-        open={deleteConfirm !== null}
-        onClose={() => setDeleteConfirm(null)}
-        title={deleteConfirm?.lineKind === "adjustment" ? "조정 줄 삭제" : deleteConfirm?.linked ? "견적 줄 취소" : "견적 줄 삭제"}
-        subtitle={`${deleteConfirm?.itemName || "(항목명 없음)"} · ${
-          deleteConfirm ? formatKrw(deleteConfirm.lineKind === "adjustment" ? deleteConfirm.executionKrw : deleteConfirm.quoteAmountKrw) : "—"
-        }`}
-        resultLines={[deleteConfirm?.linked ? "견적가 0 · 이력과 연결된 지출결의는 그대로" : "보관함으로 옮겨짐 · 복원은 관리자"]}
-        primary={{
-          label: deleteConfirm?.lineKind === "adjustment" ? "조정 줄 삭제" : deleteConfirm?.linked ? "견적 줄 취소" : "견적 줄 삭제",
-          onConfirm: confirmDeleteLine,
-        }}
-      />
 
       {openSheetRow ? (
         <RowSheet

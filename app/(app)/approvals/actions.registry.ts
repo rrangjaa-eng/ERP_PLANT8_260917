@@ -25,3 +25,18 @@ registerAction({
   action: "approve",
   dtoName: null,
 });
+
+// 07.2-16: 일괄 승인 · 반려 — 처리 id · 막힘 이유 · 시각(구조 값)만 돌려준다(투영할 DTO 없음). 판정은 행마다 단건 엔진.
+registerAction({
+  name: "approveBatchAction",
+  menu: "approvals",
+  action: "approve",
+  dtoName: null,
+});
+
+registerAction({
+  name: "rejectBatchAction",
+  menu: "approvals",
+  action: "approve",
+  dtoName: null,
+});

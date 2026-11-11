@@ -1,7 +1,7 @@
 import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
-import { roles, codeItems, orgUnits, teams, corpCards, users, vendors, quoteLines, quoteRevisions } from "@/db/schema";
+import { roles, codeItems, orgUnits, teams, corpCards, users, vendors, quoteLines, quoteRevisions, projects } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import {
   findRoleById,
@@ -220,7 +220,9 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
         .select({ id: quoteLines.id, name: quoteLines.itemName, archivedAt: quoteLines.archivedAt, archivedBy: quoteLines.archivedBy, projectId: quoteRevisions.projectId })
         .from(quoteLines)
         .innerJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
-        .where(isNotNull(quoteLines.archivedAt));
+        // 07.2-17 /review #1: 보관된 프로젝트의 줄은 뺀다 — 줄 하나로는 되살리지 못하고, 프로젝트를 되살리면 함께 돌아온다.
+        .innerJoin(projects, eq(projects.id, quoteRevisions.projectId))
+        .where(and(isNotNull(quoteLines.archivedAt), isNull(projects.archivedAt)));
       return rows.map((row) => ({ entity: "quote_line", label: "견적 줄", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy, projectId: row.projectId }));
     },
   },

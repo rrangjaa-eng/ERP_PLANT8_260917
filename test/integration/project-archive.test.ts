@@ -592,6 +592,31 @@ describe("보관함 프로젝트 행 · 복원", () => {
     expect((await rejection(restore(fx.lead, "project", other.projectId))).message).toBe("존재하지 않는 프로젝트");
   });
 
+  it("/review #1 — 보관된 프로젝트의 견적 줄은 보관함 권한자도 하나씩 되살리지 못하고 줄은 보관된 채다", async () => {
+    const fx = await setupExpenseProject();
+    const admin = await makePerson("관리자", SYSADMIN_ROLE_ID, null);
+    // 승인 차수는 합계를 바꾸는 복원을 따로 막으므로(B-01) 승인을 걷어 보관 판정만 남긴다.
+    await db.update(quoteRevisions).set({ customerApprovedAt: null }).where(eq(quoteRevisions.id, fx.revisionId));
+    await archiveProject(fx.lead, fx.projectId);
+
+    expect((await rejection(restore(admin, "quote_line", fx.lines.withVendor))).message).toBe("연결된 프로젝트 찾을 수 없음");
+    const line = (await linesOf(fx.projectId)).find((row) => row.id === fx.lines.withVendor);
+    expect(line?.archivedAt).not.toBeNull();
+  });
+
+  it("/review #1 — 보관함 목록에 보관된 프로젝트의 견적 줄 행은 뜨지 않고 살아 있는 프로젝트의 지운 줄은 뜬다", async () => {
+    const fx = await setupExpenseProject();
+    const live = await setupExpenseProject();
+    const admin = await makePerson("관리자", SYSADMIN_ROLE_ID, null);
+    await archiveLineEarlier(fx);
+    await archiveLineEarlier(live);
+    await archiveProject(fx.lead, fx.projectId);
+
+    const lineIds = new Set((await listArchive(admin)).filter((row) => row.entity === "quote_line").map((row) => row.id));
+    for (const id of Object.values(fx.lines)) expect(lineIds.has(id)).toBe(false);
+    expect(lineIds.has(live.lines.noVendor)).toBe(true);
+  });
+
   it("보관함 권한도 삭제 권리도 없는 사원에게 보관함 목록은 거부다", async () => {
     const fx = await setupExpenseProject();
     await expect(listArchive(fx.pm)).rejects.toBeInstanceOf(ForbiddenError);

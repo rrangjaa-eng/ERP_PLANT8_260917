@@ -15,13 +15,13 @@ export function ProjectDelete({ projectId, blockedReason }: ProjectDeleteProps) 
   const router = useRouter();
   const busyRef = useRef(false);
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
 
   async function remove() {
     if (busyRef.current) return;
     busyRef.current = true;
     setPending(true);
-    setFailed(false);
+    setFailure(null);
     let result: Awaited<ReturnType<typeof deleteProjectAction>> | undefined;
     try {
       result = await deleteProjectAction({ projectId });
@@ -34,7 +34,8 @@ export function ProjectDelete({ projectId, blockedReason }: ProjectDeleteProps) 
     }
     busyRef.current = false;
     setPending(false);
-    setFailed(true);
+    // /review #2: 서버가 거부한 말(돈 문서 N건 연결 · 삭제 불가 등)은 그대로 — 네트워크 실패만 다시 시도를 시킨다.
+    setFailure(result?.serverError ?? "삭제 실패 · 다시 시도");
   }
 
   return (
@@ -48,7 +49,7 @@ export function ProjectDelete({ projectId, blockedReason }: ProjectDeleteProps) 
           프로젝트 삭제
         </RowAction>
       )}
-      {failed ? <Toast message="삭제 실패 · 다시 시도" tone="error" onDismiss={() => setFailed(false)} /> : null}
+      {failure ? <Toast message={failure} tone="error" onDismiss={() => setFailure(null)} /> : null}
     </span>
   );
 }

@@ -103,6 +103,20 @@ test.describe("프로젝트 삭제 · 되살리기 (S1)", () => {
     expect(await archivedAt(project.id)).toBeNull();
   });
 
+  test("/review #2 — 화면을 연 뒤 돈 문서가 붙어 서버가 거부하면 그 사유를 토스트에 그대로 싣는다", async ({ page }) => {
+    const { lead, project } = await setup();
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    const remove = page.getByRole("button", { name: "프로젝트 삭제", exact: true });
+    await expect(remove).not.toHaveAttribute("aria-disabled", "true");
+    await db.insert(projectBudgetEntries).values({ projectId: project.id, reason: "manual", deltaKrw: 1000, memo: "E2E 수동 조정", createdBy: lead.userId });
+    await remove.click();
+    await expect(page.getByText("돈 문서 1건 연결 · 삭제 불가", { exact: true })).toBeVisible();
+    await expect(page.getByText("삭제 실패 · 다시 시도")).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+    expect(await archivedAt(project.id)).toBeNull();
+  });
+
   test("직원(projects.delete 없음): 삭제 입구 · 보관함 링크 0 · /admin/archive 404", async ({ page }) => {
     const { pm, project } = await setup();
     await login(page, pm);

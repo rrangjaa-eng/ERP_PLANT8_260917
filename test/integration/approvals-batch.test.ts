@@ -150,9 +150,12 @@ describe("일괄 승인 — 종류 판정 · 부분 성공(D-7269 · D-7271)", (
     const result = await approveBatch(fx.lead, items, deps);
 
     expect([...result.processedIds].sort()).toEqual([expense, leave, cancel].sort());
-    expect(result.blocked).toEqual([{ id: settlement, reason: BATCH_KIND_EXCLUDED }]);
+    // 정산 결재 지금 담당은 대표 — 팀장에게는 종류를 드러내지 않고 엔진과 같은 글자(#377 리뷰 L3).
+    expect(result.blocked).toEqual([{ id: settlement, reason: "지금 담당이 아님 · 새로 고침" }]);
+    // 지금 담당(대표)에게만 종류 이유. 정산은 단건 함수를 부르지 않는다 — 판정 전 종류에서 막힌다.
+    const ceoResult = await approveBatch(fx.ceo, [await itemOf(settlement)], deps);
+    expect(ceoResult).toMatchObject({ processedIds: [], blocked: [{ id: settlement, reason: BATCH_KIND_EXCLUDED }] });
     expect(BATCH_KIND_EXCLUDED).toBe("정산 결재 · 건별 승인");
-    // 정산은 단건 함수를 부르지 않는다 — 판정 전 종류에서 막힌다.
     expect(engine.approveCalls).toBe(3);
     expect((await instanceRow(settlement)).status).toBe("submitted");
     expect(result.time).toMatch(/^\d{2}:\d{2}$/);
@@ -219,6 +222,20 @@ describe("일괄 승인 — 종류 판정 · 부분 성공(D-7269 · D-7271)", (
       expect(blocked.reason).toBe(`김도윤이 ${SEOUL_HHMM.format(row.updatedAt)}에 승인함 · 새로 고침`);
     }
     for (const id of ids) expect((await instanceRow(id)).version).toBe(items[0]!.expectedVersion + 1);
+  }, 60000);
+
+  // #377 리뷰 L3: 종류(정산 결재)는 지금 담당에게만 드러난다 — 담당 아닌 사람은 다른 문서와 같은 엔진 글자.
+  it("담당 아닌 사람이 정산 결재 id를 보냄 → `지금 담당이 아님 · 새로 고침`(정산 여부 노출 없음) · 단건 호출 0", async () => {
+    const fx = await setupExpenseProject();
+    const settlement = await settlementInstance(fx);
+
+    engine.approveCalls = 0;
+    const result = await approveBatch(fx.otherPm, [await itemOf(settlement)], deps);
+
+    expect(result.processedIds).toEqual([]);
+    expect(result.blocked).toEqual([{ id: settlement, reason: "지금 담당이 아님 · 새로 고침" }]);
+    expect(engine.approveCalls).toBe(0);
+    expect((await instanceRow(settlement)).status).toBe("submitted");
   }, 60000);
 
   it("101건 → 처리 없이 거부 `100건까지`", async () => {

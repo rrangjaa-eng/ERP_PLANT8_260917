@@ -1035,6 +1035,13 @@ export async function canSeeApprovalDocument(
   return state.isParty;
 }
 
+// 07.2-16(#377 리뷰 L3): 일괄 묶음이 종류(정산 결재 · 건별 승인)를 알리기 전에 지금 단계 후보인지 본다 — 담당 아닌 사람에게는
+// 종류를 드러내지 않고 엔진과 같은 `지금 담당이 아님` 글자를 준다. 후보 판정은 단건 승인과 같은 readApprovalState.
+export async function isCurrentCandidate(viewer: Viewer, graph: ApprovalGraph, deps?: ApprovalDeps): Promise<boolean> {
+  const state = await readApprovalState(viewer, graph, { today: seoulToday(deps?.now), logBlocked: false, listOrgSnapshot: deps?.listOrgSnapshot });
+  return state.isCandidate;
+}
+
 // readOnlyVisible(05-08 검토 #1): 종류의 보임 규칙(예: canSeeExpense — 팀장 · 전사 범위)이 이미 통과한 화면만 넘긴다. 당사자가 아니어도
 // 상태 · 결재선을 돌려주되 행동은 늘 비어 있다(행동 판정은 당사자 규칙 그대로).
 export async function getApprovalView(

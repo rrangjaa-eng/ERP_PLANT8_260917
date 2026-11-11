@@ -1,5 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
-import { approveDocument, rejectDocument, validateRejectReason, type ApprovalDeps } from "@/domain/approvals";
+import { approveDocument, isCurrentCandidate, NOT_HOLDER_MESSAGE, NotCurrentHolderError, rejectDocument, validateRejectReason, type ApprovalDeps } from "@/domain/approvals";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { LEAVE_CANCEL_KIND, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { formatKstTime } from "@/domain/holidays/business-day";
@@ -56,8 +56,10 @@ async function runBatch(
   for (const row of rows) {
     try {
       const graph = await findApprovalGraphById(viewer, row.instanceId);
-      // 그래프가 없으면 단건 함수가 엔진 판정(지금 담당이 아님)으로 막는다.
+      // 그래프가 없으면 단건 함수가 엔진 판정(지금 담당이 아님)으로 막는다. 일괄 밖 종류는 지금 담당에게만 종류를 알리고,
+      // 담당 아닌 사람은 엔진과 같은 글자로 막는다(종류 노출 0 · #377 리뷰 L3) — 어느 쪽이든 단건 함수는 부르지 않는다.
       if (graph && !BATCH_KINDS.includes(graph.instance.documentKind)) {
+        if (!(await isCurrentCandidate(viewer, graph, rowDeps))) throw new NotCurrentHolderError(NOT_HOLDER_MESSAGE);
         blocked.push({ id: row.instanceId, reason: BATCH_KIND_EXCLUDED });
         continue;
       }

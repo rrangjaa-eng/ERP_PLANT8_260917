@@ -1,4 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { formatKrw } from "@/lib/format-number";
@@ -71,6 +72,7 @@ import {
   findSettlementByProjectId,
   insertSettlementIfAbsent,
   listSettlementSummaries,
+  updateSettlementDrafterInTx,
   type SettlementSummaryRow,
 } from "@/repositories/settlement-approvals";
 
@@ -308,8 +310,9 @@ function buildSettlementDetailRows(projected: Partial<SettlementDocumentDto>): D
 
 // ── 보임 ──────────────────────────────────────────────────────────────────
 // 기안자 ∪ 결재 관련자(처리한 사람 · 지금 단계 후보) ∪ (계급 업무 범위 company ∧ 그 프로젝트를 볼 수 있음). 그 밖은 없는 문서(404).
-async function canSeeSettlement(viewer: Viewer, row: Pick<SettlementSummaryRow, "id" | "drafterId" | "projectId">): Promise<boolean> {
-  if (row.drafterId === viewer.id) return true;
+// 07.2-17(D-7311): 지금 담당 PM도 본다 — 담당 PM이 바뀐 뒤 반려 · 회수된 정산을 다시 올리는 사람이 그 PM이다(옛 기안자는 다시 올리면 빠진다).
+async function canSeeSettlement(viewer: Viewer, row: Pick<SettlementSummaryRow, "id" | "drafterId" | "projectId" | "pmUserId">): Promise<boolean> {
+  if (row.drafterId === viewer.id || row.pmUserId === viewer.id) return true;
   if (await canSeeApprovalDocument(viewer, { kind: SETTLEMENT_DOCUMENT_KIND, documentId: row.id })) return true;
   const scope = await loadActorTeamScope(viewer, { todayKst: kstToday(new Date()) });
   if (scope.workScope !== "company") return false;
@@ -425,6 +428,8 @@ export async function submitSettlement(viewer: Viewer, input: { projectId: strin
       if (graph && RESUBMITTABLE_STATUSES.has(graph.instance.status)) {
         const logDeps = await passPreSettle();
         const again = await resubmitDocument(viewer, prepared, { instanceId: graph.instance.id, expectedVersion: graph.instance.version }, tx, logDeps);
+        // 07.2-17(D-7311): 엔진이 인스턴스 기안자를 지금 PM으로 바꿨다 — 문서 행 기안자도 같은 tx에서(옛 PM이 대기 줄 · 기안 표시 · 보임을 갖지 않게).
+        if (doc.drafterId !== viewer.id) await updateSettlementDrafterInTx(viewer, { id: doc.id, drafterId: viewer.id }, tx);
         return { kind: "submitted", documentId: doc.id, instanceId: graph.instance.id, version: again.version, round: again.round };
       }
       if (graph) return { kind: "already_submitted", documentId: doc.id };
@@ -620,6 +625,12 @@ async function canResubmitSettlement(viewer: Viewer, documentId?: string): Promi
   return isAssignedPmWriter(viewer, row.pmUserId);
 }
 
+// 07.2-17(07.2 D-7311 · eng E9): 다시 올리는 사람 = 그 프로젝트의 지금 담당 PM(문서 id = 프로젝트 id). 엔진 훅 — 범위 판정은 사용자 길
+// submitSettlement(findProjectInScope · 담당 PM 쓰기)와 가능 행동의 canResubmitSettlement가 먼저 한다.
+async function settlementResubmitter(viewer: Viewer, documentId: string, tx?: DbOrTx): Promise<string | null> {
+  return (await findProjectById(viewer, documentId, tx))?.pmUserId ?? null;
+}
+
 registerDocumentKind({
   kind: SETTLEMENT_DOCUMENT_KIND,
   label: "정산 결재",
@@ -629,6 +640,8 @@ registerDocumentKind({
   routeSettings: SETTLEMENT_ROUTE_SETTINGS,
   canResubmit: canResubmitSettlement,
   resubmitFrom: ["rejected", "withdrawn"],
+  // 07.2-17(07.2 D-7311 · eng E9): 다시 올리는 사람 = 그 프로젝트의 지금 담당 PM(문서 id = 프로젝트 id). 처음 기안자 판정을 대체한다.
+  resubmitterOf: settlementResubmitter,
   prepareFinalApproval: prepareSettlementFinalApproval,
   onFinalApprovalInTx: onSettlementFinalApprovalInTx,
   approveBlockedReason: settlementApproveBlockedReason,

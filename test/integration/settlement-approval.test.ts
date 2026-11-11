@@ -2,7 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
 import { actionLog, approvalInstances, approvalRoutes, approvalSteps, expenses, projects, settlementApprovals } from "@/db/schema";
-import { ApprovalConflictError, approveDocument, getApprovalView, listMyInbox, loadKindDetails, NotCurrentHolderError, rejectDocument } from "@/domain/approvals";
+import {
+  ApprovalConflictError,
+  approveDocument,
+  getApprovalView,
+  listMyInbox,
+  loadKindDetails,
+  NotCurrentHolderError,
+  prepareSubmission,
+  rejectDocument,
+  resubmitDocument,
+} from "@/domain/approvals";
+import { withTransaction } from "@/lib/db-transaction";
+import "@/domain/leave";
 import { appendActionLog } from "@/repositories/action-log";
 import { getDocumentKind } from "@/domain/approvals/kinds";
 import { isRouteStepSettingKey } from "@/domain/approvals/route-step-settings";
@@ -502,5 +514,62 @@ describe("정산 결재 — 보임 · 되돌리기 거부 갈래 (A14)", () => {
     expect(calls).toBe(2);
     expect((await instanceOf(documentId))?.status).toBe("withdrawn");
     expect((await documentLogs(documentId)).map((log) => log.actionType)).toEqual(["document_submit", "document_withdraw"]);
+  });
+});
+
+// 07.2-17(07.2 D-7311 · eng E9 · eng r2 D P2-1 · P2-2) — 담당 PM이 바뀐 뒤 반려 · 회수된 정산은 지금 PM이 다시 올린다(처음 기안자 판정을
+// 종류 훅 resubmitterOf가 대체). 지출결의 · 연차는 훅이 없어 처음 기안자만(회귀).
+describe("정산 결재 — 담당 PM이 바뀐 뒤 다시 올리기(07.2 D-7311)", () => {
+  async function pmChangedAfter(close: "reject" | "withdraw") {
+    const fx = await setupSettlementProject();
+    const first = await submitted(fx.pm, fx.projectId);
+    if (close === "reject") await rejectDocument(fx.ceo, { instanceId: first.instanceId, expectedVersion: first.version, reason: "다시" });
+    else expect((await withdrawSettlement(fx.pm, { projectId: fx.projectId, undo: true, round: 1 })).status).toBe("withdrawn");
+    const nextPm = await makePerson("새 담당 PM", DEFAULT_ROLE_ID, "기획1팀");
+    await db.update(projects).set({ pmUserId: nextPm.id }).where(eq(projects.id, fx.projectId));
+    return { fx, first, nextPm };
+  }
+
+  for (const close of ["reject", "withdraw"] as const) {
+    it(`${close} 뒤 PM을 B로 바꾸면 B만 다시 올린다 — 같은 인스턴스 차수 2 · 인스턴스 · 문서 행 기안자 B · 요약 · 기안 행 B`, async () => {
+      const { fx, first, nextPm } = await pmChangedAfter(close);
+      const view = (viewer: typeof fx.pm) => getApprovalView(viewer, { kind: SETTLEMENT_DOCUMENT_KIND, documentId: first.documentId, readOnlyVisible: true });
+      expect((await view(fx.pm))?.actions ?? []).not.toContain("resubmit");
+      expect((await view(nextPm))?.actions ?? []).toContain("resubmit");
+      expect(await canSeeSettlementDocument(nextPm, { projectId: fx.projectId })).toBe(true);
+
+      // 사용자 길 — 처음 기안자 A는 엔진에 닿기 전에 담당 PM 판정에서 막힌다.
+      const refusedA = await submitSettlement(fx.pm, { projectId: fx.projectId }).catch((error: unknown) => error);
+      expect(refusedA).toBeInstanceOf(ForbiddenError);
+      expect((refusedA as Error).message).toBe("정산 결재는 담당 PM만");
+
+      expect(await submitSettlement(nextPm, { projectId: fx.projectId })).toMatchObject({ kind: "submitted", documentId: first.documentId, instanceId: first.instanceId, round: 2 });
+      expect((await instanceOf(first.documentId))?.drafterId).toBe(nextPm.id);
+      expect((await settlementOf(fx.projectId))?.drafterId).toBe(nextPm.id);
+      const doc = await getSettlement(nextPm, { projectId: fx.projectId });
+      expect(doc?.drafterName).toBe("새 담당 PM");
+      const submitLogs = (await documentLogs(first.documentId)).filter((log) => log.actionType === "document_submit");
+      expect((submitLogs.at(-1)?.detail as { previousDrafterId?: string }).previousDrafterId).toBe(fx.pm.id);
+    });
+  }
+
+  // 처음 기안자 판정을 대체하므로 A는 기안자가 아닌 사람과 같이 (2) 사건별 종결(closedFor)에서 막힌다 — 진 쪽 관련자 문구(반려함 · 새로 고침).
+  it("엔진 직접 — 훅 종류는 훅의 사람만: 처음 기안자 A의 resubmitDocument는 거부 · 인스턴스 그대로", async () => {
+    const { fx, first } = await pmChangedAfter("reject");
+    const before = await instanceOf(first.documentId);
+    if (!before) throw new Error("인스턴스 없음");
+    const prepared = await prepareSubmission(fx.pm, { kind: SETTLEMENT_DOCUMENT_KIND, drafterId: fx.pm.id });
+    const refused = await withTransaction((tx) => resubmitDocument(fx.pm, prepared, { instanceId: before.id, expectedVersion: before.version }, tx)).catch(
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(ApprovalConflictError);
+    expect((refused as Error).message).toContain("새로 고침");
+    expect(await instanceOf(first.documentId)).toMatchObject({ status: "rejected", version: before.version, drafterId: fx.pm.id });
+  });
+
+  it("훅은 정산 종류에만 — 지출결의 · 연차는 resubmitterOf가 없다(처음 기안자 판정 그대로)", () => {
+    expect(getDocumentKind(SETTLEMENT_DOCUMENT_KIND).resubmitterOf).toBeTypeOf("function");
+    expect(getDocumentKind("expense").resubmitterOf).toBeUndefined();
+    expect(getDocumentKind("leave").resubmitterOf).toBeUndefined();
   });
 });

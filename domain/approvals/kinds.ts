@@ -102,6 +102,9 @@ export type DocumentKindDef = {
   canResubmit?: (viewer: Viewer, documentId?: string) => Promise<boolean>;
   // 05-01 E1: 기안자가 같은 문서를 다시 제출할 수 있는 상태 — 없으면 ["rejected"](resubmittableStatuses).
   resubmitFrom?: readonly ResubmittableStatus[];
+  // 07.2-17(07.2 D-7311 · eng E9): 다시 올릴 사람 — 있으면 resubmit의 기안자 판정을 이 훅이 준 사람「만」으로 바꾼다(처음 기안자 판정을
+  // 대체). 그 사람이 올리면 엔진이 같은 tx에서 인스턴스 기안자를 그 사람으로 바꾼다. 없으면 처음 기안자(지금 그대로). tx를 받으면 그 tx로 읽는다.
+  resubmitterOf?: (viewer: Viewer, documentId: string, tx?: DbOrTx) => Promise<string | null>;
   // 05-01 E2: 최종 승인 훅 짝 — prepareFinalApproval은 트랜잭션 전(풀 읽기 가능), onFinalApprovalInTx는 최종 승인과
   // 같은 tx 안에서 단계 기록 뒤 · 행동 로그 전에 불린다(tx를 받는 리포지토리 호출만). 던지면 승인 전체가 롤백된다.
   prepareFinalApproval?: (viewer: Viewer, documentId: string) => Promise<unknown>;

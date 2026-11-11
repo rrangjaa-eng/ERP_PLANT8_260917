@@ -22,6 +22,13 @@ export async function insertSettlementIfAbsent(
   return row ?? null;
 }
 
+// 07.2-17(07.2 D-7311): 담당 PM이 바뀐 뒤 지금 PM이 반려 · 회수된 정산을 다시 올리면 같은 tx에서 문서 행 기안자도 그 PM으로 바꾼다 —
+// 요약(drafterId · drafterName) · 다시 올리기 대기 줄 · 문서 화면 기안 행 · 보임이 이 칸에서 온다.
+export async function updateSettlementDrafterInTx(viewer: Viewer, input: { id: string; drafterId: string }, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx.update(settlementApprovals).set({ drafterId: input.drafterId }).where(eq(settlementApprovals.id, input.id));
+}
+
 export async function findSettlementByProjectId(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<SettlementApprovalRow | null> {
   void viewer;
   const [row] = await tx.select().from(settlementApprovals).where(eq(settlementApprovals.projectId, projectId)).limit(1);

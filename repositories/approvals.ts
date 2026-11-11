@@ -155,6 +155,13 @@ export async function updateInstanceStatus(
   return row ?? null;
 }
 
+// 07.2-17(07.2 D-7311): 다시 신청한 사람이 처음 기안자가 아닐 때(종류 훅 resubmitterOf — 정산의 지금 담당 PM) 같은 tx에서 기안자를 바꾼다.
+// 상태 UPDATE(version 조건)가 1행을 얻은 뒤에만 불린다 — 조건 없이 id로.
+export async function updateInstanceDrafter(viewer: Viewer, input: { id: string; drafterId: string }, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx.update(approvalInstances).set({ drafterId: input.drafterId }).where(eq(approvalInstances.id, input.id));
+}
+
 // 05-01 E4: 상태 · 차수는 그대로 두고 version만 + 1(이유 · 바꾼 사람 · 시각과 함께) — 그 전에 문서를 연 결재자의
 // 승인이 version 불일치로 막힌다. expectedVersion이 있으면 조건부(0행 = null).
 export async function bumpInstanceVersion(

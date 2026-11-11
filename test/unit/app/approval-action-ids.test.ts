@@ -87,3 +87,22 @@ describe("결재 · 연차 액션 id 형식", () => {
     expect(calls).toEqual([]);
   });
 });
+
+// #377 리뷰 L2(D-7272): 상한 100은 중복 제거 뒤 — 같은 id가 섞여 101줄이어도 고유 100건이면 입력 오류 없이 도메인에 닿는다.
+describe("일괄 액션 상한은 중복 제거 뒤", () => {
+  beforeEach(() => {
+    calls.length = 0;
+  });
+
+  const ids = Array.from({ length: 100 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+  const items = [...ids, ids[0] ?? GOOD_ID].map((instanceId) => ({ instanceId, expectedVersion: 1 }));
+
+  it.each([
+    ["approveBatch", () => approveBatchAction({ items })],
+    ["rejectBatch", () => rejectBatchAction({ items, reason: "사유" })],
+  ] as const)("%s — 101줄 · 고유 100건 → 도메인 호출", async (name, run) => {
+    const result = await run();
+    expect(result?.validationErrors).toBeUndefined();
+    expect(calls).toEqual([name]);
+  });
+});

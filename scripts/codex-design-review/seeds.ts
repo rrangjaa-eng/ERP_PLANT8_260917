@@ -1078,6 +1078,32 @@ async function printLeave(): Promise<SeedResult> {
   return { vars: { leaveId: first.leaveId, leaveId2: second.leaveId, leaveId3: third.leaveId }, viewer: teamLead };
 }
 
+// leave-approved: 07.2-15(S18) 연차 취소 요청 캡처용 — 승인된 연차 하나({leaveId})의 기안자가 보는 사람(문서 화면 행동 줄 2차 `취소 요청`).
+// 결재: 팀장 → (본부장 빈 자리 건너뜀) → 경영관리 → 대표(print-leave와 같은 조직 모양). 취소 결재자 = 원 결재선 팀장.
+async function leaveApproved(): Promise<SeedResult> {
+  const today = seoulToday();
+  const year = Number(today.slice(0, 4));
+  const suffix = randomUUID().slice(0, 6);
+  const yearStart = `${year}-01-01`;
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처취소본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처취소팀-${suffix}` });
+  const mgmtTeam = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.name === "경영관리팀");
+  if (!mgmtTeam) throw new Error("시드된 경영관리팀 없음");
+  const drafter = await makePerson("기안", "role-pm", team.id, yearStart);
+  const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
+  const mgmt = await mgmtHead(mgmtTeam, yearStart);
+  const ceo = await makePerson("대표", "role-ceo", team.id, yearStart);
+  await setHireDate(SYSTEM_VIEWER, drafter.viewer.id, `${year - 3}-01-01`);
+
+  const leave = await submitLeaveFrom(drafter, `${year}-03-02`, { kind: "full_day", twoDays: true, note: "가족 행사" });
+  for (const approver of [teamLead, mgmt, ceo]) {
+    const view = await getApprovalView(approver.viewer, { kind: LEAVE_DOCUMENT_KIND, documentId: leave.leaveId });
+    if (!view) throw new Error("결재 인스턴스가 없습니다");
+    await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: view.version });
+  }
+  return { vars: { leaveId: leave.leaveId }, viewer: drafter };
+}
+
 // print-settlement: 07.4-03 프로젝트 정산서 인쇄물 캡처용 — 같은 조직의 정산 결재 중 프로젝트 둘.
 // F-S1 {projectId} = 지출결의 3(4단 결재 통과) · 구매 요청 2(1건 구매 완료 · 카드 사용) · 결재선 기본(대표 1단) — 1쪽.
 // F-S3 {projectId2} = 지출결의 45 · 구매 요청 12 · 결재선 4단계(팀장 → 본부장 → 경영관리 → 대표, 단계마다 결재권자가 있다) — 여러 쪽.
@@ -1361,5 +1387,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return printSettlement();
     case "quote-adjustment-pair":
       return quoteAdjustmentPair();
+    case "leave-approved":
+      return leaveApproved();
   }
 }

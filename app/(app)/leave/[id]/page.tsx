@@ -4,7 +4,8 @@ import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
 import "@/app/(app)/document-kinds";
 import { listReasonOptions } from "@/domain/code-tables";
-import { formatLeaveTitle, formatRequestBalanceRow, getLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
+import { formatLeaveTitle, formatRequestBalanceRow, getLeave, LEAVE_CANCEL_KIND, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
+import { previewLeaveCancel } from "@/domain/leave/cancel";
 import { getLeaveBalanceForRequest } from "@/domain/leave/balance-service";
 import {
   getApprovalView,
@@ -13,6 +14,7 @@ import {
   REJECT_REASON_MAX,
   REJECT_REASON_TOO_LONG_MESSAGE,
 } from "@/domain/approvals";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { PcOnly } from "@/app/(app)/admin/pc-only";
 import buttonStyles from "@/ui/button/Button.module.css";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -20,10 +22,18 @@ import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
 import { DayNumbers } from "../day-numbers";
-import { formatLeaveKind, formatLeavePeriod } from "../labels";
-import { leaveStatusWord, routeListSteps, seoulMinuteOf, toLeaveStatusKey, withdrawResultLines } from "../status-display";
+import { formatLeaveKind, formatLeavePeriod, type LeavePeriodSource } from "../labels";
+import {
+  cancelRouteListSteps,
+  leaveDocumentStatusWord,
+  routeListSteps,
+  seoulMinuteOf,
+  toLeaveStatusKey,
+  withdrawResultLines,
+} from "../status-display";
 import { previewRouteOrBlocked } from "../route-preview";
 import { DocumentActions } from "./document-actions";
+import type { LeaveCancelEntry } from "./cancel-request";
 import { SubmittedToast } from "./submitted-toast";
 import styles from "../leave.module.css";
 
@@ -50,6 +60,10 @@ export default async function LeaveDocumentPage({
   const leave = await getLeave(viewer, id);
   if (!leave) notFound();
   const view = await getApprovalView(viewer, { kind: LEAVE_DOCUMENT_KIND, documentId: id });
+  // 07.2-15(S18 · PU10): 승인된 연차의 취소 결재(별도 문서 종류 leave_cancel · 같은 연차 id). 결재 중 · 반려 · 회수 · 승인이면 그 결재선 ·
+  // 행동을 원 연차 대신 쓴다(원 연차는 승인으로 끝나 행동이 없다). 취소 결재 당사자가 아니면 null.
+  const cancelView = leave.status === "approved" ? await getApprovalView(viewer, { kind: LEAVE_CANCEL_KIND, documentId: id }) : null;
+  const cancelEntry = await leaveCancelEntry(viewer, id, leave, cancelView);
 
   const statusKey = toLeaveStatusKey(leave.status);
   const period = leave.startDate && leave.endDate ? `${leave.startDate}${leave.endDate !== leave.startDate ? ` ~ ${leave.endDate}` : ""}` : "";
@@ -62,6 +76,8 @@ export default async function LeaveDocumentPage({
 
   const actions = view?.actions ?? [];
   const resubmitting = actions.includes("resubmit");
+  // 취소 결재의 행동(결재자 승인 · 반려, 기안자 회수). 다시 요청(resubmit)은 폼이 아니라 `취소 다시 요청` 입구가 받는다.
+  const cancelActions = (cancelView?.actions ?? []).filter((action) => action !== "resubmit");
   // 신청 직후 착지(`?submitted=1`, 신청 폼이 붙인다) — 결재 중이고 기안자(회수 가능)일 때만 토스트. 이름은 주소에
   // 싣지 않고 지금 단계 담당(투영된 이름)에서 만든다(04.1-06 DOM 감사 #3).
   const holderNames = (view?.steps ?? [])
@@ -74,7 +90,7 @@ export default async function LeaveDocumentPage({
         ? `연차 신청 · 결재 요청됨 → ${holderNames}`
         : "연차 신청 · 결재 요청됨"
       : null;
-  const steps = routeListSteps(view?.steps);
+  const steps = [...routeListSteps(view?.steps), ...cancelRouteListSteps(cancelView?.steps)];
   const route = <ApprovalRoute mode="list" steps={steps} endLines={view?.endLines ?? []} />;
 
   const items: KvItem[] = [];
@@ -121,7 +137,7 @@ export default async function LeaveDocumentPage({
   return (
     <DetailScreen
       title={formatLeaveTitle(leave)}
-      status={statusKey ? <StatusTag status={leaveStatusWord(statusKey)} /> : undefined}
+      status={statusKey ? <StatusTag status={leaveDocumentStatusWord(statusKey, leave.cancelState)} /> : undefined}
       meta={leave.number || undefined}
       // 07.4-02 D-7409: 결재 인스턴스가 있을 때만 머리 줄 2차 「인쇄」(새 탭). 폰(<700)에서는 PcOnly가 숨긴다.
       actions={
@@ -140,22 +156,39 @@ export default async function LeaveDocumentPage({
     >
       <KvList items={items} />
       <DocumentActions
-        instanceId={view?.instanceId ?? null}
-        version={view?.version ?? null}
-        actions={actions}
-        decision={
-          view?.instanceId && view.version !== undefined
-            ? {
-                instanceId: view.instanceId,
-                version: view.version,
-                kindLabel: getDocumentKind(LEAVE_DOCUMENT_KIND).label,
+        {...(cancelView?.instanceId && cancelView.version !== undefined && cancelActions.length > 0
+          ? {
+              instanceId: cancelView.instanceId,
+              version: cancelView.version,
+              actions: cancelActions,
+              decision: {
+                instanceId: cancelView.instanceId,
+                version: cancelView.version,
+                kindLabel: getDocumentKind(LEAVE_CANCEL_KIND).label,
                 subtitle: [leave.number, leave.drafterName, formatLeavePeriod(leave), leave.days].filter(Boolean).join(" · "),
                 withdrawSubtitle: [leave.number, formatLeavePeriod(leave), leave.days].filter(Boolean).join(" · "),
-                drafterName: view.drafterName ?? leave.drafterName ?? null,
-                withdrawLines: withdrawResultLines(view.steps),
-              }
-            : null
-        }
+                drafterName: cancelView.drafterName ?? leave.drafterName ?? null,
+                withdrawLines: withdrawResultLines(cancelView.steps),
+              },
+            }
+          : {
+              instanceId: view?.instanceId ?? null,
+              version: view?.version ?? null,
+              actions,
+              decision:
+                view?.instanceId && view.version !== undefined
+                  ? {
+                      instanceId: view.instanceId,
+                      version: view.version,
+                      kindLabel: getDocumentKind(LEAVE_DOCUMENT_KIND).label,
+                      subtitle: [leave.number, leave.drafterName, formatLeavePeriod(leave), leave.days].filter(Boolean).join(" · "),
+                      withdrawSubtitle: [leave.number, formatLeavePeriod(leave), leave.days].filter(Boolean).join(" · "),
+                      drafterName: view.drafterName ?? leave.drafterName ?? null,
+                      withdrawLines: withdrawResultLines(view.steps),
+                    }
+                  : null,
+            })}
+        cancel={cancelEntry}
         rejectMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
         reasonOptions={await listReasonOptions(viewer, "reject_reason")}
         resubmit={
@@ -183,4 +216,28 @@ export default async function LeaveDocumentPage({
       {submittedToast ? <SubmittedToast message={submittedToast} href={`/leave/${id}`} /> : null}
     </DetailScreen>
   );
+}
+
+// 07.2-15(S18): `취소 요청` · `취소 다시 요청` 입구 — 취소 결재가 없거나(처음) 반려 · 회수되어 다시 요청할 수 있을 때만. 입구 판정(연차 쓰기 ·
+// 기안자 본인 · 원 연차 승인)과 결과 줄 이름은 제출과 같은 도메인 미리보기가 한다 — 통과하지 못하면(사용자에게 보일 거부) 입구를 그리지 않는다.
+async function leaveCancelEntry(
+  viewer: Awaited<ReturnType<typeof requireSession>>["viewer"],
+  leaveId: string,
+  leave: LeavePeriodSource & { status?: string | null; cancelState?: string },
+  cancelView: Awaited<ReturnType<typeof getApprovalView>>,
+): Promise<LeaveCancelEntry | null> {
+  if (leave.status !== "approved" || leave.cancelState !== "none") return null;
+  // 취소 결재가 이미 있으면(반려 · 회수) 엔진이 다시 요청을 허락할 때만 그 version으로.
+  let resubmitVersion: number | null = null;
+  if (cancelView?.instanceId) {
+    if (!cancelView.actions?.includes("resubmit") || cancelView.version === undefined) return null;
+    resubmitVersion = cancelView.version;
+  }
+  try {
+    const { approverName } = await previewLeaveCancel(viewer, leaveId);
+    return { leaveId, resubmitVersion, subtitle: formatLeavePeriod(leave), approverName };
+  } catch (error) {
+    if (error instanceof UserFacingError) return null;
+    throw error;
+  }
 }

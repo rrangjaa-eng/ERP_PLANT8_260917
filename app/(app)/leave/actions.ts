@@ -29,6 +29,7 @@ import { previewLeaveBalance } from "@/domain/leave/balance-service";
 import { currentHolderNames, projectActionResult, withdrawDocument } from "@/domain/approvals";
 import { previewRouteOrBlocked } from "./route-preview";
 import { resubmitLeave } from "@/domain/leave/resubmit";
+import { requestLeaveCancel, resubmitLeaveCancel } from "@/domain/leave/cancel";
 import { log } from "@/lib/log";
 import "./actions.registry";
 
@@ -98,6 +99,28 @@ export const resubmitLeaveAction = authedActionClient
       log.warn("leave.resubmit_toast_material_failed", { leaveId: resubmitted.leaveId, error: error instanceof Error ? error.message : String(error) });
       return { result: { documentId: resubmitted.leaveId, final: false } };
     }
+  });
+
+// 07.2-15(S18 · PU10): 승인된 연차의 취소 요청 · 취소 다시 요청 — 판정(연차 쓰기 · 기안자 본인 · 승인 · 사유 1~500)은 도메인.
+// 토스트 재료(결재자 이름)는 ApprovalActionResultDto 투영을 지난다(B-A1). 사유 길이 상한은 도메인 문구가 말한다(스키마는 크기만 막는다).
+const cancelReason = z.string().max(2000);
+
+export const requestLeaveCancelAction = authedActionClient
+  .schema(z.object({ leaveId: z.string().uuid(), reason: cancelReason }))
+  .action(async ({ parsedInput, ctx }) => {
+    const requested = await requestLeaveCancel(ctx.viewer, parsedInput);
+    return {
+      result: await projectActionResult(ctx.viewer, { documentId: parsedInput.leaveId, final: false, nextHolderNames: requested.approverName }),
+    };
+  });
+
+export const resubmitLeaveCancelAction = authedActionClient
+  .schema(z.object({ leaveId: z.string().uuid(), expectedVersion: z.number().int().min(1), reason: cancelReason }))
+  .action(async ({ parsedInput, ctx }) => {
+    const resubmitted = await resubmitLeaveCancel(ctx.viewer, parsedInput);
+    return {
+      result: await projectActionResult(ctx.viewer, { documentId: parsedInput.leaveId, final: false, nextHolderNames: resubmitted.approverName }),
+    };
   });
 
 const DAY_MS = 24 * 60 * 60 * 1000;

@@ -12,6 +12,7 @@ import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "@/app/(app)/approvals/decision-dialogs";
 import { LeaveForm } from "../new/leave-form";
 import { usePhoneWidth } from "../use-phone-width";
+import { CancelRequest, type LeaveCancelEntry } from "./cancel-request";
 import styles from "./document-actions.module.css";
 
 // 04.1-05 S3 행동 줄 — 서버 가능 행동 목록을 **전부** 그대로 그린다(클라이언트는 상태로 고르지 않는다 · 권한을
@@ -40,6 +41,8 @@ export type DocumentActionsProps = {
   approveBlockedReason?: string | null;
   /** 06-22: 승인 막힘 이유 옆 다음 한 수 3차(§7-1) — 넘긴 화면만 `승인`의 nextStep으로 그린다. */
   approveNextStep?: ReactNode;
+  /** 07.2-15(S18): 승인된 연차의 `취소 요청` 입구 — 서버가 입구 조건을 통과시킨 연차 문서 화면만 넘긴다. 2차 자리에 그린다. */
+  cancel?: LeaveCancelEntry | null;
 };
 
 export function DocumentActions({
@@ -53,6 +56,7 @@ export function DocumentActions({
   resubmitRoute,
   approveBlockedReason = null,
   approveNextStep,
+  cancel = null,
 }: DocumentActionsProps) {
   const router = useRouter();
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
@@ -109,7 +113,7 @@ export function DocumentActions({
   // 폰 고정 행동 줄 아래 여백 = 행동 줄의 실제 높이(충돌 줄이 뜨거나 줄바꿈하면 늘어난다 — /review 디자인). 수화 전에는 CSS 기본값.
   const barRef = useRef<HTMLDivElement>(null);
   const [barHeight, setBarHeight] = useState<number | null>(null);
-  const hasBar = canApprove || secondary !== undefined;
+  const hasBar = canApprove || secondary !== undefined || cancel !== null;
   useEffect(() => {
     const bar = barRef.current;
     if (!bar || !phone) return;
@@ -128,6 +132,10 @@ export function DocumentActions({
           {secondary === "reject" ? "반려" : "회수"}
         </Button>
       </span>
+    ) : cancel ? (
+      <span className={styles.secondaryWrap}>
+        <CancelRequest entry={cancel} messages={rejectMessages} onDone={showToast} />
+      </span>
     ) : null;
 
   return (
@@ -137,7 +145,7 @@ export function DocumentActions({
           <LeaveForm resubmit={{ ...resubmit, route: resubmitRoute, onResubmitted: showToast }} />
         </div>
       ) : null}
-      {canApprove || secondary ? (
+      {hasBar ? (
         <>
           <div ref={barRef} className={styles.bar} data-fixed-bar="">
             {conflict ? <ConflictLine message={conflict} /> : null}

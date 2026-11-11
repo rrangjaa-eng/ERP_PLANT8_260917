@@ -2,3 +2,4 @@
 import "@/domain/leave";
 import "@/domain/expenses";
 import "@/domain/settlements";
+import "@/domain/leave/cancel";

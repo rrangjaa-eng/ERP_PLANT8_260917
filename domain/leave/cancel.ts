@@ -194,6 +194,8 @@ export async function resubmitLeaveCancel(
 
 // 창 결과 줄 `결재 → {이름}`의 재료 — 엔진 previewRoute(제출과 같은 힌트 · 같은 planRoute)의 지금 단계 보유자 이름(approval.value 투영 뒤).
 export async function previewLeaveCancel(viewer: Viewer, leaveId: string, deps?: { now?: Date }): Promise<{ approverName: string | null }> {
+  // 요청과 같은 입구 판정(연차 쓰기 · 기안자 본인 · 승인) — 문서 화면은 이 함수가 통과할 때만 `취소 요청` 입구를 그린다.
+  await assertLeaveWrite(viewer);
   await ownApprovedLeave(viewer, leaveId);
   const preview = await previewRoute(viewer, { kind: LEAVE_CANCEL_KIND, hint: { documentId: leaveId } }, { now: deps?.now });
   const first = preview.steps.find((step) => !step.skipped);

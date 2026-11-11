@@ -28,6 +28,7 @@ vi.mock("@/domain/leave/access", () => ({ assertLeaveWrite: () => Promise.resolv
 vi.mock("@/domain/leave/balance-service", () => ({ previewLeaveBalance: () => Promise.resolve(null) }));
 vi.mock("@/domain/leave/guard", () => ({ loadLeaveHolidays: () => Promise.resolve(() => new Set<string>()) }));
 vi.mock("@/app/(app)/leave/route-preview", () => ({ previewRouteOrBlocked: () => Promise.resolve({ route: null, blocked: null }) }));
+vi.mock("@/domain/leave/cancel", () => ({ requestLeaveCancel: () => Promise.resolve(null), resubmitLeaveCancel: () => Promise.resolve(null) }));
 vi.mock("@/domain/leave/resubmit", () => ({ resubmitLeave: () => Promise.resolve({ leaveId: "leave-1", nextHolderNames: null }) }));
 
 const { submitLeaveAction } = await import("@/app/(app)/leave/actions");

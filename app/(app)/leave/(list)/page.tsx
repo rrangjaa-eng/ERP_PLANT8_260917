@@ -14,7 +14,7 @@ import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { DayNumbers } from "../day-numbers";
 import { formatLeavePeriod, formatTableDate } from "../labels";
-import { leaveStatusWord, toLeaveStatusKey } from "../status-display";
+import { leaveDocumentStatusWord, toLeaveStatusKey } from "../status-display";
 import { resolveLeaveYear } from "../year-param";
 import { LeaveTable, LeaveYearFilter, type LeaveListRow } from "./leave-table";
 import { PeopleBalanceTable, type PeopleBalanceRow } from "./people-balance-table";
@@ -68,7 +68,7 @@ export default async function LeaveListPage({ searchParams }: { searchParams: Pr
       startDate: leave.startDate ?? "",
       days: leave.days ?? "",
       statusKey: key,
-      status: key ? leaveStatusWord(key) : null,
+      status: key ? leaveDocumentStatusWord(key, leave.cancelState) : null,
       requestedOn: leave.createdAt ? formatTableDate(kstDateOf(leave.createdAt), thisYear) : "",
       note: leave.note ?? "",
     };

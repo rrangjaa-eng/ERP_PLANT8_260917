@@ -220,6 +220,8 @@ export async function approveDateChange(
     const locked = await lockAndRejudge(viewer, pre.expenseId, tx);
     const decided = await decidePendingDateChange(viewer, { requestId: pre.id, status: "approved", decidedBy: viewer.id, decidedAt: now, rejectMemo: null }, tx);
     if (!decided) throw new UserFacingError(DATE_CHANGE_STALE);
+    // 요청 때와 같은 기준 — 그 사이 날짜가 지났으면 지난 날을 지급 예정일로 쓰지 않는다(쓰기 함수는 지난 날짜를 허용).
+    if (decided.newDate <= seoulToday(now)) throw new UserFacingError(DATE_CHANGE_DATE_REQUIRED);
     const written = await writeScheduledPayDate(viewer, { expenseId: locked.id, date: decided.newDate, version: input.version }, { lookup, now }, tx);
     await recordAction(viewer, { actionType: "document_approve", entity: ENTITY, entityId: pre.id, documentId: locked.id, detail: { newDate: decided.newDate } }, { tx });
     return { expenseId: locked.id, newDate: decided.newDate, before: written.before, version: written.version };

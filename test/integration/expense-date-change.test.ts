@@ -266,6 +266,17 @@ describe("경영관리 처리 — 승인 · 거절 · 되돌리기 (Task 2 · D-
     expect((await expenseRow(doc.expenseId)).version).toBe(fresh.version);
   });
 
+  it("새 희망일이 지난 뒤 승인(그날 · 이틀 뒤) → 거부 · 요청 pending · 지급 예정일 그대로 (review #1)", async () => {
+    const before = await expenseRow(doc.expenseId);
+    for (const day of [newDate, addDays(newDate, 2)]) {
+      const now = new Date(`${day}T03:00:00Z`); // KST 12:00
+      expect((await rejection(() => approveDateChange(payer, { requestId, version: before.version }, { now }))).message).toBe(DATE_CHANGE_DATE_REQUIRED);
+      expect((await requestRows(doc.expenseId))[0]?.status).toBe("pending");
+      const after = await expenseRow(doc.expenseId);
+      expect([after.scheduled, after.version]).toEqual([before.scheduled, before.version]);
+    }
+  });
+
   it("처리 권한 없는 계급(기안자 · 팀장 · 대표) → 거부 · 처리 줄 없음", async () => {
     for (const viewer of [fx.pm, fx.lead, fx.ceo]) {
       expect(await rejection(() => approveDateChange(viewer, { requestId, version: doc.version }))).toBeInstanceOf(ForbiddenError);

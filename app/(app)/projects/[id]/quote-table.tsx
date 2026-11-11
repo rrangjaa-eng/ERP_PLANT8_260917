@@ -1316,11 +1316,18 @@ export function QuoteLedger({
   // 07.2-17(S3) — 기본 정보 4칸. 기준값은 서버 렌더 값 또는 직전 저장 결과 — 다시 그림(router.refresh)이 새 version을 내려보내면 따라간다.
   const [infoBase, setInfoBase] = useState({ values: info.values, version: info.version });
   const [renderedInfoVersion, setRenderedInfoVersion] = useState(info.version);
+  const [infoDraft, setInfoDraft] = useState<InfoValues | null>(null);
   if (renderedInfoVersion !== info.version) {
     setRenderedInfoVersion(info.version);
     setInfoBase({ values: info.values, version: info.version });
+    // Codex P1(PR #378) — 열린 초안은 내가 바꾼 칸(옛 기준값과 다른 칸)만 남기고 나머지는 새 서버 값으로 — 동료가 바꾼 칸을 다음 저장이 되돌리지 않는다.
+    if (infoDraft !== null) {
+      setInfoDraft({
+        ...info.values,
+        ...Object.fromEntries(INFO_KEYS.filter((key) => infoDraft[key] !== infoBase.values[key]).map((key) => [key, infoDraft[key]])),
+      });
+    }
   }
-  const [infoDraft, setInfoDraft] = useState<InfoValues | null>(null);
   const [infoServerErrors, setInfoServerErrors] = useState<InfoFieldError[]>([]);
   // 「복원」한 기본 정보 칸은 보관 시점 version으로 저장한다(그 사이 동료 저장이면 동시 수정). 저장 성공 · 닫기에 비운다.
   const [restoredInfoVersion, setRestoredInfoVersion] = useState<number | null>(null);

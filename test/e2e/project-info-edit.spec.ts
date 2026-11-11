@@ -196,4 +196,48 @@ test.describe("기본 정보 4칸 (S3)", () => {
     expect(row?.name).toBe(`${project.name} 먼저`);
     await other.close();
   });
+
+  test("충돌 뒤 `새로 고침`은 내가 바꾼 칸만 남기고 동료가 바꾼 칸은 새 값으로 — 다시 저장해도 동료의 PM이 그대로", async ({ page, browser }) => {
+    const { pm, mate, lead, project } = await setup();
+    const other = await browser.newPage();
+    await login(page, pm);
+    await login(other, lead);
+    await page.goto(`/projects/${project.id}`);
+    await other.goto(`/projects/${project.id}`);
+    await openEdit(page);
+    await openEdit(other);
+
+    const myName = `${project.name} 내편집`;
+    await page.getByLabel("행사명", { exact: true }).fill(myName);
+
+    // 동료(팀장)는 담당 PM만 바꿔 먼저 저장한다.
+    await projectInfo(other).locator("#info-pm").click();
+    const dialog = other.getByRole("dialog", { name: "담당 PM 바꾸기" });
+    await dialog.getByRole("textbox", { name: "담당 PM 검색" }).fill(mate.name);
+    await dialog.getByRole("option", { name: new RegExp(mate.name) }).click();
+    await dialog.getByRole("button", { name: /이 사람으로/ }).click();
+    const first = waitForSaveAction(other);
+    await other.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await first;
+
+    const second = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await second;
+    const panel = projectInfo(page);
+    await expect(panel.getByText(/^다른 사람이 \d{2}:\d{2}에 바꿈/)).toBeVisible();
+
+    const refreshed = page.waitForResponse((response) => response.request().headers()["rsc"] === "1" && response.url().includes(project.id));
+    await panel.getByRole("button", { name: "새로 고침", exact: true }).click();
+    await refreshed;
+    await expect(panel.getByText(mate.name, { exact: true })).toBeVisible();
+    await expect(page.getByLabel("행사명", { exact: true })).toHaveValue(myName);
+
+    const third = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 \d/ }).click();
+    await third;
+    await expect(page.getByRole("heading", { name: myName })).toBeVisible();
+    const [row] = await db.select({ name: projects.name, pmUserId: projects.pmUserId }).from(projects).where(eq(projects.id, project.id));
+    expect(row).toEqual({ name: myName, pmUserId: mate.userId });
+    await other.close();
+  });
 });

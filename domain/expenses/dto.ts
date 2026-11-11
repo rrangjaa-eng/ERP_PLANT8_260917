@@ -340,6 +340,8 @@ export type PaymentTargetRowDto = {
   account?: PaymentAccount;
   // 06.5-06(결정 맥락 11): 오늘(KST) 이체 파일에 담긴 가장 늦은 시각 HH:mm — 이체 파일 게이트를 가진 사람에게만, 아니면 null.
   transferFileAt: string | null;
+  // 07.2-18 X4(S16): 대기 중인 희망 지급일 변경 요청의 새 희망일 MM-DD — 없으면 null(행 아래 줄 `희망 지급일 변경 요청 MM-DD`).
+  pendingDateChange: string | null;
   // 07-01(D-715 · D-742): scheduledPaymentDate는 유효 예정일(수동 ?? 자동). 수동 지정 여부 · 자동값 · 결재 마감(ISO) · 밀림 사유 · 계산 실패(R15).
   scheduledPaymentManual: boolean;
   autoPaymentDate: string;
@@ -374,6 +376,7 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
     { key: "account", from: "account", infoItem: "vendor.value" },
     { key: "transferFileAt", from: "transferFileAt", infoItem: "expense.value" },
+    { key: "pendingDateChange", from: "pendingDateChange", infoItem: "expense.value" },
     { key: "scheduledPaymentManual", from: "scheduledPaymentManual", infoItem: "expense.value" },
     { key: "autoPaymentDate", from: "autoPaymentDate", infoItem: "expense.value" },
     { key: "paymentCutoffAt", from: "paymentCutoffAt", infoItem: "expense.value" },

@@ -261,7 +261,7 @@ export async function undoDateChangeApproval(
       const written = await writeScheduledPayDate(viewer, { expenseId: locked.id, date: input.before, version: input.version }, { lookup, now }, tx);
       await recordAction(
         viewer,
-        { actionType: "document_update", entity: ENTITY, entityId: pre.id, documentId: locked.id, detail: { changes: buildChanges({ status: "approved" }, { status: "pending" }) } },
+        { actionType: "document_update", entity: ENTITY, entityId: pre.id, documentId: locked.id, detail: { changes: buildChanges({ status: STATUS_WORD.approved }, { status: STATUS_WORD.pending }) } },
         { tx },
       );
       return { expenseId: locked.id, version: written.version };
@@ -275,7 +275,7 @@ export async function undoDateChangeApproval(
 export type DateChangeHistoryDto = {
   id: string;
   newDate: string;
-  // 대기 · 승인 · 거절 · 철회 — 상태 글자(StatusTag text) 그대로.
+  // 대기 · 승인 · 거절 · 회수(철회 — 새 상태 낱말을 만들지 않고 기존 `회수` muted) — 상태 글자(StatusTag text) 그대로.
   status: string;
   requesterName: string | null;
   requestedAt: string;
@@ -301,7 +301,7 @@ export const DATE_CHANGE_DTO_SPEC: DtoSpec<DateChangeHistoryDto, DateChangeHisto
 
 registerDto({ name: "dateChangeHistory", fields: DATE_CHANGE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 
-const STATUS_WORD: Record<string, string> = { pending: "대기", approved: "승인", rejected: "거절", withdrawn: "철회" };
+const STATUS_WORD: Record<string, string> = { pending: "대기", approved: "승인", rejected: "거절", withdrawn: "회수" };
 
 function stamp(at: Date): string {
   return `${kstDateOf(at)} ${formatKstTime(at)}`;

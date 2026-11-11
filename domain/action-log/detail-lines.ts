@@ -58,6 +58,8 @@ export const CHANGE_FIELD_LABELS: Record<string, string> = {
   hireDate: "입사일",
   resignationDate: "퇴직일",
   preEstimate: "사전 견적",
+  // 07.2-18: 희망 지급일 변경 요청 승인 되돌리기 — 쓰는 쪽이 상태 낱말(승인 · 대기)을 담는다.
+  status: "상태",
 };
 
 // 07.1-13 S8(E-P2-40): detail.lineChanges 원소의 줄 종류별 제목과 칸 이름 — 견적 줄은 domain/quotes/lines.ts CELL_LABELS,

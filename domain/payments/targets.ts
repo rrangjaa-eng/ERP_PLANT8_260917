@@ -41,6 +41,7 @@ import {
 import { seoulToday } from "@/lib/dates";
 import { addDays, kstDayStart } from "@/lib/kst-date";
 import { findTransferFileTimes } from "@/repositories/action-log";
+import { listPendingDateChanges } from "@/repositories/expense-date-change-requests";
 import { canExportBankTransferFile } from "@/domain/payments/transfer-gate";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import { loadPayCalendar, loadPaySchedules, type LoadedPaySchedule } from "@/domain/payments/pay-schedule-load";
@@ -270,6 +271,7 @@ function toDto(
   shared: PaymentShared,
   transferFileAt: ReadonlyMap<string, string>,
   changedVendors: ReadonlySet<string>,
+  pendingDateChanges: ReadonlyMap<string, string>,
 ): PaymentTargetRowDto {
   const { row } = target;
   const vendorPayee = vendorPayeeOf(row);
@@ -290,6 +292,7 @@ function toDto(
     prepaid: row.prepaid,
     quoteLineId: row.quoteLineId,
     transferFileAt: transferFileAt.get(row.id) ?? null,
+    pendingDateChange: pendingDateChanges.get(row.id)?.slice(5) ?? null,
     scheduledPaymentManual: target.schedule.manual,
     autoPaymentDate: target.schedule.autoPayDate,
     paymentCutoffAt: target.schedule.cutoffAt.toISOString(),
@@ -309,10 +312,12 @@ export async function projectPaymentTargets(
 ): Promise<Partial<PaymentTargetRowDto>[]> {
   // 07-23 AQ-36: 계좌 바뀜은 쪽의 거래처 지급처 묶음으로 한 번 묻는다(행마다 부르지 않는다).
   const changedVendors = await accountChangedSinceLastPayment(viewer, targets.flatMap((target) => vendorPayeeOf(target.row) ?? []));
+  // 07.2-18 X4(S16 · eng D-18 P3): 대기 중인 희망 지급일 변경 요청 — 쪽의 문서 id 묶음으로 한 번 읽는다(지급 대상은 미지급 · 결재 통과 문서뿐).
+  const pendingDateChanges = await listPendingDateChanges(viewer, targets.map((target) => target.row.id));
   // 06-20(O-17) — 계좌 칸은 문서 화면과 같은 투영 함수 하나. 지급 방식 코드 · 거래처 id · 직원 지급처 id(06.5 D-6517)는 스펙 밖 키라 projectMany가 버린다.
   const rows = await projectPaymentAccounts(
     viewer,
-    targets.map((target) => ({ ...toDto(target, shared, transferFileAt, changedVendors), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId, payeeUserId: target.row.payeeUserId })),
+    targets.map((target) => ({ ...toDto(target, shared, transferFileAt, changedVendors, pendingDateChanges), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId, payeeUserId: target.row.payeeUserId })),
   );
   return projectMany(viewer, rows, PAYMENT_TARGET_ROW_DTO_SPEC);
 }

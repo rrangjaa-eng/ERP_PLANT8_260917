@@ -18,6 +18,7 @@ import {
   withdrawDateChange,
 } from "@/domain/expenses/date-change";
 import { completeExpensePayment, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { listPaymentTargets } from "@/domain/payments/targets";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { makePerson } from "./approvals-fixtures";
@@ -153,7 +154,7 @@ describe("요청 · 철회 (Task 1 · D-7291 · D-7294 · D-7295)", () => {
 
     await requestDateChange(fx.pm, { expenseId: doc.expenseId, newDate, reason: "다시 요청" });
     expect((await requestRows(doc.expenseId)).map((row) => row.status).sort()).toEqual(["pending", "withdrawn"]);
-    expect((await listDateChangeView(fx.pm, doc.expenseId)).history.map((row) => row.status)).toEqual(["대기", "철회"]);
+    expect((await listDateChangeView(fx.pm, doc.expenseId)).history.map((row) => row.status)).toEqual(["대기", "회수"]);
   });
 
   it("본인 아닌 팀장 · 대표 → 거부 · 다른 사람이 철회 → 거부", async () => {
@@ -239,6 +240,13 @@ describe("경영관리 처리 — 승인 · 거절 · 되돌리기 (Task 2 · D-
     // 두 번째 승인 · 거절 → 이미 처리됨
     expect((await rejection(() => approveDateChange(payer, { requestId, version: result.version }))).message).toBe(DATE_CHANGE_STALE);
     expect((await rejection(() => rejectDateChange(payer, { requestId, memo: "늦음" }))).message).toBe(DATE_CHANGE_STALE);
+  });
+
+  it("지급 대상 표 — 대기 요청 행에 pendingDateChange MM-DD(묶음 한 번 읽기) · 승인 뒤 null", async () => {
+    const rowOf = async () => (await listPaymentTargets(payer, { q: doc.number })).groups.flatMap((group) => group.rows).find((row) => row.id === doc.expenseId);
+    expect((await rowOf())?.pendingDateChange).toBe(newDate.slice(5));
+    await approveDateChange(payer, { requestId, version: (await expenseRow(doc.expenseId)).version });
+    expect((await rowOf())?.pendingDateChange).toBeNull();
   });
 
   it("지급 예정일 쓰기가 실패하면(지출결의 version 바뀜 · 영업일 아님) 요청도 pending 그대로 — 롤백", async () => {

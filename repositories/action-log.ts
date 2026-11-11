@@ -131,6 +131,8 @@ export async function hasDocumentPrintWithin(
 export async function findTransferFileTimes(
   viewer: Viewer,
   input: { expenseIds: readonly string[]; since: Date },
+  // 07.2-18(eng D-0 P2): 잠금 뒤 재판정이 같은 트랜잭션에서 읽게 — 없으면 풀 db.
+  tx?: DbOrTx,
 ): Promise<{ occurredAt: Date; expenseIds: string[] }[]> {
   void viewer;
   if (input.expenseIds.length === 0) return [];
@@ -138,7 +140,7 @@ export async function findTransferFileTimes(
     input.expenseIds.map((id) => sql`${id}`),
     sql`, `,
   );
-  const rows = await db
+  const rows = await (tx ?? db)
     .select({ occurredAt: actionLog.occurredAt, expenseIds: sql<unknown>`${actionLog.detail} -> 'expenseIds'` })
     .from(actionLog)
     .where(

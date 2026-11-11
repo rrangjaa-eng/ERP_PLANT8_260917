@@ -2,7 +2,7 @@ import { Client } from "pg";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db, pool } from "@/db/client";
-import { expensePayments, expenses, files } from "@/db/schema";
+import { expenseDateChangeRequests, expensePayments, expenses, files } from "@/db/schema";
 import { completeExpensePayment, decidePayable, loadPaymentInputs } from "@/domain/payments";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
@@ -10,6 +10,10 @@ import { markVoided } from "@/repositories/files";
 import { withTransaction } from "@/lib/db-transaction";
 import { lockProjectForWrite } from "@/repositories/projects";
 import { deferred } from "./lock-race";
+import { approveDateChange, DATE_CHANGE_BLOCKED, requestDateChange } from "@/domain/expenses/date-change";
+import { loadHolidayLookup } from "@/domain/holidays/calendar";
+import { isBusinessDay } from "@/domain/holidays/business-day";
+import { seoulToday } from "@/lib/dates";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { setupExpenseProject } from "./fixtures/expenses";
@@ -195,4 +199,67 @@ describe("hasEvidence (C5 · RS-13)", () => {
     expect(await hasEvidence(fx.pm, owner)).toBe(true);
     expect(await withTransaction((tx) => hasEvidence(fx.pm, owner, tx))).toBe(true);
   });
+});
+
+// 07.2-18 X4(eng D-18 P3 · 위협 T-07.2-18-04): 지급 완료와 희망 지급일 변경 승인이 같은 문서 행에서 겹친다 — 바깥 연결이 문서 행을 쥔 채
+// 두 호출이 모두 잠금 대기에 들어간 것을 확인한 뒤 풀어 준다. 잠금 순서(지급: 프로젝트 → 견적 줄 → 문서 · 승인: 문서 → 요청)가 겹치지 않아
+// 교착이 없고, 먼저 문서 행을 잡은 쪽만 성공한다(지급이 이기면 승인은 `지급 진행 중`, 승인이 이기면 지급은 version 충돌).
+describe("지급 완료 × 희망 지급일 변경 승인 경합 (07.2-18)", () => {
+  it("하나만 성공 — 지급 예정일 · 지급 기록 · 요청 상태가 어긋나지 않는다", async () => {
+    const payer = await makePaymentManager();
+    if (!payer.roleId) throw new Error("계급 없음");
+    for (const infoItem of ["expense.amount", "expense.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem, visible: true });
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    const today = seoulToday();
+    const year = Number(today.slice(0, 4));
+    const lookup = await loadHolidayLookup([year, year + 1]);
+    let newDate = new Date(`${today}T00:00:00Z`);
+    do newDate = new Date(newDate.getTime() + 86_400_000);
+    while (!isBusinessDay(newDate.toISOString().slice(0, 10), lookup));
+    const target = newDate.toISOString().slice(0, 10);
+    const { requestId } = await requestDateChange(fx.pm, { expenseId: doc.expenseId, newDate: target, reason: "행사 연기" });
+    const [before] = await db.select({ version: expenses.version, scheduled: expenses.scheduledPaymentDate }).from(expenses).where(eq(expenses.id, doc.expenseId));
+    if (!before) throw new Error("지출결의 없음");
+    const pre = await loadPaymentInputs(payer, { expenseId: doc.expenseId });
+    if (!pre.amount || !pre.tax) throw new Error("지급 총액을 셈할 수 없는 문서");
+    const payable = await decidePayable(
+      { amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, recipientCount: pre.tax.recipientCount },
+      pre.tax.rates,
+    );
+
+    const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+    await lockClient.connect();
+    let calls: Promise<unknown>[] = [];
+    try {
+      await lockClient.query("BEGIN");
+      await lockClient.query("SELECT id FROM expenses WHERE id = $1 FOR UPDATE", [doc.expenseId]);
+      calls = [
+        completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable.payableKrw, version: before.version }),
+        approveDateChange(payer, { requestId, version: before.version }),
+      ];
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const { rows } = await lockClient.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+        );
+        if ((rows[0]?.count ?? 0) >= 2) break;
+        await new Promise((settle) => setTimeout(settle, 20));
+      }
+    } finally {
+      await lockClient.query("ROLLBACK").catch(() => undefined);
+      await lockClient.end();
+    }
+    const [paid, approved] = await Promise.allSettled(calls);
+    expect([paid?.status, approved?.status].filter((status) => status === "fulfilled")).toHaveLength(1);
+
+    const live = await db.select().from(expensePayments).where(and(eq(expensePayments.expenseId, doc.expenseId), isNull(expensePayments.cancelledAt)));
+    const [after] = await db.select({ scheduled: expenses.scheduledPaymentDate }).from(expenses).where(eq(expenses.id, doc.expenseId));
+    const [request] = await db.select({ status: expenseDateChangeRequests.status }).from(expenseDateChangeRequests).where(eq(expenseDateChangeRequests.id, requestId));
+    if (paid?.status === "fulfilled") {
+      expect(approved?.status === "rejected" ? String(approved.reason) : "").toContain(DATE_CHANGE_BLOCKED);
+      expect([live.length, after?.scheduled, request?.status]).toEqual([1, before.scheduled, "pending"]);
+    } else {
+      expect([live.length, after?.scheduled, request?.status]).toEqual([0, target, "approved"]);
+    }
+  }, 30_000);
 });

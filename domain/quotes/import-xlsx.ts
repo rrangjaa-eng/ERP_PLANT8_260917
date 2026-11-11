@@ -72,7 +72,8 @@ export function normalizeHeader(value: unknown): string {
     .trim();
 }
 
-type Columns = Partial<Record<FieldKey, number>> & { item: number };
+// labelStart: 대분류가 놓인 첫 열. 병합 머리글(ITEM이 B:D 병합)이면 ITEM 머리글 열, 아니면 0.
+type Columns = Partial<Record<FieldKey, number>> & { item: number; labelStart: number };
 
 type HeaderMatch = { rowIndex: number; columns: Columns };
 
@@ -91,7 +92,11 @@ function findHeader(rows: readonly (readonly unknown[])[]): HeaderMatch | null {
       }
     }
     if (found.item !== undefined && (found.unitPrice !== undefined || found.amount !== undefined)) {
-      return { rowIndex, columns: { ...found, item: found.item } };
+      // ITEM 머리글이 오른쪽 칸들과 병합이면(다음 머리글까지 빈 칸) 항목 글자는 병합의 오른쪽 끝 칸에 있고 병합 안쪽 왼쪽 칸들은 대 · 중분류다.
+      const others = FIELD_ORDER.flatMap((field) => (field === "item" || found[field] === undefined ? [] : [found[field]])).filter((column): column is number => column !== undefined && column > found.item!);
+      const nextHeader = others.length > 0 ? Math.min(...others) : null;
+      const merged = nextHeader !== null && nextHeader - found.item > 1 && cells.slice(found.item + 1, nextHeader).every((cell) => cell === "");
+      return { rowIndex, columns: { ...found, item: merged ? nextHeader - 1 : found.item, labelStart: merged ? found.item : 0 } };
     }
   }
   return null;
@@ -99,7 +104,7 @@ function findHeader(rows: readonly (readonly unknown[])[]): HeaderMatch | null {
 
 type Num = { t: "empty" } | { t: "num"; v: number } | { t: "foc"; label: string } | { t: "bad" };
 
-const FOC_PATTERN = /^(F\.?O\.?C\.?|TBD)$/i;
+const FOC_PATTERN = /^(F\.?O\.?C\.?|T\.?B\.?D\.?)$/i;
 
 // 문자열 칸은 붙여넣기(ui/table/parse-tsv.ts normalizeNumericPaste)와 같은 규칙 — 쉼표 · 공백 · 통화 기호를 지운 뒤 숫자 모양만. 두 곳을 같이 고친다.
 const NUMERIC_PATTERN = /^-?\d+(\.\d+)?$/;
@@ -125,7 +130,9 @@ function textOf(value: unknown): string {
 
 // 소계 · 합계 줄 이름(D-7241) — 항목 칸 정규화 글자가 완전 일치일 때만. 한글 소계 · 합계 · 총계는 같은 뜻의 완전 일치로 더했다.
 function nameKey(item: string): string {
-  return item.toLowerCase().replace(/[^a-z0-9가-힣]+/g, " ").trim();
+  return item
+    .replace(/[(（[][^)）\]]*[)）\]]/g, " ")
+    .toLowerCase().replace(/[^a-z0-9가-힣]+/g, " ").trim();
 }
 
 const SUBTOTAL_NAMES = new Map<string, "sub" | "total" | "grand">([
@@ -143,7 +150,7 @@ const SUBTOTAL_NAMES = new Map<string, "sub" | "total" | "grand">([
 const COMMISSION_NAMES = new Set(["plan & management", "venue commission", "agency commission"]);
 
 function isCommissionItem(item: string): boolean {
-  const lower = item.toLowerCase().replace(/\s+/g, " ").trim();
+  const lower = item.replace(/[(（[][^)）\]]*[)）\]]/g, " ").toLowerCase().replace(/\s+/g, " ").trim();
   return COMMISSION_NAMES.has(lower) || lower.endsWith("commission");
 }
 
@@ -180,7 +187,7 @@ function analyzeSheet(rows: readonly (readonly unknown[])[], header: HeaderMatch
     const row = rows[rowIndex] ?? [];
     const rowNumber = rowIndex + 1;
     const itemRaw = cell(row, "item");
-    const itemText = textOf(itemRaw);
+    const rawItemText = textOf(itemRaw);
     const qty = readNum(cell(row, "quantity"));
     const unit = readNum(cell(row, "unitPrice"));
     const days = readNum(cell(row, "days"));
@@ -188,11 +195,18 @@ function analyzeSheet(rows: readonly (readonly unknown[])[], header: HeaderMatch
     const remarkText = textOf(cell(row, "remark"));
     const skip = (reason: string) => skipped.push({ row: rowNumber, reason: `행 ${rowNumber} · ${reason}` });
 
-    const leftLabels: { column: number; text: string }[] = [];
+    let leftLabels: { column: number; text: string }[] = [];
     for (let column = 0; column < columns.item; column++) {
       const text = textOf(row[column]);
       if (text !== "") leftLabels.push({ column, text });
     }
+    // 항목 칸이 빈 채 라벨 칸(B · C)에 소계 · 합계 · 수수료 이름과 금액만 있는 줄(sub · Total · Grand Total(KRW) · PLAN & MANAGEMENT) — 그 이름이 항목이고 분류가 아니다.
+    const lastLabel = leftLabels[leftLabels.length - 1];
+    const labelIsRowName =
+      rawItemText === "" && lastLabel !== undefined && qty.t === "empty" && unit.t === "empty" && days.t === "empty" && amount.t === "num" &&
+      (SUBTOTAL_NAMES.has(nameKey(lastLabel.text)) || isCommissionItem(lastLabel.text));
+    const itemText = labelIsRowName && lastLabel ? lastLabel.text : rawItemText;
+    if (labelIsRowName) leftLabels = [];
     const numberCells = [qty, unit, days, amount];
     const hasNumberCell = numberCells.some((value) => value.t !== "empty");
     if (itemText === "" && leftLabels.length === 0 && remarkText === "" && !hasNumberCell) {
@@ -201,7 +215,7 @@ function analyzeSheet(rows: readonly (readonly unknown[])[], header: HeaderMatch
     }
 
     for (const label of leftLabels) {
-      if (label.column === 0) {
+      if (label.column <= columns.labelStart) {
         major = clip(label.text, CATEGORY_LIMIT);
         mid = null;
       } else {
@@ -212,6 +226,11 @@ function analyzeSheet(rows: readonly (readonly unknown[])[], header: HeaderMatch
     const totalKind = SUBTOTAL_NAMES.get(nameKey(itemText));
     if (totalKind !== undefined && qty.t === "empty" && unit.t === "empty") {
       totals.push({ kind: totalKind, value: amount.t === "num" ? amount.v : null });
+      // Total · Grand Total 아래(수수료)는 앞 분류를 이어받지 않는다.
+      if (totalKind !== "sub") {
+        major = null;
+        mid = null;
+      }
       afterData = false;
       continue;
     }
@@ -302,11 +321,8 @@ function analyzeSheet(rows: readonly (readonly unknown[])[], header: HeaderMatch
       clientRemark = clip(remarkText === "" ? head : `${head} · ${remarkText}`, REMARK_LIMIT);
     } else {
       const raw = amountOnly ? (commission ? (amountNum ?? unitNum ?? 0) : (amountNum ?? 0)) : (unitNum ?? 0);
+      // 견본 실측: 원 미만 단가 · 금액(94363636.36 등 부가세 역산)이 큰 줄에 흔하다 — 건너뛰면 큰 줄이 사라지므로 원 정수로 반올림하고 비교(합계 차 · 금액 다름)가 드러낸다.
       unitPrice = Math.round(raw);
-      if (Math.abs(unitPrice - raw) > WON_TOLERANCE) {
-        skip("원 미만 금액");
-        continue;
-      }
     }
     if (!quoteAmountWithinBound(quantity, { currency: "KRW", amount: unitPrice, fxRate: 1 }, dayCount)) {
       skip("금액 상한 초과");

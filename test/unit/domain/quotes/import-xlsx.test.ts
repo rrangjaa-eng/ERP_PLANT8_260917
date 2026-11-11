@@ -111,10 +111,10 @@ describe("건너뛴 줄 (부분 성공)", () => {
 });
 
 describe("숫자 칸은 raw double이다", () => {
-  it("단가 1234.5000000001은 건너뜀 원 미만 금액 · 150000.0000000001은 150000", () => {
+  it("원 미만 단가는 건너뛰지 않고 반올림한다 — 1234.5000000001은 1235 · 150000.0000000001은 150000", () => {
     const sub = okOf(parse([[...HEADER], ["원미만", 1, 1234.5000000001, 1, null, null]]));
-    expect(sub.lines).toEqual([]);
-    expect(sub.skipped[0]?.reason).toBe("행 2 · 원 미만 금액");
+    expect(sub.skipped).toEqual([]);
+    expect(sub.lines[0]?.unitPrice).toBe(1235);
     const tail = okOf(parse([[...HEADER], ["꼬리", 1, 150000.0000000001, 1, null, null]]));
     expect(tail.lines[0]?.unitPrice).toBe(150000);
   });
@@ -133,9 +133,10 @@ describe("숫자 칸은 raw double이다", () => {
     expect(result.mismatchedLines).toBe(0);
   });
 
-  it("금액만 있는 줄의 금액 1234.5000000001은 건너뜀 원 미만 금액", () => {
-    const result = okOf(parse([["항목", "금액"], ["운송", 1234.5000000001]]));
-    expect(result.skipped[0]?.reason).toBe("행 2 · 원 미만 금액");
+  it("금액만 있는 줄의 금액 94363636.36은 반올림해 94363636", () => {
+    const result = okOf(parse([["항목", "금액"], ["운송", 94_363_636.36]]));
+    expect(result.skipped).toEqual([]);
+    expect(result.lines[0]?.unitPrice).toBe(94_363_636);
   });
 
   it("문자열 숫자는 붙여넣기와 같은 규칙으로 읽는다(쉼표 · 원)", () => {
@@ -247,5 +248,83 @@ describe("양식 규칙 (Task 2)", () => {
     const result = okOf(parse([[...HEADER], ["가".repeat(150)], ["A", 1, 1000, 1, 1000, "나".repeat(600)]]));
     expect(result.lines[0]?.clientRemark).toHaveLength(500);
     expect(result.lines[0]?.majorCategory).toHaveLength(100);
+  });
+});
+
+// 실제 견적 양식의 모양(2026-11 견본 실측) — 지어낸 재료. ITEM 머리글이 B:D 병합이라 항목은 병합 오른쪽 끝 칸(D)에, 대분류는 B · 중분류는 C에 있다.
+describe("병합 머리글 양식 (견본 실측)", () => {
+  const MERGED_HEADER = [null, "ITEM", null, null, "QTY", "(WON/KRW)\nCOST/UNIT", "NO. of\nDAY/SET", "AMOUNT(KRW)", null, null, "REMARK"];
+  const sheet = (): unknown[][] => [
+    [null, "Quotation"],
+    [null, "Total Amount (NET / VAT excluded) ", null, 9_999],
+    [],
+    MERGED_HEADER,
+    [null, "Venue", "Hall A", "Setting Day", 1, 1_000_000.4, 1, 1_000_000.4, null, null, null],
+    [null, null, null, "Event Day", 2, 500_000, 1, 1_000_000, null, null, "점심 포함"],
+    [null, null, "sub", null, null, null, null, 2_000_000.4],
+    [null, "Decoration", "Design", "Main EI", 1, 800_000, 1, 800_000],
+    [null, null, null, "Banner", 3, 100_000, 1, 300_000],
+    [null, null, "Product", "Board", 2, 50_000, 1, 100_000],
+    [null, null, "sub", null, null, null, null, 1_200_000],
+    [null, "Total", null, null, null, null, null, 3_200_000.4],
+    [null, "PLAN & MANAGEMENT", null, null, null, null, null, 500_000, null, null, "기획"],
+    [null, "Agency Commission(12%)", null, null, null, null, null, 384_000.05],
+    [null, "Grand Total(KRW)", null, null, null, null, null, 4_084_000.45, null, null, "VAT excluded"],
+  ];
+
+  it("항목은 병합 오른쪽 끝 칸에서 읽고 B · C는 대 · 중분류로 읽는다", () => {
+    const result = okOf(parse(sheet()));
+    const quote = result.lines.filter((line) => line.lineKind === "quote");
+    expect(quote.map((line) => [line.itemName, line.majorCategory, line.midCategory])).toEqual([
+      ["Setting Day", "Venue", "Hall A"],
+      ["Event Day", "Venue", "Hall A"],
+      ["Main EI", "Decoration", "Design"],
+      ["Banner", "Decoration", "Design"],
+      ["Board", "Decoration", "Product"],
+    ]);
+    expect(quote[1]?.clientRemark).toBe("점심 포함");
+  });
+
+  it("sub · Total · Grand Total(KRW)는 줄도 분류도 아니고 비교 합계로만 쓴다", () => {
+    const result = okOf(parse(sheet()));
+    expect(result.skipped).toEqual([]);
+    expect(result.lines.map((line) => line.itemName)).not.toContain("sub");
+    expect(result.lines.map((line) => line.midCategory)).not.toContain("sub");
+    expect(result.lines.map((line) => line.majorCategory)).not.toContain("Total");
+  });
+
+  it("라벨 칸에 이름이 있는 수수료 줄(PLAN & MANAGEMENT · Agency Commission(12%))은 수수료 줄 — 분류 없음 · 금액 반올림", () => {
+    const result = okOf(parse(sheet()));
+    const commission = result.lines.filter((line) => line.lineKind === "commission");
+    expect(commission.map((line) => [line.itemName, line.unitPrice, line.majorCategory, line.midCategory, line.clientRemark])).toEqual([
+      ["PLAN & MANAGEMENT", 500_000, null, null, "기획"],
+      ["Agency Commission(12%)", 384_000, null, null, null],
+    ]);
+  });
+
+  it("줄 합과 Grand Total의 차가 반올림 꼬리 안이면 checksumDiff null · 불일치 0", () => {
+    const result = okOf(parse(sheet()));
+    expect(result.lines).toHaveLength(7);
+    expect(result.checksumDiff).toBeNull();
+    expect(result.mismatchedLines).toBe(0);
+  });
+
+  it("amount 칸의 T.B.D · F.O.C는 단가를 비고에 남기고 0원 줄로 올린다", () => {
+    const rows = [
+      MERGED_HEADER,
+      [null, "Staff", "Event", "Overtime", 14, 18_000, 1, "T.B.D", null, null, "1시간 기준"],
+      [null, null, null, "Gift", 1, 100_000, 1, "F.O.C", null, null, null],
+    ];
+    const result = okOf(parse(rows));
+    expect(result.skipped).toEqual([]);
+    expect(result.lines.map((line) => [line.itemName, line.unitPrice, line.clientRemark])).toEqual([
+      ["Overtime", 0, "T.B.D · 단가 18,000 · 1시간 기준"],
+      ["Gift", 0, "F.O.C · 단가 100,000"],
+    ]);
+  });
+
+  it("병합이 없는 머리글(ITEM 바로 옆이 QTY)은 그대로 — 항목은 ITEM 칸", () => {
+    const result = okOf(parse([[...HEADER], ["Stage", 1, 1000, 1, 1000, null]]));
+    expect(result.lines[0]?.itemName).toBe("Stage");
   });
 });

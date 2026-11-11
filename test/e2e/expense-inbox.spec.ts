@@ -6,7 +6,14 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration } from "./leave-org";
 import { expectSeededReasonOptions, seedReasonOptions } from "./reason-options";
-import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, uniqueReceipt } from "./expense-fixture";
+import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E } from "./expense-fixture";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { expenses, projects } from "@/db/schema";
+import { rejectDocument } from "@/domain/approvals";
+import { submitExpense } from "@/domain/expenses";
+import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
+import { findApprovalGraphByDocument } from "@/repositories/approvals";
 
 // 05-10 Task 2 — 결재함의 지출결의: PC 행 승인은 확인 없이 즉시(토스트 `승인 · 결재 요청됨 → {다음}`) · 0건 빈 화면의 행동은 expenses 보기 권한이 있을 때만 ·
 // 시트를 연 뒤 경영관리 권한자가 증빙을 바꾸면 승인이 `{붙인 사람}이 HH:MM에 증빙을 바꿈 · 새로 고침`으로 거부되고 시트는 열려 있다.
@@ -157,7 +164,8 @@ test.describe("결재함 — 지출결의 (05-10)", () => {
     await expect(lead.getByRole("status").filter({ hasText: "승인 · " })).toBeVisible();
     await expect(rows).toHaveCount(1);
     await expect(lead.getByRole("button", { name: secondLabel })).toBeFocused();
-    await expect(lead.getByRole("button", { name: /^승인/ })).not.toBeFocused();
+    // 07.2-16: 필터 줄 1차 `승인`(일괄)도 같은 낱말이라 행 안의 `승인`만 본다.
+    await expect(lead.locator("tbody").getByRole("button", { name: /^승인/ })).not.toBeFocused();
   });
 
   test("PC 첫 화면 내 차례 — 승인한 뒤 포커스는 다음 줄의 대상 글자로 가고 `승인`이 아니다", async ({ browser, baseURL }) => {
@@ -181,4 +189,99 @@ test.describe("결재함 — 지출결의 (05-10)", () => {
     await expect(lead.locator('[id^="next-turn-label-"]').filter({ hasText: secondText })).toBeFocused();
     await expect(lead.getByRole("button", { name: /^승인/ })).not.toBeFocused();
   });
+
+  // 07.2-16(PU7 · UI-SPEC S12): fixture 프로젝트 시작일은 1월 1일 — 오늘 상신한 지출결의는 사후 추인이다. 시작일을 오늘로 옮기면(당일) 읽을 때 사라진다.
+  test("사후 추인 — 결재함 행 · 지출결의 목록 행 · 상세 머리 세 자리 정확히 1회 · 375 목록 행 2줄 이내 · 시작일을 오늘로 고치면 사라짐", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
+    const label = `지출결의 · ${fx.projectName} · ${fx.lines.tracer.itemName}`;
+
+    const lead = await loginPage(browser, baseURL, fx.lead);
+    await lead.goto("/approvals");
+    const inboxRow = lead.getByRole("row").filter({ hasText: label });
+    await expect(inboxRow).toHaveCount(1);
+    await expect(inboxRow.getByText("사후 추인", { exact: true })).toHaveCount(1);
+
+    const pm = await loginPage(browser, baseURL, fx.pm);
+    await pm.goto("/expenses");
+    const listRow = pm.getByRole("row").filter({ hasText: fx.projectName });
+    await expect(listRow).toHaveCount(1);
+    await expect(listRow.getByText("사후 추인", { exact: true })).toHaveCount(1);
+    await pm.goto(`/expenses/${expenseId}`);
+    await expect(pm.getByText("사후 추인", { exact: true })).toHaveCount(1);
+
+    // 375 — 상태 칸의 조각은 숨고 접힌 줄 끝에 한 번, 행(문서 줄 + 접힌 줄)은 2줄 이내.
+    const phone = await loginPage(browser, baseURL, fx.pm, { width: 375, height: 812 });
+    await phone.goto("/expenses");
+    const phoneRow = phone.getByRole("row").filter({ hasText: fx.projectName }).first();
+    await expect(phoneRow).toBeVisible();
+    await expect(phone.getByText("사후 추인", { exact: true }).filter({ visible: true })).toHaveCount(1);
+    // 보이는 글자 조각의 줄 위치만 센다(칸 · 요소 상자는 빼고, 같은 줄의 다른 글자 크기는 10px 안에서 한 줄로 묶는다).
+    const lineTops = await phoneRow.evaluate((row) => {
+      const rows = [row, row.nextElementSibling].filter((element): element is Element => element !== null && (element === row || element.querySelector("[colspan]") !== null));
+      const tops: number[] = [];
+      for (const element of rows) {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (!node.textContent?.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          for (const rect of range.getClientRects()) if (rect.width > 0 && rect.height > 0) tops.push(rect.top);
+        }
+      }
+      tops.sort((a, b) => a - b);
+      return tops.filter((top, index) => index === 0 || top - (tops[index - 1] ?? top) > 10).length;
+    });
+    expect(lineTops).toBeLessThanOrEqual(2);
+
+    await db.update(projects).set({ startDate: seoulToday() }).where(eq(projects.id, fx.projectId));
+    await lead.reload();
+    await expect(lead.getByRole("row").filter({ hasText: label })).toHaveCount(1);
+    await expect(lead.getByText("사후 추인", { exact: true })).toHaveCount(0);
+    await pm.reload();
+    await expect(pm.getByText("사후 추인", { exact: true })).toHaveCount(0);
+  });
+
+  // 07.2-16(PU18 · UI-SPEC S14): 두 번 반려된 뒤 다시 올라온 문서 — 결재 시트와 문서 화면에 직전(2번째) 사유 전문 + `총 2회`.
+  test("지난 반려 — 2회 반려 뒤 재상신 문서의 결재 시트 · 문서 화면에 2번째 사유 전문(500자 · 넘침 없음) + 2행 `총 2회`", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
+    const second = `${"금액과 증빙을 다시 확인 ".repeat(35).trim()} 끝`;
+    expect(second.length).toBeLessThanOrEqual(500);
+    await rejectAndResubmit(fx, expenseId, "첫 번째 사유");
+    await rejectAndResubmit(fx, expenseId, second);
+
+    const lead = await loginPage(browser, baseURL, fx.lead);
+    await lead.goto("/approvals");
+    const row = lead.getByRole("row").filter({ hasText: fx.lines.tracer.itemName });
+    const open = row.locator('button[aria-haspopup="dialog"]');
+    await waitForHydration(open);
+    await open.click();
+    const sheet = lead.getByRole("dialog");
+    await expectPreviousRejection(sheet.locator("dt", { hasText: /^지난 반려$/ }), second);
+
+    await lead.goto(`/expenses/${expenseId}`);
+    await expectPreviousRejection(lead.locator("dt", { hasText: /^지난 반려$/ }), second);
+  });
 });
+
+async function rejectAndResubmit(fx: ExpenseE2E, expenseId: string, reason: string): Promise<void> {
+  const graph = await findApprovalGraphByDocument(SYSTEM_VIEWER, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+  if (!graph) throw new Error("결재 인스턴스가 없다");
+  await rejectDocument(fx.lead.viewer, { instanceId: graph.instance.id, expectedVersion: graph.instance.version, reason });
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  await submitExpense(fx.pm.viewer, { expenseId, expectedVersion: row?.version ?? -1 });
+}
+
+async function expectPreviousRejection(label: import("@playwright/test").Locator, reason: string): Promise<void> {
+  await expect(label).toHaveCount(1);
+  const value = label.locator("xpath=following-sibling::dd[1]");
+  const lines = value.locator(":scope > span");
+  await expect(lines).toHaveCount(2);
+  await expect(lines.nth(0)).toHaveText(reason);
+  await expect(lines.nth(1)).toHaveText(new RegExp(`^${"[^·]+"} · \\d{2}-\\d{2} \\d{2}:\\d{2} · 총 2회$`));
+  // 전문이 넘치지 않고 줄바꿈된다(keep-all) — 값 칸 가로 넘침 0 · 여러 줄.
+  expect(await value.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await lines.nth(0).evaluate((element) => element.getBoundingClientRect().height > parseFloat(getComputedStyle(element).lineHeight) * 1.5)).toBe(true);
+}
+

@@ -24,7 +24,8 @@ vi.mock("@/domain/settings/registry", async () => {
 
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, createRole } from "@/domain/permissions/roles";
-import { approveDocument, getApprovalView, listMyInbox, previewRoute } from "@/domain/approvals";
+import { approveDocument, getApprovalView, listMyInbox, previewRoute, rejectDocument } from "@/domain/approvals";
+import { resubmitLeave } from "@/domain/leave/resubmit";
 import { listMyLeave, submitLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
 import { getLeaveBalanceForRequest } from "@/domain/leave/balance-service";
 import { formatBalanceRow } from "@/domain/leave/balance";
@@ -340,5 +341,61 @@ describe("결재함 상세 withDetails(CEO-17 · CEO-9 · ENG-17 · CXF2-B-RF01)
     const view = await getApprovalView(lead, { kind: LEAVE_DOCUMENT_KIND, documentId: own.leaveId }, { now: NOW_2026 });
     expect(view?.actions).toEqual(ownItem?.actions);
     expect(otherItem?.actions).toEqual(["approve", "reject"]);
+  });
+});
+
+// ── 07.2-16(PU18 · D-7274): 지난 반려 — 지난 차수(round < 현재)의 반려 단계에서 직전 1건 + 총 수 ─────────
+
+describe("지난 반려 previousRejection(PU18)", () => {
+  async function rejectedRounds(times: number): Promise<{ ceo: Viewer; drafter: Viewer; documentId: string }> {
+    // 기획1팀에 팀장 없음 · 본부 책임자 없음 → 지금 단계는 대표.
+    const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
+    const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
+    const submitted = await submitLeave(drafter, DAY(7), { now: NOW_2026 });
+    for (let i = 1; i <= times; i++) {
+      const graph = await findApprovalGraphByDocument(SYSTEM_VIEWER, { documentKind: LEAVE_DOCUMENT_KIND, documentId: submitted.leaveId });
+      await rejectDocument(ceo, { instanceId: submitted.instanceId, expectedVersion: graph?.instance.version ?? -1, reason: `사유${i}` }, { now: NOW_2026 });
+      const after = await findApprovalGraphByDocument(SYSTEM_VIEWER, { documentKind: LEAVE_DOCUMENT_KIND, documentId: submitted.leaveId });
+      await resubmitLeave(drafter, { leaveId: submitted.leaveId, expectedVersion: after?.instance.version ?? -1, input: DAY(7) }, { now: NOW_2026 });
+    }
+    return { ceo, drafter, documentId: submitted.leaveId };
+  }
+
+  it("2회 반려 뒤 재상신 — 결재 화면 · 결재함 항목 모두 직전(2번째) 사유 · 반려자 · 시각 · 총 2회", async () => {
+    const { ceo, documentId } = await rejectedRounds(2);
+    const view = await getApprovalView(ceo, { kind: LEAVE_DOCUMENT_KIND, documentId }, { now: NOW_2026 });
+    expect(view?.round).toBe(3);
+    expect(view?.previousRejection).toMatchObject({ reason: "사유2", rejectedBy: "최대표", totalRejections: 2 });
+    expect(view?.previousRejection?.rejectedAt).toBeInstanceOf(Date);
+
+    const inbox = await listMyInbox(ceo, { now: NOW_2026, withDetails: true });
+    expect(inbox.mine).toHaveLength(1);
+    expect(inbox.mine[0]?.previousRejection).toEqual(view?.previousRejection);
+  });
+
+  it("1회 반려 → 총 1회 · 반려 0회 → null", async () => {
+    const { ceo, documentId } = await rejectedRounds(1);
+    const view = await getApprovalView(ceo, { kind: LEAVE_DOCUMENT_KIND, documentId }, { now: NOW_2026 });
+    expect(view?.previousRejection).toMatchObject({ reason: "사유1", totalRejections: 1 });
+
+    const fresh = await submitLeave(await makePerson("이준호", DEFAULT_ROLE_ID, "기획1팀"), DAY(8), { now: NOW_2026 });
+    const freshView = await getApprovalView(ceo, { kind: LEAVE_DOCUMENT_KIND, documentId: fresh.leaveId }, { now: NOW_2026 });
+    expect(freshView?.previousRejection).toBeNull();
+    const inbox = await listMyInbox(ceo, { now: NOW_2026, withDetails: true });
+    expect(inbox.mine.find((item) => item.documentId === fresh.leaveId)?.previousRejection).toBeNull();
+  });
+
+  it("무관한 직원은 결재 화면 자체가 없고(null) · 결재 정보가 꺼진 계급은 읽기 전용으로 봐도 필드가 없다(DTO 투영)", async () => {
+    const { documentId } = await rejectedRounds(1);
+    const stranger = await makePerson("정다은", DEFAULT_ROLE_ID, null);
+    expect(await getApprovalView(stranger, { kind: LEAVE_DOCUMENT_KIND, documentId }, { now: NOW_2026 })).toBeNull();
+
+    const role = await createRole(SYSTEM_VIEWER, { name: `무정보-${Date.now()}` });
+    if (!role.id) throw new Error("계급 id가 없습니다");
+    const blind = await makePerson("새직원", role.id, null);
+    const view = await getApprovalView(blind, { kind: LEAVE_DOCUMENT_KIND, documentId, readOnlyVisible: true }, { now: NOW_2026 });
+    expect(view).not.toBeNull();
+    expect(view && "previousRejection" in view).toBe(false);
+    expect(JSON.stringify(view)).not.toContain("사유1");
   });
 });

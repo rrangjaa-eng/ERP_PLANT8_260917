@@ -17,7 +17,8 @@ import { PcOnly } from "@/app/(app)/admin/pc-only";
 import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import { DocumentActions } from "@/app/(app)/leave/[id]/document-actions";
 import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
-import { routeListSteps, withdrawResultLines } from "@/app/(app)/leave/status-display";
+import { previousRejectionLines, routeListSteps, withdrawResultLines } from "@/app/(app)/leave/status-display";
+import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import { expenseStatusWord } from "../status-display";
 import type { EvidenceActions } from "@/domain/evidence";
 import type { PaymentViewDto } from "@/domain/payments";
@@ -193,6 +194,17 @@ export function ExpenseDocument({
     { label: "상세", value: expense.note || dash },
     { label: "기안", value: [expense.drafterName, expense.createdAt ? kstDateOf(expense.createdAt) : null].filter(Boolean).join(" · ") },
   );
+  // 07.2-16(PU18 · S14): 다시 올라온 문서의 `지난 반려` — 줄 모양은 연차 잔고 줄(`balance-*`)과 같다. 반려 이력이 없거나 당사자가 아니면 행이 없다.
+  if (view?.previousRejection) {
+    items.push({
+      label: "지난 반려",
+      value: previousRejectionLines(view.previousRejection).map((line) => (
+        <span key={line.tone} className={leaveStyles[`balance-${line.tone}`]}>
+          {line.text}
+        </span>
+      )),
+    });
+  }
   // 결재선 노출 항목이 없는 계급에는 단계가 투영에서 빠진다 — 빈 값 행을 두지 않는다(웨이브 11 D5).
   if (view?.steps && view.steps.length > 0) {
     items.push({ label: "결재선", value: <ApprovalRoute mode="list" steps={routeListSteps(view.steps)} endLines={view.endLines ?? []} /> });
@@ -258,7 +270,13 @@ export function ExpenseDocument({
     <div className={styles.column}>
       <DetailScreen
         title={title}
-        status={closure ? <StatusTag status="종결" /> : expense.number !== null && !view ? undefined : <StatusTag status={expenseStatusWord(view?.status)} />}
+        status={
+          <>
+            {closure ? <StatusTag status="종결" /> : expense.number !== null && !view ? null : <StatusTag status={expenseStatusWord(view?.status)} />}
+            {/* 07.2-16(PU7 · S12): 상태 배지 뒤 `사후 추인`(목록 · 결재함과 같은 판정 — 서버 postHoc). */}
+            {expense.postHoc ? <StatusTag status="사후 추인" variant="text" /> : null}
+          </>
+        }
         meta={meta}
         // 06-28(S23): 반려 · 회수 문서를 보는 기안자 · 지급 권한자에게만 2차 `종결`(서버 closeDialog) — 결재 통과 문서의 지급 행과 함께 서지 않는다.
         // 07.4-01 D-7409(E1): 결재 인스턴스가 있을 때만 2차 `인쇄` 링크(새 탭 · PC만) — 기존 2차 `종결`의 왼쪽. 1차는 건드리지 않는다.

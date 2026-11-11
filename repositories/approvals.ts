@@ -264,6 +264,27 @@ export async function listActiveInstances(viewer: Viewer): Promise<ActiveInstanc
   return [...result.values()];
 }
 
+// 07.2-16(PU18 · D-7274): 인스턴스들의 모든 차수 반려 단계 — 결재함 `내 결재` 시트의 `지난 반려`. 차수 거르기(round < 현재)는 도메인이 한다.
+export type RejectedStepRow = { instanceId: string; round: number; reason: string | null; actedByName: string | null; actedAt: Date | null };
+
+export async function listRejectedSteps(viewer: Viewer, instanceIds: string[]): Promise<RejectedStepRow[]> {
+  void viewer;
+  if (instanceIds.length === 0) return [];
+  return db
+    .select({
+      instanceId: approvalRoutes.instanceId,
+      round: approvalRoutes.round,
+      reason: approvalSteps.reason,
+      actedByName: actors.name,
+      actedAt: approvalSteps.actedAt,
+    })
+    .from(approvalSteps)
+    .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+    .leftJoin(actors, eq(actors.id, approvalSteps.actedBy))
+    .where(and(inArray(approvalRoutes.instanceId, instanceIds), eq(approvalSteps.action, "rejected")))
+    .orderBy(asc(approvalRoutes.round));
+}
+
 export type ProcessedInstance = ApprovalInstanceWithDrafter & { actedAt: Date; action: string; submittedAt: Date };
 
 // 내가 처리한 인스턴스 — 인스턴스마다 가장 최근 처리 한 건, 처리 내림차순 limit건.

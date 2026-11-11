@@ -14,7 +14,8 @@ import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
 import { PcOnly } from "@/app/(app)/admin/pc-only";
-import { leaveStatusWord, routeListSteps, toLeaveStatusKey, withdrawResultLines } from "@/app/(app)/leave/status-display";
+import { leaveStatusWord, previousRejectionLines, routeListSteps, toLeaveStatusKey, withdrawResultLines } from "@/app/(app)/leave/status-display";
+import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import { preSettleBlockReason } from "@/domain/pre-settle-check/summary";
 import { SettlementActions } from "./settlement-actions";
 import detailStyles from "../project-detail.module.css";
@@ -92,6 +93,17 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
     });
   }
   items.push({ label: "기안", value: [doc.drafterName, doc.createdAt ? kstDateOf(doc.createdAt) : null].filter(Boolean).join(" · ") || dash });
+  // 07.2-16(PU18 · S14): 다시 올라온 정산 결재의 `지난 반려` — 줄 모양은 연차 잔고 줄(`balance-*`)과 같다.
+  if (view?.previousRejection) {
+    items.push({
+      label: "지난 반려",
+      value: previousRejectionLines(view.previousRejection).map((line) => (
+        <span key={line.tone} className={leaveStyles[`balance-${line.tone}`]}>
+          {line.text}
+        </span>
+      )),
+    });
+  }
   if (view?.steps && view.steps.length > 0) {
     items.push({ label: "결재선", value: <ApprovalRoute mode="list" steps={routeListSteps(view.steps)} endLines={view.endLines ?? []} /> });
   }

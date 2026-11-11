@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cancelRouteListSteps, leaveDocumentStatusWord, leaveStatusDisplay, leaveStatusWord, routeListSteps, seoulMinuteOf, withdrawResultLines, type LeaveStatusKey } from "@/app/(app)/leave/status-display";
+import { cancelRouteListSteps, leaveDocumentStatusWord, leaveStatusDisplay, leaveStatusWord, previousRejectionLines, routeListSteps, seoulMinuteOf, withdrawResultLines, type LeaveStatusKey } from "@/app/(app)/leave/status-display";
 import { statusKind } from "@/ui/status-tag/status-map";
 
 // 04.6-18: `StatusTag status` 낱말 — 색은 상태 배지 표(`status-map.ts`) 한 곳이 정하고, 화면은 낱말만 넘긴다. 낱말과 옛 {kind, label}이 어긋나지 않는다.
@@ -123,5 +123,25 @@ describe("cancelRouteListSteps(07.2-15 S18 결재선 목록 끝)", () => {
     expect(cancelRouteListSteps([{ stepIndex: 1, label: "팀장", state: "approved", actedByName: "김팀장" }])[0]?.result.status).toBe("취소됨");
     expect(cancelRouteListSteps([{ stepIndex: 1, label: "팀장", state: "current", holderNames: "김팀장" }])[0]?.result.status).toBe("취소 요청 중");
     expect(cancelRouteListSteps([{ stepIndex: 1, label: "팀장", state: "current", holderNames: "김팀장", viewerHolds: true }])[0]?.result.status).toBe("내 결재");
+  });
+});
+
+// 07.2-16(PU18 · UI-SPEC S14): `지난 반려` 행 두 줄.
+describe("previousRejectionLines", () => {
+  const at = new Date("2026-11-02T01:05:00Z"); // 서울 11-02 10:05
+
+  it("1회 반려 — 1행 사유 원문 · 2행 `{반려자} · MM-DD HH:mm`(총 조각 없음)", () => {
+    expect(previousRejectionLines({ reason: "금액 다시 확인", rejectedBy: "최대표", rejectedAt: at, totalRejections: 1 })).toEqual([
+      { text: "금액 다시 확인", tone: "default" },
+      { text: "최대표 · 11-02 10:05", tone: "muted" },
+    ]);
+  });
+
+  it("2회 이상 — 2행 끝에 ` · 총 {n}회` · 반려자 이름이 없으면(투영 밖) 시각부터", () => {
+    expect(previousRejectionLines({ reason: "두 번째", rejectedBy: "최대표", rejectedAt: at, totalRejections: 2 })[1]).toEqual({
+      text: "최대표 · 11-02 10:05 · 총 2회",
+      tone: "muted",
+    });
+    expect(previousRejectionLines({ reason: "x", rejectedBy: null, rejectedAt: at, totalRejections: 3 })[1]?.text).toBe("11-02 10:05 · 총 3회");
   });
 });

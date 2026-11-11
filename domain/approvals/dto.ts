@@ -26,6 +26,10 @@ export type ApprovalStepView = {
 // 04.1-05(S7 끝 줄): 해당할 때만 — 자기 승인 건너뜀 · 회수 시각 · 멈춘 문서의 기안자 줄(danger).
 export type ApprovalRouteEndLine = { text: string; tone: "muted" | "danger" };
 
+// 07.2-16(PU18 · D-7274): 지난 반려 — 같은 인스턴스의 지난 차수(round < 현재) 반려 단계 중 직전 1건 + 총 수. 반려가 없으면 null.
+// 별도 칸 없이 차수 보존(unique(instance_id, round))에서 읽는다. 사유 · 반려자 · 시각은 approval.value 뒤(이름 · 시각 · 사유와 같은 축).
+export type PreviousRejection = { reason: string; rejectedBy: string | null; rejectedAt: Date; totalRejections: number };
+
 export type ApprovalInboxItemDto = {
   instanceId: string;
   kind: string;
@@ -49,6 +53,8 @@ export type ApprovalInboxItemDto = {
   actions: ApprovalAction[] | null;
   // 05-01 E3(Round 4 D7): 종류가 준 `승인` 막힘 이유 — 가능 행동과 같은 구조 값(approval.value를 끈 계급에도 남는다).
   approveBlockedReason: string | null;
+  // 07.2-16(PU18): 결재 시트 `지난 반려` 행 — withDetails `내 결재` 항목만, 그 밖 null.
+  previousRejection: PreviousRejection | null;
 };
 
 export type ApprovalInboxItemSource = ApprovalInboxItemDto;
@@ -80,6 +86,7 @@ export const APPROVAL_INBOX_ITEM_DTO_SPEC: DtoSpec<ApprovalInboxItemValues, Appr
     { key: "detail", from: "detail", infoItem: "approval.value" },
     { key: "steps", from: "steps", infoItem: "approval.value" },
     { key: "endLines", from: "endLines", infoItem: "approval.value" },
+    { key: "previousRejection", from: "previousRejection", infoItem: "approval.value" },
   ],
 };
 
@@ -100,6 +107,8 @@ export type ApprovalViewDto = {
   actions: ApprovalAction[];
   // 05-01 E3(Round 4 D7): 구조 값 — 위 결재함 항목과 같다.
   approveBlockedReason: string | null;
+  // 07.2-16(PU18): 문서 화면 `지난 반려` 행.
+  previousRejection: PreviousRejection | null;
 };
 
 export type ApprovalViewSource = ApprovalViewDto;
@@ -124,6 +133,7 @@ export const APPROVAL_VIEW_DTO_SPEC: DtoSpec<ApprovalViewValues, ApprovalViewVal
     { key: "drafterName", from: "drafterName", infoItem: "approval.value" },
     { key: "steps", from: "steps", infoItem: "approval.value" },
     { key: "endLines", from: "endLines", infoItem: "approval.value" },
+    { key: "previousRejection", from: "previousRejection", infoItem: "approval.value" },
   ],
 };
 

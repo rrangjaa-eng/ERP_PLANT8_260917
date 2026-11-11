@@ -195,6 +195,59 @@
   gap: var(--s-2);
 }
 
+/* 07.2-14(S10) — 머리 줄 2차 `엑셀 올리기`: 편집 폭(≥1024)에서만 선다. 서버 렌더 = 수화 뒤 같은 배치라 CSS로 숨긴다(JS 폭 판정으로 넣었다 빼면 머리 줄이 움직인다). */
+@media (max-width: 1023.98px) {
+  .xlsxEntry {
+    display: none;
+  }
+}
+
+/* 07.2-14(S10) — 표 위 가져오기 결과 줄(저장 안 한 편집 줄 `.restoreBanner`와 같은 모양) + 3차. 조각은 warning 먼저, muted `엑셀 올림 N줄`이 끝. */
+.importLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--s-2);
+  margin: var(--s-2) 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.importLineFailed {
+  color: var(--status-danger);
+}
+
+.importWarning {
+  color: var(--status-warning);
+}
+
+.importPieces {
+  min-width: 0;
+}
+
+/* 건너뜀 목록: 세 줄을 넘으면 목록 안 스크롤(디자인 r2 F-R2-3). 네이티브 details — 모달 없음. */
+.importSkipped {
+  margin: 0 0 var(--s-2);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+.importSkipped > summary {
+  display: inline-block;
+  cursor: pointer;
+}
+
+.importSkipList {
+  max-height: calc(3 * var(--lh-table) * 1em);
+  margin: var(--s-1) 0 0;
+  padding: 0 0 0 var(--s-4);
+  overflow-y: auto;
+  line-height: var(--lh-table);
+  overflow-wrap: anywhere;
+}
+
 /* 04-30(DR-2 · DR-31) — 표 위 잠김 줄. 복원 줄 다음, 잠긴 셀 편집 시도의 이유와 같은 문자열. */
 .lockLine {
   margin: var(--s-2) 0;

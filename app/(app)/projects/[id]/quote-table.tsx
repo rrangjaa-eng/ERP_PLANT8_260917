@@ -43,8 +43,10 @@ import {
 } from "@/domain/quotes/edit-scope";
 import type { RevenueDto } from "@/domain/revenue";
 import type { LineDoorCell, LineDoors } from "@/domain/expenses";
+import type { QuoteImportLine } from "@/domain/quotes/import-xlsx";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type EntryDraft } from "./revenue-section";
+import { useQuoteXlsxImport } from "./xlsx-import";
 import {
   IssueRequestTable,
   issueRequestDraftsFromDto,
@@ -2245,6 +2247,45 @@ export function QuoteLedger({
   // 04-26(D-86) — 화면의 활성 줄(보관할 줄은 이미 빠져 있고 새 줄은 포함)이 상한이면 줄을 더하지 않는다.
   const atLineCap = lines.filter((line) => line.pendingDelete !== "delete").length >= lineCap;
   const lineCapReason = `${lineCap}줄 상한 · 상한은 관리자 설정`;
+
+  // 07.2-14(X2 · S10) — 회사 양식 엑셀 올리기. 올린 줄은 붙여넣기와 같은 길(미저장 줄 · dirty)로 표 맨 아래에 붙고 저장은 `일괄 저장 N`이다.
+  // 소분류는 표 기본 소분류(줄 추가와 같다) · 대 · 중분류는 엑셀 값 · 수수료 줄은 「수수료 줄 추가」와 같은 새 줄 꼴(단가 칸 = 금액).
+  const xlsxImport = useQuoteXlsxImport({
+    projectId,
+    enabled: structural.insert && approvedSeq === null && status !== "settling" && status !== "completed",
+    visible: editableWidth,
+    capLeft: lineCap - lines.filter((line) => line.pendingDelete !== "delete").length,
+    append: (imported: QuoteImportLine[]) => {
+      const drafts = imported.map((source): DraftLine => {
+        const base: DraftLine =
+          source.lineKind === "commission"
+            ? { ...newDraftLine("", commissionLineCells), lineKind: "commission" }
+            : newDraftLine(subcategories[0]?.value ?? "", newLineCells);
+        return {
+          ...base,
+          itemName: source.itemName,
+          quantity: source.quantity,
+          days: source.days,
+          unitPriceAmount: source.unitPrice,
+          unitPriceAmountKrw: source.unitPrice,
+          clientRemark: source.clientRemark,
+          majorCategory: source.majorCategory,
+          midCategory: source.midCategory,
+        };
+      });
+      persistPendingRef.current = true;
+      setSavedAt(null);
+      setLineCapNotice(null);
+      setLines((prev) => [...prev, ...drafts]);
+      return drafts.map((draft) => draft.clientKey);
+    },
+    remove: (keys) => {
+      const drop = new Set(keys);
+      persistPendingRef.current = true;
+      setLines((prev) => prev.filter((line) => !(drop.has(line.clientKey) && line.isNew)));
+    },
+    liveKeys: (keys) => keys.filter((key) => lines.some((line) => line.clientKey === key && line.isNew)),
+  });
   const capReasonId = useId();
   // 04-47(DR-16) — 상한 이유는 합계 행 danger 항목이고, 직전 저장 결과(성공은 혼자 선다)를 지운다.
   function showLineCapNotice(text: string) {
@@ -3173,6 +3214,7 @@ export function QuoteLedger({
   const copyActions = (
     <HeaderCopyActions key="copy">
       {newRevision ? <NewRevisionDialog {...newRevision} dirtyCount={dirtyCount} onCreated={setStatusToast} /> : null}
+      {xlsxImport.entry}
       {copyProjectHref ? (
         <Link href={copyProjectHref} className={`${buttonLinkClassName()} ${styles.headerTouchButton}`}>
           프로젝트 복사
@@ -3405,6 +3447,8 @@ export function QuoteLedger({
         references={{ subcategories: subcategoryLabels, vendors, vendorShown }}
         onSharedEditsCarried={dirtyStorage.recount}
       />
+      {/* 07.2-14(DC-12) — 가져오기 결과 줄: 현재 복원 → 이전 차수 복원 → 가져오기 결과 → 잠김 → ④ (DOM 순서 = 보이는 순서). */}
+      {xlsxImport.line}
       {lockLine ? <p className={styles.lockLine}>{lockLine}</p> : null}
       {doorGateLine ? <p className={styles.lockLine}>{doorGateLine}</p> : null}
 

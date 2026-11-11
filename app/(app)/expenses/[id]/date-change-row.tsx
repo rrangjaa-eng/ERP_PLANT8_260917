@@ -152,7 +152,8 @@ export function DateChangeRow({
     );
   }
 
-  const memoEmpty = memo.trim() === "";  return (
+  const memoEmpty = memo.trim() === "";
+  return (
     <>
       {view.entry === "can" ? (
         <span className={`${styles.valueRow} ${styles.scheduleRow}`}>

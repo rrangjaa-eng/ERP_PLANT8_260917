@@ -109,6 +109,8 @@ function SimpleFieldEditor({
   const [selectFailed, setSelectFailed] = useState(false);
   // 빠른 연속 변경(A→B→C)에서 낡은 요청(B)의 늦은 실패가 화면을 A로 되돌리지 않게, 마지막 요청만 되돌린다.
   const selectRequestRef = useRef(0);
+  // Codex P2(#373): 되돌릴 값은 직전 선택이 아니라 마지막으로 저장에 성공한 값이다 — 연속 변경이 둘 다 실패하면 저장된 적 없는 값으로 돌아가지 않는다.
+  const savedSelectRef = useRef<string | null>(null);
   const [checked, setChecked] = useState(initialValue === true);
   const [selected, setSelected] = useState(
     typeof initialValue === "string"
@@ -168,19 +170,21 @@ function SimpleFieldEditor({
             options={options ?? (descriptor.kind === "enum" ? descriptor.options.map((option) => ({ value: option, label: option })) : [])}
             error={error ?? (selectFailed ? "저장 실패 · 다시 시도" : undefined)}
             onChange={(event) => {
-              const previous = selected;
+              if (savedSelectRef.current === null) savedSelectRef.current = selected;
               const next = event.target.value;
               const requestId = ++selectRequestRef.current;
               setSelected(next);
               setSelectFailed(false);
               executeAsync({ key: fieldKey, value: next }).then(
                 (saved) => {
+                  const failed = saved?.serverError !== undefined || saved?.validationErrors !== undefined;
+                  if (!failed) savedSelectRef.current = next;
                   if (requestId !== selectRequestRef.current) return;
-                  if (saved?.serverError !== undefined || saved?.validationErrors !== undefined) setSelected(previous);
+                  if (failed) setSelected(savedSelectRef.current ?? next);
                 },
                 () => {
                   if (requestId !== selectRequestRef.current) return;
-                  setSelected(previous);
+                  setSelected(savedSelectRef.current ?? next);
                   setSelectFailed(true);
                 },
               );

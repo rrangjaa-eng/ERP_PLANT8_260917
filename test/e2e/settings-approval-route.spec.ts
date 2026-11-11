@@ -887,6 +887,40 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     }
   });
 
+  // Codex P2(#373): 연속 변경 A→B→C가 둘 다 실패하면 화면은 마지막으로 저장된 A로 돌아간다(저장된 적 없는 B로 돌아가지 않는다).
+  test("반반차 · 재택 결재 단계: 연속 변경이 둘 다 실패하면 마지막으로 저장된 값으로 돌아간다", async ({ page }) => {
+    const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER);
+    try {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER, 4);
+      await openSettings(page);
+      const light = leaveRoute(page).getByLabel("반반차 · 재택 결재 단계");
+      await expect(light).toHaveValue("4");
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let posts = 0;
+      await page.route(
+        (url) => url.pathname === "/admin/settings",
+        async (route) => {
+          if (route.request().method() !== "POST") return route.continue();
+          posts += 1;
+          if (posts === 1) await gate;
+          return route.fulfill({ status: 500, body: "" });
+        },
+      );
+      await light.selectOption({ label: "1단까지" });
+      await light.selectOption({ label: "2단까지" });
+      release();
+      await expect(leaveRoute(page).getByText("저장 실패 · 다시 시도", { exact: true })).toHaveCount(1);
+      await expect(light).toHaveValue("4");
+      await page.unroute((url) => url.pathname === "/admin/settings");
+      expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER)).toBe(4);
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER, original);
+    }
+  });
+
   // 07.2-13(D-7299 · D7298-A): 커스텀 계급 단계 — 보유자 0명이면 `보유자 없음 · 대표가 대신 승인`, 2명이면 `보유자 2명 · 한 명이 승인`
   // (단계 계급 칸 아래 · 저장 막지 않음). 미리보기 단계 이름은 이미 구현된 모양 그대로 `A · B {계급}`(C-4 — 공용 결재선 변경 0).
   test("커스텀 계급 2단(전사): 0명 경고 `보유자 없음 · 대표가 대신 승인` → 2명 경고 `보유자 2명 · 한 명이 승인` · 미리보기 `A · B 계급`", async ({ page, browser, baseURL }) => {

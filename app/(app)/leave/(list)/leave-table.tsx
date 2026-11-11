@@ -15,7 +15,9 @@ import styles from "../leave.module.css";
 // 04.1-06 S1 — 내 연차 표. 그룹 머리글 = 상태, 순서는 아래 상수 하나(UI-SPEC 사용자 확인 대상 #4 — 뒤집을 때 이
 // 줄만 고친다, T17). 그룹 안은 시작일 오름차순, 빈 그룹은 머리글째 없다. 행 전체가 `/leave/[id]` 링크(종류 · 기간
 // 칸의 링크가 ::after로 행을 덮는다 — ui/table은 고치지 않는다). 합계 행 없음(A4 — 머리 잔고 줄이 합계다).
-export const LEAVE_STATUS_GROUP_ORDER = ["결재 중", "반려", "승인", "회수"] as const;
+// 07.2-15: 취소가 최종 승인된 연차(원 상태 approved · 낱말 `취소됨`)는 끝 상태 묶음 `취소됨`으로 맨 뒤 — 승인 묶음에 섞지 않는다.
+// 취소 요청 중은 아직 승인된 연차라 `승인` 묶음 그대로.
+export const LEAVE_STATUS_GROUP_ORDER = ["결재 중", "반려", "승인", "회수", "취소됨"] as const;
 
 const GROUP_OF: Partial<Record<LeaveStatusKey, (typeof LEAVE_STATUS_GROUP_ORDER)[number]>> = {
   submitted: "결재 중",
@@ -38,8 +40,8 @@ export type LeaveListRow = {
   note: string;
 };
 
-function groupIndex(row: LeaveListRow): number {
-  const group = row.statusKey ? GROUP_OF[row.statusKey] : undefined;
+export function groupIndex(row: LeaveListRow): number {
+  const group = row.status === "취소됨" ? "취소됨" : row.statusKey ? GROUP_OF[row.statusKey] : undefined;
   return group ? LEAVE_STATUS_GROUP_ORDER.indexOf(group) : LEAVE_STATUS_GROUP_ORDER.length;
 }
 

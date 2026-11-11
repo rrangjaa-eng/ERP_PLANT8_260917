@@ -67,13 +67,14 @@ const BATCH_LIMIT_REASON = `${BATCH_LIMIT}건까지`;
 
 type BatchVerb = "승인" | "반려";
 // 처리 결과 — 처리된 행은 사라지고 막힌 행은 자리를 지킨다(새로 고침 뒤 내 결재에서 빠진 행도 이유와 함께 남긴다).
-type BatchOutcome = { processed: ReadonlySet<string>; blocked: ReadonlyMap<string, string>; kept: InboxRow[]; order: string[] };
+// processed는 인스턴스 id → 처리할 때 보낸 version — 숨김은 그 version의 행에만 건다(기안자가 다시 올리면 같은 id · 새 version으로 돌아온다).
+type BatchOutcome = { processed: ReadonlyMap<string, number>; blocked: ReadonlyMap<string, string>; kept: InboxRow[]; order: string[] };
 type BatchResultLine = { time: string; verb: BatchVerb; processed: number; blocked: number };
 
 // 새로 받은 행에서 처리된 `내 결재` 행을 빼고, 막혀서 남겨 둔 행을 원래 순서 자리에 다시 끼운다(새로 들어온 행은 뒤).
 function mergeRows(rows: InboxRow[], outcome: BatchOutcome | null): InboxRow[] {
   if (!outcome) return rows;
-  const present = rows.filter((row) => !(row.group === "mine" && row.instanceId !== null && outcome.processed.has(row.instanceId)));
+  const present = rows.filter((row) => !(row.group === "mine" && row.instanceId !== null && outcome.processed.get(row.instanceId) === row.version));
   const presentIds = new Set(present.map((row) => row.id));
   const order = new Map(outcome.order.map((id, index) => [id, index]));
   const rank = (row: InboxRow, index: number) => order.get(row.id) ?? outcome.order.length + index;
@@ -174,8 +175,9 @@ export function InboxTable({
 
   const mineRows = rows.filter((row) => row.group === "mine");
   const rowById = new Map(rows.map((row) => [row.id, row]));
-  // 지금 보이는 행 중 고른 것만(새로 고침으로 사라진 행은 센다에서 빠진다).
-  const chosen = chosenIds.map((id) => rowById.get(id)).filter((row): row is InboxRow => row !== undefined);
+  // 지금 고를 수 있는 행 중 고른 것만 — 새로 고침으로 사라졌거나 고를 수 없게 된 행은 상한 · 표 선택 · 막대 모두에서 빠진다(Codex P2).
+  const chosen = chosenIds.map((id) => rowById.get(id)).filter((row): row is InboxRow => row !== undefined && !selectHidden(row) && !row.batchBlock);
+  const liveChosenIds = chosen.map((row) => row.id);
   const summary = batchSummary(chosen);
   // 일괄 반려는 단건 반려가 열린 행만(본인 기안 등 반려가 없는 행은 고른 채 승인에만 남는다 · #377 리뷰 L1).
   const rejectable = chosen.filter((row) => row.actions.includes("reject"));
@@ -189,7 +191,7 @@ export function InboxTable({
     // 칸을 비운 행은 고를 수 없다(머리글 「이 쪽 전체 고르기」가 세지 않게) — 이유 글자는 그리지 않는다(ui/table hidden).
     if (selectHidden(row)) return { reason: "" };
     if (row.batchBlock) return { reason: row.batchBlock };
-    if (chosenIds.length >= BATCH_LIMIT && !chosenIds.includes(row.id)) return { reason: BATCH_LIMIT_REASON };
+    if (liveChosenIds.length >= BATCH_LIMIT && !liveChosenIds.includes(row.id)) return { reason: BATCH_LIMIT_REASON };
     return true;
   }
   function selectHidden(row: InboxRow): boolean {
@@ -240,7 +242,9 @@ export function InboxTable({
       }
       const blocked = new Map(data.blocked.map((row) => [row.id, row.reason]));
       const keptRows = rows.filter((row) => row.instanceId !== null && blocked.has(row.instanceId));
-      setOutcome({ processed: new Set(data.processedIds), blocked, kept: keptRows, order: rows.map((row) => row.id) });
+      const processedIds = new Set(data.processedIds);
+      const processed = new Map(items.filter((item) => processedIds.has(item.instanceId)).map((item) => [item.instanceId, item.expectedVersion]));
+      setOutcome({ processed, blocked, kept: keptRows, order: rows.map((row) => row.id) });
       const sentIds = new Set(sent.map((row) => row.id));
       setChosenIds((ids) => ids.filter((id) => !sentIds.has(id)));
       setBatchResult({ time: data.time, verb, processed: data.processedIds.length, blocked: data.blocked.length });
@@ -460,7 +464,7 @@ export function InboxTable({
         groupBy={(row) => GROUP_HEADERS[row.group]}
         // `내 결재` 행이 없으면(처리함만) 선택 열째 없다 — 머리글 체크박스도 없다(디자인 r6 N-2).
         selection={mineRows.length === 0 ? undefined : {
-          selectedIds: chosenIds,
+          selectedIds: liveChosenIds,
           selectable,
           hidden: selectHidden,
           onChange: (ids) => setChosenIds(ids.slice(0, BATCH_LIMIT)),

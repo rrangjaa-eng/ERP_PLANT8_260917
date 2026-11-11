@@ -30,6 +30,9 @@ export type QuoteXlsxImport = {
 
 export function useQuoteXlsxImport({
   projectId,
+  lineCap,
+  atLineCap,
+  capReasonId,
   enabled,
   visible,
   capLeft,
@@ -38,6 +41,11 @@ export function useQuoteXlsxImport({
   liveKeys,
 }: {
   projectId: string;
+  /** 설정 줄 상한 — 거절 글자(`300줄 초과 · 300줄까지`)에 쓴다. */
+  lineCap: number;
+  /** 상한이 찬 차수 — `줄 추가`와 같이 입구를 비활성(aria-disabled)하고 줄 추가의 상한 이유 글자(capReasonId)를 가리킨다. */
+  atLineCap: boolean;
+  capReasonId: string;
   /** 입구가 서는 조건 — 구조 권리 · 현재 미승인 차수 · 정산 아님. */
   enabled: boolean;
   /** 결과 줄을 그리는 폭 조건(편집 폭, ≥1024). */
@@ -103,8 +111,7 @@ export function useQuoteXlsxImport({
       return;
     }
     if (data.lines.length > capLeft) {
-      const left = Math.max(0, capLeft);
-      setShown({ kind: "rejected", message: `${left}줄 초과 · ${left}줄까지`, skipped: [], skippedTotal: 0 });
+      setShown({ kind: "rejected", message: `${lineCap}줄 초과 · ${lineCap}줄까지`, skipped: [], skippedTotal: 0 });
       return;
     }
     const keys = append(data.lines);
@@ -125,6 +132,7 @@ export function useQuoteXlsxImport({
   }
 
   function openFilePicker() {
+    if (atLineCap) return;
     inputRef.current?.click();
   }
 
@@ -144,6 +152,8 @@ export function useQuoteXlsxImport({
         variant="secondary"
         className={`${styles.headerTouchButton} ${styles.xlsxEntry}`}
         pending={reading}
+        disabled={atLineCap}
+        aria-describedby={atLineCap ? capReasonId : undefined}
         onClick={openFilePicker}
       >
         엑셀 올리기
@@ -189,6 +199,8 @@ export function useQuoteXlsxImport({
             const file = fileRef.current;
             fileRef.current = null;
             setPick(null);
+            // 창이 닫힌 뒤 입구로 포커스를 돌려준다(Esc와 같게) — 모달이 열려 있는 동안은 바깥 요소가 포커스를 못 받는다.
+            setTimeout(focusEntry, 0);
             if (file) void run(file, row.id);
           }}
         />

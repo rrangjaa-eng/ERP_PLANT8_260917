@@ -2248,10 +2248,14 @@ export function QuoteLedger({
   const atLineCap = lines.filter((line) => line.pendingDelete !== "delete").length >= lineCap;
   const lineCapReason = `${lineCap}줄 상한 · 상한은 관리자 설정`;
 
+  const capReasonId = useId();
   // 07.2-14(X2 · S10) — 회사 양식 엑셀 올리기. 올린 줄은 붙여넣기와 같은 길(미저장 줄 · dirty)로 표 맨 아래에 붙고 저장은 `일괄 저장 N`이다.
   // 소분류는 표 기본 소분류(줄 추가와 같다) · 대 · 중분류는 엑셀 값 · 수수료 줄은 「수수료 줄 추가」와 같은 새 줄 꼴(단가 칸 = 금액).
   const xlsxImport = useQuoteXlsxImport({
     projectId,
+    lineCap,
+    atLineCap,
+    capReasonId,
     enabled: structural.insert && approvedSeq === null && status !== "settling" && status !== "completed",
     visible: editableWidth,
     capLeft: lineCap - lines.filter((line) => line.pendingDelete !== "delete").length,
@@ -2286,7 +2290,6 @@ export function QuoteLedger({
     },
     liveKeys: (keys) => keys.filter((key) => lines.some((line) => line.clientKey === key && line.isNew)),
   });
-  const capReasonId = useId();
   // 04-47(DR-16) — 상한 이유는 합계 행 danger 항목이고, 직전 저장 결과(성공은 혼자 선다)를 지운다.
   function showLineCapNotice(text: string) {
     setSavedAt(null);

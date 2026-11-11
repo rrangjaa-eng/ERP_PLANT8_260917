@@ -201,6 +201,43 @@ test.describe("견적 엑셀 올리기 (07.2-14 · S10)", () => {
     await expect(page.locator("dialog[open]")).toHaveCount(0);
   });
 
+  test("시트 고르기에서 Enter로 고르면 포커스가 `엑셀 올리기` 입구로 돌아간다(Esc와 같게)", async ({ page }) => {
+    await open(page, { existing: 0 });
+    await upload(page, buildQuoteXlsx([noisySheet("견적서A"), { name: "견적서B", rows: [[...HEADER], ["B1", 1, 2000, 1, 2000, null]] }]), "양식.xlsx");
+    const dialog = page.getByRole("dialog", { name: "시트 고르기" });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeHidden();
+    await expect(resultLine(page, "엑셀 올림 5줄")).toBeVisible();
+    await expect(page.getByRole("button", { name: "엑셀 올리기" })).toBeFocused();
+  });
+
+  test("줄 상한이 찬 차수 — 입구는 `줄 추가`처럼 aria-disabled이고 상한 이유 글자를 가리킨다 · 눌러도 파일 창 없음", async ({ page }) => {
+    await open(page, { existing: 300 });
+    const entry = page.getByRole("button", { name: "엑셀 올리기" });
+    await expect(entry).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByRole("button", { name: "줄 추가" }).first()).toHaveAttribute("aria-disabled", "true");
+    const reasonId = await entry.getAttribute("aria-describedby");
+    expect(reasonId).toBeTruthy();
+    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("300줄 상한 · 상한은 관리자 설정");
+    let chooser = false;
+    page.on("filechooser", () => {
+      chooser = true;
+    });
+    await entry.click({ force: true });
+    await page.waitForTimeout(300);
+    expect(chooser).toBe(false);
+  });
+
+  test("남은 자리보다 많으면 거절 글자는 설정 줄 상한 — `300줄 초과 · 300줄까지`", async ({ page }) => {
+    await open(page, { existing: 2 });
+    const sheet: TestSheet = { name: "많음", rows: [[...HEADER], ...Array.from({ length: 299 }, (_, index) => [`줄 ${index + 1}`, 1, 1000, 1, 1000, null])] };
+    await upload(page, buildQuoteXlsx([sheet]));
+    const line = resultLine(page, "300줄 초과 · 300줄까지");
+    await expect(line).toBeVisible();
+    await expect(line.locator("span").first()).toHaveText("300줄 초과 · 300줄까지");
+  });
+
   test("거절 4종 — 글자 정확 + 3차 `다시 올리기`", async ({ page }) => {
     await open(page, { existing: 0 });
     const refused = async (bytes: Uint8Array | Buffer, message: string) => {

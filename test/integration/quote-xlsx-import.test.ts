@@ -142,7 +142,7 @@ describe("readQuoteXlsxUpload", () => {
     const [before] = await db.select().from(settingsSimple).where(eq(settingsSimple.key, CAP_KEY));
     await db.insert(settingsSimple).values({ key: CAP_KEY, value: 6 }).onConflictDoUpdate({ target: settingsSimple.key, set: { value: 6 } });
     try {
-      expect(await readQuoteXlsxUpload(pm, { projectId, file: goodFile() })).toEqual({ kind: "rejected", message: "4줄 초과 · 4줄까지" });
+      expect(await readQuoteXlsxUpload(pm, { projectId, file: goodFile() })).toEqual({ kind: "rejected", message: "6줄 초과 · 6줄까지" });
     } finally {
       if (before) await db.update(settingsSimple).set({ value: before.value }).where(eq(settingsSimple.key, CAP_KEY));
       else await db.delete(settingsSimple).where(eq(settingsSimple.key, CAP_KEY));

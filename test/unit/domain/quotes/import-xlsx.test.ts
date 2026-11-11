@@ -328,3 +328,92 @@ describe("병합 머리글 양식 (견본 실측)", () => {
     expect(result.lines[0]?.itemName).toBe("Stage");
   });
 });
+
+// PR #375 /review 지적 1~5 — 생성 fixture.
+describe("게이트 지적 반영 (/review)", () => {
+  it("1. 음수 금액 줄은 `음수 금액`으로 건너뛰고 수수료 줄의 음수는 그대로 올린다", () => {
+    const result = okOf(
+      parse([
+        [...HEADER],
+        ["Discount", null, null, null, -100, null],
+        ["Minus unit", 1, -100, 1, -100, null],
+        ["Agency Commission", null, null, null, -300, null],
+        ["Stage", 1, 1000, 1, 1000, null],
+      ]),
+    );
+    expect(result.skipped.map((entry) => entry.reason)).toEqual(["행 2 · 음수 금액", "행 3 · 음수 금액"]);
+    expect(result.lines.map((line) => [line.itemName, line.lineKind, line.unitPrice])).toEqual([
+      ["Agency Commission", "commission", -300],
+      ["Stage", "quote", 1000],
+    ]);
+  });
+
+  it("2. 병합이 아닌 머리글의 번호 열(NO. · 번호)과 숫자뿐인 칸은 분류로 읽지 않는다", () => {
+    const numbered = okOf(parse([["NO.", "ITEM", "QTY", "COST/UNIT", "DAY/SET", "AMOUNT", "REMARK"], [1, "Stage", 2, 100, 1, 200, null], [2, "Truss", 1, 50, 1, 50, null]]));
+    expect(numbered.lines.map((line) => [line.itemName, line.majorCategory, line.midCategory])).toEqual([
+      ["Stage", null, null],
+      ["Truss", null, null],
+    ]);
+    const korean = okOf(parse([["번호", "분류", "ITEM", "QTY", "COST/UNIT", "AMOUNT"], ["1", "무대", "Stage", 2, 100, 200]]));
+    expect(korean.lines[0]).toMatchObject({ majorCategory: "무대", midCategory: null });
+    const numericOnly = okOf(parse([["", "ITEM", "QTY", "COST/UNIT", "AMOUNT"], [3, "Stage", 2, 100, 200], ["4.", "Truss", 1, 50, 50]]));
+    expect(numericOnly.lines.map((line) => line.majorCategory)).toEqual([null, null]);
+  });
+
+  it("3. 짧은 별칭(SET · DAY · QTY)은 낱말 단위로만 — ASSET TAG는 일수 열이 아니다", () => {
+    const asset = okOf(parse([["ITEM", "ASSET TAG", "QTY", "단가", "금액"], ["Laptop", "T-1", 2, 100, 200]]));
+    expect(asset.lines).toHaveLength(1);
+    expect(asset.skipped).toEqual([]);
+    expect(asset.lines[0]).toMatchObject({ quantity: 2, days: 1, unitPrice: 100 });
+    const set = okOf(parse([["ITEM", "QTY", "UNIT PRICE", "SET", "AMOUNT"], ["A", 2, 100, 3, 600]]));
+    expect(set.lines[0]).toMatchObject({ quantity: 2, days: 3, unitPrice: 100 });
+    const day = okOf(parse([["항목", "수량", "단가", "DAY", "금액"], ["A", 1, 100, 4, 400]]));
+    expect(day.lines[0]).toMatchObject({ days: 4 });
+  });
+
+  it("4. 수량 · 일수가 열 상한(1e10) 이상이면 `상한 초과`로 건너뛴다 · 원래 단가 0인 F.O.C는 `단가 0`을 붙이지 않는다", () => {
+    const result = okOf(
+      parse([
+        [...HEADER],
+        ["Gift", 1e12, 1000, 1, null, null],
+        ["Long", 1, 1000, 1e10, null, null],
+        ["Free", 1, "F.O.C", 1, 0, "메모"],
+        ["Free2", 1, 0, 1, "F.O.C", null],
+      ]),
+    );
+    expect(result.skipped.map((entry) => entry.reason)).toEqual(["행 2 · 상한 초과 · 수량", "행 3 · 상한 초과 · 일수"]);
+    expect(result.lines.map((line) => [line.itemName, line.unitPrice, line.clientRemark])).toEqual([
+      ["Free", 0, "F.O.C · 메모"],
+      ["Free2", 0, "F.O.C"],
+    ]);
+  });
+
+  it("5. VAT · 부가세 줄은 줄로 올리지 않고 소계처럼 건너뛴다 — Grand Total이 VAT 포함이어도 검산 차가 난다", () => {
+    for (const vatName of ["VAT (10%)", "V.A.T", "부가세", "부가가치세", "vat"]) {
+      const result = okOf(
+        parse([
+          [...HEADER],
+          ["Stage", 1, 1000, 1, 1000, null],
+          ["Total", null, null, null, 1000, null],
+          [vatName, null, null, null, 100, null],
+          ["Grand Total", null, null, null, 1100, null],
+        ]),
+      );
+      expect(result.lines.map((line) => line.itemName)).toEqual(["Stage"]);
+      expect(result.skipped).toEqual([]);
+      expect(result.checksumDiff).toBeNull();
+    }
+    // VAT 앞 Total이 없고 Grand Total(VAT 포함)만 있어도 같다.
+    const noTotal = okOf(parse([[...HEADER], ["Stage", 1, 1000, 1, 1000, null], ["VAT", null, null, null, 100, null], ["Grand Total", null, null, null, 1100, null]]));
+    expect(noTotal.lines).toHaveLength(1);
+    expect(noTotal.checksumDiff).toBeNull();
+    // 줄 합이 다르면 VAT를 뺀 기준으로 차이를 낸다.
+    const off = okOf(parse([[...HEADER], ["Stage", 1, 900, 1, 900, null], ["VAT", null, null, null, 100, null], ["Grand Total", null, null, null, 1100, null]]));
+    expect(off.checksumDiff).toBe(100);
+  });
+
+  it("F-3. 줄 상한 거절 글자는 설정 줄 상한(lineCap)으로 만든다", () => {
+    const rows = [[...HEADER], ...Array.from({ length: 3 }, (_, i) => [`A${i}`, 1, 1000, 1, 1000, null])];
+    expect(parseQuoteWorkbook(bookOf([{ name: "견적서", rows }]), { maxLines: 2, lineCap: 300 })).toEqual({ kind: "rejected", message: "300줄 초과 · 300줄까지" });
+  });
+});

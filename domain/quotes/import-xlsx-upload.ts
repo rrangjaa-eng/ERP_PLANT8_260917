@@ -50,5 +50,5 @@ export async function readQuoteXlsxUpload(viewer: Viewer, input: { projectId: st
   // 저장 때 LINE_CAP으로 전부 거부되지 않게: 올릴 수 있는 줄 = 설정 상한 − 현재 차수 활성 줄 수.
   const cap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
   const active = await countActiveLinesByRevision(viewer, revision.id);
-  return parseQuoteWorkbook(read.book, { sheet: input.sheet, maxLines: Math.max(0, cap - active) });
+  return parseQuoteWorkbook(read.book, { sheet: input.sheet, maxLines: Math.max(0, cap - active), lineCap: cap });
 }

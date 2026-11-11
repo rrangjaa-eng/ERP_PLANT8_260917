@@ -456,6 +456,8 @@ export type ExpenseSummaryRow = ExpenseRow & {
   drafterName: string;
   projectName: string | null;
   projectNumber: string | null;
+  // 07.2-16(PU7): 행사 시작일 — 사후 추인 판정(domain/expenses/post-hoc.ts) 재료.
+  projectStartDate: string | null;
   // 견적 표의 줄 번호(차수 안 보관 제외 줄의 표시 순서 1부터) — 문서 화면 · 결재 시트 `견적 줄` 값 앞 조각.
   lineNo: number | null;
   itemName: string | null;
@@ -480,6 +482,7 @@ export async function listExpenseSummaries(
       drafterName: users.name,
       projectName: projects.name,
       projectNumber: projects.number,
+      projectStartDate: projects.startDate,
       lineNo: sql<number | null>`case when ${quoteLines.id} is null then null else (select count(*)::int + 1 from quote_lines ql where ql.revision_id = ${quoteLines.revisionId} and ql.archived_at is null and (ql.sort_order < ${quoteLines.sortOrder} or (ql.sort_order = ${quoteLines.sortOrder} and ql.id < ${quoteLines.id}))) end`,
       itemName: quoteLines.itemName,
       teamName: teams.name,
@@ -506,6 +509,7 @@ export async function listExpenseSummaries(
     drafterName: row.drafterName,
     projectName: row.projectName,
     projectNumber: row.projectNumber,
+    projectStartDate: row.projectStartDate,
     lineNo: row.lineNo,
     itemName: row.itemName,
     teamName: row.teamName,
@@ -657,6 +661,8 @@ export type ExpenseListRow = ExpenseRow & {
   groupRank: number;
   drafterName: string;
   projectName: string | null;
+  // 07.2-16(PU7): 행사 시작일 — 사후 추인 판정 재료.
+  projectStartDate: string | null;
   itemName: string | null;
   teamName: string | null;
   vendorName: string | null;
@@ -763,6 +769,7 @@ export async function listExpensePage(
       expense: expenses,
       drafterName: users.name,
       projectName: projects.name,
+      projectStartDate: projects.startDate,
       itemName: quoteLines.itemName,
       teamName: teams.name,
       vendorName: vendors.name,
@@ -797,6 +804,7 @@ export async function listExpensePage(
     groupRank: Number(row.groupRank),
     drafterName: row.drafterName,
     projectName: row.projectName,
+    projectStartDate: row.projectStartDate,
     itemName: row.itemName,
     teamName: row.teamName,
     vendorName: row.vendorName,

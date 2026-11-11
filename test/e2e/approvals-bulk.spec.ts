@@ -251,6 +251,31 @@ test.describe("결재함 일괄 승인 · 반려 (07.2-16 S13)", () => {
     await context.close();
   });
 
+  // /qa D-1: 폰에서 선택 열을 숨기면 첫 보이는 칸(문서)이 ui/table의 `첫 칸 --s-4`를 못 받아 8px로 남았다 — 다른 폰 목록과 같은 --s-4.
+  test("폰 375 · 320 — 선택 열 숨김 뒤 첫 보이는 칸 padding-left = --s-4(다른 폰 목록과 같음)", async ({ browser, baseURL }) => {
+    const org = await setupLeaveOrg(seoulToday());
+    const doc = await leave(org.drafter, 4);
+
+    const page = await loginPage(browser, baseURL, org.teamLead, { width: 375, height: 800 });
+    await page.goto("/approvals");
+    const row = page.getByRole("row").filter({ hasText: doc.label });
+    await expect(row).toHaveCount(1);
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      const measured = await row.evaluate((tr) => {
+        const probe = document.createElement("div");
+        probe.style.paddingLeft = "var(--s-4)";
+        tr.closest("table")?.parentElement?.appendChild(probe);
+        const expected = getComputedStyle(probe).paddingLeft;
+        probe.remove();
+        const visible = [...tr.children].filter((cell) => getComputedStyle(cell).display !== "none");
+        return { expected, first: visible[0] ? getComputedStyle(visible[0]).paddingLeft : null };
+      });
+      expect(measured.expected).toBe("16px");
+      expect(measured.first).toBe(measured.expected);
+    }
+  });
+
   test("잔여 초과 연차 포함 — 막대 `잔여 초과 1건`(warning) · 승인 창 결과 줄 `잔여 초과 연차 1건 포함` · 승인됨", async ({ browser, baseURL }) => {
     const org = await setupLeaveOrg(seoulToday());
     const over = await leave(org.drafter, 4, 20);

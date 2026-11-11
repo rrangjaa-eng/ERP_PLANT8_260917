@@ -207,6 +207,11 @@ tr:has(.rowTap) {
     display: none;
   }
 
+  /* 숨긴 선택 칸 다음 칸이 첫 보이는 칸 — ui/table 폰 첫 칸 규칙(--s-4)은 제 열 접기 클래스만 알아 이 칸에 안 걸린다(/qa D-1 · 8px로 남았다). */
+  .bulk:has(thead input[type="checkbox"]) tr > :first-child:not([colspan]) + * {
+    padding-left: var(--s-4);
+  }
+
   .bulk [id$="-select-reason"] {
     display: none;
   }

@@ -67,13 +67,14 @@ const BATCH_LIMIT_REASON = `${BATCH_LIMIT}건까지`;
 
 type BatchVerb = "승인" | "반려";
 // 처리 결과 — 처리된 행은 사라지고 막힌 행은 자리를 지킨다(새로 고침 뒤 내 결재에서 빠진 행도 이유와 함께 남긴다).
-type BatchOutcome = { processed: ReadonlySet<string>; blocked: ReadonlyMap<string, string>; kept: InboxRow[]; order: string[] };
+// processed는 인스턴스 id → 처리할 때 보낸 version — 숨김은 그 version의 행에만 건다(기안자가 다시 올리면 같은 id · 새 version으로 돌아온다).
+type BatchOutcome = { processed: ReadonlyMap<string, number>; blocked: ReadonlyMap<string, string>; kept: InboxRow[]; order: string[] };
 type BatchResultLine = { time: string; verb: BatchVerb; processed: number; blocked: number };
 
 // 새로 받은 행에서 처리된 `내 결재` 행을 빼고, 막혀서 남겨 둔 행을 원래 순서 자리에 다시 끼운다(새로 들어온 행은 뒤).
 function mergeRows(rows: InboxRow[], outcome: BatchOutcome | null): InboxRow[] {
   if (!outcome) return rows;
-  const present = rows.filter((row) => !(row.group === "mine" && row.instanceId !== null && outcome.processed.has(row.instanceId)));
+  const present = rows.filter((row) => !(row.group === "mine" && row.instanceId !== null && outcome.processed.get(row.instanceId) === row.version));
   const presentIds = new Set(present.map((row) => row.id));
   const order = new Map(outcome.order.map((id, index) => [id, index]));
   const rank = (row: InboxRow, index: number) => order.get(row.id) ?? outcome.order.length + index;
@@ -240,7 +241,9 @@ export function InboxTable({
       }
       const blocked = new Map(data.blocked.map((row) => [row.id, row.reason]));
       const keptRows = rows.filter((row) => row.instanceId !== null && blocked.has(row.instanceId));
-      setOutcome({ processed: new Set(data.processedIds), blocked, kept: keptRows, order: rows.map((row) => row.id) });
+      const processedIds = new Set(data.processedIds);
+      const processed = new Map(items.filter((item) => processedIds.has(item.instanceId)).map((item) => [item.instanceId, item.expectedVersion]));
+      setOutcome({ processed, blocked, kept: keptRows, order: rows.map((row) => row.id) });
       const sentIds = new Set(sent.map((row) => row.id));
       setChosenIds((ids) => ids.filter((id) => !sentIds.has(id)));
       setBatchResult({ time: data.time, verb, processed: data.processedIds.length, blocked: data.blocked.length });

@@ -1,11 +1,12 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { approvalRoutes, approvalSteps } from "@/db/schema";
+import { approvalInstances, approvalRoutes, approvalSteps } from "@/db/schema";
 import { approveDocument, withdrawDocument, NotCurrentHolderError } from "@/domain/approvals";
 import "@/domain/leave";
 import { submitLeave } from "@/domain/leave";
 import { requestLeaveCancel } from "@/domain/leave/cancel";
+import { resubmitLeave } from "@/domain/leave/resubmit";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import { APPROVAL_ROUTE_LEAVE_SELF_APPROVAL } from "@/domain/settings/keys";
@@ -274,6 +275,39 @@ test.describe("결재함 일괄 승인 · 반려 (07.2-16 S13)", () => {
       expect(measured.expected).toBe("16px");
       expect(measured.first).toBe(measured.expected);
     }
+  });
+
+  // Codex P2(2): 일괄 반려한 문서를 기안자가 다시 올리면(같은 인스턴스 id · 새 version) 같은 화면의 다음 새로 고침에서 `내 결재`로 돌아온다 —
+  // 처리한 행 숨김은 처리한 그 version에만 건다.
+  test("일괄 반려 뒤 기안자가 다시 올림 → 같은 화면에서 다음 새로 고침 때 그 문서가 `내 결재`에 다시 보인다", async ({ browser, baseURL }) => {
+    const org = await setupLeaveOrg(seoulToday());
+    const rejected = await leave(org.drafter, 4);
+    const other = await leave(org.drafter, 5);
+
+    const page = await loginPage(browser, baseURL, org.teamLead, DESKTOP);
+    await page.goto("/approvals");
+    const box = page.getByRole("checkbox", { name: `${rejected.label} 고르기` });
+    await waitForHydration(box);
+    await box.check();
+    await bar(page).getByRole("button", { name: "반려 1" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("사유").fill("일정 다시 맞춤");
+    await dialog.getByRole("button", { name: /^반려 1건/ }).click();
+    await expect(page.getByRole("status").filter({ hasText: /반려 \d+건/ })).toHaveText(RESULT("반려", 1));
+    await expect(box).toHaveCount(0);
+
+    const [instance] = await db.select().from(approvalInstances).where(eq(approvalInstances.id, rejected.instanceId));
+    const range = leaveWeekdayRange(seoulToday(), { week: 4, weekdays: 1 });
+    await resubmitLeave(org.drafter.viewer, {
+      leaveId: rejected.leaveId,
+      expectedVersion: instance!.version,
+      input: { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" },
+    });
+
+    // 같은 화면에서 다른 행 단건 승인 → 새로 고침(화면 상태는 그대로).
+    await rowOf(page, other.label).getByRole("button", { name: /^승인/ }).click();
+    await expect(rowOf(page, other.label)).toHaveCount(0);
+    await expect(page.getByRole("checkbox", { name: `${rejected.label} 고르기` })).toHaveCount(1);
   });
 
   test("잔여 초과 연차 포함 — 막대 `잔여 초과 1건`(warning) · 승인 창 결과 줄 `잔여 초과 연차 1건 포함` · 승인됨", async ({ browser, baseURL }) => {

@@ -1346,7 +1346,9 @@ export async function writeQuoteLinesInTx(
   ).filter((id) => id !== projectId);
   if (!sameIds(counterpartsAfterLock, prepared.counterpartIds)) deny(ADJUSTMENT_PAIR_RULE, new UserFacingError(ADJUSTMENT_PAIR_CHANGED));
   const missingSource = sourceIds.some((id) => !currentById.has(id));
-  if (currentRows.length !== existingIds.length || missingSource) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
+  // Codex 리뷰 P2(PR #372) — 같은 줄 id가 한 요청에 두 번이면 새 조정 줄의 짝이 두 번 생긴다(삽입은 멱등이지만 짝 쓰기는 아니다).
+  if (new Set(lineIds).size !== lineIds.length) deny(MEMBERSHIP_RULE, new UserFacingError(ORDER_MISMATCH));
+  else if (currentRows.length !== existingIds.length || missingSource) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
   else if (currentRows.some((row) => row.archivedAt !== null)) deny(MEMBERSHIP_RULE, new UserFacingError(ARCHIVED_LINE));
   else if (order === "mismatch") deny(MEMBERSHIP_RULE, new UserFacingError(ORDER_MISMATCH));
 

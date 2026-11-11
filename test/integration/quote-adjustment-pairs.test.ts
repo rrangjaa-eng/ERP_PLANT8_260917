@@ -308,6 +308,17 @@ describe("조정 줄 쌍 — 한 트랜잭션 · 따라 고치기 · 짝 보관(
     expect((await lineById(partner!.id)).itemName).toBe("프로젝트 간 비용 이전");
   });
 
+  it("(p10) 한 저장에 같은 새 조정 줄 id가 두 번 실리면 전부 거부 · 짝 줄이 둘 생기지 않는다(Codex 리뷰 P2 · PR #372)", async () => {
+    const a = await makeProject("쌍A");
+    const b = await makeProject("쌍B");
+    const adjuster = await makeAdjuster();
+    const row = pairRow(-1_000, b.projectId);
+
+    await expect(saveQuoteLines(adjuster, a.revisionId, { rows: [row, { ...row }] })).rejects.toThrow("줄 순서가 맞지 않음 · 새로 고침");
+    expect(await liveAdjustments(a.revisionId)).toHaveLength(0);
+    expect(await liveAdjustments(b.revisionId)).toHaveLength(0);
+  });
+
   it("(p7) 상대 고르기 목록 — 자기 프로젝트는 빠지고 완료 프로젝트는 고를 수 없다 · 조정 권리 없으면 빈 목록", async () => {
     const a = await makeProject("쌍A");
     const b = await makeProject("쌍B");

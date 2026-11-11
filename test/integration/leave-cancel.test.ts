@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { approvalInstances, approvalRoutes, approvalSteps, users } from "@/db/schema";
-import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { approveDocument, currentHolderNames, NotCurrentHolderError, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { getLeave, LeaveValidationError, submitLeave, type SubmitLeaveInput } from "@/domain/leave";
-import { LEAVE_CANCEL_KIND, requestLeaveCancel, resubmitLeaveCancel } from "@/domain/leave/cancel";
+import { LEAVE_CANCEL_KIND, previewLeaveCancel, requestLeaveCancel, resubmitLeaveCancel } from "@/domain/leave/cancel";
 import { getMyLeaveBalance } from "@/domain/leave/balance-service";
 import type { Viewer } from "@/domain/viewer";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
@@ -178,6 +178,87 @@ describe("최종 승인 재확인(T-07.2-15-03)", () => {
     await db.update(approvalInstances).set({ status: "withdrawn" }).where(eq(approvalInstances.id, leave.instanceId));
     expect((await refusal(approveDocument(lead, { instanceId: cancel.instanceId, expectedVersion: cancel.version }, deps))).message).toBe(STALE);
     expect(await instanceOf(LEAVE_CANCEL_KIND, leave.leaveId)).toMatchObject({ status: "submitted", version: cancel.version });
+  });
+});
+
+describe("결재자 — 대표 대체 · 기안자 = 팀장 · 팀장 빈 자리(D-7254 · 07.2 D-7310)", () => {
+  it("대표 본인 연차 → 결재자 = 대표 본인 · 제출 직후 submitted(즉시 승인 0) → 본인 승인 1회 → 취소됨 · 잔고 복귀", async () => {
+    const { lead } = await world();
+    const ceo = await makePerson("정대표", CEO_ROLE_ID, null);
+    const others = await makePerson("한대표", CEO_ROLE_ID, null);
+    await db.update(users).set({ archivedAt: new Date("2026-06-01T00:00:00Z") }).where(eq(users.id, others.id));
+    // 시드의 다른 대표 계정이 있으면 그 사람이 대체 결재자가 된다 — 이 시험의 대표만 남긴다.
+    const ceos = await db.select({ id: users.id }).from(users).where(eq(users.roleId, CEO_ROLE_ID));
+    for (const row of ceos) if (row.id !== ceo.id) await db.update(users).set({ archivedAt: new Date("2026-06-01T00:00:00Z") }).where(eq(users.id, row.id));
+
+    const leave = await approvedLeave(ceo, [lead, ceo]);
+    expect(await annualUsed(ceo)).toBe(4);
+    expect(await previewLeaveCancel(ceo, leave.leaveId, deps)).toEqual({ approverName: "정대표" });
+    const cancel = await requestLeaveCancel(ceo, { leaveId: leave.leaveId, reason: "출장" }, deps);
+    expect(cancel.approverName).toBe("정대표");
+    expect((await instanceOf(LEAVE_CANCEL_KIND, leave.leaveId)).status).toBe("submitted");
+    await expect(approveDocument(ceo, { instanceId: cancel.instanceId, expectedVersion: cancel.version }, deps)).resolves.toMatchObject({
+      status: "approved",
+    });
+    expect((await getLeave(ceo, leave.leaveId, deps))?.cancelState).toBe("cancelled");
+    expect(await annualUsed(ceo)).toBe(0);
+  });
+
+  it("기안자가 팀장인 연차 → 결재자 = 원 결재선 다음 단계 보유자(본부 책임자) · 본인 0", async () => {
+    const { lead, ceo } = await world();
+    const head = await makePerson("이본부", DIVISION_HEAD_ROLE_ID, "기획1팀");
+    const leave = await approvedLeave(lead, [head, ceo]);
+    const preview = await previewLeaveCancel(lead, leave.leaveId, deps);
+    expect(preview).toEqual({ approverName: "이본부" });
+    const cancel = await requestLeaveCancel(lead, { leaveId: leave.leaveId, reason: "일정 바뀜" }, deps);
+    expect(cancel.approverName).toBe("이본부");
+    expect((await cancelSteps(cancel.instanceId)).map((step) => step.roleId)).toEqual([DIVISION_HEAD_ROLE_ID]);
+    expect(await refusal(approveDocument(lead, { instanceId: cancel.instanceId, expectedVersion: cancel.version }, deps))).toBeInstanceOf(
+      NotCurrentHolderError,
+    );
+    await expect(approveDocument(head, { instanceId: cancel.instanceId, expectedVersion: cancel.version }, deps)).resolves.toMatchObject({
+      status: "approved",
+    });
+  });
+
+  it("(회귀 T-07.2-15-01) 원 결재선 팀장이 보관된 직원 연차 → 결재자 = 대표 · 기안자 본인 승인 0", async () => {
+    const { drafter, lead, ceo } = await world();
+    const leave = await approvedLeave(drafter, [lead, ceo]);
+    await db.update(users).set({ archivedAt: new Date("2026-06-01T00:00:00Z") }).where(eq(users.id, lead.id));
+    const cancel = await requestLeaveCancel(drafter, { leaveId: leave.leaveId, reason: "일정 바뀜" }, deps);
+    expect(cancel.approverName).toBe("최대표");
+    expect(await refusal(approveDocument(drafter, { instanceId: cancel.instanceId, expectedVersion: cancel.version }, deps))).toBeInstanceOf(
+      NotCurrentHolderError,
+    );
+    await expect(approveDocument(ceo, { instanceId: cancel.instanceId, expectedVersion: cancel.version }, deps)).resolves.toMatchObject({
+      status: "approved",
+    });
+  });
+
+  it("미리보기(결과 줄 재료) = 제출 뒤 담당 · 남의 연차 미리보기는 거부", async () => {
+    const { drafter, lead, ceo } = await world();
+    const leave = await approvedLeave(drafter, [lead, ceo]);
+    const preview = await previewLeaveCancel(drafter, leave.leaveId, deps);
+    const cancel = await requestLeaveCancel(drafter, { leaveId: leave.leaveId, reason: "일정 바뀜" }, deps);
+    expect(preview.approverName).toBe(cancel.approverName);
+    expect(await currentHolderNames(drafter, { kind: LEAVE_CANCEL_KIND, documentId: leave.leaveId })).toBe(preview.approverName);
+    const other = await makePerson("김민수", DEFAULT_ROLE_ID, "기획1팀");
+    expect(await refusal(previewLeaveCancel(other, leave.leaveId, deps))).toBeInstanceOf(NotCurrentHolderError);
+  });
+
+  it("팀장 승인과 기안자 회수가 겹치면 하나만 성공 · 다른 쪽은 사용자 문구로 거부", async () => {
+    const { drafter, lead, ceo } = await world();
+    const leave = await approvedLeave(drafter, [lead, ceo]);
+    const cancel = await requestLeaveCancel(drafter, { leaveId: leave.leaveId, reason: "일정 바뀜" }, deps);
+    const results = await Promise.allSettled([
+      approveDocument(lead, { instanceId: cancel.instanceId, expectedVersion: cancel.version }, deps),
+      withdrawDocument(drafter, { instanceId: cancel.instanceId, expectedVersion: cancel.version }, deps),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const lost = results.find((result) => result.status === "rejected");
+    expect(lost?.status === "rejected" ? (lost.reason as Error).message : "").toMatch(/새로 고침/);
+    const final = await instanceOf(LEAVE_CANCEL_KIND, leave.leaveId);
+    expect(["approved", "withdrawn"]).toContain(final.status);
   });
 });
 

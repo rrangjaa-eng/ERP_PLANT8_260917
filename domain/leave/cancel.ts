@@ -11,6 +11,7 @@ import {
   NOT_HOLDER_MESSAGE,
   NotCurrentHolderError,
   prepareSubmission,
+  previewRoute,
   recordActionInTx,
   registerDocumentKind,
   resolveHolders,
@@ -189,6 +190,14 @@ export async function resubmitLeaveCancel(
     await recordCancelReason(viewer, { leaveId: leave.id, reason, round: resubmitted.round }, tx, prepared, deps);
     return { instanceId: cancel.instance.id, version: resubmitted.version, approverName: approverNameOf(prepared) };
   });
+}
+
+// 창 결과 줄 `결재 → {이름}`의 재료 — 엔진 previewRoute(제출과 같은 힌트 · 같은 planRoute)의 지금 단계 보유자 이름(approval.value 투영 뒤).
+export async function previewLeaveCancel(viewer: Viewer, leaveId: string, deps?: { now?: Date }): Promise<{ approverName: string | null }> {
+  await ownApprovedLeave(viewer, leaveId);
+  const preview = await previewRoute(viewer, { kind: LEAVE_CANCEL_KIND, hint: { documentId: leaveId } }, { now: deps?.now });
+  const first = preview.steps.find((step) => !step.skipped);
+  return { approverName: first?.holderNames || null };
 }
 
 // ── 최종 승인 훅 짝 ─────────────────────────────────────────────────────

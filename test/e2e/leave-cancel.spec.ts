@@ -79,6 +79,7 @@ test.describe("연차 취소 요청 (07.2-15 · S18)", () => {
 
     const drafter = await loginPage(browser, baseURL, org.drafter);
     await drafter.goto(url);
+    await expect(drafter.getByRole("link", { name: "인쇄" })).toHaveCount(1);
     const entry = drafter.getByRole("button", { name: "취소 요청" });
     await expect(entry).toHaveCount(1);
     await waitForHydration(entry);
@@ -117,6 +118,9 @@ test.describe("연차 취소 요청 (07.2-15 · S18)", () => {
     await drafter.goto(url);
     await expect(headerStatus(drafter).getByText("취소됨", { exact: true })).toBeVisible();
     await expect(drafter.getByRole("button", { name: "취소 요청" })).toHaveCount(0);
+    // 취소된 연차는 인쇄 입구가 없고 인쇄 주소도 응답 전 404(게이트 지적 — 볼 수 없는 문서와 같은 막기).
+    await expect(drafter.getByRole("link", { name: "인쇄" })).toHaveCount(0);
+    expect((await drafter.goto(`/print/leaves/${leave.leaveId}`))?.status()).toBe(404);
     expect(await usedQuarters(org.drafter)).toBe((usedBefore ?? 0) - 8);
   });
 

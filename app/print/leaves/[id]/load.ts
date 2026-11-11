@@ -11,5 +11,8 @@ export const loadLeaveForPrint = cache(async (id: string) => {
   if (!(await getSessionId())) return undefined;
   const { viewer } = await requireSession();
   if (!UUID.test(id)) return null;
-  return getLeave(viewer, id);
+  const leave = await getLeave(viewer, id);
+  // 07.2-15: 취소가 최종 승인된 연차는 신청서를 인쇄하지 않는다 — 볼 수 없는 문서와 같은 404(새 문구 0).
+  if (leave?.cancelState === "cancelled") return null;
+  return leave;
 });

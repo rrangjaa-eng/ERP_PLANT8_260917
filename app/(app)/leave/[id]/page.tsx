@@ -140,8 +140,9 @@ export default async function LeaveDocumentPage({
       status={statusKey ? <StatusTag status={leaveDocumentStatusWord(statusKey, leave.cancelState)} /> : undefined}
       meta={leave.number || undefined}
       // 07.4-02 D-7409: 결재 인스턴스가 있을 때만 머리 줄 2차 「인쇄」(새 탭). 폰(<700)에서는 PcOnly가 숨긴다.
+      // 07.2-15: 취소가 최종 승인된 연차는 인쇄 입구가 없다(인쇄 주소도 404 — app/print/leaves/[id]/load.ts).
       actions={
-        view?.instanceId
+        view?.instanceId && leave.cancelState !== "cancelled"
           ? {
               secondary: (
                 <PcOnly>

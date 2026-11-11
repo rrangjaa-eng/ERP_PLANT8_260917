@@ -553,7 +553,8 @@ describe("06-28 종결", () => {
     await closeAs(fx.pm, closed.expenseId);
     const closedAt = (await expenseRow(closed.expenseId)).closedAt;
     if (!closedAt) throw new Error("종결 안 됨");
-    const groups = (await listExpenses(fx.pm, { status: "all" })).groups;
+    // 07.2-11(D-7280): 종결 문서는 기본 목록에서 빠지고 `종결 보기`(includeClosed)로 섞여 보인다.
+    const groups = (await listExpenses(fx.pm, { status: "all", includeClosed: true })).groups;
     const groupOf = (id: string) => groups.find((group) => group.rows.some((row) => row.id === id));
     const rowOf = (id: string) => groupOf(id)?.rows.find((row) => row.id === id);
     expect(rowOf(closed.expenseId)).toMatchObject({ statusWord: "종결", statusDate: seoulToday(closedAt).slice(5) });

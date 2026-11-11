@@ -63,7 +63,7 @@ function firstParam(raw: string | string[] | undefined): string | undefined {
   return Array.isArray(raw) ? raw[0] : raw;
 }
 
-type MainFilters = { team: string; month: string; mine: boolean };
+type MainFilters = { team: string; month: string; mine: boolean; closed: boolean };
 
 function viewHref(view: ExpenseStatusView, page?: number, q?: string | null, filters?: MainFilters): string {
   const params = new URLSearchParams({ status: view });
@@ -73,6 +73,8 @@ function viewHref(view: ExpenseStatusView, page?: number, q?: string | null, fil
   if (filters?.team) params.set("team", filters.team);
   if (filters?.month) params.set("month", filters.month);
   if (filters?.mine) params.set("mine", "1");
+  // 07.2-11(D-7280 · S22): `종결 보기`도 쪽 이동에 잇고 `필터 지우기`가 지운다.
+  if (filters?.closed) params.set("closed", "1");
   if (page && page > 1) params.set("page", String(page));
   return `/expenses?${params.toString()}`;
 }
@@ -135,9 +137,9 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   const view = toView(params.status);
   const page = Array.isArray(params.page) ? params.page[0] : params.page;
   const q = normalizeListQuery(firstParam(params.q));
-  const filters: MainFilters = { team: firstParam(params.team) ?? "", month: firstParam(params.month) ?? "", mine: firstParam(params.mine) === "1" };
+  const filters: MainFilters = { team: firstParam(params.team) ?? "", month: firstParam(params.month) ?? "", mine: firstParam(params.mine) === "1", closed: firstParam(params.closed) === "1" };
   const [list, canWrite] = await Promise.all([
-    listExpenses(session.viewer, { status: VIEW_STATUS[view], page, q, team: filters.team, month: filters.month, mine: filters.mine }),
+    listExpenses(session.viewer, { status: VIEW_STATUS[view], page, q, team: filters.team, month: filters.month, mine: filters.mine, includeClosed: filters.closed }),
     can(session.viewer, "expenses", "write"),
   ]);
 
@@ -167,7 +169,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       // 06.1-05(Round 2 G8) — 그때도 증빙 링크가 있으면 링크 하나만 든 필터 줄을 넘긴다(보이는 지출결의가 0건인 경영관리도 증빙으로 간다).
       filters={
         list.hasAny ? (
-          <StatusFilter value={view} views={views} selects={filterSelects} searchValue={q ?? ""} mine={{ checked: filters.mine }} endLink={evidenceLink} />
+          <StatusFilter value={view} views={views} selects={filterSelects} searchValue={q ?? ""} mine={{ checked: filters.mine }} closed={{ checked: filters.closed }} endLink={evidenceLink} />
         ) : evidenceLink ? (
           <RowActions>
             <RowAction href={evidenceLink.href}>{evidenceLink.label}</RowAction>
@@ -175,12 +177,15 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
         ) : undefined
       }
       summary={
-        list.total && list.total.count > 0 ? (
+        // 07.2-11 /review P2: 보기 안 문서가 전부 종결이어도 합계 줄을 그려 `종결 N건 제외`를 남긴다(숨긴 문서가 사라진 것처럼 보이지 않게).
+        list.total && (list.total.count > 0 || list.closedExcluded > 0) ? (
           <section aria-label="합계" className={styles.totals}>
             <p className={styles.totalsTitle}>{`합계 (${view} · ${list.total.count}건)`}</p>
             <p className={styles.totalsAmount}>
               <Num value={list.total.sumKrw} />
             </p>
+            {/* 07.2-11(D-7280 · S22): 기본 숨김으로 빠진 종결 문서 수 — 0이면 DOM 0. */}
+            {list.closedExcluded > 0 ? <p className={styles.totalsExcluded}>{`종결 ${list.closedExcluded}건 제외`}</p> : null}
           </section>
         ) : undefined
       }
@@ -206,6 +211,9 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     >
       {rows.length > 0 ? (
         <ExpensesTable rows={rows} drafterColumn={list.drafterColumn} amountColumn={list.amountColumn} />
+      ) : list.closedExcluded > 0 ? (
+        // 07.2-11 /review P2: 조건에 맞는 문서가 종결뿐이면 빈 자리 행동은 `종결 보기`(closed=1, 검색어 · 거르개 유지) — `전체 보기`가 같은 화면으로 돌던 자리.
+        <ListEmpty message="조건에 맞는 건이 없습니다" action={{ label: "종결 보기", href: viewHref(view, undefined, q, { ...filters, closed: true }) }} />
       ) : q || filtered ? (
         // 06.5 D-6508(EP1-13): 문서는 있는데 검색으로 0건 — 필터 줄 · 검색어는 그대로 서고 표 자리에서 검색을 지우고 빠져나간다.
         // 07.1-09(W11): 팀 · 월 · 내 것만으로 0건이어도 같은 갈래 — `필터 지우기`가 검색어와 셋을 모두 지운다.

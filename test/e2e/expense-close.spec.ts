@@ -365,7 +365,8 @@ test.describe("반려 · 회수 지출결의 종결 (S23)", () => {
     const expenseId = await rejectedExpense(browser, baseURL, fx, "tracer");
     await closeOnServer(fx.pm.viewer, expenseId);
     const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 800 });
-    await page.goto("/expenses");
+    // 07.2-11(D-7280): 종결 문서는 기본 목록에서 빠진다 — `종결 보기`(closed=1)로 연다.
+    await page.goto("/expenses?closed=1");
     const row = page.locator("main table tr").filter({ hasText: fx.lines.tracer.itemName });
     await expect(row).toHaveCount(1);
     const word = row.getByText("종결", { exact: true });

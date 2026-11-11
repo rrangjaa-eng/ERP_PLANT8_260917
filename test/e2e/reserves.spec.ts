@@ -6,7 +6,7 @@ import { checkPrinciples } from "./principles-check";
 import { loginAsSysadmin } from "./row-actions-helpers";
 import { db } from "@/db/client";
 import { codeItems, projects, reserveEntries } from "@/db/schema";
-import { insertVendor } from "@/repositories/vendors";
+import { insertVendor, setVendorArchived } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertTempRole } from "./temp-roles";
 import { setRoleArchived } from "@/repositories/roles";
@@ -1213,5 +1213,42 @@ test.describe("리저브 대장 — 목록 틀 · Num · 뼈대 (04.6-22)", () =
     await checkPrinciples(page, ["/admin/action-log", "/admin/archive", "/pnl/reserves"], {
       strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT),
     });
+  });
+});
+
+// 07.2-11 PU22 ②(D-7279 · 07.2 D-7309 · UI-SPEC S22): 사용중지(보관) 거래처 — 새 줄은 그 칸 오류 + 전부 거부, 기존 줄 수정은 저장된다.
+test.describe("리저브 대장 — 사용중지 거래처 (07.2-11 PU22 ②)", () => {
+  test("고른 거래처가 그새 사용중지되면 새 줄 클라이언트 칸 오류 `거래처 사용중지 · 다른 거래처 고르기` · 합계 행 `오류 1칸 · 전부 거부`", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브중지");
+    await openLedger(page, roles.finance);
+
+    await addReserveRow(page);
+    await page.getByRole("combobox", { name: "클라이언트", exact: true }).selectOption({ label: client.name });
+    await typeDate(page, cell(page, 0, COL.date), "2026-05-01");
+    await typeInto(page, cell(page, 0, COL.amount), "금액", "300000");
+    await setVendorArchived(SYSTEM_VIEWER, client.id, true);
+    await saveWithKeyboard(page, cell(page, 0, COL.amount));
+
+    await expect(cell(page, 0, COL.client)).toHaveAttribute("aria-invalid", "true");
+    await expect(cell(page, 0, COL.client)).toContainText("거래처 사용중지 · 다른 거래처 고르기");
+    await expect(ledger(page).locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
+    expect(await db.select().from(reserveEntries).where(eq(reserveEntries.clientId, client.id))).toHaveLength(0);
+  });
+
+  test("사용중지 거래처의 기존 줄 금액을 고쳐 저장하면 저장되고 잔액이 다시 계산된다", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브중지수정");
+    await seedEntries(client.id, [{ date: "2026-05-01", direction: "deposit", amount: 100_000 }]);
+    await setVendorArchived(SYSTEM_VIEWER, client.id, true);
+    await openLedger(page, roles.finance);
+
+    await typeInto(page, cell(page, 0, COL.amount), "금액", "250000");
+    await saveWithKeyboard(page, cell(page, 0, COL.amount));
+
+    await expectGroupBalance(page, client.name, "250,000");
+    await expect(cell(page, 0, COL.amount)).not.toHaveAttribute("aria-invalid", "true");
+    const [stored] = await db.select().from(reserveEntries).where(eq(reserveEntries.clientId, client.id));
+    expect(stored?.amountAmountKrw).toBe(250_000);
   });
 });

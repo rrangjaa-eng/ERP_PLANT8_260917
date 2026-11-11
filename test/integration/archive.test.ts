@@ -17,7 +17,7 @@ import { addHoliday, deleteHoliday } from "@/domain/holidays/admin";
 import { queryActionLog } from "@/domain/action-log";
 import { db } from "@/db/client";
 import { corpCards, holidays, vendors } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findRoleById, insertRole } from "@/repositories/roles";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
@@ -25,6 +25,11 @@ import { updateUserResignationDate } from "@/repositories/users";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 import { makeAdmin, makeAdminRole, makeDelegatedRole } from "./admin-cap-fixtures";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { createOrgUnit, createTeam } from "@/domain/org";
+import { findTeamById } from "@/repositories/teams";
+import { setOrgUnitArchived } from "@/repositories/org-units";
+import { lockSeatKeys } from "@/repositories/seats";
+import { withTransaction } from "@/lib/db-transaction";
 
 let ipCounter = 0;
 function nextTestIp(): string {
@@ -464,5 +469,86 @@ describe("계급 보관 가드(07-15 R16 · R17)", () => {
 
     await archive(d, "roles", inside, deps);
     expect((await findRoleById(SYSTEM_VIEWER, inside))?.archivedAt).not.toBeNull();
+  });
+});
+
+// 07.2-11 PU22 ③(D-7279 · UI-SPEC S22): 위 본부가 사용중지(보관)면 아래 팀 되살리기를 막는다 — 잠금 뒤 tx 안에서 팀의 본부를 다시 읽어 판정.
+// 문구에 본부 이름을 넣지 않는다(T-07.2-11-03). 260907 O:server/src/org.ts:505-519(409 「본부를 먼저 되살려 주세요」).
+describe("팀 복원 — 사용중지 본부 아래 팀 막기 (07.2-11 PU22 ③)", () => {
+  const BLOCKED = "사용중지 본부 아래 팀 · 본부 먼저 복원";
+
+  async function archivedPair() {
+    const unit = await createOrgUnit(SYSTEM_VIEWER, { name: `보관본부-${randomUUID().slice(0, 6)}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: unit.id, name: `보관팀-${randomUUID().slice(0, 6)}` });
+    await archive(SYSTEM_VIEWER, "team", team.id);
+    return { unitId: unit.id, teamId: team.id };
+  }
+
+  async function caught(promise: Promise<unknown>): Promise<unknown> {
+    return promise.then(
+      () => null,
+      (error: unknown) => error,
+    );
+  }
+
+  it("본부 · 팀 둘 다 보관 → 팀 복원은 사용자 오류 · 팀은 보관 그대로 · 본부 복원 뒤 팀 복원 성공", async () => {
+    const { unitId, teamId } = await archivedPair();
+    await archive(SYSTEM_VIEWER, "org_unit", unitId);
+
+    const error = await caught(restore(SYSTEM_VIEWER, "team", teamId));
+    expect(error).toBeInstanceOf(UserFacingError);
+    expect((error as Error).message).toBe(BLOCKED);
+    expect((await findTeamById(SYSTEM_VIEWER, teamId))?.archivedAt).not.toBeNull();
+
+    await expect(restore(SYSTEM_VIEWER, "org_unit", unitId)).resolves.toEqual({ restored: true });
+    await expect(restore(SYSTEM_VIEWER, "team", teamId)).resolves.toEqual({ restored: true });
+    expect((await findTeamById(SYSTEM_VIEWER, teamId))?.archivedAt).toBeNull();
+  });
+
+  it("살아 있는 본부 아래 보관 팀은 지금처럼 복원된다", async () => {
+    const { teamId } = await archivedPair();
+    await expect(restore(SYSTEM_VIEWER, "team", teamId)).resolves.toEqual({ restored: true });
+  });
+
+  // 다른 연결이 이 advisory 키(`pg_advisory_xact_lock(hashtextextended(key, 0))`)를 아직 못 잡고 기다리는지 — bigint 키는 classid(위 32비트) · objid(아래 32비트)로 나뉜다.
+  async function waitForAdvisoryWaiter(key: string): Promise<void> {
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+      const [row] = await db.execute<{ waiting: number }>(sql`
+        select count(*)::int as waiting from pg_locks
+        where locktype = 'advisory' and not granted and objsubid = 1
+          and ((classid::bigint << 32) | objid::bigint) = hashtextextended(${key}, 0)`).then((result) => result.rows);
+      if ((row?.waiting ?? 0) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`advisory 대기 없음: ${key}`);
+  }
+
+  it("팀 복원이 본부 자리 키를 기다리는 사이 본부 보관이 끝나면 잠금 뒤 다시 읽어 막는다", async () => {
+    const { unitId, teamId } = await archivedPair();
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked: () => void = () => {};
+    const lockTaken = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    // 본부 보관 tx를 흉내 낸다 — 본부 자리 키를 잡고 보관한 채 커밋을 미룬다.
+    const archiving = withTransaction(async (tx) => {
+      await lockSeatKeys(SYSTEM_VIEWER, { orgUnitIds: [unitId] }, tx);
+      await setOrgUnitArchived(SYSTEM_VIEWER, unitId, true, tx);
+      locked();
+      await held;
+    });
+    await lockTaken;
+    const restoring = caught(restore(SYSTEM_VIEWER, "team", teamId));
+    // 시간이 아니라 순서로 고정한다 — 복원 tx가 이 본부 자리 키를 기다리는 것(pg_locks 미허가 advisory)을 본 뒤에야 보관을 커밋한다.
+    // 그래서 복원이 tx 밖에서 본부를 읽었다면 그 값은 보관 전이고, 거부는 잠금 뒤 다시 읽어야만 나온다.
+    await waitForAdvisoryWaiter(`seat:division:${unitId}`);
+    release();
+    await archiving;
+    const error = await restoring;
+    expect((error as Error | null)?.message).toBe(BLOCKED);
+    expect((await findTeamById(SYSTEM_VIEWER, teamId))?.archivedAt).not.toBeNull();
   });
 });

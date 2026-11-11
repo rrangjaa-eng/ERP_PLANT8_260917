@@ -13,8 +13,13 @@ vi.mock("@/domain/archive", async () => {
   return {
     VendorBusinessNoTakenError: class VendorBusinessNoTakenError extends Facing {},
     CorpCardLast4TakenError: class CorpCardLast4TakenError extends Facing {},
+    ParentOrgUnitArchivedError: class ParentOrgUnitArchivedError extends Facing {},
     restore: () => (errors.restoreError.current ? Promise.reject(errors.restoreError.current) : Promise.resolve({ restored: true })),
   };
+});
+vi.mock("@/domain/reserves", async () => {
+  const { UserFacingError: Facing } = await import("@/lib/actions/user-facing-error");
+  return { ReserveClientArchivedError: class ReserveClientArchivedError extends Facing {} };
 });
 vi.mock("@/domain/holidays/admin", async () => {
   const { UserFacingError: Facing } = await import("@/lib/actions/user-facing-error");
@@ -37,7 +42,8 @@ vi.mock("@/domain/people/seat-rules", async () => {
 });
 
 const { restoreArchivedAction } = await import("@/app/(app)/admin/archive/actions");
-const { VendorBusinessNoTakenError, CorpCardLast4TakenError } = await import("@/domain/archive");
+const { VendorBusinessNoTakenError, CorpCardLast4TakenError, ParentOrgUnitArchivedError } = await import("@/domain/archive");
+const { ReserveClientArchivedError } = await import("@/domain/reserves");
 const { HolidayNotRestorableError } = await import("@/domain/holidays/admin");
 const { PersonRestoreForbiddenError, PersonNotRestorableError } = await import("@/domain/people/restore");
 const { RoleGrantForbiddenError } = await import("@/domain/permissions/grant-ceiling");
@@ -54,6 +60,9 @@ describe("보관함 복원 액션 — 거부 원인 매핑", () => {
     ["없는 사람", new PersonNotRestorableError("없는 사람 · 복원 불가")],
     ["권한 상한", new RoleGrantForbiddenError("계급 지정 권한 없음 · 시스템 관리자 · 복원 불가")],
     ["자리", new SeatTakenError("팀장 있음 · 가나 · 복원 불가")],
+    // 07.2-11(PU22 ② · ③ · UI-SPEC S22): 사용중지 본부 아래 팀 · 사용중지 거래처 리저브 줄 — 행 아래 이유 줄로 보인다.
+    ["사용중지 본부 아래 팀", new ParentOrgUnitArchivedError("사용중지 본부 아래 팀 · 본부 먼저 복원")],
+    ["사용중지 거래처 리저브 줄", new ReserveClientArchivedError("거래처 사용중지 · 다른 거래처 고르기")],
   ])("%s 거부는 문구를 루트 검증 오류로 돌려준다", async (_label, error) => {
     errors.restoreError.current = error;
     const result = await restoreArchivedAction(INPUT);

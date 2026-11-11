@@ -2676,3 +2676,11 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **범위**: `app/print/quotes/**`와 공용 틀의 선택 prop · 클래스 — 세 서류 불변. 입구 ⑥은 `app/(app)/projects/[id]/revision-section.tsx`.
 **결정자**: 사용자 확정(D-7224 · D-7225 · D-7227). 계획 결정 k.
 **영향**: SYSTEM §6-6(07.2-10 고객 견적서 줄 · 공용 틀 서류 목록) · §7-7 인쇄 라우트 행.
+
+## 2026-11-02 — 07.2 PU22 ④ 결제 끝난 구매요청 보관 막기 = 기존 취소 · 삭제 불가 (07.2-11)
+**결정**: 260907의 「결제 끝난 구매요청 보관 막기」(O:server/src/purchases.ts:3231-3236 — `card_paid_date !== null`이면 409)는 새 판정 없이 지금 규칙 둘로 이미 선다 — 우리에게는 구매요청 「보관」 동작이 없고, 같은 효과를 내는 두 길이 닫혀 있다.
+**이유**: 결제가 끝난 구매가 합계에서 빠지면 나간 돈이 사라진다.
+- 구매요청 취소 불가 — 취소는 `requested`에서만, `purchased`면 `이미 구매 완료 · 새로 고침`(`domain/purchase-requests/index.ts` `statusChangedError` · `REQUEST_PURCHASED`, 취소 되돌리기도 `cancelled`에서만). 시험: `test/integration/purchase-requests.test.ts` 「[Q2] `purchased` 요청의 취소 → `이미 구매 완료 · 새로 고침` 거부」.
+- 그 구매로 생긴 카드 사용 삭제 불가 — `domain/corp-card-usages/rights.ts` `registeredVia === "purchase"` → `delete: false` · `changeLink: false`. 시험: 같은 파일 「구매 완료 건의 연결 변경 · 삭제 → ForbiddenError」.
+**결정자**: 사용자(D-7279 「넷 다 넣기」) — 구현 판정은 07.2-11 플랜(「이미 구현」 · 시험으로 닫음).
+**영향**: 코드 변경 없음(`domain/purchase-requests/` · `domain/corp-card-usages/` 그대로).

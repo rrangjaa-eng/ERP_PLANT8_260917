@@ -107,6 +107,8 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   paymentPushReason: "cutoff" | "no-slot" | null;
   paymentRuleLine: string;
   paymentOffWeekday: string | null;
+  // 07.2-16(PU7 · D-7234): 사후 추인 — 상신일(서울) > 행사 시작일. 읽을 때 계산(domain/expenses/post-hoc.ts).
+  postHoc: boolean;
 };
 
 export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocumentDto> = {
@@ -156,6 +158,7 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "paymentPushReason", from: "paymentPushReason", infoItem: "expense.value" },
     { key: "paymentRuleLine", from: "paymentRuleLine", infoItem: "expense.value" },
     { key: "paymentOffWeekday", from: "paymentOffWeekday", infoItem: "expense.value" },
+    { key: "postHoc", from: "postHoc", infoItem: "expense.value" },
   ],
 };
 
@@ -288,6 +291,8 @@ export type ExpenseListRowDto = {
   statusDate: string | null;
   // 06-20(UA-605) — 상태 칸 둘째 줄 `증빙 {N}일 경과`(기한 지난 선결제 · 지급 뒤). 없으면 키 없음.
   statusNote?: string | null;
+  // 07.2-16(PU7): 사후 추인 — 상태 칸 `{상태} · 사후 추인`(문서 화면 · 결재함과 같은 판정 하나).
+  postHoc: boolean;
 };
 
 export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRowDto> = {
@@ -305,6 +310,7 @@ export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRo
     { key: "statusWord", from: "statusWord", infoItem: "expense.value" },
     { key: "statusDate", from: "statusDate", infoItem: "expense.value" },
     { key: "statusNote", from: "statusNote", infoItem: "expense.value" },
+    { key: "postHoc", from: "postHoc", infoItem: "expense.value" },
   ],
 };
 

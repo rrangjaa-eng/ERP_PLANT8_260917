@@ -1,6 +1,6 @@
 import type { ApprovalInboxItemDto, DocumentMeasure, DocumentSummary } from "@/domain/approvals";
 import { formatKrw } from "@/lib/format-number";
-import { routeListSteps, withdrawResultLines } from "@/app/(app)/leave/status-display";
+import { previousRejectionLines, routeListSteps, withdrawResultLines } from "@/app/(app)/leave/status-display";
 import type { ApprovalSheetItem, SheetDetailRow } from "./approval-sheet";
 import type { DecisionTarget } from "./decision-dialogs";
 
@@ -52,7 +52,10 @@ export function toSheet(item: Partial<ApprovalInboxItemDto>): ApprovalSheetItem 
     version: item.version,
     title: item.detail.title,
     subtitle: item.detail.subtitle,
-    rows: sheetRows(item.detail.rows),
+    // 07.2-16(PU18 · S14): 다시 올라온 문서면 상세 행 끝에 `지난 반려`(결재선 바로 위) — 반려 이력이 없으면 행 자체가 없다.
+    rows: item.previousRejection
+      ? [...sheetRows(item.detail.rows), { label: "지난 반려", lines: previousRejectionLines(item.previousRejection) }]
+      : sheetRows(item.detail.rows),
     steps: routeListSteps(item.steps),
     endLines: item.endLines ?? [],
     actions: item.actions,

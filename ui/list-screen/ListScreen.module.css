@@ -76,13 +76,14 @@
 }
 
 /* 폰은 읽기만인 화면의 1차 — 폰(<700)에서 그리지 않는다(사용자 결정 2026-10-03 「폰은 읽기만」).
-   필터도 없어 줄이 비면 줄 자체를 그리지 않는다(빈 줄의 아래 여백이 제목 아래 간격을 --s-4보다 벌린다). */
+   필터도 없어 줄이 비면 줄 자체를 그리지 않는다(빈 줄의 아래 여백이 제목 아래 간격을 --s-4보다 벌린다).
+   처음부터 DOM에 있는 빈 결과 영역(aria-live — 결재함 07.2-16)도 빈 칸으로 센다. */
 @media (max-width: 699.98px) {
   .bar > .phoneHidden {
     display: none;
   }
 
-  .bar:has(> .phoneHidden):not(:has(> .filters > *)) {
+  .bar:has(> .phoneHidden):not(:has(> .filters > :not(:empty))) {
     display: none;
   }
 }

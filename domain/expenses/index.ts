@@ -73,6 +73,7 @@ import { computeExpenseTax, snapshotSupplyDiffers, storedTaxResult, taxDriftText
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { BANK_TRANSFER_PAYMENT_METHOD, documentPayee, hasUsableAccount, PAYEE_ACCOUNT_MISSING_FIXABLE, type ExpensePayee } from "@/domain/expenses/payee";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
+import { isPostHocSubmitted } from "@/domain/expenses/post-hoc";
 import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
 import { fileVisibilityFor, PRIVATE_EVIDENCE_SHEET_NOTICE } from "@/domain/evidence/private-files";
 import { recheckEvidenceConfirmation } from "@/domain/evidence-reviews";
@@ -434,6 +435,7 @@ function toSource(row: ExpenseSummaryRow, payment: PaymentFields, extras: Source
     prepaidReason: row.prepaidReason,
     recipientCount: row.recipientCount,
     evidenceDate: row.evidenceDate,
+    postHoc: isPostHocSubmitted(row.submittedAt, row.projectStartDate),
   };
 }
 
@@ -459,6 +461,8 @@ async function describeExpenseDocuments(viewer: Viewer, ids: string[], deps?: De
       const { currency, amount, fxRate, amountKrw } = projected.supply;
       summary.measure = { kind: "money", money: { currency, amount, fxRate, amountKrw } };
     }
+    // 07.2-16(PU7 · D-7235): 결재함 문서 칸 2행 배지 `사후 추인` — 목록 · 문서 화면과 같은 판정(투영 뒤 값).
+    if (projected.postHoc) summary.postHoc = true;
     result.set(row.id, summary);
   }
   return result;

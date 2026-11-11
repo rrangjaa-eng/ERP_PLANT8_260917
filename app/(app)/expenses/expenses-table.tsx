@@ -79,6 +79,8 @@ export function ExpensesTable({ rows, drafterColumn, amountColumn }: { rows: Exp
       key: "payment",
       header: EXPENSE_COLUMN_LABELS.payment,
       priority: "p2",
+      // 07.2-16: 상태 칸이 `{상태} · 사후 추인`으로 넓어지면 700에서 자동 표 배치가 이 열(내용 `MM-DD`)을 줄여 머리글이 두 줄로 접혔다 — 머리글은 한 줄.
+      headerClassName: styles.nowrap,
       cell: (row) => <Num value={row.scheduledPaymentDate ? row.scheduledPaymentDate.slice(5) : null} />,
       // 접힌 줄 — 지급 예정 뒤에 외화 2행 · 미연결 2행(폰은 주 행에서 숨긴 두 줄을 여기서 한 번만 보인다).
       summary: (row) => {
@@ -128,10 +130,23 @@ export function ExpensesTable({ rows, drafterColumn, amountColumn }: { rows: Exp
               </>
             ) : null}
             {/* 06-20(UA-605) — 기한 지난 선결제 둘째 줄(경고 색 · 태그 크기). 열을 새로 만들지 않는다. 폰에서는 주 행이 한 줄이라 이 줄은 숨고(expenses.module.css) 같은 글자가 접힌 줄 앞에 선다(07.1-18). */}
+            {/* 07.2-16(PU7 · S12): `{상태} · 사후 추인` — 둘째 조각만 warning. 폰은 상태 칸이 길어지지 않게 접힌 줄 끝으로 옮긴다. */}
+            {row.postHoc ? (
+              <span className={styles.postHoc}>
+                {" · "}
+                <StatusTag status="사후 추인" variant="text" />
+              </span>
+            ) : null}
             {row.statusNote ? <span className={styles.statusNote}>{row.statusNote}</span> : null}
           </span>
         ) : null,
-      secondaryText: (row) => row.statusNote ?? "",
+      secondaryText: (row) =>
+        row.postHoc ? (
+          <>
+            {row.statusNote ? `${row.statusNote} · ` : null}
+            <StatusTag status="사후 추인" variant="text" />
+          </>
+        ) : (row.statusNote ?? ""),
     },
   ];
 

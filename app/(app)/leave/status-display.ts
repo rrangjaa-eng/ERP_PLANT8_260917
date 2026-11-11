@@ -131,6 +131,19 @@ export function seoulMinuteOf(at: Date): string {
   return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
+// 07.2-16(PU18 · D-7274 · UI-SPEC S14): `지난 반려` 행 두 줄 — 1행 직전 반려 사유 원문 · 2행 `{반려자} · MM-DD HH:mm`(2회 이상이면 ` · 총 {n}회`).
+// 결재 시트(줄 목록)와 문서 화면 KvList가 같은 줄을 쓴다.
+export function previousRejectionLines(rejection: { reason: string; rejectedBy: string | null; rejectedAt: Date; totalRejections: number }): {
+  text: string;
+  tone: "default" | "muted";
+}[] {
+  const meta = [rejection.rejectedBy, seoulMinuteOf(rejection.rejectedAt), rejection.totalRejections >= 2 ? `총 ${rejection.totalRejections}회` : null];
+  return [
+    { text: rejection.reason, tone: "default" },
+    { text: meta.filter(Boolean).join(" · "), tone: "muted" },
+  ];
+}
+
 function stepStatusKey(step: RouteStepSource): LeaveStatusKey | null {
   switch (step.state) {
     case "approved":

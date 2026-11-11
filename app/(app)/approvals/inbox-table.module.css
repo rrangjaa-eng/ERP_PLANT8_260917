@@ -154,3 +154,89 @@ tr:has(.rowTap) {
     outline-offset: calc(var(--focus-w) * -1);
   }
 }
+
+/* 07.2-16(S13 · DC-8) — 일괄 고르기. 결과 글자는 필터 줄 필터 자리(지급 대상 .batchResult와 같은 모양 — expenses.module.css). */
+.batchResult {
+  margin: 0;
+  font-size: var(--text-aux);
+  align-self: last baseline;
+}
+
+.batchDone {
+  color: var(--status-success);
+}
+
+.batchBlocked {
+  color: var(--status-danger);
+}
+
+/* 선택 막대 — 필터 줄 아래 · 표 위 한 줄(폭 = 표 폭). 왼쪽 요약 · 오른쪽 2차. 좁으면 요약이 두 줄로 접히고 2차는 오른쪽에 남는다. */
+.bulkBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-4);
+  margin: 0 0 var(--s-2);
+}
+
+.bulkSummary {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  margin: 0;
+  font-weight: var(--fw-bold);
+}
+
+.bulkPiece {
+  white-space: nowrap;
+}
+
+.bulkWarning {
+  color: var(--status-warning);
+}
+
+/* 폰(<700)은 지금처럼 행 → 결재 시트 단건 — 선택 열 · 막대는 그리지 않는다(D-7268 · CSS라 SSR 첫 화면부터).
+   선택 열은 ui/table이 그리는 각 행의 첫 칸이다(그룹 머리 · 접힌 줄은 colspan 칸이라 남는다) · 선택 열이 없는 표(`처리함`만)는 첫 칸이 문서 칸이라
+   머리글 전체 고르기가 있을 때만 숨긴다 · 고를 수 없음 이유 줄도 숨긴다. */
+@media (max-width: 699.98px) {
+  .bulkBar {
+    display: none;
+  }
+
+  .bulk:has(thead input[type="checkbox"]) tr > :first-child:not([colspan]) {
+    display: none;
+  }
+
+  /* 숨긴 선택 칸 다음 칸이 첫 보이는 칸 — ui/table 폰 첫 칸 규칙(--s-4)은 제 열 접기 클래스만 알아 이 칸에 안 걸린다(/qa D-1 · 8px로 남았다). */
+  .bulk:has(thead input[type="checkbox"]) tr > :first-child:not([colspan]) + * {
+    padding-left: var(--s-4);
+  }
+
+  .bulk [id$="-select-reason"] {
+    display: none;
+  }
+}
+
+/* 선택 열 체크박스는 행 덮개(.rowTap::after) 밖에 둔다 — 덮개가 앞쪽 선택 칸 폭만큼 오른쪽에서 시작한다(앞 칸이라 DOM 순서로는 덮개 아래 · z-index 토큰 없이).
+   칸 폭 식은 ui/table 선택 열(--row-number-w + 양옆 칸 여백)과 같고, 터치 폭에서는 라벨이 --touch-min으로 커지므로 그 폭을 쓴다. */
+@media (min-width: 700px) {
+  .bulk:has(thead input[type="checkbox"]) .rowTap::after {
+    inset-inline-start: calc(var(--row-number-w) + 2 * var(--cell-pad-x));
+  }
+}
+
+@media (pointer: coarse) and (min-width: 700px) {
+  .bulk:has(thead input[type="checkbox"]) .rowTap::after {
+    inset-inline-start: calc(var(--touch-min) + 2 * var(--cell-pad-x));
+  }
+}
+
+/* 터치 PC · 태블릿 — 선택 열 체크박스 눌림 면 44(보이는 체크박스는 그대로 · 행 높이는 음수 여백으로 유지 — ui/table 폰 규칙과 같은 식).
+   머리글 `이 쪽 전체 고르기`도 같은 규칙(독립 DOM 감사 결함 ① — 머리글만 44×13이었다). */
+@media (pointer: coarse) and (min-width: 700px) {
+  .bulk label:has(> input[type="checkbox"]) {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    margin-block: calc(-1 * var(--cell-pad-y));
+  }
+}

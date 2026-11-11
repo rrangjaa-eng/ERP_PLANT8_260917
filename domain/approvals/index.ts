@@ -17,6 +17,7 @@ import {
   listActiveInstances,
   listDrafterInstances,
   listProcessedInstances,
+  listRejectedSteps,
   recordStepAction,
   updateInstanceStatus,
   type ApprovalGraph,
@@ -61,13 +62,14 @@ import {
   type ApprovalStepView,
   type ApprovalView,
   type ApprovalViewDto,
+  type PreviousRejection,
 } from "@/domain/approvals/dto";
 
 export { registerDocumentKind, getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
 export type { DocumentDetailEvidenceFile, DocumentDetailRow, DocumentDetailRows, DocumentKindDef, DocumentMeasure, DocumentSummary, RouteConfig, RouteConfigStep, RouteHint, RouteSettingDefs } from "@/domain/approvals/kinds";
 export { nextStep, resolveHolders, statusStepLabel, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
-export type { ApprovalInboxItem, ApprovalInboxItemDto, ApprovalView, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
+export type { ApprovalInboxItem, ApprovalInboxItemDto, ApprovalView, ApprovalViewDto, PreviousRejection, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
 export { projectActionResult } from "@/domain/approvals/dto";
 export type { ApprovalActionResult } from "@/domain/approvals/dto";
 
@@ -941,6 +943,20 @@ function seoulMinute(at: Date): string {
   return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
+// 07.2-16(PU18 · D-7274): 지난 차수(round < 현재)의 반려 단계 중 직전 1건 + 총 수. 지금 차수의 반려는 결재선이 이미 보인다.
+// 사유 · 시각이 비어 있는 반려 단계는 없다(rejectDocument가 사유를 검증해 쓴다) — 그런 행은 세지 않는다.
+function previousRejectionOf(
+  rejected: { round: number; reason: string | null; actedByName: string | null; actedAt: Date | null }[],
+  currentRound: number,
+): PreviousRejection | null {
+  const past = rejected
+    .filter((step): step is typeof step & { reason: string; actedAt: Date } => step.round < currentRound && step.reason !== null && step.actedAt !== null)
+    .sort((a, b) => a.round - b.round || a.actedAt.getTime() - b.actedAt.getTime());
+  const last = past[past.length - 1];
+  if (!last) return null;
+  return { reason: last.reason, rejectedBy: last.actedByName, rejectedAt: last.actedAt, totalRejections: past.length };
+}
+
 // S7 끝 줄 — 자기 승인 건너뜀(진행 중 표시 목록에서) · 회수 시각.
 function routeEndLines(status: ApprovalStatus, steps: ApprovalStepView[], updatedAt: Date): ApprovalRouteEndLine[] {
   const lines: ApprovalRouteEndLine[] = steps
@@ -1019,6 +1035,13 @@ export async function canSeeApprovalDocument(
   return state.isParty;
 }
 
+// 07.2-16(#377 리뷰 L3): 일괄 묶음이 종류(정산 결재 · 건별 승인)를 알리기 전에 지금 단계 후보인지 본다 — 담당 아닌 사람에게는
+// 종류를 드러내지 않고 엔진과 같은 `지금 담당이 아님` 글자를 준다. 후보 판정은 단건 승인과 같은 readApprovalState.
+export async function isCurrentCandidate(viewer: Viewer, graph: ApprovalGraph, deps?: ApprovalDeps): Promise<boolean> {
+  const state = await readApprovalState(viewer, graph, { today: seoulToday(deps?.now), logBlocked: false, listOrgSnapshot: deps?.listOrgSnapshot });
+  return state.isCandidate;
+}
+
 // readOnlyVisible(05-08 검토 #1): 종류의 보임 규칙(예: canSeeExpense — 팀장 · 전사 범위)이 이미 통과한 화면만 넘긴다. 당사자가 아니어도
 // 상태 · 결재선을 돌려주되 행동은 늘 비어 있다(행동 판정은 당사자 규칙 그대로).
 export async function getApprovalView(
@@ -1089,6 +1112,13 @@ export async function getApprovalView(
     currentStepIndex,
     actions,
     approveBlockedReason: blocked.get(graph.instance.documentId) ?? null,
+    // UI-SPEC S14 「보는 사람: 지금 결재 후보 + 기안자」 — 당사자에게만 싣는다(읽기 전용으로 보는 팀장 · 전사 범위는 null).
+    previousRejection: state.isParty
+      ? previousRejectionOf(
+          graph.routes.flatMap((route) => route.steps.filter((step) => step.action === "rejected").map((step) => ({ ...step, round: route.round }))),
+          graph.instance.currentRound,
+        )
+      : null,
   };
   return projectApprovalView(viewer, source, { visible: createVisibleMemo(deps?.findVisibility) });
 }
@@ -1194,6 +1224,7 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
       endLines: steps ? routeEndLines(instance.status as ApprovalStatus, steps, instance.updatedAt) : null,
       actions: deps?.withDetails ? await possibleActions(viewer, { instance, isCandidate: true, steps: instance.steps }) : null,
       approveBlockedReason: null,
+      previousRejection: null,
     });
   }
 
@@ -1220,6 +1251,7 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
       endLines: null,
       actions: null,
       approveBlockedReason: null,
+      previousRejection: null,
     };
   });
 
@@ -1246,6 +1278,16 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
 
   // 04.1-05(CEO-17): `내 결재` 상세 — 종류마다 id 목록으로 loadDetails 한 번, 같은 노출 메모 · 같은 시계.
   if (deps?.withDetails) {
+    // 07.2-16(PU18): `지난 반려` — `내 결재` 인스턴스들의 반려 단계를 한 번에 읽는다(행마다 따로 읽지 않는다).
+    const rejected = await listRejectedSteps(viewer, mineSources.map((source) => source.instanceId));
+    const roundById = new Map(active.map((instance) => [instance.id, instance.currentRound]));
+    for (const source of mineSources) {
+      source.previousRejection = previousRejectionOf(
+        rejected.filter((step) => step.instanceId === source.instanceId),
+        roundById.get(source.instanceId) ?? 0,
+      );
+    }
+
     const mineIdsByKind = new Map<string, string[]>();
     for (const source of mineSources) mineIdsByKind.set(source.kind, [...(mineIdsByKind.get(source.kind) ?? []), source.documentId]);
     for (const [kind, ids] of mineIdsByKind) {

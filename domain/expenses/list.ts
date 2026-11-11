@@ -6,6 +6,7 @@ import { projectMany } from "@/domain/permissions/project";
 import { visible } from "@/domain/permissions/visible";
 import { moneyFromRow } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
+import { isPostHocSubmitted } from "@/domain/expenses/post-hoc";
 import { EXPENSE_LIST_ROW_DTO_SPEC, type ExpenseListRowDto } from "@/domain/expenses/dto";
 import { loadExpenseSchedules, scheduleOf, TEAM_EXPENSE_KIND_LABELS, type TeamExpenseKind } from "@/domain/expenses";
 import { payWeekIndex, type PaySchedule } from "@/domain/payments/pay-schedule";
@@ -184,6 +185,7 @@ function toSource(row: RepoRow, schedule: PaySchedule, currentSteps: Map<string,
     scheduledPaymentManual: schedule.manual,
     drafterName: row.drafterName,
     ...statusOf(row, currentSteps, payment),
+    postHoc: isPostHocSubmitted(row.submittedAt, row.projectStartDate),
   };
 }
 

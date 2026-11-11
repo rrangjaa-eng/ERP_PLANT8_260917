@@ -13,6 +13,7 @@ import {
   withdrawDocument,
   type ApprovalActionResult,
 } from "@/domain/approvals";
+import { approveBatch, APPROVAL_BATCH_LIMIT, rejectBatch } from "@/domain/approvals/batch";
 import { log } from "@/lib/log";
 import "./actions.registry";
 
@@ -63,3 +64,23 @@ export const withdrawAction = authedActionClient.schema(transitionSchema).action
   revalidatePath("/approvals");
   return { documentId: withdrawn.documentId };
 });
+
+// 07.2-16(PU15 · 16 · D-7269 · D-7272): 결재함 일괄 승인 · 반려 — 요청에는 인스턴스 id · version만(종류 칸 없음 · 종류는 서버가 읽는다).
+// 상한 100은 도메인이 중복 제거 뒤에 센다(D-7272 · 문구 `100건까지`의 출처) — 스키마는 그 갑절을 남용 막이로만 둔다(같은 id가 섞인 101줄도 도메인에 닿는다).
+// 결과는 구조 값(id · 막힘 이유 · 시각)뿐이라 투영할 DTO가 없다.
+const batchSchema = z.object({ items: z.array(transitionSchema).min(1).max(APPROVAL_BATCH_LIMIT * 2) });
+
+export const approveBatchAction = authedActionClient.schema(batchSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await approveBatch(ctx.viewer, parsedInput.items);
+  revalidatePath("/approvals");
+  return result;
+});
+
+// 빈 사유는 도메인이 행 루프 전에 막는다(`사유 없음 · 사유 적기` — 화면 aria-disabled만으로 막지 않는다).
+export const rejectBatchAction = authedActionClient
+  .schema(batchSchema.extend({ reason: z.string().max(2000) }))
+  .action(async ({ parsedInput, ctx }) => {
+    const result = await rejectBatch(ctx.viewer, parsedInput.items, parsedInput.reason);
+    revalidatePath("/approvals");
+    return result;
+  });

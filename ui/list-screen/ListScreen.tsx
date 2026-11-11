@@ -21,6 +21,8 @@ export type ListPrimaryAction =
       disabledReason?: string;
       reasonTone?: "info";
       pending?: boolean;
+      /** 07.2-16(DC-8): 1024 대신 폰(<700)만 숨김 — 고르기만 하는 표(결재함)라 편집 경계(1024)가 걸리지 않는 1차. */
+      phoneHidden?: boolean;
     };
 
 export type ListScreenProps = {
@@ -72,7 +74,7 @@ export function ListScreen({ title, primaryAction, filters, summary, summaryPlai
             </Link>
           ) : headAction ? (
             // 편집 표는 1024 이상(DR-36) — 버튼 갈래는 그 미만에서 이유 글자 감싸개까지 그리지 않는다.
-            <span className={`${styles.buttonAction} ${styles.wideOnly}`}>
+            <span className={`${styles.buttonAction} ${headAction.phoneHidden ? styles.phoneHidden : styles.wideOnly}`}>
               <Button
                 variant="primary"
                 className={styles.primaryAction}

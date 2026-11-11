@@ -25,6 +25,18 @@ vi.mock("@/domain/approvals", () => ({
   projectActionResult: (_viewer: unknown, raw: unknown) => Promise.resolve(raw),
   currentHolderNames: () => Promise.resolve(null),
 }));
+// 07.2-16: 일괄 래퍼 — 같은 결재 액션 파일이 import한다(행마다 단건 함수를 부르는 래퍼라 여기서는 호출만 센다).
+vi.mock("@/domain/approvals/batch", () => ({
+  APPROVAL_BATCH_LIMIT: 100,
+  approveBatch: () => {
+    calls.push("approveBatch");
+    return Promise.resolve({ processedIds: [], blocked: [], time: "00:00" });
+  },
+  rejectBatch: () => {
+    calls.push("rejectBatch");
+    return Promise.resolve({ processedIds: [], blocked: [], time: "00:00" });
+  },
+}));
 class LeaveValidationError extends Error {}
 vi.mock("@/domain/leave", () => ({
   LEAVE_DOCUMENT_KIND: "leave",
@@ -49,6 +61,9 @@ const { approveAction, rejectAction } = await import("@/app/(app)/approvals/acti
 const { withdrawLeaveAction, resubmitLeaveAction } = await import("@/app/(app)/leave/actions");
 // 05-01(Round 4 D8): 종류 중립 회수 액션.
 const { withdrawAction } = await import("@/app/(app)/approvals/actions");
+// 07.2-16(S13): 일괄 승인 · 반려 — 행 하나라도 uuid가 아니면 전체가 입력 오류.
+const { approveBatchAction, rejectBatchAction } = await import("@/app/(app)/approvals/actions");
+const GOOD_ID = "00000000-0000-4000-8000-000000000000";
 
 const BAD_ID = "not-a-uuid";
 const INPUT = { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-21", half: "", note: "" };
@@ -64,9 +79,30 @@ describe("결재 · 연차 액션 id 형식", () => {
     ["withdraw", () => withdrawLeaveAction({ instanceId: BAD_ID, expectedVersion: 1 })],
     ["resubmit", () => resubmitLeaveAction({ leaveId: BAD_ID, expectedVersion: 1, input: INPUT })],
     ["withdraw (종류 중립)", () => withdrawAction({ instanceId: BAD_ID, expectedVersion: 1 })],
+    ["approveBatch", () => approveBatchAction({ items: [{ instanceId: GOOD_ID, expectedVersion: 1 }, { instanceId: BAD_ID, expectedVersion: 1 }] })],
+    ["rejectBatch", () => rejectBatchAction({ items: [{ instanceId: BAD_ID, expectedVersion: 1 }], reason: "사유" })],
   ] as const)("%s — uuid가 아닌 id는 도메인에 닿지 않고 입력 오류로 끝난다", async (_name, run) => {
     const result = await run();
     expect(result?.validationErrors).toBeDefined();
     expect(calls).toEqual([]);
+  });
+});
+
+// #377 리뷰 L2(D-7272): 상한 100은 중복 제거 뒤 — 같은 id가 섞여 101줄이어도 고유 100건이면 입력 오류 없이 도메인에 닿는다.
+describe("일괄 액션 상한은 중복 제거 뒤", () => {
+  beforeEach(() => {
+    calls.length = 0;
+  });
+
+  const ids = Array.from({ length: 100 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+  const items = [...ids, ids[0] ?? GOOD_ID].map((instanceId) => ({ instanceId, expectedVersion: 1 }));
+
+  it.each([
+    ["approveBatch", () => approveBatchAction({ items })],
+    ["rejectBatch", () => rejectBatchAction({ items, reason: "사유" })],
+  ] as const)("%s — 101줄 · 고유 100건 → 도메인 호출", async (name, run) => {
+    const result = await run();
+    expect(result?.validationErrors).toBeUndefined();
+    expect(calls).toEqual([name]);
   });
 });

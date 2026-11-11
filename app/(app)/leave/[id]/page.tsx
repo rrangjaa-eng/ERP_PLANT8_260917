@@ -26,6 +26,7 @@ import { formatLeaveKind, formatLeavePeriod, type LeavePeriodSource } from "../l
 import {
   cancelRouteListSteps,
   leaveDocumentStatusWord,
+  previousRejectionLines,
   routeListSteps,
   seoulMinuteOf,
   toLeaveStatusKey,
@@ -121,10 +122,20 @@ export default async function LeaveDocumentPage({
         )),
       });
     }
-    items.push(
-      { label: "기안", value: [leave.drafterName, leave.createdAt ? kstDateOf(leave.createdAt) : null].filter(Boolean).join(" · ") },
-      { label: "결재선", value: route },
-    );
+    items.push({ label: "기안", value: [leave.drafterName, leave.createdAt ? kstDateOf(leave.createdAt) : null].filter(Boolean).join(" · ") });
+    // 07.2-16(PU18 · S14): 다시 올라온 문서의 `지난 반려` — 진행 중인 취소 요청이 다시 올라온 것이면 그 반려, 아니면 연차의 반려(한 행).
+    const previousRejection = cancelView?.previousRejection ?? view?.previousRejection;
+    if (previousRejection) {
+      items.push({
+        label: "지난 반려",
+        value: previousRejectionLines(previousRejection).map((line) => (
+          <span key={line.tone} className={styles[`balance-${line.tone}`]}>
+            {line.text}
+          </span>
+        )),
+      });
+    }
+    items.push({ label: "결재선", value: route });
   }
 
   // 다시 신청 미리보기 — 지금 설정 · 소속으로 다시 해석한 제출 전 한 줄(S3 반려 편집).

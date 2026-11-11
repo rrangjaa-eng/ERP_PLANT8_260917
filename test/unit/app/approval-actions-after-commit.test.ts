@@ -27,6 +27,8 @@ vi.mock("@/domain/leave", () => ({
   formatRequestBalanceRowBeforeDates: () => null,
 }));
 vi.mock("@/domain/leave/access", () => ({ assertLeaveWrite: () => Promise.resolve() }));
+// 07.2-16: 결재 액션 파일이 일괄 래퍼를 import한다 — 이 시험은 단건 액션만 본다.
+vi.mock("@/domain/approvals/batch", () => ({ APPROVAL_BATCH_LIMIT: 100, approveBatch: () => Promise.resolve(null), rejectBatch: () => Promise.resolve(null) }));
 vi.mock("@/domain/leave/balance-service", () => ({ previewLeaveBalance: () => Promise.resolve(null) }));
 vi.mock("@/domain/leave/guard", () => ({ loadLeaveHolidays: () => Promise.resolve(() => new Set<string>()) }));
 vi.mock("@/app/(app)/leave/route-preview", () => ({ previewRouteOrBlocked: () => Promise.resolve({ route: null, blocked: null }) }));

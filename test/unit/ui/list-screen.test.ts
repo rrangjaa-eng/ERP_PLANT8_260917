@@ -76,6 +76,28 @@ describe("ListScreen — primaryAction 버튼 갈래(06-29 · SP-1)", () => {
     expect(html).not.toContain("wideOnly");
   });
 
+  // 07.2-16(DC-8 · D-7268): 결재함 1차 `승인 N`은 ≥700 — 버튼 갈래도 링크 갈래와 같은 `phoneHidden`(기존 클래스)을 받는다.
+  it("버튼 갈래 + phoneHidden이면 감싸개가 phoneHidden(폰만 숨김)이고 wideOnly가 아니다", () => {
+    const html = render({
+      title: "결재",
+      primaryAction: { label: "승인", onClick: () => {}, shortcut: "Ctrl+Enter", phoneHidden: true },
+      children: null,
+    });
+    expect(html).toMatch(/<span class="[^"]*buttonAction[^"]*phoneHidden[^"]*"><span[^>]*><button[^>]*data-ui="primary-button"/);
+    expect(html).not.toContain("wideOnly");
+  });
+
+  it("버튼 갈래에 phoneHidden이 없으면 지금처럼 wideOnly(지급 대상 1024 경계 회귀 0)", () => {
+    const html = render({ title: "지급 대상", primaryAction: { label: "지급 완료", onClick: () => {} }, children: null });
+    expect(html).toMatch(/<span class="[^"]*buttonAction[^"]*wideOnly[^"]*"><span[^>]*><button/);
+    expect(html).not.toContain("phoneHidden");
+  });
+
+  it("폰에서 1차가 숨고 필터 자리에 빈 결과 영역만 있으면 필터 줄째 숨긴다(빈 자식도 빈 칸으로 센다)", () => {
+    const css = readFileSync(resolve(process.cwd(), "ui/list-screen/ListScreen.module.css"), "utf8");
+    expect(css).toContain(".bar:has(> .phoneHidden):not(:has(> .filters > :not(:empty)))");
+  });
+
   it("empty를 넘기면 버튼 갈래 1차도 그리지 않는다", () => {
     const html = render({
       title: "지급 대상",

@@ -214,3 +214,32 @@ describe("복원 — 고를 수 없게 된 견적 분류", () => {
     expect(restored).toMatchObject({ subcategory: "video", dirty: true });
   });
 });
+
+// Codex 리뷰 P2(PR #372) — 저장 전 지우기 표시(07.2-12 · D-7238)도 보관본에 실려 새로 고침 뒤 「복원」으로 돌아온다.
+// 연결 문서가 있는 줄의 「취소 예정」이 사라지면 저장 때 취소가 빠진다(이전에는 상태 칸 편집으로 보관됐다).
+describe("복원 — 저장 전 지우기 표시", () => {
+  it("취소 예정 줄: 표시와 보관할 때의 version·baseline을 되살린다", () => {
+    const marked = { ...savedLine(1, 1000), hasLinkedDocuments: true, pendingDelete: "cancel" as const };
+    const stash = editsSnapshot([marked], null, PERIOD_V1, null, null);
+
+    const fresh = { ...savedLine(2, 1000), hasLinkedDocuments: true };
+    const [restored] = mergeRestoredEdits([fresh], stash, ["print"], KIND_CELLS).lines;
+
+    expect(restored).toMatchObject({ pendingDelete: "cancel", version: 1 });
+  });
+
+  it("삭제 예정 줄: 표시를 되살린다", () => {
+    const stash = editsSnapshot([{ ...savedLine(1, 1000), pendingDelete: "delete" as const }], null, PERIOD_V1, null, null);
+    const [restored] = mergeRestoredEdits([savedLine(1, 1000)], stash, ["print"], KIND_CELLS).lines;
+
+    expect(restored).toMatchObject({ pendingDelete: "delete" });
+  });
+
+  it("모양이 틀린 표시 값은 들이지 않는다", () => {
+    const stash = { ...editsSnapshot([{ ...savedLine(1, 1000), itemName: "현수막", dirty: true }], null, PERIOD_V1, null, null), "line-1:pendingDelete": "drop" };
+    const [restored] = mergeRestoredEdits([savedLine(1, 1000)], stash, ["print"], KIND_CELLS).lines;
+
+    expect(restored?.pendingDelete).toBeUndefined();
+    expect(restored).toMatchObject({ itemName: "현수막" });
+  });
+});

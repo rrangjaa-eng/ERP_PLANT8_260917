@@ -543,8 +543,10 @@ export function editsSnapshot(
     if (line.clientRemark !== (base.clientRemark ?? null)) edits[`${line.id}:clientRemark`] = line.clientRemark;
     if (line.midCategory !== (base.midCategory ?? null)) edits[`${line.id}:midCategory`] = line.midCategory;
     if (line.majorCategory !== (base.majorCategory ?? null)) edits[`${line.id}:majorCategory`] = line.majorCategory;
+    // Codex 리뷰 P2(PR #372) — 저장 전 지우기 표시도 보관한다(취소 예정이 새로 고침 뒤 사라지면 저장 때 취소가 빠진다).
+    if (line.pendingDelete) edits[`${line.id}:pendingDelete`] = line.pendingDelete;
     // 검토 8(S18) — 칸이 하나라도 있으면 그 줄의 version·baseline을 함께 보관한다(복원 뒤 저장이 충돌 판정을 받는다).
-    if (lineDiffersFromBaseline(line) && line.version !== undefined) {
+    if ((lineDiffersFromBaseline(line) || line.pendingDelete) && line.version !== undefined) {
       const stored: StoredLineBase = { version: line.version, baseline: base, vendorHidden: line.vendorHidden };
       edits[`${line.id}:base`] = stored;
     }
@@ -660,6 +662,8 @@ export function restoredCellPatch(column: string, value: unknown): Partial<Draft
       return typeof value === "string" || value === null ? { midCategory: value } : null;
     case "majorCategory":
       return typeof value === "string" || value === null ? { majorCategory: value } : null;
+    case "pendingDelete":
+      return value === "delete" || value === "cancel" ? { pendingDelete: value } : null;
     default:
       return null;
   }
@@ -773,7 +777,8 @@ export function mergeRestoredEdits(
             ...patch,
             ...stored,
             baseline: vendorHidden || line.vendorHidden ? { ...stored.baseline, vendorId: line.baseline.vendorId } : stored.baseline,
-            dirty: true,
+            // 지우기 표시만으로는 칸 편집이 아니다(표시를 끄면 dirty가 남지 않게 — toggleDeleteLine과 같다).
+            dirty: patch.pendingDelete ? line.dirty : true,
           }
         : line,
     );

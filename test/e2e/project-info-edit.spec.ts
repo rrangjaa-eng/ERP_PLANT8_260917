@@ -110,6 +110,30 @@ test.describe("기본 정보 4칸 (S3)", () => {
     expect(row).toEqual({ name: newName, pmUserId: mate.userId });
   });
 
+  test("DOM 감사 ① — 키보드로 `바꾸기` → 행 Enter로 고르면 창이 닫히고 포커스가 그 `바꾸기`로 돌아온다", async ({ page }) => {
+    const { pm, mate, project } = await setup();
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/projects/${project.id}`);
+    await openEdit(page);
+    const panel = projectInfo(page);
+    const trigger = panel.locator("#info-pm");
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "담당 PM 바꾸기" });
+    const search = dialog.getByRole("textbox", { name: "담당 PM 검색" });
+    await expect(search).toBeFocused();
+    await search.fill(mate.name);
+    // 검색 결과가 그 한 사람으로 좁혀진 뒤에 ↓(첫 행) → Enter.
+    await expect(dialog.getByRole("option")).toHaveCount(1);
+    await expect(dialog.getByRole("option", { name: new RegExp(mate.name) })).toBeVisible();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeHidden();
+    await expect(panel.getByText(mate.name, { exact: true })).toBeVisible();
+    await expect(trigger).toBeFocused();
+  });
+
   test("돈 문서가 붙으면 고객사 · 담당 팀 `바꾸기`가 없고 잠김 한 줄이 선다(편집 중에만)", async ({ page }) => {
     const { lead, project } = await setup();
     await db.insert(projectBudgetEntries).values({ projectId: project.id, reason: "manual", deltaKrw: 1000, memo: "E2E 수동 조정", createdBy: lead.userId });

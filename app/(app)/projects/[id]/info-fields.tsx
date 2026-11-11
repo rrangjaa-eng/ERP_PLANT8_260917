@@ -206,9 +206,8 @@ export function InfoFields({
           primaryLabel={picking === "client" ? "이 고객사로" : picking === "team" ? "이 팀으로" : "이 사람으로"}
           noun={picking === "client" ? "거래처" : picking === "team" ? "팀" : "사람"}
           onPick={(row: PickRow) => {
-            const kind = picking;
-            setPicking(null);
-            onChange({ ...draft, [FIELD_OF[kind]]: row.id });
+            // 닫기는 PickDialog closeNow → onClose에 맡긴다 — 여기서 먼저 치우면 창이 언마운트돼 포커스가 `바꾸기`로 돌아오지 못한다(DOM 감사 ①).
+            onChange({ ...draft, [FIELD_OF[picking]]: row.id });
           }}
         />
       ) : null}

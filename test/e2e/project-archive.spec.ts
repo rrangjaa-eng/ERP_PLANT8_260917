@@ -65,7 +65,10 @@ test.describe("프로젝트 삭제 · 되살리기 (S1)", () => {
     expect(await archivedAt(project.id)).not.toBeNull();
     await page.screenshot({ path: `${SHOTS}/delete-toast-1280.png` });
 
-    await page.getByRole("button", { name: "되돌리기", exact: true }).click();
+    // DOM 감사 ② — 착지 첫 포커스가 `되돌리기`(키보드 사용자도 4초 안에 Enter 한 번).
+    const undo = page.getByRole("button", { name: "되돌리기", exact: true });
+    await expect(undo).toBeFocused();
+    await undo.click();
     await expect(page).toHaveURL(/\/projects$/);
     await expect.poll(() => archivedAt(project.id)).toBeNull();
   });

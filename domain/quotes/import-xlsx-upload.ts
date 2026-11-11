@@ -1,5 +1,5 @@
 import { DEFAULT_WORKBOOK_DEPS, readSheets, sniff } from "@/domain/evidence-import/workbook";
-import { EVIDENCE_IMPORT_MAX_BYTES, EVIDENCE_IMPORT_MAX_UNZIPPED_BYTES, EVIDENCE_IMPORT_MAX_ZIP_ENTRIES, quoteXlsxSizeRefusalHeadline } from "@/domain/evidence-import/limits";
+import { EVIDENCE_IMPORT_MAX_BYTES, EVIDENCE_IMPORT_MAX_UNZIPPED_BYTES, EVIDENCE_IMPORT_MAX_ZIP_ENTRIES, quoteXlsxReadLimits, quoteXlsxSizeRefusalHeadline } from "@/domain/evidence-import/limits";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { canOpenProject } from "@/domain/projects/visibility";
@@ -40,15 +40,15 @@ export async function readQuoteXlsxUpload(viewer: Viewer, input: { projectId: st
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.length > EVIDENCE_IMPORT_MAX_BYTES) return rejected(quoteXlsxSizeRefusalHeadline(bytes.length));
   if (sniff(bytes) !== "xlsx") return rejected(NOT_XLSX);
+  // 저장 때 LINE_CAP으로 전부 거부되지 않게: 올릴 수 있는 줄 = 설정 상한 − 현재 차수 활성 줄 수.
+  const cap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
   const read = readSheets(
     { container: "xlsx", bytes },
-    { zipLimits: { maxEntries: EVIDENCE_IMPORT_MAX_ZIP_ENTRIES, maxUnzippedBytes: EVIDENCE_IMPORT_MAX_UNZIPPED_BYTES } },
+    { zipLimits: { maxEntries: EVIDENCE_IMPORT_MAX_ZIP_ENTRIES, maxUnzippedBytes: EVIDENCE_IMPORT_MAX_UNZIPPED_BYTES }, ...quoteXlsxReadLimits(cap) },
     DEFAULT_WORKBOOK_DEPS,
   );
   if (!read.ok) return rejected(NOT_XLSX);
 
-  // 저장 때 LINE_CAP으로 전부 거부되지 않게: 올릴 수 있는 줄 = 설정 상한 − 현재 차수 활성 줄 수.
-  const cap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
   const active = await countActiveLinesByRevision(viewer, revision.id);
   return parseQuoteWorkbook(read.book, { sheet: input.sheet, maxLines: Math.max(0, cap - active), lineCap: cap });
 }

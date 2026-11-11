@@ -102,11 +102,24 @@ function findHeader(rows: readonly (readonly unknown[])[]): HeaderMatch | null {
       }
     }
     if (found.item !== undefined && (found.unitPrice !== undefined || found.amount !== undefined)) {
-      // ITEM 머리글이 오른쪽 칸들과 병합이면(다음 머리글까지 빈 칸) 항목 글자는 병합의 오른쪽 끝 칸에 있고 병합 안쪽 왼쪽 칸들은 대 · 중분류다.
+      // ITEM 머리글 오른쪽에 머리글이 빈 칸들이 있고 그 칸에 데이터 줄 글자가 있으면(ITEM이 B:C 또는 B:D 병합인 양식) 항목은 그 가운데 가장 오른쪽 글자 칸이고
+      // ITEM 칸부터 그 왼쪽 칸들은 대 · 중분류다. 빈 칸에 데이터 글자가 없으면(병합 아닌 빈 열) 항목은 ITEM 열 그대로 — 병합 정보가 아니라 데이터로 판정한다.
       const others = FIELD_ORDER.flatMap((field) => (field === "item" || found[field] === undefined ? [] : [found[field]])).filter((column): column is number => column !== undefined && column > found.item!);
       const nextHeader = others.length > 0 ? Math.min(...others) : null;
-      const merged = nextHeader !== null && nextHeader - found.item > 1 && cells.slice(found.item + 1, nextHeader).every((cell) => cell === "");
-      const item = merged ? nextHeader - 1 : found.item;
+      let item = found.item;
+      if (nextHeader !== null) {
+        for (let column = nextHeader - 1; column > found.item && cells[column] === ""; column--) {
+          const hasText = rows.slice(rowIndex + 1).some((row) => {
+            const value = row[column];
+            return typeof value === "string" && value.trim() !== "";
+          });
+          if (hasText) {
+            item = column;
+            break;
+          }
+        }
+      }
+      const merged = item !== found.item;
       const ignoredLabels = cells.flatMap((cell, index) => (index < item && NUMBER_HEADERS.has(cell.replace(/\./g, "")) ? [index] : []));
       let majorColumn = merged ? found.item : 0;
       while (!merged && ignoredLabels.includes(majorColumn) && majorColumn < item) majorColumn++;

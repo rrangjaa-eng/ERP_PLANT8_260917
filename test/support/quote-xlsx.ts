@@ -39,3 +39,21 @@ export function companySheet(name = "견적서"): TestSheet {
     ],
   };
 }
+
+// Codex P1 시험 — 작은 시트에 먼 칸 하나를 더하고 선언 범위(!ref)를 그 칸까지 넓힌다. 열이 멀면 마지막 줄의 XFD 칸, 행이 멀면 A열 1048576행 칸
+// (둘을 한 칸에 겹치면 쓰기 루프가 열 × 행 전체를 돈다).
+export function buildQuoteXlsxWithFarCell(sheet: TestSheet, far: "column" | "row"): Uint8Array {
+  const ws = XLSX.utils.aoa_to_sheet(sheet.rows);
+  const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
+  if (far === "column") {
+    ws[XLSX.utils.encode_cell({ r: range.e.r, c: 16383 })] = { t: "s", v: "far" };
+    range.e.c = 16383;
+  } else {
+    ws[XLSX.utils.encode_cell({ r: 1048575, c: 0 })] = { t: "s", v: "far" };
+    range.e.r = 1048575;
+  }
+  ws["!ref"] = XLSX.utils.encode_range(range);
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, ws, sheet.name);
+  return new Uint8Array(XLSX.write(book, { bookType: "xlsx", type: "array" }) as ArrayBuffer);
+}

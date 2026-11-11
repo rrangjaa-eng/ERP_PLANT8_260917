@@ -18,7 +18,7 @@ import { parseQuoteWorkbook } from "@/domain/quotes/import-xlsx";
 import { readWorkbookRows } from "@/lib/xlsx-server";
 import { kstToday } from "@/lib/kst-date";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
-import { buildQuoteXlsx, companySheet, HEADER } from "@/test/support/quote-xlsx";
+import { buildQuoteXlsx, buildQuoteXlsxWithFarCell, companySheet, HEADER } from "@/test/support/quote-xlsx";
 
 // 07.2-14 Task 2 — 견적 엑셀 올리기 읽기 서비스(액션 본체)의 경계: 크기 · 형식 · zip 상한 · 권리 · 승인 · 정산 · 줄 상한. 저장 0.
 
@@ -71,6 +71,20 @@ describe("readQuoteXlsxUpload", () => {
     if (result.kind === "ok") expect(result.lines).toHaveLength(5);
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId))).toHaveLength(0);
   });
+
+  it("먼 칸 하나 든 작은 xlsx(XFD 열 · 1048576행) → 메모리를 펼치지 않고 상한 안에서 줄을 읽는다 (Codex P1)", async () => {
+    const { pm, projectId } = await setup();
+    for (const far of ["column", "row"] as const) {
+      const file = xlsxFile(buildQuoteXlsxWithFarCell(companySheet(), far));
+      expect(file.size).toBeLessThan(100_000);
+      // 파일 만들기(1048576행 칸 쓰기)가 5초쯤 걸려 시험 한도를 늘렸고, 시간은 읽기만 잰다.
+      const started = Date.now();
+      const result = await readQuoteXlsxUpload(pm, { projectId, file });
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") expect(result.lines).toHaveLength(5);
+    }
+  }, 60_000);
 
   it("1MB 초과 → {N}MB · 1MB 초과 · 줄여 다시", async () => {
     const { pm, projectId } = await setup();

@@ -417,3 +417,36 @@ describe("게이트 지적 반영 (/review)", () => {
     expect(parseQuoteWorkbook(bookOf([{ name: "견적서", rows }]), { maxLines: 2, lineCap: 300 })).toEqual({ kind: "rejected", message: "300줄 초과 · 300줄까지" });
   });
 });
+
+// Codex 봇 지적 P2 — 머리글 사이 빈 칸만 보고 병합이라 짐작하지 않는다. 그 칸에 데이터 줄 글자가 있을 때만 항목 열이 옮겨 간다
+// (실제 견본은 ITEM이 B:C 병합이고 항목 글자는 병합 밖 D칸에 있어 시트 병합 정보로는 못 가른다).
+describe("머리글 병합 판정 (Codex P2)", () => {
+  it("ITEM 다음 칸이 병합 아닌 빈 칸이면(데이터 글자 없음) 항목은 ITEM 열 그대로", () => {
+    const result = okOf(parse([["ITEM", "", "QTY", "UNIT PRICE", "AMOUNT"], ["Stage", null, 1, 1000, 1000]]));
+    expect(result.skipped).toEqual([]);
+    expect(result.lines[0]).toMatchObject({ itemName: "Stage", quantity: 1, unitPrice: 1000 });
+  });
+
+  it("빈 머리글 칸에 데이터 글자가 있으면 가장 오른쪽 글자 칸이 항목 · 왼쪽은 분류(ITEM이 B:C 병합 · 항목이 D)", () => {
+    const result = okOf(parse([[null, "ITEM", null, null, "QTY", "UNIT PRICE", "AMOUNT"], [null, "Venue", "Hall", "Stage", 1, 1000, 1000]]));
+    expect(result.lines[0]).toMatchObject({ itemName: "Stage", majorCategory: "Venue", midCategory: "Hall" });
+  });
+});
+
+// 사용자 결정 카드 ② — 수량이나 일수가 0이고 금액이 0원인 줄은 건너뛰고 이유를 보인다. F.O.C 줄은 이 규칙 대상이 아니다(기존 판정 그대로).
+describe("0 수량·일수 + 0원 줄 건너뜀", () => {
+  it("일수 0 · 수량 0 + 금액 0 → 건너뜀 `0 이하 · 일수|수량`", () => {
+    const result = okOf(parse([[...HEADER], ["Staff", 1, 280_000, 0, 0, "선정"], ["Helper", 0, 350_000, 0, 0, null], ["Stage", 1, 1000, 1, 1000, null]]));
+    expect(result.skipped.map((entry) => entry.reason)).toEqual(["행 2 · 0 이하 · 일수", "행 3 · 0 이하 · 수량"]);
+    expect(result.lines.map((line) => line.itemName)).toEqual(["Stage"]);
+  });
+});
+
+// 사용자 결정 카드 ① — 원 미만 단가 · 금액은 원 단위로 반올림해 올린다.
+describe("원 미만 반올림", () => {
+  it("단가 94,363,636.36은 94,363,636 · 금액만 있는 8,695,681.82는 8,695,682", () => {
+    const result = okOf(parse([[...HEADER], ["Venue", 1, 94_363_636.36, 1, 94_363_636.36, null], ["Commission", null, null, null, 8_695_681.82, null]]));
+    expect(result.skipped).toEqual([]);
+    expect(result.lines.map((line) => line.unitPrice)).toEqual([94_363_636, 8_695_682]);
+  });
+});

@@ -47,6 +47,9 @@ import "@/app/(app)/document-kinds";
 import { getSettlementHeader } from "@/domain/settlements";
 import { getPreSettleCheck, type PreSettleCheckDto } from "@/domain/pre-settle-check";
 import { PreSettleCheckSection } from "./pre-settle-check";
+import { deleteRights } from "@/domain/projects/archive";
+import { loadInfoEditView } from "@/domain/projects/info";
+import { countMoneyAttachments, moneyBlockedReason } from "@/domain/projects/money-attachment";
 import { DocumentsSection } from "./documents-section";
 
 // SYSTEM.md §6-2 상세 화면 — 이 리포의 첫 목록/상세 분리 화면. 네 숫자 줄
@@ -222,7 +225,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const hasEditableCell = lines.some((line) => Object.values(line.cellEditability).includes("edit"));
   // 06-18 — 발행 요청 표도 같은 1차 「일괄 저장」으로 저장한다(수주중 · 진행 · 정산의 프로젝트 쓰기 권한자).
   const canRequestIssue = canWrite && (status === "bidding" || status === "in_progress" || status === "settling");
+  // 07.2-17(S1 · S3) — 삭제 입구와 기본 정보 4칸 권리. 돈 문서 수는 둘 중 하나라도 권리가 있을 때 한 번만 센다(삭제 막힘 · 고객사 · 팀 잠김).
+  const [canDelete, infoView] = await Promise.all([
+    project.archivedAt === null ? deleteRights(session.viewer, project.id) : Promise.resolve(false),
+    loadInfoEditView(session.viewer, project, { todayKst }),
+  ]);
+  const moneyTotal = canDelete || infoView.rights === "edit" ? (await countMoneyAttachments(session.viewer, project.id)).total : 0;
+  const nameOf = (rows: { id: string; name: string }[], id: string) => rows.find((row) => row.id === id)?.name ?? null;
   const canSave =
+    infoView.rights === "edit" ||
     hasEditableCell ||
     structural.insert ||
     adjustmentStructural.insert ||
@@ -348,6 +359,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       canWriteEntries={canWriteEntries}
       usdDefaultFxRate={usdDefaultFxRate}
       lineDoors={lineDoors}
+      info={{
+        values: { name: project.name, clientId: project.clientId, teamId: project.teamId, pmUserId: project.pmUserId },
+        names: { client: nameOf(references.clients, project.clientId), team: nameOf(references.teams, project.teamId), pm: nameOf(references.pmUsers, project.pmUserId) },
+        rights: infoView.rights,
+        moneyLocked: moneyTotal > 0,
+        candidates: infoView.candidates,
+        version: project.version,
+      }}
+      projectDelete={canDelete ? { projectId: project.id, blockedReason: moneyTotal > 0 ? moneyBlockedReason(moneyTotal) : null } : null}
     >
       {/* 07-22(W3 · SC-20) — 매출 섹션 아래 「서류」(발주서 · 기타). 견적 표가 첫 면이라 정보 면 바로 아래가 아니라 원장 아래 첫 섹션이다. */}
       {documents ? <DocumentsSection projectId={project.id} canWrite={documents.canWrite} maxMb={documents.maxMb} documents={documents.documents} /> : null}

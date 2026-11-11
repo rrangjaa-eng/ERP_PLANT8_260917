@@ -677,6 +677,23 @@ export async function updateProjectPeriod(
   return row ?? null;
 }
 
+// 07.2-17(PU5 · D-7220) — 정보 면 4칸(행사명 · 고객사 · 담당 팀 · 담당 PM). 화면이 읽은 version(expectedVersion)과 같을 때만
+// 바꾸고 version + 1(0행이면 null — 호출자가 동시 수정으로 거부한다). 기간 갱신은 version을 쓰지 않는다(위 주석) — 이 칸들만 쓴다.
+export async function updateProjectInfoIfVersion(
+  viewer: Viewer,
+  id: string,
+  input: { patch: { name?: string; clientId?: string; teamId?: string; pmUserId?: string }; expectedVersion: number },
+  tx: DbOrTx,
+): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(projects)
+    .set({ ...input.patch, version: sql`${projects.version} + 1`, updatedAt: new Date() })
+    .where(and(eq(projects.id, id), eq(projects.version, input.expectedVersion)))
+    .returning();
+  return row ?? null;
+}
+
 // 04-44(계약 8) — 총 매출 예상가 네 칸. 동시 수정 기준값은 두지 않는다(나중 저장이 이긴다 — 사용자 2026-09-23).
 // 호출자는 잠근 트랜잭션 안에서 부른다.
 export async function updateProjectPreEstimate(

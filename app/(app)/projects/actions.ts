@@ -12,6 +12,8 @@ import {
   type PeriodFieldError,
 } from "@/domain/projects/ledger";
 import { validatePreEstimateChange, type PreEstimateFieldError } from "@/domain/projects/pre-estimate";
+import { InfoConflictError } from "@/domain/projects/info";
+import type { InfoFieldError } from "@/domain/projects/info-rules";
 import { quoteLinesInputSchema, SaveRejectedError } from "@/domain/quotes/lines";
 import { listCounterpartProjects } from "@/domain/quotes/adjustment-pair";
 import { readQuoteXlsxUpload } from "@/domain/quotes/import-xlsx-upload";
@@ -158,8 +160,13 @@ const issueRequestRowSchema = z
 // 화면의 `"rejected" in data` 좁히기가 풀린다.
 function periodRejected(
   error: PeriodRejectedError,
-): { periodRejected: { errors: PeriodFieldError[]; preEstimateErrors: PreEstimateFieldError[] } } {
-  return { periodRejected: { errors: error.errors, preEstimateErrors: error.preEstimateErrors } };
+): { periodRejected: { errors: PeriodFieldError[]; preEstimateErrors: PreEstimateFieldError[]; infoErrors: InfoFieldError[] } } {
+  return { periodRejected: { errors: error.errors, preEstimateErrors: error.preEstimateErrors, infoErrors: error.infoErrors } };
+}
+
+// 07.2-17(D-7220) — 정보 4칸 동시 수정. 화면이 면 아래 문구 + 3차 `새로 고침`으로 그린다.
+function infoConflict(message: string): { infoConflict: { message: string } } {
+  return { infoConflict: { message } };
 }
 
 function preEstimateRejected(error: PreEstimateRejectedError): { preEstimateRejected: { errors: PreEstimateFieldError[] } } {
@@ -203,6 +210,18 @@ export const saveProjectLedgerAction = authedActionClient
         .optional(),
       // 07-18(D-737) — PO 번호. 길이 상한은 도메인이 칸 문구로 돌려준다.
       poNumber: z.string().nullable().optional(),
+      // 07.2-17(PU5) — 정보 4칸. 바꾼 칸만 싣고 baselineVersion은 화면이 읽은 version. 행사명 빈 값은 도메인이 칸 문구로 돌려준다.
+      info: z
+        .object({
+          name: z.string().optional(),
+          clientId: z.string().uuid().optional(),
+          teamId: z.string().uuid().optional(),
+          // 사람 id는 uuid가 아닌 글자 id(인증 표 users.id text).
+          pmUserId: z.string().min(1).optional(),
+          baselineVersion: z.number().int().positive(),
+        })
+        .strict()
+        .optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -223,8 +242,10 @@ export const saveProjectLedgerAction = authedActionClient
         period: parsedInput.period,
         preEstimate: parsedInput.preEstimate,
         poNumber: parsedInput.poNumber,
+        info: parsedInput.info,
       });
     } catch (error) {
+      if (error instanceof InfoConflictError) return infoConflict(error.message);
       // 04-22 — 기간 칸 거부는 칸 오류로 돌려준다(화면이 칸 아래 Form.Error로 그린다).
       if (error instanceof PeriodRejectedError) return periodRejected(error);
       // 04-44 — 총 매출 예상가 칸 거부도 칸 오류로(칸 아래 Form.Error).

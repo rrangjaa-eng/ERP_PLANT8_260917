@@ -26,6 +26,8 @@ import { ProjectsFilterBar, type ProjectFilterOption } from "./filter-bar";
 import { summarizeOpenIssueRequests } from "@/domain/issue-requests";
 import { ProjectsTable } from "./projects-table";
 import { ListTotals } from "./list-totals";
+import { findDeletedProjectForUndo } from "@/domain/projects/archive";
+import { ProjectDeletedToast } from "./deleted-toast";
 
 // D-18과 같은 결: 캐시·별도 저장 없음.
 export const dynamic = "force-dynamic";
@@ -84,7 +86,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const sortDirection = firstListParam(params.dir) === "desc" ? "desc" : "asc";
   const statusLabel = statusOptions.find((option) => option.value === status)?.label;
 
-  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate, profitRateThreshold, openIssueRequests, canViewBudget] = await Promise.all([
+  // 07.2-17(S1) — 삭제 착지 `/projects?deleted={id}`. 내가 방금 지운(보관한) 프로젝트일 때만 토스트가 선다(남의 id · 보관 안 된 id는 null).
+  const deletedParam = firstListParam(params.deleted);
+  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate, profitRateThreshold, openIssueRequests, canViewBudget, canDeleteProjects, deletedProject] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
     can(session.viewer, "admin.vendors", "write"),
@@ -110,6 +114,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     summarizeOpenIssueRequests(session.viewer),
     // 07-24(SC-21): 하위 목록 링크 `예산 현황` — `projects.budget` 보기가 있을 때만(새 메뉴 없음).
     can(session.viewer, "projects.budget", "view"),
+    // 07.2-17(S1 · D-7213) — 하위 목록 링크 `보관함` — `projects.delete` 쓰기 보유자에게만(보관함도 같은 권한으로 열린다).
+    can(session.viewer, "projects.delete", "write"),
+    deletedParam && /^[0-9a-f-]{36}$/i.test(deletedParam) ? findDeletedProjectForUndo(session.viewer, deletedParam) : Promise.resolve(null),
   ]);
 
   // 등록 폼의 팀 · 담당 PM 칸만 업무 범위로 좁힌다 — 필터 줄은 전체 팀(references.teams)을 계속 쓴다.
@@ -157,6 +164,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const copyKey = copySource && copyFrom ? `copy-${copyFrom}` : "new";
 
   return (
+    <>
     <ListScreen
       title="프로젝트"
       // DR5 A — 프로젝트가 하나도 없으면(emptyKind none) `ListScreen`이 머리 1차를 그리지 않고 아래 `empty`의 버튼 하나가 등록을 맡는다.
@@ -178,6 +186,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             openIssueRequests ? { label: openIssueRequests.count > 0 ? `발행 요청 ${openIssueRequests.count}` : "발행 요청", href: "/projects/issue-requests" } : null
           }
           budgetLink={canViewBudget ? { label: "예산 현황", href: "/projects/budget" } : null}
+          archiveLink={canDeleteProjects ? { label: "보관함", href: "/admin/archive" } : null}
         />
       }
       summary={total > 0 ? <ListTotals totals={totals} /> : undefined}
@@ -229,5 +238,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         />
       ) : null}
     </ListScreen>
+    {/* 목록이 비어도(마지막 프로젝트를 지움 — `empty`가 children 자리를 대신한다) 토스트는 선다. */}
+    {deletedProject ? <ProjectDeletedToast key={deletedProject.id} projectId={deletedProject.id} number={deletedProject.number} /> : null}
+    </>
   );
 }

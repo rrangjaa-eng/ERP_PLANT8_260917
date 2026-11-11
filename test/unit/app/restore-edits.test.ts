@@ -243,3 +243,20 @@ describe("복원 — 저장 전 지우기 표시", () => {
     expect(restored).toMatchObject({ itemName: "현수막" });
   });
 });
+
+// 07.2-17(S3 · D-7220) — 기본 정보 4칸 보관본은 바뀐 칸 + 보관 시점 version만 담고, 복원은 그 version을 기준값으로 돌려준다.
+describe("기본 정보 4칸 보관 · 복원", () => {
+  const base = { name: "가을 팝업", clientId: "client-1", teamId: "team-1", pmUserId: "pm-A" };
+
+  it("바뀐 칸과 version만 보관하고 같은 값으로 되살린다", () => {
+    const stash = editsSnapshot([], null, PERIOD_V1, null, null, null, { draft: { ...base, name: "겨울 팝업", pmUserId: "pm-B" }, base, version: 7 });
+
+    expect(stash).toEqual({ "info:name": "겨울 팝업", "info:pmUserId": "pm-B", "info:version": 7 });
+    expect(mergeRestoredEdits([], stash, ["print"], KIND_CELLS).info).toEqual({ name: "겨울 팝업", pmUserId: "pm-B", version: 7 });
+  });
+
+  it("바뀐 칸이 없으면 아무것도 보관하지 않는다 · version 없는 보관본은 들이지 않는다", () => {
+    expect(editsSnapshot([], null, PERIOD_V1, null, null, null, { draft: base, base, version: 3 })).toEqual({});
+    expect(mergeRestoredEdits([], { "info:name": "겨울 팝업" }, ["print"], KIND_CELLS).info).toBeUndefined();
+  });
+});

@@ -46,6 +46,8 @@ import { projectResponsibles } from "@/domain/projects/responsibles";
 import { rememberFxRate as defaultRememberFxRate } from "@/domain/money/currency";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { kstToday } from "@/lib/kst-date";
+import { applyInfoChange, loadInfoFacts, type InfoInput } from "@/domain/projects/info";
+import type { InfoFieldError } from "@/domain/projects/info-rules";
 import {
   findProjectById,
   findProjectInScope,
@@ -93,6 +95,8 @@ export type SaveProjectLedgerInput = {
   preEstimate?: PreEstimateInput;
   // 07-18(W2 · D-737) — PO 번호. 빈 문자열 · 공백은 NULL, 중복은 막지 않는다. 권리는 기간 칸과 같다.
   poNumber?: string | null;
+  // 07.2-17(PU5 · D-7217~D-7220) — 정보 면 4칸. 권리는 projects.info 쓰기 + (담당 PM 또는 업무 범위) · baselineVersion = 화면이 읽은 version.
+  info?: InfoInput;
 };
 
 export type SaveProjectLedgerResult = {
@@ -101,19 +105,29 @@ export type SaveProjectLedgerResult = {
   // 06-18 — 이번 저장이 요청 줄을 쓰거나 잇었으면 커밋 뒤 다시 읽은 표(그 밖에는 null).
   issueRequests: IssueRequestDto[] | null;
   // preEstimate는 이번 저장에 실어 보낸(권리·노출을 통과한) 경우에만 싣는다.
-  project: { status: string; startDate: string | null; endDate: string | null; preEstimate?: Money; poNumber?: string | null };
+  project: {
+    status: string;
+    startDate: string | null;
+    endDate: string | null;
+    preEstimate?: Money;
+    poNumber?: string | null;
+    // 07.2-17 — 정보 4칸을 실은 저장만(새 version과 저장된 값).
+    info?: { name: string; clientId: string; teamId: string; pmUserId: string; version: number };
+  };
 };
 
 export type { PeriodFieldError };
 
 // 기간 칸 거부 — 칸 오류를 싣고 저장 전체를 되돌린다(표 쪽은 저장하지 않는다). 같은 저장의 총 매출 예상가 칸
 // 오류도 함께 싣는다(04-44 · U-6 — 표 밖 칸 오류를 모아 한 번에 거부).
+// 07.2-17(PU5) — 정보 4칸 칸 오류도 같은 거부에 싣는다(전부 저장 또는 전부 거부 · §7-3).
 export class PeriodRejectedError extends UserFacingError {
   constructor(
     readonly errors: PeriodFieldError[],
     readonly preEstimateErrors: PreEstimateFieldError[] = [],
+    readonly infoErrors: InfoFieldError[] = [],
   ) {
-    super(errors[0]?.reason ?? "기간 바꾸기 권한 없음");
+    super(errors[0]?.reason ?? infoErrors[0]?.reason ?? "기간 바꾸기 권한 없음");
   }
 }
 
@@ -171,7 +185,8 @@ export async function saveProjectLedger(
     if (!(await findProjectInScope(viewer, scope, projectId))) {
       const reaches = async (menu: "projects.adjustment" | "projects.revenue") =>
         (await findProjectInScope(viewer, await projectRowScope(viewer, undefined, { fundOp: [menu, "write"] }), projectId)) !== null;
-      const genericParts = input.period || input.preEstimate || input.poNumber !== undefined || (input.issueRequests?.length ?? 0) > 0;
+      // 07.2-17 — 정보 4칸도 원래 범위만(자금 키로만 들어온 저장에는 info 권리가 없다 · Task 1 ④ 쓰기 용도).
+      const genericParts = input.period || input.preEstimate || input.poNumber !== undefined || (input.issueRequests?.length ?? 0) > 0 || input.info;
       const fundOnly =
         !genericParts &&
         (input.quoteLines || input.revenue) &&
@@ -222,7 +237,14 @@ export async function saveProjectLedger(
             return { canWrite, canEditPeriod, teamScope, teamLeadName, canSeeAmount };
           })()
         : null;
-
+    // 07.2-17 — 정보 4칸 권리의 사실(projects.info 쓰기 · 참여 뺀 업무 범위)도 트랜잭션 전에 읽는다.
+    const infoFacts = input.info
+      ? await loadInfoFacts(viewer, input.info, {
+          canEditInfo: await can(viewer, "projects.info", "write"),
+          teamScope: periodFacts?.teamScope ?? (await teamScopeForProject(viewer, await loadActorTeamScope(viewer, { todayKst }), scope, projectId)),
+          todayKst,
+        })
+      : null;
 
     const inTx = await withTransaction(async (tx) => {
       // ① 잠금 읽기 + 자동 전환 선판정 — 같은 tx(A-13). 07.2-12(D7298-B (나)): 조정 쌍의 상대 프로젝트도 id 오름차순 한 순서로 함께 잠근다.
@@ -298,9 +320,19 @@ export async function saveProjectLedger(
         if (!decision.allowed) poNumberRejection = decision.reason;
       }
 
-      // U-6 — 표 밖 칸(기간 · 총 매출 예상가) 오류는 모아 한 번에 거부한다. write.denied는 한 번.
-      if (periodRejection) {
-        denyWrite(viewer, PERIOD_RULE, { projectId }, new PeriodRejectedError(periodRejection, preEstimateRejection ?? []));
+      // 07.2-17 정보 4칸 판정 · 쓰기 — 칸 오류는 쓰지 않고 돌려받아 기간 · PO 오류와 모은다. 오류가 없으면 여기서 쓴다(같은 tx라
+      // 뒤 단계가 거부하면 함께 되돌아간다). 기간 쓰기 · 상태 되돌리기(version을 올린다)보다 먼저 — 화면이 읽은 version과 잠근 행을 비교한다.
+      const info = input.info && infoFacts ? await applyInfoChange(viewer, locked, input.info, infoFacts, tx) : null;
+      const infoRejection = info && !info.ok ? info.errors : null;
+
+      // U-6 — 표 밖 칸(기간 · 총 매출 예상가 · 정보 4칸) 오류는 모아 한 번에 거부한다. write.denied는 한 번.
+      if (periodRejection || infoRejection) {
+        denyWrite(
+          viewer,
+          periodRejection ? PERIOD_RULE : "projects.info",
+          { projectId },
+          new PeriodRejectedError(periodRejection ?? [], preEstimateRejection ?? [], infoRejection ?? []),
+        );
       }
       if (preEstimateRejection) {
         denyWrite(viewer, PRE_ESTIMATE_RULE, { projectId }, new PreEstimateRejectedError(preEstimateRejection));
@@ -313,6 +345,12 @@ export async function saveProjectLedger(
       // A-16: 누가 무엇을 바꿨는지 — 바뀐 칸만 싣는다. 같은 tx, 한 줄. 총 매출 예상가는 07.1-13(사용자 결정 카드
       // 2026-10-28 01:03Z — 04-44 「금액 없이 표시만」을 바꿈)부터 preEstimateChanged 표시와 함께 전후 Money 글자를 싣는다(0원 = 미입력 = null).
       const changed: Record<string, unknown> = {};
+      let savedInfo: { name: string; clientId: string; teamId: string; pmUserId: string; version: number } | undefined;
+      if (info?.ok) {
+        Object.assign(changed, info.changed);
+        current = info.row;
+        savedInfo = { name: info.row.name, clientId: info.row.clientId, teamId: info.row.teamId, pmUserId: info.row.pmUserId, version: info.row.version };
+      }
 
       const resolved = input.period
         ? resolvePeriodSave({ status, newStart: input.period.startDate, newEnd: input.period.endDate, todayKst })
@@ -461,6 +499,7 @@ export async function saveProjectLedger(
           endDate: current.endDate,
           ...(savedPreEstimate ? { preEstimate: savedPreEstimate } : {}),
           ...(savedPoNumber !== undefined ? { poNumber: savedPoNumber } : {}),
+          ...(savedInfo ? { info: savedInfo } : {}),
         },
       };
     });

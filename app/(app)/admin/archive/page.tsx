@@ -13,7 +13,8 @@ export const dynamic = "force-dynamic";
 export default async function ArchivePage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!(await can(session.viewer, "admin.archive", "view"))) notFound();
+  // 07.2-17(D-F3): 프로젝트 삭제 권리(projects.delete 쓰기)만 있어도 자기 범위 `프로젝트` 행을 보러 들어온다(listArchive가 거른다).
+  if (!(await can(session.viewer, "admin.archive", "view")) && !(await can(session.viewer, "projects.delete", "write"))) notFound();
 
   const items = await listArchive(session.viewer);
 

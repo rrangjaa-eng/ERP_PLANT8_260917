@@ -477,7 +477,8 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     expect(await amount.evaluate((element) => (element as HTMLInputElement).selectionStart)).toBe(1);
   });
 
-  test("(8) 정산 프로젝트의 담당 PM에게는 값만 있고 「고치기」가 없다(권리 none)", async ({ page }) => {
+  // 07.2-17(D-7218) — 담당 PM은 정산에서도 기본 정보 4칸(projects.info)을 고치므로 `고치기`가 선다. 기간 · PO 금액 권리(none)는 그대로 — 묶음을 열어도 칸이 없다.
+  test("(8) 정산 프로젝트의 담당 PM에게 기간 · PO 금액은 값만 있다(권리 none)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
     const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "settling", endDate: addDays(TODAY, -1) });
@@ -486,7 +487,10 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await page.goto(`/projects/${project.id}`);
     await expect(projectInfo(page).getByText("PO 금액 · 없음", { exact: true })).toBeVisible();
     await expandProjectInfo(page);
-    await expect(projectInfo(page).getByRole("button", { name: /고치기/ })).toHaveCount(0);
+    await projectInfo(page).getByRole("button", { name: "고치기", exact: true }).click();
+    await expect(projectInfo(page).getByLabel("행사명", { exact: true })).toBeVisible();
+    await expect(projectInfo(page).getByLabel("시작일", { exact: true })).toHaveCount(0);
+    await expect(projectInfo(page).getByLabel("PO 금액", { exact: true })).toHaveCount(0);
   });
 
   test("(9) 음수 금액을 Ctrl+S로 저장하면 칸 아래 「0 이상」 + 견적 표 합계 행 「전부 거부 · 다른 칸 오류 1칸」 · Esc 두 번이면 묶음이 닫히고 포커스가 3차로", async ({ page }) => {

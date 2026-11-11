@@ -18,3 +18,8 @@ export function sizeRefusalHeadline(bytes: number): string {
 export function rowRefusalHeadline(rows: number): string {
   return `${rows.toLocaleString("en-US")}줄 · ${EVIDENCE_IMPORT_MAX_ROWS.toLocaleString("en-US")}줄 초과 · ${SPLIT_AND_RETRY}`;
 }
+
+// 07.2-14(X2): 견적 엑셀 올리기 크기 거절 — 증빙 가져오기와 같은 상한 · 다음 한 수만 다르다(`sizeRefusalHeadline`의 꼬리는 기간을 나눠 다시 내려받기).
+export function quoteXlsxSizeRefusalHeadline(bytes: number): string {
+  return `${(bytes / 1_000_000).toFixed(1)}MB · ${EVIDENCE_IMPORT_MAX_BYTES / 1_000_000}MB 초과 · 줄여 다시`;
+}

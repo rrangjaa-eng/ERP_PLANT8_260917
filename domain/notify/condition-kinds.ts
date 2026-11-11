@@ -1,5 +1,7 @@
 // 알림 조건 종류 등록부(NOTI-03). tick이 종류마다 규칙(기본값 ⊕ notification_rules 행)을 합쳐 evaluate(ctx)로 후보를 모은다.
 import { approvalWaitingKind } from "@/domain/notify/kinds/approval-waiting";
+import { dateChangeRequestedKind } from "@/domain/notify/kinds/date-change-requested";
+import { dateChangeResultKind } from "@/domain/notify/kinds/date-change-result";
 import { expenseResultKind } from "@/domain/notify/kinds/expense-result";
 import { orphanEvidenceKind } from "@/domain/notify/kinds/orphan-evidence";
 import { paidNoEvidenceKind } from "@/domain/notify/kinds/paid-no-evidence";
@@ -78,4 +80,7 @@ export const CONDITION_KINDS: readonly ConditionKind[] = [
   orphanEvidenceKind,
   // 07-22(N22 · D-716) 수금 지연 — SC-07 마지막 행.
   collectionOverdueKind,
+  // 07.2-18 X4(D-7296 · D-7301) 희망 지급일 변경 요청 도착 · 결과 — 즉시 경로 없음 → 다음 영업일 tick 묶음. 기본 켬(플래너 가정).
+  dateChangeRequestedKind,
+  dateChangeResultKind,
 ];

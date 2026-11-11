@@ -61,6 +61,9 @@ describe("등록부 (SC-07 순서 · D-718 · D-744)", () => {
       "orphan-evidence",
       // 07-22 수금 지연 — SC-07 마지막 행.
       "collection-overdue",
+      // 07.2-18 희망 지급일 변경 요청 도착 · 결과 — 등록부 끝(기본 켬).
+      "date-change-requested",
+      "date-change-result",
     ]);
     // D-718: 구매 처리 결과 알림은 없다.
     expect(names.filter((name) => /purchase/i.test(name))).toEqual([]);
@@ -70,7 +73,7 @@ describe("등록부 (SC-07 순서 · D-718 · D-744)", () => {
   });
 
   it("07-14 여섯은 모두 기본 끔 · 받는 사람 글자가 있다", () => {
-    const added = CONDITION_KINDS.slice(6);
+    const added = CONDITION_KINDS.slice(6, 14);
     for (const kind of added) {
       expect(kind.defaults.enabled).toBe(false);
       expect(kind.defaultRecipientLabel.length).toBeGreaterThan(0);

@@ -1876,6 +1876,12 @@ export function QuoteLedger({
     setPreEstimateErrors([]);
     setPoNumberBase(poNumber ?? "");
     setPoNumberDraft(null);
+    // 07.2-17(S3) — 기본 정보 4칸도 같은 꼴(서버 값으로 · 보관본은 복원 줄로).
+    setInfoBase({ values: info.values, version: info.version });
+    setInfoDraft(null);
+    setInfoServerErrors([]);
+    setRestoredInfoVersion(null);
+    setInfoConflict(null);
     setRenderedApprovedSeq(approvedSeq);
     setResplitKey((key) => key + 1);
     setDiscardedEdits(null);

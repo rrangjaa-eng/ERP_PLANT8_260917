@@ -79,6 +79,8 @@ export function ExpensesTable({ rows, drafterColumn, amountColumn }: { rows: Exp
       key: "payment",
       header: EXPENSE_COLUMN_LABELS.payment,
       priority: "p2",
+      // 07.2-16: 상태 칸이 `{상태} · 사후 추인`으로 넓어지면 700에서 자동 표 배치가 이 열(내용 `MM-DD`)을 줄여 머리글이 두 줄로 접혔다 — 머리글은 한 줄.
+      headerClassName: styles.nowrap,
       cell: (row) => <Num value={row.scheduledPaymentDate ? row.scheduledPaymentDate.slice(5) : null} />,
       // 접힌 줄 — 지급 예정 뒤에 외화 2행 · 미연결 2행(폰은 주 행에서 숨긴 두 줄을 여기서 한 번만 보인다).
       summary: (row) => {

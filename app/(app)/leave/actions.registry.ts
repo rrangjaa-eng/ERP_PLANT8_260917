@@ -34,3 +34,19 @@ registerAction({
   action: "write",
   dtoName: "leaveRequestBalance",
 });
+
+// 07.2-15(S18): 연차 취소 요청 · 취소 다시 요청 — 토스트 재료(결재자 이름)를 ApprovalActionResultDto로 투영해 돌려준다.
+// 판정은 도메인(assertLeaveWrite · 기안자 본인 · 원 연차 승인).
+registerAction({
+  name: "requestLeaveCancelAction",
+  menu: "leave",
+  action: "write",
+  dtoName: "ApprovalActionResultDto",
+});
+
+registerAction({
+  name: "resubmitLeaveCancelAction",
+  menu: "leave",
+  action: "write",
+  dtoName: "ApprovalActionResultDto",
+});

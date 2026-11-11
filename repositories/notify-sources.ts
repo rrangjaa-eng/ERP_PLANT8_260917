@@ -158,9 +158,15 @@ export async function listDocumentTitles(
     for (const row of rows) titles.set(`settlement:${row.id}`, row.name);
   }
   const leaveIds = idsOf("leave");
-  if (leaveIds.length > 0) {
-    const rows = await tx.select({ id: leaveRequests.id, startDate: leaveRequests.startDate }).from(leaveRequests).where(inArray(leaveRequests.id, leaveIds));
-    for (const row of rows) titles.set(`leave:${row.id}`, `연차 ${row.startDate.slice(5)}`);
+  // 07.2-15: 연차 취소 결재(leave_cancel)는 원 연차 id를 문서 id로 쓴다 — 같은 연차 행에서 `연차 취소 {시작일}`.
+  const leaveCancelIds = idsOf("leave_cancel");
+  const leaveRowIds = [...new Set([...leaveIds, ...leaveCancelIds])];
+  if (leaveRowIds.length > 0) {
+    const rows = await tx.select({ id: leaveRequests.id, startDate: leaveRequests.startDate }).from(leaveRequests).where(inArray(leaveRequests.id, leaveRowIds));
+    for (const row of rows) {
+      if (leaveIds.includes(row.id)) titles.set(`leave:${row.id}`, `연차 ${row.startDate.slice(5)}`);
+      if (leaveCancelIds.includes(row.id)) titles.set(`leave_cancel:${row.id}`, `연차 취소 ${row.startDate.slice(5)}`);
+    }
   }
   return titles;
 }

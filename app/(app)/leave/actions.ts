@@ -29,6 +29,7 @@ import { previewLeaveBalance } from "@/domain/leave/balance-service";
 import { currentHolderNames, projectActionResult, withdrawDocument } from "@/domain/approvals";
 import { previewRouteOrBlocked } from "./route-preview";
 import { resubmitLeave } from "@/domain/leave/resubmit";
+import { requestLeaveCancel, resubmitLeaveCancel } from "@/domain/leave/cancel";
 import { log } from "@/lib/log";
 import "./actions.registry";
 
@@ -97,6 +98,40 @@ export const resubmitLeaveAction = authedActionClient
     } catch (error) {
       log.warn("leave.resubmit_toast_material_failed", { leaveId: resubmitted.leaveId, error: error instanceof Error ? error.message : String(error) });
       return { result: { documentId: resubmitted.leaveId, final: false } };
+    }
+  });
+
+// 07.2-15(S18 · PU10): 승인된 연차의 취소 요청 · 취소 다시 요청 — 판정(연차 쓰기 · 기안자 본인 · 승인 · 사유 1~500)은 도메인.
+// 토스트 재료(결재자 이름)는 ApprovalActionResultDto 투영을 지난다(B-A1). 사유 길이 상한은 도메인 문구가 말한다(스키마는 크기만 막는다).
+const cancelReason = z.string().max(2000);
+
+export const requestLeaveCancelAction = authedActionClient
+  .schema(z.object({ leaveId: z.string().uuid(), reason: cancelReason }))
+  .action(async ({ parsedInput, ctx }) => {
+    const requested = await requestLeaveCancel(ctx.viewer, parsedInput);
+    // 취소 요청은 이미 커밋됐다 — 토스트 재료 투영이 실패해도 성공으로(실패로 돌려주면 다시 눌러 「이미 요청」 가드에 걸린다, Codex P2).
+    try {
+      return {
+        result: await projectActionResult(ctx.viewer, { documentId: parsedInput.leaveId, final: false, nextHolderNames: requested.approverName }),
+      };
+    } catch (error) {
+      log.warn("leave.cancel_toast_material_failed", { leaveId: parsedInput.leaveId, error: error instanceof Error ? error.message : String(error) });
+      return { result: { documentId: parsedInput.leaveId, final: false } };
+    }
+  });
+
+export const resubmitLeaveCancelAction = authedActionClient
+  .schema(z.object({ leaveId: z.string().uuid(), expectedVersion: z.number().int().min(1), reason: cancelReason }))
+  .action(async ({ parsedInput, ctx }) => {
+    const resubmitted = await resubmitLeaveCancel(ctx.viewer, parsedInput);
+    // 다시 요청도 이미 커밋됐다 — 투영 실패를 성공으로(실패로 돌려주면 다시 눌러 낡은 version에 걸린다).
+    try {
+      return {
+        result: await projectActionResult(ctx.viewer, { documentId: parsedInput.leaveId, final: false, nextHolderNames: resubmitted.approverName }),
+      };
+    } catch (error) {
+      log.warn("leave.cancel_resubmit_toast_material_failed", { leaveId: parsedInput.leaveId, error: error instanceof Error ? error.message : String(error) });
+      return { result: { documentId: parsedInput.leaveId, final: false } };
     }
   });
 

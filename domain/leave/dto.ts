@@ -5,6 +5,9 @@ import type { AnnualBalanceLine, MonthlyBalanceLine, RequestBalance, Resignation
 
 // 04.1(ROADMAP 기준 5): 연차 DTO — 필드 전부 leave.value.
 
+// 07.2-15(PU10): 취소 요청 상태 — none(취소 인스턴스 없음 · 반려 · 회수) · requested(결재 중) · cancelled(최종 승인).
+export type LeaveCancelState = "none" | "requested" | "cancelled";
+
 export type LeaveRequestDto = {
   id: string;
   number: string | null;
@@ -23,6 +26,7 @@ export type LeaveRequestDto = {
   status: string | null;
   version: number | null;
   createdAt: Date;
+  cancelState: LeaveCancelState;
 };
 
 export type LeaveRequestSource = LeaveRequestDto;
@@ -45,6 +49,7 @@ export const LEAVE_REQUEST_DTO_SPEC: DtoSpec<LeaveRequestSource, LeaveRequestDto
     { key: "status", from: "status", infoItem: "leave.value" },
     { key: "version", from: "version", infoItem: "leave.value" },
     { key: "createdAt", from: "createdAt", infoItem: "leave.value" },
+    { key: "cancelState", from: "cancelState", infoItem: "leave.value" },
   ],
 };
 

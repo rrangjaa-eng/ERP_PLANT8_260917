@@ -1,5 +1,6 @@
 import type { StatusTagKind } from "@/ui/status-tag/StatusTag";
 import type { StatusWord } from "@/ui/status-tag/status-map";
+import type { LeaveCancelState } from "@/domain/leave/dto";
 
 // 04.1 UI-SPEC Color 「상태 → 색 매핑」(SYSTEM.md §7-5 · A2) — 문서 상태 → kind · 글자의 유일한 출처.
 // 화면 코드는 상태 문자열로 색을 직접 고르지 않고 이 함수만 쓴다. 자리: 제목 옆 `tag`(테두리) ·
@@ -75,6 +76,14 @@ export function leaveStatusWord(status: LeaveStatusKey, stepLabel?: string | nul
       return unreachable;
     }
   }
+}
+
+// 07.2-15(S18 · PU10): 연차 문서 · 목록의 상태 낱말 — 승인된 연차에 취소 요청이 결재 중이면 `취소 요청 중`, 취소가 승인되면 `취소됨`.
+// 반려 · 회수된 취소(none)는 `승인` 그대로. 승인이 아닌 문서는 취소가 있을 수 없어 원래 낱말.
+export function leaveDocumentStatusWord(status: LeaveStatusKey, cancelState: LeaveCancelState | undefined, stepLabel?: string | null): StatusWord {
+  if (status === "approved" && cancelState === "requested") return "취소 요청 중";
+  if (status === "approved" && cancelState === "cancelled") return "취소됨";
+  return leaveStatusWord(status, stepLabel);
 }
 
 const STATUS_KEYS: readonly string[] = ["draft", "submitted", "in_review", "approved", "rejected", "withdrawn"];
@@ -163,6 +172,17 @@ export function routeListSteps(steps: RouteStepSource[] | null | undefined): Rou
     });
   }
   return result;
+}
+
+// 07.2-15(S18): 연차 문서 결재선 목록 끝에 붙는 취소 요청 결재선 — 같은 표시 목록에서 낱말만 취소 쪽으로(반려 = `취소 요청 반려` +
+// 사유 원문, 승인 = `취소됨`, 남이 담당인 지금 단계 = `취소 요청 중`). 내 차례(`내 결재`) · 대기 · 담당 없음은 그대로.
+export function cancelRouteListSteps(steps: RouteStepSource[] | null | undefined): RouteListStep[] {
+  return routeListSteps(steps).map((step, index) => {
+    const source = (steps ?? []).filter((item) => stepStatusKey(item) !== null)[index];
+    const word: StatusWord | null =
+      source?.state === "rejected" ? "취소 요청 반려" : source?.state === "approved" ? "취소됨" : source?.state === "current" && !source.viewerHolds ? "취소 요청 중" : null;
+    return { ...step, key: `cancel-${step.key}`, result: word ? { text: word, status: word } : step.result };
+  });
 }
 
 // 04.1-05(UI-SPEC Destructive — 회수 · #18): 회수 확인 결과 줄 — 첫 줄 `결재 멈춤 · {지금 담당}의 결재함에서 빠짐`

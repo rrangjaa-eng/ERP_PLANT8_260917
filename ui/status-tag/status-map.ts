@@ -10,6 +10,8 @@ export const STATUS_KIND = {
   "카드 미등록": "danger",
   반려: "danger",
   "담당 없음": "danger",
+  // 07.2-15 S18(PU10): 연차 문서 결재선 목록 끝 — 취소 요청을 결재자가 반려한 줄(사유 원문이 다음 줄)
+  "취소 요청 반려": "danger",
   // 06-19 S18: 완료 전 점검 — 선결제 뒤 증빙이 없는 미결 지출결의(D-611)
   "선결제 · 증빙 없음": "danger",
   // warning — 오늘 · 마감 임박 · 마감 중 · 정산
@@ -30,6 +32,8 @@ export const STATUS_KIND = {
   현재: "accent",
   "내 결재": "accent",
   "지출결의 중": "accent",
+  // 07.2-15 S18(PU10): 승인된 연차의 취소 요청이 결재 중
+  "취소 요청 중": "accent",
   // 06 SP-2: 구매 요청 중(카드 쪽 견적 줄 — `지출결의 중`과 같은 꼴, text 변형만) · 확인 전(증빙 있음, 경영관리 확인 전)
   "구매 요청 중": "accent",
   "확인 전": "accent",
@@ -58,6 +62,8 @@ export const STATUS_KIND = {
   임시: "muted",
   미수주: "muted",
   취소: "muted",
+  // 07.2-15 S18(PU10): 취소 요청이 승인된 연차(잔고 · 겹침에서 빠짐)
+  취소됨: "muted",
   회수: "muted",
   종결: "muted",
   무효: "muted",

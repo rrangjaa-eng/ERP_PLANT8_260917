@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lte, max, min, or, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
 import { approvalInstances, leaveRequests, teamMemberships, teams, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -13,7 +14,13 @@ export type LeaveRequestWithApproval = LeaveRequestRow & {
   instanceId: string | null;
   status: string | null;
   version: number | null;
+  // 07.2-15(PU10): 같은 연차의 취소 요청(leave_cancel) 인스턴스 상태 — 없으면 null. 연차 표시 상태(`취소 요청 중` · `취소됨`)의 재료.
+  cancelStatus: string | null;
 };
+
+// 07.2-15: domain/leave/access.ts LEAVE_CANCEL_KIND와 같은 값(leave-usage.ts와 같은 이유로 여기 둔다).
+const LEAVE_CANCEL_KIND = "leave_cancel";
+const cancelInstances = alias(approvalInstances, "leave_cancel_instances");
 
 export async function insertLeaveRequest(
   viewer: Viewer,
@@ -56,13 +63,15 @@ function withApprovalSelect(documentKind: string) {
       instanceId: approvalInstances.id,
       status: approvalInstances.status,
       version: approvalInstances.version,
+      cancelStatus: cancelInstances.status,
     })
     .from(leaveRequests)
     .innerJoin(users, eq(users.id, leaveRequests.drafterId))
     .leftJoin(
       approvalInstances,
       and(eq(approvalInstances.documentKind, documentKind), eq(approvalInstances.documentId, leaveRequests.id)),
-    );
+    )
+    .leftJoin(cancelInstances, and(eq(cancelInstances.documentKind, LEAVE_CANCEL_KIND), eq(cancelInstances.documentId, leaveRequests.id)));
 }
 
 type JoinedRow = {
@@ -71,10 +80,18 @@ type JoinedRow = {
   instanceId: string | null;
   status: string | null;
   version: number | null;
+  cancelStatus: string | null;
 };
 
 function flatten(row: JoinedRow): LeaveRequestWithApproval {
-  return { ...row.leave, drafterName: row.drafterName, instanceId: row.instanceId, status: row.status, version: row.version };
+  return {
+    ...row.leave,
+    drafterName: row.drafterName,
+    instanceId: row.instanceId,
+    status: row.status,
+    version: row.version,
+    cancelStatus: row.cancelStatus,
+  };
 }
 
 export async function findLeaveRequestById(

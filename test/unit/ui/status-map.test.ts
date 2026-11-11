@@ -155,6 +155,14 @@ describe("status-map — 낱말 → 색 한 표", () => {
     }
   });
 
+  describe("07.2-15 S18 연차 취소", () => {
+    it("`취소 요청 중` → accent · `취소됨` → muted · `취소 요청 반려` → danger", () => {
+      expect(statusKind("취소 요청 중")).toBe("accent");
+      expect(statusKind("취소됨")).toBe("muted");
+      expect(statusKind("취소 요청 반려")).toBe("danger");
+    });
+  });
+
   it("Phase 6 기존 낱말은 같은 색으로 다시 쓴다(신청됨 · 증빙 없음 · 지출결의 중)", () => {
     expect(statusKind("신청됨")).toBe("muted");
     expect(statusKind("증빙 없음")).toBe("danger");

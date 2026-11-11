@@ -7,6 +7,8 @@ import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID,
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { ForbiddenError } from "@/domain/people";
 import { submitLeave } from "@/domain/leave";
+import { approveDocument } from "@/domain/approvals";
+import { requestLeaveCancel } from "@/domain/leave/cancel";
 import { peopleLeaveScopeOf } from "@/domain/leave/access";
 import { getLeaveBalanceForUser, listPeopleLeaveBalances } from "@/domain/leave/balance-service";
 import { insertMembership } from "@/repositories/team-memberships";
@@ -210,5 +212,23 @@ describe("listPeopleLeaveBalances — 팀장 범위의 퇴직 · 보관 · 지�
     expect(names).toContain("가전입");
     expect(names).not.toContain("나전출");
     expect(rows.every((row) => row.teamName === "기획1팀")).toBe(true);
+  });
+});
+
+// 07.2-15(PU10): 취소가 승인된 연차는 사람별 잔여 표의 `사용`에서도 빠진다 — 잔고와 같은 판정(cancelledLeaveFilter).
+describe("취소 승인 → 사람별 잔여 사용 감소(07.2-15)", () => {
+  it("승인된 1일 → 사용 4 · 취소 요청 중 그대로 · 취소 승인 뒤 사용 0", async () => {
+    const lead = await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
+    const staff = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
+    const leave = await submitLeave(staff, { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-21", half: "" }, deps);
+    await approveDocument(lead, { instanceId: leave.instanceId, expectedVersion: 1 }, deps);
+    await approveDocument(ceo, { instanceId: leave.instanceId, expectedVersion: 2 }, deps);
+    const used = async () => (await listPeopleLeaveBalances(lead, 2026, deps)).rows.find((row) => row.userId === staff.id)?.usedQuarters;
+    expect(await used()).toBe(4);
+    const cancel = await requestLeaveCancel(staff, { leaveId: leave.leaveId, reason: "일정 바뀜" }, deps);
+    expect(await used()).toBe(4);
+    await approveDocument(lead, { instanceId: cancel.instanceId, expectedVersion: cancel.version }, deps);
+    expect(await used()).toBe(0);
   });
 });

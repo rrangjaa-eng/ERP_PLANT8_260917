@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { leaveAdjustments, users } from "@/db/schema";
@@ -37,6 +37,19 @@ export async function listLeaveAdjustments(viewer: Viewer, userId: string, tx: D
     .from(leaveAdjustments)
     .innerJoin(users, eq(users.id, leaveAdjustments.createdBy))
     .where(eq(leaveAdjustments.userId, userId))
+    .orderBy(desc(leaveAdjustments.createdAt), desc(leaveAdjustments.id));
+  return rows.map((row) => ({ ...row.adjustment, createdByName: row.createdByName }));
+}
+
+// 07.2-15(CI: /leave?view=all 5초 초과): 사람별 잔여의 조정 재료를 여러 사람 한 번에 — listLeaveAdjustments와 같은 조인 · 정렬.
+export async function listLeaveAdjustmentsForUsers(viewer: Viewer, userIds: string[], tx: DbOrTx = db): Promise<LeaveAdjustmentWithAuthor[]> {
+  void viewer;
+  if (userIds.length === 0) return [];
+  const rows = await tx
+    .select({ adjustment: leaveAdjustments, createdByName: users.name })
+    .from(leaveAdjustments)
+    .innerJoin(users, eq(users.id, leaveAdjustments.createdBy))
+    .where(inArray(leaveAdjustments.userId, userIds))
     .orderBy(desc(leaveAdjustments.createdAt), desc(leaveAdjustments.id));
   return rows.map((row) => ({ ...row.adjustment, createdByName: row.createdByName }));
 }

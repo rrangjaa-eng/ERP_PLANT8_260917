@@ -9,6 +9,9 @@ import { listSeatHolders } from "@/repositories/seats";
 
 // 04.1: 연차의 결재 문서 종류 키 — 결재 모듈은 이 문자열을 모른다(등록으로만 안다).
 export const LEAVE_DOCUMENT_KIND = "leave";
+// 07.2-15(PU10 · D-7253): 승인된 연차의 취소 요청 종류 — document_id = 원 연차 id(문서당 취소 건 하나 · 유일키). 등록은 domain/leave/cancel.ts.
+// 상수는 여기 — 보임 규칙(아래)과 알림 착지(domain/notify/href.ts)가 cancel.ts를 거치지 않고 읽는다(순환 없음).
+export const LEAVE_CANCEL_KIND = "leave_cancel";
 
 // 연차 문서 보임 규칙 한 곳(CEO-4) — domain/leave/index.ts와 04.1-03 잔고 서비스가
 // 함께 import한다(index.ts를 거치지 않아 순환이 없다). 기안자 · 처리한 사람 ·
@@ -20,11 +23,10 @@ export async function canSeeLeaveDocument(
   deps?: { today?: string },
 ): Promise<boolean> {
   if (leave.drafterId === viewer.id) return true;
-  return canSeeApprovalDocument(
-    viewer,
-    { kind: LEAVE_DOCUMENT_KIND, documentId: leave.id },
-    { today: deps?.today ?? seoulToday() },
-  );
+  const today = deps?.today ?? seoulToday();
+  if (await canSeeApprovalDocument(viewer, { kind: LEAVE_DOCUMENT_KIND, documentId: leave.id }, { today })) return true;
+  // 07.2-15(Codex PR #335): 원 연차 승인 뒤 팀장이 바뀌어도 그 연차의 취소 결재 참여자(지금 단계 후보 · 처리한 사람)는 원 연차 문서를 본다.
+  return canSeeApprovalDocument(viewer, { kind: LEAVE_CANCEL_KIND, documentId: leave.id }, { today });
 }
 
 // 04.1-02(Codex HIGH 02 · CX-W1): 연차 쓰기 권한 — 「새로 신청하는 일」(신청 · 다시 신청 · 신청 미리보기)의

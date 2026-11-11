@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { leaveStatusDisplay, leaveStatusWord, routeListSteps, seoulMinuteOf, withdrawResultLines, type LeaveStatusKey } from "@/app/(app)/leave/status-display";
+import { cancelRouteListSteps, leaveDocumentStatusWord, leaveStatusDisplay, leaveStatusWord, routeListSteps, seoulMinuteOf, withdrawResultLines, type LeaveStatusKey } from "@/app/(app)/leave/status-display";
 import { statusKind } from "@/ui/status-tag/status-map";
 
 // 04.6-18: `StatusTag status` 낱말 — 색은 상태 배지 표(`status-map.ts`) 한 곳이 정하고, 화면은 낱말만 넘긴다. 낱말과 옛 {kind, label}이 어긋나지 않는다.
@@ -95,5 +95,33 @@ describe("withdrawResultLines", () => {
 describe("seoulMinuteOf", () => {
   it("UTC 12-31 15:30은 서울 01-01 00:30", () => {
     expect(seoulMinuteOf(new Date("2026-12-31T15:30:00Z"))).toBe("01-01 00:30");
+  });
+});
+
+// 07.2-15(S18 · PU10): 연차 문서 상태 낱말 — 승인된 연차에 취소 요청이 결재 중이면 `취소 요청 중`, 승인되면 `취소됨`. 반려 · 회수된 취소는 `승인` 그대로.
+describe("leaveDocumentStatusWord(07.2-15)", () => {
+  it("approved + requested → `취소 요청 중`(accent) · cancelled → `취소됨`(muted) · none → `승인`", () => {
+    expect(leaveDocumentStatusWord("approved", "requested")).toBe("취소 요청 중");
+    expect(statusKind(leaveDocumentStatusWord("approved", "requested"))).toBe("accent");
+    expect(leaveDocumentStatusWord("approved", "cancelled")).toBe("취소됨");
+    expect(statusKind(leaveDocumentStatusWord("approved", "cancelled"))).toBe("muted");
+    expect(leaveDocumentStatusWord("approved", "none")).toBe("승인");
+    expect(leaveDocumentStatusWord("approved", undefined)).toBe("승인");
+  });
+
+  it("승인이 아닌 문서는 취소 상태와 무관하게 원래 낱말", () => {
+    expect(leaveDocumentStatusWord("submitted", "requested")).toBe("결재 중");
+    expect(leaveDocumentStatusWord("rejected", "none")).toBe("반려");
+  });
+});
+
+describe("cancelRouteListSteps(07.2-15 S18 결재선 목록 끝)", () => {
+  it("반려 단계 → `취소 요청 반려`(danger) + 사유 원문 · 승인 → `취소됨` · 지금 단계(남) → `취소 요청 중` · 내 차례는 `내 결재`", () => {
+    const rejected = cancelRouteListSteps([{ stepIndex: 1, label: "팀장", state: "rejected", actedByName: "김팀장", reason: "행사 주간" }]);
+    expect(rejected[0]).toMatchObject({ person: "김팀장", label: "팀장", result: { status: "취소 요청 반려" }, reason: "행사 주간" });
+    expect(rejected[0]?.key.startsWith("cancel-")).toBe(true);
+    expect(cancelRouteListSteps([{ stepIndex: 1, label: "팀장", state: "approved", actedByName: "김팀장" }])[0]?.result.status).toBe("취소됨");
+    expect(cancelRouteListSteps([{ stepIndex: 1, label: "팀장", state: "current", holderNames: "김팀장" }])[0]?.result.status).toBe("취소 요청 중");
+    expect(cancelRouteListSteps([{ stepIndex: 1, label: "팀장", state: "current", holderNames: "김팀장", viewerHolds: true }])[0]?.result.status).toBe("내 결재");
   });
 });

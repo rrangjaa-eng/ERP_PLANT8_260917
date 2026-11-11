@@ -581,6 +581,17 @@ export async function restoreProjectRow(viewer: Viewer, id: string, input: { at:
   return row ?? null;
 }
 
+// 07.2-17(D-7213) — 보관함 `프로젝트` 항목 재료(번호 · 이름 · 보관 시각 · 보관한 사람 · id). 범위로 거르지 않는다 — 호출자 domain/archive
+// listArchive가 admin.archive view 또는 projects.delete 쓰기 판정 뒤 listProjectIdsInScope(쓰기 rowScope)로 거른다.
+export async function listArchivedProjectNames(viewer: Viewer): Promise<{ id: string; number: string; name: string; archivedAt: Date; archivedBy: string | null }[]> {
+  void viewer;
+  const rows = await db
+    .select({ id: projects.id, number: projects.number, name: projects.name, archivedAt: projects.archivedAt, archivedBy: projects.archivedBy })
+    .from(projects)
+    .where(isNotNull(projects.archivedAt));
+  return rows.flatMap((row) => (row.archivedAt ? [{ ...row, archivedAt: row.archivedAt }] : []));
+}
+
 // D-7212 — 프로젝트 차수의 살아 있는 줄을 id 순으로 잠근 뒤 같은 시각 · 같은 사람으로 보관한다(잠금 순서 프로젝트 행 → 줄 id 순).
 // quote-lines.ts의 보관 함수는 차수 하나 · 시각 없이 now()를 쓰므로 여기에 둔다. 보관한 줄 수를 돌려준다.
 export async function archiveLiveLinesOfProject(viewer: Viewer, projectId: string, input: { at: Date; by: string }, tx: DbOrTx): Promise<number> {

@@ -18,6 +18,8 @@ import { findOrgUnitById } from "@/repositories/org-units";
 import { insertFieldDefinition } from "@/repositories/field-definitions";
 import { findCodeItemById } from "@/repositories/code-tables";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
+import { setupExpenseProject } from "./fixtures/expenses";
+import { archiveProject } from "@/domain/projects/archive";
 import { addTeam, countLogs, makeAdmin, makeDelegatedRole, makeOrgTeam, makeSeated, uniqueName } from "./admin-cap-fixtures";
 
 // 06.4-03: 보관함 「복원」으로 사람을 되살릴 때 사람 쓰기 · 권한 상한 · 자리를 다시 본다(D-6406 · G36).
@@ -352,8 +354,9 @@ describe("보관함 쓰기 게이트 — 보관함 쓰기 없는 위임자 (07-0
     expect(ARCHIVABLE_TABLES.length).toBeGreaterThan(0);
     for (const entry of ARCHIVABLE_TABLES) {
       const id = randomUUID();
-      const error = await refusal(restore(viewer, entry.entity, id, deps), ArchiveForbiddenError);
-      expect(error.message, entry.entity).toBe("보관함 쓰기 권한 없음");
+      // 07.2-17(D-F3): 프로젝트는 보관함 관문 앞에서 도메인 복원기(projects.delete 쓰기 + 쓰기 범위)가 판정한다 — 권리 없음 = 없는 프로젝트.
+      const error = await refusal(restore(viewer, entry.entity, id, deps), entry.entity === "project" ? UserFacingError : ArchiveForbiddenError);
+      expect(error.message, entry.entity).toBe(entry.entity === "project" ? "존재하지 않는 프로젝트" : "보관함 쓰기 권한 없음");
       expect(await countLogs("restore", entry.entity, id), entry.entity).toBe(0);
     }
   });
@@ -369,6 +372,12 @@ const ARCHIVED_ROW_OF_GATED_KIND: Record<string, () => Promise<string>> = {
     await archive(SYSTEM_VIEWER, "field_definitions", id, deps);
     return id;
   },
+  // 07.2-17(D-7213): 프로젝트 — requiredMenu projects.delete. 보관은 archiveProject로만.
+  project: async () => {
+    const fx = await setupExpenseProject();
+    await archiveProject(fx.lead, fx.projectId);
+    return fx.projectId;
+  },
 };
 
 describe("종류별 복원 게이트 — 보관함 쓰기만 있는 위임자 (07-03 R11)", () => {
@@ -383,9 +392,9 @@ describe("종류별 복원 게이트 — 보관함 쓰기만 있는 위임자 (0
       const id = await makeArchived();
       expect((await entry.findById(SYSTEM_VIEWER, id))?.archivedAt, entry.entity).not.toBeNull();
 
-      const error = await refusal(restore(v, entry.entity, id, deps), ArchiveForbiddenError);
+      const error = await refusal(restore(v, entry.entity, id, deps), entry.entity === "project" ? UserFacingError : ArchiveForbiddenError);
 
-      expect(error.message, entry.entity).toBe("보관함 쓰기 권한 없음");
+      expect(error.message, entry.entity).toBe(entry.entity === "project" ? "존재하지 않는 프로젝트" : "보관함 쓰기 권한 없음");
       expect((await entry.findById(SYSTEM_VIEWER, id))?.archivedAt, entry.entity).not.toBeNull();
       expect(await countLogs("restore", entry.entity, id), entry.entity).toBe(0);
     }

@@ -403,7 +403,11 @@ export async function submitSettlement(viewer: Viewer, input: { projectId: strin
     const current = await findProjectById(viewer, input.projectId, tx);
     if (!current) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
     if (current.status !== SETTLING) throw notSettling(current.status);
+    if (current.archivedAt !== null) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
     const inserted = await insertSettlementIfAbsent(viewer, { projectId: input.projectId, drafterId: viewer.id }, tx);
+    // 07.2-17(T-07.2-17-02): 프로젝트 행을 잠그지 않는 길(T-05-1106 교착 회피)이라 lockProjectForWrite 대신 — 새 행의 FK 확인이 프로젝트 행을
+    // FOR KEY SHARE로 잡아 보관(archiveProject의 FOR UPDATE)과 직렬된다. 넣은 뒤 다시 읽어(새 문장 스냅숏) 그사이 보관됐으면 되돌린다.
+    if (inserted && (await findProjectById(viewer, input.projectId, tx))?.archivedAt != null) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
     const doc = inserted ?? (await findSettlementByProjectId(viewer, input.projectId, tx));
     if (!doc) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
     // 06-19: 기안 직전 같은 tx로 완료 전 점검 — 막힘이면 거부(문서 행도 롤백). 점검 예외는 잡지 않는다(fail-closed).

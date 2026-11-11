@@ -183,6 +183,7 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/project-budget-entries.ts", fn: "findBudgetBasisFacts", reason: "예산 기준 금액 재료(07-24 D-730 · AQ-39) — 도메인 budgetBasisKrw만 부른다: 쓰기 tx 안 범위 판정 · 잠금 뒤(등록 · PO 금액 저장 · 고객 승인 · 처음 원가율) 또는 rowScopeCondition으로 거른 예산 현황 행(listBudgetRowFacts) 뒤, 돌려주는 PO 금액 · 승인 합계는 예산 줄 계산에만 쓴다" },
   { file: "repositories/project-budget-entries.ts", fn: "listProjectIdsWithoutBudget", reason: "처음 원가율 예산 줄(07-24 D-747) — 원가율은 전사 설정이라 대상도 전사(보는 사람 범위로 거르면 범위 밖 프로젝트가 예산 없이 남는다), 호출자 seedInitialBudgets는 admin.settings 쓰기 판정 뒤 저장 tx · 가져오기 명령에서만 돌고 id만 돌려준다(화면에는 만든 줄 수뿐)" },
   { file: "repositories/projects.ts", fn: "findProjectById", reason: "원시 프리미티브 — 도메인 호출 자리는 ⓒ 처분표가 고정한다" },
+  { file: "repositories/projects.ts", fn: "listArchivedProjectNames", reason: "보관함 `프로젝트` 항목(07.2-17 D-7213) — 호출자 domain/archive listArchive가 admin.archive view 또는 projects.delete 쓰기 판정 뒤 listProjectIdsInScope(쓰기 projectRowScope)로 거른다, 번호 · 이름 · 보관 시각 · 보관한 사람만" },
   { file: "repositories/projects.ts", fn: "findProjectByNumber", reason: "도메인 · 화면 호출자 없음 — 부르면 ⓒ 프리미티브 목록에 이름을 더한다" },
   { file: "repositories/projects.ts", fn: "lockProjectForWrite", reason: "트랜잭션 안 잠금 — 호출자가 트랜잭션 전 범위 판정(findProjectInScope · precheckLink · 지출결의 게이트, 04-32)" },
   { file: "repositories/projects.ts", fn: "lockAutoSettleCandidates", reason: "시스템 자동 정산(D-76) — 행 노출 없음, 상태 전환만(검토 M-5 수용)" },

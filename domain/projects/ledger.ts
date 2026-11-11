@@ -233,7 +233,8 @@ export async function saveProjectLedger(
         { now, tx, afterLock: deps?.afterLock },
         { recordAction },
       );
-      if (!locked || (locked.archivedAt !== null && !scope.includeArchived)) {
+      // 07.2-17(D-7210): 보관된 프로젝트에는 쓰지 않는다 — 보관함 권한자(scope.includeArchived)도 같다(보관함 열람은 읽기 화면만).
+      if (!locked || locked.archivedAt !== null) {
         throw new UserFacingError("존재하지 않는 프로젝트");
       }
       // DR-6: 비교는 첫 판정 행(자정 자동 정산 반영)과 기간 쓰기 전에 한다 — 사람 자신의 기간 변경은

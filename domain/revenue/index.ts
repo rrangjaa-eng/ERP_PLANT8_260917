@@ -32,7 +32,7 @@ import { collectionStatus, type CollectionIssue, type CollectionStatus } from "@
 import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR, EMPTY_ERROR as DATE_EMPTY_ERROR } from "@/domain/projects/period";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { projectRowScope } from "@/domain/projects/visibility";
-import { findProjectInScope } from "@/repositories/projects";
+import { findProjectInScope, lockProjectForWrite } from "@/repositories/projects";
 import {
   listRevenueEntriesByProject as repoListRevenueEntriesByProject,
   insertRevenueEntry as repoInsertRevenueEntry,
@@ -592,7 +592,13 @@ export async function saveRevenue(
   if (!(await findProjectInScope(viewer, await projectRowScope(viewer, undefined, { fundOp: [REVENUE_SETTLEMENT_MENU, "write"] }), projectId))) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
   // 줄을 싣지 않으면 권한을 보지 않는다(saveRevenueInTx도 그때는 rights를 읽지 않는다).
   const rights = deps?.rights ?? (input.issuedEntries || input.paidEntries ? await revenueWriteRights(viewer, deps?.can) : { canWriteEntries: false });
-  const fxToRemember = await withTransaction((tx) => saveRevenueInTx(viewer, projectId, input, { rights, recordAction: deps?.recordAction }, tx));
+  // 07.2-17(T-07.2-17-02): 단독 저장도 합성 저장(saveProjectLedger)처럼 프로젝트 행을 먼저 잠그고 잠근 행으로 보관 여부를 본다 —
+  // 보관된 프로젝트에는 매출 줄을 쓰지 않는다(보관함 권한자도).
+  const fxToRemember = await withTransaction(async (tx) => {
+    const locked = await lockProjectForWrite(viewer, projectId, tx);
+    if (!locked || locked.archivedAt !== null) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
+    return saveRevenueInTx(viewer, projectId, input, { rights, recordAction: deps?.recordAction }, tx);
+  });
   await rememberFxAfterCommit(fxToRemember, deps?.rememberFxRate);
   return listRevenue(viewer, projectId);
 }

@@ -74,26 +74,33 @@ const drafters = alias(users, "drafters");
 const actors = alias(users, "actors");
 const updaters = alias(users, "updaters");
 
+// 인스턴스 · 차수 · 단계를 한 문장으로 읽는다 — READ COMMITTED에서 문장마다 스냅숏이 달라, 두 문장으로 나눠 읽으면 경합에서 인스턴스는
+// 이긴 쪽 커밋 전(version 그대로) · 단계는 커밋 뒤(이미 승인됨)로 섞여 전이 판정이 version 확인을 지나 후보 판정에서 `지금 담당이 아님`으로
+// 떨어졌다(#377 동시 일괄 실측 · 진 쪽은 충돌 문구를 받아야 한다). where는 인스턴스 하나만 맞는다(id 기본 키 · 종류+문서 유일 제약).
 async function readGraph(where: SQL | undefined, tx: DbOrTx): Promise<ApprovalGraph | null> {
-  const [found] = await tx
-    .select({ instance: approvalInstances, drafterName: drafters.name, updatedByName: updaters.name })
+  const rows = await tx
+    .select({
+      instance: approvalInstances,
+      drafterName: drafters.name,
+      updatedByName: updaters.name,
+      route: approvalRoutes,
+      step: approvalSteps,
+      actedByName: actors.name,
+    })
     .from(approvalInstances)
     .innerJoin(drafters, eq(drafters.id, approvalInstances.drafterId))
     .leftJoin(updaters, eq(updaters.id, approvalInstances.updatedBy))
-    .where(where)
-    .limit(1);
-  if (!found) return null;
-
-  const rows = await tx
-    .select({ route: approvalRoutes, step: approvalSteps, actedByName: actors.name })
-    .from(approvalRoutes)
+    .leftJoin(approvalRoutes, eq(approvalRoutes.instanceId, approvalInstances.id))
     .leftJoin(approvalSteps, eq(approvalSteps.routeId, approvalRoutes.id))
     .leftJoin(actors, eq(actors.id, approvalSteps.actedBy))
-    .where(eq(approvalRoutes.instanceId, found.instance.id))
+    .where(where)
     .orderBy(asc(approvalRoutes.round), asc(approvalSteps.stepIndex));
+  const [found] = rows;
+  if (!found) return null;
 
   const routes = new Map<string, ApprovalRouteWithSteps>();
   for (const row of rows) {
+    if (!row.route) continue;
     let route = routes.get(row.route.id);
     if (!route) {
       route = { ...row.route, steps: [] };

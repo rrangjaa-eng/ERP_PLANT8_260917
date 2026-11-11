@@ -9,7 +9,7 @@ import { submitLeave } from "@/domain/leave";
 import { requestLeaveCancel } from "@/domain/leave/cancel";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { submitSettlement } from "@/domain/settlements";
-import { TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { settlementApprovals } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import { log } from "@/lib/log";
@@ -237,6 +237,25 @@ describe("일괄 승인 — 종류 판정 · 부분 성공(D-7269 · D-7271)", (
     expect(engine.approveCalls).toBe(0);
     expect((await instanceRow(settlement)).status).toBe("submitted");
   }, 60000);
+
+  // 두 탭 경합 재현(15회) — 진 쪽이 인스턴스는 이긴 쪽 커밋 전, 단계는 커밋 뒤로 읽으면(그래프를 두 문장으로 읽던 때) version은 맞는데
+  // 후보가 아니라서 `지금 담당이 아님`이 났다(경합 120건 중 19건 실측). 그래프는 한 문장(한 스냅숏)으로 읽는다 — 진 쪽은 늘 엔진 충돌 글자.
+  it("두 탭 동시 일괄 15회 반복 → 진 쪽 이유는 늘 `{처리자}이 {HH:mm}에 승인함 · 새로 고침`(그래프 한 스냅숏)", async () => {
+    const fx = await setupExpenseProject();
+    const reasons = new Set<string>();
+    for (let round = 0; round < 15; round++) {
+      const drafter = await makePerson(`경합${round}`, DEFAULT_ROLE_ID, "기획1팀");
+      const items = [];
+      for (const day of WEEKDAYS.slice(0, 3)) {
+        const { instanceId } = await submitLeave(drafter, { kind: "full_day", startDate: day, endDate: day, half: "" }, deps);
+        items.push(await itemOf(instanceId));
+      }
+      const [a, b] = await Promise.all([approveBatch(fx.lead, items, deps), approveBatch(fx.lead, items, deps)]);
+      expect(a.processedIds.length + b.processedIds.length).toBe(3);
+      for (const blocked of [...a.blocked, ...b.blocked]) reasons.add(blocked.reason.replace(/\d{2}:\d{2}/, "HH:mm"));
+    }
+    expect([...reasons]).toEqual(["김도윤이 HH:mm에 승인함 · 새로 고침"]);
+  }, 180000);
 
   it("101건 → 처리 없이 거부 `100건까지`", async () => {
     const items = Array.from({ length: APPROVAL_BATCH_LIMIT + 1 }, (_, i) => ({

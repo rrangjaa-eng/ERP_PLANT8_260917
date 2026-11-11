@@ -177,7 +177,7 @@ async function phoneRowFacts(row: Locator): Promise<unknown> {
       const st = getComputedStyle(el);
       return r.width > 0 && r.height > 0 && st.display !== "none" && st.visibility !== "hidden";
     };
-    const tds = [...tr.querySelectorAll(":scope > td")];
+    const tds = [...tr.querySelectorAll(':scope > td:not([class*="selectCell"])')];
     const shown = tds.filter(visible).map((td) => {
       const r = td.getBoundingClientRect();
       const reasonIds = (td.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
@@ -185,7 +185,7 @@ async function phoneRowFacts(row: Locator): Promise<unknown> {
       return { text: (td.textContent ?? "").trim().slice(0, 40), w: Math.round(r.width), h: Math.round(r.height), reasonVisibleInCell: reasons.some((el) => td.contains(el) && visible(el)) };
     });
     const next = tr.nextElementSibling;
-    const folded = next && next.querySelectorAll(":scope > td").length === 1 && !next.querySelector("th") ? (next.textContent ?? "").trim().slice(0, 80) : null;
+    const folded = next && next.querySelectorAll(':scope > td:not([class*="selectCell"])').length === 1 && !next.querySelector("th") ? (next.textContent ?? "").trim().slice(0, 80) : null;
     return { shownCells: shown.length, shown, foldedRow: folded };
   });
 }
@@ -423,7 +423,7 @@ test("E 필터 줄 — 순서 · 2차 꼴 · 1024 미만 0 · 거르개 select �
       record("E CSV 머리줄 = 목록 열 순서", width, role, url, lines[0], headers.join(","), lines[0] === headers.join(","));
       const domRows = await evidenceRows(page).evaluateAll((trs) =>
         trs.map((tr) => {
-          const tds = [...tr.querySelectorAll(":scope > td")];
+          const tds = [...tr.querySelectorAll(':scope > td:not([class*="selectCell"])')];
           const first = (td: Element | undefined) => {
             if (!td) return "";
             const walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
@@ -484,7 +484,7 @@ test("자격 — 경영관리 1280 붙여넣기 · 내려받기 / 금액 노출 
     await page.goto(url);
     await expect(evidenceRows(page)).toHaveCount(ids.length);
     await settle(page, 1280);
-    const domAmounts = await evidenceRows(page).evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll(":scope > td")].slice(3, 6).map((td) => (td.textContent ?? "").trim())));
+    const domAmounts = await evidenceRows(page).evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll(':scope > td:not([class*="selectCell"])')].slice(3, 6).map((td) => (td.textContent ?? "").trim())));
     record("자격 금액 노출 없음 — 화면 금액 칸 글자(정보)", 1280, "intake·금액없음", url, domAmounts, "보이지 않음", null);
     const buttons = await exportButton(page).count();
     record("자격 금액 노출 없음 — `파일 받기` 1(문 = intake 쓰기)", 1280, "intake·금액없음", url, buttons, 1, buttons === 1);

@@ -42,6 +42,7 @@ import {
   hasAnyRecordForScope,
   listProposalTargets,
   listRecordsByIdsForScope,
+  listArchivableIdsForScope,
   listRecordsForScope,
   lockRecordsForUpdate,
   setRecordArchivedIfVersionMatches,
@@ -493,6 +494,18 @@ export async function listAllEvidenceRecords(viewer: Viewer, query: EvidenceList
   return { filters, rows: await projectMany(viewer, rows.map((row) => sourceOf(row, age)), EVIDENCE_RECORD_DTO_SPEC) };
 }
 
+// 07.2-09 D-7284 — `?batch=` 보기에서 `묶음 전체 고르기`가 쓰는 보관 가능 줄(안 붙고 보관 안 된 줄)의 id · version. 목록과 같은 앞 단계
+// (listInputsFor — 범위 · 거르개)라 화면에 보이는 필터 결과 전체에서 고른다. 상한 넘침 판정을 위해 301번째까지만 싣는다. 묶음 필터가 없으면 비운다
+// (쪽 밖 전체 고르기는 묶음 안에서만 — 한 번에 수천 줄을 읽지 않는다). 등록 권한(evidence.intake 쓰기)이 없으면 빈 목록.
+export const EVIDENCE_ARCHIVABLE_READ_MAX = 301;
+
+export async function listArchivableEvidence(viewer: Viewer, query: EvidenceListQuery = {}): Promise<EvidenceArchiveInput[]> {
+  if (!(await can(viewer, "evidence.intake", "write"))) return [];
+  const { scope, filters, repoFilters } = await listInputsFor(viewer, query);
+  if (filters.batch === null) return [];
+  return listArchivableIdsForScope(viewer, scope, repoFilters, EVIDENCE_ARCHIVABLE_READ_MAX);
+}
+
 // 07.1-05 D-7113(E-P2-19) — 파일 받기의 읽기 전 건수. 목록과 같은 앞 단계(listInputsFor — 범위 · 거르개)와 같은 합계 질의라
 // 화면이 버튼 상태를 정하는 건수(list.total.count)와 서버가 거부를 판정하는 수가 같은 집합이다. 행은 읽지 않는다.
 export async function countEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<number> {
@@ -851,6 +864,13 @@ export type EvidenceArchiveInput = { id: string; version: number };
 /** 보관 · 되살림 거부(낡은 version · 그사이 붙음 · 이미 그 상태 — PA-ARC-FAIL). 글자는 화면 결과 줄에 그대로 선다(DA-23 문구). */
 export class EvidenceArchiveConflictError extends UserFacingError {}
 
+/** 07.2-09 — 붙은 줄 보관 거부. 일괄 보관의 막힘 이유가 오류 종류로 갈리게 하는 하위 오류(기존 `instanceof EvidenceArchiveConflictError` 잡기 그대로). */
+export class EvidenceAttachedError extends EvidenceArchiveConflictError {
+  constructor() {
+    super("붙은 문서 있음 · 먼저 떼기");
+  }
+}
+
 // 보관 · 되살림(DA-7 · E41 · C2) — 확인 창 없이 바로 하고 화면이 되돌리기를 준다. 붙이기(06.1-06)도 같은 증빙 행을 잠그므로 살아 있는
 // 붙임 검사는 잠근 뒤에 한다. 되돌리기는 보관이 돌려준 version으로 되살림을 부른다.
 async function setEvidenceArchived(viewer: Viewer, input: EvidenceArchiveInput, actionType: "archive" | "restore"): Promise<EvidenceArchiveInput> {
@@ -860,6 +880,8 @@ async function setEvidenceArchived(viewer: Viewer, input: EvidenceArchiveInput, 
   return withTransaction(async (tx) => {
     const [row] = await lockRecordsForUpdate(viewer, [input.id], tx);
     if (!row) throw new UserFacingError(INVALID_REQUEST);
+    // 붙이기가 증빙 version을 올리므로(attach.ts) 화면을 연 뒤 남이 붙인 줄은 version도 다르다 — 붙음을 version보다 먼저 가른다(07.2-09 eng r2 C N4).
+    if (archived && row.archivedAt === null && row.attached) throw new EvidenceAttachedError();
     const conflict = new EvidenceArchiveConflictError(`다른 사람이 ${formatKstTime(row.updatedAt)}에 바꿈 · 새로 고침`);
     if (row.version !== input.version || evidenceRowAction(lockedStatusInput(row)) !== actionType) throw conflict;
     if (!(await setRecordArchivedIfVersionMatches(viewer, { id: input.id, version: input.version, archived }, tx))) throw conflict;

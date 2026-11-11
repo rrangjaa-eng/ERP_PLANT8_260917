@@ -9,6 +9,8 @@ import { EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
 import {
   archiveEvidenceRecord,
   CARD_FORMATS,
+  EvidenceArchiveConflictError,
+  EvidenceAttachedError,
   countTodoEvidence,
   getEvidenceBatch,
   getEvidenceDetail,
@@ -698,13 +700,18 @@ describe("domain/evidence-records — 서버가 거부하는 편집 · 보관 / 
     ]);
   });
 
-  it("(DA-7) 붙은 줄 보관 · 낡은 version 보관 · 보관 아닌 줄 되살림은 거부(다른 사람이 {HH:mm}에 바꿈 · 새로 고침) — 보관 0 · 로그 0", async () => {
+  it("(DA-7) 붙은 줄 보관(붙은 문서 있음 · 먼저 떼기) · 낡은 version 보관 · 보관 아닌 줄 되살림은 거부(다른 사람이 {HH:mm}에 바꿈 · 새로 고침) — 보관 0 · 로그 0", async () => {
     const intake = await createIntakeViewer();
     const rows = await seedStateRows(intake);
     const versions = await versionsOf([rows.attached, rows.plain]);
     const conflict = /^다른 사람이 \d{2}:\d{2}에 바꿈 · 새로 고침$/;
 
-    await expect(archiveEvidenceRecord(intake, { id: rows.attached, version: versions.get(rows.attached) ?? 0 })).rejects.toThrow(conflict);
+    // 07.2-09: 붙은 줄은 version과 무관하게 새 글자(EvidenceAttachedError — EvidenceArchiveConflictError의 하위라 기존 instanceof 잡기 그대로).
+    const attachedError = await archiveEvidenceRecord(intake, { id: rows.attached, version: versions.get(rows.attached) ?? 0 }).catch((error: unknown) => error);
+    expect(attachedError).toBeInstanceOf(EvidenceAttachedError);
+    expect(attachedError).toBeInstanceOf(EvidenceArchiveConflictError);
+    expect((attachedError as Error).message).toBe("붙은 문서 있음 · 먼저 떼기");
+    await expect(archiveEvidenceRecord(intake, { id: rows.attached, version: (versions.get(rows.attached) ?? 0) + 5 })).rejects.toBeInstanceOf(EvidenceAttachedError);
     await expect(archiveEvidenceRecord(intake, { id: rows.plain, version: (versions.get(rows.plain) ?? 0) + 1 })).rejects.toThrow(conflict);
     await expect(restoreEvidenceRecord(intake, { id: rows.plain, version: versions.get(rows.plain) ?? 0 })).rejects.toThrow(conflict);
 

@@ -345,7 +345,7 @@ test("① intake × 6폭 × 기본 · state=all · state=all&batch — 머리글
         (rows, cols) =>
           rows.flatMap((row) =>
             cols.map((col) => {
-              const td = row.querySelectorAll(":scope > td")[col] as HTMLElement | undefined;
+              const td = row.querySelectorAll(':scope > td:not([class*="selectCell"])')[col] as HTMLElement | undefined;
               if (!td) return { ok: false, align: "없음", fvn: "없음" };
               const inner = td.querySelector<HTMLElement>("*");
               const fvn = [getComputedStyle(td).fontVariantNumeric, inner ? getComputedStyle(inner).fontVariantNumeric : ""].join("|");
@@ -363,7 +363,7 @@ test("① intake × 6폭 × 기본 · state=all · state=all&batch — 머리글
       for (const kind of ["danger", "warning", "accent", "success", "muted"]) tokenColors[kind] = await tokenProbe(page, "color", `var(--status-${kind})`);
       const statuses = await evidenceRows(page).evaluateAll((rows, col) =>
         rows.map((row) => {
-          const td = row.querySelectorAll(":scope > td")[col] as HTMLElement | undefined;
+          const td = row.querySelectorAll(':scope > td:not([class*="selectCell"])')[col] as HTMLElement | undefined;
           const tag = td?.querySelector("span") as HTMLElement | null;
           return { word: tag?.textContent?.trim() ?? "", color: tag ? getComputedStyle(tag).color : "" };
         }),
@@ -424,7 +424,7 @@ test("① intake × 6폭 × 기본 · state=all · state=all&batch — 머리글
       // 합계 행 = 보이는 줄 금액 합(감사가 더한다 — 화면이 아니라) · 그룹 줄 글자 · 면
       const footText = (await evidenceTable(page).locator("tfoot").innerText()).replace(/\s+/g, " ");
       const rowCount = await evidenceRows(page).count();
-      const totals = await evidenceRows(page).evaluateAll((rows, col) => rows.map((row) => (row.querySelectorAll(":scope > td")[col] as HTMLElement | undefined)?.textContent ?? ""), EVIDENCE_COL.total);
+      const totals = await evidenceRows(page).evaluateAll((rows, col) => rows.map((row) => (row.querySelectorAll(':scope > td:not([class*="selectCell"])')[col] as HTMLElement | undefined)?.textContent ?? ""), EVIDENCE_COL.total);
       const sum = totals.reduce((acc, text) => acc + krw(text), 0);
       if (phone) {
         // SYSTEM §7-3 폰 — 합계 행의 부제(줄 수 · 공급가 · 세액)는 숨기고 합계 금액만 한 줄(디자인 검토 H3).
@@ -460,13 +460,13 @@ test("① intake × 6폭 × 기본 · state=all · state=all&batch — 머리글
 
       // 상태 2행(1280 · state=all에서만 — 낱말 · 2행 대조)
       if (width === 1280 && url === "/expenses/evidence?state=all") {
-        const details = await evidenceRows(page).evaluateAll((rows, col) => rows.map((row) => (row.querySelectorAll(":scope > td")[col] as HTMLElement | undefined)?.innerText.replace(/\s+/g, " ").trim() ?? ""), EVIDENCE_COL.status);
+        const details = await evidenceRows(page).evaluateAll((rows, col) => rows.map((row) => (row.querySelectorAll(':scope > td:not([class*="selectCell"])')[col] as HTMLElement | undefined)?.innerText.replace(/\s+/g, " ").trim() ?? ""), EVIDENCE_COL.status);
         record("상태 칸 글자(낱말 + 2행) 전부", width, role, url, details, "보관됨 없음 · 팀 공개 2행 팀 · 본부 공개 2행 `기획본부 공개` · 음수 2행 `음수 · 원거래 문서에 붙이기`", null);
         record("팀 공개 2행 = 팀 이름", width, role, url, details.find((text) => text.startsWith("팀 공개")) ?? "없음", "팀 공개 기획1팀", details.some((text) => text === "팀 공개 기획1팀"));
         record("본부 공개 2행 = `기획본부 공개`", width, role, url, details.find((text) => text.startsWith("본부 공개")) ?? "없음", "본부 공개 기획본부 공개", details.some((text) => text === "본부 공개 기획본부 공개"));
         record("음수 줄 2행", width, role, url, details.filter((text) => text.includes("음수")), "미공개 음수 · 원거래 문서에 붙이기", details.some((text) => text === "미공개 음수 · 원거래 문서에 붙이기"));
         record("보관 줄 state=all에 없음", width, role, url, details.filter((text) => text.startsWith("보관됨")).length, 0, details.every((text) => !text.startsWith("보관됨")));
-        const negativeVis = await evidenceRows(page).evaluateAll((rows, cols) => rows.filter((row) => row.textContent?.includes("음수")).map((row) => (row.querySelectorAll(":scope > td")[cols] as HTMLElement).innerText.trim()), EVIDENCE_COL.visibility);
+        const negativeVis = await evidenceRows(page).evaluateAll((rows, cols) => rows.filter((row) => row.textContent?.includes("음수")).map((row) => (row.querySelectorAll(':scope > td:not([class*="selectCell"])')[cols] as HTMLElement).innerText.trim()), EVIDENCE_COL.visibility);
         record("음수 줄 공개 칸 `—`", width, role, url, negativeVis, ["—"], negativeVis.length === 1 && negativeVis[0] === "—");
       }
 
@@ -583,7 +583,8 @@ test("③ intake 1280 — Ctrl+U 파일 선택 · 방향키 → Enter 편집 →
   await focusGridCell(evidenceCell(page, rowIndex, EVIDENCE_COL.date));
   await page.keyboard.press("ArrowRight");
   const focusAfterRight = await page.evaluate(() => (document.activeElement as HTMLTableCellElement | null)?.cellIndex ?? -1);
-  record("방향키 → 오른쪽 칸으로 초점(날짜 오른쪽 = 며칠째)", 1280, role, url, focusAfterRight, EVIDENCE_COL.ageDays, focusAfterRight === EVIDENCE_COL.ageDays);
+  // 07.2-09: cellIndex는 DOM 순서라 편집 폭(1280)에서 앞에 선 선택 열(체크박스 칸) 하나를 센다.
+  record("방향키 → 오른쪽 칸으로 초점(날짜 오른쪽 = 며칠째)", 1280, role, url, focusAfterRight, EVIDENCE_COL.ageDays + 1, focusAfterRight === EVIDENCE_COL.ageDays + 1);
   await page.keyboard.press("ArrowDown");
   const focusRowAfterDown = await page.evaluate(() => ((document.activeElement as HTMLElement | null)?.parentElement as HTMLTableRowElement | null)?.rowIndex ?? -1);
   record("방향키 ↓ 아래 행으로 초점(rowIndex 증가)", 1280, role, url, focusRowAfterDown, "> 0", focusRowAfterDown > 0);
@@ -729,7 +730,7 @@ test("⑤ intake 1280 — 보관 → `증빙 보관됨` + 되돌리기(초점 ·
   const archivedUrl = "/expenses/evidence?state=archived";
   const labels = await rowActionButtons(page).allInnerTexts();
   record("보관됨 보기 행 행동 = 되살리기만", 1280, role, archivedUrl, labels, "전부 `되살리기`", labels.length >= 1 && labels.every((label) => label.trim() === "되살리기"));
-  const statusWords = await evidenceRows(page).evaluateAll((rows, col) => rows.map((row) => (row.querySelectorAll(":scope > td")[col] as HTMLElement).querySelector("span")?.textContent ?? ""), EVIDENCE_COL.status);
+  const statusWords = await evidenceRows(page).evaluateAll((rows, col) => rows.map((row) => (row.querySelectorAll(':scope > td:not([class*="selectCell"])')[col] as HTMLElement).querySelector("span")?.textContent ?? ""), EVIDENCE_COL.status);
   record("보관됨 보기 상태 낱말", 1280, role, archivedUrl, statusWords, "전부 보관됨", statusWords.every((word) => word === "보관됨"));
   const countBefore = await evidenceRows(page).count();
   const revive = waitForServerAction(page);

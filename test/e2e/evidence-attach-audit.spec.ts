@@ -354,7 +354,8 @@ test("A 증빙 목록 · PickDialog — ① 경영관리(두 키)", async ({ bro
           .filter((el) => el.tabIndex >= 0 && !(el as HTMLButtonElement).disabled && el.getClientRects().length > 0)
           .map((el) => `${el.tagName.toLowerCase()}«${(el.textContent ?? "").trim().slice(0, 16)}»`),
       );
-      record("표 탭 정지 수(§7-3 (아) — 격자 1)", width, role, URL_ALL, { count: tabStops.length, sample: tabStops.slice(0, 6) }, 1, tabStops.length === 1);
+      // 07.2-09: 선택 열이 서는 편집 폭(≥1024)에는 머리글 「이 쪽 전체 고르기」가 탭 정지 하나를 더한다(§7-3 (카) 「탭 정지 2개」 — 머리글 전체 고르기 + 격자).
+      record("표 탭 정지 수(§7-3 (카) — 머리글 전체 고르기 1 + 격자 1)", width, role, URL_ALL, { count: tabStops.length, sample: tabStops.slice(0, 6) }, 2, tabStops.length === 2);
       // D-3 판정(오케스트레이터 2026-10-17) — 이 목록 행 행동 셀은 §7-19 RowActions 규칙이 정한다(§7-3 (차) 「셀마다 3차 하나」는 편집 표 문서 행동 열 규칙).
       // 「붙이기」 + 「보관」 둘은 허용하되 보관(삭제류)은 §7-19 · §7-1 772대로 danger 글자(`--status-danger`) · 맨 끝 · 앞 행동과 글자 간격 ≥ `--s-8`.
       const cell = await rowOf(page, names.open)

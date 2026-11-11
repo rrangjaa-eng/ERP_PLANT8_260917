@@ -6,10 +6,12 @@ import {
   EVIDENCE_PERIOD_FILTERS,
   EVIDENCE_STATE_FILTERS,
   EVIDENCE_TYPE_FILTERS,
+  listArchivableEvidence,
   listEvidenceRecords,
   listEvidenceTeamOptions,
 } from "@/domain/evidence-records";
 import { loadCardUsageForEdit } from "@/domain/corp-card-usages";
+import { EVIDENCE_BATCH_LIMIT } from "@/domain/evidence-records/batch";
 import { formatKrw } from "@/lib/format-number";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { EvidenceTable } from "./evidence-table";
@@ -33,16 +35,16 @@ export default async function EvidencePage({ searchParams }: { searchParams: Pro
   if (!(await can(viewer, "evidence.intake", "write"))) notFound();
   const params = await searchParams;
   // 공개 칸 묶음 「다른 팀」의 팀(보관 아닌 팀 · DA-1)은 목록과 함께 한 번 읽는다.
-  const [list, teams] = await Promise.all([
-    listEvidenceRecords(viewer, {
-      state: firstParam(params.state),
-      type: firstParam(params.type),
-      period: firstParam(params.period),
-      batch: firstParam(params.batch),
-      page: firstParam(params.page),
-    }),
-    listEvidenceTeamOptions(viewer),
-  ]);
+  const query = {
+    state: firstParam(params.state),
+    type: firstParam(params.type),
+    period: firstParam(params.period),
+    batch: firstParam(params.batch),
+    page: firstParam(params.page),
+  };
+  const [list, teams] = await Promise.all([listEvidenceRecords(viewer, query), listEvidenceTeamOptions(viewer)]);
+  // 07.2-09 D-7284 — `?batch=` 보기에서만 `묶음 전체 고르기`가 쓸 보관 가능 줄(id · version, 최대 301)을 함께 읽는다.
+  const batchItems = list.filters.batch !== null ? await listArchivableEvidence(viewer, query) : [];
   // 06.1-09 S8 대리 등록 착지 — 합계는 그 카드 사용을 서버가 다시 읽어 싣는다(쿼리 글자를 그대로 보이지 않는다). 못 읽으면 토스트 없음.
   const registeredId = firstParam(params.registered);
   const registered = registeredId ? await loadCardUsageForEdit(viewer, registeredId) : null;
@@ -54,6 +56,8 @@ export default async function EvidencePage({ searchParams }: { searchParams: Pro
         viewerId={viewer.id}
         list={list}
         teams={teams}
+        batchItems={batchItems}
+        batchLimit={EVIDENCE_BATCH_LIMIT}
         filterOptions={{ states: EVIDENCE_STATE_FILTERS, types: EVIDENCE_TYPE_FILTERS, periods: EVIDENCE_PERIOD_FILTERS, defaults: EVIDENCE_LIST_DEFAULTS }}
       />
     </ListScreen>

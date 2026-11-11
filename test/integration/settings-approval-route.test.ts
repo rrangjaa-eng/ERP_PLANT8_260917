@@ -20,7 +20,9 @@ import { isRouteStepSettingKey, saveRouteStepSettings } from "@/domain/approvals
 import { recordAction } from "@/domain/action-log/record";
 import { submitLeave, LEAVE_DOCUMENT_KIND, LEAVE_ROUTE_SETTINGS } from "@/domain/leave";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
+import { setSimpleSettingValue } from "@/domain/document-numbering";
 import {
+  APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER,
   APPROVAL_ROUTE_LEAVE_SELF_APPROVAL,
   APPROVAL_ROUTE_LEAVE_STEP2_ENABLED,
   APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID,
@@ -539,5 +541,43 @@ describe("결재선 한 단계 원자 저장(사용자 결정 2026-09-30 A)", ()
     await expect(
       saveRouteStepSettings(SYSTEM_VIEWER, { kind: LEAVE_DOCUMENT_KIND, stepIndex: 5, values: CEO_COMPANY }),
     ).rejects.toThrow("결재선 단계 없음");
+  });
+});
+
+// 07.2-13(PU9 · S19): 반반차 · 재택 결재 단계 — 설정 화면 select는 글자("2")를 보낸다. 저장 경로(setSimpleSettingAction과 같은
+// setSimpleSettingValue)는 숫자로 저장하고, 1~4 밖 값은 거부해 저장값이 그대로다(T-07.2-13-03).
+describe("반반차 · 재택 결재 단계 저장(PU9 · S19)", () => {
+  const def = APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER;
+  const stored = async () => (await db.select().from(settingsSimple).where(eq(settingsSimple.key, def.key)))[0]?.value;
+
+  it("기본 4가 시드되고, select 글자 \"2\"는 숫자 2로 저장 · 읽기 2", async () => {
+    expect(await getSettingValue(def)).toBe(4);
+    await setSimpleSettingValue(SYSTEM_VIEWER, def, "2", NOW_2026);
+    expect(await stored()).toBe(2);
+    expect(await getSettingValue(def)).toBe(2);
+  });
+
+  it.each([0, 5, "0", "5", 2.5, "", null])("1~4 밖 값(%j)은 거부하고 저장값은 그대로다", async (bad) => {
+    await setSimpleSettingValue(SYSTEM_VIEWER, def, "3", NOW_2026);
+    await expect(setSimpleSettingValue(SYSTEM_VIEWER, def, bad, NOW_2026)).rejects.toThrow();
+    expect(await stored()).toBe(3);
+  });
+});
+
+// 07.2-13(D-7299 · D7298-A): 커스텀 계급 단계 보유자 경고 — 실제 조직 스냅숏으로 센다.
+describe("커스텀 계급 단계 보유자 경고(D-7299)", () => {
+  const step2 = LEAVE_ROUTE_SETTINGS.steps[1]!;
+
+  it("2단 = 커스텀 계급 × 전사: 0명이면 보유자 없음 · 2명이면 보유자 2명 · 한 명이 승인 · 1명이면 경고 없음", async () => {
+    const role = await createRole(SYSTEM_VIEWER, { name: "부팀장" });
+    await upsertSimpleValue(SYSTEM_VIEWER, step2.roleId.key, role.id, null);
+    await upsertSimpleValue(SYSTEM_VIEWER, step2.scope.key, "company", null);
+    const warnings = () => listApprovalRouteSettingWarnings(SYSTEM_VIEWER);
+
+    expect((await warnings())[step2.roleId.key]).toBe("보유자 없음 · 대표가 대신 승인");
+    await makePerson("부팀장하나", role.id, "기획1팀");
+    expect((await warnings())[step2.roleId.key]).toBeUndefined();
+    await makePerson("부팀장둘", role.id, "경영관리팀");
+    expect((await warnings())[step2.roleId.key]).toBe("보유자 2명 · 한 명이 승인");
   });
 });

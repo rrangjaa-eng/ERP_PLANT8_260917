@@ -5,10 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // 목은 평범한 함수 변수로 둔다(모듈 위 vi.fn에 거부를 넣으면 잡아도 실패로 친다 — .continue-here).
 class RouteBlockedError extends Error {}
 let previewImpl: () => Promise<unknown> = () => Promise.resolve({ steps: [] });
+const previewInputs: unknown[] = [];
 vi.mock("@/app/(app)/document-kinds", () => ({}));
 vi.mock("@/domain/approvals", () => ({
   RouteBlockedError,
-  previewRoute: () => previewImpl(),
+  previewRoute: (_viewer: unknown, input: unknown) => {
+    previewInputs.push(input);
+    return previewImpl();
+  },
 }));
 
 const { previewRouteOrBlocked } = await import("@/app/(app)/leave/route-preview");
@@ -17,6 +21,19 @@ const viewer = { id: "viewer" } as never;
 describe("previewRouteOrBlocked", () => {
   beforeEach(() => {
     previewImpl = () => Promise.resolve({ steps: [] });
+    previewInputs.length = 0;
+  });
+
+  // 07.2-13(PU9): 종류를 바꿀 때마다 그 종류를 힌트로 미리보기를 다시 부른다 — 제출 · 재상신과 같은 hint(미리보기 = 제출).
+  it("종류 힌트를 그대로 엔진 미리보기에 넘긴다 · 힌트 없으면 hint 없음", async () => {
+    await previewRouteOrBlocked(viewer, { leaveKind: "quarter_day" });
+    await previewRouteOrBlocked(viewer, { leaveKind: "full_day" });
+    await previewRouteOrBlocked(viewer);
+    expect(previewInputs).toEqual([
+      { kind: "leave", hint: { leaveKind: "quarter_day" } },
+      { kind: "leave", hint: { leaveKind: "full_day" } },
+      { kind: "leave", hint: undefined },
+    ]);
   });
 
   it("막히지 않으면 미리보기를 주고 막힘은 없다", async () => {

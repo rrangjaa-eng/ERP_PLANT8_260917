@@ -2684,3 +2684,13 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 - 그 구매로 생긴 카드 사용 삭제 불가 — `domain/corp-card-usages/rights.ts` `registeredVia === "purchase"` → `delete: false` · `changeLink: false`. 시험: 같은 파일 「구매 완료 건의 연결 변경 · 삭제 → ForbiddenError」.
 **결정자**: 사용자(D-7279 「넷 다 넣기」) — 구현 판정은 07.2-11 플랜(「이미 구현」 · 시험으로 닫음).
 **영향**: 코드 변경 없음(`domain/purchase-requests/` · `domain/corp-card-usages/` 그대로).
+
+## 2026-11-10 — 07.2-13 선택지 글자가 있는 숫자 설정은 select (§7-2)
+**결정**: 자동 생성 설정 화면에서 registry 타입이 number인데 키 정의에 선택지 글자(`optionLabels`)가 있으면 텍스트 칸이 아니라 네이티브 `<select>`로 그린다. 첫 사례는 연차 결재선 `반반차 · 재택 결재 단계`(`1단까지`~`4단까지`, 값 1~4). select 즉시 저장이 실패하면(서버 거부 · 통신 실패) 고르기 전 값으로 되돌리고, 통신 실패는 칸 아래 `저장 실패 · 다시 시도`(서버 거부는 기존 `저장 실패 · {이유}`).
+**이유**: UI-SPEC S19가 이 칸을 select로 정했고(D-7251 「숫자 1칸」), 값은 숫자여야 한다 — 숫자 글자 enum(`"1"`~`"4"`)은 jsonb 읽기(drizzle `mapFromDriverValue`의 `JSON.parse`)가 숫자로 되돌려 스키마가 거부한다. 실패 되돌림은 S19 ERROR 「값 되돌림」과 §7-2 짝 격자 · §7-13의 「그 칸 되돌림」과 같은 규칙이다.
+**바뀐 규칙**: §7-2 렌더 표에 `number + 선택지 글자 → 네이티브 select` 행. 설정 select 실패 되돌림(모든 select 칸).
+**버린 대안**: 숫자 글자 enum(위 jsonb 왕복 문제) · 숫자 텍스트 칸(1~4 외 값을 칠 수 있어 고를 것을 늘린다).
+**범위**: `app/(app)/admin/settings/page.tsx` `optionsFor` · `settings-form-client.tsx` `SimpleFieldEditor` select 갈래. 새 색 · 새 컴포넌트 0.
+**결정자**: 계획(07.2-13 · UI-SPEC S19) — 실행자 판정(렌더 매핑 한 행), 사용자 확인 대상.
+**영향**: SYSTEM §7-2 「자동 생성 설정 화면 필드 렌더 규칙」 표.
+

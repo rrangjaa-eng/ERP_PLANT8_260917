@@ -112,7 +112,10 @@ export default async function LeaveDocumentPage({
   }
 
   // 다시 신청 미리보기 — 지금 설정 · 소속으로 다시 해석한 제출 전 한 줄(S3 반려 편집).
-  const { route: preview, blocked: routeBlocked } = resubmitting ? await previewRouteOrBlocked(viewer) : { route: null, blocked: null };
+  // 07.2-13(PU9): 첫 그림은 그 문서의 저장된 종류로 — 폼에서 종류를 바꾸면 폼 미리보기 액션이 새 종류로 다시 그린다.
+  const { route: preview, blocked: routeBlocked } = resubmitting
+    ? await previewRouteOrBlocked(viewer, leave.kind ? { leaveKind: leave.kind } : undefined)
+    : { route: null, blocked: null };
   const skipped = preview?.steps.filter((step) => step.skipped).map((step) => `${step.label ?? ""} 단계 건너뜀(자기 승인 없음)`) ?? [];
 
   return (

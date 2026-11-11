@@ -24,6 +24,7 @@ import {
   APPROVAL_ROUTE_LEAVE_STEP4_ROLE_ID,
   APPROVAL_ROUTE_LEAVE_STEP4_SCOPE,
   APPROVAL_ROUTE_LEAVE_STEP4_ORG_UNIT_ID,
+  APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER,
 } from "@/domain/settings/keys";
 import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/document-numbering";
 import {
@@ -32,6 +33,7 @@ import {
   registerDocumentKind,
   submitDocument,
   type RouteConfig,
+  type RouteHint,
   type RouteSettingDefs,
 } from "@/domain/approvals";
 import type { findVisibility } from "@/repositories/permissions";
@@ -112,18 +114,24 @@ export const LEAVE_ROUTE_SETTINGS: RouteSettingDefs = {
 const LEAVE_ROUTE_DEFS = [
   APPROVAL_ROUTE_LEAVE_SELF_APPROVAL,
   ...LEAVE_ROUTE_SETTINGS.steps.flatMap((step) => [step.enabled, step.roleId, step.scope, step.orgUnitId]),
+  APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER,
 ];
+
+// 07.2-13(PU9 · D-7251): 결재선이 짧아지는 경량 종류.
+const LIGHT_LEAVE_KINDS: readonly LeaveKind[] = ["quarter_day", "remote"];
 
 function required<T>(value: T | undefined, key: string): T {
   if (value === undefined) throw new Error(`결재선 설정 '${key}' 값 없음`);
   return value;
 }
 
-// 17키를 getSimpleSettingValues **한 번**(SELECT 한 문장)으로 읽어 객체 하나로
+// 17키(+ 07.2-13 경량 종류 단계 수 1키)를 getSimpleSettingValues **한 번**(SELECT 한 문장)으로 읽어 객체 하나로
 // 조립한다 — 키마다 따로 읽으면 그 사이의 관리자 저장이 섞인다(Codex HIGH 스냅숏).
 // 기본값 없는 org_unit_id 키(지금은 3단)에 행이 없으면 ""(특정 부서 없음 — 그 단계는
 // 빈 자리)로 읽는다 — 연차 신청·미리보기가 원시 오류로 막히지 않는다(CEO-7).
-export async function loadLeaveRouteConfig(deps?: Parameters<typeof getSimpleSettingValues>[1]): Promise<RouteConfig> {
+// 07.2-13(PU9): 힌트가 반반차 · 재택이면 슬롯 번호 > N인 단계를 꺼서 돌려준다 — 엔진 planRoute가 슬롯 번호(i + 1)를
+// 그대로 쓰므로 번호가 당겨지지 않고, 꺼진 단계는 결재선에 행이 없다(흐리게 그리지 않음).
+export async function loadLeaveRouteConfig(hint?: RouteHint, deps?: Parameters<typeof getSimpleSettingValues>[1]): Promise<RouteConfig> {
   const values = await getSimpleSettingValues(LEAVE_ROUTE_DEFS, deps);
   const byKey = new Map(LEAVE_ROUTE_DEFS.map((def, i) => [def.key, values[i]]));
   const read = <T>(def: { key: string }): T | undefined => byKey.get(def.key) as T | undefined;
@@ -135,7 +143,9 @@ export async function loadLeaveRouteConfig(deps?: Parameters<typeof getSimpleSet
     orgUnitId: read<string>(step.orgUnitId) ?? "",
   }));
   const selfApproval = required(read<RouteConfig["selfApproval"]>(APPROVAL_ROUTE_LEAVE_SELF_APPROVAL), APPROVAL_ROUTE_LEAVE_SELF_APPROVAL.key);
-  return { selfApproval, steps };
+  if (hint?.leaveKind === undefined || !LIGHT_LEAVE_KINDS.includes(hint.leaveKind)) return { selfApproval, steps };
+  const stopAfter = required(read<number>(APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER), APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER.key);
+  return { selfApproval, steps: steps.map((step, i) => (i + 1 > stopAfter ? { ...step, enabled: false } : step)) };
 }
 
 // 07.2-08(PU11 · D-7257 · D-7258): 반반차 시작 시각 — 새 반반차는 필수 · `HH:MM` 형식만(근무시간 검사 없음). 반반차가 아니면
@@ -344,7 +354,7 @@ function buildLeaveDetailRows(projected: Partial<LeaveDetailDto>): DocumentDetai
 registerDocumentKind({
   kind: LEAVE_DOCUMENT_KIND,
   label: "연차",
-  loadRouteConfig: () => loadLeaveRouteConfig(),
+  loadRouteConfig: (hint) => loadLeaveRouteConfig(hint),
   href: (documentId) => `/leave/${documentId}`,
   describeDocuments: describeLeaveDocuments,
   routeSettings: LEAVE_ROUTE_SETTINGS,
@@ -373,7 +383,8 @@ export async function submitLeave(
   const days = validateLeaveInput(input, range, holidays);
   const year = Number(today.slice(0, 4));
 
-  const prepared = await prepareSubmission(viewer, { kind: LEAVE_DOCUMENT_KIND, drafterId: viewer.id }, { now: deps?.now });
+  // 07.2-13(PU9): 결재선 힌트는 검증된 종류(days.kind) — 입력 원문을 쓰지 않는다. 폼 미리보기와 같은 힌트다.
+  const prepared = await prepareSubmission(viewer, { kind: LEAVE_DOCUMENT_KIND, drafterId: viewer.id, hint: { leaveKind: days.kind } }, { now: deps?.now });
   const format = await loadDocumentNumberFormat(LEAVE_DOCUMENT_KIND);
   const note = input.note?.trim() ? input.note.trim() : null;
 

@@ -44,7 +44,7 @@ import {
   type SnapshotPerson,
   type WalkRouteResult,
 } from "@/domain/approvals/route";
-import { getDocumentKind, listDocumentKinds, resubmittableStatuses, type DetailFields, type DocumentKindDef, type DocumentSummary, type DocumentDetailRows, type LoadDetailsDeps, type LoadScope, type RouteConfigStep } from "@/domain/approvals/kinds";
+import { getDocumentKind, listDocumentKinds, resubmittableStatuses, type DetailFields, type DocumentKindDef, type DocumentSummary, type DocumentDetailRows, type LoadDetailsDeps, type LoadScope, type RouteConfigStep, type RouteHint } from "@/domain/approvals/kinds";
 import { buildConflictMessage, isApprovalParty } from "@/domain/approvals/conflict-message";
 import { loadActionLogGate as defaultLoadActionLogGate, recordActionInTx, type ActionLogGate, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
@@ -64,7 +64,7 @@ import {
 } from "@/domain/approvals/dto";
 
 export { registerDocumentKind, getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
-export type { DocumentDetailEvidenceFile, DocumentDetailRow, DocumentDetailRows, DocumentKindDef, DocumentMeasure, DocumentSummary, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
+export type { DocumentDetailEvidenceFile, DocumentDetailRow, DocumentDetailRows, DocumentKindDef, DocumentMeasure, DocumentSummary, RouteConfig, RouteConfigStep, RouteHint, RouteSettingDefs } from "@/domain/approvals/kinds";
 export { nextStep, resolveHolders, statusStepLabel, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 export type { ApprovalInboxItem, ApprovalInboxItemDto, ApprovalView, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
@@ -223,11 +223,12 @@ function unactedSteps(steps: NewApprovalStep[]): RouteStep[] {
 // 지금 설정 · 지금 소속으로 결재선을 조립한다(아무것도 쓰지 않는다).
 async function planRoute(
   viewer: Viewer,
-  input: { kind: string; drafterId: string; doc?: { teamId: string | null } },
+  input: { kind: string; drafterId: string; doc?: { teamId: string | null }; hint?: RouteHint },
   deps?: ApprovalDeps,
 ): Promise<Omit<PreparedSubmission, "gate"> & { drafterName: string | null; unresolvedStepIndexes: number[] }> {
   const def = getDocumentKind(input.kind);
-  const config = await def.loadRouteConfig();
+  // 07.2-13(PU9): 힌트는 종류 로더가 해석한다(연차 반반차 · 재택 → 설정 슬롯 번호 ≤ N). 미리보기 · 제출이 같은 힌트로 여기를 지난다.
+  const config = await def.loadRouteConfig(input.hint);
   const snapshot = await readSnapshot(viewer, deps);
   const names = await listRouteLabelNames(viewer);
   const drafter = snapshot.find((person) => person.id === input.drafterId);
@@ -267,7 +268,8 @@ async function planRoute(
 export async function prepareSubmission(
   viewer: Viewer,
   // doc — 문서에 매인 단계 범위(project_team)를 풀 문서 팀. 서버가 문서 행에서 계산한다(클라이언트 입력 아님, D-6215).
-  input: { kind: string; drafterId: string; doc?: { teamId: string | null } },
+  // hint — 07.2-13 종류별 결재선 힌트(RouteHint). 호출부가 검증된 값으로 만든다.
+  input: { kind: string; drafterId: string; doc?: { teamId: string | null }; hint?: RouteHint },
   deps?: ApprovalDeps,
 ): Promise<PreparedSubmission> {
   const { drafterName, unresolvedStepIndexes, ...planned } = await planRoute(viewer, input, deps);
@@ -285,10 +287,10 @@ export async function prepareSubmission(
 // 06.2(D-6224): 문서 없이 부르면 행사 담당 팀 단계는 빈 자리여도 자리 이름만(사람 이름 없이) 싣는다.
 export async function previewRoute(
   viewer: Viewer,
-  input: { kind: string; doc?: { teamId: string | null } },
+  input: { kind: string; doc?: { teamId: string | null }; hint?: RouteHint },
   deps?: ApprovalDeps,
 ): Promise<RoutePreviewDTO> {
-  const planned = await planRoute(viewer, { kind: input.kind, drafterId: viewer.id, doc: input.doc }, deps);
+  const planned = await planRoute(viewer, { kind: input.kind, drafterId: viewer.id, doc: input.doc, hint: input.hint }, deps);
   // 안 풀린 문서 단계가 있는데 처리할 단계가 없으면 끝 판정(대표 폴백 · 막힘)은 그 단계가 빈 자리라는 가정에
   // 기댄다 — 제출 때는 다를 수 있어 미리보기는 끝 판정을 싣지 않고 자리 이름만 낸다(D-6224 · /review #190 P2).
   const { outcome } = planned.walk;

@@ -3,7 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, approvalInstances, approvalRoutes, approvalSteps, leaveRequests } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { setVisibilityCell } from "@/domain/permissions/matrix";
 import {
   approveDocument,
@@ -15,10 +15,19 @@ import {
   ApprovalConflictError,
   NotCurrentHolderError,
   NOT_HOLDER_MESSAGE,
+  previewRoute,
 } from "@/domain/approvals";
 import { submitLeave, getLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
 import { resubmitLeave } from "@/domain/leave/resubmit";
-import { APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID } from "@/domain/settings/keys";
+import {
+  APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER,
+  APPROVAL_ROUTE_LEAVE_SELF_APPROVAL,
+  APPROVAL_ROUTE_LEAVE_STEP1_ROLE_ID,
+  APPROVAL_ROUTE_LEAVE_STEP2_ENABLED,
+  APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID,
+  APPROVAL_ROUTE_LEAVE_STEP3_ENABLED,
+  APPROVAL_ROUTE_LEAVE_STEP4_ENABLED,
+} from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
 import type { appendActionLog } from "@/repositories/action-log";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -442,5 +451,102 @@ describe("액션 반환값 투영(B-A1)", () => {
     const ceoResult = await projectActionResult(org.ceo, { documentId: finalResult.documentId, final: finalResult.final, deductedDays: days });
     expect(ceoResult).toMatchObject({ final: true });
     expect(ceoResult).not.toHaveProperty("deductedDays");
+  });
+});
+
+// 07.2-13(PU9 · D-7251): 반반차 · 재택 결재 단계 — 설정 슬롯 번호 ≤ N인 단계만 남는다. 미리보기(엔진 previewRoute ·
+// 같은 hint)와 제출 · 재상신의 approval_steps가 같고, 진행 중 문서는 제출 때 굳은 결재선 그대로다.
+describe("반반차 · 재택 결재 단계(PU9 · D-7251)", () => {
+  // 4단 전부에 보유자가 있는 조직 — 1단 팀장(기획1팀) · 2단 본부 책임자(기획본부) · 3단 본부 책임자(경영관리본부) · 4단 대표.
+  async function fullOrg() {
+    return {
+      drafter: await makePerson("경량기안", DEFAULT_ROLE_ID, "기획1팀"),
+      lead: await makePerson("경량팀장", TEAM_LEAD_ROLE_ID, "기획1팀"),
+      head: await makePerson("경량본부장", DIVISION_HEAD_ROLE_ID, "기획1팀"),
+      mgmt: await makePerson("경량경영", DIVISION_HEAD_ROLE_ID, "경영관리팀"),
+      ceo: await makePerson("경량대표", CEO_ROLE_ID, null),
+    };
+  }
+  const QUARTER = { kind: "quarter_day", startDate: "2026-09-30", endDate: "2026-09-30", half: "", startTime: "09:00" };
+  const REMOTE = { kind: "remote", startDate: "2026-09-15", endDate: "2026-09-15", half: "" };
+
+  async function stepRowsOf(instanceId: string, round: number) {
+    const rows = await db
+      .select({ round: approvalRoutes.round, stepIndex: approvalSteps.stepIndex, label: approvalSteps.label })
+      .from(approvalSteps)
+      .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+      .where(eq(approvalRoutes.instanceId, instanceId))
+      .orderBy(asc(approvalSteps.stepIndex));
+    return rows.filter((row) => row.round === round).map((row) => ({ stepIndex: row.stepIndex, label: row.label }));
+  }
+  async function previewLabels(viewer: Viewer, leaveKind: "full_day" | "half_day" | "quarter_day" | "remote") {
+    return (await previewRoute(viewer, { kind: LEAVE_DOCUMENT_KIND, hint: { leaveKind } }, deps)).steps.map((step) => step.label);
+  }
+  const setStopAfter = (value: number) => upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_LIGHT_KINDS_STOP_AFTER.key, value, null);
+
+  it("값 2: 반반차 · 재택 제출 결재선 = 미리보기 2단 · 종일 = 4단 · 제출 뒤 값 1로 바꿔도 진행 중 문서 그대로", async () => {
+    const org = await fullOrg();
+    await setStopAfter(2);
+
+    const quarterPreview = await previewLabels(org.drafter, "quarter_day");
+    const quarter = await submitLeave(org.drafter, QUARTER, deps);
+    const quarterSteps = await stepRowsOf(quarter.instanceId, 1);
+    expect(quarterSteps.map((step) => step.stepIndex)).toEqual([1, 2]);
+    expect(quarterSteps.map((step) => step.label)).toEqual(quarterPreview);
+
+    const remotePreview = await previewLabels(org.drafter, "remote");
+    const remote = await submitLeave(org.drafter, REMOTE, deps);
+    expect((await stepRowsOf(remote.instanceId, 1)).map((step) => step.label)).toEqual(remotePreview);
+    expect(remotePreview).toHaveLength(2);
+
+    const fullPreview = await previewLabels(org.drafter, "full_day");
+    const full = await submitLeave(org.drafter, FULL_DAY, deps);
+    const fullSteps = await stepRowsOf(full.instanceId, 1);
+    expect(fullSteps.map((step) => step.stepIndex)).toEqual([1, 2, 3, 4]);
+    expect(fullSteps.map((step) => step.label)).toEqual(fullPreview);
+
+    await setStopAfter(1);
+    expect(await stepRowsOf(quarter.instanceId, 1)).toEqual(quarterSteps);
+    expect(await previewLabels(org.drafter, "quarter_day")).toHaveLength(1);
+  });
+
+  it("종일 반려 → 반반차로 바꿔 다시 신청: 차수 2 결재선 = 반반차 미리보기(지금 설정 값 2 → 2단) · 차수 1은 4단 그대로", async () => {
+    const org = await fullOrg();
+    const submitted = await submitLeave(org.drafter, FULL_DAY, deps);
+    const rejected = await rejectDocument(org.lead, { instanceId: submitted.instanceId, expectedVersion: 1, reason: REASON }, deps);
+    await setStopAfter(2);
+
+    const preview = await previewLabels(org.drafter, "quarter_day");
+    await resubmitLeave(org.drafter, { leaveId: submitted.leaveId, expectedVersion: rejected.version, input: { ...QUARTER, note: "" } }, deps);
+    const round2 = await stepRowsOf(submitted.instanceId, 2);
+    expect(round2.map((step) => step.stepIndex)).toEqual([1, 2]);
+    expect(round2.map((step) => step.label)).toEqual(preview);
+    expect((await stepRowsOf(submitted.instanceId, 1)).map((step) => step.stepIndex)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("C-3 현행 유지: 1단만 남는 반반차(값 1)를 그 팀장이 올리면 본인 건너뜀으로 비고 대표가 대신 승인한다", async () => {
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP1_ROLE_ID.key, TEAM_LEAD_ROLE_ID, null);
+    await setStopAfter(1);
+    const lead = await makePerson("경량팀장기안", TEAM_LEAD_ROLE_ID, "기획1팀");
+    const ceo = await makePerson("경량대표승인", CEO_ROLE_ID, null);
+
+    const doc = await submitLeave(lead, QUARTER, deps);
+    expect((await stepRowsOf(doc.instanceId, 1)).map((step) => step.stepIndex)).toEqual([1]);
+    expect(await viewActions(ceo, doc.leaveId)).toContain("approve");
+    const approved = await approveDocument(ceo, { instanceId: doc.instanceId, expectedVersion: 1 }, deps);
+    expect(approved.status).toBe("approved");
+  });
+
+  it("힌트 없이 부르는 미리보기와 다른 단계 끔은 그대로 — 값 2여도 종일은 꺼진 단계만 빠진다", async () => {
+    const org = await fullOrg();
+    await setStopAfter(2);
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ENABLED.key, false, null);
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ENABLED.key, true, null);
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP4_ENABLED.key, true, null);
+    const noHint = (await previewRoute(org.drafter, { kind: LEAVE_DOCUMENT_KIND }, deps)).steps.map((step) => step.label);
+    expect(noHint).toEqual(await previewLabels(org.drafter, "full_day"));
+    expect(noHint).toHaveLength(3);
+    // 슬롯 번호 기준 — 2단이 꺼져 있으면 반반차는 1단 하나뿐이다(켜진 단계 두 개가 아니다).
+    expect(await previewLabels(org.drafter, "quarter_day")).toHaveLength(1);
   });
 });

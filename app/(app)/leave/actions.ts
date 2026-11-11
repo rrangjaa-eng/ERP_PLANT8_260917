@@ -16,6 +16,7 @@ import {
   LEAVE_DATE_EMPTY_ERROR,
   LEAVE_HALF_EMPTY_ERROR,
   LEAVE_KIND_EMPTY_ERROR,
+  LEAVE_KINDS,
   LEAVE_START_EMPTY_ERROR,
   leaveYearRange,
   type LeaveFieldError,
@@ -141,7 +142,9 @@ export const previewLeaveAction = authedActionClient.schema(leaveInputSchema).ac
   // 07.2-08(PU11): 반반차 시작 시각 형식 — 다른 막힘이 없을 때 한 줄(제출 검사 validateLeaveInput과 같은 함수 · 같은 글자).
   const time = leaveStartTimeOf(parsedInput.kind, parsedInput.startTime);
   if (!time.ok && !blockedReason) blockedReason = time.error;
-  const { route, blocked: routeBlocked } = await previewRouteOrBlocked(ctx.viewer);
+  // 07.2-13(PU9): 결재선은 고른 종류로 — 날짜가 아직 없어도 종류만으로 바뀐다. 목록 밖 종류는 힌트 없음(현행 결재선).
+  const leaveKind = LEAVE_KINDS.find((kind) => kind === parsedInput.kind);
+  const { route, blocked: routeBlocked } = await previewRouteOrBlocked(ctx.viewer, leaveKind ? { leaveKind } : undefined);
   return { remote: days.ok && days.kind === "remote", offDays, balance, route, routeBlocked, blockedReason };
 });
 

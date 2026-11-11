@@ -254,7 +254,10 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   }
 
   const hint = preview ? (preview.remote ? "재택 · 차감 없음" : preview.offDays ? `휴일 ${preview.offDays}일 제외` : null) : null;
-  const route = !resubmit && preview ? preview.route : null;
+  // 07.2-13(PU9): 결재선은 고른 종류마다 달라진다 — 다시 신청에서 종류를 바꾸면 폼 미리보기(지금 종류)를 그린다. 저장된 종류
+  // 그대로면 문서 화면이 넘긴 한 줄(같은 종류 · 같은 결재선)을 두어 한 줄이 다시 그려지지 않게 한다. 미리보기 = 제출(T-07.2-13-01).
+  const pageRoute = Boolean(resubmit?.route) && values.kind === resubmit?.initial.kind;
+  const route = preview && !pageRoute ? preview.route : null;
   const skippedNote =
     route?.steps
       .filter((step) => step.skipped)
@@ -275,9 +278,9 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
       ),
     });
   }
-  if (resubmit?.route) {
+  if (resubmit && pageRoute) {
     items.push({ label: "결재선", value: resubmit.route });
-  } else if (!resubmit && preview?.routeBlocked) {
+  } else if (preview?.routeBlocked) {
     // 결재선이 막히면 이유를 결재선 자리에 한 줄(04.1-06 코드 검토 L3) — 제출해도 같은 이유로 거부된다.
     items.push({ label: "결재선", value: <span className={styles.blockedReason}>{preview.routeBlocked}</span> });
   } else if (route) {

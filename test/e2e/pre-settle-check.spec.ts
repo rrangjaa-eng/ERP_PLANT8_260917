@@ -15,7 +15,7 @@ import { approveDocument, getApprovalView, rejectDocument } from "@/domain/appro
 import { saveRevenue } from "@/domain/revenue";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
 import { setSettingValue } from "@/domain/settings/registry";
-import { PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE, PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES, PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
+import { PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE, PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES } from "@/domain/settings/keys";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { findApprovalGraphByDocument } from "@/repositories/approvals";
 import { findExpenseById } from "@/repositories/expenses";
@@ -29,6 +29,7 @@ import { testVendorAccount } from "../integration/fixtures/expenses";
 import { archiveTempRoles, insertTempRole, makeEvidenceManagerE2E, uniqueReceipt } from "./expense-fixture";
 import { loginPage, makePerson, setupLeaveOrg, waitForHydration, type LeaveOrg } from "./leave-org";
 import { projectInfo } from "./project-info-helpers";
+import { E2E_ONLINE_VENDOR_NAME, enableOnlineVendorSetting } from "./online-vendor";
 
 // 06-19(PROJ-06 · UI-SPEC S18): 정산 프로젝트 상세의 「완료 전 점검」 섹션과 머리 줄 `정산 결재 올리기` 막힘이 한 판정이다.
 // 준비는 도메인 함수(지출결의 제출만 화면 — 증빙 업로드가 브라우저 경로다). 줄 하나 · 발행 줄 1건이라 막힘은 반려 지출결의 1건뿐이다.
@@ -311,7 +312,7 @@ async function sectionOverflow(section: Locator): Promise<number> {
 
 // Task 2 — 미매칭 견적 줄(그 줄의 문) · 매출 미입력 · 매출 줄. 줄 하나(거래처 있음 · 연결 없음) · 발행 줄 없음 → 막힘 2.
 // 06-22 Task 3 — `vendor: "none"`(거래처 빈 줄) · `noLines`(줄 없음) · `approve: false`(고객 승인 전) · `issued`(발행 줄 1건)를 고른다.
-type UnmatchedOptions = { itemName?: string; executionKrw?: number; vendor?: "none"; noLines?: boolean; approve?: boolean; issued?: boolean };
+type UnmatchedOptions = { itemName?: string; executionKrw?: number; vendor?: "none" | "online"; noLines?: boolean; approve?: boolean; issued?: boolean };
 async function setupUnmatchedSettling(
   line: UnmatchedOptions = {},
 ): Promise<{ org: LeaveOrg; projectId: string; itemName: string; lineId: string; vendorName: string }> {
@@ -320,7 +321,9 @@ async function setupUnmatchedSettling(
   const suffix = randomUUID().slice(0, 6);
   const org = await setupLeaveOrg(today);
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E점검클라이언트-${suffix}`, normalizedName: `e2e점검클라이언트-${suffix}` });
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E점검거래처-${suffix}`, normalizedName: `e2e점검거래처-${suffix}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
+  // 온라인구매 협력사 줄은 공용 이름(online-vendor.ts)만 쓴다 — 설정은 전역 한 칸이라 다른 이름을 넣으면 같은 샤드의 다른 스펙 문 판정이 뒤바뀐다.
+  const vendorName = line.vendor === "online" ? E2E_ONLINE_VENDOR_NAME : `E2E점검거래처-${suffix}`;
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: vendorName, normalizedName: vendorName.toLowerCase(), defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const project = await createProject(org.drafter.viewer, {
     clientId: client.id,
     teamId: org.teamId,
@@ -596,16 +599,12 @@ test.describe("완료 전 점검 — 섹션 마감(S18 · 06-22)", () => {
   });
 
   test("온라인구매 미매칭 줄 — 3차 `구매 요청` href `/cards/purchases?new=1&line={id}`", async ({ browser, baseURL }) => {
-    const fx = await setupUnmatchedSettling();
-    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, fx.vendorName);
-    try {
-      const page = await loginPage(browser, baseURL, fx.org.drafter, { width: 1280, height: 900 });
-      await page.goto(`/projects/${fx.projectId}`);
-      const row = preSettleSection(page).getByRole("row").filter({ hasText: fx.itemName });
-      await expect(row.getByRole("link", { name: `1 ${fx.itemName} 구매 요청`, exact: true })).toHaveAttribute("href", `/cards/purchases?new=1&line=${fx.lineId}`);
-    } finally {
-      await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "");
-    }
+    await enableOnlineVendorSetting();
+    const fx = await setupUnmatchedSettling({ vendor: "online" });
+    const page = await loginPage(browser, baseURL, fx.org.drafter, { width: 1280, height: 900 });
+    await page.goto(`/projects/${fx.projectId}`);
+    const row = preSettleSection(page).getByRole("row").filter({ hasText: fx.itemName });
+    await expect(row.getByRole("link", { name: `1 ${fx.itemName} 구매 요청`, exact: true })).toHaveAttribute("href", `/cards/purchases?new=1&line=${fx.lineId}`);
   });
 
   // 06-19 검토 D-4 — 정산의 기존 줄은 거래처 칸이 잠겨 있어(domain/quotes/edit-scope.ts — 정산은 실행가만 "edit") 견적 줄 표 문에도

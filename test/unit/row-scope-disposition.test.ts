@@ -111,6 +111,7 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
   { file: "domain/quotes/client-print.ts", fn: "loadPrintable", primitive: "findQuoteRevisionById", kind: "scoped", reason: "같은 함수의 canOpenRevision(write) 판정 뒤(07.2-10 고객 견적서 인쇄)" },
   { file: "domain/quotes/client-print.ts", fn: "loadPrintable", primitive: "findProjectById", kind: "scoped", reason: "같은 함수의 canOpenRevision(write) 판정 뒤 — 차수의 프로젝트, 완료 · 보관은 거부(07.2-10 결정 j)" },
   { file: "domain/quotes/client-print.ts", fn: "getQuoteClientPrint", primitive: "listQuoteLinesByRevision", kind: "post-gate", reason: "같은 함수의 loadPrintable(canOpenRevision write) 판정 뒤에만 줄을 읽는다(07.2-10)" },
+  { file: "domain/quotes/import-xlsx-upload.ts", fn: "readQuoteXlsxUpload", primitive: "findProjectById", kind: "scoped", reason: "같은 함수의 canOpenProject(write → findProjectInScope) 판정 뒤 — 범위 밖 · 보관은 없는 차수로 거절, 상태 확인용 읽기이고 저장 0(07.2-14 견적 엑셀 올리기)" },
   { file: "domain/quotes/lines.ts", fn: "createOutOfQuoteLine", primitive: "listQuoteLinesByRevision", kind: "post-gate", reason: "카드 사용 트랜잭션 안 — 트랜잭션 전 precheckLink(findProjectInScope) 판정(06.2-03 주석)" },
   { file: "domain/quotes/lines.ts", fn: "getCurrentQuoteRevision", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "차수 요약(id · 순번 · 승인)만 — 호출자가 관문 뒤(상세 페이지 findProject · 픽스처), 견적 줄 값은 listQuoteLines가 canOpenRevision으로 막는다" },
   { file: "domain/quotes/lines.ts", fn: "listQuoteLines", primitive: "findQuoteRevisionById", kind: "scoped", reason: "같은 함수의 canOpenRevision 판정 뒤(06.2-03)" },

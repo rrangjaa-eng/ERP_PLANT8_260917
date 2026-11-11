@@ -35,7 +35,8 @@ export function buildTextSheetXlsx(sheetName: string, rows: readonly (readonly s
 // ── 06.1-02 읽기 함수 ─────────────────────────────────────────────
 
 export type ZipLimits = { maxEntries: number; maxUnzippedBytes: number };
-export type ReadWorkbookOptions = { sheetRows?: number; onlySheet?: string; zipLimits?: ZipLimits };
+// maxCols: 선언 범위(!ref)의 열이 이보다 넓으면 왼쪽 maxCols열까지만 펼친다(먼 칸 하나가 16,384열을 만들지 않게). 안 주면 선언 범위 전체 — 기존 동작.
+export type ReadWorkbookOptions = { sheetRows?: number; onlySheet?: string; zipLimits?: ZipLimits; maxCols?: number };
 export type ReadSheet = { name: string; rows: unknown[][]; fullRef: string | null; hitRowLimit: boolean };
 export type ReadBook = { sheetNames: string[]; sheets: ReadSheet[]; date1904: boolean };
 
@@ -70,6 +71,14 @@ export function readWorkbookRows(input: Uint8Array | { text: string }, opts: Rea
   for (const name of names) {
     const sheet = book.Sheets[name];
     if (!sheet) continue;
+    const ref = sheet["!ref"];
+    if (opts.maxCols !== undefined && ref) {
+      const range = XLSX.utils.decode_range(ref);
+      if (range.e.c - range.s.c + 1 > opts.maxCols) {
+        range.e.c = range.s.c + opts.maxCols - 1;
+        sheet["!ref"] = XLSX.utils.encode_range(range);
+      }
+    }
     const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null, blankrows: true, raw: true });
     const fullRef: unknown = sheet["!fullref"];
     sheets.push({

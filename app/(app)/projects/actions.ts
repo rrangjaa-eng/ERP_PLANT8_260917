@@ -14,6 +14,7 @@ import {
 import { validatePreEstimateChange, type PreEstimateFieldError } from "@/domain/projects/pre-estimate";
 import { quoteLinesInputSchema, SaveRejectedError } from "@/domain/quotes/lines";
 import { listCounterpartProjects } from "@/domain/quotes/adjustment-pair";
+import { readQuoteXlsxUpload } from "@/domain/quotes/import-xlsx-upload";
 import {
   CUSTOMER_APPROVAL_BASES,
   createRevisionFromCurrent,
@@ -439,3 +440,14 @@ export const requestInvoiceFileUploadAction = authedActionClient
 export const getInvoiceFileAction = authedActionClient
   .schema(z.object({ entryId: z.string().uuid() }))
   .action(async ({ parsedInput, ctx }) => getOwnedEvidence(ctx.viewer, { ownerKind: REVENUE_INVOICE_KIND, ownerId: parsedInput.entryId }));
+
+// 07.2-14(X2): 회사 양식 견적 엑셀 읽기 — 저장 0. 파일 · 프로젝트 id · (시트 이름)은 FormData 하나로 받고, 권리 · 차수 · 크기 · 형식 판정은 전부 domain이 한다.
+export const readQuoteXlsxAction = authedActionClient.schema(z.instanceof(FormData)).action(async ({ parsedInput, ctx }) => {
+  const projectId = parsedInput.get("projectId");
+  const sheet = parsedInput.get("sheet");
+  return readQuoteXlsxUpload(ctx.viewer, {
+    projectId: typeof projectId === "string" ? projectId : "",
+    file: parsedInput.get("file"),
+    sheet: typeof sheet === "string" && sheet !== "" ? sheet : undefined,
+  });
+});

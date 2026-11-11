@@ -7,6 +7,13 @@ import { archive } from "@/domain/archive";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { findUserById } from "@/repositories/users";
+import { findTeamById } from "@/repositories/teams";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { db } from "@/db/client";
+import { reserveEntries } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { insertTempRole } from "./temp-roles";
+import { waitForHydration } from "./leave-org";
 import { findVendorById, insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { loginAsSysadmin } from "./row-actions-helpers";
 
@@ -181,5 +188,96 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     await expect(page.getByText(`복원 · 실패 · 팀장 있음 · ${takerName}`, { exact: true })).toBeVisible();
     await expect(row.getByRole("button", { name: "복원" })).toHaveCount(0);
     expect((await findUserById(SYSTEM_VIEWER, l))?.archivedAt).not.toBeNull();
+  });
+
+  // 07.2-11 PU22 ③(D-7279 · UI-SPEC S22): 위 본부가 사용중지면 팀 복원 거부 — 행 아래 이유 줄(서버 원인 전문) · 「복원」 → 「—」.
+  test("사용중지 본부 아래 팀 복원은 행 아래 `사용중지 본부 아래 팀 · 본부 먼저 복원` · 동작 칸 「—」 · 팀은 보관 그대로", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const unique = randomUUID().slice(0, 8);
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E중지본부-${unique}` });
+    const teamName = `E2E중지본부팀-${unique}`;
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: teamName });
+    await archive(SYSTEM_VIEWER, "team", team.id);
+    await archive(SYSTEM_VIEWER, "org_unit", orgUnit.id);
+
+    await page.goto("/admin/archive");
+    const row = page.locator("tr", { hasText: teamName }).first();
+    await row.getByRole("button", { name: "복원" }).click();
+
+    // 행 바로 뒤는 폰 접힌 줄(PC에서는 숨김)이고 그다음이 이유 줄이다 — 다음 두 행 안의 detail 줄만 본다.
+    const reason = row.locator("xpath=following-sibling::tr[position() <= 2][@data-ui='static-table-detail']");
+    await expect(reason).toHaveText("사용중지 본부 아래 팀 · 본부 먼저 복원");
+    // 서버 거부 글자는 보조 기술이 듣는다 — 다른 화면의 거부 줄과 같은 role="alert"(토스트는 원인 앞부분만 싣는다).
+    await expect(reason.getByRole("alert")).toHaveText("사용중지 본부 아래 팀 · 본부 먼저 복원");
+    await expect(row.getByRole("button", { name: "복원" })).toHaveCount(0);
+    await expect(row.getByRole("cell").last()).toHaveText("—");
+    await expect(page.getByText("복원 · 실패 · 사용중지 본부 아래 팀", { exact: true })).toBeVisible();
+    expect((await findTeamById(SYSTEM_VIEWER, team.id))?.archivedAt).not.toBeNull();
+  });
+
+  // 07.2-11 /review(Codex): 본부 복원이 팀의 의존 거부를 풀 수 있다 — 같은 표에서 본부를 복원하면 팀 행은 새로고침 없이 「복원」이 돌아와야 한다.
+  test("거부된 팀 행은 같은 표에서 본부를 복원하면 새로고침 없이 「복원」이 돌아오고 복원된다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const unique = randomUUID().slice(0, 8);
+    const unitName = `E2E재시도본부-${unique}`;
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: unitName });
+    const teamName = `E2E재시도팀-${unique}`;
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: teamName });
+    await archive(SYSTEM_VIEWER, "team", team.id);
+    await archive(SYSTEM_VIEWER, "org_unit", orgUnit.id);
+
+    await page.goto("/admin/archive");
+    const teamRow = page.locator("tr", { hasText: teamName }).first();
+    await waitForHydration(teamRow.getByRole("button", { name: "복원" }));
+    await teamRow.getByRole("button", { name: "복원" }).click();
+    await expect(teamRow.locator("xpath=following-sibling::tr[position() <= 2][@data-ui='static-table-detail']")).toHaveText("사용중지 본부 아래 팀 · 본부 먼저 복원");
+    await expect(teamRow.getByRole("button", { name: "복원" })).toHaveCount(0);
+
+    // 같은 표에서 본부를 복원한다 — 전체 새로고침 없음.
+    const unitRow = page.locator("tr", { hasText: unitName }).first();
+    await unitRow.getByRole("button", { name: "복원" }).click();
+    await expect(page.locator("tr", { hasText: unitName })).toHaveCount(0);
+
+    await expect(teamRow.getByRole("button", { name: "복원" })).toBeVisible();
+    await teamRow.getByRole("button", { name: "복원" }).click();
+    await expect(page.locator("tr", { hasText: teamName })).toHaveCount(0);
+    expect((await findTeamById(SYSTEM_VIEWER, team.id))?.archivedAt).toBeNull();
+  });
+
+  // 07.2-11 PU22 ②(07.2 D-7309 · UI-SPEC S22): 사용중지(보관) 거래처의 지운 리저브 줄 복원은 거부 — 같은 행 아래 이유 줄 · 「—」.
+  // 리저브 줄은 pnl 보기 · 쓰기 + reserve.amount가 있는 보관함 권한자에게만 보이고 복원된다 — 이 테스트가 만든 임시 계급으로 연다(공용 계급 불변).
+  test("사용중지 거래처의 리저브 줄 복원은 행 아래 `거래처 사용중지 · 다른 거래처 고르기` · 동작 칸 「—」 · 줄은 보관 그대로", async ({ page }) => {
+    const roleId = `role-e2e-arch-rsv-${randomUUID()}`;
+    await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 보관 리저브 ${roleId.slice(-8)}`, sortOrder: 99, viewScope: "company" });
+    for (const [menu, action] of [["admin.archive", "view"], ["admin.archive", "write"], ["pnl", "view"], ["pnl", "write"]] as const) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId, menu, action, allowed: true });
+    }
+    for (const infoItem of ["reserve.amount", "archive.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem, visible: true });
+    const clientName = `E2E중지거래처-${randomUUID().slice(0, 8)}`;
+    const client = await insertVendor(SYSTEM_VIEWER, { name: clientName, normalizedName: clientName.toLowerCase(), kind: "client" });
+    const [entry] = await db
+      .insert(reserveEntries)
+      .values({ clientId: client.id, entryDate: "2026-05-01", direction: "deposit", amountCurrency: "KRW", amountForeignAmount: null, amountFxRate: "1", amountAmountKrw: 10_000, archivedAt: new Date() })
+      .returning({ id: reserveEntries.id });
+    await setVendorArchived(SYSTEM_VIEWER, client.id, true);
+
+    const user = await createFixtureUser({ roleId });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/admin/archive");
+    // 보관된 거래처 행도 같은 이름을 싣는다 — 종류 칸이 「리저브」인 행만 고른다.
+    const row = page.locator("tr", { hasText: clientName }).filter({ has: page.getByRole("cell", { name: "리저브", exact: true }) });
+    // 수화 전 클릭은 사라진다 — 단추가 수화된 뒤 누른다.
+    await waitForHydration(row.getByRole("button", { name: "복원" }));
+    await row.getByRole("button", { name: "복원" }).click();
+
+    await expect(row.locator("xpath=following-sibling::tr[position() <= 2][@data-ui='static-table-detail']")).toHaveText("거래처 사용중지 · 다른 거래처 고르기");
+    await expect(row.getByRole("button", { name: "복원" })).toHaveCount(0);
+    await expect(row.getByRole("cell").last()).toHaveText("—");
+    const [stored] = await db.select({ archivedAt: reserveEntries.archivedAt }).from(reserveEntries).where(eq(reserveEntries.id, entry?.id ?? ""));
+    expect(stored?.archivedAt).not.toBeNull();
   });
 });

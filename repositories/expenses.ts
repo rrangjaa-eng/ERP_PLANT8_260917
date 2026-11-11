@@ -607,7 +607,8 @@ export type ExpenseSearch = { query: string; fields: readonly ExpenseSearchField
 // 07.1-09(PF4 · C-36 · E-P1-08): 목록 거르개 — 팀(문서의 팀 docTeamId, 행 범위와 같은 칸 · 기안자 발령 팀 아님) · 월(문서 등록 시각의 서울 월) · 내 것(기안자).
 // 검색어와 같은 자리에 AND로 걸린다(합계 FILTER · 쪽 · 승인 정렬 공용). scopeCondition에는 섞지 않는다 — 문서 하나 판정(isExpenseInScope)이 같이 쓰므로 거름이 보임을 바꾸면 안 된다.
 // 07.4-03 D-7414: projectId — 정산서의 그 프로젝트 지출결의(선택 칸 · 기존 호출은 넘기지 않는다).
-export type ExpenseListFilter = { teamId: string | null; month: string | null; drafterId: string | null; projectId?: string | null };
+// 07.2-11 D-7280: includeClosed — false일 때만 종결 문서를 뺀다(목록 기본 · `종결 보기` 꺼짐). 넘기지 않는 호출(정산서)은 지금대로 종결도 싣는다.
+export type ExpenseListFilter = { teamId: string | null; month: string | null; drafterId: string | null; projectId?: string | null; includeClosed?: boolean };
 
 // created_at은 시간대 없는 UTC 값 — UTC로 읽은 뒤 서울로 한 번 더 바꿔야 서울 날짜다(`at time zone 'Asia/Seoul'` 한 번이면 9시간 틀린다 · projects.ts CREATED_ON_KST 선례).
 const createdMonthKst = sql`to_char((${expenses.createdAt} at time zone 'UTC') at time zone 'Asia/Seoul', 'YYYY-MM')`;
@@ -636,17 +637,18 @@ export function expenseListFilterCondition(viewer: Viewer, filter: ExpenseListFi
   if (filter.projectId !== undefined && filter.projectId !== null) {
     parts.push(UUID_SHAPE.test(filter.projectId) ? sql`${expenses.projectId} = ${filter.projectId}::uuid` : sql`false`);
   }
+  if (filter.includeClosed === false) parts.push(sql`${expenses.closedAt} is null`);
   return parts.length === 0 ? null : sql`(${sql.join(parts, sql` and `)})`;
 }
 
-/** 월 select 옵션 — 보는 범위 안 문서의 등록 월(서울), 최신 먼저. */
-export async function listExpenseMonths(viewer: Viewer, input: { scope: ExpenseScope; documentKind: string }): Promise<string[]> {
+/** 월 select 옵션 — 보는 범위 안 문서의 등록 월(서울), 최신 먼저. includeClosed가 거짓이면 종결 문서만 있는 달은 없다(07.2-11 D-7280 — 목록과 같은 조각). */
+export async function listExpenseMonths(viewer: Viewer, input: { scope: ExpenseScope; documentKind: string; includeClosed: boolean }): Promise<string[]> {
   const rows = await db
     .selectDistinct({ month: createdMonthKst.mapWith(String) })
     .from(expenses)
     .leftJoin(approvalInstances, instanceJoin(input.documentKind))
     .leftJoin(projects, eq(projects.id, expenses.projectId))
-    .where(scopeCondition(viewer, input.scope))
+    .where(and(scopeCondition(viewer, input.scope), input.includeClosed ? undefined : sql`${expenses.closedAt} is null`))
     .orderBy(sql`1 desc`);
   return rows.map((row) => row.month);
 }
@@ -805,7 +807,7 @@ export async function listExpensePage(
   }));
 }
 
-export type ExpenseListSummary = { visibleCount: number; viewCount: number; viewSumKrw: number; othersCount: number };
+export type ExpenseListSummary = { visibleCount: number; viewCount: number; viewSumKrw: number; othersCount: number; closedExcluded: number };
 
 // 같은 범위 조건의 집계 한 번 — 보임 범위 전체 건수(빈 화면 갈래) · 보기 건수 · 보기 공급가액 원화 합(페이지 무관 · 외화는 원화로만) ·
 // 남의 문서 건수(기안 열 여부).
@@ -820,12 +822,17 @@ export async function summarizeExpenseList(
   const searchPart = input.search ? sql`${inRanks} and ${expenseSearchCondition(viewer, input.search.query, input.search.fields)}` : inRanks;
   const filterPart = input.filter ? expenseListFilterCondition(viewer, input.filter) : null;
   const inView = filterPart ? sql`${searchPart} and ${filterPart}` : searchPart;
+  // 07.2-11 D-7280: 종결 제외 수 = 종결 조각만 뺀 같은 조건(보기 · 검색 · 거르개) 안의 종결 문서 — 합계 줄 `종결 {N}건 제외`. 종결을 싣는 조회는 0.
+  const openFilterPart = input.filter ? expenseListFilterCondition(viewer, { ...input.filter, includeClosed: true }) : null;
+  const inViewWithClosed = openFilterPart ? sql`${searchPart} and ${openFilterPart}` : searchPart;
+  const closedExcluded = input.filter?.includeClosed === false ? sql<number>`(count(*) filter (where ${inViewWithClosed} and ${expenses.closedAt} is not null))::int` : sql<number>`0`;
   const [row] = await db
     .select({
       visibleCount: sql<number>`count(*)::int`,
       viewCount: sql<number>`(count(*) filter (where ${inView}))::int`,
       viewSumKrw: sql<string>`coalesce(sum(${expenses.supplyAmountKrw}) filter (where ${inView}), 0)::text`,
       othersCount: sql<number>`(count(*) filter (where ${expenses.drafterId} <> ${input.scope.drafterId}))::int`,
+      closedExcluded,
     })
     .from(expenses)
     .leftJoin(approvalInstances, instanceJoin(input.documentKind))
@@ -836,6 +843,7 @@ export async function summarizeExpenseList(
     viewCount: Number(row?.viewCount ?? 0),
     viewSumKrw: Number(row?.viewSumKrw ?? 0),
     othersCount: Number(row?.othersCount ?? 0),
+    closedExcluded: Number(row?.closedExcluded ?? 0),
   };
 }
 

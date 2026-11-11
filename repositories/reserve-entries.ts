@@ -15,11 +15,12 @@ export type ReserveEntryRow = InferSelectModel<typeof reserveEntries>;
 // 그 거래처를 가리키는 무관한 FK 쓰기(`FOR KEY SHARE`)는 막지 않는다. 잠근 행만 돌려준다 — 없는 클라이언트는 빠진다.
 // 묶음 ④ /review R10 — 새 줄이 고를 수 있는 거래처인지(보관·숨김 아님) 잠근 값으로 판정하도록 `selectable`을 싣는다.
 // 261006 「바뀔 때만 막기」 — 새 줄 클라이언트의 갈래 판정도 잠근 값으로 하도록 `kind`를 싣는다.
+// 07.2-11 PU22 ②(D-7309) — 사용중지(보관) 판정은 숨김과 따로 `archived`로 싣는다(줄 복원 거부 · 새 줄 이유 글자).
 export async function lockReserveClients(
   viewer: Viewer,
   clientIds: string[],
   tx: DbOrTx,
-): Promise<{ id: string; selectable: boolean; kind: VendorKind }[]> {
+): Promise<{ id: string; selectable: boolean; archived: boolean; kind: VendorKind }[]> {
   void viewer;
   if (clientIds.length === 0) return [];
   const rows = await tx
@@ -28,7 +29,7 @@ export async function lockReserveClients(
     .where(inArray(vendors.id, clientIds))
     .orderBy(vendors.id)
     .for("no key update");
-  return rows.map((row) => ({ id: row.id, selectable: row.archivedAt === null && !row.hidden, kind: row.kind }));
+  return rows.map((row) => ({ id: row.id, selectable: row.archivedAt === null && !row.hidden, archived: row.archivedAt !== null, kind: row.kind }));
 }
 
 export async function listActiveEntriesByClients(viewer: Viewer, clientIds: string[], tx: DbOrTx = db): Promise<ReserveEntryRow[]> {

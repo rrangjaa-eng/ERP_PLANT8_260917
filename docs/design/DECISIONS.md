@@ -2677,6 +2677,14 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정자**: 사용자 확정(D-7224 · D-7225 · D-7227). 계획 결정 k.
 **영향**: SYSTEM §6-6(07.2-10 고객 견적서 줄 · 공용 틀 서류 목록) · §7-7 인쇄 라우트 행.
 
+## 2026-11-02 — 07.2 PU22 ④ 결제 끝난 구매요청 보관 막기 = 기존 취소 · 삭제 불가 (07.2-11)
+**결정**: 260907의 「결제 끝난 구매요청 보관 막기」(O:server/src/purchases.ts:3231-3236 — `card_paid_date !== null`이면 409)는 새 판정 없이 지금 규칙 둘로 이미 선다 — 우리에게는 구매요청 「보관」 동작이 없고, 같은 효과를 내는 두 길이 닫혀 있다.
+**이유**: 결제가 끝난 구매가 합계에서 빠지면 나간 돈이 사라진다.
+- 구매요청 취소 불가 — 취소는 `requested`에서만, `purchased`면 `이미 구매 완료 · 새로 고침`(`domain/purchase-requests/index.ts` `statusChangedError` · `REQUEST_PURCHASED`, 취소 되돌리기도 `cancelled`에서만). 시험: `test/integration/purchase-requests.test.ts` 「[Q2] `purchased` 요청의 취소 → `이미 구매 완료 · 새로 고침` 거부」.
+- 그 구매로 생긴 카드 사용 삭제 불가 — `domain/corp-card-usages/rights.ts` `registeredVia === "purchase"` → `delete: false` · `changeLink: false`. 시험: 같은 파일 「구매 완료 건의 연결 변경 · 삭제 → ForbiddenError」.
+**결정자**: 사용자(D-7279 「넷 다 넣기」) — 구현 판정은 07.2-11 플랜(「이미 구현」 · 시험으로 닫음).
+**영향**: 코드 변경 없음(`domain/purchase-requests/` · `domain/corp-card-usages/` 그대로).
+
 ## 2026-11-10 — 07.2-13 선택지 글자가 있는 숫자 설정은 select (§7-2)
 **결정**: 자동 생성 설정 화면에서 registry 타입이 number인데 키 정의에 선택지 글자(`optionLabels`)가 있으면 텍스트 칸이 아니라 네이티브 `<select>`로 그린다. 첫 사례는 연차 결재선 `반반차 · 재택 결재 단계`(`1단까지`~`4단까지`, 값 1~4). select 즉시 저장이 실패하면(서버 거부 · 통신 실패) 고르기 전 값으로 되돌리고, 통신 실패는 칸 아래 `저장 실패 · 다시 시도`(서버 거부는 기존 `저장 실패 · {이유}`).
 **이유**: UI-SPEC S19가 이 칸을 select로 정했고(D-7251 「숫자 1칸」), 값은 숫자여야 한다 — 숫자 글자 enum(`"1"`~`"4"`)은 jsonb 읽기(drizzle `mapFromDriverValue`의 `JSON.parse`)가 숫자로 되돌려 스키마가 거부한다. 실패 되돌림은 S19 ERROR 「값 되돌림」과 §7-2 짝 격자 · §7-13의 「그 칸 되돌림」과 같은 규칙이다.

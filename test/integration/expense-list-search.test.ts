@@ -5,7 +5,9 @@ import { db } from "@/db/client";
 import { expenses, teams, users } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { createTeamExpenseDraft, createExpenseFromLines, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
+import { closeExpense, createTeamExpenseDraft, createExpenseFromLines, listExpenseFormOptions, saveExpenseDraft, withdrawExpense } from "@/domain/expenses";
+import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
+import { listExpenseIdsInScope } from "@/repositories/expenses";
 import { listExpenses, normalizeListQuery, searchFieldsFor } from "@/domain/expenses/list";
 import { approveDocument } from "@/domain/approvals";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -451,4 +453,92 @@ describe("지출결의 목록 거르개 — 팀 · 월 · 내 것만 (07.1-09)",
     expect((await listExpenses(outsider, { status: "all" }, { today: seoulToday() })).months).not.toContain("2025-11");
     expect(w.line.expenseId).toBeTruthy();
   }, 60_000);
+});
+
+// 07.2-11(D-7280 · UI-SPEC S22): 종결 문서는 기본 목록 · 합계 · 월 선택지에서 빠지고 `includeClosed`(화면 `종결 보기` · closed=1)로 섞인다.
+// 보는 사람 = 새 기안자(본인 범위) — 공유 DB의 다른 문서가 수에 섞이지 않는다. 알림 링크(listExpenseIdsInScope)는 종결도 그대로 연다.
+describe("지출결의 목록 종결 숨김 (07.2-11 D-7280)", () => {
+  async function submittedDoc(viewer: Viewer, content: string, vendorId: string) {
+    const { expenseId } = await createTeamExpenseDraft(viewer, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: seoulToday(), content } });
+    const payment = (await listExpenseFormOptions(viewer)).payment[0]?.value ?? null;
+    await saveExpenseDraft(viewer, {
+      expectedVersion: 1,
+      expenseId,
+      fields: { vendorId, evidenceType: "tax_invoice", paymentMethod: payment, supply: { currency: "KRW", amount: 440_000, fxRate: 1 } },
+    });
+    const submitted = await submitReadyDraft(viewer, expenseId, { now: NOW });
+    if (submitted.kind !== "submitted") throw new Error("제출 실패");
+    return { expenseId, version: submitted.version };
+  }
+
+  async function closedDoc(viewer: Viewer, content: string, vendorId: string): Promise<string> {
+    const doc = await submittedDoc(viewer, content, vendorId);
+    await withdrawExpense(viewer, { expenseId: doc.expenseId, expectedInstanceVersion: doc.version });
+    const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, doc.expenseId));
+    await closeExpense(viewer, { expenseId: doc.expenseId, expectedVersion: row?.version ?? 0, reason: "업체 취소" });
+    return doc.expenseId;
+  }
+
+  // 일반 3건 · 종결 2건 — 종결 둘은 등록 월을 2025-03으로 옮겨 「종결만 있는 달」을 만든다.
+  async function closedWorld() {
+    const fx = await setupExpenseProject();
+    const vendor = (await insertVendor(SYSTEM_VIEWER, { name: `종결거래처-${randomUUID().slice(0, 6)}`, normalizedName: `종결거래처-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() })).id;
+    const open = [await submittedDoc(fx.pm, "열림 하나", vendor), await submittedDoc(fx.pm, "열림 둘", vendor), await submittedDoc(fx.pm, "열림 셋", vendor)].map((doc) => doc.expenseId);
+    const closed = [await closedDoc(fx.pm, "종결 하나", vendor), await closedDoc(fx.pm, "종결 둘", vendor)];
+    for (const id of closed) await db.update(expenses).set({ createdAt: new Date("2025-03-10T03:00:00Z") }).where(eq(expenses.id, id));
+    return { fx, open: [...open].sort(), closed: [...closed].sort() };
+  }
+
+  const rowCount = (list: Awaited<ReturnType<typeof listExpenses>>) => list.groups.reduce((sum, group) => sum + group.rows.length, 0);
+
+  it("기본(팀 · 월 · 내 것만 없음)은 종결이 행 · 합계 · 월 선택지에서 빠지고 제외 2건, includeClosed는 5행 · 제외 0", async () => {
+    const { fx, open, closed } = await closedWorld();
+    const base = await listExpenses(fx.pm, { status: "all" }, { today: seoulToday() });
+    expect(ids(base)).toEqual(open);
+    expect(base.closedExcluded).toBe(2);
+    expect(base.page.total).toBe(3);
+    expect(rowCount(base)).toBe(base.page.total);
+    expect(base.months).not.toContain("2025-03");
+    if (base.total) expect(base.total.sumKrw).toBe(base.groups.flatMap((group) => group.rows).reduce((sum, row) => sum + (row.supply?.amount ?? 0), 0));
+
+    const withClosed = await listExpenses(fx.pm, { status: "all", includeClosed: true }, { today: seoulToday() });
+    expect(ids(withClosed)).toEqual([...open, ...closed].sort());
+    expect(withClosed.closedExcluded).toBe(0);
+    expect(withClosed.page.total).toBe(5);
+    expect(rowCount(withClosed)).toBe(withClosed.page.total);
+    expect(withClosed.months).toContain("2025-03");
+    expect(withClosed.groups.flatMap((group) => group.rows).filter((row) => row.statusWord === "종결").map((row) => row.id).sort()).toEqual(closed);
+  }, 90_000);
+
+  it("팀 거르개만 켠 조회 · 진행 중 보기도 종결 0 — 제외 수는 같은 조건(보기 · 거르개) 안에서만 센다", async () => {
+    const { fx, open } = await closedWorld();
+    const team = await listExpenses(fx.pm, { status: "all", team: await teamIdByName("기획1팀") }, { today: seoulToday() });
+    expect(ids(team)).toEqual(open);
+    expect(team.closedExcluded).toBe(2);
+    const approved = await listExpenses(fx.pm, { status: "approved" }, { today: seoulToday() });
+    expect(ids(approved)).toEqual([]);
+    expect(approved.closedExcluded).toBe(0);
+    expect(approved.hasAny).toBe(true);
+  }, 90_000);
+
+  // /review P2: 보기 안 문서가 전부 종결이면 행 0인데도 hasAny는 참이고(필터 줄 · `종결 보기`가 남는다) 제외 수가 화면 빈 자리 갈래의 근거가 된다.
+  it("보기 안 문서가 전부 종결 — 행 0 · hasAny 참 · 합계 0건 · 제외 2건, includeClosed는 2행 · 제외 0", async () => {
+    const fx = await setupExpenseProject();
+    const vendor = (await insertVendor(SYSTEM_VIEWER, { name: `종결만거래처-${randomUUID().slice(0, 6)}`, normalizedName: `종결만거래처-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() })).id;
+    const closed = [await closedDoc(fx.pm, "종결만 하나", vendor), await closedDoc(fx.pm, "종결만 둘", vendor)].sort();
+    const base = await listExpenses(fx.pm, { status: "all" }, { today: seoulToday() });
+    expect(rowCount(base)).toBe(0);
+    expect(base.hasAny).toBe(true);
+    expect(base.closedExcluded).toBe(2);
+    if (base.total) expect(base.total.count).toBe(0);
+    const withClosed = await listExpenses(fx.pm, { status: "all", includeClosed: true }, { today: seoulToday() });
+    expect(ids(withClosed)).toEqual(closed);
+    expect(withClosed.closedExcluded).toBe(0);
+  }, 90_000);
+
+  it("알림 링크 범위(listExpenseIdsInScope)는 종결 문서도 그대로 연다(D-7280 영향 0)", async () => {
+    const { fx, closed } = await closedWorld();
+    const scope = await visibleExpenseScope(fx.pm);
+    expect([...(await listExpenseIdsInScope(fx.pm, { ids: closed, scope, documentKind: EXPENSE_DOCUMENT_KIND }))].sort()).toEqual(closed);
+  }, 90_000);
 });

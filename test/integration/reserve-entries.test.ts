@@ -332,10 +332,11 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
   });
 
   // 묶음 ④ /review R10 — 새 줄의 클라이언트는 고를 수 있는 거래처(보관·숨김 아님)만. 기존 줄은 거래처가 나중에 보관·숨김돼도 고칠 수 있다.
+  // 07.2-11 PU22 ②(D-7309): 보관(사용중지) 거래처는 vendor.value를 보는 사람에게 `거래처 사용중지 · 다른 거래처 고르기` — 숨김은 사용중지가 아니라 지금 글자.
   it.each([
-    ["보관된", { archivedAt: new Date() }],
-    ["숨긴", { hidden: true }],
-  ])("%s 거래처를 새 줄 클라이언트로 보내면 `클라이언트 없음 · 클라이언트 다시 고르기`, 기존 줄 수정은 통과", async (_label, change) => {
+    ["보관된", { archivedAt: new Date() }, "거래처 사용중지 · 다른 거래처 고르기"],
+    ["숨긴", { hidden: true }, "클라이언트 없음 · 클라이언트 다시 고르기"],
+  ])("%s 거래처를 새 줄 클라이언트로 보내면 거부(보관 = 사용중지 글자 · 숨김 = 지금 글자), 기존 줄 수정은 통과", async (_label, change, reason) => {
     const finance = await createFinanceViewer();
     const client = await createClient();
     const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
@@ -345,7 +346,7 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
 
     const error = await rejection(saveReserves(finance, { rows: [row] }));
 
-    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "clientId", reason: "클라이언트 없음 · 클라이언트 다시 고르기" })]);
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "clientId", reason })]);
     expect(await storedRow(row.id)).toBeUndefined();
     await saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, note: "보관 뒤 수정" }] });
     expect((await storedRow(deposit.id))?.note).toBe("보관 뒤 수정");
@@ -1185,5 +1186,68 @@ describe("domain/reserves — 쓰기 경로 노출 게이트, 선택지와 같�
 
     expect(await storedRow(row.id)).toMatchObject({ version: 2, projectId: project.id });
     expect((await reserveLogs("document_update")).filter((log) => log.entityId === row.id)).toHaveLength(1);
+  });
+});
+
+// 07.2-11 PU22 ②(D-7279 · 07.2 D-7309 — 사용자 확정 2026-11-02 14:43 KST): 사용중지(보관) 거래처의 리저브 — 지운 줄 복원만 거부,
+// 기존 줄 수정 · 보관(닫기)은 허용(CEO-D18 결), 새 줄은 지금도 막힘. 판정은 archivedAt만(숨김은 사용중지가 아니다).
+// 260907 O:server/src/vendors.ts:1836(`/api/vendors/:id/reserve` — 넣기 거부).
+describe("domain/reserves — 사용중지 거래처 (07.2-11 PU22 ②)", () => {
+  const ARCHIVED_CLIENT = "거래처 사용중지 · 다른 거래처 고르기";
+
+  async function lineOnArchivedClient(change: { archivedAt?: Date; hidden?: boolean } = { archivedAt: new Date() }) {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-04-01", "deposit", 1_000_000);
+    const spare = newRow(client.id, "2026-04-02", "deposit", 10_000);
+    await saveReserves(finance, { rows: [deposit, spare] });
+    await saveReserves(finance, { rows: [], archived: [{ id: spare.id, version: 1 }] });
+    await db.update(vendors).set(change).where(eq(vendors.id, client.id));
+    return { finance, client, deposit, spare };
+  }
+
+  it("보관 거래처의 지운 줄 복원은 거부 · 줄은 보관 그대로 · restore 로그 없음", async () => {
+    const { spare } = await lineOnArchivedClient();
+    const refused = await caught(restore(SYSTEM_VIEWER, "reserve_entry", spare.id));
+    expect(refused).toBeInstanceOf(UserFacingError);
+    expect((refused as Error).message).toBe(ARCHIVED_CLIENT);
+    expect((await storedRow(spare.id))?.archivedAt).not.toBeNull();
+    expect((await reserveLogs("restore")).map((row) => row.entityId)).not.toContain(spare.id);
+  });
+
+  it("보관 거래처의 기존 줄 금액 · 메모 수정과 그 줄 보관(닫기)은 지금처럼 통과", async () => {
+    const { finance, deposit } = await lineOnArchivedClient();
+    await saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, amount: krw(900_000), note: "오타 고침" }] });
+    expect(await storedRow(deposit.id)).toMatchObject({ amountAmountKrw: 900_000, note: "오타 고침", version: 2 });
+    await saveReserves(finance, { rows: [], archived: [{ id: deposit.id, version: 2 }] });
+    expect((await storedRow(deposit.id))?.archivedAt).not.toBeNull();
+  });
+
+  it("한 저장에 정상 새 줄 + 보관 거래처 새 줄 → 전부 거부(오류 1칸) · 두 줄 다 없음", async () => {
+    const { finance } = await lineOnArchivedClient();
+    const blocked = await lineOnArchivedClient();
+    const live = await createClient();
+    const ok = newRow(live.id, "2026-04-03", "deposit", 5_000);
+    const bad = newRow(blocked.client.id, "2026-04-03", "deposit", 5_000);
+
+    const error = await rejection(saveReserves(finance, { rows: [ok, bad] }));
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: bad.id, field: "clientId", reason: ARCHIVED_CLIENT })]);
+    expect(await storedRow(ok.id)).toBeUndefined();
+    expect(await storedRow(bad.id)).toBeUndefined();
+  });
+
+  it("숨김 거래처(사용중지 아님)의 줄 복원 · 수정은 통과", async () => {
+    const { finance, deposit, spare } = await lineOnArchivedClient({ hidden: true });
+    expect(await restore(SYSTEM_VIEWER, "reserve_entry", spare.id)).toEqual({ restored: true });
+    await saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, note: "숨김 뒤 수정" }] });
+    expect((await storedRow(deposit.id))?.note).toBe("숨김 뒤 수정");
+  });
+
+  it("vendor.value를 못 보는 쓰기 권한자의 보관 거래처 새 줄은 지금 글자(존재 숨김) — 새 글자 없음", async () => {
+    const { client } = await lineOnArchivedClient();
+    const writer = await createRoleViewer({ permissions: WRITER, visible: ["reserve.amount", "project.value"] });
+    const row = newRow(client.id, "2026-04-05", "deposit", 1_000);
+    const error = await rejection(saveReserves(writer, { rows: [row] }));
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "clientId", reason: "클라이언트 없음 · 클라이언트 다시 고르기" })]);
   });
 });

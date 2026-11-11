@@ -120,6 +120,8 @@ export type ExpenseList = {
   // 07.1-09(PF4): 팀 select 옵션(보는 범위 안 활성 팀 — 범위가 팀 하나 이하면 빈 목록 = select를 그리지 않는다) · 월 select 옵션(등록 월, 최신 먼저).
   teams: { value: string; label: string }[];
   months: string[];
+  // 07.2-11 D-7280: 같은 보기 · 거르개 안에서 기본 숨김으로 빠진 종결 문서 수(`종결 보기`를 켜면 0) — 합계 줄 `종결 {N}건 제외`.
+  closedExcluded: number;
 };
 
 function teamKindLabel(kind: string | null): string | null {
@@ -210,7 +212,7 @@ async function approvedOrderOf(viewer: Viewer, input: { scope: ExpenseScope; ran
 
 export async function listExpenses(
   viewer: Viewer,
-  input: { status: ExpenseListStatus; page?: string | number; q?: string | null; team?: string | null; month?: string | null; mine?: boolean },
+  input: { status: ExpenseListStatus; page?: string | number; q?: string | null; team?: string | null; month?: string | null; mine?: boolean; includeClosed?: boolean },
   deps?: { today?: string; pageSize?: number },
 ): Promise<ExpenseList> {
   if (!(await can(viewer, "expenses", "view"))) throw new ForbiddenError("지출결의 보기 권한 없음");
@@ -226,10 +228,12 @@ export async function listExpenses(
   const teamOptions = await teamOptionsFor(viewer, scope.rowScope);
   const rawTeam = input.team?.trim() ? input.team.trim() : null;
   const team = rawTeam !== null && teamOptions.length > 0 && !teamOptions.some((option) => option.value === rawTeam) ? null : rawTeam;
-  const months = await listExpenseMonths(viewer, { scope, documentKind: EXPENSE_DOCUMENT_KIND });
+  // 07.2-11 D-7280: 종결 문서는 기본에서 빠진다(`종결 보기` = includeClosed) — 거르개가 없는 기본 화면에도 걸리도록 filter를 늘 만든다(빈 칸은 null).
+  const includeClosed = input.includeClosed === true;
+  const months = await listExpenseMonths(viewer, { scope, documentKind: EXPENSE_DOCUMENT_KIND, includeClosed });
   const month = input.month && FILTER_MONTH_SHAPE.test(input.month) && months.includes(input.month) ? input.month : null;
-  const filter: ExpenseListFilter | undefined = team || month || input.mine ? { teamId: team, month, drafterId: input.mine ? viewer.id : null } : undefined;
-  const summary = await summarizeExpenseList(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, ...(search ? { search } : {}), ...(filter ? { filter } : {}) });
+  const filter: ExpenseListFilter = { teamId: team, month, drafterId: input.mine ? viewer.id : null, includeClosed };
+  const summary = await summarizeExpenseList(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, ...(search ? { search } : {}), filter });
   const pageCount = pageCountFrom(summary.viewCount, pageSize);
   const page = clampPage(input.page, pageCount);
   const rows =
@@ -241,8 +245,8 @@ export async function listExpenses(
           limit: pageSize,
           offset: (page - 1) * pageSize,
           ...(search ? { search } : {}),
-          ...(filter ? { filter } : {}),
-          approvedOrder: await approvedOrderOf(viewer, { scope, ranks, ...(search ? { search } : {}), ...(filter ? { filter } : {}) }),
+          filter,
+          approvedOrder: await approvedOrderOf(viewer, { scope, ranks, ...(search ? { search } : {}), filter }),
         })
       : [];
   const drafterColumn =
@@ -272,6 +276,7 @@ export async function listExpenses(
     page: { page, pageCount, total: summary.viewCount, pageSize },
     teams: teamOptions,
     months,
+    closedExcluded: summary.closedExcluded,
   };
 }
 

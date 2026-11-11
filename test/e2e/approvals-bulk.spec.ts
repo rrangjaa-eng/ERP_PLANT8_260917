@@ -439,6 +439,14 @@ test.describe("결재함 일괄 승인 · 반려 (07.2-16 S13)", () => {
     }
     await page.setViewportSize(DESKTOP);
 
+    // Codex P2(1): 고른 100건 중 한 행이 단건 승인으로 사라지면 남은 선택은 99건 — 상한 막힘이 풀린다(사라진 id가 상한을 잡고 있지 않는다).
+    await page.locator("tbody tr").filter({ has: page.getByRole("checkbox", { checked: true }) }).first().getByRole("button", { name: /^승인/ }).click();
+    await expect(rowBoxes).toHaveCount(104);
+    await expect(primary(page)).toContainText("승인 99");
+    await expect(disabled).toHaveCount(0);
+    await head.check();
+    await expect(primary(page)).toContainText("승인 100");
+
     // 키보드만 — 머리글 풀고 Tab으로 첫 행 체크박스 → Space → Ctrl+Enter(표 안 = 1차) → Ctrl+Enter(확인).
     await head.uncheck();
     await head.focus();
@@ -451,7 +459,7 @@ test.describe("결재함 일괄 승인 · 반려 (07.2-16 S13)", () => {
     await expect(dialog).toContainText("일괄 승인");
     await page.keyboard.press("Control+Enter");
     await expect(page.getByRole("status").filter({ hasText: /승인 \d+건/ })).toHaveText(RESULT("승인", 1));
-    await expect(rowBoxes).toHaveCount(104);
+    await expect(rowBoxes).toHaveCount(103);
 
     // 100건 한 번 — 확인부터 결과 글자까지 30초 안(PLAN 07.2-16 「100건 일괄 실측 시간」).
     await head.check();
@@ -463,6 +471,6 @@ test.describe("결재함 일괄 승인 · 반려 (07.2-16 S13)", () => {
     const elapsed = Date.now() - started;
     console.log(`[07.2-16] 100건 일괄 승인 ${elapsed}ms`);
     expect(elapsed).toBeLessThanOrEqual(30_000);
-    await expect(rowBoxes).toHaveCount(4);
+    await expect(rowBoxes).toHaveCount(3);
   });
 });

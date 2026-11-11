@@ -120,3 +120,7 @@ registerAction({ name: "getInvoiceFileAction", menu: "projects", action: "view",
 
 // 07.2-14(X2): 견적 엑셀 올리기 읽기 — 저장 0이지만 새 줄을 만드는 입구라 쓰기 자리에 적는다. 줄 목록(DTO 아님 — 올린 파일 자기 값)만 돌려준다.
 registerAction({ name: "readQuoteXlsxAction", menu: "projects", action: "write", dtoName: null });
+
+// 07.2-17(PU1 · D-7213): 프로젝트 삭제(보관) · 되돌리기 — 번호만 돌려준다(DTO 없음).
+registerAction({ name: "deleteProjectAction", menu: "projects.delete", action: "write", dtoName: null });
+registerAction({ name: "undoProjectDeleteAction", menu: "projects.delete", action: "write", dtoName: null });

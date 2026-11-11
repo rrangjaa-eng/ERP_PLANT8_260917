@@ -29,6 +29,7 @@ import {
   statusChangedMessage,
 } from "@/domain/projects/status";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
+import { archiveProject, restoreProject } from "@/domain/projects/archive";
 import { addProjectMembers, listMemberCandidates, listProjectMembers, removeProjectMember, restoreProjectMember } from "@/domain/projects/members";
 import "@/app/(app)/document-kinds";
 import { currentHolderNames, projectActionResult } from "@/domain/approvals";
@@ -451,3 +452,22 @@ export const readQuoteXlsxAction = authedActionClient.schema(z.instanceof(FormDa
     sheet: typeof sheet === "string" && sheet !== "" ? sheet : undefined,
   });
 });
+
+// 07.2-17(PU1 · D-7210 · D-7213): 프로젝트 삭제 = 보관 — 확인 창 없이 즉시(되돌릴 수 있는 일), 착지 토스트 `되돌리기`가
+// undoProjectDeleteAction(내가 지운 것만). 판정(projects.delete 쓰기 · 쓰기 범위 · 돈 문서 0건)은 domain이 하고 거부 문구가 serverError로 간다.
+export const deleteProjectAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid() }).strict())
+  .action(async ({ parsedInput, ctx }) => {
+    const done = await archiveProject(ctx.viewer, parsedInput.projectId);
+    revalidatePath("/projects");
+    return { number: done.number };
+  });
+
+export const undoProjectDeleteAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid() }).strict())
+  .action(async ({ parsedInput, ctx }) => {
+    const done = await restoreProject(ctx.viewer, parsedInput.projectId, { via: "undo" });
+    revalidatePath("/projects");
+    revalidatePath("/admin/archive");
+    return { number: done.number };
+  });

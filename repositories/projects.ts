@@ -1,7 +1,23 @@
 import { and, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import type { InferSelectModel, SQL } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, projects, quoteLines, quoteRevisions, revenueEntries, teams, users, vendors } from "@/db/schema";
+import {
+  actionLog,
+  corpCardUsages,
+  expenses,
+  projectBudgetEntries,
+  projects,
+  purchaseRequests,
+  quoteLines,
+  quoteRevisions,
+  reserveEntries,
+  revenueEntries,
+  revenueIssueRequests,
+  settlementApprovals,
+  teams,
+  users,
+  vendors,
+} from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { RowScope } from "@/domain/permissions/scope-for";
 import { rowScopeCondition } from "@/repositories/row-scope";
@@ -497,6 +513,107 @@ export async function lockProjectForWrite(viewer: Viewer, id: string, tx: DbOrTx
   void viewer;
   const [row] = await tx.select().from(projects).where(eq(projects.id, id)).for("update");
   return row ?? null;
+}
+
+// 07.2-17(D-7211 · 260907 `O: server/src/quotes.ts:2036-2049`) — 프로젝트에 붙은 돈 문서 7종을 종류별 스칼라 하위 질의 하나로 센다.
+// 지출결의(삭제 안 됨 · 프로젝트 id 또는 그 프로젝트 차수의 줄) · 매출(보관 안 된 매출 줄 + 취소 아닌 발행 요청) · 리저브(보관 안 됨) ·
+// 구매 요청(취소 아님) · 카드 사용(보관 안 됨 · 그 프로젝트 줄) · 예산 이력(사람이 고친 manual만 — 플래너 가정) · 정산 결재(행 있음).
+// 호출자가 잠근 트랜잭션 안에서 부르면 잠근 뒤 커밋된 값을 센다(READ COMMITTED 문장 단위 스냅숏).
+export type ProjectMoneyCounts = {
+  expenses: number;
+  revenue: number;
+  reserves: number;
+  purchaseRequests: number;
+  cardUsages: number;
+  budgetEntries: number;
+  settlement: number;
+};
+
+export async function countProjectMoneyAttachments(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<ProjectMoneyCounts> {
+  void viewer;
+  const lineIds = sql`(select ${quoteLines.id} from ${quoteLines} inner join ${quoteRevisions} on ${quoteRevisions.id} = ${quoteLines.revisionId} where ${quoteRevisions.projectId} = ${projectId})`;
+  const count = (body: SQL) => sql<number>`(select count(*) ${body})`.mapWith(Number);
+  const [row] = await tx
+    .select({
+      expenses: count(sql`from ${expenses} where ${expenses.deletedAt} is null and (${expenses.projectId} = ${projectId} or ${expenses.quoteLineId} in ${lineIds})`),
+      revenueEntries: count(sql`from ${revenueEntries} where ${revenueEntries.projectId} = ${projectId} and ${revenueEntries.archivedAt} is null`),
+      issueRequests: count(sql`from ${revenueIssueRequests} where ${revenueIssueRequests.projectId} = ${projectId} and ${revenueIssueRequests.status} <> 'cancelled'`),
+      reserves: count(sql`from ${reserveEntries} where ${reserveEntries.projectId} = ${projectId} and ${reserveEntries.archivedAt} is null`),
+      purchaseRequests: count(
+        sql`from ${purchaseRequests} where ${purchaseRequests.status} <> 'cancelled' and (${purchaseRequests.projectId} = ${projectId} or ${purchaseRequests.quoteLineId} in ${lineIds})`,
+      ),
+      cardUsages: count(sql`from ${corpCardUsages} where ${corpCardUsages.archivedAt} is null and ${corpCardUsages.quoteLineId} in ${lineIds}`),
+      budgetEntries: count(sql`from ${projectBudgetEntries} where ${projectBudgetEntries.projectId} = ${projectId} and ${projectBudgetEntries.reason} = 'manual'`),
+      settlement: count(sql`from ${settlementApprovals} where ${settlementApprovals.projectId} = ${projectId}`),
+    })
+    .from(sql`(select 1) as one`);
+  if (!row) throw new Error("돈 문서 수 질의가 행을 돌려주지 않았습니다.");
+  return {
+    expenses: row.expenses,
+    revenue: row.revenueEntries + row.issueRequests,
+    reserves: row.reserves,
+    purchaseRequests: row.purchaseRequests,
+    cardUsages: row.cardUsages,
+    budgetEntries: row.budgetEntries,
+    settlement: row.settlement,
+  };
+}
+
+// 07.2-17(D-7210 · D-7212) — 프로젝트 보관. 보관 아닐 때만(0행이면 null). 호출자가 잠근 트랜잭션 안에서 부른다.
+export async function archiveProjectRow(viewer: Viewer, id: string, input: { at: Date; by: string }, tx: DbOrTx): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(projects)
+    .set({ archivedAt: input.at, archivedBy: input.by, updatedAt: input.at })
+    .where(and(eq(projects.id, id), isNull(projects.archivedAt)))
+    .returning();
+  return row ?? null;
+}
+
+// 그 시각 보관일 때만 되살린다(0행이면 null).
+export async function restoreProjectRow(viewer: Viewer, id: string, input: { at: Date; now: Date }, tx: DbOrTx): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(projects)
+    .set({ archivedAt: null, archivedBy: null, updatedAt: input.now })
+    .where(and(eq(projects.id, id), eq(projects.archivedAt, input.at)))
+    .returning();
+  return row ?? null;
+}
+
+// D-7212 — 프로젝트 차수의 살아 있는 줄을 id 순으로 잠근 뒤 같은 시각 · 같은 사람으로 보관한다(잠금 순서 프로젝트 행 → 줄 id 순).
+// quote-lines.ts의 보관 함수는 차수 하나 · 시각 없이 now()를 쓰므로 여기에 둔다. 보관한 줄 수를 돌려준다.
+export async function archiveLiveLinesOfProject(viewer: Viewer, projectId: string, input: { at: Date; by: string }, tx: DbOrTx): Promise<number> {
+  void viewer;
+  const live = await tx
+    .select({ id: quoteLines.id })
+    .from(quoteLines)
+    .innerJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
+    .where(and(eq(quoteRevisions.projectId, projectId), isNull(quoteLines.archivedAt)))
+    .orderBy(quoteLines.id)
+    .for("update", { of: quoteLines });
+  if (live.length === 0) return 0;
+  await tx
+    .update(quoteLines)
+    .set({ archivedAt: input.at, archivedBy: input.by })
+    .where(inArray(quoteLines.id, live.map((line) => line.id)));
+  return live.length;
+}
+
+// 프로젝트와 같은 시각에 보관된 줄만 되살린다(앞서 지운 줄은 시각이 달라 그대로). 되살린 줄 수.
+export async function restoreLinesArchivedAt(viewer: Viewer, projectId: string, at: Date, tx: DbOrTx): Promise<number> {
+  void viewer;
+  const restored = await tx
+    .update(quoteLines)
+    .set({ archivedAt: null, archivedBy: null })
+    .where(
+      and(
+        eq(quoteLines.archivedAt, at),
+        inArray(quoteLines.revisionId, tx.select({ id: quoteRevisions.id }).from(quoteRevisions).where(eq(quoteRevisions.projectId, projectId))),
+      ),
+    )
+    .returning({ id: quoteLines.id });
+  return restored.length;
 }
 
 // 04-20(D-82): 기대 상태일 때만 바꾼다(0행이면 null — 호출자가 동시 변경으로

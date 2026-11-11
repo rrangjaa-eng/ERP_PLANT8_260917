@@ -31,6 +31,9 @@ import { TaxParts } from "./tax-parts";
 import { PaymentActionRow, PaymentLoadError, PaymentPanelProvider, PaymentSection } from "./payment-action-row";
 import { PaymentScheduleValue, type PaymentScheduleValueProps } from "./payment-section";
 import { CloseExpenseButton } from "./close-expense-button";
+import type { DateChangeView } from "@/domain/expenses/date-change";
+import { DateApprovedToast, DateChangeRow } from "./date-change-row";
+import { DateChangeHistory } from "./date-change-history";
 import styles from "./expense.module.css";
 
 // 05-05(S7): 지출결의 문서 화면 — 제출 뒤. 읽기 칸(KvList) → `DetailScreen.Section 증빙` → 04.1 행동 줄. 행동 줄은 `getApprovalView`의 가능 행동 목록을
@@ -51,6 +54,8 @@ export function ExpenseDocument({
   paymentView = null,
   projectOpenable,
   reasonOptions,
+  dateChange = null,
+  dateLanding = null,
 }: {
   expense: Partial<ExpenseDocumentDto>;
   view: ApprovalView | null;
@@ -68,6 +73,10 @@ export function ExpenseDocument({
   projectOpenable: boolean;
   /** 07.2-07 X3 — 반려 사유 코드표의 활성 항목 label(서버 page가 읽어 내린다). */
   reasonOptions: string[];
+  /** 07.2-18 X4 — 희망 지급일 변경 요청 사실(결재 통과 문서만 · 서버 listDateChangeView). 없으면 요청 줄 · 이력 DOM 0. */
+  dateChange?: DateChangeView | null;
+  /** 07.2-18 — 요청 화면 착지(`requested`) · 승인 착지(되돌리기 재료). 주소에서 서버가 모양을 거른 값. */
+  dateLanding?: { kind: "requested" } | { kind: "approved"; requestId: string; newDate: string; before: string | null; version: number } | null;
 }) {
   const id = expense.id ?? "";
   // 팀 비용 문서(프로젝트 · 견적 줄 없음 · 사용일 있음) — 머리 줄은 `지출결의 — {팀} · {내용}`, 프로젝트 칸은 `프로젝트 미연결 · {종류}`.
@@ -184,9 +193,17 @@ export function ExpenseDocument({
     ruleLine: expense.paymentRuleLine ?? null,
     offWeekday: expense.paymentOffWeekday ?? null,
   };
-  const requested = { date: expense.requestedPaymentDate ?? null, reason: expense.requestedPaymentReason ?? null };
+  // 07.2-18 S16: 요청 줄은 입구 · 대기 · 처리 줄이 있을 때만(그 밖 DOM 0), 이력 표는 요청이 한 번이라도 있을 때만 — 지급 섹션과 이 자리가 같은 사실 하나를 쓴다.
+  const requestedDate = expense.requestedPaymentDate ?? null;
+  const dateChangeRow =
+    dateChange && (dateChange.entry !== null || dateChange.canDecide) ? (
+      <DateChangeRow expenseId={id} number={expense.number ?? null} date={requestedDate} view={dateChange} hopeReason={expense.requestedPaymentReason ?? null} />
+    ) : null;
+  const dateChangeHistory = dateChange && dateChange.history.length > 0 ? <DateChangeHistory rows={dateChange.history} /> : null;
+  const requested = { date: requestedDate, reason: expense.requestedPaymentReason ?? null, dateChange: dateChangeRow, history: dateChangeHistory };
   if (!paymentView || paymentView === "error") {
-    if (requested.date) items.push({ label: "희망 지급일", value: requested.date });
+    if (dateChangeRow) items.push({ label: "희망 지급일", value: dateChangeRow });
+    else if (requested.date) items.push({ label: "희망 지급일", value: requested.date });
     if (requested.reason) items.push({ label: "희망 사유", value: <span className={styles.subLine}>{requested.reason}</span> });
     items.push({ label: "지급 예정일", value: <PaymentScheduleValue {...scheduleValueProps} /> }, { label: "지급 방식", value: expense.paymentMethodName ?? dash });
   }
@@ -283,6 +300,7 @@ export function ExpenseDocument({
         actions={printLink || expense.closeDialog ? { secondary: secondary } : undefined}
       >
         <KvList items={items} />
+        {!paymentView || paymentView === "error" ? dateChangeHistory : null}
         {paymentView && paymentView !== "error" ? (
           // 06-06: 결재 통과 문서는 패널 상태가 증빙 섹션 확인부(S4)까지 감싼다 — 공급가액 고침 칸 · 1차 확인이 같은 상태를 쓴다(06.5 D-6520 — 문서 공급가를 함께 넘긴다).
           <PaymentPanelProvider view={paymentView} supply={supply}>
@@ -326,6 +344,10 @@ export function ExpenseDocument({
         />
         {undoToast ? <SubmittedUndoToast expenseId={id} round={undoToast.round} message={undoToast.message} /> : null}
         {toast ? <SubmittedToast message={toast} href={`/expenses/${id}`} /> : null}
+        {dateLanding?.kind === "requested" ? <SubmittedToast message="변경 요청 · 경영관리 확인 대기" href={`/expenses/${id}`} /> : null}
+        {dateLanding?.kind === "approved" ? (
+          <DateApprovedToast expenseId={id} requestId={dateLanding.requestId} newDate={dateLanding.newDate} before={dateLanding.before} version={dateLanding.version} />
+        ) : null}
       </DetailScreen>
     </div>
   );

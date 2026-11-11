@@ -158,6 +158,7 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
 
 // ⓓ 리포지토리 projects 읽기 처분표 — (파일, 최상위 선언, 이유).
 export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
+  { file: "repositories/archive.ts", fn: "ARCHIVABLE_TABLES", reason: "보관함 `견적 줄` 항목(07.2-17 /review #1) — projects 조인은 보관된 프로젝트의 줄을 빼는 archived_at 거름뿐이고 프로젝트 열을 내보내지 않는다, 호출자 domain/archive listArchive가 줄의 projectId를 listProjectIdsInScope(projectRowScope)로 거른다" },
   { file: "repositories/corp-card-usages.ts", fn: "listCardUsageRows", reason: "카드 사용 목록(#9) — listAccess(자기 거름 · privileged · 지름길 K2)가 행을 거른다, 프로젝트는 상태 · 이름 조인만" },
   { file: "repositories/corp-card-usages.ts", fn: "findCardUsageForWrite", reason: "카드 사용 한 건 수정 · 삭제 — 권리(cardUsageRights) 판정이 행을 거른다, 프로젝트는 상태 · id 조인만" },
   { file: "repositories/corp-card-usages.ts", fn: "findCardUsageOverwriteFacts", reason: "06.1-09 대사 덮기 막힘 판정(카드 R3) — 증빙 등록 권한 뒤 등록 트랜잭션 안, 프로젝트는 상태 조인만이고 화면에 내보내지 않는다(완료 프로젝트 막힘 판정용)" },

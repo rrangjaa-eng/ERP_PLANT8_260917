@@ -23,7 +23,7 @@ vi.mock("@/domain/projects", () => ({
   loadProjectProfit: () => Promise.resolve(null),
 }));
 vi.mock("@/domain/projects/references", () => ({
-  listProjectFormReferences: () => Promise.resolve({ clients: [], vendors: [], vendorShown: true, subcategories: [], subcategoryLabels: {} }),
+  listProjectFormReferences: () => Promise.resolve({ clients: [], teams: [], pmUsers: [], vendors: [], vendorShown: true, subcategories: [], subcategoryLabels: {} }),
   scopeCreateFormReferences: () => Promise.resolve({ teams: [], pmUsers: [] }),
 }));
 const listQuoteLines = vi.fn<(...args: unknown[]) => Promise<unknown[]>>(() => Promise.resolve([]));
@@ -65,6 +65,13 @@ vi.mock("@/app/(app)/projects/[id]/members-section", () => ({
   MembersSection: () => null,
   ProjectMembersProvider: ({ children }: { children: unknown }) => children,
   MemberAddHeaderButton: () => null,
+}));
+// 07.2-17: 페이지가 삭제 입구 · 기본 정보 4칸 권리 · 돈 문서 수를 서버에서 읽는다 — 이 테스트의 관심사(줄 카드 사실)가 아니라 권리 없음으로 스텁한다.
+vi.mock("@/domain/projects/archive", () => ({ deleteRights: () => Promise.resolve(false) }));
+vi.mock("@/domain/projects/info", () => ({ loadInfoEditView: () => Promise.resolve({ rights: "none", candidates: null }) }));
+vi.mock("@/domain/projects/money-attachment", () => ({
+  countMoneyAttachments: () => Promise.resolve({ total: 0, byKind: {} }),
+  moneyBlockedReason: (total: number) => `돈 문서 ${total}건 연결 · 삭제 불가`,
 }));
 const logError = vi.fn<(...args: unknown[]) => void>();
 vi.mock("@/lib/log", () => ({ log: { error: (...args: unknown[]) => logError(...args), info: vi.fn(), warn: vi.fn() } }));

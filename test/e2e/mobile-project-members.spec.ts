@@ -178,12 +178,30 @@ test.describe("768 · 1280 — PC 셸", () => {
     await expect(actions).toBeVisible();
     const slot = actions.locator("button, a").filter({ hasText: "참여자 더하기" });
     await expect(slot).toBeHidden();
-    const boxes = (await actions.locator("button:visible, a:visible").evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON() as { x: number; width: number; y: number })))
+    // 위험 3차 `프로젝트 삭제`는 1차 뒤 --s-8 떼어 맨 끝이라 그 앞 간격만 따로 잰다(DECISIONS 2026-11-12) — 나머지 버튼 사이는 모두 같다.
+    const boxes = (await actions.locator("button:visible, a:visible").filter({ hasNotText: "프로젝트 삭제" }).evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON() as { x: number; width: number; y: number })))
       .filter((box) => box.width > 0)
       .sort((a, b) => a.x - b.x);
     expect(boxes.length).toBeGreaterThanOrEqual(2);
     const gaps = boxes.slice(1).map((box, index) => Math.round(box.x - (boxes[index]!.x + boxes[index]!.width)));
     for (const gap of gaps) expect(Math.abs(gap - (gaps[0] ?? 0))).toBeLessThanOrEqual(1);
+    // 삭제 앞 간격 = 바로 앞 플렉스 항목(1차 버튼 묶음 · 비활성 이유 포함)의 오른쪽 끝에서 삭제 묶음까지. display: contents 껍데기는 건너뛴다.
+    await expect(actions.getByRole("button", { name: "프로젝트 삭제" })).toBeVisible();
+    const [dangerGap, s8] = await actions.evaluate((container) => {
+      const button = [...container.querySelectorAll("button")].find((element) => element.textContent?.trim() === "프로젝트 삭제")!;
+      const flexItem = (element: Element): Element => {
+        let item = element;
+        for (let current: Element | null = element; current && current !== container; current = current.parentElement) {
+          if (getComputedStyle(current).display !== "contents") item = current;
+        }
+        return item;
+      };
+      const items = [...container.querySelectorAll("*")].map(flexItem).filter((item, index, all) => all.indexOf(item) === index && item.getBoundingClientRect().width > 0);
+      const own = flexItem(button);
+      const previous = items[items.indexOf(own) - 1]!;
+      return [own.getBoundingClientRect().x - previous.getBoundingClientRect().right, parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--s-8"))];
+    });
+    expect(Math.abs(dangerGap - s8)).toBeLessThanOrEqual(1);
     await page.context().close();
   });
 });

@@ -36,4 +36,10 @@ describe("WR-05: 토스트 자동 소멸 타이머", () => {
   it("오류 토스트는 role=alert다 — 닫을 때까지 남는 실패를 polite로 읽으면 놓친다", () => {
     expect(TOAST).toMatch(/role=\{tone === "error" \? "alert" : "status"\}/);
   });
+
+  it("3차 행동이 있을 때만 포커스를 타이머에 잇는다 — 행동 없는 토스트는 4초 그대로", () => {
+    expect(TOAST).toMatch(/holdWhileFocused = Boolean\(actionLabel && onAction\)/);
+    expect(TOAST).toMatch(/onFocus=\{holdWhileFocused \?/);
+    expect(TOAST).toMatch(/onBlur=\{holdWhileFocused \?/);
+  });
 });

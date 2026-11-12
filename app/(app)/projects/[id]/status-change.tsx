@@ -197,6 +197,7 @@ export function StatusChange({
 
   function closeConfirm() {
     setRejection(null);
+    setReason("");
     setStep((current) => (current.kind === "confirm" ? { kind: "closed" } : current));
     const focus = periodFocusAfterCloseRef.current;
     periodFocusAfterCloseRef.current = null;

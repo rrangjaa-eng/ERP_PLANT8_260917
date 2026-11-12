@@ -43,6 +43,25 @@ async function openConfirm(page: Page) {
 }
 
 test.describe("완료 되돌리기(S2) — 대표 1280", () => {
+  test("확인 창을 닫으면(Esc · 취소) 사유가 비워진다 — 다시 열면 빈 칸 · 1차 막힘", async ({ browser, baseURL }) => {
+    const fx = await completedProject();
+    const page = await openProject(browser, baseURL, fx.ceo, fx);
+
+    let dialog = await openConfirm(page);
+    await dialog.getByLabel("사유").fill(REASON);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    dialog = await openConfirm(page);
+    await expect(dialog.getByLabel("사유")).toHaveValue("");
+    await expect(dialog.getByRole("button", { name: new RegExp(`^${TRIGGER}`) })).toHaveAttribute("aria-disabled", "true");
+
+    await dialog.getByLabel("사유").fill(REASON);
+    await dialog.getByRole("button", { name: /^취소/ }).click();
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    dialog = await openConfirm(page);
+    await expect(dialog.getByLabel("사유")).toHaveValue("");
+  });
+
   test("트리거 1 · 목록 창 없이 확인 창 · 사유 비면 막힘 → 입력 → 토스트 · 정산 · 결재선 끝 되돌림 줄", async ({ browser, baseURL }) => {
     const fx = await completedProject();
     const page = await openProject(browser, baseURL, fx.ceo, fx);

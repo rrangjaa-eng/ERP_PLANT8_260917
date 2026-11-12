@@ -1381,6 +1381,60 @@ async function projectDeleteInfo(): Promise<SeedResult> {
   return { vars: { projectId: free.id, lockedProjectId: locked.id }, viewer: lead };
 }
 
+// project-completed: 07.2-19(S2) 완료 되돌리기 캡처용 — 정산 결재를 대표까지 승인해 완료된 프로젝트 하나(test/e2e/settlement-fixture.ts와 같은 흐름).
+// 프로젝트명은 머리 줄 줄바꿈 실측용 40자. 대표로 본다(projects.reopen 보유 — 트리거 `정산으로 되돌리기`가 그려진다).
+async function projectCompleted(): Promise<SeedResult> {
+  const today = seoulToday();
+  const lastYear = Number(today.slice(0, 4)) - 1;
+  const suffix = randomUUID().slice(0, 6);
+  const yearStart = `${today.slice(0, 4)}-01-01`;
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처완료본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처완료팀-${suffix}` });
+  const pm = await makePerson("담당", "role-pm", team.id, yearStart);
+  const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
+  const ceo = await makePerson("대표", "role-ceo", team.id, yearStart);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처완료클라이언트-${suffix}`, normalizedName: `캡처완료클라이언트-${suffix}` });
+  const period = { startDate: `${lastYear}-11-01`, endDate: `${lastYear}-12-31` };
+  const name = `캡처완료 서울모터쇼 브랜드관 부스 운영 및 현장프로모션 행사-${suffix}`; // 33자 + `-` + 6자 = 40자
+  const project = await createProject(pm.viewer, { clientId: client.id, teamId: team.id, pmUserId: pm.viewer.id, name, ...period });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision || !project.id) throw new Error("프로젝트 · 1차 차수가 없습니다");
+  const [subcategory] = await listCodeItems(SYSTEM_VIEWER, { tableKey: QUOTE_SUBCATEGORY_TABLE_KEY, scope: { rows: "all", includeArchived: false }, includeInactive: false });
+  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: [
+      {
+        id: randomUUID(),
+        isNew: true as const,
+        subcategory: subcategory.value,
+        itemName: `무대 제작-${suffix}`,
+        vendorId: null,
+        unitPrice: { currency: "KRW" as const, amount: 13_400_000, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: 12_400_000, fxRate: 1 },
+      },
+    ],
+  });
+  await changeProjectStatus(teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
+  // 완료 전 점검이 기안을 막지 않게 줄마다 카드 사용 1건 + 매출 발행 줄 1건(E2E 픽스처와 같은 순서 · 강행 키 없음).
+  const taken = await takenCardLast4();
+  for (const line of saved.lines) {
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `캡처완료카드사-${suffix}`, numberLast4: pickCardLast4(taken), label: `캡처완료카드-${suffix}`, kind: "personal", holderUserId: pm.viewer.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const input: CardUsageInput = { corpCardId: card.id, usedOn: today, merchantVendorId: null, total: { currency: "KRW", amount: 100_000, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "quote_line", lineId: line.id, memo: null };
+    await createCardUsage(pm.viewer, input, await precheckCardUsage(pm.viewer, input));
+  }
+  await saveRevenue(SYSTEM_VIEWER, project.id, { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: period.endDate, amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }] });
+  await applyAutoSettlement({ projectIds: [project.id] });
+  if ((await findProjectById(SYSTEM_VIEWER, project.id))?.status !== "settling") throw new Error("정산 상태가 아닙니다");
+  const submitted = await submitSettlement(pm.viewer, { projectId: project.id });
+  if (submitted.kind !== "submitted") throw new Error(`정산 결재가 올라가지 않았습니다: ${JSON.stringify(submitted)}`);
+  const graph = await findApprovalGraphByDocument(SYSTEM_VIEWER, { documentKind: SETTLEMENT_DOCUMENT_KIND, documentId: project.id });
+  if (!graph) throw new Error("정산 결재 인스턴스가 없습니다");
+  await approveDocument(ceo.viewer, { instanceId: graph.instance.id, expectedVersion: graph.instance.version });
+  if ((await findProjectById(SYSTEM_VIEWER, project.id))?.status !== "completed") throw new Error("완료 상태가 아닙니다");
+  return { vars: { projectId: project.id }, viewer: ceo };
+}
+
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
   switch (name) {
     case "pre-settle-evidence-pending":
@@ -1411,5 +1465,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return leaveApproved();
     case "project-delete-info":
       return projectDeleteInfo();
+    case "project-completed":
+      return projectCompleted();
   }
 }

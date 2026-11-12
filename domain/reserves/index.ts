@@ -13,7 +13,7 @@ import { withTransaction } from "@/lib/db-transaction";
 import { clampPage, pageCountFrom, LIST_PAGE_SIZE } from "@/lib/paging";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { projectRowScope } from "@/domain/projects/visibility";
-import { listProjectIdsInScope } from "@/repositories/projects";
+import { listProjectIdsInScope, lockProjectForWrite as repoLockProjectForWrite } from "@/repositories/projects";
 import { listAliveByOwners } from "@/repositories/files";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { formatKrw } from "@/lib/format-number";
@@ -155,6 +155,7 @@ const CLIENT_ARCHIVED = "거래처 사용중지 · 다른 거래처 고르기";
 export class ReserveClientArchivedError extends UserFacingError {}
 const PROJECT_CLIENT_MISMATCH = "다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기";
 const PROJECT_ARCHIVED = "보관된 프로젝트 · 프로젝트 다시 고르기";
+const PROJECT_ARCHIVED_SHORT = "보관된 프로젝트";
 const EVIDENCE_NOT_IN_TABLE = "코드표에 없는 증빙 종류 · 증빙 종류 고르기";
 const AMOUNT_NOT_POSITIVE = "금액 0 이하 · 금액 수정";
 const DIRECTION_INVALID = "구분 없음 · 구분 고르기";
@@ -316,6 +317,9 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
   const now = deps?.now?.() ?? new Date();
 
   const fxToRemember = await withTransaction(async (tx) => {
+    // 07.2-17(T-07.2-17-02): 줄이 가리키는 프로젝트 행을 맨 앞에서 id 순으로 잠근다(잠금 순서 프로젝트 → 클라이언트 → 줄) — 프로젝트
+    // 보관(archiveProject)이 잠금을 쥔 동안 끼어든 저장이 FK 대기 뒤 보관된 프로젝트에 줄을 붙이지 않게, planBatch의 보관 판정이 잠근 뒤 커밋된 값을 본다.
+    for (const projectId of [...rowProjectIds].sort()) await repoLockProjectForWrite(viewer, projectId, tx);
     // 기존 줄의 클라이언트는 바뀌지 않으므로(사용자 D6) 잠글 id를 잠금 전에 읽어도 된다.
     const preStored = await repoFindEntriesByIds(viewer, entryIds, tx);
     const lockIds = [...new Set([...prepared.filter((row) => row.input.isNew).map((row) => row.input.clientId), ...preStored.map((row) => row.clientId)])].sort();
@@ -560,12 +564,17 @@ export async function restoreReserve(
   return withTransaction(async (tx) => {
     const [before] = await repoFindEntriesByIds(viewer, [id], tx);
     if (!before) denyWrite(viewer, "reserve.restore", { entryIds: [id] }, new UserFacingError(ENTRY_NOT_FOUND));
+    // 07.2-17(T-07.2-17-02): 줄의 프로젝트 행을 먼저 잠근다(잠금 순서 프로젝트 → 클라이언트) — 보관된 프로젝트에 리저브 줄을 되살리지 않는다.
+    if (before.projectId) await repoLockProjectForWrite(viewer, before.projectId, tx);
     // 클라이언트는 첫 저장 뒤 바뀌지 않으므로 잠금 전에 읽어도 된다(사용자 D6).
     const [client] = await repoLockReserveClients(viewer, [before.clientId], tx);
     await deps?.afterLock?.();
     const [current] = await repoFindEntriesByIds(viewer, [id], tx);
     // quick 261002-4jn — 이미 활성(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
     if (!current || current.archivedAt === null) return { restored: false };
+    if (current.projectId && (await repoFindProjectClientIds(viewer, [current.projectId], tx)).get(current.projectId)?.archived) {
+      denyWrite(viewer, "reserve.restore", { clientIds: [current.clientId], entryIds: [id] }, new UserFacingError(`${PROJECT_ARCHIVED_SHORT} · 복원 불가`));
+    }
     // 07.2-11 PU22 ②(D-7309): 사용중지(보관) 거래처의 지운 줄 복원은 사실상 새로 넣기라 거부한다 — 잠근 값의 archivedAt만 본다(숨김은 사용중지가 아니다).
     if (client?.archived) denyWrite(viewer, "reserve.restore", { clientIds: [current.clientId], entryIds: [id] }, new ReserveClientArchivedError(CLIENT_ARCHIVED));
     const ledger = (await repoListActiveEntriesByClients(viewer, [current.clientId], tx)).map(toBalanceRow);

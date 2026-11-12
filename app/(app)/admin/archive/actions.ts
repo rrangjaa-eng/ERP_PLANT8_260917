@@ -10,6 +10,7 @@ import { HolidayNotRestorableError } from "@/domain/holidays/admin";
 import { PersonNotRestorableError, PersonRestoreForbiddenError } from "@/domain/people/restore";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
 import { SeatTakenError } from "@/domain/people/seat-rules";
+import { ProjectRestoreBlockedError } from "@/domain/projects/archive";
 import "./actions.registry";
 
 // ADMN-12: domain/archive만 부른다(03-01의 보관·복원 진입점) — 등록은
@@ -38,13 +39,16 @@ export const restoreArchivedAction = authedActionClient
         error instanceof RoleGrantForbiddenError ||
         error instanceof SeatTakenError ||
         error instanceof ParentOrgUnitArchivedError ||
-        error instanceof ReserveClientArchivedError
+        error instanceof ReserveClientArchivedError ||
+        // 07.2-17(D-7210): 프로젝트 복원 거부(담당 팀 사용중지 · 돈 문서)도 행 아래 이유 줄로.
+        error instanceof ProjectRestoreBlockedError
       ) {
         returnValidationErrors(restoreArchivedSchema, { _errors: [error.message] });
       }
       throw error;
     }
     revalidatePath("/admin/archive");
+    revalidatePath("/projects");
     // 복원 대상 표의 목록 화면도 즉시 갱신되게 한다.
     revalidatePath("/admin/code-tables");
     revalidatePath("/admin/people");

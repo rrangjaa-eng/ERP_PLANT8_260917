@@ -1,7 +1,7 @@
 import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
-import { roles, codeItems, orgUnits, teams, corpCards, users, vendors, quoteLines, quoteRevisions } from "@/db/schema";
+import { roles, codeItems, orgUnits, teams, corpCards, users, vendors, quoteLines, quoteRevisions, projects } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import {
   findRoleById,
@@ -26,6 +26,7 @@ import { findQuoteLineById, setQuoteLineArchived } from "@/repositories/quote-li
 import { findHolidayById, listArchivedHolidays } from "@/repositories/holidays";
 import { findFieldDefinitionById, listArchivedFieldDefinitions, setFieldDefinitionArchived } from "@/repositories/field-definitions";
 import { FIELD_DEFINITION_TARGETS } from "@/domain/custom-fields/targets";
+import { findProjectById, listArchivedProjectNames } from "@/repositories/projects";
 import { findEntriesByIds as findReserveEntriesByIds, setEntryArchived as setReserveEntryArchived, listArchivedEntryNames as listArchivedReserveEntryNames } from "@/repositories/reserve-entries";
 
 // archive()/restore()(domain/archive/index.ts)가 필요로 하는 최소 행 모양.
@@ -47,7 +48,7 @@ export type ArchivedItem = {
   dateTaken?: boolean;
   // 거래처만 — 같은 숫자 사업자번호의 살아 있는 거래처가 있으면 참(복원 불가). 화면 DTO에는 싣지 않는다.
   businessNoTaken?: boolean;
-  // 견적 줄만 — 줄이 속한 프로젝트(06.2 I-2: 도메인이 보는 범위로 거른다). 화면 DTO에는 싣지 않는다.
+  // 견적 줄 · 프로젝트만 — 줄이 속한 프로젝트 · 프로젝트 자신(06.2 I-2 · 07.2-17: 도메인이 보는 범위로 거른다). 화면 DTO에는 싣지 않는다.
   projectId?: string;
 };
 
@@ -219,7 +220,9 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
         .select({ id: quoteLines.id, name: quoteLines.itemName, archivedAt: quoteLines.archivedAt, archivedBy: quoteLines.archivedBy, projectId: quoteRevisions.projectId })
         .from(quoteLines)
         .innerJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
-        .where(isNotNull(quoteLines.archivedAt));
+        // 07.2-17 /review #1: 보관된 프로젝트의 줄은 뺀다 — 줄 하나로는 되살리지 못하고, 프로젝트를 되살리면 함께 돌아온다.
+        .innerJoin(projects, eq(projects.id, quoteRevisions.projectId))
+        .where(and(isNotNull(quoteLines.archivedAt), isNull(projects.archivedAt)));
       return rows.map((row) => ({ entity: "quote_line", label: "견적 줄", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy, projectId: row.projectId }));
     },
   },
@@ -263,6 +266,28 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     async listArchived(viewer) {
       const rows = await listArchivedHolidays(viewer);
       return rows.map((row) => ({ entity: "holiday", label: "공휴일", ...row }));
+    },
+  },
+  // 07.2-17(D-7210 · D-7213) — 프로젝트. 삭제(보관)는 돈 문서 판정 · 같은 시각 줄 보관을 지나는 domain/projects/archive의 archiveProject로만
+  // 한다 — 범용 archive()는 그 판정을 하지 않으므로 늘 보호 행이다. 복원은 DOMAIN_RESTORERS가 restoreProject(via archive)에 맡긴다.
+  // 권리는 projects.delete 쓰기(requiredMenu) — 목록의 행 범위는 domain/archive listArchive가 쓰기 rowScope로 거른다(projectId).
+  {
+    entity: "project",
+    label: "프로젝트",
+    requiredMenu: "projects.delete",
+    // 보호 행이라 범용 경로가 부르지 않는다 — 잘못 불리면 바로 던진다(공휴일 항목과 같은 꼴).
+    setArchived() {
+      return Promise.reject(new Error("프로젝트 보관 · 복원은 domain/projects/archive로만"));
+    },
+    async findById(viewer, id) {
+      return findProjectById(viewer, id);
+    },
+    isProtected() {
+      return true;
+    },
+    async listArchived(viewer) {
+      const rows = await listArchivedProjectNames(viewer);
+      return rows.map((row) => ({ entity: "project", label: "프로젝트", id: row.id, name: `${row.number} ${row.name}`, archivedAt: row.archivedAt, archivedBy: row.archivedBy, projectId: row.id }));
     },
   },
   // 04.5-04(D10-12 · O21) — 화면 항목(칸 정의). 대상 상수 밖(프로젝트 · 견적 줄) 정의는 「없음」으로 본다(O13).

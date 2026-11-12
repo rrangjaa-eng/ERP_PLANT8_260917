@@ -209,14 +209,19 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(cell(page, 0, COL.unitPrice)).toHaveText("1,000,000");
   });
 
-  test("완료 프로젝트를 PM이 열면 견적 표가 캡션 있는 읽기 표(격자 아님)이고 1차 「일괄 저장」이 없다", async ({ page }) => {
+  test("완료 프로젝트를 PM이 열면 견적 표가 캡션 있는 읽기 표(격자 아님)이고 1차 「일괄 저장」은 바뀐 칸 0인 비활성 하나다", async ({ page }) => {
     await openAsPm(page, "completed", addDays(TODAY, -20), [{ itemName: "완료 줄", unitPrice: 1_000_000, execution: 600_000 }]);
 
     const table = page.getByRole("table", { name: "견적 줄" });
     await expect(table).toBeVisible();
     await expect(table.getByText("완료 줄")).toBeVisible();
     await expect(page.getByRole("grid")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /일괄 저장/ })).toHaveCount(0);
+    // 07.2-17(D-7218 · UI-SPEC S3) — 행사명 · 담당 PM은 완료 뒤에도 고치고 저장은 화면 1차 「일괄 저장」 하나라
+    // 완료 프로젝트 담당 PM에게도 1차가 남는다. 견적 표는 여전히 읽기 표이니 고친 칸이 없어 N 없이 비활성이다.
+    const save = page.getByRole("button", { name: /일괄 저장/ });
+    await expect(save).toHaveCount(1);
+    await expect(save).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByRole("button", { name: /일괄 저장 \d/ })).toHaveCount(0);
   });
 
   test("(e2) 진행 프로젝트 세 줄 중 둘째 줄의 실행가만 고쳐 저장해도 새로 고치기 전에 줄이 셋이다", async ({ page }) => {

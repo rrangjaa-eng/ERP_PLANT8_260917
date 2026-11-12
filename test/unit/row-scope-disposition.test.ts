@@ -136,6 +136,7 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
   { file: "domain/revenue/index.ts", fn: "deriveContract", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "호출자 listRevenue의 projectRowScope + findProjectInScope 판정 뒤" },
   { file: "domain/revenue/index.ts", fn: "listRevenue", primitive: "listRevenueEntriesByProject", kind: "scoped", reason: "같은 함수의 projectRowScope + findProjectInScope 판정 뒤(06.2-04)" },
   { file: "domain/revenue/index.ts", fn: "numberEntryChanges", primitive: "listRevenueEntriesByProject", kind: "post-gate", reason: "저장 트랜잭션 안 행동 로그 순번(07.1-13) — 호출자 saveRevenueInTx는 tx 전 saveRevenue · saveProjectLedger의 findProjectInScope 판정 뒤, 값은 로그 순번만" },
+  { file: "domain/settlements/index.ts", fn: "settlementResubmitter", primitive: "findProjectById", kind: "post-gate", reason: "결재 엔진 다시 신청 훅(07.2-17 D-7311) — 사용자 길 submitSettlement가 findProjectInScope · 담당 PM 쓰기로 먼저 거른다, 가능 행동은 canResubmitSettlement가 함께 본다 · 담당 PM id만 돌려준다" },
   { file: "domain/settlements/index.ts", fn: "canResubmitSettlement", primitive: "listSettlementSummaries", kind: "post-gate", reason: "결재 엔진 훅 — 결재 관련자(지금 단계 후보 · 처리자) 판정 뒤, 결재함은 범위로 거르지 않는다(D-6205 ②) · 담당 PM 쓰기 권리만 돌려준다" },
   { file: "domain/settlements/index.ts", fn: "canSeeSettlementDocument", primitive: "listSettlementSummaries", kind: "post-gate", reason: "문서 화면 404 판정 — 바로 canSeeSettlement(기안자 · 결재 관련자 · findProject)로 거른다, 불리언만" },
   { file: "domain/settlements/index.ts", fn: "describeSettlementDocuments", primitive: "listSettlementSummaries", kind: "post-gate", reason: "결재 엔진 훅 — 결재 관련자(지금 단계 후보 · 처리자) 판정 뒤, 결재함은 범위로 거르지 않는다(D-6205 ②)" },
@@ -157,6 +158,7 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
 
 // ⓓ 리포지토리 projects 읽기 처분표 — (파일, 최상위 선언, 이유).
 export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
+  { file: "repositories/archive.ts", fn: "ARCHIVABLE_TABLES", reason: "보관함 `견적 줄` 항목(07.2-17 /review #1) — projects 조인은 보관된 프로젝트의 줄을 빼는 archived_at 거름뿐이고 프로젝트 열을 내보내지 않는다, 호출자 domain/archive listArchive가 줄의 projectId를 listProjectIdsInScope(projectRowScope)로 거른다" },
   { file: "repositories/corp-card-usages.ts", fn: "listCardUsageRows", reason: "카드 사용 목록(#9) — listAccess(자기 거름 · privileged · 지름길 K2)가 행을 거른다, 프로젝트는 상태 · 이름 조인만" },
   { file: "repositories/corp-card-usages.ts", fn: "findCardUsageForWrite", reason: "카드 사용 한 건 수정 · 삭제 — 권리(cardUsageRights) 판정이 행을 거른다, 프로젝트는 상태 · id 조인만" },
   { file: "repositories/corp-card-usages.ts", fn: "findCardUsageOverwriteFacts", reason: "06.1-09 대사 덮기 막힘 판정(카드 R3) — 증빙 등록 권한 뒤 등록 트랜잭션 안, 프로젝트는 상태 조인만이고 화면에 내보내지 않는다(완료 프로젝트 막힘 판정용)" },
@@ -183,6 +185,7 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/project-budget-entries.ts", fn: "findBudgetBasisFacts", reason: "예산 기준 금액 재료(07-24 D-730 · AQ-39) — 도메인 budgetBasisKrw만 부른다: 쓰기 tx 안 범위 판정 · 잠금 뒤(등록 · PO 금액 저장 · 고객 승인 · 처음 원가율) 또는 rowScopeCondition으로 거른 예산 현황 행(listBudgetRowFacts) 뒤, 돌려주는 PO 금액 · 승인 합계는 예산 줄 계산에만 쓴다" },
   { file: "repositories/project-budget-entries.ts", fn: "listProjectIdsWithoutBudget", reason: "처음 원가율 예산 줄(07-24 D-747) — 원가율은 전사 설정이라 대상도 전사(보는 사람 범위로 거르면 범위 밖 프로젝트가 예산 없이 남는다), 호출자 seedInitialBudgets는 admin.settings 쓰기 판정 뒤 저장 tx · 가져오기 명령에서만 돌고 id만 돌려준다(화면에는 만든 줄 수뿐)" },
   { file: "repositories/projects.ts", fn: "findProjectById", reason: "원시 프리미티브 — 도메인 호출 자리는 ⓒ 처분표가 고정한다" },
+  { file: "repositories/projects.ts", fn: "listArchivedProjectNames", reason: "보관함 `프로젝트` 항목(07.2-17 D-7213) — 호출자 domain/archive listArchive가 admin.archive view 또는 projects.delete 쓰기 판정 뒤 listProjectIdsInScope(쓰기 projectRowScope)로 거른다, 번호 · 이름 · 보관 시각 · 보관한 사람만" },
   { file: "repositories/projects.ts", fn: "findProjectByNumber", reason: "도메인 · 화면 호출자 없음 — 부르면 ⓒ 프리미티브 목록에 이름을 더한다" },
   { file: "repositories/projects.ts", fn: "lockProjectForWrite", reason: "트랜잭션 안 잠금 — 호출자가 트랜잭션 전 범위 판정(findProjectInScope · precheckLink · 지출결의 게이트, 04-32)" },
   { file: "repositories/projects.ts", fn: "lockAutoSettleCandidates", reason: "시스템 자동 정산(D-76) — 행 노출 없음, 상태 전환만(검토 M-5 수용)" },

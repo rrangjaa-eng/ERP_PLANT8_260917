@@ -13,6 +13,7 @@ import {
   insertApprovalInstance,
   insertApprovalRoute,
   insertApprovalSteps,
+  updateInstanceDrafter,
   insertFallbackStep,
   listActiveInstances,
   listDrafterInstances,
@@ -530,6 +531,8 @@ async function runTransition<T>(
   const fields = { ...baseFields, actualVersion: instance.version };
   const status = instance.status as ApprovalStatus;
   const isDrafter = viewer.id === instance.drafterId;
+  // 07.2-17(D-7311): 다시 신청의 「기안자」는 종류 훅(resubmitterOf)이 있으면 그 사람만 — 회수 · 승인 · 반려는 그대로 처음 기안자로 판정한다.
+  const actsAsDrafter = input.event === "resubmit" ? await isResubmitter(viewer, instance, tx) : isDrafter;
   const before = IN_PROGRESS.includes(status) ? walkGraph(graph, pre.snapshot) : null;
   // 관련자 재료 — 끝난 문서도 지금 차수 담당(예: 회수된 문서의 1단 팀장)은 관련자다(CEO-6 순서 B).
   const holders = before ?? walkGraph(graph, pre.snapshot);
@@ -540,7 +543,7 @@ async function runTransition<T>(
   }
   // (2) 사건별 종결.
   const priorApproval = hasPriorApproval(currentRouteOf(graph)?.steps ?? [], instance.drafterId);
-  if (closedFor(status, input.event, isDrafter, instance.documentKind, priorApproval)) {
+  if (closedFor(status, input.event, actsAsDrafter, instance.documentKind, priorApproval)) {
     const reason = IN_PROGRESS.includes(status) ? "invalid_state" : "final";
     throw await refuseStaleOrClosed(viewer, graph, holders, input.event, reason, fields, pre);
   }
@@ -555,7 +558,7 @@ async function runTransition<T>(
       throw refuse("not_holder", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), fields);
     }
     outcome = actionable;
-  } else if (!isDrafter) {
+  } else if (!actsAsDrafter) {
     throw refuse("not_drafter", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), fields);
   }
   if (!route) throw new Error("지금 차수 행 없음");
@@ -591,6 +594,13 @@ async function runTransition<T>(
     { appendActionLog: pre.appendActionLog },
   );
   return { updated, result: written.result };
+}
+
+// 07.2-17(D-7311): 다시 신청할 수 있는 사람 — 종류 훅이 있으면 훅이 준 사람만(처음 기안자도 아니면 거부), 없으면 처음 기안자.
+async function isResubmitter(viewer: Viewer, instance: { drafterId: string; documentKind: string; documentId: string }, tx?: DbOrTx): Promise<boolean> {
+  const hook = getDocumentKind(instance.documentKind).resubmitterOf;
+  if (!hook) return instance.drafterId === viewer.id;
+  return (await hook(viewer, instance.documentId, tx)) === viewer.id;
 }
 
 async function readTransitionPre(viewer: Viewer, deps?: ApprovalDeps): Promise<TransitionPre> {
@@ -883,6 +893,11 @@ export async function resubmitDocument(
           tx,
         );
         await insertApprovalSteps(viewer, route.id, prepared.steps, tx);
+        // 07.2-17(D-7311): 훅의 사람이 처음 기안자가 아니면 인스턴스 기안자를 그 사람으로 바꾼다(같은 tx) — 로그에 이전 기안자.
+        if (graph.instance.drafterId !== viewer.id) {
+          await updateInstanceDrafter(viewer, { id: graph.instance.id, drafterId: viewer.id }, tx);
+          return { detail: { previousDrafterId: graph.instance.drafterId }, result: null };
+        }
         return { detail: {}, result: null };
       },
     };
@@ -1011,7 +1026,9 @@ async function possibleActions(
   if (state.isCandidate && !closedFor(status, "approve", isDrafter, kind, priorApproval)) actions.push("approve");
   if (state.isCandidate && !isDrafter && !closedFor(status, "reject", isDrafter, kind, priorApproval)) actions.push("reject");
   if (isDrafter && !closedFor(status, "withdraw", isDrafter, kind, priorApproval)) actions.push("withdraw");
-  if (isDrafter && !closedFor(status, "resubmit", isDrafter, kind, priorApproval)) {
+  // 07.2-17(D-7311): 다시 신청은 종류 훅(resubmitterOf)의 사람만 — 훅이 없으면 처음 기안자.
+  const resubmitter = await isResubmitter(viewer, instance);
+  if (resubmitter && !closedFor(status, "resubmit", resubmitter, kind, priorApproval)) {
     const canResubmit = getDocumentKind(kind).canResubmit;
     if (canResubmit && (await canResubmit(viewer, instance.documentId))) actions.push("resubmit");
   }
@@ -1087,7 +1104,8 @@ export async function getApprovalView(
       );
   }
 
-  if (state.isParty) {
+  // 07.2-17(D-7311): 종류 훅(resubmitterOf)의 사람은 관련자가 아니어도(처음 기안자가 아닌 지금 담당 PM) 다시 신청 행동을 받는다.
+  if (state.isParty || (await isResubmitter(viewer, graph.instance))) {
     actions.push(...(await possibleActions(viewer, { instance: graph.instance, isCandidate: state.isCandidate, steps: route?.steps ?? [] })));
   }
   const blocked = state.isCandidate

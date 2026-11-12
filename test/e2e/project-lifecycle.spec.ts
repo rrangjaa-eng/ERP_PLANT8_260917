@@ -769,7 +769,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     // 작업이 없다는 것만 본다 — 「더보기」가 있으면 그 묶음의 자식은 참여자 더하기 하나뿐이다.
     for (const toggle of await page.getByRole("main").getByRole("button", { name: "더보기" }).all()) {
       const groupId = await toggle.getAttribute("aria-controls");
-      await expect(page.locator(`[id="${groupId}"] > *`)).toHaveText(["참여자 더하기"]);
+      // 07.2-17(S1) — 팀장은 projects.delete가 있어 펼친 줄 끝에 `프로젝트 삭제`가 선다.
+      await expect(page.locator(`[id="${groupId}"] > *`)).toHaveText(["참여자 더하기", "프로젝트 삭제"]);
     }
   });
 });

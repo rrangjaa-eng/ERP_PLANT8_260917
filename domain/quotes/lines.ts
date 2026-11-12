@@ -1874,7 +1874,8 @@ export async function restoreQuoteLine(
       { recordAction },
     );
     const projectRow = locked.own;
-    if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트 찾을 수 없음");
+    // 07.2-17 /review #1: 보관된 프로젝트의 줄은 하나씩 되살리지 않는다 — 보관함 권한자도 같다(프로젝트를 되살리면 같은 시각 줄이 함께 돌아온다).
+    if (!projectRow || projectRow.archivedAt !== null) throw new RevisionNotFoundError("연결된 프로젝트 찾을 수 없음");
     const current = await repoFindQuoteLineById(viewer, id, tx);
     if (!current || current.revisionId !== line.revisionId) throw new UserFacingError(MEMBERSHIP_MISMATCH);
     // quick 261002-4jn — 이미 활성(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.

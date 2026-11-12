@@ -166,8 +166,10 @@ export async function setBudgetManually(
 
   return withTransaction(async (tx) => {
     // 쓰기 권한이 있어도 행 범위(예산 현황 목록과 같은 projectRowScope) 밖 프로젝트는 없는 것과 같다.
-    await lockProjectForWrite(viewer, projectId, tx);
+    const locked = await lockProjectForWrite(viewer, projectId, tx);
     if (!(await findProjectInScope(viewer, scope, projectId, tx))) throw new UserFacingError("프로젝트 없음");
+    // 07.2-17: 보관된 프로젝트에는 예산 줄을 쓰지 않는다(잠근 행으로 판정 — 보관과 직렬).
+    if (!locked || locked.archivedAt !== null) throw new UserFacingError("프로젝트 없음");
     const { sumKrw } = await sumBudgetKrw(viewer, projectId, tx);
     if (sumKrw !== input.expectedBudgetKrw) throw new UserFacingError("다른 사람이 먼저 수정 · 새로 불러오기");
     const deltaKrw = input.budgetKrw - sumKrw;

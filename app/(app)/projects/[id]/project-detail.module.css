@@ -80,6 +80,18 @@
     min-width: var(--touch-min);
     min-height: var(--touch-min);
   }
+
+  /* 07.2-17(S1) — 펼친 줄 끝 `프로젝트 삭제`도 누르는 상자 44(§3). */
+  .deleteSlot button {
+    min-height: var(--touch-min);
+  }
+}
+
+/* 07.2-17(S1 · D-F1) — 머리 행동 묶음 맨 끝 위험 3차. 앞 행동과 --s-8(버튼군 사이 --s-3 + 이 여백). 새 토큰 0. */
+.deleteSlot {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: calc(var(--s-8) - var(--s-3));
 }
 
 .cellSelect,
@@ -601,6 +613,22 @@ td:has(> .rowNumber) {
 
 .periodInputDirty {
   box-shadow: var(--inset-dirty);
+}
+
+/* 07.2-17(S3) — 정보 면 고객사 · 담당 팀 · 담당 PM 칸: 값 + 3차 `바꾸기`. 바꾼 칸은 저장 대기 면 + 왼쪽 위 삼각형(표 dirty 셀과 같은 토큰). */
+.infoPick {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.infoPickDirty {
+  padding: 0 var(--s-2);
+  background-color: var(--surface-dirty);
+  background-image: var(--mark-dirty);
 }
 
 .periodInput[aria-invalid="true"] {

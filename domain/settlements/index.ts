@@ -1,4 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { formatKrw } from "@/lib/format-number";
@@ -71,6 +72,7 @@ import {
   findSettlementByProjectId,
   insertSettlementIfAbsent,
   listSettlementSummaries,
+  updateSettlementDrafterInTx,
   type SettlementSummaryRow,
 } from "@/repositories/settlement-approvals";
 
@@ -308,8 +310,9 @@ function buildSettlementDetailRows(projected: Partial<SettlementDocumentDto>): D
 
 // ── 보임 ──────────────────────────────────────────────────────────────────
 // 기안자 ∪ 결재 관련자(처리한 사람 · 지금 단계 후보) ∪ (계급 업무 범위 company ∧ 그 프로젝트를 볼 수 있음). 그 밖은 없는 문서(404).
-async function canSeeSettlement(viewer: Viewer, row: Pick<SettlementSummaryRow, "id" | "drafterId" | "projectId">): Promise<boolean> {
-  if (row.drafterId === viewer.id) return true;
+// 07.2-17(D-7311): 지금 담당 PM도 본다 — 담당 PM이 바뀐 뒤 반려 · 회수된 정산을 다시 올리는 사람이 그 PM이다(옛 기안자는 다시 올리면 빠진다).
+async function canSeeSettlement(viewer: Viewer, row: Pick<SettlementSummaryRow, "id" | "drafterId" | "projectId" | "pmUserId">): Promise<boolean> {
+  if (row.drafterId === viewer.id || row.pmUserId === viewer.id) return true;
   if (await canSeeApprovalDocument(viewer, { kind: SETTLEMENT_DOCUMENT_KIND, documentId: row.id })) return true;
   const scope = await loadActorTeamScope(viewer, { todayKst: kstToday(new Date()) });
   if (scope.workScope !== "company") return false;
@@ -403,7 +406,11 @@ export async function submitSettlement(viewer: Viewer, input: { projectId: strin
     const current = await findProjectById(viewer, input.projectId, tx);
     if (!current) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
     if (current.status !== SETTLING) throw notSettling(current.status);
+    if (current.archivedAt !== null) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
     const inserted = await insertSettlementIfAbsent(viewer, { projectId: input.projectId, drafterId: viewer.id }, tx);
+    // 07.2-17(T-07.2-17-02): 프로젝트 행을 잠그지 않는 길(T-05-1106 교착 회피)이라 lockProjectForWrite 대신 — 새 행의 FK 확인이 프로젝트 행을
+    // FOR KEY SHARE로 잡아 보관(archiveProject의 FOR UPDATE)과 직렬된다. 넣은 뒤 다시 읽어(새 문장 스냅숏) 그사이 보관됐으면 되돌린다.
+    if (inserted && (await findProjectById(viewer, input.projectId, tx))?.archivedAt != null) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
     const doc = inserted ?? (await findSettlementByProjectId(viewer, input.projectId, tx));
     if (!doc) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
     // 06-19: 기안 직전 같은 tx로 완료 전 점검 — 막힘이면 거부(문서 행도 롤백). 점검 예외는 잡지 않는다(fail-closed).
@@ -421,6 +428,8 @@ export async function submitSettlement(viewer: Viewer, input: { projectId: strin
       if (graph && RESUBMITTABLE_STATUSES.has(graph.instance.status)) {
         const logDeps = await passPreSettle();
         const again = await resubmitDocument(viewer, prepared, { instanceId: graph.instance.id, expectedVersion: graph.instance.version }, tx, logDeps);
+        // 07.2-17(D-7311): 엔진이 인스턴스 기안자를 지금 PM으로 바꿨다 — 문서 행 기안자도 같은 tx에서(옛 PM이 대기 줄 · 기안 표시 · 보임을 갖지 않게).
+        if (doc.drafterId !== viewer.id) await updateSettlementDrafterInTx(viewer, { id: doc.id, drafterId: viewer.id }, tx);
         return { kind: "submitted", documentId: doc.id, instanceId: graph.instance.id, version: again.version, round: again.round };
       }
       if (graph) return { kind: "already_submitted", documentId: doc.id };
@@ -616,6 +625,12 @@ async function canResubmitSettlement(viewer: Viewer, documentId?: string): Promi
   return isAssignedPmWriter(viewer, row.pmUserId);
 }
 
+// 07.2-17(07.2 D-7311 · eng E9): 다시 올리는 사람 = 그 프로젝트의 지금 담당 PM(문서 id = 프로젝트 id). 엔진 훅 — 범위 판정은 사용자 길
+// submitSettlement(findProjectInScope · 담당 PM 쓰기)와 가능 행동의 canResubmitSettlement가 먼저 한다.
+async function settlementResubmitter(viewer: Viewer, documentId: string, tx?: DbOrTx): Promise<string | null> {
+  return (await findProjectById(viewer, documentId, tx))?.pmUserId ?? null;
+}
+
 registerDocumentKind({
   kind: SETTLEMENT_DOCUMENT_KIND,
   label: "정산 결재",
@@ -625,6 +640,8 @@ registerDocumentKind({
   routeSettings: SETTLEMENT_ROUTE_SETTINGS,
   canResubmit: canResubmitSettlement,
   resubmitFrom: ["rejected", "withdrawn"],
+  // 07.2-17(07.2 D-7311 · eng E9): 다시 올리는 사람 = 그 프로젝트의 지금 담당 PM(문서 id = 프로젝트 id). 처음 기안자 판정을 대체한다.
+  resubmitterOf: settlementResubmitter,
   prepareFinalApproval: prepareSettlementFinalApproval,
   onFinalApprovalInTx: onSettlementFinalApprovalInTx,
   approveBlockedReason: settlementApproveBlockedReason,

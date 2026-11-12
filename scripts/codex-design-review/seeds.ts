@@ -2,7 +2,7 @@ import { createHash, randomInt, randomUUID } from "node:crypto";
 import { expect, type Browser } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, files, projects, purchaseRequests } from "@/db/schema";
+import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, files, projectBudgetEntries, projects, purchaseRequests } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -1361,6 +1361,26 @@ async function quoteAdjustmentPair(): Promise<SeedResult> {
   return { vars: { projectId: a.id, counterpartProjectId: b.id }, viewer: adjuster };
 }
 
+// 07.2-17(S1 · S3) — 팀장이 보는 상세 두 개: 돈 문서 0건(머리 끝 `프로젝트 삭제` 활성 · 정보 면 4칸 전부 `바꾸기`)과
+// 예산 수동 조정 1건(삭제 막힘 이유 · 고객사 · 담당 팀 잠김 줄). 목록 `/projects`의 `보관함` 링크도 같은 팀장으로 본다.
+async function projectDeleteInfo(): Promise<SeedResult> {
+  const today = seoulToday();
+  const year = today.slice(0, 4);
+  const suffix = randomUUID().slice(0, 6);
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처삭제본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처삭제팀-${suffix}` });
+  const pm = await makePerson("담당", "role-pm", team.id, `${year}-01-01`);
+  const lead = await makePerson("팀장", "role-team-lead", team.id, `${year}-01-01`);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처삭제클라이언트-${suffix}`, normalizedName: `캡처삭제클라이언트-${suffix}` });
+  const make = async (label: string) =>
+    createProject(pm.viewer, { clientId: client.id, teamId: team.id, pmUserId: pm.viewer.id, name: `캡처삭제${label}-${suffix}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` });
+  const free = await make("빈");
+  const locked = await make("돈문서");
+  for (const project of [free, locked]) await db.update(projects).set({ status: "in_progress" }).where(eq(projects.id, project.id));
+  await db.insert(projectBudgetEntries).values({ projectId: locked.id, reason: "manual", deltaKrw: 1_000_000, memo: "캡처 수동 조정", createdBy: lead.viewer.id });
+  return { vars: { projectId: free.id, lockedProjectId: locked.id }, viewer: lead };
+}
+
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
   switch (name) {
     case "pre-settle-evidence-pending":
@@ -1389,5 +1409,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return quoteAdjustmentPair();
     case "leave-approved":
       return leaveApproved();
+    case "project-delete-info":
+      return projectDeleteInfo();
   }
 }

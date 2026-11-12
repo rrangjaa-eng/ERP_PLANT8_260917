@@ -856,24 +856,39 @@ export async function createExpenseFromLines(
       amount: door.remaining.amount,
       fxRate: await recentFxRate(door.remaining.currency),
     });
-    const inserted = await insertDraftIfAbsent(viewer, {
-      drafterId: viewer.id,
-      projectId: facts.project.id,
-      quoteLineId: line.id,
-      vendorId: line.vendorId,
-      evidenceType: vendor?.defaultEvidenceType ?? null,
-      paymentMethod: typed.paymentMethod ?? paymentMethod,
-      note: typed.note ?? null,
-      requestedPaymentDate: typed.requestedPaymentDate ?? null,
-      requestedPaymentReason: typed.requestedPaymentDate ? (typed.requestedPaymentReason ?? null) : null,
-      supplyCurrency: supply.currency,
-      supplyForeignAmount: supply.foreignAmount,
-      supplyFxRate: supply.fxRate,
-      supplyAmountKrw: supply.amountKrw,
-      installment: door.forcedInstallment,
-      updatedBy: viewer.id,
+    // 07.2-17(T-07.2-17-02): 생성은 프로젝트 행을 잠근 뒤 보관 여부를 다시 본다 — 보관(archiveProject)이 잠금을 쥔 동안 끼어든 생성이
+    // FK 대기 뒤 보관된 프로젝트에 붙지 않게(잠금 순서 프로젝트 행 → 문서 행, 제출과 같음). 보관이면 줄이 현재 차수에 없는 것과 같다.
+    const written = await withTransaction(async (tx) => {
+      const lockedProject = await lockProjectForWrite(viewer, facts.project.id, tx);
+      if (!lockedProject || lockedProject.archivedAt !== null) return null;
+      const draft = await insertDraftIfAbsent(
+        viewer,
+        {
+          drafterId: viewer.id,
+          projectId: facts.project.id,
+          quoteLineId: line.id,
+          vendorId: line.vendorId,
+          evidenceType: vendor?.defaultEvidenceType ?? null,
+          paymentMethod: typed.paymentMethod ?? paymentMethod,
+          note: typed.note ?? null,
+          requestedPaymentDate: typed.requestedPaymentDate ?? null,
+          requestedPaymentReason: typed.requestedPaymentDate ? (typed.requestedPaymentReason ?? null) : null,
+          supplyCurrency: supply.currency,
+          supplyForeignAmount: supply.foreignAmount,
+          supplyFxRate: supply.fxRate,
+          supplyAmountKrw: supply.amountKrw,
+          installment: door.forcedInstallment,
+          updatedBy: viewer.id,
+        },
+        tx,
+      );
+      return { row: draft };
     });
-    const expenseId = inserted?.id ?? (await findDraftByLineAndDrafter(viewer, { quoteLineId: line.id, drafterId: viewer.id }))?.id;
+    if (!written) {
+      blocked.push({ lineId, reason: NOT_IN_CURRENT_REVISION });
+      continue;
+    }
+    const expenseId = written.row?.id ?? (await findDraftByLineAndDrafter(viewer, { quoteLineId: line.id, drafterId: viewer.id }))?.id;
     if (!expenseId) throw new ExpenseNotFoundError();
     created.push({ lineId, expenseId });
   }
@@ -1129,7 +1144,12 @@ export async function changeExpenseLine(
   };
   let saved: ExpenseRow | null;
   try {
-    saved = await updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id });
+    // 07.2-17(T-07.2-17-02): 다른 프로젝트 줄로 옮기는 쓰기는 그 프로젝트 행을 잠근 뒤 보관 여부를 다시 본다(잠금 순서 프로젝트 → 문서).
+    saved = await withTransaction(async (tx) => {
+      const lockedProject = await lockProjectForWrite(viewer, facts.project.id, tx);
+      if (!lockedProject || lockedProject.archivedAt !== null) throw new ExpenseNotFoundError();
+      return updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id }, tx);
+    });
   } catch (error) {
     // 같은 줄에 내 작성 중 문서가 그 사이 생겼다(부분 UNIQUE) — 새 문서를 만들지 않고 그 문서로 보낸다.
     const code = (error as { code?: string; cause?: { code?: string } }).code ?? (error as { cause?: { code?: string } }).cause?.code;
@@ -1207,6 +1227,8 @@ export async function submitExpense(
     const locked = await lockExpenseForUpdate(viewer, row.id, tx);
     await deps?.afterLock?.();
     if (!locked) throw new ExpenseNotFoundError();
+    // 07.2-17: 보관된 프로젝트에는 올리지 않는다 — 보관함 권한자도 같다(잠근 행으로 판정).
+    if (projectRow && (!lockedProject || lockedProject.archivedAt !== null)) throw new ExpenseNotFoundError();
     if (locked.quoteLineId !== row.quoteLineId) throw new ExpenseConflictError(locked.updatedAt);
     let resubmit: { instanceId: string; version: number } | null = null;
     if (locked.number !== null && locked.closedAt !== null) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
@@ -1364,6 +1386,11 @@ export async function restoreExpenseDraft(viewer: Viewer, input: { expenseId: st
   const gate = await loadActionLogGate();
   try {
     return await withTransaction(async (tx) => {
+      // 07.2-17(T-07.2-17-02): 보관된 프로젝트의 지운 문서는 되살리지 않는다 — 프로젝트 행을 먼저 잠그고(잠금 순서 프로젝트 → 문서) 잠근 행으로 판정.
+      if (row.projectId) {
+        const lockedProject = await lockProjectForWrite(viewer, row.projectId, tx);
+        if (!lockedProject || lockedProject.archivedAt !== null) throw new ExpenseNotFoundError();
+      }
       const restored = await restoreDraft(viewer, { id: row.id, drafterId: viewer.id }, tx);
       if (!restored) throw new ExpenseNotFoundError();
       if (row.deletedAt) await restoreOwnerFilesRemovedAt(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id, removedAt: row.deletedAt, scopeKinds: duplicateScopeKinds(EXPENSE_DOCUMENT_KIND) }, tx);

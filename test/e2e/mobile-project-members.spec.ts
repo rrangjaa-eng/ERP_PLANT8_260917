@@ -150,10 +150,11 @@ test.describe("폰 375 — 「더보기」 안 `참여자 더하기`(S4)", () =>
     await page.keyboard.press("Enter");
     await expect(dialog).toBeHidden();
     await expect(memberRow(page, last.l)).toBeVisible();
-    // 마지막 후보를 더하면 머리 자식이 0이라 「더보기」 토글도 사라진다 — UI-SPEC S4 · R2-I5: 토글이 사라졌으면 화면 제목이 포커스를 받는다.
-    await expect(moreToggle(page)).toHaveCount(0);
-    await expect(page.locator('[data-ui="screen-title"]')).toBeFocused();
+    // 마지막 후보를 더하면 `참여자 더하기`가 사라진다. 07.2-17(S1) — 팀장은 묶음 끝 `프로젝트 삭제`가 남아 「더보기」 토글이 서고 포커스는 그 토글로
+    // (UI-SPEC S4 · R2-I5: 토글이 남으면 토글, 사라지면 화면 제목 — 토글이 사라지는 갈래는 projects.delete 없는 계급의 몫).
     await expect(page.getByRole("button", { name: "참여자 더하기" })).toHaveCount(0);
+    await expect(moreToggle(page)).toHaveCount(1);
+    await expect(moreToggle(page)).toBeFocused();
     await page.context().close();
   });
 });

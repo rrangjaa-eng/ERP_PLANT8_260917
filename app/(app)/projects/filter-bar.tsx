@@ -37,6 +37,7 @@ export function ProjectsFilterBar({
   periodErrors = {},
   issueRequestsLink = null,
   budgetLink = null,
+  archiveLink = null,
 }: {
   teams: { id: string; name: string }[];
   statusOptions: ProjectFilterOption[];
@@ -51,6 +52,8 @@ export function ProjectsFilterBar({
   issueRequestsLink?: { label: string; href: string } | null;
   /** 07-24(SC-21) — 같은 자리의 3차 `예산 현황`(`projects.budget` 보기가 없으면 null — 링크 없음). */
   budgetLink?: { label: string; href: string } | null;
+  /** 07.2-17(S1 · D-7213) — 같은 자리 끝의 3차 `보관함`(`projects.delete` 쓰기가 없으면 null — 링크 없음). */
+  archiveLink?: { label: string; href: string } | null;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const fromRef = useRef<HTMLInputElement>(null);
@@ -260,10 +263,11 @@ export function ProjectsFilterBar({
           필터 지우기
         </Link>
       ) : null}
-      {issueRequestsLink || budgetLink ? (
+      {issueRequestsLink || budgetLink || archiveLink ? (
         <RowActions>
           {issueRequestsLink ? <RowAction href={issueRequestsLink.href}>{issueRequestsLink.label}</RowAction> : null}
           {budgetLink ? <RowAction href={budgetLink.href}>{budgetLink.label}</RowAction> : null}
+          {archiveLink ? <RowAction href={archiveLink.href}>{archiveLink.label}</RowAction> : null}
         </RowActions>
       ) : null}
     </form>

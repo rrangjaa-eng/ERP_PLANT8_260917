@@ -124,3 +124,6 @@ registerAction({ name: "readQuoteXlsxAction", menu: "projects", action: "write",
 // 07.2-17(PU1 · D-7213): 프로젝트 삭제(보관) · 되돌리기 — 번호만 돌려준다(DTO 없음).
 registerAction({ name: "deleteProjectAction", menu: "projects.delete", action: "write", dtoName: null });
 registerAction({ name: "undoProjectDeleteAction", menu: "projects.delete", action: "write", dtoName: null });
+
+// 07.2-19(PU2 · D-7216): 완료 되돌리기 — projects.reopen 쓰기. 판정은 domain(reopenCompletedProject). 번호만 돌려준다(DTO 없음).
+registerAction({ name: "reopenProjectAction", menu: "projects.reopen", action: "write", dtoName: null });

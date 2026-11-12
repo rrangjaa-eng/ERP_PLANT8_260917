@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Children, Fragment, useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -3342,18 +3342,17 @@ export function QuoteLedger({
       {projectDelete ? <ProjectDelete {...projectDelete} /> : null}
     </HeaderCopyActions>
   );
+  // 05-11(S10 (가) · N3): 정산에는 「상태 바꾸기」가 없다 — 그 자리에 정산 결재 올리기 · 링크(같은 순서 규칙).
+  const settlementAction = settlement ? <SettlementButton key="settlement" {...settlement} dirtyCount={dirtyCount} /> : null;
+  // 07.2-19(S2): 둘이 함께 오는 곳은 완료 프로젝트의 되돌리기 보유자뿐 — 트리거가 승인 문서 링크(`정산 결재 승인`)를 밀어내지 않는다.
   const statusActions = statusChange ? (
-    <StatusChange
-      key="status"
-      {...statusChange}
-      dirtyCount={dirtyCount}
-      onChanged={setStatusToast}
-      onOpenPeriodField={openPeriodField}
-    />
-  ) : settlement ? (
-    // 05-11(S10 (가) · N3): 정산에는 「상태 바꾸기」가 없다 — 그 자리에 정산 결재 올리기 · 링크(같은 순서 규칙).
-    <SettlementButton key="settlement" {...settlement} dirtyCount={dirtyCount} />
-  ) : null;
+    <Fragment key="status">
+      <StatusChange {...statusChange} dirtyCount={dirtyCount} onChanged={setStatusToast} onOpenPeriodField={openPeriodField} />
+      {settlementAction}
+    </Fragment>
+  ) : (
+    settlementAction
+  );
   // 04-49(후속 결정 R1) — 1024 미만에서는 dirty가 하나라도 있을 때만(복원한 표 칸 포함, 같은 dirty 셈).
   // 05-11 웨이브 13 D1 — 폭 판정은 CSS가 한다(서버 렌더 = 수화 뒤 같은 배치). JS 폭 판정(서버 스냅숏 참)으로 넣었다 빼면 폰 · 768에서 머리 줄이 수화 뒤 줄어 아래가 움직였다.
   const saveIdle = dirtyCount === 0 && !cellEditing;

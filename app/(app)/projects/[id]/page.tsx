@@ -45,6 +45,8 @@ import { listInvoiceFiles } from "@/domain/revenue/invoice-file";
 import { listLineDoors } from "@/domain/expenses";
 import "@/app/(app)/document-kinds";
 import { getSettlementHeader } from "@/domain/settlements";
+import { getReopenTarget } from "@/domain/settlements/reopen";
+import { REJECT_REASON_MAX } from "@/domain/approvals";
 import { getPreSettleCheck, type PreSettleCheckDto } from "@/domain/pre-settle-check";
 import { PreSettleCheckSection } from "./pre-settle-check";
 import { deleteRights } from "@/domain/projects/archive";
@@ -247,8 +249,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const catalogEntry = (value: string) => catalog.find((entry) => entry.value === value);
   const statusLabel = catalogEntry(status)?.label ?? status;
   const savedEndDate = project.endDate ?? project.startDate;
+  // 07.2-19(S2): 완료 프로젝트의 갈 곳(정산 — projects.reopen 보유자만)은 승인된 정산 결재 version이 있어야 그린다(없으면 트리거 0).
+  const reopenTarget = status === "completed" && destinations.length > 0 ? await getReopenTarget(session.viewer, { projectId: project.id }) : null;
   const statusChange: StatusChangeProps | null =
-    destinations.length === 0
+    destinations.length === 0 || (status === "completed" && reopenTarget === null)
       ? null
       : {
           projectId: project.id,
@@ -268,6 +272,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           currentRevisionSeq: revision.seq,
           currentRevisionApproved: revision.approved,
           periodRights,
+          reopen: reopenTarget ? { instanceVersion: reopenTarget.instanceVersion, reasonMax: REJECT_REASON_MAX } : null,
         };
 
   // 04-11(D-81): 종료일이 지난 수주중 — 상태를 바꿀 수 있으면 글자만, 없으면 담당 팀장 이름을 붙인다.

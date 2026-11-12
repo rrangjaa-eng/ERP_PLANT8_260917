@@ -3,9 +3,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
-import { changeProjectStatusAction } from "../actions";
+import { changeProjectStatusAction, reopenProjectAction } from "../actions";
 import { Button } from "@/ui/button/Button";
 import { ConfirmDialog, RefreshStep, splitRefreshTail } from "@/ui/confirm-dialog/ConfirmDialog";
+import { ReasonField } from "@/ui/reason-field/ReasonField";
+import reasonStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import type { PeriodRights } from "@/domain/projects/period";
 import { unsavedEditsReason } from "./unsaved-edits";
@@ -41,11 +43,16 @@ export type StatusChangeProps = {
   periodRights: PeriodRights;
   /** 04-44 — 머리 줄 기간 칸을 연다(QuoteLedger의 openPeriodField). */
   onOpenPeriodField?: (focus: "start" | "end") => void;
+  /** 07.2-19(S2) — 완료 프로젝트 되돌리기 재료(서버가 projects.reopen 보유자에게만). 정산 결재 version · 사유 상한. */
+  reopen?: { instanceVersion: number; reasonMax: number } | null;
 };
 
 type Step = { kind: "closed" } | { kind: "pick" } | { kind: "confirm"; to: ProjectStatus };
 
 const REVERT_LABEL = "진행으로 되돌리기";
+// 07.2-19(UI-SPEC S2): 완료 → 정산. 갈 곳이 하나라 트리거가 곧 확인 창(목록 단계 0 — 디자인 D-F2).
+const REOPEN_LABEL = "정산으로 되돌리기";
+const REASON_EMPTY = "사유 없음 · 사유 적기";
 const END_PASSED_LINE = "종료일 지남 · 바로 정산";
 
 function approvalLine(props: StatusChangeProps): string[] {
@@ -62,6 +69,7 @@ function progressResultLines(props: StatusChangeProps): string[] {
 }
 
 function confirmCopy(props: StatusChangeProps, to: ProjectStatus): { label: string; resultLines: string[] } | null {
+  if (to === "settling" && props.from === "completed") return { label: REOPEN_LABEL, resultLines: ["완료 해제 · 정산 결재 다시 받음"] };
   if (to === "in_progress" && props.from === "lost") {
     const lines = props.endDateBeforeToday ? [END_PASSED_LINE] : [];
     return { label: REVERT_LABEL, resultLines: [...lines, ...approvalLine(props)] };
@@ -103,21 +111,29 @@ export function StatusChange({
   );
   const triggerId = useId();
 
-  const { execute, isExecuting } = useAction(changeProjectStatusAction, {
+  const [reason, setReason] = useState("");
+  const callbacks = {
     onSettled: () => {
       submittingRef.current = false;
     },
     onSuccess: () => {
       succeededRef.current = true;
       setStep({ kind: "closed" });
+      setReason("");
       onChanged(`${submittedLabelRef.current} · ${props.projectNumber}`);
       router.refresh();
     },
-    onError: ({ error }) => {
+    onError: ({ error }: { error: { serverError?: string } }) => {
       // 서버 문자열 그대로(게이트 이유 · 「상태가 … 바뀜 · 새로 고침」) — 모달은 열린 채, 토스트 없음.
       setRejection(error.serverError ? { message: error.serverError, from: submittedFromRef.current } : null);
     },
-  });
+  };
+  const { execute, isExecuting: changing } = useAction(changeProjectStatusAction, callbacks);
+  // 07.2-19(S2): 완료 되돌리기 — 사유 · 정산 결재 version을 싣는 따로 된 액션(손 전환 액션은 이 전이를 거부한다).
+  const { execute: executeReopen, isExecuting: reopeningNow } = useAction(reopenProjectAction, callbacks);
+  const isExecuting = changing || reopeningNow;
+  const reasonId = useId();
+  const reopening = props.from === "completed" && props.reopen != null;
 
   function submit(to: ProjectStatus, label: string) {
     if (submittingRef.current) return;
@@ -125,6 +141,10 @@ export function StatusChange({
     succeededRef.current = false;
     submittedLabelRef.current = label;
     submittedFromRef.current = props.from;
+    if (reopening && props.reopen) {
+      executeReopen({ projectId: props.projectId, reason: reason.trim(), expectedInstanceVersion: props.reopen.instanceVersion });
+      return;
+    }
     execute({ projectId: props.projectId, from: props.from, to });
   }
 
@@ -225,7 +245,7 @@ export function StatusChange({
         disabledReason={triggerBlockedReason ?? undefined}
         nextStep={triggerBlock.refresh ? <RefreshStep onDone={clearRejection} onStart={markRefreshStarted} /> : undefined}
       >
-        {reverting ? REVERT_LABEL : "상태 바꾸기"}
+        {reopening ? REOPEN_LABEL : reverting ? REVERT_LABEL : "상태 바꾸기"}
       </Button>
 
       <ConfirmDialog
@@ -246,13 +266,34 @@ export function StatusChange({
         title={copy?.label ?? ""}
         subtitle={props.projectLabel}
         resultLines={resultLines}
+        evidenceField={
+          reopening ? (
+            <div className={reasonStyles.reason}>
+              <label htmlFor={reasonId}>사유</label>
+              <ReasonField
+                id={reasonId}
+                options={[]}
+                value={reason}
+                maxLength={props.reopen?.reasonMax}
+                locked={isExecuting}
+                onChange={(next) => {
+                  setReason(next);
+                  setRejection(null);
+                }}
+              />
+            </div>
+          ) : undefined
+        }
         primary={{
           label: copy?.label ?? "",
           onConfirm: () => {
             if (step.kind === "confirm" && copy) submit(step.to, copy.label);
           },
           pending: isExecuting,
-          disabledReason: step.kind === "confirm" ? (rejection?.message ?? target?.blockedReason ?? undefined) : undefined,
+          disabledReason:
+            step.kind === "confirm"
+              ? (rejection?.message ?? (reopening && reason.trim() === "" ? REASON_EMPTY : undefined) ?? target?.blockedReason ?? undefined)
+              : undefined,
           nextStep: startDateStep,
         }}
       />

@@ -18,7 +18,7 @@ function subjectParticle(name: string): string {
   return (code - 0xac00) % 28 === 0 ? "가" : "이";
 }
 
-export type ConflictAttempt = "approve" | "reject" | "withdraw" | "resubmit";
+export type ConflictAttempt = "approve" | "reject" | "withdraw" | "resubmit" | "reopen";
 
 export type ConflictState = {
   status: ApprovalStatus;

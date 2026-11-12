@@ -32,9 +32,10 @@ import {
 } from "@/domain/projects/status";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { archiveProject, restoreProject } from "@/domain/projects/archive";
+import { reopenCompletedProject } from "@/domain/settlements/reopen";
 import { addProjectMembers, listMemberCandidates, listProjectMembers, removeProjectMember, restoreProjectMember } from "@/domain/projects/members";
 import "@/app/(app)/document-kinds";
-import { currentHolderNames, projectActionResult } from "@/domain/approvals";
+import { currentHolderNames, projectActionResult, REJECT_REASON_MAX } from "@/domain/approvals";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement, withdrawSettlement } from "@/domain/settlements";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { log } from "@/lib/log";
@@ -304,6 +305,17 @@ export const changeProjectStatusAction = authedActionClient
     await changeProjectStatus(ctx.viewer, parsedInput.projectId, { from: parsedInput.from, to: parsedInput.to });
     revalidatePath("/projects");
     return { status: parsedInput.to };
+  });
+
+// 07.2-19(PU2 · UI-SPEC S2): 완료 → 정산 되돌리기 — 사유 필수 확인 창의 1차. 판정(projects.reopen · 쓰기 범위 · 완료 · 승인 문서 · version)은
+// domain이 하고 거부 문구(`사유 없음 · 사유 적기` · `다른 사람이 먼저 바꿈 · 새로 고침`)가 그대로 serverError로 나간다.
+export const reopenProjectAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid(), reason: z.string().max(REJECT_REASON_MAX), expectedInstanceVersion: z.number().int().min(1) }).strict())
+  .action(async ({ parsedInput, ctx }) => {
+    const done = await reopenCompletedProject(ctx.viewer, parsedInput);
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { number: done.number };
   });
 
 // 05-11(UI-SPEC S10 (가) · 확정 #4): 정산 결재 올리기 — 확인 없이 즉시. 판정(담당 PM · 쓰기 권리 · 정산 상태)은 domain이 하고 거부 문구가

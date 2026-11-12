@@ -3,6 +3,7 @@
 // - cert_view · mask_reveal · cert_correct: 개인정보 접속기록 — 월 1회 점검 대상이라 정리 표시를 하지 않는다
 //   (안전성 확보조치 기준 제8조② · 04.3-14 사용자 결정 5936870579).
 // - cert_prize_value · cert_purge: 끌 수 없는 확인증 감사 기록(과세표준 · 파기 근거) — 정리로도 지우지 않는다(PR #88 /review F5).
+// - document_reopen: 완료 되돌리기 사유 — 결재선 끝 줄의 유일한 원천이고 프로젝트 행 흔적 칸이 없다(07.2-19 D-7216).
 export const UNPRUNABLE_ACTION_TYPES = [
   "action_log_prune",
   "cert_view",
@@ -10,6 +11,7 @@ export const UNPRUNABLE_ACTION_TYPES = [
   "cert_correct",
   "cert_prize_value",
   "cert_purge",
+  "document_reopen",
 ] as const;
 
 export function isPrunableActionType(actionType: string): boolean {

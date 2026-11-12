@@ -131,6 +131,8 @@ export default async function SettlementPrintPage({ params }: { params: Promise<
     // 키 유무(approval.value 투영)로만 시각을 보일지 정한다.
     submittedAt: "createdAt" in doc ? (round?.submittedAt ?? null) : null,
     instanceId: view?.instanceId,
+    // 완료 → 정산으로 되돌린 문서는 인스턴스가 draft — 지난 차수 승인 도장을 찍지 않는다.
+    status: view?.status,
     steps: view?.steps,
   });
 

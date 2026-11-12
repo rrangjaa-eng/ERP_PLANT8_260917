@@ -1,4 +1,5 @@
 import type { ApprovalStepView } from "@/domain/approvals/dto";
+import type { ApprovalStatus } from "@/domain/approvals/route";
 import { kstDateTimeOf } from "@/lib/kst-date";
 
 // 07.4-01 D-7410: 결재선 → 가로 결재 칸. 순수 함수 — 칸 구성 · 상태 글자 · data-state를 정한다(UI-SPEC 「결재란」 표).
@@ -12,6 +13,8 @@ type Input = {
   drafterName: string | null | undefined;
   submittedAt: Date | null;
   instanceId: string | null | undefined;
+  // 정산서만 넘긴다(07.2-19 P2-1) — 빠지면 지금까지와 같다.
+  status?: ApprovalStatus | undefined;
   steps: readonly ApprovalStepView[] | undefined;
 };
 
@@ -47,8 +50,8 @@ function stepBox(step: ApprovalStepView): ApprovalBox | null {
 
 export function toApprovalBoxes(input: Input): ApprovalBoxes {
   const name = input.drafterName ?? NONE;
-  // 결재 인스턴스가 없으면 작성 중 — 기안 칸 하나, 일시 없음.
-  if (!input.instanceId) {
+  // 결재 인스턴스가 없거나 되돌려 다시 작성 중(draft)이면 작성 중 — 기안 칸 하나, 일시 없음. draft의 steps는 지난 차수 승인이라 찍지 않는다.
+  if (!input.instanceId || input.status === "draft") {
     return { boxes: [{ label: "기안", name, stateText: "작성 중", at: null, dataState: "draft" }], columns: 4, rejectReason: null };
   }
   const drafter: ApprovalBox = { label: "기안", name, stateText: "상신", at: input.submittedAt ? kstDateTimeOf(input.submittedAt) : null, dataState: "submitted" };

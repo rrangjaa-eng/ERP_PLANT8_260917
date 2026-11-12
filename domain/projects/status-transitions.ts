@@ -9,8 +9,8 @@ export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export type ProjectStatusTransition = {
   from: ProjectStatus;
   to: ProjectStatus;
-  menu: "projects.status" | "projects.complete";
-  via?: "approval";
+  menu: "projects.status" | "projects.complete" | "projects.reopen";
+  via?: "approval" | "reopen";
 };
 
 // 진행에서 사람이 가는 곳은 없다(사용자 D13). 진행 → 정산은 자동(04-11).
@@ -19,6 +19,8 @@ export const ALLOWED_TRANSITIONS: readonly ProjectStatusTransition[] = [
   { from: "bidding", to: "lost", menu: "projects.status" },
   { from: "lost", to: "in_progress", menu: "projects.status" },
   { from: "settling", to: "completed", menu: "projects.complete", via: "approval" },
+  // 07.2-19(PU2 · D-7214): 완료 되돌리기는 정산으로만 — 사람의 손 전환이 아니라 정산 되돌리기(domain/settlements/reopen.ts)로만 간다.
+  { from: "completed", to: "settling", menu: "projects.reopen", via: "reopen" },
 ];
 
 // 04-11(D-76) — 날짜로 일어나는 자동 전환. 종료일 다음 날(KST)부터 진행은 정산이다.

@@ -103,3 +103,25 @@ describe("toApprovalBoxes — 전체 매핑 (UI-SPEC 결재란 표)", () => {
     expect(result.boxes[0]).toEqual({ label: "기안", name: "박서연", stateText: "상신", at: null, dataState: "submitted" });
   });
 });
+
+describe("toApprovalBoxes — 되돌려 다시 작성 중인 인스턴스 (07.2-19 P2-1)", () => {
+  const ACTED = new Date("2026-11-03T06:00:00.000Z");
+  const pastRound = [
+    step({ stepIndex: 1, label: "팀장", state: "approved", actedByName: "김도윤", actedAt: ACTED }),
+    step({ stepIndex: 2, label: "대표", state: "approved", actedByName: "이대표", actedAt: ACTED }),
+  ];
+
+  it("인스턴스가 draft면 지난 차수 승인 · 일시를 찍지 않는다 — 기안 칸 하나 · 작성 중", () => {
+    const result = toApprovalBoxes({ drafterName: "박서연", submittedAt: SUBMITTED, instanceId: "i1", status: "draft", steps: pastRound });
+    expect(result.boxes).toEqual([{ label: "기안", name: "박서연", stateText: "작성 중", at: null, dataState: "draft" }]);
+    expect(result.columns).toBe(4);
+    expect(result.rejectReason).toBeNull();
+  });
+
+  it.each([undefined, "approved", "in_review"] as const)("status가 %s면 결과가 바뀌지 않는다(다른 문서 종류)", (status) => {
+    const withStatus = toApprovalBoxes({ drafterName: "박서연", submittedAt: SUBMITTED, instanceId: "i1", status, steps: pastRound });
+    const without = toApprovalBoxes({ drafterName: "박서연", submittedAt: SUBMITTED, instanceId: "i1", steps: pastRound });
+    expect(withStatus).toEqual(without);
+    expect(without.boxes[1]?.stateText).toBe("승인");
+  });
+});

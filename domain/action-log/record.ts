@@ -73,6 +73,8 @@ export const CORE_ACTION_TYPES = [
   "budget_manual_change",
   // 07.4 D-7415: 서류 인쇄 — 누가 · 어떤 서류. 끌 수 없다(저장된 선택 목록에 새 종류가 자동으로 들어가지 않아 조용히 빠지는 것을 막는다)
   "document_print",
+  // 07.2-19 D-7216: 완료 되돌리기(승인 → 초안) — 사유 원문이 결재선 끝 줄의 유일한 원천이라 끌 수 없다(정리로도 지우지 않는다 — prune-scope).
+  "document_reopen",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -125,6 +127,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   work_vendor_create: "업무 중 거래처 등록",
   budget_manual_change: "예산 직접 수정",
   document_print: "서류 인쇄",
+  document_reopen: "승인 되돌리기",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -184,6 +187,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "budget_manual_change",
   // 07.4 D-7415: 서류 인쇄 기록은 누가 어떤 서류를 뽑았는지의 흔적이라 끌 수 없다
   "document_print",
+  // 07.2-19 D-7216: 승인 되돌리기 사유는 결재선 끝 줄의 원천이고 프로젝트 행에 흔적 칸이 없어 끌 수 없다
+  "document_reopen",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

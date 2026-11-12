@@ -155,6 +155,12 @@ describe("종류 상세 — detailDto 투영 뒤 buildDetailRows(Codex MEDIUM ·
     expect(invalid.kind).toBe("c");
   });
 
+  // 07.2-19(07.2 D-7302): 승인 되돌리기(reopen)는 종류가 켤 때만 — 정산 결재 하나만 켜고 draft에서 다시 올린다.
+  it("(07.2-19) resubmitFrom에 draft를 둘 수 있고 reopen 허용은 기본 거짓이다", () => {
+    expect(resubmittableStatuses({ ...testKind("d"), resubmitFrom: ["rejected", "withdrawn", "draft"] })).toEqual(["rejected", "withdrawn", "draft"]);
+    expect(testKind("e").allowReopen).toBeUndefined();
+  });
+
   it("주입한 now가 loadDetails의 deps.now로 그대로 가고, 없으면 undefined다(CX-B2 — 엔진이 시계를 읽지 않는다)", async () => {
     const kind = `test_detail_${randomUUID()}`;
     const seen: { now?: Date | undefined; called: number } = { called: 0 };
@@ -186,5 +192,18 @@ describe("leave_cancel 등록(07.2-15)", () => {
 
   it("원 연차 id 없이 결재선을 조립하면 호출 계약 오류(대표 결재로 조용히 떨어지지 않는다)", async () => {
     await expect(getDocumentKind(LEAVE_CANCEL_KIND).loadRouteConfig()).rejects.toThrow("원 연차 id 없음");
+  });
+});
+
+// 07.2-19(07.2 D-7302 · T-07.2-19-02): 승인 되돌리기를 켠 종류는 정산 결재 하나 — 지출결의 · 연차 · 연차 취소의 approved는 끝 상태 그대로.
+describe("reopen 허용 종류(07.2-19)", () => {
+  it("등록된 실제 종류 중 allowReopen은 settlement 하나이고, 정산은 draft에서 다시 올린다", async () => {
+    await Promise.all([import("@/domain/settlements"), import("@/domain/expenses"), import("@/domain/leave")]);
+    const { listDocumentKinds } = await import("@/domain/approvals/kinds");
+    const real = listDocumentKinds().filter((def) => !def.kind.startsWith("test_"));
+    expect(real.map((def) => def.kind).sort()).toEqual(["expense", "leave", "leave_cancel", "settlement"]);
+    expect(real.filter((def) => def.allowReopen === true).map((def) => def.kind)).toEqual(["settlement"]);
+    expect(resubmittableStatuses(getDocumentKind("settlement"))).toContain("draft");
+    for (const kind of ["expense", "leave", "leave_cancel"]) expect(resubmittableStatuses(getDocumentKind(kind))).not.toContain("draft");
   });
 });

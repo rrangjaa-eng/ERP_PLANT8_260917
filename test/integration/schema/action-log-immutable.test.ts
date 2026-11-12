@@ -144,11 +144,12 @@ describe("action_log 불변 트리거 — 정리 표시(NULL → 값 한 방향)
 });
 
 describe("action_log 불변 트리거 — 끌 수 없는 종류(R4)", () => {
-  it("끌 수 없는 종류(cert_view · action_log_prune)에 정리 표시를 찍으면 P0001 · 정리 가능한 종류는 통과한다", async () => {
+  it("끌 수 없는 종류(cert_view · action_log_prune · document_reopen)에 정리 표시를 찍으면 P0001 · 정리 가능한 종류는 통과한다", async () => {
     const certView = await insertRow("cert_view");
     const prune = await insertRow("action_log_prune");
+    const reopen = await insertRow("document_reopen");
     const prunable = await insertRow("immutable_probe");
-    for (const seq of [certView, prune]) {
+    for (const seq of [certView, prune, reopen]) {
       await expectAppendOnly(() => db.execute(sql`UPDATE action_log SET pruned_at = now(), pruned_by = 'tester' WHERE seq = ${seq}`));
       expect((await readRow(seq)).prunedAt).toBeNull();
     }
@@ -158,8 +159,12 @@ describe("action_log 불변 트리거 — 끌 수 없는 종류(R4)", () => {
 
   it("표류 가드 — 불변 트리거의 NOT IN 목록이 UNPRUNABLE_ACTION_TYPES와 같다(목록이 바뀌면 새 마이그레이션)", () => {
     const dir = path.join(process.cwd(), "db/migrations");
-    const file = readdirSync(dir).find((name) => name.endsWith("_phase7_action_log_immutable.sql"));
-    if (!file) throw new Error("*_phase7_action_log_immutable.sql 마이그레이션이 없습니다");
+    // 목록이 바뀔 때마다 새 마이그레이션이 함수를 다시 만든다 — 가장 나중 것이 지금 DB의 트리거다.
+    const file = readdirSync(dir)
+      .filter((name) => /_phase\d+_action_log_immutable\.sql$/.test(name))
+      .sort()
+      .at(-1);
+    if (!file) throw new Error("*_phase*_action_log_immutable.sql 마이그레이션이 없습니다");
     const body = readFileSync(path.join(dir, file), "utf8");
     const list = /NEW\.action_type NOT IN \(([^)]*)\)/.exec(body)?.[1];
     if (list === undefined) throw new Error("마이그레이션에 NEW.action_type NOT IN (...) 목록이 없습니다");

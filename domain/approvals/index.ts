@@ -29,6 +29,7 @@ import {
 } from "@/repositories/approvals";
 import { listOrgSnapshot as defaultListOrgSnapshot, listRouteLabelNames } from "@/repositories/org-snapshot";
 import { markStepNotificationsRead } from "@/repositories/notifications";
+import { findLatestDocumentActionWithActor } from "@/repositories/action-log";
 import {
   FALLBACK_LABEL,
   hasPriorApproval,
@@ -408,7 +409,7 @@ function warnIfBlocked(graph: ApprovalGraph, walk: WalkRouteResult | null): void
   });
 }
 
-type TransitionEvent = "approve" | "reject" | "withdraw" | "resubmit";
+type TransitionEvent = "approve" | "reject" | "withdraw" | "resubmit" | "reopen";
 
 // 상태 기계 표(nextStep)가 그 사건을 허용하는가 — 승인은 approve · approve_final 둘 중 하나라도.
 function allowsEvent(status: ApprovalStatus, event: TransitionEvent, opts?: NextStepOptions): boolean {
@@ -430,13 +431,16 @@ function allowsEvent(status: ApprovalStatus, event: TransitionEvent, opts?: Next
 // 05-01 E1: resubmit은 종류의 resubmitFrom(없으면 rejected만)에 지금 상태가 있을 때만 열리고, withdrawn이 있으면
 // nextStep에 allowResubmitFromWithdrawn을 준다 — approve · reject · withdraw에는 withdrawn이 여전히 닫혔다.
 // 06.6 D28: 회수는 지금 차수에 기안자 아닌 사람의 승인이 있으면 기안자에게도 닫힌다(priorApproval — 호출자가 hasPriorApproval로 계산).
+// 07.2-19(07.2 D-7302): reopen은 종류가 allowReopen을 켰을 때만 approved에서 열린다(기안자 판정 없음 — 누가 되돌리나는 (3)의 브랜드
+// 권한 값). resubmit은 종류의 resubmitFrom에 draft가 있으면 allowResubmitFromDraft도 준다(되돌린 문서를 같은 문서로 다시 올림).
 function closedFor(status: ApprovalStatus, event: TransitionEvent, isDrafter: boolean, kind: string, priorApproval: boolean): boolean {
   if (event === "withdraw" && isDrafter && priorApproval) return true;
+  if (event === "reopen") return !(getDocumentKind(kind).allowReopen === true && allowsEvent(status, event, { allowReopen: true }));
   if (event !== "resubmit") return !allowsEvent(status, event);
   if (!isDrafter) return true;
   const from: readonly string[] = resubmittableStatuses(getDocumentKind(kind));
   if (!from.includes(status)) return true;
-  return !allowsEvent(status, event, { allowResubmitFromWithdrawn: from.includes("withdrawn") });
+  return !allowsEvent(status, event, { allowResubmitFromWithdrawn: from.includes("withdrawn"), allowResubmitFromDraft: from.includes("draft") });
 }
 
 // 지금 행으로 만든 상세 문구(관련자에게만) — 마지막으로 바꾼 사람(updated_by)은 기안자이거나 처리 기록의 한 사람이다.
@@ -500,7 +504,7 @@ type TransitionContext = {
 type TransitionPlan<T> = {
   status: ApprovalStatus;
   currentRound?: number;
-  actionType: "document_approve" | "document_reject" | "document_withdraw" | "document_submit";
+  actionType: "document_approve" | "document_reject" | "document_withdraw" | "document_submit" | "document_reopen";
   // (6) UPDATE가 1행을 얻은 뒤에만 부른다 — 단계 기록 · 폴백 행 · 새 차수 행. 로그 detail 조각과 결과를 돌려준다.
   write: (updated: ApprovalInstanceRow) => Promise<{ detail: Record<string, unknown>; result: T }>;
 };
@@ -519,7 +523,7 @@ type TransitionPre = {
 // (7) 같은 tx 행동 로그. 재시도 코드를 두지 않는다(진 쪽은 무슨 일이 있었는지 받고 스스로 새로 고친다).
 async function runTransition<T>(
   viewer: Viewer,
-  input: { instanceId: string; expectedVersion: number; event: TransitionEvent },
+  input: { instanceId: string; expectedVersion: number; event: TransitionEvent; reopenAuthority?: ReopenAuthority },
   pre: TransitionPre,
   tx: DbOrTx,
   plan: (ctx: TransitionContext) => TransitionPlan<T>,
@@ -558,6 +562,12 @@ async function runTransition<T>(
       throw refuse("not_holder", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), fields);
     }
     outcome = actionable;
+  } else if (input.event === "reopen") {
+    // 07.2-19(eng D-19-1): 되돌리기는 기안자 판정 대신 종류 모듈이 tx 전 판정 뒤 만든 브랜드 값이 이 인스턴스 문서와 맞을 때만.
+    const authority = input.reopenAuthority;
+    if (!authority || authority.kind !== instance.documentKind || authority.documentId !== instance.documentId) {
+      throw refuse("not_drafter", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), fields);
+    }
   } else if (!actsAsDrafter) {
     throw refuse("not_drafter", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), fields);
   }
@@ -876,8 +886,8 @@ export async function resubmitDocument(
     const round = graph.instance.currentRound + 1;
     const status = graph.instance.status as ApprovalStatus;
     return {
-      // (2)의 closedFor가 종류의 resubmitFrom으로 이미 걸렀다 — withdrawn이면 그 한 칸만 연다(05-01 E1).
-      status: nextStep(status, "resubmit", status === "withdrawn" ? { allowResubmitFromWithdrawn: true } : undefined),
+      // (2)의 closedFor가 종류의 resubmitFrom으로 이미 걸렀다 — withdrawn · draft(07.2-19 되돌린 문서)면 그 한 칸만 연다(05-01 E1).
+      status: nextStep(status, "resubmit", status === "withdrawn" ? { allowResubmitFromWithdrawn: true } : status === "draft" ? { allowResubmitFromDraft: true } : undefined),
       currentRound: round,
       actionType: "document_submit",
       write: async () => {
@@ -908,6 +918,54 @@ export async function resubmitDocument(
     round: updated.currentRound,
     nextHolderNames: currentHolderNamesOf(prepared.walk),
   };
+}
+
+// ── 승인 되돌리기(07.2-19 · 07.2 D-7302) ──────────────────────────────────
+
+// 되돌리기 권한 — 종류 모듈(domain/settlements/reopen.ts)이 트랜잭션 전 판정(권한 · 보임 · 상태 · version)을 지난 뒤에만 만드는 값.
+// 엔진은 타입만 내보낸다(만드는 함수 없음). 값 없이 · 다른 문서 값으로 부르면 (3)에서 거부한다.
+declare const reopenBrand: unique symbol;
+export type ReopenAuthority = { kind: string; documentId: string } & { readonly [reopenBrand]: true };
+
+export type ReopenPrepared = TransitionPre;
+
+// 트랜잭션 전 읽기(조직 스냅숏 · 로그 켜짐) — 엔진 전이와 같은 순서(CEO-6).
+export function prepareReopen(viewer: Viewer, deps?: ApprovalDeps): Promise<ReopenPrepared> {
+  return readTransitionPre(viewer, deps);
+}
+
+export const REOPEN_LOG_ACTION = "document_reopen";
+
+// 승인 → 초안(같은 문서 · 차수 그대로). 호출자(종류 모듈)의 트랜잭션 안에서 돈다 — 상태 UPDATE(version 조건)가 먼저라 잠금 순서는
+// 인스턴스 → (호출자의) 프로젝트다(T-05-1106). 사유는 끌 수 없는 document_reopen 로그 detail에만 남는다(D-7216).
+export async function reopenApprovedDocument(
+  viewer: Viewer,
+  input: { instanceId: string; expectedVersion: number; reason: string; authority?: ReopenAuthority },
+  tx: DbOrTx,
+  prepared: ReopenPrepared,
+): Promise<{ status: ApprovalStatus; version: number; round: number; documentId: string }> {
+  const { updated } = await runTransition(
+    viewer,
+    { instanceId: input.instanceId, expectedVersion: input.expectedVersion, event: "reopen", reopenAuthority: input.authority },
+    prepared,
+    tx,
+    ({ graph }) => ({
+      status: nextStep(graph.instance.status as ApprovalStatus, "reopen", { allowReopen: true }),
+      actionType: REOPEN_LOG_ACTION,
+      write: () => Promise.resolve({ detail: { reason: input.reason }, result: null }),
+    }),
+  );
+  return { status: updated.status as ApprovalStatus, version: updated.version, round: updated.currentRound, documentId: updated.documentId };
+}
+
+// 결재선 끝 되돌림 줄 — 그 인스턴스의 가장 최근 document_reopen 한 줄(플래너 가정: 여러 번이면 최근 한 줄 · 지난 것은 행동 로그).
+async function reopenEndLine(viewer: Viewer, instance: { id: string; documentId: string; documentKind: string }): Promise<ApprovalRouteEndLine[]> {
+  if (getDocumentKind(instance.documentKind).allowReopen !== true) return [];
+  const row = await findLatestDocumentActionWithActor(viewer, { documentId: instance.documentId, entityId: instance.id, actionType: REOPEN_LOG_ACTION });
+  if (!row) return [];
+  const reason = (row.detail as { reason?: unknown } | null)?.reason;
+  const parts = ["되돌림", row.actorName, seoulMinute(row.occurredAt), typeof reason === "string" ? `사유 ${reason}` : null];
+  return [{ text: parts.filter((part): part is string => Boolean(part)).join(" · "), tone: "muted" }];
 }
 
 // ── 조회 ────────────────────────────────────────────────────────────────
@@ -1126,6 +1184,7 @@ export async function getApprovalView(
       ...(state.walk?.outcome.kind === "blocked" && graph.instance.drafterId === viewer.id
         ? [{ text: actions.includes("withdraw") ? ROUTE_BLOCKED_DRAFTER_LINE : ROUTE_BLOCKED_ASSIGN_LINE, tone: "danger" as const }]
         : []),
+      ...(await reopenEndLine(viewer, graph.instance)),
     ],
     currentStepIndex,
     actions,

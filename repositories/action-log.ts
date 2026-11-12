@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, isNull, lte, notInArray, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { actionLog } from "@/db/schema";
+import { actionLog, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import { UNPRUNABLE_ACTION_TYPES } from "@/domain/action-log/prune-scope";
 
@@ -80,6 +80,24 @@ export async function findLatestActionFor(
         eq(actionLog.actionType, query.actionType),
       ),
     )
+    .orderBy(desc(actionLog.occurredAt), desc(actionLog.seq))
+    .limit(1);
+  return row ?? null;
+}
+
+// 07.2-19(D-7216): 한 문서의 한 결재 인스턴스에서 그 종류의 가장 최근 로그 한 줄 + 행위자 이름 — 결재선 끝 되돌림 줄(document_reopen).
+// document_id 색인(action_log_document_idx)으로 좁힌다. 정리 표시 행도 읽는다(document_reopen은 정리 대상이 아니다). 값은 바인딩.
+export async function findLatestDocumentActionWithActor(
+  viewer: Viewer,
+  query: { documentId: string; entityId: string; actionType: string },
+  tx?: DbOrTx,
+): Promise<{ occurredAt: Date; detail: unknown; actorName: string | null } | null> {
+  void viewer;
+  const [row] = await (tx ?? db)
+    .select({ occurredAt: actionLog.occurredAt, detail: actionLog.detail, actorName: users.name })
+    .from(actionLog)
+    .leftJoin(users, eq(users.id, actionLog.actorId))
+    .where(and(eq(actionLog.documentId, query.documentId), eq(actionLog.entityId, query.entityId), eq(actionLog.actionType, query.actionType)))
     .orderBy(desc(actionLog.occurredAt), desc(actionLog.seq))
     .limit(1);
   return row ?? null;

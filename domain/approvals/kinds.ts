@@ -88,7 +88,7 @@ export type DetailFields = Record<string, unknown>;
 // 종류의 등록 DTO 명세(DtoSpec과 같은 모양 — 종류마다 키 타입이 달라 구조 타입으로 받는다).
 export type DetailDtoSpec = { readonly fields: ReadonlyArray<{ key: string; from: string; infoItem: InfoItemRef }> };
 
-export type ResubmittableStatus = "rejected" | "withdrawn";
+export type ResubmittableStatus = "rejected" | "withdrawn" | "draft";
 
 export type DocumentKindDef = {
   kind: string;
@@ -102,6 +102,9 @@ export type DocumentKindDef = {
   canResubmit?: (viewer: Viewer, documentId?: string) => Promise<boolean>;
   // 05-01 E1: 기안자가 같은 문서를 다시 제출할 수 있는 상태 — 없으면 ["rejected"](resubmittableStatuses).
   resubmitFrom?: readonly ResubmittableStatus[];
+  // 07.2-19(07.2 D-7302): 승인된 문서를 같은 문서에서 초안으로 물리는 것(reopen)을 허용하는가 — 없으면 거짓(approved는 끝 상태).
+  // 켠 종류만 엔진이 nextStep에 allowReopen을 준다. 누가 되돌리나는 종류 모듈이 만든 브랜드 권한 값(ReopenAuthority)이 정한다.
+  allowReopen?: boolean;
   // 07.2-17(07.2 D-7311 · eng E9): 다시 올릴 사람 — 있으면 resubmit의 기안자 판정을 이 훅이 준 사람「만」으로 바꾼다(처음 기안자 판정을
   // 대체). 그 사람이 올리면 엔진이 같은 tx에서 인스턴스 기안자를 그 사람으로 바꾼다. 없으면 처음 기안자(지금 그대로). tx를 받으면 그 tx로 읽는다.
   resubmitterOf?: (viewer: Viewer, documentId: string, tx?: DbOrTx) => Promise<string | null>;

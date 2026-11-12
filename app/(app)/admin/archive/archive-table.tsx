@@ -22,7 +22,7 @@ export type ArchiveTableRow = {
 
 const COLUMNS: StaticTableColumn[] = [
   { key: "label", header: "종류", priority: "p1" },
-  { key: "name", header: "이름", priority: "p1" },
+  { key: "name", header: "이름", priority: "p1", ellipsis: true },
   { key: "archivedAt", header: "보관 시각", priority: "p2" },
   { key: "archivedBy", header: "보관한 사람", priority: "p2" },
   { key: "actions", header: "동작", priority: "p1" },

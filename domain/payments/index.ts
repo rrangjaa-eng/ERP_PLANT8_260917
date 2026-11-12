@@ -685,7 +685,8 @@ export async function cancelExpensePayment(
 // 조건 UPDATE(예정일 · 기록 칸 · version + 1) → 끌 수 없는 행동 로그 payment_schedule_change(전후 날짜, 같은 tx).
 const NOT_PUSHED = "마감 지나 밀림 아님 · 새로 고침";
 
-async function writeScheduledPayDate(
+// 07.2-18(X4 · D-7292): 희망 지급일 변경 승인 · 되돌리기도 요청 상태와 한 트랜잭션에서 이 쓰기를 부른다(export만 — 본문 그대로).
+export async function writeScheduledPayDate(
   viewer: Viewer,
   input: { expenseId: string; date: string | null; version: number },
   ctx: { lookup: HolidayLookup; now: Date },
@@ -720,7 +721,7 @@ async function writeScheduledPayDate(
   return { before: locked.scheduledPaymentDate, version };
 }
 
-async function assertSchedulePayer(viewer: Viewer): Promise<void> {
+export async function assertSchedulePayer(viewer: Viewer): Promise<void> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
 }
 

@@ -340,10 +340,15 @@ export function PaymentScheduleValue({ date, manual, autoDate, pushReason, ruleL
   );
 }
 
+// 07.2-18 S16: 희망 지급일 변경 요청 줄(서버가 사실을 넘길 때만 — 입구 · 대기 · 처리 줄이 있을 때) · 이력 표(요청이 있을 때만).
+export type RequestedPayment = { date: string | null; reason: string | null; dateChange?: ReactNode; history?: ReactNode };
+
 // 희망 지급일 · 희망 사유(기안자가 적은 값 — 있을 때만 줄이 선다). 지급 예정일 줄 바로 앞(지급 섹션 없는 문서는 expense-document.tsx가 같은 두 줄).
-function requestedPaymentItems(requested: { date: string | null; reason: string | null }): KvItem[] {
+// 변경 요청 줄이 있으면 그 부품이 `희망 지급일` 값 칸 전체를 그린다(희망일이 없으면 `—`).
+function requestedPaymentItems(requested: RequestedPayment): KvItem[] {
   const items: KvItem[] = [];
-  if (requested.date) items.push({ label: "희망 지급일", value: requested.date });
+  if (requested.dateChange) items.push({ label: "희망 지급일", value: requested.dateChange });
+  else if (requested.date) items.push({ label: "희망 지급일", value: requested.date });
   if (requested.reason) items.push({ label: "희망 사유", value: <span className={styles.subLine}>{requested.reason}</span> });
   return items;
 }
@@ -361,7 +366,7 @@ export function PaymentFields({
   paymentMethodName: string | null;
   scheduledPaymentDate: string | null;
   scheduleValueProps: PaymentScheduleValueProps;
-  requested: { date: string | null; reason: string | null };
+  requested: RequestedPayment;
 }) {
   const router = useRouter();
   const { view, fields, setFields, preview, previewing, refreshPreview, fieldErrors, setFieldErrors, schedule, setSchedule } = usePaymentPanel();
@@ -531,6 +536,7 @@ export function PaymentFields({
         />
       ) : null}
       <KvList items={items} />
+      {requested.history ?? null}
       {canPay ? (
         <Form
           aria-label="지급"

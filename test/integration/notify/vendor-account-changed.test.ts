@@ -76,13 +76,15 @@ describe("등록부 (SC-07 순서 · R13)", () => {
       "vendor-account-changed",
       "orphan-evidence",
       "collection-overdue",
+      "date-change-requested",
+      "date-change-result",
     ];
     const names = CONDITION_KINDS.map((kind) => kind.kind);
     expect(names).toEqual(sc07.filter((name) => names.includes(name)));
     const index = names.indexOf(KIND);
     expect(names[index - 1]).toBe("quote-nudge");
     expect(names[index + 1]).toBe("orphan-evidence");
-    expect(names.at(-1)).toBe("collection-overdue");
+    expect(names.at(-1)).toBe("date-change-result");
   });
 
   it("기본 끔 · 메일 켬 · 달력일 · 받는 사람 경영관리 · 일수 칸 · 사다리 · 받는 사람 정보 항목 없음", () => {

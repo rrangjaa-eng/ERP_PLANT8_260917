@@ -11,6 +11,7 @@ import { SUPPLY_ZERO } from "@/domain/expenses";
 import { MoneyInputError } from "@/domain/money";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX } from "@/domain/expenses/draft-fields";
 import { isCalendarDate } from "@/lib/dates";
+import { approveDateChange, DATE_CHANGE_TEXT_MAX, rejectDateChange, requestDateChange, undoDateChangeApproval, withdrawDateChange } from "@/domain/expenses/date-change";
 import "./actions.registry";
 
 // 06-03(EXP-06 · D-604): 문서 화면 지급 액션. 입력에 지급 총액 · 공급가 역산 칸이 없다 — 서버가 다시 계산한 값만 저장한다(T-06-09).
@@ -127,4 +128,53 @@ export const waiveEvidenceAction = authedActionClient.schema(waiveEvidenceSchema
   const result = await waiveEvidence(ctx.viewer, parsedInput);
   revalidatePath(`/expenses/${parsedInput.expenseId}`);
   return result;
+});
+
+// 07.2-18 X4(D-7290~D-7295): 희망 지급일 변경 요청 · 철회 · 경영관리 승인 · 승인 되돌리기 · 거절. 판정(본인 · 처리 권한 · 잠금 뒤 재판정)은 도메인이 한다.
+const requestDateChangeSchema = z.object({
+  expenseId: z.string().uuid(),
+  newDate: paymentDate,
+  reason: z.string().max(DATE_CHANGE_TEXT_MAX, `사유 ${DATE_CHANGE_TEXT_MAX}자 넘음 · 줄여 적기`),
+});
+
+export const requestDateChangeAction = authedActionClient.schema(requestDateChangeSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await requestDateChange(ctx.viewer, parsedInput);
+  revalidatePath(`/expenses/${parsedInput.expenseId}`);
+  return { requestId: result.requestId, newDate: result.newDate };
+});
+
+const requestIdSchema = z.object({ requestId: z.string().uuid() });
+
+export const withdrawDateChangeAction = authedActionClient.schema(requestIdSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await withdrawDateChange(ctx.viewer, parsedInput);
+  revalidatePath(`/expenses/${result.expenseId}`);
+  return { ok: true };
+});
+
+// version = 화면이 읽은 지출결의 version. 결과의 before · version은 토스트 `되돌리기`가 그대로 돌려보낸다.
+const approveDateChangeSchema = z.object({ requestId: z.string().uuid(), version: z.number().int().positive() });
+
+export const approveDateChangeAction = authedActionClient.schema(approveDateChangeSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await approveDateChange(ctx.viewer, parsedInput);
+  revalidatePath(`/expenses/${result.expenseId}`);
+  return { newDate: result.newDate, before: result.before, version: result.version };
+});
+
+const undoDateChangeSchema = z.object({ requestId: z.string().uuid(), before: paymentDate.nullable(), version: z.number().int().positive() });
+
+export const undoDateChangeApprovalAction = authedActionClient.schema(undoDateChangeSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await undoDateChangeApproval(ctx.viewer, parsedInput);
+  revalidatePath(`/expenses/${result.expenseId}`);
+  return { version: result.version };
+});
+
+const rejectDateChangeSchema = z.object({
+  requestId: z.string().uuid(),
+  memo: z.string().max(DATE_CHANGE_TEXT_MAX, `거절 메모 ${DATE_CHANGE_TEXT_MAX}자 넘음 · 줄여 적기`),
+});
+
+export const rejectDateChangeAction = authedActionClient.schema(rejectDateChangeSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await rejectDateChange(ctx.viewer, parsedInput);
+  revalidatePath(`/expenses/${result.expenseId}`);
+  return { ok: true };
 });

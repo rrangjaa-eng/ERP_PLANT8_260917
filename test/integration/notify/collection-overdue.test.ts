@@ -88,11 +88,14 @@ describe("등록부 (SC-07 순서 · AQ-33 · R13)", () => {
       "vendor-account-changed",
       "orphan-evidence",
       "collection-overdue",
+      "date-change-requested",
+      "date-change-result",
     ];
     const names = CONDITION_KINDS.map((kind) => kind.kind);
     expect(names).toEqual(sc07.filter((name) => names.includes(name)));
-    expect(names.at(-1)).toBe(KIND);
-    expect(names.at(-2)).toBe("orphan-evidence");
+    // 07.2-18 두 종류가 끝에 붙었다 — 수금 지연은 SC-07 표의 마지막 행 그대로.
+    expect(names[names.indexOf(KIND) - 1]).toBe("orphan-evidence");
+    expect(names.slice(names.indexOf(KIND) + 1)).toEqual(["date-change-requested", "date-change-result"]);
   });
 
   it("기본 끔 · 달력일 · 받는 사람 담당 PM · 일수 칸 없음 · 사다리 없음 · 받는 사람 정보 항목 revenue.paid_amount", () => {

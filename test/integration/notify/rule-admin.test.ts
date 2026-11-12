@@ -31,6 +31,8 @@ const SC07_ORDER = [
   "vendor-account-changed",
   "orphan-evidence",
   "collection-overdue",
+  "date-change-requested",
+  "date-change-result",
 ];
 
 async function person(roleId: string): Promise<Viewer> {

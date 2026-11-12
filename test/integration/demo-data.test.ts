@@ -4,7 +4,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { seoulToday } from "@/lib/dates";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCards, evidenceRecordLinks, evidenceRecords, expenses, files, orgUnits, projectMembers, projects, quoteLines, quoteRevisions, revenueEntries, teamMemberships, teams, users, vendors } from "@/db/schema";
+import { corpCards, evidenceRecordLinks, evidenceRecords, expenseDateChangeRequests, expenses, files, orgUnits, projectMembers, projects, quoteLines, quoteRevisions, revenueEntries, teamMemberships, teams, users, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createVendor } from "@/domain/vendors";
 import { createProject } from "@/domain/projects";
@@ -468,5 +468,20 @@ describe("scripts/demo-data purge — 증빙 붙임(06.1-06 · 재검토 2회차
     expect(await db.select().from(evidenceRecordLinks).where(eq(evidenceRecordLinks.ownerId, outsideOwner))).toHaveLength(1);
     // 살아 있는 붙임이 남았다면 부분 유니크(evidence_record_links_live_uniq)가 이 INSERT를 막는다.
     await insertLinkFixture({ recordId: liveRecord, ownerKind: "purchase_request", ownerId: randomUUID(), attachedBy: owner.id });
+  }, 180_000);
+});
+
+describe("scripts/demo-data 희망 지급일 변경 요청 (07.2-18 · 07.2-01 T-07)", () => {
+  it("견본 지출결의에 변경 요청 행이 있어도 purge가 FK에 걸리지 않고 요청 행을 먼저 지운다", async () => {
+    await seedDemoData();
+    const [doc] = await db.select({ id: expenses.id, drafterId: expenses.drafterId }).from(expenses).limit(1);
+    if (!doc) throw new Error("견본 지출결의 없음");
+    await db.insert(expenseDateChangeRequests).values({ expenseId: doc.id, requestedBy: doc.drafterId, newDate: "2099-01-05", reason: "견본 요청" });
+
+    const purged = await purgeDemoData();
+    expect(purged.purged).toBe(true);
+    expect(purged.counts.expenseDateChangeRequests).toBe(1);
+    expect(await db.select().from(expenseDateChangeRequests).where(eq(expenseDateChangeRequests.expenseId, doc.id))).toHaveLength(0);
+    expect(await count("expenses")).toBe(0);
   }, 180_000);
 });

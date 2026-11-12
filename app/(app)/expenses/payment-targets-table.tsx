@@ -1474,7 +1474,9 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
                       const link = blocked.get(row.id)?.link;
                       return link ? { ...link, newTab: true } : null;
                     },
-                    noteReason: (row: PaymentTargetScreenRow) => (row.transferFileAt ? `${row.transferFileAt} 이체 파일에 담김` : null),
+                    // 07.2-18 S16: 이체 파일 줄이 먼저 — 그 상태에서는 변경 요청이 막혀 있어 둘이 함께 서지 않는다(새 열 0).
+                    noteReason: (row: PaymentTargetScreenRow) =>
+                      row.transferFileAt ? `${row.transferFileAt} 이체 파일에 담김` : row.pendingDateChange ? `희망 지급일 변경 요청 ${row.pendingDateChange}` : null,
                     onPrimary: openDialog,
                     hidden: (row: PaymentTargetScreenRow) => row.approving !== undefined,
                   },

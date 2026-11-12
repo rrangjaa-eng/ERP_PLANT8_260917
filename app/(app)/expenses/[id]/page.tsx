@@ -36,6 +36,8 @@ import { countRecommendedEvidence } from "@/domain/evidence-records/pool";
 import { DeleteDraftButton } from "./delete-draft-button";
 import { CloseExpenseButton } from "./close-expense-button";
 import { ExpenseForm } from "./expense-form";
+import { listDateChangeView, type DateChangeView } from "@/domain/expenses/date-change";
+import { isCalendarDate } from "@/lib/dates";
 import styles from "./expense.module.css";
 
 // 06.1-08(S5): 증빙 고르기 트리거 재료 — 모드가 none이거나 후보가 0이면 null(트리거 DOM 0). 못 읽으면 트리거만 비운다(문서는 이미 읽기 판정을 지났다).
@@ -73,6 +75,17 @@ function linkedItemsOf(linked: LinkedRead): LinkedEvidenceItem[] {
   );
 }
 
+
+// 07.2-18 S16 착지 — 요청 화면 성공(`?dateRequested=1`) · 승인(`?dateApproved={요청 id}&on=&before=&v=` — 되돌리기 재료). 모양이 어긋나면 토스트 없음.
+// 값은 되돌리기 액션이 서버에서 다시 판정한다(같은 처리자 · 60초 · version) — 주소는 재료를 나를 뿐이다.
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function dateLandingOf(query: Record<string, string | string[] | undefined>) {
+  if (query.dateRequested === "1") return { kind: "requested" as const };
+  const { dateApproved, on, before, v } = query;
+  if (typeof dateApproved !== "string" || !UUID_SHAPE.test(dateApproved) || typeof on !== "string" || !isCalendarDate(on)) return null;
+  if (typeof before !== "string" || (before !== "" && !isCalendarDate(before)) || typeof v !== "string" || !/^\d{1,9}$/.test(v)) return null;
+  return { kind: "approved" as const, requestId: dateApproved, newDate: on, before: before === "" ? null : before, version: Number(v) };
+}
 
 // 05-05(S3 · S7): 인스턴스(결재)가 없는 작성 중 문서는 폼, 그 밖은 문서 화면. 05-09: 반려 · 회수된 내 문서(가능 행동에 다시 신청)도 폼 —
 // 머리 줄 상태 `반려` · `회수` · 메타 번호, 맨 위 읽기 행(`KvList`), 1차 `지출결의 다시 제출`(같은 번호). 볼 수 없는 사람은 404(`layout.tsx`가 응답 전에 먼저 판정한다 —
@@ -157,6 +170,14 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           next: next ? { number: next.number, href: `/expenses/${next.id}?${payQuery.docQuery}` } : null,
         }))
       : null;
+    // 07.2-18 X4(S16): 희망 지급일 변경 요청 사실 — 결재 통과 문서만. 못 읽으면 요청 줄 · 이력만 비운다(문서는 이미 읽기 판정을 지났다).
+    const dateChange: DateChangeView | null =
+      view?.status === "approved"
+        ? await listDateChangeView(viewer, id).catch((error: unknown) => {
+            log.error("expense.date_change_view_failed", { expenseId: id, message: error instanceof Error ? error.message : String(error) });
+            return null;
+          })
+        : null;
     const documentPaymentView: Partial<PaymentViewDto> | "error" | null = paymentView && paymentView !== "error" && payReturn ? { ...paymentView, payReturn } : paymentView;
     return (
       <ExpenseDocument
@@ -171,6 +192,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         paymentView={documentPaymentView}
         projectOpenable={projectOpenable}
         reasonOptions={rejectReasonOptions}
+        dateChange={dateChange}
+        dateLanding={dateLandingOf(query)}
       />
     );
   }

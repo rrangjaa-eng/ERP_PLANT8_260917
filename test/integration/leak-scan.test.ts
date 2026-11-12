@@ -75,6 +75,7 @@ import "@/domain/corp-card-usages/link-targets";
 import "@/domain/evidence/dto";
 import "@/domain/expenses/dto";
 import "@/domain/expenses/pick";
+import "@/domain/expenses/date-change";
 import "@/domain/leave/dto";
 import "@/domain/pre-settle-check";
 import "@/domain/people/seat-rules";

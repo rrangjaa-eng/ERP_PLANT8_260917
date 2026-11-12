@@ -116,6 +116,9 @@ export const STATUS_KIND = {
   // 07.2-12 PU23(D-7238 · D-7237): 견적 줄 지우기 — 확인 창 대신 저장 전 표시 + 되돌리기(연결 문서가 있는 줄은 취소)
   "삭제 예정": "muted",
   "취소 예정": "muted",
+  // 07.2-18 X4(DC-1): 승인 뒤 희망 지급일 변경 요청이 경영관리 확인 대기(상세 입구 · text 변형만) · 요청 거절(이력 상태 글자)
+  "변경 요청 중": "accent",
+  거절: "danger",
 } as const satisfies Record<string, StatusKind>;
 
 /** 표의 낱말 + 단계 이름이 붙은 `{단계} 결재 중`(accent) + 조직 화면 중복 개수(warning). */

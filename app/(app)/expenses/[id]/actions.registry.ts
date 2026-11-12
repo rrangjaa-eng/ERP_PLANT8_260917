@@ -16,3 +16,10 @@ registerAction({ name: "cancelExpensePaymentAction", menu: "expenses.payments", 
 registerAction({ name: "confirmEvidenceAction", menu: "expenses.payments", action: "write", dtoName: null });
 // 06-10: 증빙 면제 — 새 version · 증빙 상태 낱말 · 행동 줄(DTO 없음).
 registerAction({ name: "waiveEvidenceAction", menu: "expenses.payments", action: "write", dtoName: null });
+// 07.2-18 X4(D-7290~D-7295): 희망 지급일 변경 요청 · 철회 — 올린 사람 본인만(도메인 판정, 메뉴는 지출결의 쓰기). 요청 id만 돌려준다(DTO 없음).
+registerAction({ name: "requestDateChangeAction", menu: "expenses", action: "write", dtoName: null });
+registerAction({ name: "withdrawDateChangeAction", menu: "expenses", action: "write", dtoName: null });
+// 경영관리 처리 — 「지급 예정일 바꾸기」 권한자(expenses.payments 쓰기 · 새 권한 없음). 승인은 새 날짜 · 승인 전 값 · 새 version만(DTO 없음).
+registerAction({ name: "approveDateChangeAction", menu: "expenses.payments", action: "write", dtoName: null });
+registerAction({ name: "undoDateChangeApprovalAction", menu: "expenses.payments", action: "write", dtoName: null });
+registerAction({ name: "rejectDateChangeAction", menu: "expenses.payments", action: "write", dtoName: null });

@@ -10,6 +10,7 @@ import {
   corpCardUsages,
   corpCards,
   expenseEvidenceReviews,
+  expenseDateChangeRequests,
   expensePayments,
   expenses,
   files,
@@ -524,6 +525,8 @@ export async function purgeDemoData(): Promise<DemoPurgeResult> {
     const fileOwnerIds = [...expenseIds, ...revisionIds, ...usageIds, ...reserveIds];
     record("files", await tx.delete(files).where(inArray(files.ownerId, fileOwnerIds)));
     record("uploadIntents", await tx.delete(uploadIntents).where(inArray(uploadIntents.ownerId, fileOwnerIds)));
+    // 07.2-18(07.2-01 T-07): 변경 요청 표 FK에 ON DELETE가 없어 지출결의보다 먼저 지운다.
+    record("expenseDateChangeRequests", await tx.delete(expenseDateChangeRequests).where(inArray(expenseDateChangeRequests.expenseId, expenseIds)));
     record("expenses", await tx.delete(expenses).where(inArray(expenses.id, expenseIds)));
 
     record("corpCardUsages", await tx.delete(corpCardUsages).where(inArray(corpCardUsages.id, usageIds)));

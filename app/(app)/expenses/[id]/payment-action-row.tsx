@@ -36,6 +36,7 @@ import {
   usePaymentPanel,
   type PaymentFieldErrors,
   type PaymentScheduleValueProps,
+  type RequestedPayment,
 } from "./payment-section";
 import { CORRECTED_SUPPLY_ID, correctedSupplyInput, EvidenceEditProvider, useEvidenceEdit, type DocSupply } from "./evidence-review-section";
 import styles from "./expense.module.css";
@@ -63,7 +64,7 @@ export function PaymentSection(props: {
   paymentMethodName: string | null;
   scheduledPaymentDate: string | null;
   scheduleValueProps: PaymentScheduleValueProps;
-  requested: { date: string | null; reason: string | null };
+  requested: RequestedPayment;
 }) {
   return (
     <DetailScreen.Section title="지급">

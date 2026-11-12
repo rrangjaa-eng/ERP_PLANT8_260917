@@ -309,7 +309,7 @@ test.describe("PR #104 후속 — 폰 복원 줄 44 (DR-104-01) · 머리 줄 Ta
     const copyProject = main.getByRole("link", { name: "프로젝트 복사", exact: true });
     // 07.2-14(S10) — `엑셀 올리기`는 PC(≥1024) 전용 2차 입구: 복사 묶음 안에서 `복사해 새 차수`와 `프로젝트 복사` 사이에 그려지므로(보이는 순서 = Tab 순서) PC Tab 순서에만 들어가고 폰에는 없다.
     const xlsxEntry = main.getByRole("button", { name: "엑셀 올리기", exact: true });
-    // 07.2-17(S1) — 관리자는 projects.delete가 있어 복사 묶음 맨 끝에 위험 3차 `프로젝트 삭제`가 선다(폰 펼친 줄 끝 · PC 버튼군 끝).
+    // 07.2-17(S1) — 관리자는 projects.delete가 있어 복사 묶음 맨 끝에 위험 3차 `프로젝트 삭제`가 선다(폰 펼친 줄 끝 · PC 머리 행동 줄 맨 끝 — 1차 일괄 저장 뒤, 카드 11/12).
     const deleteProject = main.getByRole("button", { name: "프로젝트 삭제", exact: true });
     await expect(copyRevision).toBeVisible();
     await expect(copyProject).toBeVisible();
@@ -337,7 +337,7 @@ test.describe("PR #104 후속 — 폰 복원 줄 44 (DR-104-01) · 머리 줄 Ta
       await expect(locator, `폰 Tab → ${name}`).toBeFocused();
     }
 
-    // PC 1280 — DOM · Tab 순서는 그대로(복사해 새 차수 → [엑셀 올리기: 07.2-14 PC 전용 입구] → 프로젝트 복사 → 상태 바꾸기 → 일괄 저장). 폭을 바꾸면 훅이 순서를 다시 맞춘다.
+    // PC 1280 — DOM · Tab 순서는 그대로(복사해 새 차수 → [엑셀 올리기: 07.2-14 PC 전용 입구] → 프로젝트 복사 → 상태 바꾸기 → 일괄 저장 → 프로젝트 삭제). 폭을 바꾸면 훅이 순서를 다시 맞춘다.
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(more).toBeHidden();
     await expect
@@ -349,7 +349,7 @@ test.describe("PR #104 후속 — 폰 복원 줄 44 (DR-104-01) · 머리 줄 Ta
       )
       .toBe(true);
     await copyRevision.focus();
-    for (const [name, locator] of [["엑셀 올리기", xlsxEntry], ["프로젝트 복사", copyProject], ["프로젝트 삭제", deleteProject], ["상태 바꾸기", status], ["일괄 저장", save]] as const) {
+    for (const [name, locator] of [["엑셀 올리기", xlsxEntry], ["프로젝트 복사", copyProject], ["상태 바꾸기", status], ["일괄 저장", save], ["프로젝트 삭제", deleteProject]] as const) {
       await page.keyboard.press("Tab");
       await expect(locator, `PC Tab → ${name}`).toBeFocused();
     }

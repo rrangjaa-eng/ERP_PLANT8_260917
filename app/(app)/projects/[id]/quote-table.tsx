@@ -3329,6 +3329,8 @@ export function QuoteLedger({
 
   const openSheetRow = sheetRowKey ? lines.find((line) => line.clientKey === sheetRowKey) : undefined;
 
+  // 카드 11/12 — 위험 3차 `프로젝트 삭제`: 폰(<700)은 펼친 「더보기」 줄 끝, PC는 머리 행동 줄 맨 끝(1차 「일괄 저장」 뒤 — 간격 --s-8)이라 1차와 붙지 않는다. DOM 순서 = 보이는 순서 = Tab 순서.
+  const deleteAction = projectDelete ? <ProjectDelete key="delete" {...projectDelete} /> : null;
   const copyActions = (
     <HeaderCopyActions key="copy">
       {newRevision ? <NewRevisionDialog {...newRevision} dirtyCount={dirtyCount} onCreated={setStatusToast} /> : null}
@@ -3339,7 +3341,7 @@ export function QuoteLedger({
         </Link>
       ) : null}
       {memberAdd}
-      {projectDelete ? <ProjectDelete {...projectDelete} /> : null}
+      {phone ? deleteAction : null}
     </HeaderCopyActions>
   );
   // 05-11(S10 (가) · N3): 정산에는 「상태 바꾸기」가 없다 — 그 자리에 정산 결재 올리기 · 링크(같은 순서 규칙).
@@ -3389,7 +3391,7 @@ export function QuoteLedger({
         // 폰(<700)은 수화 뒤 DOM 순서 = 보이는 순서 — SYSTEM §10, DR-104-05. 서버 · 수화 중에는 PC 순서다 — 연차 화면 usePhoneWidth 선례(DECISIONS 2026-09-29).
         // key 덕에 순서가 바뀌어도 다시 마운트되지 않는다. 1차 「일괄 저장」은 늘 마지막(오른쪽 끝, D4).
         secondary: phone ? [statusActions, copyActions] : [copyActions, statusActions],
-        primary: saveAction,
+        primary: !phone && deleteAction ? [saveAction, deleteAction] : saveAction,
       }}
     >
       <p className={styles.periodLine}>{statusSinceText}</p>

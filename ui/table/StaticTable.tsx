@@ -48,13 +48,11 @@ function classNames(...names: (string | false | undefined)[]): string {
 
 export function StaticTable({ caption, editable = false, columns, rows }: StaticTableProps) {
   const hasRowHeader = columns.some((column) => column.rowHeader);
+  const hasEllipsis = columns.some((column) => column.ellipsis);
   const p2Indexes = columns.flatMap((column, index) => (column.priority === "p2" ? [index] : []));
 
   return (
-    <table
-      className={classNames(styles.table, editable && styles.editable, editable && styles.inputCells)}
-      data-cell-ellipsis={columns.some((column) => column.ellipsis) ? "" : undefined}
-    >
+    <table className={classNames(styles.table, editable && styles.editable, editable && styles.inputCells)} data-cell-ellipsis={hasEllipsis ? "" : undefined}>
       <caption className="sr-only">{caption}</caption>
       <thead>
         <tr>

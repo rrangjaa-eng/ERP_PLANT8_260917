@@ -286,3 +286,19 @@ describe("document_print (07.4 D-7415)", () => {
     expect((ACTION_TYPE_LABELS as Record<string, string>).document_print).toBe("서류 인쇄");
   });
 });
+
+// 07.2-19(D-7216): 완료 되돌리기 사유 — 세 배열에 함께 있고 설정으로 끌 수 없다(결재선 끝 줄의 원천).
+describe("document_reopen (07.2-19 D-7216)", () => {
+  it("CORE · ALWAYS_ON에 있고 라벨이 「승인 되돌리기」이며 켜기 목록 기본값에 없다", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("document_reopen");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("document_reopen");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).document_reopen).toBe("승인 되돌리기");
+    expect(ACTION_LOG_OPTIONAL_TYPES.default as readonly string[]).not.toContain("document_reopen");
+  });
+
+  it("행동 로그 설정이 꺼져 있어도 기록된다", async () => {
+    const appendActionLog = vi.fn().mockResolvedValue(undefined);
+    await recordAction(viewer, { actionType: "document_reopen", entity: "approval_instance", entityId: "i1" }, { appendActionLog, isActionTypeEnabled: () => Promise.resolve(false) });
+    expect(appendActionLog).toHaveBeenCalledTimes(1);
+  });
+});

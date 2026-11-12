@@ -7,7 +7,7 @@ import type { ApprovalSelfApprovalValue } from "@/domain/settings/keys";
 export const APPROVAL_STATUSES = ["draft", "submitted", "in_review", "approved", "rejected", "withdrawn"] as const;
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
 
-export const APPROVAL_EVENTS = ["submit", "approve", "approve_final", "reject", "withdraw", "resubmit"] as const;
+export const APPROVAL_EVENTS = ["submit", "approve", "approve_final", "reject", "withdraw", "resubmit", "reopen"] as const;
 export type ApprovalEvent = (typeof APPROVAL_EVENTS)[number];
 
 export class InvalidTransitionError extends Error {}
@@ -25,10 +25,14 @@ const TRANSITIONS: Record<ApprovalStatus, Partial<Record<ApprovalEvent, Approval
 
 // 05-01 E1: 선택 셋째 인자 — 종류가 회수 뒤 다시 제출을 허용할 때만 withdrawn --resubmit--> submitted 한 칸이 열린다.
 // 없으면 04.1 표 그대로(withdrawn은 모든 사건에 끝 상태).
-export type NextStepOptions = { allowResubmitFromWithdrawn?: boolean };
+// 07.2-19(07.2 D-7302): 같은 꼴로 두 칸 — 종류가 승인 되돌리기를 켤 때만 approved --reopen--> draft, 되돌린 문서를 같은 문서로
+// 다시 올릴 때만 draft --resubmit--> submitted. 표는 그대로라 옵션 없이 approved는 끝 상태다.
+export type NextStepOptions = { allowResubmitFromWithdrawn?: boolean; allowReopen?: boolean; allowResubmitFromDraft?: boolean };
 
 export function nextStep(status: ApprovalStatus, event: ApprovalEvent, opts?: NextStepOptions): ApprovalStatus {
   if (status === "withdrawn" && event === "resubmit" && opts?.allowResubmitFromWithdrawn) return "submitted";
+  if (status === "approved" && event === "reopen" && opts?.allowReopen) return "draft";
+  if (status === "draft" && event === "resubmit" && opts?.allowResubmitFromDraft) return "submitted";
   const next = TRANSITIONS[status][event];
   if (!next) throw new InvalidTransitionError(`허용되지 않는 결재 전이: ${status} → ${event}`);
   return next;

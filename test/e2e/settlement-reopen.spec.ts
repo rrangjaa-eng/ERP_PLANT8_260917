@@ -79,6 +79,12 @@ test.describe("완료 되돌리기(S2) — 대표 1280", () => {
     const endLine = page.getByText(new RegExp(`^되돌림 · ${fx.ceo.name} · \\d{2}-\\d{2} \\d{2}:\\d{2} · 사유 ${REASON}$`));
     await expect(endLine).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/settlement-endline-1280.png`, fullPage: true });
+
+    // P2-1 — 되돌린 정산서(인스턴스 draft) 인쇄 결재란에 지난 차수 승인 도장 · 일시가 찍히지 않는다(기안 칸 하나 · 작성 중).
+    await page.goto(`/print/settlements/${fx.projectId}`);
+    await expect(page.locator('[data-state="draft"]')).toHaveCount(1);
+    await expect(page.locator('[data-state="draft"]')).toContainText("작성 중");
+    await expect(page.locator('[data-state="approved"], [data-state="self"], [data-state="submitted"]')).toHaveCount(0);
     await page.context().close();
   });
 

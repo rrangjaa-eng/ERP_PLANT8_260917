@@ -3389,7 +3389,7 @@ export function QuoteLedger({
       meta={frame.meta}
       actions={{
         // 폰(<700)은 수화 뒤 DOM 순서 = 보이는 순서 — SYSTEM §10, DR-104-05. 서버 · 수화 중에는 PC 순서다 — 연차 화면 usePhoneWidth 선례(DECISIONS 2026-09-29).
-        // key 덕에 순서가 바뀌어도 다시 마운트되지 않는다. 1차 「일괄 저장」은 늘 마지막(오른쪽 끝, D4).
+        // key 덕에 순서가 바뀌어도 다시 마운트되지 않는다. 1차 「일괄 저장」은 채운 버튼 중 마지막(오른쪽 끝, D4). PC의 「프로젝트 삭제」만 그 뒤 --s-8 떼어 맨 끝(DECISIONS 2026-11-12).
         secondary: phone ? [statusActions, copyActions] : [copyActions, statusActions],
         primary: !phone && deleteAction ? [saveAction, deleteAction] : saveAction,
       }}

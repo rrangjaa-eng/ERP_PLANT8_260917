@@ -42,4 +42,10 @@ describe("WR-05: 토스트 자동 소멸 타이머", () => {
     expect(TOAST).toMatch(/onFocus=\{holdWhileFocused \?/);
     expect(TOAST).toMatch(/onBlur=\{holdWhileFocused \?/);
   });
+
+  // 리뷰 P2(PR #383): 되돌리기를 눌러 포커스가 60초로 걸린 뒤 같은 인스턴스가 행동 없는 확인 토스트로 바뀌면
+  // onBlur 핸들러가 함께 떨어져 60초가 풀리지 않는다. 행동이 사라지면(holdWhileFocused true→false) 4초를 다시 센다.
+  it("행동 버튼이 사라지면(holdWhileFocused가 꺼지면) 포커스 유지를 풀고 4초를 다시 센다", () => {
+    expect(TOAST).toMatch(/useEffect\(\(\) => \{\s*if \(!holdWhileFocused\) timerRef\.current\?\.blur\(\);\s*\}, \[holdWhileFocused\]\);/);
+  });
 });

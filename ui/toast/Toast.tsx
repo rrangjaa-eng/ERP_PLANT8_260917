@@ -61,6 +61,14 @@ export function Toast({ message, tone = "default", actionLabel, onAction, focusA
     };
   }, [tone]);
 
+  // 3차 행동이 있는 토스트는 그 안에 포커스가 있는 동안 소멸하지 않는다(최대 60초 — dismiss-timer). 행동 없는 토스트는 연결하지 않아 4초 그대로.
+  const holdWhileFocused = Boolean(actionLabel && onAction);
+  // 같은 인스턴스에서 행동이 사라지면(예: 되돌리기 성공 뒤 확인 토스트) 포커스 유지도 함께 푼다 —
+  // 포커스를 쥔 버튼이 빠지면 onBlur 핸들러도 떨어져 60초가 남기 때문이다. 4초를 다시 센다.
+  useEffect(() => {
+    if (!holdWhileFocused) timerRef.current?.blur();
+  }, [holdWhileFocused]);
+
   const actionRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (focusAction) actionRef.current?.focus();
@@ -88,8 +96,6 @@ export function Toast({ message, tone = "default", actionLabel, onAction, focusA
     };
   }, []);
 
-  // 3차 행동이 있는 토스트는 그 안에 포커스가 있는 동안 소멸하지 않는다(최대 60초 — dismiss-timer). 행동 없는 토스트는 연결하지 않아 4초 그대로.
-  const holdWhileFocused = Boolean(actionLabel && onAction);
   return (
     <div
       ref={toastRef}

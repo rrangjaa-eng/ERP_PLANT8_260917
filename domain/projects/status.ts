@@ -20,6 +20,7 @@ import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findLatestActionFor as defaultFindLatestActionFor } from "@/repositories/action-log";
 import type { SettlementApprovalAuthority } from "@/domain/settlements";
+import type { ProjectReopenAuthority } from "@/domain/settlements/reopen";
 
 // 04-20(PROJ-04 · D-44·D-46·D-75·D-79·D-82) — 사람의 상태 전환 넷의 서버 쪽.
 // 상태 이름 비교는 전이표(status-transitions.ts)와 게이트 규칙(rules/register.ts)
@@ -122,7 +123,7 @@ export async function actorCoversProjectTeam(
 // ── 트랜잭션 전 사실(ENG-D3 ① — ARCHITECTURE §4-8) ─────────────────────────
 export type StatusChangeFacts = {
   rowScope: RowScope;
-  menus: { status: boolean; complete: boolean };
+  menus: { status: boolean; complete: boolean; reopen: boolean };
   teamScope: ActorTeamScope;
   // 고정 상태 낱말(04.6-10 — 코드표 라벨이 아니다) — 「상태가 … 바뀜」 문구용. 비활성 값 포함.
   labels: Record<string, string>;
@@ -243,6 +244,7 @@ export async function statusDestinations(
   const destinations: StatusDestination[] = [];
   for (const transition of ALLOWED_TRANSITIONS) {
     // 05-11: 결재로만 가는 전환(정산 → 완료)은 사람이 고르는 갈 곳이 아니다.
+    // 07.2-19: 완료 → 정산(via reopen)은 projects.reopen 보유자에게만 갈 곳 하나로 실린다(화면 트리거 `정산으로 되돌리기`).
     if (transition.from !== project.status || transition.via === "approval") continue;
     const decision = await evaluateTransition(project, transition.to, facts);
     if (decision.allowed) destinations.push({ to: transition.to, blockedReason: null });
@@ -259,12 +261,14 @@ async function loadProjectActorFacts(viewer: Viewer, project: { id: string }, de
 async function loadActorFacts(viewer: Viewer, deps?: Partial<StatusChangeFactDeps>): Promise<ActorFacts> {
   const canFn = deps?.can ?? defaultCan;
   const now = deps?.now ?? (() => new Date());
-  const [status, complete, teamScope] = await Promise.all([
+  const [status, complete, reopen, teamScope] = await Promise.all([
     canFn(viewer, "projects.status", "write"),
     canFn(viewer, "projects.complete", "write"),
+    // 07.2-19(PU2): 완료 → 정산 되돌리기(via reopen)의 메뉴 — 갈 곳 목록이 보유자에게만 그 한 곳을 싣는다.
+    canFn(viewer, "projects.reopen", "write"),
     loadActorTeamScope(viewer, { todayKst: kstToday(now()) }, deps),
   ]);
-  return { menus: { status, complete }, teamScope };
+  return { menus: { status, complete, reopen }, teamScope };
 }
 
 // ── 마지막 상태 변경일(D-50 · S3 부제) ──────────────────────────────────────
@@ -302,6 +306,8 @@ export type ChangeProjectStatusDeps = StatusChangeFactDeps & {
   recordAction: typeof defaultRecordAction;
   // 05-11(F1): 결재 경로(trigger approval)의 권한 — 정산 모듈만 만드는 브랜드 값(최종 승인 훅이 tx 안 마지막 단계 기록을 확인한 뒤).
   approvalAuthority: SettlementApprovalAuthority;
+  // 07.2-19(PU2): 완료 되돌리기(trigger reopen)의 표지 — 정산 되돌리기 모듈만 만드는 브랜드 값(트랜잭션 전 보임 · projects.reopen 판정 뒤).
+  reopenAuthority: ProjectReopenAuthority;
 };
 
 // 05-11(F1): 결재 경로의 권한은 결재 인스턴스의 마지막 단계 담당이라는 사실 하나다 — viewer의 메뉴 · 팀 범위 · 행 범위 대신
@@ -319,7 +325,7 @@ function approvalPathFacts(facts: StatusChangeFacts): StatusChangeFacts {
 export async function changeProjectStatus(
   viewer: Viewer,
   projectId: string,
-  input: { from: ProjectStatus; to: ProjectStatus; trigger?: "manual" | "approval" },
+  input: { from: ProjectStatus; to: ProjectStatus; trigger?: "manual" | "approval" | "reopen" },
   deps?: Partial<ChangeProjectStatusDeps>,
 ): Promise<void> {
   const ids = { projectId, from: input.from, to: input.to };
@@ -332,17 +338,26 @@ export async function changeProjectStatus(
   if (trigger === "approval" && deps?.approvalAuthority?.projectId !== projectId) {
     denyWrite(viewer, "project.approval-authority", ids, new GateBlockedError("지금 담당이 아님 · 새로 고침"));
   }
+  // 07.2-19(PU2 · D-7214): 완료 → 정산은 정산 되돌리기로만(사유 · 정산 결재 되돌림과 한 트랜잭션) — 손 전환 길은 막고, 되돌리기 표지는
+  // 그 전이에만 쓴다. 메뉴 · 팀 범위 판정(evaluateTransition)은 그대로 돈다(호출자가 트랜잭션 전에 읽은 facts).
+  if (transition?.via === "reopen" && trigger !== "reopen") {
+    denyWrite(viewer, "project.reopen-only", ids, new GateBlockedError("정산으로 되돌리기로만 · 새로 고침"));
+  }
+  if (trigger === "reopen" && (transition?.via !== "reopen" || deps?.reopenAuthority?.projectId !== projectId)) {
+    denyWrite(viewer, "project.reopen-authority", ids, new GateBlockedError("지금 담당이 아님 · 새로 고침"));
+  }
   const loaded = deps?.facts ?? (await loadStatusChangeFacts(viewer, deps));
   let facts = trigger === "approval" ? approvalPathFacts(loaded) : loaded;
   if (facts.rowScope.rows === "none" && trigger !== "approval") {
     denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트"));
   }
   // 06.2(D-6206): 범위 밖 프로젝트는 없음 — 트랜잭션(잠금) 전에 전역 db로 판정한다(04-32).
-  if (trigger !== "approval" && !(await findProjectInScope(viewer, facts.rowScope, projectId))) {
+  // 07.2-19: 되돌리기는 바깥 트랜잭션(인스턴스 잠금) 안에서 불린다 — 보임 · 업무 범위 좁히기는 호출자가 트랜잭션 전에 이미 했다(facts).
+  if (trigger === "manual" && !(await findProjectInScope(viewer, facts.rowScope, projectId))) {
     denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트"));
   }
   // 06.2-09(I-2): 사람의 전환은 업무 범위 갈래를 참여 뺀 보임으로 좁힌다 — 결재 경로는 결속 권한이 경계라 그대로.
-  if (trigger !== "approval") {
+  if (trigger === "manual") {
     facts = { ...facts, teamScope: await teamScopeForProject(viewer, facts.teamScope, facts.rowScope, projectId) };
   }
 

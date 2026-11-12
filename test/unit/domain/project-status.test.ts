@@ -22,15 +22,16 @@ import type { ProjectStatus } from "@/domain/projects/status-transitions";
 const TEAM_A = "team-a";
 const TEAM_B = "team-b";
 
-type Actor = { menus: { status: boolean; complete: boolean }; teamScope: ActorTeamScope };
+type Actor = { menus: { status: boolean; complete: boolean; reopen: boolean }; teamScope: ActorTeamScope };
 
 const ACTORS = {
-  pm: { menus: { status: false, complete: false }, teamScope: { workScope: "team", teamId: TEAM_A } },
-  ownLead: { menus: { status: true, complete: false }, teamScope: { workScope: "team", teamId: TEAM_A } },
-  otherLead: { menus: { status: true, complete: false }, teamScope: { workScope: "team", teamId: TEAM_B } },
-  divisionHead: { menus: { status: true, complete: false }, teamScope: { workScope: "company", teamId: null } },
-  ceo: { menus: { status: true, complete: true }, teamScope: { workScope: "company", teamId: null } },
-  sysadmin: { menus: { status: true, complete: true }, teamScope: { workScope: "company", teamId: null } },
+  pm: { menus: { status: false, complete: false, reopen: false }, teamScope: { workScope: "team", teamId: TEAM_A } },
+  ownLead: { menus: { status: true, complete: false, reopen: false }, teamScope: { workScope: "team", teamId: TEAM_A } },
+  otherLead: { menus: { status: true, complete: false, reopen: false }, teamScope: { workScope: "team", teamId: TEAM_B } },
+  divisionHead: { menus: { status: true, complete: false, reopen: false }, teamScope: { workScope: "company", teamId: null } },
+  // 07.2-19(D-7216): projects.reopen 쓰기 — 시드는 대표, 시스템 관리자는 can() 우회.
+  ceo: { menus: { status: true, complete: true, reopen: true }, teamScope: { workScope: "company", teamId: null } },
+  sysadmin: { menus: { status: true, complete: true, reopen: true }, teamScope: { workScope: "company", teamId: null } },
 } satisfies Record<string, Actor>;
 
 type ActorName = keyof typeof ACTORS;
@@ -67,6 +68,12 @@ const TRANSITION_TABLE: { from: ProjectStatus; to: ProjectStatus; expect: Record
   {
     from: "settling",
     to: "completed",
+    expect: { pm: NO_MENU, ownLead: NO_MENU, otherLead: NO_MENU, divisionHead: NO_MENU, ceo: "ok", sysadmin: "ok" },
+  },
+  // 07.2-19(PU2): 완료 → 정산(되돌리기 — projects.reopen). 실제 전환은 정산 되돌리기 길로만(changeProjectStatus manual 막힘 — 통합).
+  {
+    from: "completed",
+    to: "settling",
     expect: { pm: NO_MENU, ownLead: NO_MENU, otherLead: NO_MENU, divisionHead: NO_MENU, ceo: "ok", sysadmin: "ok" },
   },
 ];
@@ -242,10 +249,17 @@ describe("statusDestinations — 갈 곳 목록과 막힘 이유 (S3·S7, A-09)"
     await expect(destinations("settling", "divisionHead")).resolves.toEqual([]);
   });
 
-  it("진행·완료는 누구에게도 빈 목록이다 — 정산은 사람이 고르는 목적지가 아니다", async () => {
+  it("진행은 누구에게도 빈 목록이다 — 정산은 사람이 고르는 목적지가 아니다", async () => {
     for (const actor of ACTOR_NAMES) {
       await expect(destinations("in_progress", actor)).resolves.toEqual([]);
-      await expect(destinations("completed", actor)).resolves.toEqual([]);
+    }
+  });
+
+  // 07.2-19(PU2 · 디자인 D-F2): 완료에서는 projects.reopen 보유자에게만 정산 한 곳(트리거 `정산으로 되돌리기`).
+  it("완료는 대표 · 시스템 관리자에게만 정산 한 곳, 그 밖은 빈 목록", async () => {
+    for (const actor of ACTOR_NAMES) {
+      const expected = actor === "ceo" || actor === "sysadmin" ? [{ to: "settling", blockedReason: null }] : [];
+      await expect(destinations("completed", actor)).resolves.toEqual(expected);
     }
   });
 
@@ -257,8 +271,8 @@ describe("statusDestinations — 갈 곳 목록과 막힘 이유 (S3·S7, A-09)"
     }
   });
 
-  it("어떤 입력에서도 정산을 돌려주지 않는다", async () => {
-    const statuses: ProjectStatus[] = ["bidding", "in_progress", "settling", "completed", "lost"];
+  it("완료 밖 어떤 입력에서도 정산을 돌려주지 않는다", async () => {
+    const statuses: ProjectStatus[] = ["bidding", "in_progress", "settling", "lost"];
     for (const status of statuses) {
       for (const actor of ACTOR_NAMES) {
         const list = await destinations(status, actor);

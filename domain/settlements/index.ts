@@ -86,7 +86,8 @@ export const SETTLEMENT_DOCUMENT_KIND = "settlement";
 
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(["submitted", "in_review"]);
-const RESUBMITTABLE_STATUSES: ReadonlySet<string> = new Set(["rejected", "withdrawn"]);
+// 07.2-19(07.2 D-7302): draft = 완료 되돌리기로 승인에서 물린 문서 — submitSettlement가 already_submitted 대신 같은 문서로 다시 올린다.
+const RESUBMITTABLE_STATUSES: ReadonlySet<string> = new Set(["rejected", "withdrawn", "draft"]);
 const SETTLING: ProjectStatus = "settling";
 // D-80: 결재 중 기간 변경으로 프로젝트가 진행으로 돌아갔을 때 대표 `승인`의 막힘 이유(UI-SPEC S10 — 2차 `반려`는 산다).
 const BACK_TO_PROGRESS = "진행으로 바뀜 · 반려";
@@ -174,6 +175,8 @@ const STATUS_WORDS: Record<string, string> = {
   approved: "승인",
   rejected: "반려",
   withdrawn: "회수",
+  // 07.2-19: 되돌린 정산 결재(엔진 draft) — 문서가 없을 때와 같은 기존 낱말(새 낱말 0).
+  draft: "작성 중",
 };
 
 type Totals = Partial<Pick<SettlementDocumentDto, "quoteTotalKrw" | "executionTotalKrw" | "evidencePendingCount">>;
@@ -349,7 +352,8 @@ export async function getSettlementPreSettleSummary(
 
 // 프로젝트 상세 머리 줄 재료(S10 (가)) — 문서가 있고 볼 수 있으면 상태 낱말(`정산 결재 {낱말}` 링크), 없고 정산 · 담당 PM 쓰기 권리면 올리기,
 // 둘 다 아니면 null(아무것도 그리지 않는다). 낱말은 04.1 결재 낱말에서 `결재`를 뺀 꼴(`결재 중` → `중`).
-const HEADER_WORDS: Record<string, string> = { submitted: "중", in_review: "중", approved: "승인", rejected: "반려", withdrawn: "회수" };
+// 07.2-19: draft(완료 되돌리기 뒤) = 기존 낱말 `작성 중` — 머리 줄 `정산 결재 작성 중` 링크, 올리기는 반려와 같이 문서 화면에서.
+const HEADER_WORDS: Record<string, string> = { submitted: "중", in_review: "중", approved: "승인", rejected: "반려", withdrawn: "회수", draft: "작성 중" };
 
 export async function getSettlementHeader(viewer: Viewer, input: { projectId: string }): Promise<{ statusWord: string | null; canSubmit: boolean } | null> {
   if (!UUID_SHAPE.test(input.projectId)) return null;
@@ -639,7 +643,10 @@ registerDocumentKind({
   describeDocuments: describeSettlementDocuments,
   routeSettings: SETTLEMENT_ROUTE_SETTINGS,
   canResubmit: canResubmitSettlement,
-  resubmitFrom: ["rejected", "withdrawn"],
+  // 07.2-19(07.2 D-7302): 완료 되돌리기로 초안이 된 문서도 담당 PM이 같은 문서로 다시 올린다(round + 1 · 결재선 다시 탐).
+  resubmitFrom: ["rejected", "withdrawn", "draft"],
+  // 07.2-19(07.2 D-7302): 승인 되돌리기를 켠 유일한 종류 — 되돌리는 길은 domain/settlements/reopen.ts 하나다(브랜드 권한 값).
+  allowReopen: true,
   // 07.2-17(07.2 D-7311 · eng E9): 다시 올리는 사람 = 그 프로젝트의 지금 담당 PM(문서 id = 프로젝트 id). 처음 기안자 판정을 대체한다.
   resubmitterOf: settlementResubmitter,
   prepareFinalApproval: prepareSettlementFinalApproval,

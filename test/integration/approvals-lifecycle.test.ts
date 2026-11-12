@@ -16,7 +16,13 @@ import {
   NotCurrentHolderError,
   NOT_HOLDER_MESSAGE,
   previewRoute,
+  prepareReopen,
+  reopenApprovedDocument,
+  type ReopenAuthority,
 } from "@/domain/approvals";
+import { withTransaction } from "@/lib/db-transaction";
+import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
+import { setupSettlementProject } from "./fixtures/settlements";
 import { submitLeave, getLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
 import { resubmitLeave } from "@/domain/leave/resubmit";
 import {
@@ -548,5 +554,60 @@ describe("반반차 · 재택 결재 단계(PU9 · D-7251)", () => {
     expect(noHint).toHaveLength(3);
     // 슬롯 번호 기준 — 2단이 꺼져 있으면 반반차는 1단 하나뿐이다(켜진 단계 두 개가 아니다).
     expect(await previewLabels(org.drafter, "quarter_day")).toHaveLength(1);
+  });
+});
+
+// 07.2-19(eng D-19-1 · T-07.2-19-01 · T-07.2-19-02): 엔진 reopen은 기안자 판정 대신 정산 되돌리기 모듈만 만드는 브랜드 권한 값이
+// 그 인스턴스 문서와 맞을 때만 지난다 — 값 없이 · 다른 문서 값으로 · 기안자 본인이라도 거부. reopen을 켜지 않은 종류는 값이 있어도 거부.
+describe("승인 되돌리기(reopen) — 브랜드 권한 값 · 종류 opt-in(07.2-19)", () => {
+  // 테스트 전용 위조 — 운영 코드에서는 domain/settlements/reopen.ts 안 함수만 만든다.
+  const forged = (kind: string, documentId: string) => ({ kind, documentId }) as ReopenAuthority;
+
+  async function approvedSettlement() {
+    const fx = await setupSettlementProject();
+    const done = await submitSettlement(fx.pm, { projectId: fx.projectId });
+    if (done.kind !== "submitted") throw new Error("올리기 안 됨");
+    const approved = await approveDocument(fx.ceo, { instanceId: done.instanceId, expectedVersion: done.version });
+    return { fx, instanceId: done.instanceId, documentId: done.documentId, version: approved.version };
+  }
+
+  async function reopenAs(viewer: Viewer, input: { instanceId: string; version: number }, authority?: ReopenAuthority) {
+    const prepared = await prepareReopen(viewer);
+    return withTransaction((tx) =>
+      reopenApprovedDocument(viewer, { instanceId: input.instanceId, expectedVersion: input.version, reason: REASON, authority }, tx, prepared),
+    );
+  }
+
+  it("값 없이 · 다른 문서 id 값으로 · 기안자(PM) 본인이 값 없이 부르면 모두 거부 · 인스턴스 그대로", async () => {
+    const s = await approvedSettlement();
+    for (const [viewer, authority] of [
+      [s.fx.ceo, undefined],
+      [s.fx.ceo, forged(SETTLEMENT_DOCUMENT_KIND, "00000000-0000-4000-8000-000000000000")],
+      [s.fx.pm, undefined],
+    ] as const) {
+      expect(await errorOf(reopenAs(viewer, s, authority))).toBeInstanceOf(NotCurrentHolderError);
+    }
+    const after = await instanceOf(s.instanceId);
+    expect([after.status, after.version]).toEqual(["approved", s.version]);
+  });
+
+  it("맞는 값이면 approved → draft · document_reopen 로그(사유 · 차수) 한 줄", async () => {
+    const s = await approvedSettlement();
+    await reopenAs(s.fx.ceo, s, forged(SETTLEMENT_DOCUMENT_KIND, s.documentId));
+    const after = await instanceOf(s.instanceId);
+    expect([after.status, after.version, after.currentRound]).toEqual(["draft", s.version + 1, 1]);
+    const logs = (await logsOf(s.instanceId)).filter((row) => row.actionType === "document_reopen");
+    expect(logs.map((row) => row.detail)).toEqual([{ kind: SETTLEMENT_DOCUMENT_KIND, round: 1, reason: REASON }]);
+  });
+
+  it("reopen을 켜지 않은 종류(연차)의 approved는 값이 있어도 거부 · 그대로", async () => {
+    const org = await makeOrg();
+    const submitted = await submitLeave(org.drafter, FULL_DAY, deps);
+    const first = await approveDocument(org.lead, { instanceId: submitted.instanceId, expectedVersion: 1 }, deps);
+    const final = await approveDocument(org.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version }, deps);
+    expect(final.status).toBe("approved");
+    const refused = await errorOf(reopenAs(org.ceo, { instanceId: submitted.instanceId, version: final.version }, forged(LEAVE_DOCUMENT_KIND, submitted.leaveId)));
+    expect(refused).toBeInstanceOf(UserFacingError);
+    expect((await instanceOf(submitted.instanceId)).status).toBe("approved");
   });
 });

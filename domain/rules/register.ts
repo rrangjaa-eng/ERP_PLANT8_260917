@@ -150,7 +150,7 @@ registerGateRule<unknown, QuoteLineCapCtx>({
 export type ProjectTransitionCtx = {
   from: string;
   to: string;
-  actorMenus: { status: boolean; complete: boolean };
+  actorMenus: { status: boolean; complete: boolean; reopen: boolean };
   actorCoversTeam: boolean;
 };
 
@@ -159,7 +159,8 @@ registerGateRule<unknown, ProjectTransitionCtx>({
   check: (_doc, ctx) => {
     const transition = ALLOWED_TRANSITIONS.find((entry) => entry.from === ctx.from && entry.to === ctx.to);
     if (!transition) return { allowed: false, reason: "갈 수 없는 상태 · 새로 고침" };
-    const hasMenu = transition.menu === "projects.complete" ? ctx.actorMenus.complete : ctx.actorMenus.status;
+    const hasMenu =
+      transition.menu === "projects.complete" ? ctx.actorMenus.complete : transition.menu === "projects.reopen" ? ctx.actorMenus.reopen : ctx.actorMenus.status;
     if (!hasMenu) return { allowed: false, reason: "상태 바꾸기 권한 없음" };
     if (!ctx.actorCoversTeam) return { allowed: false, reason: "다른 팀 프로젝트 · 상태 바꾸기 권한 없음" };
     return { allowed: true };

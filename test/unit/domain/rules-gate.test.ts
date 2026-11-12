@@ -140,7 +140,7 @@ describe("domain/rules/gate", () => {
 
 // 04-20 — 사람의 전환 규칙 둘의 경계.
 describe("project.transition (D-46·D-79·D11)", () => {
-  const allMenus = { status: true, complete: true };
+  const allMenus = { status: true, complete: true, reopen: true };
 
   it("전이표에 없는 쌍은 「갈 수 없는 상태 · 새로 고침」", async () => {
     const decision = await gate({}, "project.transition", {
@@ -156,7 +156,7 @@ describe("project.transition (D-46·D-79·D11)", () => {
     const decision = await gate({}, "project.transition", {
       from: "settling",
       to: "completed",
-      actorMenus: { status: true, complete: false },
+      actorMenus: { status: true, complete: false, reopen: false },
       actorCoversTeam: true,
     });
     expect(decision).toEqual({ allowed: false, reason: "상태 바꾸기 권한 없음" });
@@ -166,17 +166,27 @@ describe("project.transition (D-46·D-79·D11)", () => {
     const decision = await gate({}, "project.transition", {
       from: "bidding",
       to: "lost",
-      actorMenus: { status: true, complete: false },
+      actorMenus: { status: true, complete: false, reopen: false },
       actorCoversTeam: false,
     });
     expect(decision).toEqual({ allowed: false, reason: "다른 팀 프로젝트 · 상태 바꾸기 권한 없음" });
+  });
+
+  // 07.2-19(PU2): 완료 → 정산(되돌리기)은 projects.reopen 메뉴 — 상태 바꾸기 · 완료 메뉴로는 지나지 않는다.
+  it("완료 → 정산은 projects.reopen 메뉴가 있어야 한다", async () => {
+    const ctx = { from: "completed", to: "settling", actorCoversTeam: true };
+    expect(await gate({}, "project.transition", { ...ctx, actorMenus: { status: true, complete: true, reopen: false } })).toEqual({
+      allowed: false,
+      reason: "상태 바꾸기 권한 없음",
+    });
+    expect(await gate({}, "project.transition", { ...ctx, actorMenus: { status: false, complete: false, reopen: true } })).toEqual({ allowed: true });
   });
 
   it("쌍·권한·팀 범위가 맞으면 통과한다", async () => {
     const decision = await gate({}, "project.transition", {
       from: "bidding",
       to: "in_progress",
-      actorMenus: { status: true, complete: false },
+      actorMenus: { status: true, complete: false, reopen: false },
       actorCoversTeam: true,
     });
     expect(decision).toEqual({ allowed: true });

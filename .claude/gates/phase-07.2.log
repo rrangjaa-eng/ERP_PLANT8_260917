@@ -9,3 +9,6 @@ design-review 2026-11-02T17:07Z session=aa96b6a6-1140-5889-99cd-533fd6d336d4
 qa 2026-11-02T17:14Z session=aa96b6a6-1140-5889-99cd-533fd6d336d4
 plan-eng-review 2026-11-05T03:33Z session=772c1f55-3b44-5c21-bb6a-9fcd44beae69
 plan-design-review 2026-11-05T03:33Z session=6b6a040a-ae2b-5fd1-9427-84fbae30e507
+review 2026-11-13T04:29Z session=aa96b6a6-1140-5889-99cd-533fd6d336d4 (PR #385 G-07.2-28 /review 607d44c9 — P0 0·P1 0·P2 0·P3 3(권한 없는 계급에도 이유 줄·detail 식 한 줄·showInfo 거짓 때 undefined) · typecheck·lint 통과 · 단위 6623 · 통합 archive 27/27 · 기록 /mnt/project-files/07.2-review/g28/review.md · 훅 미기록이라 손으로 적음)
+design-review 2026-11-13T04:44Z session=aa96b6a6-1140-5889-99cd-533fd6d336d4 (PR #385 G-07.2-28 /design-review 607d44c9 — Codex 스크립트 실행 완료(exit 0)·후보 0, 시드 없어 빈 보관함 캡처 · CI=true DOM 실측 320·375·768·1280 넘침 0·이유 줄 rowReason·동작 칸 —·폰 복원 44×44 · 결함 0 · 기록 design-review.md · 훅 미기록이라 손으로 적음)
+qa 2026-11-13T04:52Z session=aa96b6a6-1140-5889-99cd-533fd6d336d4 (PR #385 G-07.2-28 /qa-only — /browse 실행 불가(Aside 없음 · chromium_headless_shell-1234 없음) → CI=true Playwright 흐름(막힘→본부 복원→팀 복원→새로고침) 콘솔 0·5xx 0·탭 순서 막힌 행 진입 없음, 사용자 확인 필요 · 결함 0 · 기록 qa.md · 훅 미기록이라 손으로 적음)

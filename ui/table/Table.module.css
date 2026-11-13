@@ -462,6 +462,8 @@ thead .selectLabel {
 
 .cellWidthNumber {
   width: 12ch;
+  /* 숫자 열(.alignRight)의 줄바꿈 없음을 머리글에서는 풀어, 20자 칸 이름이 12ch 안에서 줄바꿈된다(옆 열이 눌리지 않게). */
+  white-space: normal;
 }
 
 /* 04-49(DR-14) — 좁은 PC 열 접기(TableColumn.collapseBelow). 숨은 열은 DOM에 남아 논리 열 순서를 지킨다. */

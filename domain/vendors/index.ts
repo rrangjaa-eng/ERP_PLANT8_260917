@@ -8,7 +8,7 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { encrypt, decrypt } from "@/lib/crypto";
 import { withTransaction } from "@/lib/db-transaction";
-import { resolveCustomFieldsWrite, type InputFieldDef } from "@/domain/custom-fields/preserve";
+import { resolveCustomFieldsWrite } from "@/domain/custom-fields/preserve";
 import {
   countVendors as repoCountVendors,
   listVendors as repoListVendors,
@@ -24,7 +24,7 @@ import {
   setVendorConfirmed as repoSetVendorConfirmed,
   type VendorRow,
 } from "@/repositories/vendors";
-import { readVendorFieldAccess } from "@/repositories/permissions";
+import { readCustomFieldInputs } from "@/domain/custom-fields/access";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
 import { servesSide, vendorKindToAdd, vendorKindsFor, VENDOR_KIND_LABELS, type VendorKind, type VendorSide } from "@/domain/vendors/kind";
@@ -322,35 +322,9 @@ export async function listVendorFieldDefinitions(
   }));
 }
 
-type VendorInputFieldDef = InputFieldDef & { id: string; sortOrder: number; optionsColumn: string[] | null };
-
-// 04.5-05: 보는 사람의 거래처 입력 칸 집합 하나 — 「거래처 정보」(vendor.value)가 보이면 활성 ∩ 칸별 보임(03의
-// visibleCustomFieldKeys와 같은 규칙), 아니면 빈 집합. knownKeys는 정의 전체 키(보관 · 노출 행 없는 칸 포함).
-// 정의 · 두 보임을 SQL 한 문(한 스냅숏)으로 읽는다(T-04.5-44). tx는 받은 그대로 넘긴다(domain은 db를 import하지 않는다).
-async function vendorInputFieldKeys(
-  viewer: Viewer,
-  tx?: DbOrTx,
-): Promise<{ inputDefs: VendorInputFieldDef[]; knownKeys: Set<string> }> {
-  const access = await readVendorFieldAccess(viewer, viewer.roleId, tx);
-  const inputDefs = access.vendorValueVisible
-    ? access.definitions
-        .filter((def) => def.archivedAt === null && access.visibleFieldKeys.has(def.key))
-        .map((def) => {
-          const optionsColumn = Array.isArray(def.options) ? (def.options as string[]) : null;
-          return {
-            id: def.id,
-            key: def.key,
-            label: def.label,
-            type: def.type as FieldDefinitionDto["type"],
-            options: optionsColumn ?? [],
-            archivedOptions: def.archivedOptions,
-            required: def.required,
-            sortOrder: def.sortOrder,
-            optionsColumn,
-          };
-        })
-    : [];
-  return { inputDefs, knownKeys: new Set(access.definitions.map((def) => def.key)) };
+// 04.5-05 → 07.5-01: 거래처 입력 칸 집합은 일반화된 readCustomFieldInputs 한 함수다(domain/custom-fields/access.ts).
+async function vendorInputFieldKeys(viewer: Viewer, tx?: DbOrTx) {
+  return readCustomFieldInputs(viewer, { entity: VENDOR_ENTITY, valueInfoItem: "vendor.value" }, tx);
 }
 
 export type VendorWriteDeps = {

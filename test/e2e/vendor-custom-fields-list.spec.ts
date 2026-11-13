@@ -64,15 +64,24 @@ test.describe("거래처 목록 추가 칸 열 (07.5-01)", () => {
     await expect(page.locator("tr", { hasText: withValue }).locator("td").nth(at)).toHaveText("열값1");
     await expect(page.locator("tr", { hasText: withoutValue }).locator("td").nth(at)).toHaveText("—");
 
-    // 폭 상한 — 계산 max-width가 아니라 실측: <td> 실측 폭 − 좌우 padding ≤ --field-w-select(eng r2 N4).
+    // 폭 상한 — 계산 max-width가 아니라 실측: 칸 안 감싸개 span 실측 폭 ≤ --field-w-select(eng r2 N4).
+    // <td> 자체 폭은 표 자동 배치가 남는 폭을 나눠 주므로(CSS 2.1 §17.5.2) 상한을 걸지 않는다 — 상한은 감싸개의 몫이다.
     const measured = await page.locator("tr", { hasText: withLong }).locator("td").nth(at).evaluate((cell) => {
-      const style = getComputedStyle(cell);
-      const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const wrapper = cell.querySelector("span");
       const limit = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--field-w-select"));
-      return { content: cell.getBoundingClientRect().width - padding, limit };
+      return {
+        hasWrapper: wrapper !== null,
+        width: wrapper?.getBoundingClientRect().width ?? 0,
+        wrapped: (wrapper?.getBoundingClientRect().height ?? 0) > parseFloat(getComputedStyle(cell).lineHeight) * 1.5,
+        overflows: (wrapper?.scrollWidth ?? 0) > (wrapper?.clientWidth ?? 0),
+        limit,
+      };
     });
     expect(measured.limit).toBe(200);
-    expect(measured.content).toBeLessThanOrEqual(measured.limit + 0.5);
+    expect(measured.hasWrapper).toBe(true);
+    expect(measured.width).toBeLessThanOrEqual(measured.limit + 0.5);
+    expect(measured.wrapped).toBe(true);
+    expect(measured.overflows).toBe(false);
 
     // 칸 노출 행이 없는 계정(시스템 관리자 — 이 칸은 전용 계급에만 보인다)의 목록에는 머리글 DOM이 없다.
     const adminContext = await browser.newContext();

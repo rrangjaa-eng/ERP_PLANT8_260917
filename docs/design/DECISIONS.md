@@ -2702,3 +2702,12 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: 삭제를 2차들 쪽에 두기(사용자가 고르지 않은 안 — 위험 행동이 떨어지지 않는다) · DetailScreen에 `danger` 슬롯을 따로 두기(이름과 뜻은 맞지만 이번 범위 밖 — 후속 후보).
 **결정자**: 사용자(선택 카드 2026-11-12). 시스템 이탈 기록은 DOM 감사 FINDING-002 지적으로 사후 정리.
 **영향**: SYSTEM §7-7 DetailScreen 행동 순위 · `ui/detail-screen/DetailScreen.tsx` 주석 · `app/(app)/projects/[id]/quote-table.tsx` 주석.
+
+## 2026-11-13 — 추가 칸 열 폭 · 거르개 라벨은 공용 부품 안 기존 토큰으로 (07.5-01 · D-7524)
+**결정**: `ui/table`의 `TableColumn` · `StaticTableColumn`에 선택 열 옵션 `cellWidth?: "field" | "number"`를 둔다. `field` = 머리글 글자 · 읽기 칸 내용을 감싼 span 하나에 `display: block` + `max-width: var(--field-w-select)` + `word-break: keep-all` + `overflow-wrap: anywhere`(말줄임 없음), `number` = `<th>` · `<td>`에 `width: 12ch`. 거래처 목록 거르개 라벨은 `ui/custom-field/CustomField.module.css` `.filterLabel` 한 규칙(프로젝트 목록 `.selectLabel`과 같은 값). 02가 같은 파일에 입력 칸 감싸개 · 구분선 두 규칙을 더한다.
+**이유**: 추가 칸 열 폭 · 입력 칸 감싸개는 세 화면(거래처 · 프로젝트 · 견적 줄)이 같은 공용 부품을 쓰고(프로젝트 목록 거르개는 04가 기존 필터 줄 select로), 화면 하나만 예외를 만들지 않는다. 표 칸의 `max-width`는 표 배치에서 효과가 정해져 있지 않아(CSS 2.1 §17.5.2) 상한은 칸이 아니라 칸 안 감싸개에 건다.
+**결정자**: 사용자 카드 2026-11-04 16:20 KST eng E2(D-7524 — 열 폭 · 공용 부품). 날짜 열 예외는 계획자 재량(디자인 검토 1회차 B7 권고, design r2 N2).
+**바뀐 규칙**: SYSTEM.md §7-3 표 절에 추가 칸 열 한 줄. §2-4 날짜 표(「같은 해 날짜(표 안) | 월-일만」) 예외 한 줄 — 관리자 추가 칸 날짜 열은 같은 해여도 늘 `YYYY-MM-DD`(연도 무관 값일 수 있고 견적 줄 편집 원문 = 표시 글자, UI-SPEC A7 · design B7).
+**버린 대안**: 화면 모듈 CSS 클래스 · 인라인 style.
+**범위**: `ui/table/{types.ts,StaticTable.tsx,Table.tsx,Table.module.css}` · `ui/custom-field/{CustomFieldFilter.tsx,CustomField.module.css}`. 새 색 · 서체 · radius · 토큰 0. 옵션이 없는 열의 DOM · 클래스 글자는 main 그대로.
+**영향**: SYSTEM §2-4 · §7-3.

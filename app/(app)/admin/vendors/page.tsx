@@ -1,10 +1,11 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
-import { listVendors, listVendorFieldDefinitions } from "@/domain/vendors";
+import { listVendors, listVendorFieldDefinitions, type FieldDefinitionDto } from "@/domain/vendors";
+import { customFieldListColumns } from "@/domain/custom-fields/access-rules";
 import { listCodeItems } from "@/domain/code-tables";
 import { VENDOR_KIND_LABELS, parseVendorSide, type VendorSide } from "@/domain/vendors/kind";
 import { maskTail4 } from "@/lib/mask-tail4";
@@ -13,6 +14,7 @@ import { PAYMENT_TERM_DAYS } from "@/domain/settings/keys";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { Num } from "@/ui/num/Num";
 import { StaticTable } from "@/ui/table/StaticTable";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { VendorForm, VendorHiddenToggle, VendorDeleteButton, VendorPanel } from "./vendor-form";
@@ -56,6 +58,22 @@ function vendorsHref(includeHidden: boolean, opts?: { editId?: string; isNew?: b
   return query ? `/admin/vendors?${query}` : "/admin/vendors";
 }
 
+// 07.5-01(D-7509): 추가 칸 한 칸의 목록 셀 — 값은 이미 칸별로 거른 DTO(`vendor.customFields`)에서만 읽는다. 없음 `—`.
+function customFieldCell(def: FieldDefinitionDto, raw: unknown): ReactNode {
+  const text = typeof raw === "string" ? raw : typeof raw === "number" ? String(raw) : "";
+  if (text === "") return "—";
+  switch (def.type) {
+    case "number":
+      return typeof raw === "number" ? <Num value={raw} unit="quantity" /> : text;
+    case "date":
+      return text.slice(0, 10);
+    case "select":
+      return (def.options ?? []).includes(text) ? text : `${text} (보관됨)`;
+    case "text":
+      return text;
+  }
+}
+
 export default async function VendorsPage({
   searchParams,
 }: {
@@ -87,6 +105,7 @@ export default async function VendorsPage({
     getSettingValue(PAYMENT_TERM_DAYS),
   ]);
 
+  const customColumns = customFieldListColumns(fieldDefs);
   const evidenceTypeLabelByValue = new Map(evidenceTypes.map((item) => [item.value, item.label]));
   // 「동작」 열의 유무 — 머리글·행·접힌 줄의 colSpan이 같은 조건을 쓴다.
   const hasActions = canWrite || canArchive;
@@ -197,6 +216,13 @@ export default async function VendorsPage({
             { key: "businessNo", header: "사업자 번호", priority: "p2" },
             { key: "evidenceType", header: "기본 증빙 종류", priority: "p2" },
             { key: "account", header: "계좌", priority: "p2", align: "right" },
+            // 07.5-01(D-7509 · D-7524): 이 사람에게 보이는 추가 칸 앞 3개 — 폰은 접힌 줄(P2), 텍스트 · 선택은 폭 상한 `field`, 숫자 · 날짜는 `number`.
+            ...customColumns.map((def) => ({
+              key: `cf_${def.key}`,
+              header: def.label,
+              priority: "p2" as const,
+              cellWidth: def.type === "text" || def.type === "select" ? ("field" as const) : ("number" as const),
+            })),
             { key: "status", header: "상태", priority: "p1" },
             ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
           ]}
@@ -218,6 +244,7 @@ export default async function VendorsPage({
                   canReveal={canReveal}
                   revealAction={revealVendorAccountNumberAction}
                 />,
+                ...customColumns.map((def) => <Fragment key={`cf_${def.key}`}>{customFieldCell(def, vendor.customFields?.[def.key])}</Fragment>),
                 <Fragment key="status">
                   {vendor.archivedAt ? (
                     <StatusTag status="보관됨" variant="text" />

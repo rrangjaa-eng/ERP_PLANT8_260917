@@ -830,12 +830,14 @@ export function Table<Row>({
       column.priority === "p1" && column.align !== "right" && !column.headerHidden && !(isValidElement(primary) && primary.type === Num);
     const oneChild = typeof primary === "string" || typeof primary === "number" || (isValidElement(primary) && primary.type !== Fragment);
     const wrapped = !clampable ? primary : oneChild ? <div data-cell-text="">{primary}</div> : <div data-cell-text=""><div>{primary}</div></div>;
-    if (secondary === null || secondary === undefined || secondary === "") return wrapped;
-    return (
+    // 07.5-01(D-7524): `field` 열은 읽기 칸 내용을 폭 상한 span 하나로 감싼다(편집 중 입력 칸은 위에서 이미 돌아갔다).
+    const fieldWidth = (node: ReactNode) => (column.cellWidth === "field" ? <span className={styles.cellWidthField}>{node}</span> : node);
+    if (secondary === null || secondary === undefined || secondary === "") return fieldWidth(wrapped);
+    return fieldWidth(
       <>
         {wrapped === primary ? <div>{primary}</div> : wrapped}
         <div className={styles.cellSecondary}>{secondary}</div>
-      </>
+      </>,
     );
   }
 
@@ -926,6 +928,7 @@ export function Table<Row>({
                   styles[`prio-${column.priority}`],
                   collapseClass(column),
                   column.align === "right" ? styles.alignRight : "",
+                  column.cellWidth === "number" ? styles.cellWidthNumber : "",
                   column.headerClassName,
                 ]
                   .filter(Boolean)
@@ -940,6 +943,8 @@ export function Table<Row>({
                   </Link>
                 ) : column.headerHidden ? (
                   <span className="sr-only">{column.header}</span>
+                ) : column.cellWidth === "field" ? (
+                  <span className={styles.cellWidthField}>{column.header}</span>
                 ) : (
                   column.header
                 )}
@@ -1054,6 +1059,7 @@ export function Table<Row>({
                             styles[`prio-${column.priority}`],
                             collapseClass(column),
                             column.align === "right" ? styles.alignRight : "",
+                            ...(column.cellWidth === "number" ? [styles.cellWidthNumber] : []),
                             isEditableColumn ? styles.editableCell : "",
                             editability === "locked" ? styles.lockedCell : "",
                             invalid ? (issue.kind === "conflict" ? styles.conflictCell : styles.errorCell) : "",

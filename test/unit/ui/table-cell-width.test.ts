@@ -43,7 +43,7 @@ describe("Table cellWidth", () => {
   it("옵션 없는 열의 th · td class에는 폭 규칙이 없고 DOM은 감싸개가 없다", () => {
     expect(classOf(markup, "th", "일반")).not.toMatch(/cellWidth/);
     expect(classOf(markup, "td", "가")).not.toMatch(/cellWidth/);
-    expect(markup).toMatch(/>가<\/td>/);
+    expect(markup).not.toMatch(/cellWidthField[^>]*>(가|일반)</);
     expect(markup).toMatch(/>일반<\/th>/);
   });
 

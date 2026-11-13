@@ -219,6 +219,15 @@ export async function listActiveUserIdsAllowed(
   return rows.map((row) => row.id);
 }
 
+export type CustomFieldAccess = {
+  /** 그 대상 정의 전체(보관 포함) — listFieldDefinitions와 같은 조건 · 정렬(sortOrder, key) */
+  definitions: InferSelectModel<typeof fieldDefinitions>[];
+  /** 그 대상 값의 바깥 문(예: vendor.value)이 보이는지 */
+  valueVisible: boolean;
+  /** 그 계급에 cf.<entity>.<key> 보임 행이 있는 정의 키(보관 여부와 무관 — 판정은 domain) */
+  visibleFieldKeys: Set<string>;
+};
+
 export type VendorFieldAccess = {
   /** 거래처 정의 전체(보관 포함) — listFieldDefinitions와 같은 조건 · 정렬(sortOrder, key) */
   definitions: InferSelectModel<typeof fieldDefinitions>[];
@@ -227,19 +236,19 @@ export type VendorFieldAccess = {
   visibleFieldKeys: Set<string>;
 };
 
-const VENDOR_TARGET: FieldDefinitionTarget = "vendor";
-
-// 04.5-05(T-04.5-44): 거래처 입력 칸 판정 재료를 SQL 한 문(READ COMMITTED에서 한 스냅숏)으로 읽는다 — 정의에 노출표를
-// 두 번 LEFT JOIN(칸별 cf.vendor.<key> · 「거래처 정보」 vendor.value). (role_id, info_item)이 유일이라 행이 늘지 않는다.
-// 행 없음 · roleId 없음은 거짓(기본 숨김). 정의가 0개면 vendorValueVisible은 거짓이다(입력 칸도 0개라 쓰이지 않는다).
-export async function readVendorFieldAccess(
+// 04.5-05(T-04.5-44): 입력 칸 판정 재료를 SQL 한 문(READ COMMITTED에서 한 스냅숏)으로 읽는다 — 정의에 노출표를
+// 두 번 LEFT JOIN(칸별 cf.<entity>.<key> · 그 대상 값의 바깥 문 valueInfoItem). (role_id, info_item)이 유일이라 행이 늘지 않는다.
+// 행 없음 · roleId 없음은 거짓(기본 숨김). 정의가 0개면 valueVisible은 거짓이다(입력 칸도 0개라 쓰이지 않는다).
+// 07.5-01: 거래처 전용이던 판정을 대상 · 바깥 문을 받는 한 벌로 올렸다 — 프로젝트 · 견적 줄(02~04)이 같은 함수를 쓴다.
+export async function readCustomFieldAccess(
   viewer: Viewer,
   roleId: string | null,
+  target: { entity: FieldDefinitionTarget; valueInfoItem: string },
   tx: DbOrTx = db,
-): Promise<VendorFieldAccess> {
+): Promise<CustomFieldAccess> {
   void viewer;
   const fieldRow = alias(visibilityMatrix, "cf_visibility");
-  const valueRow = alias(visibilityMatrix, "vendor_value_visibility");
+  const valueRow = alias(visibilityMatrix, "cf_value_visibility");
   const rows = await tx
     .select({ definition: fieldDefinitions, fieldVisible: fieldRow.visible, valueVisible: valueRow.visible })
     .from(fieldDefinitions)
@@ -247,19 +256,28 @@ export async function readVendorFieldAccess(
       fieldRow,
       roleId === null
         ? sql`false`
-        : and(eq(fieldRow.roleId, roleId), eq(fieldRow.infoItem, sql`${customFieldInfoItem(VENDOR_TARGET, "")}::text || ${fieldDefinitions.key}`)),
+        : and(eq(fieldRow.roleId, roleId), eq(fieldRow.infoItem, sql`${customFieldInfoItem(target.entity, "")}::text || ${fieldDefinitions.key}`)),
     )
     .leftJoin(
       valueRow,
-      roleId === null ? sql`false` : and(eq(valueRow.roleId, roleId), eq(valueRow.infoItem, "vendor.value")),
+      roleId === null ? sql`false` : and(eq(valueRow.roleId, roleId), eq(valueRow.infoItem, target.valueInfoItem)),
     )
-    .where(eq(fieldDefinitions.entity, VENDOR_TARGET))
+    .where(eq(fieldDefinitions.entity, target.entity))
     .orderBy(fieldDefinitions.sortOrder, fieldDefinitions.key);
   return {
     definitions: rows.map((row) => row.definition),
-    vendorValueVisible: rows.some((row) => row.valueVisible === true),
+    valueVisible: rows.some((row) => row.valueVisible === true),
     visibleFieldKeys: new Set(rows.filter((row) => row.fieldVisible === true).map((row) => row.definition.key)),
   };
+}
+
+export async function readVendorFieldAccess(
+  viewer: Viewer,
+  roleId: string | null,
+  tx: DbOrTx = db,
+): Promise<VendorFieldAccess> {
+  const access = await readCustomFieldAccess(viewer, roleId, { entity: "vendor", valueInfoItem: "vendor.value" }, tx);
+  return { definitions: access.definitions, vendorValueVisible: access.valueVisible, visibleFieldKeys: access.visibleFieldKeys };
 }
 
 export type RoleGrantRow = { roleId: string; viewScope: string; workScope: string; keys: string[] };

@@ -18,6 +18,8 @@ export type StaticTableColumn = {
   nowrapHeader?: boolean;
   /** 폰(<700)에서 이 열의 글자를 한 줄 말줄임으로 — `Table` 읽기 렌더의 `[data-cell-text]` 감싸개와 같은 규칙. 글자 칸이면 전체 글자가 `title`이다. 켜지 않은 열은 그대로 줄바꿈. */
   ellipsis?: boolean;
+  /** 07.5-01(D-7524) — 열 폭 옵션(`TableColumn.cellWidth`와 같다): `field` = 머리글 · 칸 내용을 폭 상한 span으로, `number` = `12ch`. 없으면 그대로. */
+  cellWidth?: "field" | "number";
 };
 
 export type StaticTableRow = {
@@ -60,9 +62,9 @@ export function StaticTable({ caption, editable = false, columns, rows }: Static
             <th
               key={column.key}
               scope="col"
-              className={classNames(styles.headerCell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight, column.nowrapHeader && styles.nowrapHeader)}
+              className={classNames(styles.headerCell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight, column.nowrapHeader && styles.nowrapHeader, column.cellWidth === "number" && styles.cellWidthNumber)}
             >
-              {column.header}
+              {column.cellWidth === "field" ? <span className={styles.cellWidthField}>{column.header}</span> : column.header}
             </th>
           ))}
         </tr>
@@ -77,7 +79,7 @@ export function StaticTable({ caption, editable = false, columns, rows }: Static
             <Fragment key={row.key}>
               <tr>
                 {columns.map((column, index) => {
-                  const className = classNames(styles.cell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight);
+                  const className = classNames(styles.cell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight, column.cellWidth === "number" && styles.cellWidthNumber);
                   const value = row.cells[index];
                   // ellipsis 열: 글자 한 흐름을 block 감싸개 하나에 담는다(말줄임은 td가 아니라 이 감싸개에 건다 — Table.module.css `[data-cell-text]`).
                   const content =
@@ -85,6 +87,8 @@ export function StaticTable({ caption, editable = false, columns, rows }: Static
                       <div data-cell-text="" title={typeof value === "string" ? value : undefined}>
                         {value}
                       </div>
+                    ) : column.cellWidth === "field" && !isEmptyCell(value) ? (
+                      <span className={styles.cellWidthField}>{value}</span>
                     ) : (
                       value
                     );

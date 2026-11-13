@@ -450,6 +450,20 @@ thead .selectLabel {
   line-height: var(--lh-head);
 }
 
+/* 07.5-01(D-7524) — 열 폭 옵션(TableColumn.cellWidth · StaticTableColumn.cellWidth). 기존 토큰 · ch 단위만.
+   field: 표 칸의 max-width는 표 배치에서 효과가 정해져 있지 않아(CSS 2.1 §17.5.2) 칸이 아니라 칸 안 블록 감싸개 span에 건다. 말줄임 없음 — 긴 값은 줄바꿈한다.
+   number: 숫자 · 날짜 열 폭(UI-SPEC S4). */
+.cellWidthField {
+  display: block;
+  max-width: var(--field-w-select);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.cellWidthNumber {
+  width: 12ch;
+}
+
 /* 04-49(DR-14) — 좁은 PC 열 접기(TableColumn.collapseBelow). 숨은 열은 DOM에 남아 논리 열 순서를 지킨다. */
 @media (max-width: 1279.98px) {
   .collapse-1280 {

@@ -59,6 +59,11 @@ export type TableColumn<Row> = {
   headerDescribedBy?: string;
   /** 07-19 — 머리글 `<th>`에 더하는 클래스. 라우트 loading.tsx 뼈대(`TableSkeleton` 열의 같은 이름)와 같은 클래스를 줘 로드 앞뒤 머리글 폭을 맞춘다. */
   headerClassName?: string;
+  /**
+   * 07.5-01(D-7524) — 열 폭 옵션. `field`(관리자 추가 칸 텍스트 · 선택)는 머리글 글자 · 읽기 칸 내용을 감싼 span의 폭을 `--field-w-select`로 제한하고,
+   * `number`(숫자 · 날짜)는 열 폭을 `12ch`로 둔다. 없으면 지금 그대로(DOM · 클래스 불변). 편집 중 입력 칸은 감싸지 않는다.
+   */
+  cellWidth?: "field" | "number";
   /** 05-05 — 행 행동 열처럼 머리글 글자가 눈에 필요 없는 열. 글자는 스크린리더용으로만 남는다(열 이름은 그대로 `header`). */
   headerHidden?: boolean;
 };

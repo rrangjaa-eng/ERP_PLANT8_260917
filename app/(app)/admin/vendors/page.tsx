@@ -246,6 +246,7 @@ export default async function VendorsPage({
               header: def.label,
               priority: "p2" as const,
               cellWidth: def.type === "text" || def.type === "select" ? ("field" as const) : ("number" as const),
+              ...(def.type === "number" ? { align: "right" as const } : {}),
             })),
             { key: "status", header: "상태", priority: "p1" },
             ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),

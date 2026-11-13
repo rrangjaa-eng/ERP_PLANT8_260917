@@ -49,6 +49,12 @@ import {
 } from "@/domain/settings/keys";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { listCodeItems, setCodeItemActive } from "@/repositories/code-tables";
+import { fieldDefinitions } from "@/db/schema/field-definitions";
+import { insertFieldDefinition } from "@/repositories/field-definitions";
+import { insertVisibilityIfAbsent } from "@/repositories/permissions";
+import { listRoles } from "@/repositories/roles";
+import { customFieldInfoItem } from "@/domain/custom-fields/targets";
+import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import type { SeedName } from "./lib";
 
 // 지출결의 제출·결재·증빙 무효 준비는 test/e2e의 도우미와 같은 흐름이지만, scripts는 test를 import할 수 없어(eslint boundaries) 필요한 만큼만 다시 쓴다.
@@ -1435,6 +1441,63 @@ async function projectCompleted(): Promise<SeedResult> {
   return { vars: { projectId: project.id }, viewer: ceo };
 }
 
+// custom-fields-filled: 07.5-01(S6) 거래처 목록 추가 칸 캡처용 — 시스템 관리자가 보는 거래처 목록.
+// 정의 · 보임 행은 (대상, 이름)으로 이미 있으면 다시 쓴다(capture.spec.ts가 경로마다 시드를 다시 부르고 erp_test 초기화는 실행당 한 번 — field_definitions_entity_label_key).
+// 대상별 작은 함수로 나눠 02 · 03이 프로젝트 · 견적 줄 칸을 같은 꼴로 덧붙인다.
+type SeedFieldSpec = { label: string; type: "text" | "number" | "date" | "select"; sortOrder: number; options?: string[]; archivedOptions?: string[]; archived?: boolean };
+
+async function ensureCustomFieldDefinition(entity: "vendor", spec: SeedFieldSpec): Promise<string> {
+  const [existing] = await db
+    .select({ key: fieldDefinitions.key })
+    .from(fieldDefinitions)
+    .where(and(eq(fieldDefinitions.entity, entity), eq(fieldDefinitions.label, spec.label)))
+    .limit(1);
+  if (existing) return existing.key;
+  const key = `cf_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+  await insertFieldDefinition(SYSTEM_VIEWER, { id: randomUUID(), entity, key, label: spec.label, type: spec.type, options: spec.options, sortOrder: spec.sortOrder });
+  const patch = { ...(spec.archivedOptions ? { archivedOptions: spec.archivedOptions } : {}), ...(spec.archived ? { archivedAt: new Date() } : {}) };
+  if (Object.keys(patch).length > 0) await db.update(fieldDefinitions).set(patch).where(and(eq(fieldDefinitions.entity, entity), eq(fieldDefinitions.key, key)));
+  for (const role of await listRoles(SYSTEM_VIEWER)) {
+    await insertVisibilityIfAbsent(SYSTEM_VIEWER, { roleId: role.id, infoItem: customFieldInfoItem(entity, key), visible: true });
+  }
+  return key;
+}
+
+async function customFieldsFilledVendors(suffix: string): Promise<{ filterKey: string }> {
+  const longText = await ensureCustomFieldDefinition("vendor", { label: "담당 영업 사원과 연락 경로 메모 칸", type: "text", sortOrder: 1 });
+  const date = await ensureCustomFieldDefinition("vendor", { label: "계약 만료일과 다음 갱신 협의 예정일", type: "date", sortOrder: 2 });
+  const score = await ensureCustomFieldDefinition("vendor", { label: "거래 점수", type: "number", sortOrder: 3 });
+  const region = await ensureCustomFieldDefinition("vendor", { label: "지역", type: "select", sortOrder: 4, options: ["서울", "부산"], archivedOptions: ["대구"] });
+  await ensureCustomFieldDefinition("vendor", { label: "규모", type: "select", sortOrder: 5, options: ["대형", "중형", "소형"] });
+  await ensureCustomFieldDefinition("vendor", { label: "등급", type: "select", sortOrder: 6, options: ["A", "B", "C"] });
+  const rep = await ensureCustomFieldDefinition("vendor", { label: "담당 영업", type: "text", sortOrder: 7 });
+  const archivedKey = await ensureCustomFieldDefinition("vendor", { label: "보관한 칸", type: "text", sortOrder: 8, archived: true });
+  const make = (label: string, customFields: Record<string, unknown>) =>
+    insertVendor(SYSTEM_VIEWER, { name: `캡처칸${label}-${suffix}`, normalizedName: `캡처칸${label}-${suffix}`, customFields });
+  await make("긴텍스트", {
+    [longText]: "서울 본사 영업 2팀 김 대리와 먼저 통화하고 안 받으면 메신저로 연락 후 다음 날 오전에 다시 확인하는 순서로 진행",
+    [date]: "2026-11-04",
+    [score]: 1234.5,
+    [region]: "서울",
+    [rep]: "김영업",
+    [archivedKey]: "보관한 칸 값",
+  });
+  await make("수식", { [longText]: "=SUM(A1)", [region]: "부산", [score]: 80 });
+  await make("보관선택지", { [region]: "대구" });
+  await make("값없음", {});
+  return { filterKey: region };
+}
+
+async function customFieldsFilled(): Promise<SeedResult> {
+  const today = seoulToday();
+  const suffix = randomUUID().slice(0, 6);
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처칸본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처칸팀-${suffix}` });
+  const { filterKey } = await customFieldsFilledVendors(suffix);
+  const viewer = await makePerson("관리", SYSADMIN_ROLE_ID, team.id, `${today.slice(0, 4)}-01-01`);
+  return { vars: { vendorFilterQuery: `cf_${filterKey}=${encodeURIComponent("서울")}` }, viewer };
+}
+
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
   switch (name) {
     case "pre-settle-evidence-pending":
@@ -1467,5 +1530,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return projectDeleteInfo();
     case "project-completed":
       return projectCompleted();
+    case "custom-fields-filled":
+      return customFieldsFilled();
   }
 }

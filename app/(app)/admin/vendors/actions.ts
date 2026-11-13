@@ -20,6 +20,7 @@ import {
 import { exportVendorsCsv } from "@/domain/vendors/export";
 import { VendorContactsError } from "@/domain/vendors/contacts";
 import { requestVendorDocumentUpload } from "@/domain/vendors/document-upload";
+import { CUSTOM_FIELD_FILTER_LIMIT } from "@/domain/custom-fields/access-rules";
 import { CustomFieldsInvalidError } from "@/domain/custom-fields/preserve";
 import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { archive } from "@/domain/archive";
@@ -196,7 +197,10 @@ export const exportVendorsCsvAction = authedActionClient
       includeHidden: z.boolean(),
       kind: z.enum(["client", "supplier"]).nullable(),
       q: z.string(),
-      custom: z.record(z.string().max(64), z.string().max(40)).optional(),
+      custom: z
+        .record(z.string().max(64), z.string().max(40))
+        .refine((record) => Object.keys(record).length <= CUSTOM_FIELD_FILTER_LIMIT)
+        .optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => exportVendorsCsv(ctx.viewer, parsedInput));

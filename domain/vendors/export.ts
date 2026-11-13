@@ -6,6 +6,7 @@ import { csvEscape } from "@/lib/csv";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { listCodeItems } from "@/domain/code-tables";
 import { readCustomFieldInputs } from "@/domain/custom-fields/access";
+import { customFieldFilterDefs, parseCustomFieldFilters } from "@/domain/custom-fields/access-rules";
 import { countVendors, ForbiddenError, listVendors, type VendorDto, type VendorListFilter } from "@/domain/vendors";
 import { accountNumberLast4 } from "@/domain/vendors/account-digits";
 import { VENDOR_KIND_LABELS } from "@/domain/vendors/kind";
@@ -48,7 +49,7 @@ function customCsvCell(column: VendorCsvCustomColumn, value: unknown): string {
   if (value === undefined || value === null || value === "") return "";
   if (column.type === "number" && typeof value === "number") return String(value);
   const text = typeof value === "string" ? value : typeof value === "number" ? String(value) : "";
-  return column.type === "date" ? text.slice(0, 10) : csvEscape(text);
+  return csvEscape(column.type === "date" ? text.slice(0, 10) : text);
 }
 
 export function serializeVendorsAsCsv(
@@ -96,6 +97,7 @@ export async function exportVendorsCsv(viewer: Viewer, filter: VendorExportFilte
   // 세기와 읽기는 한 스냅숏이 아니다 — 사이에 늘어난 행도 상한으로 다시 막는다(Codex #285).
   if (rows.length > VENDOR_EXPORT_LIMIT) throw new VendorExportTooManyError();
   // 끌 수 없는 기록(excel_export)을 직렬화 전에 — 기록이 실패하면 파일이 없다. detail에는 거르개 · 건수만(계좌 · 사업자 번호 없음).
+  const appliedCustom = parseCustomFieldFilters(filter.custom ?? {}, customFieldFilterDefs(inputDefs));
   await recordAction(viewer, {
     actionType: "excel_export",
     entity: "vendor",
@@ -105,7 +107,7 @@ export async function exportVendorsCsv(viewer: Viewer, filter: VendorExportFilte
         q: filter.q,
         includeHidden: filter.includeHidden,
         kind: filter.kind,
-        ...(filter.custom && Object.keys(filter.custom).length > 0 ? { custom: filter.custom } : {}),
+        ...(Object.keys(appliedCustom).length > 0 ? { custom: appliedCustom } : {}),
       },
       count: rows.length,
     },

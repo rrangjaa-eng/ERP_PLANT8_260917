@@ -64,6 +64,14 @@ describe("거래처 검색 — 추가 칸 텍스트 값 (D-7522)", () => {
     expect(await ids(a, { q: value })).toEqual([id]);
   });
 
+  it("NFD로 저장된 한글 값도 NFC 검색어로 찾는다", async () => {
+    const a = await makeViewer();
+    const field = await seedCustomFieldDefinition("vendor", { label: `칸${tag()}`, type: "text" }, { visibleRoleIds: [a.roleId ?? ""] });
+    const t = tag();
+    const id = await seedVendor(`이름${tag()}`, { [field.key]: `${t}${"가나".normalize("NFD")}` });
+    expect(await ids(a, { q: `${t}${"가나".normalize("NFC")}` })).toEqual([id]);
+  });
+
   it("`%`는 글자 그대로 찾는다 — 「50%」로 찾으면 「50%」가 든 행만", async () => {
     const a = await makeViewer();
     const field = await seedCustomFieldDefinition("vendor", { label: `칸${tag()}`, type: "text" }, { visibleRoleIds: [a.roleId ?? ""] });

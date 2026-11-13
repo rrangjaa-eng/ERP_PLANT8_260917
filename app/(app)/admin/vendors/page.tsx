@@ -96,7 +96,7 @@ export default async function VendorsPage({
   const rawCustom: Record<string, string> = {};
   for (const [name, raw] of Object.entries(params)) {
     const value = Array.isArray(raw) ? raw[0] : raw;
-    if (name.startsWith("cf_") && value !== undefined) rawCustom[name.slice(3)] = value;
+    if (name.startsWith("cf_") && value !== undefined && value !== "") rawCustom[name.slice(3)] = value;
   }
   const includeHidden = includeHiddenParam === "1";
   // 261006-biv D-5: ?kind=client · supplier만 걸러보기(둘 다 포함), 그 밖의 값은 전체.

@@ -34,7 +34,7 @@ function listConditions(opts: VendorListOpts) {
   if (opts.nameQuery) {
     const byName = ilike(vendors.normalizedName, likeContains(opts.nameQuery));
     // 키는 매개변수 바인딩 — JSON 전체를 글자로 바꿔 찾지 않는다(키 이름 · 보이지 않는 칸 값까지 맞는다).
-    const byCustom = (opts.customTextKeys ?? []).map((key) => sql`${vendors.customFields} ->> ${key} ILIKE ${likeContains(opts.nameQuery ?? "")}`);
+    const byCustom = (opts.customTextKeys ?? []).map((key) => sql`normalize(${vendors.customFields} ->> ${key}, NFC) ILIKE ${likeContains(opts.nameQuery ?? "")}`);
     conditions.push(
       opts.digitsQuery
         ? or(byName, sql`regexp_replace(${vendors.businessNo}, '[^0-9]', '', 'g') LIKE ${`${opts.digitsQuery}%`}`, ...byCustom)

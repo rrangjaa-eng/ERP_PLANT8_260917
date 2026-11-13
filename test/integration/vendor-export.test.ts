@@ -239,4 +239,17 @@ describe("거래처 파일 받기 — 추가 칸 열 (07.5-01 D-7511)", () => {
     expect(logs[0]?.detail).toMatchObject({ filter: { custom: { [field.key]: "서울" } }, count: 1 });
     expect(JSON.stringify(logs[0]?.detail)).not.toContain(`${t}-서울`);
   });
+  it("excel_export 기록에는 적용된 거르개만 — 모르는 키 · 선택지 밖 값은 싣지 않는다", async () => {
+    const a = await exporter();
+    const field = await seedCustomFieldDefinition("vendor", { label: "로그지역", type: "select", options: ["서울", "부산"] }, { visibleRoleIds: [a.roleId ?? ""] });
+    const t = tag();
+    await seedPlainVendor(`${t}-서울`, { [field.key]: "서울" });
+    await exportVendorsCsv(a, { q: t, includeHidden: false, kind: null, custom: { [field.key]: "없는선택지", cf_unknown00: "서울" } });
+    const logs = (await queryActionLog(SYSTEM_VIEWER, { actorId: a.id, actionType: "excel_export" })).filter((row) => row.entity === "vendor");
+    expect(logs).toHaveLength(1);
+    const text = JSON.stringify(logs[0]?.detail);
+    expect(text).not.toContain("cf_unknown00");
+    expect(text).not.toContain("없는선택지");
+    expect(text).not.toContain(field.key);
+  });
 });

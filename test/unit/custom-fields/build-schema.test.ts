@@ -115,6 +115,20 @@ describe("날짜 칸 엄격 ISO (D-7521)", () => {
     }
   });
 
+  it("유효한 Date 객체는 통과하고 같은 날로 돌아온다", () => {
+    const result = schema.safeParse({ due: new Date("2026-11-04T00:00:00.000Z") });
+    expect(result.success).toBe(true);
+    if (result.success) expect(((result.data as { due: Date }).due).toISOString().slice(0, 10)).toBe("2026-11-04");
+  });
+
+  it("잘못된 Date 객체는 거부", () => {
+    expect(schema.safeParse({ due: new Date("not-a-date") }).success).toBe(false);
+  });
+
+  it("전체 ISO 시각 문자열은 거부 (D-7521 엄격)", () => {
+    expect(schema.safeParse({ due: "2026-11-04T00:00:00.000Z" }).success).toBe(false);
+  });
+
   it.each(["2026-02-31", "11/4/2026", "2026-1-4", "2023-02-29"])("%s 거부 — 칸 오류 「날짜 아님 · 2026-11-04처럼」", (value) => {
     const result = schema.safeParse({ due: value });
     expect(result.success).toBe(false);

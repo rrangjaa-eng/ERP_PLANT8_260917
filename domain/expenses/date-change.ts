@@ -45,6 +45,8 @@ export const DATE_CHANGE_BLOCKED = "지급 진행 중 · 변경 요청 불가";
 export const DATE_CHANGE_STALE = "이미 처리됨 · 새로 고침";
 export const DATE_CHANGE_REASON_REQUIRED = "사유 없음 · 사유 적기";
 export const DATE_CHANGE_DATE_REQUIRED = "새 희망일 없음 · 날짜 고르기";
+// 카드 11/12: 요청 뒤 새 희망일이 지나 승인할 수 없을 때 — 요청 때 문구(날짜 고르기)와 달리 처리자가 할 일은 거절이다.
+export const DATE_CHANGE_EXPIRED = "희망일 지남 · 거절";
 export const DATE_CHANGE_MEMO_REQUIRED = "거절 메모 없음 · 메모 적기";
 export const DATE_CHANGE_TEXT_MAX = 500;
 const NOT_DRAFTER = "올린 사람만 변경 요청";
@@ -222,7 +224,7 @@ export async function approveDateChange(
     const decided = await decidePendingDateChange(viewer, { requestId: pre.id, status: "approved", decidedBy: viewer.id, decidedAt: now, rejectMemo: null }, tx);
     if (!decided) throw new UserFacingError(DATE_CHANGE_STALE);
     // 요청 때와 같은 기준 — 그 사이 날짜가 지났으면 지난 날을 지급 예정일로 쓰지 않는다(쓰기 함수는 지난 날짜를 허용).
-    if (decided.newDate <= seoulToday(now)) throw new UserFacingError(DATE_CHANGE_DATE_REQUIRED);
+    if (decided.newDate <= seoulToday(now)) throw new UserFacingError(DATE_CHANGE_EXPIRED);
     const written = await writeScheduledPayDate(viewer, { expenseId: locked.id, date: decided.newDate, version: input.version }, { lookup, now }, tx);
     await recordAction(viewer, { actionType: "document_approve", entity: ENTITY, entityId: pre.id, documentId: locked.id, detail: { newDate: decided.newDate } }, { tx });
     return { expenseId: locked.id, newDate: decided.newDate, before: written.before, version: written.version };

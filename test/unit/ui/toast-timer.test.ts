@@ -36,4 +36,16 @@ describe("WR-05: 토스트 자동 소멸 타이머", () => {
   it("오류 토스트는 role=alert다 — 닫을 때까지 남는 실패를 polite로 읽으면 놓친다", () => {
     expect(TOAST).toMatch(/role=\{tone === "error" \? "alert" : "status"\}/);
   });
+
+  it("3차 행동이 있을 때만 포커스를 타이머에 잇는다 — 행동 없는 토스트는 4초 그대로", () => {
+    expect(TOAST).toMatch(/holdWhileFocused = Boolean\(actionLabel && onAction\)/);
+    expect(TOAST).toMatch(/onFocus=\{holdWhileFocused \?/);
+    expect(TOAST).toMatch(/onBlur=\{holdWhileFocused \?/);
+  });
+
+  // 리뷰 P2(PR #383): 되돌리기를 눌러 포커스가 60초로 걸린 뒤 같은 인스턴스가 행동 없는 확인 토스트로 바뀌면
+  // onBlur 핸들러가 함께 떨어져 60초가 풀리지 않는다. 행동이 사라지면(holdWhileFocused true→false) 4초를 다시 센다.
+  it("행동 버튼이 사라지면(holdWhileFocused가 꺼지면) 포커스 유지를 풀고 4초를 다시 센다", () => {
+    expect(TOAST).toMatch(/useEffect\(\(\) => \{\s*if \(!holdWhileFocused\) timerRef\.current\?\.blur\(\);\s*\}, \[holdWhileFocused\]\);/);
+  });
 });

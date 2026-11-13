@@ -57,6 +57,11 @@ test.describe("프로젝트 삭제 · 되살리기 (S1)", () => {
     await page.goto(`/projects/${project.id}`);
     const remove = page.getByRole("button", { name: "프로젝트 삭제", exact: true });
     await expect(remove).toBeVisible();
+    // 카드 11/12 — PC 머리 행동 줄 맨 끝: 1차 `일괄 저장`의 오른쪽에 떨어져 선다(붙어 있지 않다 — 간격 --s-8 = 32).
+    const saveBox = await page.getByRole("button", { name: /일괄 저장/ }).boundingBox();
+    const removeBox = await remove.boundingBox();
+    expect(saveBox && removeBox).toBeTruthy();
+    expect(removeBox!.x - (saveBox!.x + saveBox!.width), "프로젝트 삭제는 일괄 저장 오른쪽 · 떨어져").toBeGreaterThanOrEqual(30);
     await page.screenshot({ path: `${SHOTS}/delete-entry-1280.png` });
     await remove.click();
     await expect(page.locator("dialog[open]")).toHaveCount(0);
@@ -147,5 +152,20 @@ test.describe("프로젝트 삭제 · 되살리기 (S1)", () => {
     const box = await remove.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
     await page.screenshot({ path: `${SHOTS}/delete-entry-375.png` });
+  });
+  test("375: 보관함 긴 프로젝트 이름(40자)은 한 줄 말줄임 · 전체 이름은 title (카드 11/12)", async ({ page }) => {
+    const { lead, project } = await setup();
+    const longName = `${project.name}-${"가".repeat(40)}`.slice(0, 40);
+    await db.update(projects).set({ name: longName, archivedAt: new Date() }).where(eq(projects.id, project.id));
+    await login(page, lead);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/admin/archive");
+    const cell = page.locator("tr", { hasText: project.number }).locator("[data-cell-text]");
+    await expect(cell).toHaveCount(1);
+    await expect(cell).toHaveAttribute("title", `${project.number} ${longName}`);
+    const metrics = await cell.evaluate((node) => ({ height: node.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(node).lineHeight) }));
+    // 한 줄: 높이가 줄 높이의 1.5배 미만(두 줄이면 2배 이상). 40자는 375 칸에 안 들어가 잘린다.
+    expect(metrics.height, "이름 칸 한 줄").toBeLessThan(metrics.lineHeight * 1.5);
+    await page.screenshot({ path: `${SHOTS}/archive-ellipsis-375.png` });
   });
 });

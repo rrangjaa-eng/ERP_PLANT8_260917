@@ -8,6 +8,7 @@ import {
   approveDateChange,
   DATE_CHANGE_BLOCKED,
   DATE_CHANGE_DATE_REQUIRED,
+  DATE_CHANGE_EXPIRED,
   DATE_CHANGE_MEMO_REQUIRED,
   DATE_CHANGE_REASON_REQUIRED,
   DATE_CHANGE_STALE,
@@ -291,7 +292,7 @@ describe("경영관리 처리 — 승인 · 거절 · 되돌리기 (Task 2 · D-
     const before = await expenseRow(doc.expenseId);
     for (const day of [newDate, addDays(newDate, 2)]) {
       const now = new Date(`${day}T03:00:00Z`); // KST 12:00
-      expect((await rejection(() => approveDateChange(payer, { requestId, version: before.version }, { now }))).message).toBe(DATE_CHANGE_DATE_REQUIRED);
+      expect((await rejection(() => approveDateChange(payer, { requestId, version: before.version }, { now }))).message).toBe(DATE_CHANGE_EXPIRED);
       expect((await requestRows(doc.expenseId))[0]?.status).toBe("pending");
       const after = await expenseRow(doc.expenseId);
       expect([after.scheduled, after.version]).toEqual([before.scheduled, before.version]);

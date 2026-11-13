@@ -11,7 +11,8 @@ export type DetailScreenProps = {
   /** 제목 아래 한 줄. */
   meta?: ReactNode;
   /**
-   * 오른쪽 행동 묶음. DOM 순서 = 시각 순서 = Tab 순서 — 2차들 먼저, 1차는 마지막(오른쪽 끝). 순서를 뒤집는 CSS는 없다(D4 · SYSTEM §10).
+   * 오른쪽 행동 묶음. DOM 순서 = 시각 순서 = Tab 순서 — 2차들 먼저, 1차는 채운 버튼 중 마지막(오른쪽 끝). 순서를 뒤집는 CSS는 없다(D4 · SYSTEM §10).
+   * 예외: 위험 3차(프로젝트 삭제)는 PC에서 1차 뒤 `--s-8` 떼어 맨 끝에 선다 — `primary`에 [1차, 위험 3차]로 싣는다(DECISIONS 2026-11-12).
    * 어떤 버튼이 그 화면의 1차인지는 화면이 정한다.
    */
   actions?: { secondary?: ReactNode; primary?: ReactNode };

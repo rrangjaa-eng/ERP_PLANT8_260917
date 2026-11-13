@@ -2,6 +2,7 @@ import type { StatusTagKind } from "@/ui/status-tag/StatusTag";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import type { StatusWord } from "@/ui/status-tag/status-map";
 import type { QuoteLineLinkedStatus } from "@/domain/quotes/lines";
+import { leaveStatusWord, type LeaveStatusKey } from "@/app/(app)/leave/status-display";
 
 // 04-UI-SPEC rev 5 Color 「상태 → 색 매핑」(D-75 · SYSTEM.md §7-5 개정 ⑤) — 목록 상태 열과
 // 상세 머리 줄 태그가 같은 표를 쓴다. 미수주는 막힘이 아니라 붉게 칠하지 않는다(D-45).
@@ -28,4 +29,9 @@ const LINKED_STATUS_WORD: Record<QuoteLineLinkedStatus, StatusWord> = {
 export function lineStatusWord(line: { lineStatus: string; linkedStatus: QuoteLineLinkedStatus | null }): StatusWord {
   if (line.lineStatus === "cancelled") return "취소";
   return line.linkedStatus ? LINKED_STATUS_WORD[line.linkedStatus] : "미착수";
+}
+
+// 07.2-19 후속: 정산 문서 화면 상태 태그 — 결재 상태 매핑은 leaveStatusWord 그대로, draft만 머리 줄 · 목록과 같은 `작성 중`(연차 등 다른 종류는 `임시` 유지).
+export function settlementStatusWord(status: LeaveStatusKey, stepLabel?: string | null): StatusWord {
+  return status === "draft" ? "작성 중" : leaveStatusWord(status, stepLabel);
 }

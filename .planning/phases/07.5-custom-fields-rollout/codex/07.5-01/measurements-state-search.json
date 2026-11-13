@@ -1,0 +1,418 @@
+[
+  {
+    "width": 375,
+    "innerWidth": 375,
+    "clientWidth": 375,
+    "scrollWidth": 375,
+    "fieldWidthToken": 200,
+    "headerLabels": [
+      "이름",
+      "갈래",
+      "사업자 번호",
+      "기본 증빙 종류",
+      "계좌",
+      "E2E캡처칸연락 경로 메모 칸e95a",
+      "E2E캡처칸계약 만료일cb68",
+      "E2E캡처칸누적 거래 점수 합계17c",
+      "상태",
+      "동작"
+    ],
+    "customHeaders": [
+      {
+        "label": "E2E캡처칸연락 경로 메모 칸e95a",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "lines": 0,
+        "textOverflow": "clip",
+        "textAlign": "left",
+        "whiteSpace": "normal"
+      },
+      {
+        "label": "E2E캡처칸계약 만료일cb68",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "lines": 0,
+        "textOverflow": "clip",
+        "textAlign": "left",
+        "whiteSpace": "normal"
+      },
+      {
+        "label": "E2E캡처칸누적 거래 점수 합계17c",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "lines": 0,
+        "textOverflow": "clip",
+        "textAlign": "right",
+        "whiteSpace": "normal"
+      }
+    ],
+    "textCells": [
+      {
+        "text": "찾을값38b002 서울 본사 영업 2",
+        "width": 0,
+        "maxWidth": "200px",
+        "textOverflow": "clip",
+        "lines": 0
+      }
+    ],
+    "collapsedRows": [
+      {
+        "box": {
+          "x": 17,
+          "y": 565,
+          "width": 341,
+          "height": 70.5
+        },
+        "lines": 4,
+        "scrollWidth": 341,
+        "clientWidth": 341,
+        "textOverflow": "clip",
+        "text": "사업자 번호 — · 기본 증빙 종류 — · 계좌 — · E2E캡처칸연락 경로 메모 칸e95a 찾을값38b00"
+      }
+    ],
+    "filters": [
+      {
+        "id": "filter-cf_cf_a860e45d",
+        "box": {
+          "x": 16,
+          "y": 278.2,
+          "width": 180,
+          "height": 40
+        },
+        "label": "E2E캡처칸지역b89b"
+      }
+    ],
+    "numberCells": [
+      {
+        "text": "1,234.5",
+        "textAlign": "right",
+        "tabularNums": "tabular-nums"
+      }
+    ],
+    "rowCount": 1
+  },
+  {
+    "width": 320,
+    "innerWidth": 320,
+    "clientWidth": 320,
+    "scrollWidth": 320,
+    "fieldWidthToken": 200,
+    "headerLabels": [
+      "이름",
+      "갈래",
+      "사업자 번호",
+      "기본 증빙 종류",
+      "계좌",
+      "E2E캡처칸연락 경로 메모 칸e95a",
+      "E2E캡처칸계약 만료일cb68",
+      "E2E캡처칸누적 거래 점수 합계17c",
+      "상태",
+      "동작"
+    ],
+    "customHeaders": [
+      {
+        "label": "E2E캡처칸연락 경로 메모 칸e95a",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "lines": 0,
+        "textOverflow": "clip",
+        "textAlign": "left",
+        "whiteSpace": "normal"
+      },
+      {
+        "label": "E2E캡처칸계약 만료일cb68",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "lines": 0,
+        "textOverflow": "clip",
+        "textAlign": "left",
+        "whiteSpace": "normal"
+      },
+      {
+        "label": "E2E캡처칸누적 거래 점수 합계17c",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "lines": 0,
+        "textOverflow": "clip",
+        "textAlign": "right",
+        "whiteSpace": "normal"
+      }
+    ],
+    "textCells": [
+      {
+        "text": "찾을값38b002 서울 본사 영업 2",
+        "width": 0,
+        "maxWidth": "200px",
+        "textOverflow": "clip",
+        "lines": 0
+      }
+    ],
+    "collapsedRows": [
+      {
+        "box": {
+          "x": 17,
+          "y": 565,
+          "width": 286,
+          "height": 90
+        },
+        "lines": 5,
+        "scrollWidth": 286,
+        "clientWidth": 286,
+        "textOverflow": "clip",
+        "text": "사업자 번호 — · 기본 증빙 종류 — · 계좌 — · E2E캡처칸연락 경로 메모 칸e95a 찾을값38b00"
+      }
+    ],
+    "filters": [
+      {
+        "id": "filter-cf_cf_a860e45d",
+        "box": {
+          "x": 16,
+          "y": 278.2,
+          "width": 180,
+          "height": 40
+        },
+        "label": "E2E캡처칸지역b89b"
+      }
+    ],
+    "numberCells": [
+      {
+        "text": "1,234.5",
+        "textAlign": "right",
+        "tabularNums": "tabular-nums"
+      }
+    ],
+    "rowCount": 1
+  },
+  {
+    "width": 768,
+    "innerWidth": 768,
+    "clientWidth": 768,
+    "scrollWidth": 768,
+    "fieldWidthToken": 200,
+    "headerLabels": [
+      "이름",
+      "갈래",
+      "사업자 번호",
+      "기본 증빙 종류",
+      "계좌",
+      "E2E캡처칸연락 경로 메모 칸e95a",
+      "E2E캡처칸계약 만료일cb68",
+      "E2E캡처칸누적 거래 점수 합계17c",
+      "상태",
+      "동작"
+    ],
+    "customHeaders": [
+      {
+        "label": "E2E캡처칸연락 경로 메모 칸e95a",
+        "box": {
+          "x": 292,
+          "y": 264.8,
+          "width": 103,
+          "height": 87.4
+        },
+        "lines": 4,
+        "textOverflow": "clip",
+        "textAlign": "left",
+        "whiteSpace": "normal"
+      },
+      {
+        "label": "E2E캡처칸계약 만료일cb68",
+        "box": {
+          "x": 395,
+          "y": 264.8,
+          "width": 100.1,
+          "height": 87.4
+        },
+        "lines": 4,
+        "textOverflow": "clip",
+        "textAlign": "left",
+        "whiteSpace": "normal"
+      },
+      {
+        "label": "E2E캡처칸누적 거래 점수 합계17c",
+        "box": {
+          "x": 495,
+          "y": 264.8,
+          "width": 100.1,
+          "height": 87.4
+        },
+        "lines": 4,
+        "textOverflow": "clip",
+        "textAlign": "right",
+        "whiteSpace": "normal"
+      }
+    ],
+    "textCells": [
+      {
+        "text": "찾을값38b002 서울 본사 영업 2",
+        "width": 87,
+        "maxWidth": "200px",
+        "textOverflow": "clip",
+        "lines": 10
+      }
+    ],
+    "collapsedRows": [
+      {
+        "box": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "lines": 0,
+        "scrollWidth": 0,
+        "clientWidth": 0,
+        "textOverflow": "clip",
+        "text": "사업자 번호 — · 기본 증빙 종류 — · 계좌 — · E2E캡처칸연락 경로 메모 칸e95a 찾을값38b00"
+      }
+    ],
+    "filters": [
+      {
+        "id": "filter-cf_cf_a860e45d",
+        "box": {
+          "x": 20,
+          "y": 219.8,
+          "width": 181,
+          "height": 32
+        },
+        "label": "E2E캡처칸지역b89b"
+      }
+    ],
+    "numberCells": [
+      {
+        "text": "1,234.5",
+        "textAlign": "right",
+        "tabularNums": "tabular-nums"
+      }
+    ],
+    "rowCount": 1
+  },
+  {
+    "width": 1280,
+    "innerWidth": 1280,
+    "clientWidth": 1280,
+    "scrollWidth": 1280,
+    "fieldWidthToken": 200,
+    "headerLabels": [
+      "이름",
+      "갈래",
+      "사업자 번호",
+      "기본 증빙 종류",
+      "계좌",
+      "E2E캡처칸연락 경로 메모 칸e95a",
+      "E2E캡처칸계약 만료일cb68",
+      "E2E캡처칸누적 거래 점수 합계17c",
+      "상태",
+      "동작"
+    ],
+    "customHeaders": [
+      {
+        "label": "E2E캡처칸연락 경로 메모 칸e95a",
+        "box": {
+          "x": 625.4,
+          "y": 144,
+          "width": 254.5,
+          "height": 87.4
+        },
+        "lines": 4,
+        "textOverflow": "clip",
+        "textAlign": "left",
+        "whiteSpace": "normal"
+      },
+      {
+        "label": "E2E캡처칸계약 만료일cb68",
+        "box": {
+          "x": 879.9,
+          "y": 144,
+          "width": 100.1,
+          "height": 87.4
+        },
+        "lines": 4,
+        "textOverflow": "clip",
+        "textAlign": "left",
+        "whiteSpace": "normal"
+      },
+      {
+        "label": "E2E캡처칸누적 거래 점수 합계17c",
+        "box": {
+          "x": 980,
+          "y": 144,
+          "width": 100.1,
+          "height": 87.4
+        },
+        "lines": 4,
+        "textOverflow": "clip",
+        "textAlign": "right",
+        "whiteSpace": "normal"
+      }
+    ],
+    "textCells": [
+      {
+        "text": "찾을값38b002 서울 본사 영업 2",
+        "width": 200,
+        "maxWidth": "200px",
+        "textOverflow": "clip",
+        "lines": 4
+      }
+    ],
+    "collapsedRows": [
+      {
+        "box": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "lines": 0,
+        "scrollWidth": 0,
+        "clientWidth": 0,
+        "textOverflow": "clip",
+        "text": "사업자 번호 — · 기본 증빙 종류 — · 계좌 — · E2E캡처칸연락 경로 메모 칸e95a 찾을값38b00"
+      }
+    ],
+    "filters": [
+      {
+        "id": "filter-cf_cf_a860e45d",
+        "box": {
+          "x": 650.3,
+          "y": 94.2,
+          "width": 181,
+          "height": 32
+        },
+        "label": "E2E캡처칸지역b89b"
+      }
+    ],
+    "numberCells": [
+      {
+        "text": "1,234.5",
+        "textAlign": "right",
+        "tabularNums": "tabular-nums"
+      }
+    ],
+    "rowCount": 1
+  }
+]

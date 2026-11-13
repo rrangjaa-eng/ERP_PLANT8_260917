@@ -50,6 +50,8 @@ export type ArchivedItem = {
   businessNoTaken?: boolean;
   // 견적 줄 · 프로젝트만 — 줄이 속한 프로젝트 · 프로젝트 자신(06.2 I-2 · 07.2-17: 도메인이 보는 범위로 거른다). 화면 DTO에는 싣지 않는다.
   projectId?: string;
+  // 팀만 — 위 본부가 사용중지(보관)이면 참(복원 불가 · 본부 먼저 복원). 화면 DTO에는 싣지 않는다.
+  parentArchived?: boolean;
 };
 
 export type ArchivableEntry = {
@@ -136,10 +138,11 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     },
     async listArchived() {
       const rows = await db
-        .select({ id: teams.id, name: teams.name, archivedAt: teams.archivedAt, archivedBy: teams.archivedBy })
+        .select({ id: teams.id, name: teams.name, archivedAt: teams.archivedAt, archivedBy: teams.archivedBy, parentArchivedAt: orgUnits.archivedAt })
         .from(teams)
+        .innerJoin(orgUnits, eq(orgUnits.id, teams.orgUnitId))
         .where(isNotNull(teams.archivedAt));
-      return rows.map((row) => ({ entity: "team", label: "팀", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy }));
+      return rows.map((row) => ({ entity: "team", label: "팀", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy, parentArchived: row.parentArchivedAt !== null }));
     },
   },
   {

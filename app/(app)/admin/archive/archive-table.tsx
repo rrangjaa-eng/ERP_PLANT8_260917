@@ -18,6 +18,7 @@ export type ArchiveTableRow = {
   archivedAtLabel: string;
   archivedBy: string | null;
   restorable: boolean;
+  restoreBlockedReason: string | null;
 };
 
 const COLUMNS: StaticTableColumn[] = [
@@ -63,7 +64,8 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
           columns={COLUMNS}
           rows={rows.map((item) => ({
             key: `${item.entity}:${item.id}`,
-            detail: rejected.has(`${item.entity}:${item.id}`) ? <p role="alert" className={styles.rowReason}>{rejected.get(`${item.entity}:${item.id}`)}</p> : undefined,
+            // 서버가 목록에 미리 실어 준 복원 불가 이유(사용중지 본부 아래 팀)도 같은 이유 줄로 그린다 — 누르기 전부터 「—」.
+            detail: rejected.has(`${item.entity}:${item.id}`) || item.restoreBlockedReason ? <p role={rejected.has(`${item.entity}:${item.id}`) ? "alert" : undefined} className={styles.rowReason}>{rejected.get(`${item.entity}:${item.id}`) ?? item.restoreBlockedReason}</p> : undefined,
             // §7-3 폰 전략 — P1(종류·이름·동작)만 열로 남고 보관 시각·보관한 사람은 `StaticTable`이 행 아래 접힌 줄 하나로 넣는다.
             cells: [
               item.label,

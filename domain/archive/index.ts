@@ -372,9 +372,11 @@ export type ArchiveEntryDto = {
   archivedAt: Date;
   archivedBy: string | null;
   restorable: boolean;
+  // 복원을 미리 막는 이유(사용중지 본부 아래 팀) — 없으면 null. 복원 때 서버 거부 문구와 같다.
+  restoreBlockedReason: string | null;
 };
 
-export const ARCHIVE_ENTRY_DTO_SPEC: DtoSpec<ArchivedItem & { restorable: boolean }, ArchiveEntryDto> = {
+export const ARCHIVE_ENTRY_DTO_SPEC: DtoSpec<ArchivedItem & { restorable: boolean; restoreBlockedReason: string | null }, ArchiveEntryDto> = {
   fields: [
     { key: "entity", from: "entity", infoItem: ARCHIVE_INFO_ITEM },
     { key: "label", from: "label", infoItem: ARCHIVE_INFO_ITEM },
@@ -383,6 +385,7 @@ export const ARCHIVE_ENTRY_DTO_SPEC: DtoSpec<ArchivedItem & { restorable: boolea
     { key: "archivedAt", from: "archivedAt", infoItem: ARCHIVE_INFO_ITEM },
     { key: "archivedBy", from: "archivedBy", infoItem: ARCHIVE_INFO_ITEM },
     { key: "restorable", from: "restorable", infoItem: ARCHIVE_INFO_ITEM },
+    { key: "restoreBlockedReason", from: "restoreBlockedReason", infoItem: ARCHIVE_INFO_ITEM },
   ],
 };
 
@@ -462,6 +465,7 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   const unwritableEntities = await entitiesWithoutRequired(viewer, canFn, "write");
   const isRestorable = (row: ArchivedItem) =>
     !unwritableEntities.has(row.entity) &&
+    (row.entity !== "team" || !row.parentArchived) &&
     (row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken)) &&
     (row.entity !== "vendor" || !row.businessNoTaken) &&
     (row.entity !== "user" || peopleWritable);
@@ -479,6 +483,7 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
     ...row,
     archivedBy: row.archivedBy ? (namesById.get(row.archivedBy) ?? row.archivedBy) : null,
     restorable: isRestorable(row),
+    restoreBlockedReason: row.entity === "team" && row.parentArchived ? ARCHIVED_PARENT_ORG_UNIT : null,
   }));
   return projectMany(viewer, rowsWithExtras, ARCHIVE_ENTRY_DTO_SPEC, {
     visible: async (v, item) => (item === ARCHIVE_INFO_ITEM ? showInfo : visible(v, item)),

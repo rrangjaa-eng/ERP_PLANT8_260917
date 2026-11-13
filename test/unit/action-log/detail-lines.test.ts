@@ -386,3 +386,28 @@ describe("detailLines — 사람 본부(07.1-14 E-P2-41)", () => {
     expect(detailLines({ changes: { division: [null, "영업본부"] } })).toEqual([{ label: "본부", before: "없음", after: "영업본부" }]);
   });
 });
+
+// 07.6-01 D-7605 · eng r1 A-P3-8: 매출 줄 지우기 · 되살리기 로그는 같은 lineChanges 꼴 — detail의 entryId · via 키는 그려지는 줄을 바꾸지 않는다.
+describe("매출 줄 지우기 · 되살리기 lineChanges (07.6-01)", () => {
+  const ENTRY_ID = "3f0c3a7e-9b1d-4c55-8f0e-0a1b2c3d4e5f";
+  const removed = { entryDate: ["2026-10-01", null], amount: ["1,000,000원", null] };
+
+  it("지우기 — 발행 줄 2 발행액 1,000,000원 → 없음", () => {
+    const detail = { entryId: ENTRY_ID, lineChanges: [{ id: ENTRY_ID, kind: "issue", no: 2, name: null, changes: removed }] };
+    expect(detailLines(detail)).toEqual([
+      { label: "발행 줄 2 발행일", before: "2026-10-01", after: "없음" },
+      { label: "발행 줄 2 발행액", before: "1,000,000원", after: "없음" },
+    ]);
+  });
+
+  it("복원 — 없음 → 값 · via 키가 있어도 줄 수 · 글자 불변 · 입금 줄 입금일", () => {
+    const changes = { entryDate: [null, "2026-10-01"], amount: [null, "1,000,000원"] };
+    const withVia = { entryId: ENTRY_ID, via: "undo", lineChanges: [{ id: ENTRY_ID, kind: "payment", no: 1, name: null, changes }] };
+    const withoutVia = { entryId: ENTRY_ID, lineChanges: [{ id: ENTRY_ID, kind: "payment", no: 1, name: null, changes }] };
+    expect(detailLines(withVia)).toEqual(detailLines(withoutVia));
+    expect(detailLines(withVia)).toEqual([
+      { label: "입금 줄 1 입금일", before: "없음", after: "2026-10-01" },
+      { label: "입금 줄 1 입금액", before: "없음", after: "1,000,000원" },
+    ]);
+  });
+});

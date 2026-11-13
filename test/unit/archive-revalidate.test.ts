@@ -47,7 +47,8 @@ describe("보관 액션은 보관함을 다시 그리게 한다 (/review L-2)", 
   const archiveActions = files.flatMap((file) =>
     actionBlocks(readFileSync(file, "utf8"))
       // quick 261001-hfi(ADMN-12): 공휴일 삭제(= 보관) · 복원 액션도 보관함 목록을 바꾼다.
-      .filter((block) => /await (archive|deleteHoliday|restoreHoliday)\(/.test(block.body))
+      // 07.6-01: 매출 줄 지우기(= 보관) · 되돌리기도 보관함 목록을 바꾼다.
+      .filter((block) => /await (archive|deleteHoliday|restoreHoliday|archiveRevenueEntry|undoRevenueArchive)\(/.test(block.body))
       .map((block) => ({ file: file.replace(`${ROOT}/`, ""), ...block })),
   );
 
@@ -66,6 +67,11 @@ describe("보관 액션은 보관함을 다시 그리게 한다 (/review L-2)", 
     const src = readFileSync(resolve(APP_DIR, "(app)/admin/archive/actions.ts"), "utf8");
     const restoreBlock = actionBlocks(src).find((block) => block.name === "restoreArchivedAction");
     expect(restoreBlock?.body).toContain('revalidatePath("/admin/holidays")');
+  });
+
+  it("매출 줄 지우기 · 되돌리기 액션을 둘 다 찾았다(07.6-01)", () => {
+    const names = archiveActions.map((action) => action.name);
+    expect(names).toEqual(expect.arrayContaining(["archiveRevenueEntryAction", "undoRevenueArchiveAction"]));
   });
 
   it("공휴일 삭제 · 복원 액션을 둘 다 찾았다", () => {

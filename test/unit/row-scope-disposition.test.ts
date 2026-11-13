@@ -136,6 +136,7 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
   { file: "domain/revenue/index.ts", fn: "deriveContract", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "호출자 listRevenue의 projectRowScope + findProjectInScope 판정 뒤" },
   { file: "domain/revenue/index.ts", fn: "listRevenue", primitive: "listRevenueEntriesByProject", kind: "scoped", reason: "같은 함수의 projectRowScope + findProjectInScope 판정 뒤(06.2-04)" },
   { file: "domain/revenue/index.ts", fn: "numberEntryChanges", primitive: "listRevenueEntriesByProject", kind: "post-gate", reason: "저장 트랜잭션 안 행동 로그 순번(07.1-13) — 호출자 saveRevenueInTx는 tx 전 saveRevenue · saveProjectLedger의 findProjectInScope 판정 뒤, 값은 로그 순번만" },
+  { file: "domain/revenue/archive.ts", fn: "entryNo", primitive: "listRevenueEntriesByProject", kind: "post-gate", reason: "지우기 · 되돌리기 · 복원 잠근 tx 안 로그 순번 — 호출자가 tx 전 projectRowScope({ fundOp }) + findProjectInScope 판정 뒤, 값은 순번만(07.6)" },
   // 07.2-19(PU2): 완료 되돌리기 — 트랜잭션 전 findProjectInScope(쓰기 범위) · projects.reopen 판정 뒤 문서 행(id · version 재료)만.
   { file: "domain/settlements/reopen.ts", fn: "reopenCompletedProject", primitive: "findSettlementByProjectId", kind: "post-gate", reason: "트랜잭션 전 findProjectInScope(쓰기 범위) · projects.reopen 판정 뒤 — 문서 id만 써서 인스턴스 version을 맞춘다" },
   { file: "domain/settlements/reopen.ts", fn: "getReopenTarget", primitive: "findSettlementByProjectId", kind: "post-gate", reason: "findProjectInScope(쓰기 범위) · 완료 · projects.reopen 판정 뒤 — 정산 결재 version 숫자만" },

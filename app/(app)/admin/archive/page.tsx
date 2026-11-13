@@ -33,6 +33,7 @@ export default async function ArchivePage() {
           archivedAtLabel: kstDateTimeOf(new Date(item.archivedAt)),
           archivedBy: item.archivedBy,
           restorable: item.restorable,
+          restoreBlockedReason: item.restoreBlockedReason,
         }))}
       />
     </ListScreen>

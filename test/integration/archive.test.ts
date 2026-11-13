@@ -505,6 +505,20 @@ describe("팀 복원 — 사용중지 본부 아래 팀 막기 (07.2-11 PU22 ③
     expect((await findTeamById(SYSTEM_VIEWER, teamId))?.archivedAt).toBeNull();
   });
 
+  // G-07.2-28: 보관함 목록이 미리 알려 준다 — 본부가 보관이면 팀 행은 restorable 거짓 + 이유 문구, 아니면 이유 없음.
+  it("목록: 사용중지 본부 아래 팀은 restorable 거짓 · 이유 문구가 실리고, 살아 있는 본부 아래 팀은 복원 가능 · 이유 없음", async () => {
+    const blocked = await archivedPair();
+    await archive(SYSTEM_VIEWER, "org_unit", blocked.unitId);
+    const free = await archivedPair();
+
+    const listed = await listArchive(SYSTEM_VIEWER);
+    expect(listed.find((item) => item.id === blocked.teamId)).toMatchObject({ restorable: false, restoreBlockedReason: BLOCKED });
+    expect(listed.find((item) => item.id === free.teamId)).toMatchObject({ restorable: true, restoreBlockedReason: null });
+
+    await restore(SYSTEM_VIEWER, "org_unit", blocked.unitId);
+    expect((await listArchive(SYSTEM_VIEWER)).find((item) => item.id === blocked.teamId)).toMatchObject({ restorable: true, restoreBlockedReason: null });
+  });
+
   it("살아 있는 본부 아래 보관 팀은 지금처럼 복원된다", async () => {
     const { teamId } = await archivedPair();
     await expect(restore(SYSTEM_VIEWER, "team", teamId)).resolves.toEqual({ restored: true });

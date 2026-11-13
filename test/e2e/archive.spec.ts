@@ -16,6 +16,9 @@ import { insertTempRole } from "./temp-roles";
 import { waitForHydration } from "./leave-org";
 import { findVendorById, insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { loginAsSysadmin } from "./row-actions-helpers";
+import { createProject } from "@/domain/projects";
+import { saveRevenue } from "@/domain/revenue";
+import { kstToday, addDays } from "@/lib/kst-date";
 
 // ADMN-12: 삭제 → 보관함 → 복원 end-to-end와 권한 없는 계급의 404.
 test.describe("보관함 화면 (ADMN-12)", () => {
@@ -275,5 +278,43 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     await expect(row.getByRole("cell").last()).toHaveText("—");
     const [stored] = await db.select({ archivedAt: reserveEntries.archivedAt }).from(reserveEntries).where(eq(reserveEntries.id, entry?.id ?? ""));
     expect(stored?.archivedAt).not.toBeNull();
+  });
+
+  // 07.6-01(D-7603 · D-7611): 매출 칸에서 지운 발행 줄 → 보관함 종류 「매출 줄」 행(이름은 프로젝트 번호 · 종류 · 날짜, 금액 없음) → 복원 → 줄이 돌아온다.
+  test("매출 칸에서 지운 발행 줄은 보관함 「매출 줄」 행 · 복원하면 프로젝트 매출 칸에 돌아온다 (07.6-01)", async ({ page }) => {
+    const today = kstToday(new Date());
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E매출보관본부-${randomUUID().slice(0, 8)}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E매출보관팀-${randomUUID().slice(0, 8)}` });
+    const pm = await createAccount(SYSTEM_VIEWER, { email: `e2e-rev-arch-${randomUUID()}@example.test`, name: "E2E 매출보관 PM", roleId: "role-pm" });
+    await assignTeam(SYSTEM_VIEWER, { userId: pm.userId, teamId: team.id, effectiveFrom: today });
+    const clientName = `E2E매출보관-${randomUUID().slice(0, 8)}`;
+    const client = await insertVendor(SYSTEM_VIEWER, { name: clientName, normalizedName: clientName.toLowerCase() });
+    const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.userId, name: clientName, startDate: today, endDate: addDays(today, 10) });
+    const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+    await saveRevenue(SYSTEM_VIEWER, project.id, {
+      issuedEntries: [
+        { id: randomUUID(), isNew: true, entryDate: "2026-09-01", amount: krw(1_000_000) },
+        { id: randomUUID(), isNew: true, entryDate: "2026-09-05", amount: krw(500_000) },
+      ],
+    });
+    await loginAsSysadmin(page);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/projects/${project.id}`);
+    const issued = page.locator("table", { has: page.locator("caption", { hasText: /^발행 줄$/ }) });
+    const remove = issued.getByRole("button", { name: /발행 줄 2026-09-05 삭제$/ });
+    await waitForHydration(remove);
+    await remove.click();
+    await expect(page.getByText("발행 줄 2026-09-05 삭제됨")).toBeVisible();
+
+    await page.goto("/admin/archive");
+    const row = page.locator("tr", { hasText: `${project.number} 발행 2026-09-05` }).filter({ has: page.getByRole("cell", { name: "매출 줄", exact: true }) });
+    await expect(row).toHaveCount(1);
+    await expect(row).not.toContainText("500,000");
+    await waitForHydration(row.getByRole("button", { name: "복원" }));
+    await row.getByRole("button", { name: "복원" }).click();
+    await expect(row).toHaveCount(0);
+
+    await page.goto(`/projects/${project.id}`);
+    await expect(issued.getByRole("button", { name: /발행 줄 2026-09-05 삭제$/ })).toHaveCount(1);
   });
 });

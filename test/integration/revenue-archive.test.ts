@@ -11,7 +11,13 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { listRevenue, saveRevenue } from "@/domain/revenue";
-import { archiveRevenueEntry, undoRevenueArchive, REVENUE_ARCHIVE_LOG, REVENUE_RESTORE_LOG } from "@/domain/revenue/archive";
+import { archiveRevenueEntry, undoRevenueArchive, RevenueRestoreBlockedError, REVENUE_ARCHIVE_LOG, REVENUE_RESTORE_LOG } from "@/domain/revenue/archive";
+import { archive, ForbiddenError as ArchiveForbiddenError, listArchive, restore } from "@/domain/archive";
+import { projectRowScope } from "@/domain/projects/visibility";
+import { countProjectMoneyAttachments, listProjectsPage } from "@/repositories/projects";
+import { listCollectionCandidateProjects, listCollectionRows, listLiveIssueEntryIds } from "@/repositories/revenue-entries";
+import { listIssuedAmountsKrw } from "@/repositories/pre-settle-check";
+import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import { log } from "@/lib/log";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -417,5 +423,200 @@ describe("같은 발행 요청 이중 계상 서버 막이(design r1 G3 — 기�
     const error = await rejectionOf(saveProjectLedger(finance, project.id, { seenStatus: "bidding", revenue: { issuedEntries: [issuedEntry(row.id)] } }));
     expect(error).toBeInstanceOf(SaveRejectedError);
     expect(await entriesOf(project.id)).toHaveLength(1);
+  });
+});
+
+// ── Task 2 — 보관함 「매출 줄」 · 복원기(Q2 · E2) · 발행 요청 연결 막기(Q1) · 읽는 곳 전수 회귀 ──
+
+async function sysadmin(): Promise<Viewer> {
+  return makeFundPerson("시스템 관리자", SYSADMIN_ROLE_ID, null);
+}
+
+async function archiveRoleWith(revenue: "none" | "view" | "write", viewScope: "company" | "team" = "company"): Promise<Viewer> {
+  const roleId = await makeFundRole(viewScope);
+  await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "view", allowed: true });
+  for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "admin.archive", action, allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "archive.value", visible: true });
+  if (revenue !== "none") await grantFundKeys(roleId, ["projects.revenue"], revenue);
+  return makeFundPerson("보관함 사람", roleId, viewScope === "company" ? "경영관리팀" : "기획1팀");
+}
+
+async function revenueRow(viewer: Viewer, id: string) {
+  return (await listArchive(viewer)).find((row) => row.entity === "revenue_entry" && row.id === id);
+}
+
+async function linkedSetup(finance: Viewer) {
+  const { project, pm } = await setupProject();
+  const request = { id: randomUUID(), isNew: true as const, desiredIssueDate: "2026-09-30", amount: krw(20_000_000), memo: "선금" };
+  await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [request] });
+  const linkedId = randomUUID();
+  await saveProjectLedger(finance, project.id, {
+    seenStatus: "bidding",
+    revenue: {
+      issuedEntries: [
+        { id: linkedId, isNew: true, entryDate: "2026-09-30", amount: krw(20_000_000), note: "선금", fromIssueRequestId: request.id },
+        { id: randomUUID(), isNew: true, entryDate: "2026-10-01", amount: krw(1_000_000), note: "따로" },
+      ],
+      paidEntries: [{ id: randomUUID(), isNew: true, entryDate: "2026-10-02", amount: krw(330_000), note: "입금" }],
+    },
+  });
+  return { project, request, linkedId };
+}
+
+describe("발행 요청이 이어진 발행 줄 막기(Q1 · D-7610 — 사용자 카드 확정 11/4 22:24 KST 「그대로 막기」)", () => {
+  it("지우기 거부 `발행 요청 연결 · 삭제 불가` · 요청 issued · 연결 불변 · 로그 0 · DTO deleteBlockedReason은 그 줄만", async () => {
+    const finance = await financePerson();
+    const { project, request, linkedId } = await linkedSetup(finance);
+    const linked = await entry(linkedId);
+
+    const error = await rejectionOf(archiveRevenueEntry(finance, { projectId: project.id, entryId: linkedId, version: linked.version }));
+    expect(error.message).toBe("발행 요청 연결 · 삭제 불가");
+    expect((await entry(linkedId)).archivedAt).toBeNull();
+    const [stored] = await db.select().from(revenueIssueRequests).where(eq(revenueIssueRequests.id, request.id));
+    expect(stored).toMatchObject({ status: "issued", issuedEntryId: linkedId });
+    expect(await logsFor(linkedId, REVENUE_ARCHIVE_LOG)).toHaveLength(0);
+
+    const revenue = await listRevenue(finance, project.id);
+    expect(revenue.issuedEntries?.map((row) => [row.id === linkedId, row.deleteBlockedReason])).toEqual([
+      [true, "발행 요청 연결 · 삭제 불가"],
+      [false, null],
+    ]);
+    expect(revenue.paidEntries?.map((row) => row.deleteBlockedReason)).toEqual([null]);
+  });
+});
+
+describe("보관함 「매출 줄」(D-7603 · D-7611 · Q2 · E2)", () => {
+  it("시스템 관리자 — 행 이름(금액 없음) · restorable · 복원 → listRevenue에 다시 · 로그 via archive 1 · 다시 복원은 restored false · 로그 그대로", async () => {
+    const finance = await financePerson();
+    const admin = await sysadmin();
+    const { project, second } = await seeded(finance);
+    await archiveRevenueEntry(finance, { projectId: project.id, entryId: second.id, version: second.version });
+
+    const row = await revenueRow(admin, second.id);
+    expect(row).toMatchObject({ entity: "revenue_entry", label: "매출 줄", name: `${project.number} 발행 2026-09-05`, restorable: true });
+    expect(row?.name).not.toMatch(/500|000원/);
+
+    expect(await restore(admin, "revenue_entry", second.id)).toEqual({ restored: true });
+    expect((await listRevenue(finance, project.id)).issuedEntries?.map((entryRow) => entryRow.id)).toContain(second.id);
+    const logs = await logsFor(second.id, REVENUE_RESTORE_LOG);
+    expect(logs).toHaveLength(1);
+    expect((logs[0]?.detail as { via: string }).via).toBe("archive");
+    expect(await restore(admin, "revenue_entry", second.id)).toEqual({ restored: false });
+    expect(await logsFor(second.id, REVENUE_RESTORE_LOG)).toHaveLength(1);
+    expect(await revenueRow(admin, second.id)).toBeUndefined();
+  });
+
+  it("낡은 결과 줄 되돌리기 — 실제 보관함 복원 뒤 남이 고친 줄은 거부 · DB 금액 = 남의 값", async () => {
+    const finance = await financePerson();
+    const other = await financePerson();
+    const admin = await sysadmin();
+    const { project, second } = await seeded(finance);
+    const a = await archiveRevenueEntry(finance, { projectId: project.id, entryId: second.id, version: second.version });
+    await restore(admin, "revenue_entry", second.id);
+    const mid = await entry(second.id);
+    await saveRevenue(other, project.id, { issuedEntries: [{ id: second.id, version: mid.version, entryDate: mid.entryDate, amount: krw(888_000), note: mid.note }] });
+    const error = await rejectionOf(undoRevenueArchive(finance, { projectId: project.id, entryId: second.id, version: a.version }));
+    expect(error.message).toBe("다른 사람이 먼저 이 줄을 바꿈 · 새로 고침");
+    expect((await entry(second.id)).amountAmountKrw).toBe(888_000);
+  });
+
+  it("projects.revenue 쓰기 없는 보관함 권한자 — 행 0 · 복원 거부 `보관함 쓰기 권한 없음`(공통) · 보관 그대로 · 로그 0", async () => {
+    const finance = await financePerson();
+    const { project, second } = await seeded(finance);
+    await archiveRevenueEntry(finance, { projectId: project.id, entryId: second.id, version: second.version });
+    const noKey = await archiveRoleWith("none");
+    expect(await revenueRow(noKey, second.id)).toBeUndefined();
+    const error = await rejectionOf(restore(noKey, "revenue_entry", second.id));
+    expect(error).toBeInstanceOf(ArchiveForbiddenError);
+    expect(error.message).toBe("보관함 쓰기 권한 없음");
+    expect((await entry(second.id)).archivedAt).not.toBeNull();
+    expect(await logsFor(second.id, REVENUE_RESTORE_LOG)).toHaveLength(0);
+  });
+
+  it("projects.revenue 보기만 — 행은 보이고 restorable false · 복원 `보관함 쓰기 권한 없음`", async () => {
+    const finance = await financePerson();
+    const { project, second } = await seeded(finance);
+    await archiveRevenueEntry(finance, { projectId: project.id, entryId: second.id, version: second.version });
+    const viewOnly = await archiveRoleWith("view");
+    expect((await revenueRow(viewOnly, second.id))?.restorable).toBe(false);
+    expect((await rejectionOf(restore(viewOnly, "revenue_entry", second.id))).message).toBe("보관함 쓰기 권한 없음");
+  });
+
+  it("그 프로젝트를 볼 수 없는 범위(팀 범위 · 다른 팀) — 행 0", async () => {
+    const finance = await financePerson();
+    const { project, second } = await seeded(finance);
+    await archiveRevenueEntry(finance, { projectId: project.id, entryId: second.id, version: second.version });
+    const narrow = await archiveRoleWith("write", "team");
+    expect(await revenueRow(narrow, second.id)).toBeUndefined();
+  });
+
+  it("프로젝트가 보관됨 — restorable false · 복원 `프로젝트 삭제됨 · 복원 불가` / 범용 archive는 `보호된 항목은 보관할 수 없음`", async () => {
+    const finance = await financePerson();
+    const admin = await sysadmin();
+    const { project, first, second } = await seeded(finance);
+    await archiveRevenueEntry(finance, { projectId: project.id, entryId: second.id, version: second.version });
+    expect((await rejectionOf(archive(admin, "revenue_entry", first.id))).message).toBe("보호된 항목은 보관할 수 없음");
+    await db.update(projects).set({ archivedAt: new Date(), archivedBy: SYSTEM_VIEWER.id }).where(eq(projects.id, project.id));
+    const error = await rejectionOf(restore(admin, "revenue_entry", second.id));
+    expect(error).toBeInstanceOf(RevenueRestoreBlockedError);
+    expect(error.message).toBe("프로젝트 삭제됨 · 복원 불가");
+    expect((await entry(second.id)).archivedAt).not.toBeNull();
+  });
+
+  it("완료 프로젝트(D-7612) — restorable false · 복원 `완료 프로젝트 · 복원 불가` · 로그 0 / 정산 중이면 복원 성공", async () => {
+    const finance = await financePerson();
+    const admin = await sysadmin();
+    const { project, second } = await seeded(finance);
+    await archiveRevenueEntry(finance, { projectId: project.id, entryId: second.id, version: second.version });
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, project.id));
+    expect((await revenueRow(admin, second.id))?.restorable).toBe(false);
+    const error = await rejectionOf(restore(admin, "revenue_entry", second.id));
+    expect(error).toBeInstanceOf(RevenueRestoreBlockedError);
+    expect(error.message).toBe("완료 프로젝트 · 복원 불가");
+    expect((await entry(second.id)).archivedAt).not.toBeNull();
+    expect(await logsFor(second.id, REVENUE_RESTORE_LOG)).toHaveLength(0);
+
+    await db.update(projects).set({ status: "settling" }).where(eq(projects.id, project.id));
+    expect(await restore(admin, "revenue_entry", second.id)).toEqual({ restored: true });
+  });
+});
+
+describe("읽는 곳 전수 회귀 R1 · R2 · R3 · R8 · R9 · R10 · R14 (D-7606 — 보관 전 · 뒤 · 복원 뒤)", () => {
+  it("발행 줄 하나뿐인 프로젝트 — 지우면 모든 읽는 곳에서 빠지고 보관함 복원으로 돌아온다", async () => {
+    const finance = await financePerson();
+    const admin = await sysadmin();
+    const { project } = await setupProject();
+    await saveRevenue(finance, project.id, { issuedEntries: [{ entryDate: "2026-01-05", amount: krw(2_000_000), note: "유일" }] });
+    const [issued] = await entriesOf(project.id);
+    if (!issued) throw new Error("발행 줄 준비 실패");
+
+    const measure = async () => {
+      const revenue = await listRevenue(finance, project.id);
+      const candidates = await listCollectionCandidateProjects(SYSTEM_VIEWER, { limit: 100_000, today: "2026-11-13" });
+      const [listed] = await listProjectsPage(SYSTEM_VIEWER, {
+        scope: await projectRowScope(SYSTEM_VIEWER),
+        filter: { search: project.number },
+        sort: { key: "number", direction: "asc" },
+        offset: 0,
+        limit: 5,
+      });
+      return {
+        r1: [revenue.issuedEntries?.length, revenue.issuedTotalKrw],
+        r2: (await listCollectionRows(SYSTEM_VIEWER, [project.id])).length,
+        r3: candidates.some((candidate) => candidate.id === project.id),
+        r8: await listLiveIssueEntryIds(SYSTEM_VIEWER, project.id),
+        r9: listed?.revenueKrw ?? null,
+        r10: await listIssuedAmountsKrw(SYSTEM_VIEWER, project.id),
+        r14: (await countProjectMoneyAttachments(SYSTEM_VIEWER, project.id)).revenue,
+      };
+    };
+    const before = await measure();
+    expect(before).toEqual({ r1: [1, 2_000_000], r2: 1, r3: true, r8: [issued.id], r9: 2_000_000, r10: [2_000_000], r14: 1 });
+
+    await archiveRevenueEntry(finance, { projectId: project.id, entryId: issued.id, version: issued.version });
+    expect(await measure()).toEqual({ r1: [0, 0], r2: 0, r3: false, r8: [], r9: null, r10: [], r14: 0 });
+
+    await restore(admin, "revenue_entry", issued.id);
+    expect(await measure()).toEqual(before);
   });
 });

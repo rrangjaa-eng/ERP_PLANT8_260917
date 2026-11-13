@@ -136,6 +136,7 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
   { file: "domain/revenue/index.ts", fn: "deriveContract", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "호출자 listRevenue의 projectRowScope + findProjectInScope 판정 뒤" },
   { file: "domain/revenue/index.ts", fn: "listRevenue", primitive: "listRevenueEntriesByProject", kind: "scoped", reason: "같은 함수의 projectRowScope + findProjectInScope 판정 뒤(06.2-04)" },
   { file: "domain/revenue/index.ts", fn: "numberEntryChanges", primitive: "listRevenueEntriesByProject", kind: "post-gate", reason: "저장 트랜잭션 안 행동 로그 순번(07.1-13) — 호출자 saveRevenueInTx는 tx 전 saveRevenue · saveProjectLedger의 findProjectInScope 판정 뒤, 값은 로그 순번만" },
+  { file: "domain/revenue/index.ts", fn: "listRevenue", primitive: "listLinkedIssueEntryIdsByProject", kind: "scoped", reason: "같은 함수의 projectRowScope + findProjectInScope 판정 뒤 — 발행 줄 지우기 막힘 이유만(07.6 Q1)" },
   { file: "domain/revenue/archive.ts", fn: "entryNo", primitive: "listRevenueEntriesByProject", kind: "post-gate", reason: "지우기 · 되돌리기 · 복원 잠근 tx 안 로그 순번 — 호출자가 tx 전 projectRowScope({ fundOp }) + findProjectInScope 판정 뒤, 값은 순번만(07.6)" },
   // 07.2-19(PU2): 완료 되돌리기 — 트랜잭션 전 findProjectInScope(쓰기 범위) · projects.reopen 판정 뒤 문서 행(id · version 재료)만.
   { file: "domain/settlements/reopen.ts", fn: "reopenCompletedProject", primitive: "findSettlementByProjectId", kind: "post-gate", reason: "트랜잭션 전 findProjectInScope(쓰기 범위) · projects.reopen 판정 뒤 — 문서 id만 써서 인스턴스 version을 맞춘다" },
@@ -177,6 +178,7 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/expenses.ts", fn: "hasExpenseAttachTarget", reason: "증빙 붙이기 대상 있음 — 목록과 같은 scopeCondition(06.2-08 · 06.1-06)" },
   { file: "repositories/next-turn.ts", fn: "listSettlingProjectsOfPm", reason: "「내 차례」 PM 점검 항목(06-23) — pm_user_id = 보는 사람 ∧ rowScopeCondition(projectRowScope — none이면 PM이라도 0행, 06-23 검토 낮음-1)이 행을 거른다(번호 · 이름 · id만)" },
   { file: "repositories/revenue-entries.ts", fn: "listCollectionCandidateProjects", reason: "알림 tick(07-22 수금 지연) — 시스템 주체(SYSTEM_VIEWER, domain/notify/kinds/collection-overdue.ts만)가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(이름 · id · PM · PM 계급만)" },
+  { file: "repositories/revenue-entries.ts", fn: "listArchivedRevenueEntryNames", reason: "보관함 목록(07.6 D-7603) — 행은 domain/archive listArchive가 그 프로젝트의 보기 범위(projectRowScope)로 거르고, 「복원」은 자금 쓰기 범위({ fundOp })로 가린다. 프로젝트 번호 · 보관 · 완료 여부만 읽는다" },
   { file: "repositories/notify-sources.ts", fn: "listDocumentTitles", reason: "알림 문장의 문서 제목(07-10) — 받는 사람은 결재 후보 · 기안자 · 담당 PM으로 이미 정해졌고 문장은 제목뿐(금액 · 개인정보 없음), 범위로 거르지 않는다(시스템 tick)" },
   { file: "repositories/notify-sources.ts", fn: "listProjectsEndedWithoutExpense", reason: "알림 tick(07-10 N4) — 시스템 주체가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(번호 없이 이름 · id · PM만)" },
   { file: "repositories/notify-sources.ts", fn: "listProxyRegistrations", reason: "알림 tick(07-10 N9) — 시스템 주체가 담당 PM에게 보낼 후보를 모을 뿐 행을 화면에 내지 않는다(프로젝트 이름 · PM만)" },

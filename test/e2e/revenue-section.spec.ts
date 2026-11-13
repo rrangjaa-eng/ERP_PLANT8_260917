@@ -15,6 +15,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertTempRole } from "./temp-roles";
 import { saveRevenue, type MoneyInputDto } from "@/domain/revenue";
+import { saveProjectLedger } from "@/domain/projects/ledger";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { chooseApprovalBasis, openApprovalSheet, submitApproval } from "./project-info-helpers";
 
@@ -1134,13 +1135,16 @@ test.describe("매출 줄 삭제 · 되돌리기 (07.6-01)", () => {
     await hold.ready;
     let ledgerPosts = 0;
     page.on("request", (request) => {
-      if (isServerAction(request) && !(request.postData() ?? "").includes('"entryId"')) ledgerPosts += 1;
+      // 일괄 저장(본문에 seenStatus)만 센다 — 법인카드 · 참여자 섹션의 늦은 수화 조회(본문 projectId 하나)는 저장이 아니다.
+      if (isServerAction(request) && (request.postData() ?? "").includes('"seenStatus"')) ledgerPosts += 1;
     });
     await deleteButton(page, "발행 줄", "2026-09-05").click();
     await hold.arrived;
     await expect(save).toHaveAttribute("aria-disabled", "true");
     await expect(save).toContainText("…");
     await expect(save).toContainText("처리 중");
+    // Ctrl+S는 표 칸이 받는다(ui/table 격자 키) — 남은 첫 줄 메모 칸에서 누른다.
+    await issued.getByLabel("메모").first().focus();
     await page.keyboard.press("Control+s");
     await page.waitForTimeout(300);
     expect(ledgerPosts).toBe(0);
@@ -1149,6 +1153,10 @@ test.describe("매출 줄 삭제 · 되돌리기 (07.6-01)", () => {
     await expect(save).not.toHaveAttribute("aria-disabled", "true");
     await expect(save).toContainText("일괄 저장 1");
     await expect(save).not.toContainText("…");
+    // 셈이 비지 않았는지 — 풀린 뒤 같은 칸의 Ctrl+S는 저장 하나를 보낸다.
+    await issued.getByLabel("메모").first().focus();
+    await page.keyboard.press("Control+s");
+    await expect.poll(() => ledgerPosts).toBe(1);
   });
 
   test("(G2) 지우기 실패는 그 행에 — 연결 실패는 켠 채 `삭제 실패 · 다시 시도` · 충돌은 비활성 + 이유 + 포커스 · 앞 결과 줄 `되돌리기`는 남는다", async ({ page }) => {
@@ -1259,5 +1267,51 @@ test.describe("매출 줄 삭제 · 되돌리기 (07.6-01)", () => {
     await expect(revenueSection(page).getByRole("button", { name: /삭제$/ })).toHaveCount(0);
     await page.setViewportSize({ width: 375, height: 800 });
     await expect(revenueSection(page).getByRole("button", { name: /삭제$/ }).filter({ visible: true })).toHaveCount(0);
+  });
+
+  test("(Q1 · D12) 발행 요청이 이어진 발행 줄 셋 — `삭제`는 aria-disabled + `발행 요청 연결 · 삭제 불가` · 이어지지 않은 줄만 켜짐 · 1024 발행 표 가로 넘침 0", async ({ page }) => {
+    const seeded = await seedRevenueProject({});
+    const projectId = projectIdOf(seeded.projectUrl);
+    const requests = ["2026-09-01", "2026-09-02", "2026-09-03"].map((date, index) => ({ id: randomUUID(), isNew: true as const, desiredIssueDate: date, amount: krw(1_000_000), memo: `차수 ${index + 1}` }));
+    // 발행 요청은 담당 PM이 올린다(requested_by는 실제 사람).
+    const [owner] = await db.select({ pmUserId: projects.pmUserId }).from(projects).where(eq(projects.id, projectId));
+    await saveProjectLedger({ id: owner?.pmUserId ?? "", roleId: DEFAULT_ROLE_ID }, projectId, { seenStatus: "bidding", issueRequests: requests });
+    await saveProjectLedger(SYSTEM_VIEWER, projectId, {
+      seenStatus: "bidding",
+      revenue: {
+        issuedEntries: [
+          ...requests.map((request) => ({ id: randomUUID(), isNew: true as const, entryDate: request.desiredIssueDate, amount: request.amount, note: request.memo, fromIssueRequestId: request.id })),
+          { id: randomUUID(), isNew: true as const, entryDate: "2026-09-10", amount: krw(500_000), note: "따로" },
+        ],
+      },
+    });
+    await grantFinanceRole();
+    const finance = await createFixtureUser({ roleId: "role-ceo" });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await login(page, finance.email, finance.password);
+    await page.goto(seeded.projectUrl);
+    for (const date of ["2026-09-01", "2026-09-02", "2026-09-03"]) {
+      const blocked = deleteButton(page, "발행 줄", date);
+      await expect(blocked).toHaveAttribute("aria-disabled", "true");
+      await expect(blocked).toHaveAccessibleDescription("발행 요청 연결 · 삭제 불가");
+    }
+    await expect(deleteButton(page, "발행 줄", "2026-09-10")).not.toHaveAttribute("aria-disabled", "true");
+    // aria-disabled 버튼은 포커스를 지킨다 — Enter로 눌러도 아무 일 없음.
+    await deleteButton(page, "발행 줄", "2026-09-01").focus();
+    await page.keyboard.press("Enter");
+    await expect(statusArea(page).first()).not.toContainText("삭제됨");
+    await page.setViewportSize({ width: 1024, height: 900 });
+    const issued = revenueTable(page, "발행 줄");
+    await expect(deleteButton(page, "발행 줄", "2026-09-01")).toBeVisible();
+    // 표를 감싼 가로 스크롤 상자(overflow-x auto · scroll)의 넘침 — 없으면 문서.
+    const { scrollWidth, clientWidth } = await issued.evaluate((node) => {
+      let box: HTMLElement | null = node.parentElement;
+      while (box && !["auto", "scroll"].includes(getComputedStyle(box).overflowX)) box = box.parentElement;
+      const target = box ?? document.documentElement;
+      return { scrollWidth: target.scrollWidth, clientWidth: target.clientWidth };
+    });
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    const [stored] = await db.select().from(revenueEntries).where(and(eq(revenueEntries.projectId, projectId), eq(revenueEntries.entryDate, "2026-09-01")));
+    expect(stored?.archivedAt).toBeNull();
   });
 });

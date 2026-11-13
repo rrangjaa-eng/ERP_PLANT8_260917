@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -12,13 +12,14 @@ export type RevenueEntryRow = InferSelectModel<typeof revenueEntries>;
 // 보관 조건부 UPDATE, InferSelectModel 행 타입 export). 프로젝트별 목록은
 // kind·entry_date 순으로 정렬한다.
 // 07.1-13(#316 P2): 매출 줄 저장 로그 순번이 같은 tx에서 이 순서(= 매출 표 순서)를 읽는다 — tx를 받는다.
+// 07.6-01(R1): 보관 줄 제외 — 매출 표 · 합계 · 로그 순번은 화면에 보이는 줄. 같은 날짜 줄은 넣은 순서(createdAt, 같으면 id)로 고정한다.
 export async function listRevenueEntriesByProject(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<RevenueEntryRow[]> {
   void viewer;
   return tx
     .select()
     .from(revenueEntries)
-    .where(and(eq(revenueEntries.projectId, projectId)))
-    .orderBy(asc(revenueEntries.kind), asc(revenueEntries.entryDate));
+    .where(and(eq(revenueEntries.projectId, projectId), isNull(revenueEntries.archivedAt)))
+    .orderBy(asc(revenueEntries.kind), asc(revenueEntries.entryDate), asc(revenueEntries.createdAt), asc(revenueEntries.id));
 }
 
 export type CollectionRow = Pick<RevenueEntryRow, "id" | "projectId" | "kind" | "entryDate" | "amountAmountKrw" | "createdAt">;
@@ -172,6 +173,51 @@ export async function updateRevenueEntryIfVersionMatches(
         eq(revenueEntries.version, expectedVersion),
         eq(revenueEntries.projectId, owner.projectId),
         eq(revenueEntries.kind, owner.kind),
+        isNull(revenueEntries.archivedAt),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+// 07.6-01 — 매출 줄 지우기(보관). R6 조건 UPDATE 틀 — 이 프로젝트 · 이 version · 보관 안 된 줄만. 0행이면 null(충돌 · 이미 보관).
+export async function archiveRevenueEntryIfCurrent(
+  viewer: Viewer,
+  input: { id: string; projectId: string; expectedVersion: number; at: Date },
+  tx: DbOrTx,
+): Promise<RevenueEntryRow | null> {
+  const [row] = await tx
+    .update(revenueEntries)
+    .set({ archivedAt: input.at, archivedBy: viewer.id, version: sql`${revenueEntries.version} + 1`, updatedAt: input.at })
+    .where(
+      and(
+        eq(revenueEntries.id, input.id),
+        eq(revenueEntries.projectId, input.projectId),
+        eq(revenueEntries.version, input.expectedVersion),
+        isNull(revenueEntries.archivedAt),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+// 07.6-01 — 보관된 매출 줄 되살리기. expectedVersion은 되돌리기만 싣는다(지운 뒤 version — 그새 움직인 줄을 되살리지 않는다, eng r1 P2-A1).
+// 보관함 복원기는 싣지 않는다. 0행이면 null.
+export async function restoreRevenueEntryRow(
+  viewer: Viewer,
+  input: { id: string; projectId: string; at: Date; expectedVersion?: number },
+  tx: DbOrTx,
+): Promise<RevenueEntryRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(revenueEntries)
+    .set({ archivedAt: null, archivedBy: null, version: sql`${revenueEntries.version} + 1`, updatedAt: input.at })
+    .where(
+      and(
+        eq(revenueEntries.id, input.id),
+        eq(revenueEntries.projectId, input.projectId),
+        isNotNull(revenueEntries.archivedAt),
+        ...(input.expectedVersion !== undefined ? [eq(revenueEntries.version, input.expectedVersion)] : []),
       ),
     )
     .returning();

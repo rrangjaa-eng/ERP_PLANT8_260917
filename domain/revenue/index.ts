@@ -48,7 +48,7 @@ import { sumQuoteAmountByRevision as repoSumQuoteAmountByRevision } from "@/repo
 export class ForbiddenError extends UserFacingError {}
 export class ProjectNotFoundError extends UserFacingError {}
 
-const REVENUE_SETTLEMENT_MENU = "projects.revenue";
+export const REVENUE_SETTLEMENT_MENU = "projects.revenue";
 const REVENUE_ENTITY = "revenue_entry";
 
 export type RevenueEntryKind = "issue" | "payment";
@@ -387,7 +387,7 @@ export type RevenueWriteDeps = {
 
 const ENTRY_SCOPE_RULE = "revenue.entry-scope";
 const REPLAY_RULE = "revenue.replay-mismatch";
-const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
+export const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
 const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
 
 type EntryPayload = {
@@ -450,7 +450,7 @@ function sameStoredEntry(stored: RevenueEntryRow, owner: { projectId: string; ki
 }
 
 // 07.1-13 S8: 로그 줄 전후 보기 — 날짜 · 금액(Money 글자) · 메모만 비교한다(version · id 제외).
-function entryChangeView(entry: EntryPayload | RevenueEntryRow): Record<string, unknown> {
+export function entryChangeView(entry: EntryPayload | RevenueEntryRow): Record<string, unknown> {
   return {
     entryDate: entry.entryDate,
     amount: moneyChangeText({
@@ -502,6 +502,8 @@ async function saveEntries(
         if (!stored || stored.projectId !== projectId || stored.kind !== kind) {
           denyWrite(viewer, ENTRY_SCOPE_RULE, { projectId, entryIds: [input.id] }, new UserFacingError(ENTRY_NOT_FOUND));
         }
+        // 07.6-01(R6): 보관된 줄은 없음과 같은 글자 — 낡은 탭의 정상 사용자라 denyWrite(write.denied 경고)를 부르지 않는다.
+        if (stored.archivedAt !== null) throw new UserFacingError(ENTRY_NOT_FOUND);
         // SF-2 — 응답을 잃은 재전송: 첫 커밋이 version을 하나 올렸고 값이 이번 입력과 같으면 no-op(쓰기·로그 없음).
         if (stored.version === input.version + 1 && sameStoredEntry(stored, { projectId, kind }, payload)) continue;
         throw new UserFacingError(`다른 사람이 먼저 이 줄을 바꿈 · 덮어쓰기 / 그 값으로(줄 ${input.id})`);

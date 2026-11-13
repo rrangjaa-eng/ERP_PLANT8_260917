@@ -14,6 +14,9 @@ import type { CellIssue, TableColumn } from "@/ui/table/types";
 import type { ContractInfo } from "@/domain/revenue";
 import { otherCellsRejectedText, revenueTableErrorText } from "./revenue-cells";
 import { InvoiceFilePanel } from "./invoice-file-panel";
+import { archiveRevenueEntryAction, undoRevenueArchiveAction } from "../actions";
+import { UNDO_WINDOW_MS } from "@/domain/revenue/archive-rules";
+import { revenueDeleteFailure, revenueRemovedLine, revenueUndoFailure, type RevenueActionFailure } from "./revenue-archive-words";
 import styles from "./project-detail.module.css";
 
 export type EntryDraft = {
@@ -35,6 +38,32 @@ export type EntryDraft = {
   /** 06-18(D-610) — 「발행 줄로」로 만든 저장 전 새 줄이 닫을 발행 요청 id. 저장 때 새 줄에만 실린다. */
   fromIssueRequestId?: string;
 };
+
+/** 07.6-01(eng r1 P2-A2) — 지우기 · 되돌리기 응답의 잔액 · 수금 지연. 키가 없으면(합계 조회 실패 · 입금 정보를 못 봄) 그 칸은 그대로다. */
+export type RevenueTotals = { balanceKrw?: number; collectionOverdue?: boolean };
+
+type EntryKind = "issue" | "payment";
+
+// 07.6-01 결과 줄 — 마지막 한 건만(두 표가 한 자리를 나눈다, SYSTEM.md §7-8). failed는 되돌리기의 도메인 거부만(지우기 실패는 그 행에 — design r1 G2).
+type ResultLine =
+  | {
+      kind: "removed";
+      entryKind: EntryKind;
+      draft: EntryDraft;
+      index: number;
+      saved: boolean;
+      archivedVersion: number | null;
+      retryText: string | null;
+      shown: number;
+      expired: boolean;
+      focusText: boolean;
+    }
+  | { kind: "failed"; entryKind: EntryKind; text: string }
+  | null;
+
+function totalsOf(data: { balanceKrw?: number; collectionOverdue?: boolean }): RevenueTotals | null {
+  return data.balanceKrw === undefined && data.collectionOverdue === undefined ? null : { balanceKrw: data.balanceKrw, collectionOverdue: data.collectionOverdue };
+}
 
 // 04-16(DR-15) — 숫자 묶음은 꺾지 않고 ` · ` 사이에서만 줄바꿈한다(구분자는 줄바꿈되는 부모의 글자).
 export function NumberGroups({ groups, className }: { groups: string[]; className?: string }) {
@@ -207,6 +236,11 @@ function AmountInputField({
 // SYSTEM.md §6-2 S6 — 매출 섹션. 계약 금액 한 줄(KvList, 파생 값 — 04-16 D-84) + 발행·입금 두 편집 표.
 // 표 단위 정보 노출(issuedEntries/paidEntries가 undefined면 두 표를 렌더하지 않는다 — 기획본부 경로).
 export function RevenueSection({
+  projectId,
+  deleteLock,
+  onEntryRemoved,
+  onEntryRestored,
+  onRowActionPendingChange,
   contract,
   issuedEntries,
   paidEntries,
@@ -227,6 +261,15 @@ export function RevenueSection({
   issueRequestSlot,
   focusIssued,
 }: {
+  projectId: string;
+  /** 07.6-01(D-7612) — 완료 프로젝트면 `완료 프로젝트 · 삭제 불가`. 있으면 행동 열을 그리지 않고 표 위에 한 줄. */
+  deleteLock: string | null;
+  /** 07.6-01 — 지운 줄을 그 표에서 뺀다(통째 교체 아님). totals가 있으면 잔액 · 수금 지연 갱신. */
+  onEntryRemoved: (kind: EntryKind, clientKey: string, totals: RevenueTotals | null) => void;
+  /** 07.6-01 — 되돌린 줄을 같은 자리에 끼운다. */
+  onEntryRestored: (kind: EntryKind, draft: EntryDraft, index: number, totals: RevenueTotals | null) => void;
+  /** 07.6-01(eng r1 B-P2-2 · design r1 G5) — 지우기 · 되돌리기 대기 시작 · 끝(저장 길과 1차 모습을 잠근다). */
+  onRowActionPendingChange: (pending: boolean) => void;
   /** 04-16(B-19) — quote.amount를 볼 수 없으면 서버가 싣지 않는다(키 부재). */
   contract: ContractInfo | undefined;
   issuedEntries: EntryDraft[] | undefined;
@@ -290,6 +333,199 @@ export function RevenueSection({
 
   // 07-22(W7) — 계산서 옆 패널을 연 발행 줄(저장된 줄만).
   const [invoiceFor, setInvoiceFor] = useState<EntryDraft | null>(null);
+
+  // 07.6-01(D-7601 · D-7602) — 행 `삭제` · 표 위 결과 줄 `되돌리기`. 확인 창 · 토스트 없음(SYSTEM.md §7-8 같은 화면 결과 줄).
+  const hasActionColumn = canWriteEntries && deleteLock === null;
+  const [resultLine, setResultLine] = useState<ResultLine>(null);
+  const [rowFailures, setRowFailures] = useState<Record<string, RevenueActionFailure>>({});
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [restoredKey, setRestoredKey] = useState<string | null>(null);
+  const resultRef = useRef<HTMLParagraphElement>(null);
+  const resultTextRef = useRef<HTMLSpanElement>(null);
+  const rowBusy = saveLocked || pendingKey !== null;
+
+  // design r1 G4 — 화면 창 = 결과 줄이 떠 있는 동안 ∧ 10분(지우기 응답 · 저장 전 줄은 누른 뒤 그 결과 줄이 처음 그려진 때부터 UNDO_WINDOW_MS —
+  // 서버와 같은 값). 시각이 되면 `되돌리기`만 치우고 글자는 남긴다(포커스가 그 안이면 글자로). 정본은 서버 창이다.
+  const timedShown = resultLine?.kind === "removed" && !resultLine.expired ? resultLine.shown : undefined;
+  useEffect(() => {
+    if (timedShown === undefined) return;
+    const timer = setTimeout(() => {
+      const hadFocus = resultRef.current?.contains(document.activeElement) ?? false;
+      setResultLine((current) => (current?.kind === "removed" && current.shown === timedShown ? { ...current, expired: true, focusText: hadFocus } : current));
+    }, UNDO_WINDOW_MS);
+    return () => clearTimeout(timer);
+  }, [timedShown]);
+  const focusResultText = resultLine?.kind === "failed" || (resultLine?.kind === "removed" && resultLine.focusText);
+  useEffect(() => {
+    if (focusResultText) resultTextRef.current?.focus();
+  }, [focusResultText, resultLine]);
+
+  function showRemoved(entryKind: EntryKind, draft: EntryDraft, index: number, archivedVersion: number | null) {
+    setResultLine((prev) => ({
+      kind: "removed",
+      entryKind,
+      draft,
+      index,
+      saved: archivedVersion !== null,
+      archivedVersion,
+      retryText: null,
+      // 줄마다 새 번호 — 타이머 · `되돌리기` 포커스가 새 결과 줄에서 다시 선다.
+      shown: (prev?.kind === "removed" ? prev.shown : 0) + 1,
+      expired: false,
+      focusText: false,
+    }));
+  }
+
+  async function removeRow(entryKind: EntryKind, row: EntryDraft) {
+    const index = Math.max(0, ((entryKind === "issue" ? issuedEntries : paidEntries) ?? []).findIndex((entry) => entry.clientKey === row.clientKey));
+    setRowFailures((prev) => {
+      const next = { ...prev };
+      delete next[row.clientKey];
+      return next;
+    });
+    setRestoredKey(null);
+    if (row.version === undefined) {
+      // 저장 전 줄 — 서버를 부르지 않고 화면에서만 뺀다.
+      onEntryRemoved(entryKind, row.clientKey, null);
+      showRemoved(entryKind, row, index, null);
+      return;
+    }
+    setPendingKey(row.clientKey);
+    onRowActionPendingChange(true);
+    try {
+      const result = await archiveRevenueEntryAction({ projectId, entryId: row.id, version: row.version });
+      if (result?.data) {
+        onEntryRemoved(entryKind, row.clientKey, totalsOf(result.data));
+        showRemoved(entryKind, row, index, result.data.version);
+      } else {
+        // 지우기 실패는 그 행에 — 결과 줄 · 앞서 지운 줄의 `되돌리기`는 건드리지 않는다(design r1 G2).
+        const failure = revenueDeleteFailure(typeof result?.serverError === "string" ? result.serverError : null);
+        setRowFailures((prev) => ({ ...prev, [row.clientKey]: failure }));
+      }
+    } catch {
+      setRowFailures((prev) => ({ ...prev, [row.clientKey]: revenueDeleteFailure(null) }));
+    } finally {
+      setPendingKey(null);
+      onRowActionPendingChange(false);
+    }
+  }
+
+  async function undo(line: Extract<ResultLine, { kind: "removed" }>) {
+    if (!line.saved || line.archivedVersion === null) {
+      onEntryRestored(line.entryKind, line.draft, line.index, null);
+      setResultLine(null);
+      setRestoredKey(line.draft.clientKey);
+      return;
+    }
+    setPendingKey(line.draft.clientKey);
+    onRowActionPendingChange(true);
+    try {
+      const result = await undoRevenueArchiveAction({ projectId, entryId: line.draft.id, version: line.archivedVersion });
+      if (result?.data) {
+        onEntryRestored(line.entryKind, { ...line.draft, version: result.data.version }, line.index, totalsOf(result.data));
+        setResultLine(null);
+        setRestoredKey(line.draft.clientKey);
+      } else {
+        // 일반 서버 오류는 다시 할 수 있는 실패 — 버튼을 남긴다. 치우는 것은 도메인 거부뿐(design r1 G6).
+        const failure = revenueUndoFailure(typeof result?.serverError === "string" ? result.serverError : null);
+        setResultLine(failure.retry ? { ...line, retryText: failure.text } : { kind: "failed", entryKind: line.entryKind, text: failure.text });
+      }
+    } catch {
+      setResultLine({ ...line, retryText: revenueUndoFailure(null).text });
+    } finally {
+      setPendingKey(null);
+      onRowActionPendingChange(false);
+    }
+  }
+
+  // design r1 G3 — 「발행 줄로」로 만든 저장 전 줄을 지운 뒤 같은 요청이 다른 줄에 이어져 있는 동안 결과 줄을 그리지 않는다(렌더 때 파생).
+  const relinked =
+    resultLine?.kind === "removed" &&
+    resultLine.draft.fromIssueRequestId !== undefined &&
+    (issuedEntries ?? []).some((entry) => entry.fromIssueRequestId === resultLine.draft.fromIssueRequestId);
+
+  function resultArea(entryKind: EntryKind) {
+    if (!canEditEntries || !hasActionColumn) return null;
+    const line = resultLine?.entryKind === entryKind && !relinked ? resultLine : null;
+    const textId = `revenue-result-${entryKind}`;
+    return (
+      <div role="status">
+        {line ? (
+          <p ref={resultRef} className={styles.memberResult}>
+            {line.kind === "failed" ? (
+              <span ref={resultTextRef} tabIndex={-1} className={styles.memberResultFailed}>
+                {line.text}
+              </span>
+            ) : (
+              <>
+                {line.retryText ? (
+                  <span id={textId} className={styles.memberResultFailed}>
+                    {line.retryText}
+                  </span>
+                ) : (
+                  <span id={textId} ref={resultTextRef} tabIndex={-1}>
+                    {revenueRemovedLine(entryKind, line.draft.entryDate)}
+                  </span>
+                )}
+                {line.expired ? null : (
+                  <RowAction key={line.shown} autoFocus busy={rowBusy} describedBy={textId} onClick={() => void undo(line)}>
+                    되돌리기
+                  </RowAction>
+                )}
+              </>
+            )}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  // design r1 G1 · P3 D7 — 두 표 맨 오른쪽 새 행동 열(숨긴 머리글 `행동`). 열 유무는 권한(수화 앞뒤 같음), 셀 안 `삭제`는 편집 폭에서만.
+  function actionColumn(entryKind: EntryKind): TableColumn<EntryDraft> {
+    return {
+      key: "actions",
+      header: "행동",
+      headerHidden: true,
+      priority: "p3",
+      pasteRole: "computed",
+      cell: (row) => {
+        if (!canEditEntries) return null;
+        const failure = rowFailures[row.clientKey];
+        const failId = `revenue-delete-fail-${row.clientKey}`;
+        const label = (
+          <>
+            <span className="sr-only">{`${entryKind === "issue" ? "발행" : "입금"} 줄 ${row.entryDate} `}</span>삭제
+          </>
+        );
+        return (
+          <>
+            <RowActions noWrap>
+              {failure && !failure.retry ? (
+                <RowAction danger disabled disabledReason={failure.text} autoFocus onClick={() => undefined}>
+                  {label}
+                </RowAction>
+              ) : (
+                <RowAction
+                  danger
+                  busy={rowBusy}
+                  autoFocus={restoredKey === row.clientKey}
+                  describedBy={failure ? failId : undefined}
+                  onClick={() => void removeRow(entryKind, row)}
+                >
+                  {label}
+                </RowAction>
+              )}
+            </RowActions>
+            {failure?.retry ? (
+              <span id={failId} className={styles.memberFail}>
+                {failure.text}
+              </span>
+            ) : null}
+          </>
+        );
+      },
+    };
+  }
 
   const issuedColumns: TableColumn<EntryDraft>[] = [
     {
@@ -370,6 +606,7 @@ export function RevenueSection({
         );
       },
     },
+    ...(hasActionColumn ? [actionColumn("issue")] : []),
   ];
 
   const paidColumns: TableColumn<EntryDraft>[] = [
@@ -435,6 +672,7 @@ export function RevenueSection({
         ),
       summary: (row) => collapsedSummary(paidNumberGroups(row), row.note),
     },
+    ...(hasActionColumn ? [actionColumn("payment")] : []),
   ];
 
   const balanceLabel =
@@ -443,6 +681,9 @@ export function RevenueSection({
       : balanceKrw < 0
         ? `미수 ${formatKrw(Math.abs(balanceKrw))}`
         : `초과 입금 ${formatKrw(balanceKrw)}`;
+
+  // D-7612 — 완료 프로젝트는 행동 열 없이 첫 보이는 표 위에 한 번(SYSTEM.md 「표 전체 막힘 이유는 표 위 한 줄」).
+  const lockLine = canEditEntries && deleteLock !== null ? <p className={styles.doorNote}>{deleteLock}</p> : null;
 
   return (
     <DetailScreen.Section title="매출">
@@ -459,6 +700,8 @@ export function RevenueSection({
       {issuedVisible ? (
         <>
           {issueRequestSlot ? <h3 className={styles.tableSubheading}>발행 줄</h3> : null}
+          {lockLine}
+          {resultArea("issue")}
           <Table
             caption="발행 줄"
             keyboard={{ onSave }}
@@ -473,12 +716,13 @@ export function RevenueSection({
             alwaysShowFooter={issuedNote !== null}
             footer={
               <tr>
-                <td colSpan={issuedColumns.length - 1} className={styles.footerCell}>
+                <td colSpan={issuedColumns.length - (hasActionColumn ? 2 : 1)} className={styles.footerCell}>
                   {`합계 (공급가액 · ${issuedEntries.length}줄)`}
                 </td>
                 <td className={styles.footerCell}>
                   {issuedNote ? <span className={styles.rejectionSummary}>{issuedNote}</span> : null}
                 </td>
+                {hasActionColumn ? <td className={styles.footerCell} /> : null}
               </tr>
             }
           />
@@ -500,6 +744,8 @@ export function RevenueSection({
       {paidVisible ? (
         <>
           {issueRequestSlot ? <h3 className={styles.tableSubheading}>입금 줄</h3> : null}
+          {issuedVisible ? null : lockLine}
+          {resultArea("payment")}
           <Table
             caption="입금 줄"
             keyboard={{ onSave }}
@@ -514,7 +760,7 @@ export function RevenueSection({
             alwaysShowFooter
             footer={
               <tr>
-                <td colSpan={paidColumns.length - 1} className={styles.footerCell}>
+                <td colSpan={paidColumns.length - (hasActionColumn ? 2 : 1)} className={styles.footerCell}>
                   {`합계 (공급가액 · ${paidEntries.length}줄)`}
                 </td>
                 <td className={styles.footerCell}>
@@ -524,6 +770,7 @@ export function RevenueSection({
                   {collectionOverdue && (paidNote || balanceLabel) ? " · " : null}
                   {collectionOverdue ? <StatusTag status="수금 지연" variant="text" /> : null}
                 </td>
+                {hasActionColumn ? <td className={styles.footerCell} /> : null}
               </tr>
             }
           />

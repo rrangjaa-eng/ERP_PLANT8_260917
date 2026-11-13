@@ -1314,4 +1314,23 @@ test.describe("매출 줄 삭제 · 되돌리기 (07.6-01)", () => {
     const [stored] = await db.select().from(revenueEntries).where(and(eq(revenueEntries.projectId, projectId), eq(revenueEntries.entryDate, "2026-09-01")));
     expect(stored?.archivedAt).toBeNull();
   });
+
+  test("(D-7608) 입금일 칸 max = KST 오늘 · 새 입금 줄 내일 → 일괄 저장 → 그 칸 `미래 입금일 · 오늘까지 날짜 고르기` · 입금 표 `오류 1칸 · 전부 거부`", async ({ page }) => {
+    const seeded = await openAsFinance(page, { issued: ISSUED_TWO, paid: [{ entryDate: "2026-09-20", amount: krw(330_000) }] });
+    const today = kstToday(new Date());
+    const paid = revenueTable(page, "입금 줄");
+    await page.getByRole("button", { name: "입금 줄 추가" }).click();
+    const newDate = paid.getByLabel("입금일").last();
+    await expect(newDate).toHaveAttribute("max", today);
+    await newDate.fill(addDays(today, 1));
+    const rejected = page.waitForResponse((response) => isServerAction(response.request()));
+    await newDate.focus();
+    await page.keyboard.press("Control+s");
+    await rejected;
+    const dateCell = paid.locator("tbody tr:not([aria-hidden])").last().locator('td[aria-invalid="true"]');
+    await expect(dateCell).toHaveCount(1);
+    await expect(dateCell).toContainText("미래 입금일 · 오늘까지 날짜 고르기");
+    await expect(paid.locator("tfoot").getByText("오류 1칸 · 전부 거부", { exact: true })).toBeVisible();
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectIdOf(seeded.projectUrl)))).toHaveLength(3);
+  });
 });

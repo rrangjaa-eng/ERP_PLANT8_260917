@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { createDismissTimer, type DismissTimer } from "./dismiss-timer";
 import styles from "./Toast.module.css";
 
 // SYSTEM.md §7-6 토스트. 화면 이동이 따르는 행동의 결과에만 쓴다(표 저장 결과는
@@ -23,8 +24,6 @@ export type ToastProps = {
   /** 자동 소멸(기본) 또는 닫기 버튼(오류) 시 호출된다 — 호출부가 인스턴스를 치운다. */
   onDismiss: () => void;
 };
-
-const AUTO_DISMISS_MS = 4000;
 
 // 웨이브 11 D3 — 폰 화면 아래에 고정된 행동 줄은 이 속성을 단다. 토스트는 그 줄 위에 뜬다(줄의 버튼을 가리지 않는다).
 // 줄 높이는 막힘 줄 · 충돌 줄로 바뀌므로 실측한다. PC에서는 그 줄이 fixed가 아니라 올리지 않는다.
@@ -51,11 +50,24 @@ export function Toast({ message, tone = "default", actionLabel, onAction, focusA
     onDismissRef.current = onDismiss;
   });
 
+  const timerRef = useRef<DismissTimer | null>(null);
   useEffect(() => {
     if (tone === "error") return; // §7-6: 오류는 닫을 때까지 — 자동 소멸 없음
-    const timer = setTimeout(() => onDismissRef.current(), AUTO_DISMISS_MS);
-    return () => clearTimeout(timer);
+    const timer = createDismissTimer(() => onDismissRef.current());
+    timerRef.current = timer;
+    return () => {
+      timer.dispose();
+      timerRef.current = null;
+    };
   }, [tone]);
+
+  // 3차 행동이 있는 토스트는 그 안에 포커스가 있는 동안 소멸하지 않는다(최대 60초 — dismiss-timer). 행동 없는 토스트는 연결하지 않아 4초 그대로.
+  const holdWhileFocused = Boolean(actionLabel && onAction);
+  // 같은 인스턴스에서 행동이 사라지면(예: 되돌리기 성공 뒤 확인 토스트) 포커스 유지도 함께 푼다 —
+  // 포커스를 쥔 버튼이 빠지면 onBlur 핸들러도 떨어져 60초가 남기 때문이다. 4초를 다시 센다.
+  useEffect(() => {
+    if (!holdWhileFocused) timerRef.current?.blur();
+  }, [holdWhileFocused]);
 
   const actionRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -85,7 +97,14 @@ export function Toast({ message, tone = "default", actionLabel, onAction, focusA
   }, []);
 
   return (
-    <div ref={toastRef} className={styles.toast} role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"}>
+    <div
+      ref={toastRef}
+      className={styles.toast}
+      role={tone === "error" ? "alert" : "status"}
+      aria-live={tone === "error" ? "assertive" : "polite"}
+      onFocus={holdWhileFocused ? () => timerRef.current?.focus() : undefined}
+      onBlur={holdWhileFocused ? (event) => (event.currentTarget.contains(event.relatedTarget) ? undefined : timerRef.current?.blur()) : undefined}
+    >
       <span>{message}</span>
       {actionLabel && onAction ? (
         <button ref={actionRef} type="button" onClick={onAction} className={styles.action}>

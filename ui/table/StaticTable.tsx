@@ -16,6 +16,8 @@ export type StaticTableColumn = {
   rowHeader?: boolean;
   /** 머리글을 한 줄로 — 긴 칸(상세 JSON 등)이 폭을 가져가도 머리글 낱말이 두 줄로 갈리지 않는다(행동 로그). */
   nowrapHeader?: boolean;
+  /** 폰(<700)에서 이 열의 글자를 한 줄 말줄임으로 — `Table` 읽기 렌더의 `[data-cell-text]` 감싸개와 같은 규칙. 글자 칸이면 전체 글자가 `title`이다. 켜지 않은 열은 그대로 줄바꿈. */
+  ellipsis?: boolean;
 };
 
 export type StaticTableRow = {
@@ -46,10 +48,11 @@ function classNames(...names: (string | false | undefined)[]): string {
 
 export function StaticTable({ caption, editable = false, columns, rows }: StaticTableProps) {
   const hasRowHeader = columns.some((column) => column.rowHeader);
+  const hasEllipsis = columns.some((column) => column.ellipsis);
   const p2Indexes = columns.flatMap((column, index) => (column.priority === "p2" ? [index] : []));
 
   return (
-    <table className={classNames(styles.table, editable && styles.editable, editable && styles.inputCells)}>
+    <table className={classNames(styles.table, editable && styles.editable, editable && styles.inputCells)} data-cell-ellipsis={hasEllipsis ? "" : undefined}>
       <caption className="sr-only">{caption}</caption>
       <thead>
         <tr>
@@ -75,13 +78,23 @@ export function StaticTable({ caption, editable = false, columns, rows }: Static
               <tr>
                 {columns.map((column, index) => {
                   const className = classNames(styles.cell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight);
+                  const value = row.cells[index];
+                  // ellipsis 열: 글자 한 흐름을 block 감싸개 하나에 담는다(말줄임은 td가 아니라 이 감싸개에 건다 — Table.module.css `[data-cell-text]`).
+                  const content =
+                    column.ellipsis && !isEmptyCell(value) ? (
+                      <div data-cell-text="" title={typeof value === "string" ? value : undefined}>
+                        {value}
+                      </div>
+                    ) : (
+                      value
+                    );
                   return column.rowHeader ? (
                     <th key={column.key} scope="row" id={row.headerId} className={className}>
-                      {row.cells[index]}
+                      {content}
                     </th>
                   ) : (
                     <td key={column.key} className={className}>
-                      {row.cells[index]}
+                      {content}
                     </td>
                   );
                 })}

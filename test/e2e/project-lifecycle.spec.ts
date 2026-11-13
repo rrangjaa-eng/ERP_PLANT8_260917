@@ -822,11 +822,18 @@ test.describe("프로젝트 상세 틀 (04.6-12 — DetailScreen)", () => {
     const labels = look.items.map((item) => item.text);
     expect(labels.some((text) => text.startsWith("상태 바꾸기"))).toBe(true);
     expect(look.primaryInMain, "1차 버튼은 하나").toBe(1);
-    const last = look.items.at(-1);
-    expect(last?.primary, "DOM 순서 마지막 = 1차").toBe(true);
+    // 위험 3차(프로젝트 삭제)는 PC에서 1차 뒤 줄 맨 끝에 떼어 둔다(DECISIONS 2026-11-12 · SYSTEM §7-7).
+    const danger = look.items.filter((item) => item.text.startsWith("프로젝트 삭제"));
+    const rest = look.items.filter((item) => !item.text.startsWith("프로젝트 삭제"));
+    const last = rest.at(-1);
+    expect(last?.primary, "위험 3차를 뺀 DOM 순서 마지막 = 1차").toBe(true);
     expect(last?.text).toMatch(/^일괄 저장/);
-    const rights = look.items.map((item) => item.right);
-    expect(last?.right, "1차가 묶음의 오른쪽 끝").toBe(Math.max(...rights));
+    const rights = rest.map((item) => item.right);
+    expect(last?.right, "1차가 위험 3차를 뺀 묶음의 오른쪽 끝").toBe(Math.max(...rights));
+    if (danger.length > 0) {
+      expect(look.items.at(-1)?.text, "위험 3차는 DOM 순서 맨 끝").toMatch(/^프로젝트 삭제/);
+      expect(danger[0]?.right, "위험 3차는 1차보다 오른쪽").toBeGreaterThan(last?.right ?? Infinity);
+    }
     expect(look.items.some((item) => item.positiveTabIndex), "Tab 순서를 바꾸는 tabindex 없음").toBe(false);
 
     // 섹션 위 선 1px(--line-w) — 매출 섹션 제목의 section.

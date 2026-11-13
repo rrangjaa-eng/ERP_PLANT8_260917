@@ -1315,6 +1315,24 @@ test.describe("매출 줄 삭제 · 되돌리기 (07.6-01)", () => {
     expect(stored?.archivedAt).toBeNull();
   });
 
+  test("(DECISIONS 2026-11-13 · §7-19) 발행 표 `계산서` 칸 마지막 행동 → 다른 칸 `삭제` 가로 간격 >= 32px (1280 · 1024)", async ({ page }) => {
+    await openAsFinance(page, { issued: ISSUED_TWO });
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      const del = deleteButton(page, "발행 줄", "2026-09-05");
+      await expect(del).toBeVisible();
+      const gap = await del.evaluate((node) => {
+        const deleteCell = node.closest("td");
+        const invoiceCell = deleteCell?.previousElementSibling;
+        const controls = invoiceCell?.querySelectorAll("button, a");
+        const last = controls?.item((controls?.length ?? 1) - 1);
+        if (!last) throw new Error("계산서 칸 행동 없음");
+        return node.getBoundingClientRect().left - last.getBoundingClientRect().right;
+      });
+      expect(gap, `${width}px 간격`).toBeGreaterThanOrEqual(32);
+    }
+  });
+
   test("(D-7608) 입금일 칸 max = KST 오늘 · 새 입금 줄 내일 → 일괄 저장 → 그 칸 `미래 입금일 · 오늘까지 날짜 고르기` · 입금 표 `오류 1칸 · 전부 거부`", async ({ page }) => {
     const seeded = await openAsFinance(page, { issued: ISSUED_TWO, paid: [{ entryDate: "2026-09-20", amount: krw(330_000) }] });
     const today = kstToday(new Date());

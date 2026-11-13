@@ -245,6 +245,7 @@ export default async function VendorsPage({
               key: `cf_${def.key}`,
               header: def.label,
               priority: "p2" as const,
+              foldBelow: 1024 as const,
               cellWidth: def.type === "text" || def.type === "select" ? ("field" as const) : ("number" as const),
               ...(def.type === "number" ? { align: "right" as const } : {}),
             })),

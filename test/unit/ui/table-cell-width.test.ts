@@ -81,3 +81,60 @@ describe("StaticTable cellWidth", () => {
     expect(markup).toMatch(/<td[^>]*>가<\/td>/);
   });
 });
+
+// 07.5-01 DOM 감사 F1 — 열 옵션 foldBelow: 1024 미만에서 열을 접힌 줄로 접는다(좁은 PC에서 글자 열이 눌리지 않게).
+describe("StaticTable foldBelow", () => {
+  const markup = renderToStaticMarkup(
+    createElement(StaticTable, {
+      caption: "표",
+      columns: [
+        { key: "a", header: "일반", priority: "p1" },
+        { key: "b", header: "사업자", priority: "p2" },
+        { key: "c", header: "추가", priority: "p2", foldBelow: 1024 },
+        { key: "d", header: "날짜", priority: "p2", foldBelow: 1024 },
+      ],
+      rows: [{ key: "r1", cells: ["가", "나", "다", "라"] }],
+    }),
+  );
+
+  it("접는 열의 th · td에 fold 클래스가 붙고 옵션 없는 열에는 없다", () => {
+    expect(classOf(markup, "th", "추가")).toMatch(/fold-1024/);
+    expect(classOf(markup, "td", "다")).toMatch(/fold-1024/);
+    expect(classOf(markup, "th", "사업자")).not.toMatch(/fold-1024/);
+  });
+
+  it("접힌 줄에는 접는 열 값이 열 순서대로 있고 접는 열 항목에만 foldTablet이 붙는다", () => {
+    expect(markup).toMatch(/<span class="[^"]*foldItem[^"]*"><span class="sr-only">사업자 <\/span>나<\/span>/);
+    expect(markup).toMatch(/<span class="[^"]*foldItem[^"]*foldTablet[^"]*">(?:<span[^>]*> · <\/span>)?<span class="sr-only">추가 <\/span>다<\/span>/);
+    expect(markup.indexOf("다</span>")).toBeLessThan(markup.indexOf("라</span>"));
+  });
+
+  it("접는 열 값이 있는 행의 접힌 줄에만 태블릿 표시 클래스가 붙는다", () => {
+    expect(markup).toMatch(/<tr class="[^"]*collapsedRowTablet/);
+    const none = renderToStaticMarkup(
+      createElement(StaticTable, {
+        caption: "표",
+        columns: [
+          { key: "a", header: "일반", priority: "p1" },
+          { key: "c", header: "추가", priority: "p2", foldBelow: 1024 },
+        ],
+        rows: [{ key: "r1", cells: ["가", null] }],
+      }),
+    );
+    expect(none).not.toMatch(/collapsedRowTablet/);
+  });
+
+  it("옵션이 없는 표는 마크업에 fold 글자가 없다", () => {
+    const plain = renderToStaticMarkup(
+      createElement(StaticTable, {
+        caption: "표",
+        columns: [
+          { key: "a", header: "일반", priority: "p1" },
+          { key: "b", header: "사업자", priority: "p2" },
+        ],
+        rows: [{ key: "r1", cells: ["가", "나"] }],
+      }),
+    );
+    expect(plain).not.toMatch(/fold/);
+  });
+});

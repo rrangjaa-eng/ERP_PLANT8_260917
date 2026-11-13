@@ -20,6 +20,8 @@ export type StaticTableColumn = {
   ellipsis?: boolean;
   /** 07.5-01(D-7524) — 열 폭 옵션(`TableColumn.cellWidth`와 같다): `field` = 머리글 · 칸 내용을 폭 상한 span으로, `number` = `12ch`. 없으면 그대로. */
   cellWidth?: "field" | "number";
+  /** 07.5-01(DOM 감사 F1) — 이 폭 **미만**(700 이상)에서 이 열을 접힌 줄로 접는다. 폰(<700)은 priority 규칙이 따로 접는다. 접는 열은 `p2`로 선언한다. */
+  foldBelow?: 1024;
 };
 
 export type StaticTableRow = {
@@ -52,6 +54,7 @@ export function StaticTable({ caption, editable = false, columns, rows }: Static
   const hasRowHeader = columns.some((column) => column.rowHeader);
   const hasEllipsis = columns.some((column) => column.ellipsis);
   const p2Indexes = columns.flatMap((column, index) => (column.priority === "p2" ? [index] : []));
+  const hasFold = columns.some((column) => column.foldBelow);
 
   return (
     <table className={classNames(styles.table, editable && styles.editable, editable && styles.inputCells)} data-cell-ellipsis={hasEllipsis ? "" : undefined}>
@@ -62,7 +65,7 @@ export function StaticTable({ caption, editable = false, columns, rows }: Static
             <th
               key={column.key}
               scope="col"
-              className={classNames(styles.headerCell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight, column.nowrapHeader && styles.nowrapHeader, column.cellWidth === "number" && styles.cellWidthNumber)}
+              className={classNames(styles.headerCell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight, column.nowrapHeader && styles.nowrapHeader, column.foldBelow && styles["fold-1024"], column.cellWidth === "number" && styles.cellWidthNumber)}
             >
               {column.cellWidth === "field" ? <span className={styles.cellWidthField}>{column.header}</span> : column.header}
             </th>
@@ -79,7 +82,7 @@ export function StaticTable({ caption, editable = false, columns, rows }: Static
             <Fragment key={row.key}>
               <tr>
                 {columns.map((column, index) => {
-                  const className = classNames(styles.cell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight, column.cellWidth === "number" && styles.cellWidthNumber);
+                  const className = classNames(styles.cell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight, column.foldBelow && styles["fold-1024"], column.cellWidth === "number" && styles.cellWidthNumber);
                   const value = row.cells[index];
                   // ellipsis 열: 글자 한 흐름을 block 감싸개 하나에 담는다(말줄임은 td가 아니라 이 감싸개에 건다 — Table.module.css `[data-cell-text]`).
                   const content =
@@ -105,15 +108,25 @@ export function StaticTable({ caption, editable = false, columns, rows }: Static
               </tr>
               {folded.length > 0 ? (
                 // P2 값의 유일한 출처(폰에서는 P2 열이 숨는다)라 aria-hidden을 두지 않는다. PC에서는 CSS가 이 줄을 숨겨 중복 낭독이 없다.
-                <tr className={styles.collapsedRow}>
+                <tr className={classNames(styles.collapsedRow, folded.some(({ column }) => column?.foldBelow) && styles.collapsedRowTablet)}>
                   <td colSpan={columns.length} headers={hasRowHeader ? row.headerId : undefined} className={styles.collapsedCell}>
-                    {folded.map(({ column, value }, foldedIndex) => (
-                      <Fragment key={column?.key ?? foldedIndex}>
-                        {foldedIndex > 0 ? " · " : null}
-                        <span className="sr-only">{column?.header} </span>
-                        {value}
-                      </Fragment>
-                    ))}
+                    {folded.map(({ column, value }, foldedIndex) => {
+                      const body = (
+                        <>
+                          {foldedIndex > 0 ? (hasFold ? <span className={styles.foldSep}> · </span> : " · ") : null}
+                          <span className="sr-only">{column?.header} </span>
+                          {value}
+                        </>
+                      );
+                      // 접는 열이 있는 표만 항목을 span으로 싼다 — 700~1023에서는 접는 열 항목만 보인다(Table.module.css `.foldTablet`).
+                      return hasFold ? (
+                        <span key={column?.key ?? foldedIndex} className={classNames(styles.foldItem, column?.foldBelow && styles.foldTablet)}>
+                          {body}
+                        </span>
+                      ) : (
+                        <Fragment key={column?.key ?? foldedIndex}>{body}</Fragment>
+                      );
+                    })}
                   </td>
                 </tr>
               ) : null}

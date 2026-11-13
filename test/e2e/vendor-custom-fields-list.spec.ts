@@ -94,6 +94,46 @@ test.describe("거래처 목록 추가 칸 열 (07.5-01)", () => {
     await adminContext.close();
   });
 
+  test("700~1023에서는 추가 칸 열이 접힌 줄로 접히고 1280에서는 열로 남는다 (DOM 감사 F1)", async ({ page }) => {
+    const editor = await createE2EVendorEditor();
+    const columnLabel = `${PREFIX}접기${randomUUID().slice(0, 4)}`;
+    const field = await createE2EFieldDefinition({ label: columnLabel, type: "text", required: false, onlyRoleId: editor.roleId });
+    await login(page, editor);
+    const name = vendorName();
+    const value = `접힘값${randomUUID().slice(0, 4)}`;
+    await registerVendor(page, name, { [field.key]: value });
+
+    // 768 — 추가 칸 머리글 · 칸이 표시되지 않고(display none) 값은 접힌 줄에 있으며 가로 넘침 0
+    await page.setViewportSize({ width: 768, height: 900 });
+    await page.goto("/admin/vendors");
+    const header = page.locator("thead th", { hasText: columnLabel });
+    await expect(header).toHaveCount(1);
+    await expect(header).toBeHidden();
+    const row = page.locator("tbody tr", { hasText: name }).first();
+    const folded = row.locator("xpath=following-sibling::tr[1]");
+    await expect(folded).toBeVisible();
+    await expect(folded).toContainText(value);
+    const tablet = await page.evaluate((target) => {
+      const cell = [...document.querySelectorAll("tbody td")].find((td) => td.textContent?.trim() === target);
+      return {
+        columnShown: cell ? getComputedStyle(cell).display !== "none" : false,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    }, value);
+    expect(tablet.columnShown).toBe(false);
+    expect(tablet.overflow).toBeLessThanOrEqual(0);
+    const nameWidth768 = await page.locator("tbody tr", { hasText: name }).first().locator("td").first().evaluate((cell) => cell.getBoundingClientRect().width);
+
+    // 1280 — 열로 선다
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/admin/vendors");
+    await expect(page.locator("thead th", { hasText: columnLabel })).toBeVisible();
+    await expect(page.locator("tbody tr", { hasText: name }).first().locator("td", { hasText: value })).toBeVisible();
+    await expect(page.locator("tbody tr", { hasText: name }).first().locator("xpath=following-sibling::tr[1]")).toBeHidden();
+    const nameWidth1280 = await page.locator("tbody tr", { hasText: name }).first().locator("td").first().evaluate((cell) => cell.getBoundingClientRect().width);
+    console.log(`[F1] 이름 칸 폭 768=${Math.round(nameWidth768)} 1280=${Math.round(nameWidth1280)}`);
+  });
+
   test("검색은 칸 값도 찾고, 선택 칸 거르개는 즉시 이동하며 검색 · 갈래 · 수정 → 닫기 · 숨김 토글에서도 유지되고 「필터 지우기」만 푼다", async ({ page, browser }) => {
     const editor = await createE2EVendorEditor();
     const textLabel = `${PREFIX}검색${randomUUID().slice(0, 4)}`;

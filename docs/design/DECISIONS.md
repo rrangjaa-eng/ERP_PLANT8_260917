@@ -2711,3 +2711,12 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: 화면 모듈 CSS 클래스 · 인라인 style.
 **범위**: `ui/table/{types.ts,StaticTable.tsx,Table.tsx,Table.module.css}` · `ui/custom-field/{CustomFieldFilter.tsx,CustomField.module.css}`. 새 색 · 서체 · radius · 토큰 0. 옵션이 없는 열의 DOM · 클래스 글자는 main 그대로.
 **영향**: SYSTEM §2-4 · §7-3.
+
+## 2026-11-13 — 좁은 PC(700~1023) 관리자 추가 칸 열은 접힌 줄로 접는다 (07.5-01 · DOM 감사 F1)
+**결정**: `StaticTableColumn`에 선택 열 옵션 `foldBelow?: 1024`를 둔다. 그 폭 **미만**(700 이상)에서 그 열(머리글 · 칸)은 열에서 빠지고, 값은 폰 접힌 줄과 같은 줄 · 같은 모양(열 순서 · ` · ` 이음)에 접는 열 항목만 실려 행 아래에 선다. 1024 이상은 열 그대로, 폰(<700)은 P2 규칙 그대로. 접는 열은 `p2`로 선언한다. 첫 사용처 = 거래처 목록의 관리자 추가 칸 열(`app/(app)/admin/vendors/page.tsx`).
+**이유**: 추가 칸 열(p2 · `field`/`number`)이 700~1023에서 글자 열을 63~86px로 눌러 긴 값이 19줄로 줄바꿈됐다(DOM 감사 F1 · Codex r2 #5). SYSTEM.md §7-3은 가장 긴 문자 열을 눌러서는 안 되고 숨김은 P3만 허용한다 — 값을 지우지 않고 접힌 줄로 옮기면 정보 손실 없이 이 규칙을 지킨다.
+**바뀐 규칙**: SYSTEM.md §7-3 「열이 많은 표」 절에 열 접기 한 줄(숨김은 P3만이라는 규칙은 그대로, 접기는 값을 접힌 줄에 남긴다).
+**버린 대안**: 추가 칸을 P3로 선언해 숨김(값이 사라진다) · 추가 칸 열 폭을 더 줄이기(글자 열이 그대로 눌린다) · 화면 하나만 CSS 예외.
+**결정자**: 계획자 추천안(사용자 카드 대기) — 확정 전까지 이 항목은 사용자가 뒤집을 수 있다.
+**범위**: `ui/table/{StaticTable.tsx,Table.module.css}` · `app/(app)/admin/vendors/page.tsx`. 새 색 · 서체 · radius · 토큰 0.
+**영향**: SYSTEM §7-3 · §6-1.

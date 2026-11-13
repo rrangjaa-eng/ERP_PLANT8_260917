@@ -37,6 +37,8 @@ export type EntryDraft = {
   cellErrors?: Record<string, string>;
   /** 06-18(D-610) — 「발행 줄로」로 만든 저장 전 새 줄이 닫을 발행 요청 id. 저장 때 새 줄에만 실린다. */
   fromIssueRequestId?: string;
+  /** 07.6-01(Q1 · D-7610) — 발행 요청이 이어진 저장된 발행 줄의 지우기 막힘 이유(`발행 요청 연결 · 삭제 불가`). */
+  deleteBlockedReason?: string | null;
 };
 
 /** 07.6-01(eng r1 P2-A2) — 지우기 · 되돌리기 응답의 잔액 · 수금 지연. 키가 없으면(합계 조회 실패 · 입금 정보를 못 봄) 그 칸은 그대로다. */
@@ -502,6 +504,10 @@ export function RevenueSection({
             <RowActions noWrap>
               {failure && !failure.retry ? (
                 <RowAction danger disabled disabledReason={failure.text} autoFocus onClick={() => undefined}>
+                  {label}
+                </RowAction>
+              ) : row.deleteBlockedReason ? (
+                <RowAction danger disabled disabledReason={row.deleteBlockedReason} onClick={() => undefined}>
                   {label}
                 </RowAction>
               ) : (

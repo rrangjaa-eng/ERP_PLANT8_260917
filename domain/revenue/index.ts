@@ -43,6 +43,7 @@ import {
   type RevenueEntryRow,
 } from "@/repositories/revenue-entries";
 import { findLatestQuoteRevision as repoFindLatestQuoteRevision } from "@/repositories/quote-revisions";
+import { listLinkedIssueEntryIdsByProject } from "@/repositories/revenue-issue-requests";
 import { sumQuoteAmountByRevision as repoSumQuoteAmountByRevision } from "@/repositories/quote-lines";
 
 export class ForbiddenError extends UserFacingError {}
@@ -117,7 +118,12 @@ export type RevenueEntryDto = {
   recomputeDeltaKrw: number | null;
   note: string | null;
   version: number;
+  /** 07.6-01(Q1) — 이 줄을 지울 수 없는 이유(서버가 글자를 정한다). 발행 요청이 이어진 발행 줄만, 그 밖은 null. */
+  deleteBlockedReason: string | null;
 };
+
+// 07.6-01(Q1 · D-7610 — 사용자 카드 확정 11/4 22:24 KST 「그대로 막기」): 발행 요청이 이어진 발행 줄은 지우지 않는다.
+export const LINKED_REQUEST_BLOCK = "발행 요청 연결 · 삭제 불가";
 
 // 04-16(D-84) — 계약 금액은 입력이 아니라 고객 승인된 현재 차수의 견적 합계다. 미승인이면 금액 셋이 null이고
 // pendingLabel(`{n}차 고객 승인 전`)만 있다 — 이전 승인 차수의 합계로 대신하지 않는다.
@@ -169,6 +175,7 @@ registerDto({
 function toEntryDto(
   row: RevenueEntryRow,
   computed: { vatKrw: number | null; totalKrw: number | null; computedGrossKrw: number | null; recomputeDeltaKrw: number | null },
+  deleteBlockedReason: string | null = null,
 ): RevenueEntryDto {
   const money = moneyFromRow({
     currency: row.amountCurrency,
@@ -187,6 +194,7 @@ function toEntryDto(
     recomputeDeltaKrw: computed.recomputeDeltaKrw,
     note: row.note,
     version: row.version,
+    deleteBlockedReason,
   };
 }
 
@@ -233,11 +241,16 @@ export async function listRevenue(viewer: Viewer, projectId: string, deps?: Part
   const rows = await repoListRevenueEntriesByProject(viewer, projectId);
   const issuedRows = rows.filter((row) => row.kind === "issue");
   const paidRows = rows.filter((row) => row.kind === "payment");
+  const linkedEntryIds = new Set(await listLinkedIssueEntryIdsByProject(viewer, projectId));
 
   const issuedEntries = await Promise.all(
     issuedRows.map(async (row) => {
       const vat = await computeVat(row.amountAmountKrw, new Date(row.entryDate), deps);
-      return toEntryDto(row, { vatKrw: vat.vatKrw, totalKrw: vat.totalKrw, computedGrossKrw: null, recomputeDeltaKrw: null });
+      return toEntryDto(
+        row,
+        { vatKrw: vat.vatKrw, totalKrw: vat.totalKrw, computedGrossKrw: null, recomputeDeltaKrw: null },
+        linkedEntryIds.has(row.id) ? LINKED_REQUEST_BLOCK : null,
+      );
     }),
   );
   const paidEntries = await Promise.all(

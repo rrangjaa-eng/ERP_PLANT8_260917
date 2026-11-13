@@ -15,9 +15,11 @@ import {
   restoreRevenueEntryRow,
   type RevenueEntryRow,
 } from "@/repositories/revenue-entries";
+import { hasIssueRequestForEntry } from "@/repositories/revenue-issue-requests";
 import {
   ENTRY_NOT_FOUND,
   ForbiddenError,
+  LINKED_REQUEST_BLOCK,
   ProjectNotFoundError,
   REVENUE_SETTLEMENT_MENU,
   entryChangeView,
@@ -92,6 +94,8 @@ export async function archiveRevenueEntry(
   return inLockedRevenueProject(viewer, input.projectId, deps, { archived: projectGone, completed: () => new GateBlockedError(COMPLETED_DELETE_LOCK) }, async (tx) => {
     const entry = await findRevenueEntryById(viewer, input.entryId, tx);
     if (!entry || entry.projectId !== input.projectId || entry.archivedAt !== null) throw new UserFacingError(ENTRY_NOT_FOUND);
+    // Q1(D-7610): 잠근 프로젝트 tx 안이라 잇기(원장 tx — 같은 프로젝트 잠금 뒤)가 판정 사이에 끼지 못한다.
+    if (await hasIssueRequestForEntry(viewer, entry.id, tx)) throw new UserFacingError(LINKED_REQUEST_BLOCK);
     const no = await entryNo(viewer, input.projectId, entry, tx);
     const archived = await archiveRevenueEntryIfCurrent(viewer, { id: entry.id, projectId: input.projectId, expectedVersion: input.version, at: now() }, tx);
     if (!archived) throw new UserFacingError(ENTRY_CHANGED);
@@ -146,4 +150,46 @@ export async function undoRevenueArchive(
     );
     return { kind, version: restored.version };
   });
+}
+
+// 07.6-01(D-7603 · D-7611 · Q2) — 보관함 복원 거부(원인 토스트로 보이게 보관함이 아는 클래스). 이 모듈은 domain/archive를 import하지 않는다(순환).
+export class RevenueRestoreBlockedError extends UserFacingError {}
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// 보관함 「매출 줄」 복원기(domain/archive DOMAIN_RESTORERS). 범용 restore()가 admin.archive 쓰기 · requiredMenu(projects.revenue) 쓰기를 먼저 봤다(E2).
+// 순서: 권한(방어) → 줄 읽기 → 쓰기 범위 → 잠근 프로젝트(보관 · 완료 거부) → 이미 활성이면 { restored: false } → 되살림 · 로그(via archive).
+export async function restoreRevenueEntry(viewer: Viewer, id: string, deps: RevenueArchiveDeps = {}): Promise<{ restored: boolean }> {
+  if (!(await revenueWriteRights(viewer, deps.can)).canWriteEntries) throw new RevenueRestoreBlockedError("보관함 쓰기 권한 없음");
+  const entry = UUID_SHAPE.test(id) ? await findRevenueEntryById(viewer, id) : null;
+  if (!entry) throw new UserFacingError(ENTRY_NOT_FOUND);
+  const scope = await projectRowScope(viewer, deps.can ? { can: deps.can } : undefined, { fundOp: [REVENUE_SETTLEMENT_MENU, "write"] });
+  if (!(await findProjectInScope(viewer, scope, entry.projectId))) throw new RevenueRestoreBlockedError("매출 줄 복원 권한 없음 · 복원 불가");
+  const now = deps.now ?? (() => new Date());
+  const recordAction = deps.recordAction ?? defaultRecordAction;
+  return inLockedRevenueProject(
+    viewer,
+    entry.projectId,
+    deps,
+    { archived: () => new RevenueRestoreBlockedError("프로젝트 삭제됨 · 복원 불가"), completed: () => new RevenueRestoreBlockedError(COMPLETED_RESTORE_LOCK) },
+    async (tx) => {
+      const latest = await findRevenueEntryById(viewer, id, tx);
+      if (!latest || latest.archivedAt === null) return { restored: false };
+      const restored = await restoreRevenueEntryRow(viewer, { id, projectId: entry.projectId, at: now() }, tx);
+      if (!restored) return { restored: false };
+      const kind = restored.kind as RevenueEntryKind;
+      const no = await entryNo(viewer, entry.projectId, restored, tx);
+      await recordAction(
+        viewer,
+        {
+          actionType: REVENUE_RESTORE_LOG,
+          entity: REVENUE_ENTITY,
+          entityId: entry.projectId,
+          detail: { entryId: id, via: "archive", lineChanges: [{ id, kind, no, name: null, changes: buildChanges({}, entryChangeView(restored)) }] },
+        },
+        { tx },
+      );
+      return { restored: true };
+    },
+  );
 }

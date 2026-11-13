@@ -18,6 +18,7 @@ import { BUSINESS_NO_UNIQUE_INDEX, businessNoDigits } from "@/domain/vendors";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { restoreQuoteLine } from "@/domain/quotes/lines";
+import { restoreRevenueEntry } from "@/domain/revenue/archive";
 import { restoreProject } from "@/domain/projects/archive";
 import { canViewReserves, restoreReserve } from "@/domain/reserves";
 import { HOLIDAYS_MENU, restoreHoliday } from "@/domain/holidays/admin";
@@ -232,6 +233,8 @@ const DOMAIN_RESTORERS: Partial<Record<string, (viewer: Viewer, id: string, deps
   reserve_entry: (viewer, id, deps) => restoreReserve(viewer, id, { recordAction: deps?.recordAction }),
   // quick 261001-hfi(ADMN-12) — 공휴일 복원은 달력 잠금 · admin.holidays 쓰기 · 소급 금지 · 재계산 · 로그를 한 트랜잭션에서.
   holiday: (viewer, id, deps) => restoreHoliday(viewer, id, { recordAction: deps?.recordAction }),
+  // 07.6(D-7611): 매출 줄 복원은 projects.revenue 쓰기 + 자금 쓰기 범위 · 프로젝트 잠금 · 완료 거부 · 로그를 한 tx에서.
+  revenue_entry: (viewer, id, deps) => restoreRevenueEntry(viewer, id, { can: deps?.can, recordAction: deps?.recordAction }),
   // 06.4(D-6406): 사람 복원은 사람 쓰기 · 상한 · 자리 재검사를 한 tx에서.
   user: (viewer, id, deps) => restoreUser(viewer, id, { can: deps?.can, recordAction: deps?.recordAction, now: deps?.now, visible: deps?.visible }),
   // 07.2-17(D-7210 · D-7213): 프로젝트 복원은 projects.delete 쓰기 + 쓰기 범위 · 담당 팀 사용중지 거부 · 돈 문서 0 · 같은 시각 줄 복원을 한 tx에서.
@@ -320,15 +323,16 @@ export async function restore(
   id: string,
   deps?: Partial<ArchiveDeps>,
 ): Promise<RestoreResult> {
-  // 도메인 복원기는 자기 권한 · 형식 판정 뒤 잠금 안에서 「이미 복원됨」({ restored: false })을 가린다(quick 261002-4jn).
-  const domainRestorer = DOMAIN_RESTORERS[entity];
   // 07.2-17(D-F3): 프로젝트는 보관함 권한(admin.archive) 없이 projects.delete 쓰기만으로 되살린다 — 복원기가 자기 권리를 판정하므로
   // 보관함 관문 앞에서 보낸다. 다른 종류는 지금 순서 그대로.
-  if (entity === "project" && domainRestorer) return domainRestorer(viewer, id, deps);
+  if (entity === "project" && DOMAIN_RESTORERS.project) return DOMAIN_RESTORERS.project(viewer, id, deps);
   await assertCanWrite(viewer, deps);
-  if (domainRestorer) return domainRestorer(viewer, id, deps);
+  // 07.6 E2: requiredMenu 판정은 위임 전에 — 매출 줄이 도메인 복원기 + requiredMenu를 함께 가진 첫 종류.
   const entry = findEntry(entity);
   await assertCanWriteEntry(viewer, entry, deps);
+  // 도메인 복원기는 자기 권한 · 형식 판정 뒤 잠금 안에서 「이미 복원됨」({ restored: false })을 가린다(quick 261002-4jn).
+  const domainRestorer = DOMAIN_RESTORERS[entity];
+  if (domainRestorer) return domainRestorer(viewer, id, deps);
 
   const row = await entry.findById(viewer, id);
   if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
@@ -439,7 +443,9 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   );
   // 06.2(I-2): 보관된 견적 줄은 그 줄의 프로젝트를 볼 수 있는 사람에게만 — 범위 밖 프로젝트의 품목 이름이 보관함으로 새지 않게.
   // 보관함 메뉴는 관리자 화면이지만 줄 이름은 프로젝트 정보다 — 예외로 두지 않고 거른다(06.2-03 독립 검토 I-2).
-  const lineProjectIds = [...new Set(listed.flatMap((row) => (row.entity === "quote_line" && row.projectId ? [row.projectId] : [])))];
+  const lineProjectIds = [
+    ...new Set(listed.flatMap((row) => ((row.entity === "quote_line" || row.entity === "revenue_entry") && row.projectId ? [row.projectId] : []))),
+  ];
   const seenProjects =
     lineProjectIds.length > 0 ? await listProjectIdsInScope(viewer, await projectRowScope(viewer, deps?.can ? { can: deps.can } : undefined), lineProjectIds) : new Set<string>();
   // 07.2-17(D-7213): 보관된 프로젝트 행은 지우고 되살릴 수 있는 범위(쓰기 rowScope — 자금 키의 보기 확대를 빼고)의 것만.
@@ -448,9 +454,19 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
     archivedProjectIds.length > 0
       ? await listProjectIdsInScope(viewer, await projectRowScope(viewer, deps?.can ? { can: deps.can } : undefined, "write"), archivedProjectIds)
       : new Set<string>();
+  // 07.6(D-7611): 매출 줄 「복원」은 자금 쓰기 범위(projects.revenue 쓰기 fundOp)의 프로젝트 것만.
+  const revenueProjectIds = [...new Set(listed.flatMap((row) => (row.entity === "revenue_entry" && row.projectId ? [row.projectId] : [])))];
+  const revenueWritable =
+    revenueProjectIds.length > 0
+      ? await listProjectIdsInScope(
+          viewer,
+          await projectRowScope(viewer, deps?.can ? { can: deps.can } : undefined, { fundOp: ["projects.revenue", "write"] }),
+          revenueProjectIds,
+        )
+      : new Set<string>();
   const rows = listed.filter(
     (row) =>
-      (row.entity !== "quote_line" || (row.projectId !== undefined && seenProjects.has(row.projectId))) &&
+      ((row.entity !== "quote_line" && row.entity !== "revenue_entry") || (row.projectId !== undefined && seenProjects.has(row.projectId))) &&
       (row.entity !== "project" || (row.projectId !== undefined && writableProjects.has(row.projectId))),
   );
 
@@ -468,7 +484,9 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
     (row.entity !== "team" || !row.parentArchived) &&
     (row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken)) &&
     (row.entity !== "vendor" || !row.businessNoTaken) &&
-    (row.entity !== "user" || peopleWritable);
+    (row.entity !== "user" || peopleWritable) &&
+    (row.entity !== "revenue_entry" ||
+      (row.projectId !== undefined && revenueWritable.has(row.projectId) && !row.projectArchived && !row.projectCompleted));
 
   const findUserById = deps?.findUserById ?? defaultFindUserById;
   const archivedByIds = [...new Set(rows.map((row) => row.archivedBy).filter((id): id is string => id !== null))];

@@ -841,6 +841,7 @@ function entriesFromDto(entries: RevenueDto["issuedEntries"]): EntryDraft[] | un
     vatKrw: entry.vatKrw,
     totalKrw: entry.totalKrw,
     foreignLine: formatForeignLine(entry.amount),
+    deleteBlockedReason: entry.deleteBlockedReason,
   }));
 }
 

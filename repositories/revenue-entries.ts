@@ -223,3 +223,35 @@ export async function restoreRevenueEntryRow(
     .returning();
   return row ?? null;
 }
+
+// 07.6-01(D-7603) — 보관함 목록(repositories/archive.ts). 이름은 금액 없는 `{프로젝트 번호} {발행|입금} {날짜}`(A3 — 보관함은 매출 노출 정보 항목 밖,
+// reserve-entries.ts 선례). projectArchived · projectCompleted는 복원 가능 판정 재료(D-7612) — 화면 DTO에 싣지 않는다.
+export async function listArchivedRevenueEntryNames(viewer: Viewer): Promise<
+  { id: string; name: string; archivedAt: Date; archivedBy: string | null; projectId: string; projectArchived: boolean; projectCompleted: boolean }[]
+> {
+  void viewer;
+  const rows = await db
+    .select({
+      id: revenueEntries.id,
+      kind: revenueEntries.kind,
+      entryDate: revenueEntries.entryDate,
+      archivedAt: revenueEntries.archivedAt,
+      archivedBy: revenueEntries.archivedBy,
+      projectId: projects.id,
+      number: projects.number,
+      projectArchivedAt: projects.archivedAt,
+      projectStatus: projects.status,
+    })
+    .from(revenueEntries)
+    .innerJoin(projects, eq(projects.id, revenueEntries.projectId))
+    .where(isNotNull(revenueEntries.archivedAt));
+  return rows.map((row) => ({
+    id: row.id,
+    name: `${row.number} ${row.kind === "issue" ? "발행" : "입금"} ${row.entryDate}`,
+    archivedAt: row.archivedAt as Date,
+    archivedBy: row.archivedBy,
+    projectId: row.projectId,
+    projectArchived: row.projectArchivedAt !== null,
+    projectCompleted: row.projectStatus === "completed",
+  }));
+}

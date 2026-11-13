@@ -9,6 +9,7 @@ import { KvList } from "@/ui/kv-list/KvList";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { formatKrw, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
+import { kstToday } from "@/lib/kst-date";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { CellIssue, TableColumn } from "@/ui/table/types";
 import type { ContractInfo } from "@/domain/revenue";
@@ -627,6 +628,7 @@ export function RevenueSection({
             aria-label="입금일"
             type="date"
             value={row.entryDate}
+            max={kstToday(new Date())}
             onChange={(event) => onPaidChange(row.clientKey, { entryDate: event.target.value })}
             className={styles.cellInput}
             readOnly={saveLocked}

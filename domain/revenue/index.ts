@@ -25,6 +25,7 @@ import { findEffectiveValue, findSimpleValue } from "@/repositories/settings";
 import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT, PROJECT_COLLECTION_DUE_DAYS } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstDateOf, kstToday } from "@/lib/kst-date";
+import { futurePaidDateErrors } from "@/domain/revenue/paid-date";
 import type { HolidayLookup } from "@/domain/holidays/business-day";
 import { loadHolidayLookup as defaultLoadHolidayLookup, readHolidayLookup } from "@/domain/holidays/calendar";
 import { LUNAR_TABLE_FIRST_YEAR, LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
@@ -396,6 +397,8 @@ export type RevenueWriteDeps = {
   rememberFxRate: typeof rememberFxRate;
   /** 04-41(B §1) — 트랜잭션 앞에서 계산한 권한. 있으면 잠긴 트랜잭션 안에서 권한을 조회하지 않는다. */
   rights: { canWriteEntries: boolean };
+  /** 07.6-01(D-7608) — 입금일 미래 판정의 오늘(KST). 테스트가 시각을 주입한다. */
+  now: () => Date;
 };
 
 const ENTRY_SCOPE_RULE = "revenue.entry-scope";
@@ -566,7 +569,7 @@ export async function saveRevenueInTx(
   viewer: Viewer,
   projectId: string,
   input: SaveRevenueInput,
-  deps: Pick<RevenueWriteDeps, "rights"> & Partial<Pick<RevenueWriteDeps, "recordAction">>,
+  deps: Pick<RevenueWriteDeps, "rights"> & Partial<Pick<RevenueWriteDeps, "recordAction" | "now">>,
   tx: DbOrTx,
 ): Promise<FxToRemember[]> {
   if ((input.issuedEntries || input.paidEntries) && !deps.rights.canWriteEntries) {
@@ -581,6 +584,9 @@ export async function saveRevenueInTx(
   // 07.1-13 S8(E-P2-39): 고치는 기존 줄의 이전 값을 쓰기 전에 같은 tx로 한 번 묶어 읽는다(줄마다 질의하지 않는다).
   const editedIds = [...issued, ...paid].flatMap(({ input }) => (input.id && !input.isNew ? [input.id] : []));
   const priorById = new Map((await repoFindRevenueEntriesByIds(viewer, editedIds, tx)).map((row) => [row.id, row] as const));
+  // 07.6-01(D-7608): 새 입금 줄 · 바뀐 입금일이 오늘(KST) 뒤면 칸 오류로 전부 거부 — 형식 오류 봉투가 먼저, 발행 줄은 보지 않는다.
+  const futurePaid = futurePaidDateErrors(input.paidEntries ?? [], priorById, kstToday((deps.now ?? (() => new Date()))()));
+  if (futurePaid.length > 0) throw new SaveRejectedError([], futurePaid);
   const issuedResult = await saveEntries(viewer, projectId, "issue", issued, priorById, tx);
   const paidResult = await saveEntries(viewer, projectId, "payment", paid, priorById, tx);
 
@@ -612,7 +618,7 @@ export async function saveRevenue(
   const fxToRemember = await withTransaction(async (tx) => {
     const locked = await lockProjectForWrite(viewer, projectId, tx);
     if (!locked || locked.archivedAt !== null) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
-    return saveRevenueInTx(viewer, projectId, input, { rights, recordAction: deps?.recordAction }, tx);
+    return saveRevenueInTx(viewer, projectId, input, { rights, recordAction: deps?.recordAction, now: deps?.now }, tx);
   });
   await rememberFxAfterCommit(fxToRemember, deps?.rememberFxRate);
   return listRevenue(viewer, projectId);

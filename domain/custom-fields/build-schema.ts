@@ -17,6 +17,29 @@ export type FieldDef = {
   required?: boolean;
 };
 
+// 07.5-01 D-7521 · A18: 날짜 칸 오류 글자 — 내부 화면 명사형(DECISIONS 2026-09-26). 03의 표 셀과 같은 글자.
+export const CUSTOM_DATE_INVALID_MESSAGE = "날짜 아님 · 2026-11-04처럼";
+
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+// 실존하는 YYYY-MM-DD만 — 정규식 뒤 UTC로 되짚어 2026-02-31 같은 넘침 날짜(관대 파싱은 3월 3일로 읽는다)를 막는다.
+export function isStrictIsoDate(value: string): boolean {
+  const match = ISO_DATE.exec(value);
+  if (!match) return false;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+// 날짜 칸 — 문자열은 엄격 ISO만(통과하면 지금처럼 Date로), Date 값은 날짜 글자로 바꿔 같은 판정을 거친다.
+const strictDate = z.preprocess(
+  (value) => (value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString().slice(0, 10) : value),
+  z
+    .string()
+    .refine(isStrictIsoDate, { message: CUSTOM_DATE_INVALID_MESSAGE })
+    .transform((value) => new Date(value)),
+);
+
 function baseSchemaFor(def: FieldDef): z.ZodType {
   switch (def.type) {
     case "text":
@@ -24,7 +47,7 @@ function baseSchemaFor(def: FieldDef): z.ZodType {
     case "number":
       return z.coerce.number();
     case "date":
-      return z.coerce.date();
+      return strictDate;
     case "select":
       return z.enum((def.options ?? []) as [string, ...string[]]);
   }

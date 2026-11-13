@@ -25,6 +25,7 @@ import {
   type VendorRow,
 } from "@/repositories/vendors";
 import { readCustomFieldInputs } from "@/domain/custom-fields/access";
+import { customFieldFilterDefs, customTextSearchKeys, parseCustomFieldFilters } from "@/domain/custom-fields/access-rules";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
 import { servesSide, vendorKindToAdd, vendorKindsFor, VENDOR_KIND_LABELS, type VendorKind, type VendorSide } from "@/domain/vendors/kind";
@@ -233,7 +234,8 @@ export type VendorListDeps = { can: typeof defaultCan };
 
 // 07-20 V2: 목록 · 파일 받기가 같은 거르개 — 숨김 포함 · 갈래(그 쪽 + 둘 다) · 검색어(이름 · 사업자 번호 앞부분).
 // 게이트 P2: 번호 조건은 검색어가 숫자 · 하이픈만일 때만 건다 — `제2공장`의 「2」가 번호 부분 일치로 무관한 거래처를 끌어왔다.
-export type VendorListFilter = { includeHidden?: boolean; kind?: VendorSide | null; q?: string };
+// 07.5-01: `custom` = 선택 칸 거르개(정의 키 → 값 — `cf_` 접두 없음). 보이는 활성 선택 칸 앞 2개의 활성 선택지 값만 걸리고 나머지는 무시한다.
+export type VendorListFilter = { includeHidden?: boolean; kind?: VendorSide | null; q?: string; custom?: Record<string, string> };
 
 export function vendorListQuery(filter: VendorListFilter): { includeHidden: boolean; kinds: VendorKind[] | null; nameQuery: string; digitsQuery: string | null } {
   const q = (filter.q ?? "").trim();
@@ -245,9 +247,19 @@ export function vendorListQuery(filter: VendorListFilter): { includeHidden: bool
   };
 }
 
+// 07.5-01 D-7522 · D-7510: 검색이 함께 찾는 추가 칸 키 · 선택 칸 거르개 — 입력 칸 집합(보이는 활성 칸)에서만 나온다.
+// 호출당 한 번 읽는다(바깥 문이 꺼지면 둘 다 빈 배열 — 숨은 칸 값으로 행이 걸리지 않는다).
+async function customListOptions(viewer: Viewer, filter: VendorListFilter) {
+  // 검색어도 거르개도 없으면 읽지 않는다 — 목록 SQL 불변.
+  if ((filter.q ?? "").trim() === "" && Object.keys(filter.custom ?? {}).length === 0) return {};
+  const { inputDefs } = await vendorInputFieldKeys(viewer);
+  const customSelects = Object.entries(parseCustomFieldFilters(filter.custom ?? {}, customFieldFilterDefs(inputDefs))).map(([key, value]) => ({ key, value }));
+  return { customTextKeys: customTextSearchKeys(inputDefs), customSelects };
+}
+
 export async function listVendors(viewer: Viewer, opts?: VendorListFilter): Promise<VendorDto[]> {
   const scope = await scopeFor(viewer, VENDOR_ENTITY);
-  const rows = await repoListVendors(viewer, { scope, ...vendorListQuery(opts ?? {}) });
+  const rows = await repoListVendors(viewer, { scope, ...vendorListQuery(opts ?? {}), ...(await customListOptions(viewer, opts ?? {})) });
   const visibleKeys = await visibleCustomFieldKeys(viewer, VENDOR_ENTITY);
   return Promise.all(rows.map((row) => toVendorDto(viewer, row, visibleKeys)));
 }
@@ -255,7 +267,7 @@ export async function listVendors(viewer: Viewer, opts?: VendorListFilter): Prom
 // 07-20 D-736 — 파일 받기 상한 판정용. listVendors와 같은 범위 · 거르개로 수만 센다.
 export async function countVendors(viewer: Viewer, opts?: VendorListFilter): Promise<number> {
   const scope = await scopeFor(viewer, VENDOR_ENTITY);
-  return repoCountVendors(viewer, { scope, ...vendorListQuery(opts ?? {}) });
+  return repoCountVendors(viewer, { scope, ...vendorListQuery(opts ?? {}), ...(await customListOptions(viewer, opts ?? {})) });
 }
 
 // 자동완성 — 검색어를 NFC 정규화 + 소문자로 낮춘 뒤 normalizedName의 부분

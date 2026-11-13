@@ -9,16 +9,22 @@ export function VendorSearch({
   includeHidden,
   kind,
   clearHref,
+  custom,
 }: {
   query: string;
   includeHidden: boolean;
   kind: VendorSide | null;
   clearHref: string;
+  /** 07.5-01: 지금 고른 추가 칸 거르개(정의 키 → 값) — 검색을 제출해도 풀리지 않게 숨은 칸으로 지킨다. */
+  custom: Record<string, string>;
 }) {
   return (
     <form method="get" action="/admin/vendors" role="search" className={styles.searchForm}>
       {includeHidden ? <input type="hidden" name="includeHidden" value="1" /> : null}
       {kind ? <input type="hidden" name="kind" value={kind} /> : null}
+      {Object.entries(custom).map(([key, value]) => (
+        <input key={key} type="hidden" name={`cf_${key}`} value={value} />
+      ))}
       <label htmlFor="vendor-search" className={styles.searchLabel}>
         검색
       </label>

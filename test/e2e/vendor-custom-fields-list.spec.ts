@@ -130,7 +130,7 @@ test.describe("거래처 목록 추가 칸 열 (07.5-01)", () => {
         afterNav: Boolean(nav.compareDocumentPosition(select) & Node.DOCUMENT_POSITION_FOLLOWING),
         beforeToggle: Boolean(select.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING),
       };
-    }, `cf_${pick.key}`);
+    }, `filter-cf_${pick.key}`);
     expect(order).toEqual({ afterNav: true, beforeToggle: true });
     await filter.selectOption("서울");
     await expect(page).toHaveURL(/cf_cf_/);
@@ -172,7 +172,7 @@ test.describe("거래처 목록 추가 칸 열 (07.5-01)", () => {
     await expect(rowOf(busan)).toBeVisible();
 
     // 거르개 라벨 계산 스타일 = 프로젝트 목록 필터 라벨(font-size · weight · color)
-    const mine = await page.locator(`label[for="${param}"]`).evaluate((label) => {
+    const mine = await page.locator(`label[for="filter-${param}"]`).evaluate((label) => {
       const style = getComputedStyle(label);
       return { size: style.fontSize, weight: style.fontWeight, color: style.color };
     });

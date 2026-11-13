@@ -9,7 +9,7 @@ export const CUSTOM_FIELD_COLUMN_LIMIT = 3;
 export const CUSTOM_FIELD_FILTER_LIMIT = 2;
 
 type ListedDef = Pick<InputFieldDef, "key" | "type">;
-type FilterDef = ListedDef & Pick<InputFieldDef, "options">;
+type FilterDef = ListedDef & { options?: readonly string[] | null };
 
 export function customFieldListColumns<T extends ListedDef>(defs: readonly T[]): T[] {
   return defs.slice(0, CUSTOM_FIELD_COLUMN_LIMIT);

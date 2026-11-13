@@ -12,7 +12,7 @@ import styles from "./vendors.module.css";
 // 폰 · 태블릿 세로에는 없다(K12). 서버가 지금 거르개 전체를 다시 읽어 CSV 하나를 돌려준다(domain/vendors/export.ts).
 // 상태(SC-16 · Round 2 U16 · U6): 생성 중 = 그 버튼 aria-busy · aria-disabled(다시 누름 무시), 성공 = 브라우저 내려받기뿐(결과 줄 · 토스트 없음),
 // 실패 = 버튼 바로 아래 오류 한 줄(토스트 아님 — 증빙 export-button.tsx의 실패 토스트는 따르지 않는다).
-export type VendorExportFilter = { includeHidden: boolean; kind: VendorSide | null; q: string };
+export type VendorExportFilter = { includeHidden: boolean; kind: VendorSide | null; q: string; custom?: Record<string, string> };
 
 const LIMIT = 5000;
 const TOO_MANY_ID = "vendors-export-limit";

@@ -118,6 +118,10 @@ test.describe("기본 정보 4칸 (S3)", () => {
     await openEdit(page);
     const panel = projectInfo(page);
     const trigger = panel.locator("#info-pm");
+    // `고치기`는 첫 칸(기간 시작)으로 포커스를 옮기고(마운트 effect) 다음 프레임(requestAnimationFrame)에 한 번 더 옮긴다 —
+    // 그 프레임이 지난 뒤 `바꾸기`로 옮겨야 Enter가 빼앗기지 않는다(CI e2e(2) 실패 원인).
+    await expect(panel.locator("#period-start")).toBeFocused();
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
     await trigger.focus();
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog", { name: "담당 PM 바꾸기" });

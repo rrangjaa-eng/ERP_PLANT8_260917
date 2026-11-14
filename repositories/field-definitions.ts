@@ -131,10 +131,10 @@ export async function setFieldDefinitionArchived(viewer: Viewer, id: string, val
 export async function listArchivedFieldDefinitions(
   viewer: Viewer,
   entities: readonly string[],
-): Promise<Array<{ id: string; label: string; archivedAt: Date; archivedBy: string | null }>> {
+): Promise<Array<{ id: string; entity: string; label: string; archivedAt: Date; archivedBy: string | null }>> {
   void viewer;
   const rows = await db
-    .select({ id: fieldDefinitions.id, label: fieldDefinitions.label, archivedAt: fieldDefinitions.archivedAt, archivedBy: fieldDefinitions.archivedBy })
+    .select({ id: fieldDefinitions.id, entity: fieldDefinitions.entity, label: fieldDefinitions.label, archivedAt: fieldDefinitions.archivedAt, archivedBy: fieldDefinitions.archivedBy })
     .from(fieldDefinitions)
     .where(and(inArray(fieldDefinitions.entity, [...entities]), isNotNull(fieldDefinitions.archivedAt)));
   return rows.map((row) => ({ ...row, archivedAt: row.archivedAt as Date }));

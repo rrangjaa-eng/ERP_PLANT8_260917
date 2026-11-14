@@ -694,7 +694,7 @@ test("칸 「삭제」는 보관이다 — 기본 목록 · 거래처 폼 · 노
     const archiveRow = page.locator("tr", { hasText: label });
     await expect(archiveRow).toContainText("화면 항목");
     await archiveRow.getByRole("button", { name: "복원" }).click();
-    await expect(page.getByText(`복원 · ${label} 복원됨`)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(`복원 · 거래처 · ${label} 복원됨`)).toBeVisible({ timeout: 15000 });
 
     await page.goto(`/admin/vendors?editId=${vendor.id}`);
     await expect(page.getByLabel(label, { exact: true })).toHaveValue("남는 값");

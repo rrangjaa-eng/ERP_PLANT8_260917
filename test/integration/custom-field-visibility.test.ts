@@ -100,14 +100,33 @@ describe("정보 노출표 커스텀 열 (04.5-03)", () => {
     const grid = await readVisibilityGrid(admin);
     expect(grid.columns).toEqual([
       ...infoItemColumns,
-      { id: customFieldInfoItem("vendor", first.key), label: "첫째 칸" },
-      { id: customFieldInfoItem("vendor", second.key), label: "둘째 칸" },
+      { id: customFieldInfoItem("vendor", first.key), label: "거래처 · 첫째 칸" },
+      { id: customFieldInfoItem("vendor", second.key), label: "거래처 · 둘째 칸" },
     ]);
     expect(grid.values[`${DEFAULT_ROLE_ID}::${customFieldInfoItem("vendor", first.key)}`]).toBe(true);
 
     await archiveField(second.id);
     const after = await readVisibilityGrid(admin);
-    expect(after.columns).toEqual([...infoItemColumns, { id: customFieldInfoItem("vendor", first.key), label: "첫째 칸" }]);
+    expect(after.columns).toEqual([...infoItemColumns, { id: customFieldInfoItem("vendor", first.key), label: "거래처 · 첫째 칸" }]);
+  });
+
+  // 07.5-05 S7 · D-7502: 행 이름 = `{대상} · {칸 이름}`, 순서 = INFO_ITEMS → 거래처 → 프로젝트 → 견적 줄(상수 순서) · 대상 안 정렬 순서.
+  it("대상을 켠 뒤 열은 INFO_ITEMS 뒤 거래처 · 프로젝트 · 견적 줄 순이고 이름에 대상 접두가 붙는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const quote = await createFieldDefinition(admin, { ...input("비고", 1), target: "quote_line" });
+    const projectSecond = await createFieldDefinition(admin, { ...input("장소", 2), target: "project" });
+    const projectFirst = await createFieldDefinition(admin, { ...input("비고", 1), target: "project" });
+    const vendor = await createFieldDefinition(admin, input("비고", 5));
+
+    const grid = await readVisibilityGrid(admin);
+    expect(grid.columns).toEqual([
+      ...infoItemColumns,
+      { id: customFieldInfoItem("vendor", vendor.key), label: "거래처 · 비고" },
+      { id: customFieldInfoItem("project", projectFirst.key), label: "프로젝트 · 비고" },
+      { id: customFieldInfoItem("project", projectSecond.key), label: "프로젝트 · 장소" },
+      { id: customFieldInfoItem("quote_line", quote.key), label: "견적 줄 · 비고" },
+    ]);
+    expect(grid.values[`${DEFAULT_ROLE_ID}::${customFieldInfoItem("quote_line", quote.key)}`]).toBe(true);
   });
 
   it("저장 허용: 활성 칸 키와 INFO_ITEMS 키만 참이다", async () => {
@@ -115,10 +134,13 @@ describe("정보 노출표 커스텀 열 (04.5-03)", () => {
     const active = await createFieldDefinition(admin, input("활성 칸"));
     const archived = await createFieldDefinition(admin, input("보관 칸"));
     await archiveField(archived.id);
+    const project = await createFieldDefinition(admin, { ...input("프로젝트 칸"), target: "project" });
+    const archivedProject = await createFieldDefinition(admin, { ...input("보관 프로젝트 칸"), target: "project" });
+    await archiveField(archivedProject.id);
     await insertFieldDefinition(SYSTEM_VIEWER, {
       id: `fd-${randomUUID()}`,
-      entity: "project",
-      key: "cf_project1",
+      entity: "expense",
+      key: "cf_expense1",
       type: "text",
     });
 
@@ -126,7 +148,11 @@ describe("정보 노출표 커스텀 열 (04.5-03)", () => {
     expect(await isAssignableInfoItem(INFO_ITEMS[0]!.key)).toBe(true);
     expect(await isAssignableInfoItem("cf.vendor.cf_nothere")).toBe(false);
     expect(await isAssignableInfoItem(customFieldInfoItem("vendor", archived.key))).toBe(false);
-    expect(await isAssignableInfoItem("cf.project.cf_project1")).toBe(false);
+    // 07.5-05: 프로젝트는 대상 상수 안 — 활성 정의 키만 참, 보관 · 없는 키 · 상수 밖 대상은 거짓.
+    expect(await isAssignableInfoItem(customFieldInfoItem("project", project.key))).toBe(true);
+    expect(await isAssignableInfoItem(customFieldInfoItem("project", archivedProject.key))).toBe(false);
+    expect(await isAssignableInfoItem("cf.project.cf_nothere")).toBe(false);
+    expect(await isAssignableInfoItem("cf.expense.cf_expense1")).toBe(false);
     expect(await isAssignableInfoItem("cf.vendor")).toBe(false);
     expect(await isAssignableInfoItem("vendor.nope")).toBe(false);
   });

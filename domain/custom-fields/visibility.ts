@@ -7,20 +7,26 @@ import {
   lockCustomFieldGrants,
 } from "@/repositories/field-definitions";
 import { insertVisibilityIfAbsent, listVisibility } from "@/repositories/permissions";
-import { FIELD_DEFINITION_TARGETS, customFieldInfoItem, parseCustomFieldInfoItem } from "@/domain/custom-fields/targets";
+import {
+  FIELD_DEFINITION_TARGETS,
+  TARGET_LABELS,
+  customFieldInfoItem,
+  parseCustomFieldInfoItem,
+} from "@/domain/custom-fields/targets";
 
 // 04.5-03: 커스텀 항목(cf.<entity>.<key>)의 노출 — INFO_ITEMS(코드 상수) 옆에 더한다(add-alongside).
 // 이 모듈은 domain/permissions/roles.ts를 정적으로 import하지 않는다(roles → 이 모듈 → viewer → roles 순환).
 
 export type CustomFieldColumn = { id: string; label: string };
 
-// 노출표 열: 대상마다 활성 정의를 기존 정렬(sortOrder, key) 그대로.
+// 노출표 열: 대상마다(상수 순서) 활성 정의를 기존 정렬(sortOrder, key) 그대로. 07.5-05 S7: 이름 = `{대상} · {칸 이름}`
+// (거래처 칸 포함 — 같은 이름 칸이 대상마다 있을 수 있다). 체크박스 aria-label · 폰 KvList 라벨이 이 글자를 따른다.
 export async function customFieldColumns(viewer: Viewer): Promise<CustomFieldColumn[]> {
   const columns: CustomFieldColumn[] = [];
   for (const entity of FIELD_DEFINITION_TARGETS) {
     const defs = await defaultListFieldDefinitions(viewer, entity);
     for (const def of defs) {
-      if (def.archivedAt === null) columns.push({ id: customFieldInfoItem(entity, def.key), label: def.label });
+      if (def.archivedAt === null) columns.push({ id: customFieldInfoItem(entity, def.key), label: `${TARGET_LABELS[entity]} · ${def.label}` });
     }
   }
   return columns;

@@ -11,6 +11,11 @@ export const TARGET_LABELS: Record<FieldDefinitionTarget, string> = {
   quote_line: "견적 줄",
 };
 
+// 저장된 entity 글자를 대상 타입으로 좁힌다(상수 밖이면 거짓).
+export function isFieldDefinitionTarget(entity: string): entity is FieldDefinitionTarget {
+  return FIELD_DEFINITION_TARGETS.some((target) => target === entity);
+}
+
 export const FIELD_NAME_MAX = 20;
 export const OPTION_MAX_LENGTH = 40;
 export const ACTIVE_OPTIONS_MAX = 30;

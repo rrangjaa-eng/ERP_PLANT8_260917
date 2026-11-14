@@ -12,7 +12,7 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { archive } from "@/domain/archive";
 import { createFieldDefinition, updateFieldDefinition } from "@/domain/custom-fields/admin";
 import { customFieldInfoItem } from "@/domain/custom-fields/targets";
-import { findFieldDefinitionById, insertFieldDefinition } from "@/repositories/field-definitions";
+import { findFieldDefinitionById } from "@/repositories/field-definitions";
 import { archiveFinishedTempRoles, insertTempRole } from "./temp-roles";
 import { findRoleById } from "@/repositories/roles";
 import { insertVisibilityIfAbsent, listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -114,7 +114,7 @@ export async function createE2EProjectEditor(options: { teamId?: string } = {}):
 
 // 칸 하나를 만든다 — 노출 행은 onlyRoleId 계급에만 생성 트랜잭션 안에서 생긴다(계급 목록 deps 주입).
 // 주입 함수는 DB를 부르지 않는다(잠금을 쥔 트랜잭션 안에서 전역 db로 또 조회하면 풀 고갈 경로가 된다).
-// 07.5-02: entity — 거래처 밖 대상은 대상 상수가 아직 거래처뿐이라(05가 켠다, D-7503) 정의를 직접 심고 onlyRoleId 계급에만 노출 행을 둔다.
+// 07.5-05: 대상(entity)을 켰다 — 모든 대상이 같은 관리 경로(createFieldDefinition · target)로 만든다.
 export async function createE2EFieldDefinition(input: {
   label: string;
   type: "text" | "number" | "date" | "select";
@@ -127,27 +127,6 @@ export async function createE2EFieldDefinition(input: {
   const role = await findRoleById(SYSTEM_VIEWER, input.onlyRoleId);
   if (!role) throw new Error(`E2E 전용 계급이 없습니다: ${input.onlyRoleId}`);
   const entity = input.entity ?? "vendor";
-  if (entity !== "vendor") {
-    const id = randomUUID();
-    const key = `cf_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
-    const row = await insertFieldDefinition(SYSTEM_VIEWER, {
-      id,
-      entity,
-      key,
-      label: input.label,
-      type: input.type,
-      options: input.type === "select" ? input.options : undefined,
-      required: input.required,
-      sortOrder: input.sortOrder ?? 0,
-    });
-    const info = customFieldInfoItem(entity, key);
-    await insertVisibilityIfAbsent(SYSTEM_VIEWER, { roleId: input.onlyRoleId, infoItem: info, visible: true });
-    const rows = (await listVisibility(SYSTEM_VIEWER)).filter((visibility) => visibility.infoItem === info);
-    for (const seeded of [SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID]) {
-      if (rows.some((visibility) => visibility.roleId === seeded)) throw new Error(`시드 계급에 노출 행이 생겼습니다: ${seeded} · ${info}`);
-    }
-    return { id, key, version: row.version };
-  }
   const created = await createFieldDefinition(
     SYSTEM_VIEWER,
     {
@@ -156,10 +135,11 @@ export async function createE2EFieldDefinition(input: {
       required: input.required,
       sortOrder: input.sortOrder ?? 0,
       options: input.type === "select" ? input.options : undefined,
+      target: entity,
     },
     { listRoles: () => Promise.resolve([role]) },
   );
-  const info = customFieldInfoItem("vendor", created.key);
+  const info = customFieldInfoItem(entity, created.key);
   const rows = (await listVisibility(SYSTEM_VIEWER)).filter((row) => row.infoItem === info);
   const own = rows.find((row) => row.roleId === input.onlyRoleId);
   if (!own || !own.visible) throw new Error(`전용 계급 노출 행이 없습니다: ${info}`);

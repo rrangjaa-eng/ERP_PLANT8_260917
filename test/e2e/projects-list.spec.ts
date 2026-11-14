@@ -764,7 +764,7 @@ async function isSameDocument(page: Page): Promise<boolean> {
 }
 
 
-type FocusStop = { name: string; top: number; bottom: number; left: number };
+type FocusStop = { id: string; name: string; top: number; bottom: number; left: number };
 
 // 지금 포커스된 요소에서 시작해 Tab을 (count - 1)번 누르며 멈춘 곳의 이름(라벨·aria-label·글자)과 위치를 모은다.
 async function tabWalk(page: Page, count: number): Promise<FocusStop[]> {
@@ -782,7 +782,7 @@ async function tabWalk(page: Page, count: number): Promise<FocusStop[]> {
         const isField = el instanceof HTMLInputElement || el instanceof HTMLSelectElement;
         const name = isField ? (el.getAttribute("aria-label") ?? el.labels?.[0]?.textContent ?? "") : (el.textContent ?? "");
         const rect = el.getBoundingClientRect();
-        return { name: name.trim(), top: rect.top, bottom: rect.bottom, left: rect.left };
+        return { id: el.id, name: name.trim(), top: rect.top, bottom: rect.bottom, left: rect.left };
       }),
     );
   }
@@ -799,6 +799,18 @@ function visualOrderViolations(stops: FocusStop[]): string[] {
     if (sameRow ? a.left >= b.left : a.top >= b.top) bad.push(`${a.name} → ${b.name}`);
   }
   return bad;
+}
+
+// 07.5-04 감사 F2 — 관리자 추가 칸 선택 거르개(`filter-cf_<key>`, 최대 2)는 그 사람에게 보이는 칸에 따라 생긴다(같은 DB를 쓰는 캡처 시드는
+// 전 계급에 보이게 남긴다). 있으면 「기간 끝」 바로 뒤에 이어 있어야 하고, 이름 비교는 그 칸들을 뺀 알려진 컨트롤 순서로 한다.
+const CUSTOM_FILTER_SELECTOR = '[id^="filter-cf_"]:visible';
+
+function withoutCustomFilters(stops: FocusStop[], customCount: number): string[] {
+  const custom = stops.flatMap((stop, index) => (stop.id.startsWith("filter-cf_") ? [index] : []));
+  expect(custom, "추가 칸 거르개 Tab 멈춤 수").toHaveLength(customCount);
+  const periodEnd = stops.findIndex((stop) => stop.name === "기간 끝");
+  expect(custom, "추가 칸 거르개는 「기간 끝」 바로 뒤").toEqual(custom.map((_, offset) => periodEnd + 1 + offset));
+  return stops.filter((stop) => !stop.id.startsWith("filter-cf_")).map((stop) => stop.name);
 }
 
 
@@ -873,15 +885,17 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
 
     await page.getByRole("button", { name: "필터", exact: true }).click();
     await search.focus();
-    const expanded = await tabWalk(page, 9);
-    expect(expanded.map((stop) => stop.name)).toEqual(["검색", "필터", "상태", "팀", "연도", "기간", "기간 끝", "필터 지우기", "프로젝트 등록"]);
+    const expandedCustom = await page.locator(CUSTOM_FILTER_SELECTOR).count();
+    const expanded = await tabWalk(page, 9 + expandedCustom);
+    expect(withoutCustomFilters(expanded, expandedCustom)).toEqual(["검색", "필터", "상태", "팀", "연도", "기간", "기간 끝", "필터 지우기", "프로젝트 등록"]);
     expect(visualOrderViolations(expanded)).toEqual([]);
 
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(search).toHaveCount(1);
     await page.locator("#status").focus();
-    const wide = await tabWalk(page, 8);
-    expect(wide.map((stop) => stop.name)).toEqual(["상태", "팀", "연도", "기간", "기간 끝", "검색", "필터 지우기", "프로젝트 등록"]);
+    const wideCustom = await page.locator(CUSTOM_FILTER_SELECTOR).count();
+    const wide = await tabWalk(page, 8 + wideCustom);
+    expect(withoutCustomFilters(wide, wideCustom)).toEqual(["상태", "팀", "연도", "기간", "기간 끝", "검색", "필터 지우기", "프로젝트 등록"]);
     expect(visualOrderViolations(wide)).toEqual([]);
   });
 

@@ -36,7 +36,7 @@
         "box": {
           "x": 301,
           "y": 89.4,
-          "width": 150,
+          "width": 149,
           "height": 32
         }
       },
@@ -46,31 +46,31 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 467,
+          "x": 466,
           "y": 89.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_7e23a45b",
-        "name": "cf_cf_7e23a45b",
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
         "label": "행사 구분",
         "visible": true,
         "box": {
-          "x": 915.4,
+          "x": 914.4,
           "y": 89.4,
           "width": 116,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2690cf15",
-        "name": "cf_cf_2690cf15",
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
         "label": "지역",
         "visible": true,
         "box": {
-          "x": 1047.4,
+          "x": 1046.4,
           "y": 89.4,
           "width": 89,
           "height": 32
@@ -121,7 +121,7 @@
         "box": {
           "x": 301,
           "y": 89.4,
-          "width": 150,
+          "width": 149,
           "height": 32
         }
       },
@@ -131,31 +131,31 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 467,
+          "x": 466,
           "y": 89.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_7e23a45b",
-        "name": "cf_cf_7e23a45b",
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
         "label": "행사 구분",
         "visible": true,
         "box": {
-          "x": 915.4,
+          "x": 914.4,
           "y": 89.4,
           "width": 116,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2690cf15",
-        "name": "cf_cf_2690cf15",
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
         "label": "지역",
         "visible": true,
         "box": {
-          "x": 1047.4,
+          "x": 1046.4,
           "y": 89.4,
           "width": 89,
           "height": 32
@@ -206,7 +206,7 @@
         "box": {
           "x": 125,
           "y": 137.4,
-          "width": 150,
+          "width": 149,
           "height": 32
         }
       },
@@ -216,27 +216,27 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 291,
+          "x": 290,
           "y": 137.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_7e23a45b",
-        "name": "cf_cf_7e23a45b",
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
         "label": "행사 구분",
         "visible": true,
         "box": {
-          "x": 739.4,
+          "x": 738.4,
           "y": 137.4,
           "width": 116,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2690cf15",
-        "name": "cf_cf_2690cf15",
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
         "label": "지역",
         "visible": true,
         "box": {
@@ -291,7 +291,7 @@
         "box": {
           "x": 125,
           "y": 137.4,
-          "width": 150,
+          "width": 149,
           "height": 32
         }
       },
@@ -301,15 +301,15 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 291,
+          "x": 290,
           "y": 137.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_7e23a45b",
-        "name": "cf_cf_7e23a45b",
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
         "label": "행사 구분",
         "visible": true,
         "box": {
@@ -320,8 +320,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_2690cf15",
-        "name": "cf_cf_2690cf15",
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
         "label": "지역",
         "visible": true,
         "box": {
@@ -378,15 +378,15 @@
         "box": null
       },
       {
-        "id": "filter-cf_cf_7e23a45b",
-        "name": "cf_cf_7e23a45b",
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
         "label": "행사 구분",
         "visible": false,
         "box": null
       },
       {
-        "id": "filter-cf_cf_2690cf15",
-        "name": "cf_cf_2690cf15",
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
         "label": "지역",
         "visible": false,
         "box": null
@@ -436,7 +436,7 @@
         "box": {
           "x": 121,
           "y": 258.2,
-          "width": 158,
+          "width": 157,
           "height": 40
         }
       },
@@ -453,8 +453,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_7e23a45b",
-        "name": "cf_cf_7e23a45b",
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
         "label": "행사 구분",
         "visible": true,
         "box": {
@@ -465,8 +465,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_2690cf15",
-        "name": "cf_cf_2690cf15",
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
         "label": "지역",
         "visible": true,
         "box": {
@@ -523,15 +523,15 @@
         "box": null
       },
       {
-        "id": "filter-cf_cf_7e23a45b",
-        "name": "cf_cf_7e23a45b",
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
         "label": "행사 구분",
         "visible": false,
         "box": null
       },
       {
-        "id": "filter-cf_cf_2690cf15",
-        "name": "cf_cf_2690cf15",
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
         "label": "지역",
         "visible": false,
         "box": null
@@ -581,7 +581,7 @@
         "box": {
           "x": 121,
           "y": 258.2,
-          "width": 158,
+          "width": 157,
           "height": 40
         }
       },
@@ -598,8 +598,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_7e23a45b",
-        "name": "cf_cf_7e23a45b",
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
         "label": "행사 구분",
         "visible": true,
         "box": {
@@ -610,8 +610,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_2690cf15",
-        "name": "cf_cf_2690cf15",
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
         "label": "지역",
         "visible": true,
         "box": {

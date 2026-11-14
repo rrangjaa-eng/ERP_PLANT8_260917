@@ -883,9 +883,9 @@ function viewLinks(page: Page) {
   return page.getByRole("navigation", { name: "연차 보기" });
 }
 
-// 표 한 행(이름 칸이 그 이름으로 시작하는 보이는 행)의 보이는 칸 글자.
+// 표 한 행(이름 칸이 그 이름 + 공백·끝인 보이는 행)의 보이는 칸 글자. 접두만 보면 `팀장38a4`가 다른 시험 계정 `팀장38a4xx`도 잡는다.
 async function rowCells(page: Page, name: string): Promise<string[]> {
-  const row = peopleTable(page).locator("tbody tr").filter({ visible: true }).filter({ has: page.getByRole("cell", { name: new RegExp(`^${name}`) }) });
+  const row = peopleTable(page).locator("tbody tr").filter({ visible: true }).filter({ has: page.getByRole("cell", { name: new RegExp(`^${name}(?:\\s|$)`) }) });
   await expect(row).toHaveCount(1);
   return (await row.locator("td").filter({ visible: true }).allTextContents()).map((text) => text.trim());
 }
@@ -915,9 +915,9 @@ test.describe("사람별 연차 잔여 /leave?view=all (07.2-08 Task 3 · S20 ·
       await expect(table.locator("thead th").filter({ hasText: "월차 남음" })).toHaveCount(1);
       await expect(table.locator("thead th").filter({ hasText: /합|총/ })).toHaveCount(0);
       for (const person of [org.drafter, org.teamLead, admin, veteran, resigned]) {
-        await expect(table.getByRole("cell", { name: new RegExp(`^${person.name}`) })).toHaveCount(1);
+        await expect(table.getByRole("cell", { name: new RegExp(`^${person.name}(?:\\s|$)`) })).toHaveCount(1);
       }
-      await expect(table.getByRole("cell", { name: new RegExp(`^${resigned.name}`) })).toHaveText(`${resigned.name} 퇴직`);
+      await expect(table.getByRole("cell", { name: new RegExp(`^${resigned.name}(?:\\s|$)`) })).toHaveText(`${resigned.name} 퇴직`);
       const rowCount = await table.locator("tbody tr").filter({ visible: true }).count();
       await expect(page.getByText(/^\d+명$/)).toHaveText(`${rowCount}명`);
 
@@ -942,9 +942,9 @@ test.describe("사람별 연차 잔여 /leave?view=all (07.2-08 Task 3 · S20 ·
       const rows = table.locator("tbody tr").filter({ visible: true });
       await expect(rows).toHaveCount(4);
       for (const person of [org.drafter, org.teamLead, org.divisionHead, org.ceo]) {
-        await expect(table.getByRole("cell", { name: new RegExp(`^${person.name}`) })).toHaveCount(1);
+        await expect(table.getByRole("cell", { name: new RegExp(`^${person.name}(?:\\s|$)`) })).toHaveCount(1);
       }
-      await expect(table.getByRole("cell", { name: new RegExp(`^${other.drafter.name}`) })).toHaveCount(0);
+      await expect(table.getByRole("cell", { name: new RegExp(`^${other.drafter.name}(?:\\s|$)`) })).toHaveCount(0);
       const teams = new Set((await rows.locator("td:nth-child(2)").allTextContents()).map((text) => text.trim()));
       expect(teams.size).toBe(1);
       await expect(page.getByText(/^\d+명$/)).toHaveText("4명");

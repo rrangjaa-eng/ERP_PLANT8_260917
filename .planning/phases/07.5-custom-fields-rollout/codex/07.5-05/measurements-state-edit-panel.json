@@ -1,0 +1,318 @@
+[
+  {
+    "width": 1280,
+    "innerWidth": 1280,
+    "doc": {
+      "scrollWidth": 1280,
+      "clientWidth": 1280
+    },
+    "targetNav": {
+      "box": {
+        "x": 196,
+        "y": 75.8,
+        "width": 145.1,
+        "height": 20.8
+      },
+      "links": [
+        {
+          "text": "거래처",
+          "current": null,
+          "fontWeight": "600",
+          "textDecoration": "underline",
+          "box": {
+            "x": 196,
+            "y": 75.8,
+            "width": 33.1,
+            "height": 20.8
+          }
+        },
+        {
+          "text": "프로젝트",
+          "current": null,
+          "fontWeight": "600",
+          "textDecoration": "underline",
+          "box": {
+            "x": 245.1,
+            "y": 75.8,
+            "width": 44.1,
+            "height": 20.8
+          }
+        },
+        {
+          "text": "견적 줄",
+          "current": "page",
+          "fontWeight": "700",
+          "textDecoration": "none",
+          "box": {
+            "x": 305.2,
+            "y": 75.8,
+            "width": 35.9,
+            "height": 20.8
+          }
+        }
+      ]
+    },
+    "table": {
+      "box": {
+        "x": 196,
+        "y": 108.6,
+        "width": 1064,
+        "height": 927.8
+      },
+      "rowCount": 40
+    },
+    "firstNameLines": [
+      1,
+      0,
+      1,
+      0,
+      1
+    ],
+    "dialog": {
+      "name": "견적 줄 화면 항목 수정",
+      "box": {
+        "x": 842.1,
+        "y": 0,
+        "width": 480,
+        "height": 900
+      }
+    }
+  },
+  {
+    "width": 768,
+    "innerWidth": 768,
+    "doc": {
+      "scrollWidth": 768,
+      "clientWidth": 768
+    },
+    "targetNav": {
+      "box": {
+        "x": 20,
+        "y": 123.8,
+        "width": 145.1,
+        "height": 20.8
+      },
+      "links": [
+        {
+          "text": "거래처",
+          "current": null,
+          "fontWeight": "600",
+          "textDecoration": "underline",
+          "box": {
+            "x": 20,
+            "y": 123.8,
+            "width": 33.1,
+            "height": 20.8
+          }
+        },
+        {
+          "text": "프로젝트",
+          "current": null,
+          "fontWeight": "600",
+          "textDecoration": "underline",
+          "box": {
+            "x": 69.1,
+            "y": 123.8,
+            "width": 44.1,
+            "height": 20.8
+          }
+        },
+        {
+          "text": "견적 줄",
+          "current": "page",
+          "fontWeight": "700",
+          "textDecoration": "none",
+          "box": {
+            "x": 129.2,
+            "y": 123.8,
+            "width": 35.9,
+            "height": 20.8
+          }
+        }
+      ]
+    },
+    "table": {
+      "box": {
+        "x": 20,
+        "y": 156.6,
+        "width": 728,
+        "height": 1045.8
+      },
+      "rowCount": 40
+    },
+    "firstNameLines": [
+      1,
+      0,
+      2,
+      0,
+      2
+    ],
+    "dialog": {
+      "name": "견적 줄 화면 항목 수정",
+      "box": {
+        "x": 356,
+        "y": 0,
+        "width": 480,
+        "height": 900
+      }
+    }
+  },
+  {
+    "width": 375,
+    "innerWidth": 375,
+    "doc": {
+      "scrollWidth": 375,
+      "clientWidth": 375
+    },
+    "targetNav": {
+      "box": {
+        "x": 16,
+        "y": 108.6,
+        "width": 217.9,
+        "height": 44
+      },
+      "links": [
+        {
+          "text": "거래처",
+          "current": null,
+          "fontWeight": "600",
+          "textDecoration": "underline",
+          "box": {
+            "x": 16,
+            "y": 108.6,
+            "width": 49,
+            "height": 44
+          }
+        },
+        {
+          "text": "프로젝트",
+          "current": null,
+          "fontWeight": "600",
+          "textDecoration": "underline",
+          "box": {
+            "x": 81,
+            "y": 108.6,
+            "width": 60,
+            "height": 44
+          }
+        },
+        {
+          "text": "견적 줄",
+          "current": "page",
+          "fontWeight": "700",
+          "textDecoration": "none",
+          "box": {
+            "x": 157.1,
+            "y": 108.6,
+            "width": 51.8,
+            "height": 44
+          }
+        }
+      ]
+    },
+    "table": {
+      "box": {
+        "x": 16,
+        "y": 224.6,
+        "width": 343,
+        "height": 3256.8
+      },
+      "rowCount": 40
+    },
+    "firstNameLines": [
+      2,
+      3,
+      2,
+      3,
+      2
+    ],
+    "dialog": {
+      "name": "견적 줄 화면 항목 수정",
+      "box": {
+        "x": 0,
+        "y": 419.5,
+        "width": 375,
+        "height": 496.4
+      }
+    }
+  },
+  {
+    "width": 320,
+    "innerWidth": 320,
+    "doc": {
+      "scrollWidth": 320,
+      "clientWidth": 320
+    },
+    "targetNav": {
+      "box": {
+        "x": 16,
+        "y": 108.6,
+        "width": 162.9,
+        "height": 104
+      },
+      "links": [
+        {
+          "text": "거래처",
+          "current": null,
+          "fontWeight": "600",
+          "textDecoration": "underline",
+          "box": {
+            "x": 16,
+            "y": 108.6,
+            "width": 49,
+            "height": 44
+          }
+        },
+        {
+          "text": "프로젝트",
+          "current": null,
+          "fontWeight": "600",
+          "textDecoration": "underline",
+          "box": {
+            "x": 81,
+            "y": 108.6,
+            "width": 60,
+            "height": 44
+          }
+        },
+        {
+          "text": "견적 줄",
+          "current": "page",
+          "fontWeight": "700",
+          "textDecoration": "none",
+          "box": {
+            "x": 16,
+            "y": 168.6,
+            "width": 51.8,
+            "height": 44
+          }
+        }
+      ]
+    },
+    "table": {
+      "box": {
+        "x": 16,
+        "y": 284.6,
+        "width": 288,
+        "height": 3354.3
+      },
+      "rowCount": 40
+    },
+    "firstNameLines": [
+      3,
+      3,
+      3,
+      3,
+      3
+    ],
+    "dialog": {
+      "name": "견적 줄 화면 항목 수정",
+      "box": {
+        "x": 0,
+        "y": 419.5,
+        "width": 320,
+        "height": 496.4
+      }
+    }
+  }
+]

@@ -31,13 +31,16 @@
 }
 
 /* 04.6-10 — 필터가 여러 칸짜리 폼이면(프로젝트 목록) 폰에서 1차를 필터 아래 줄로 내린다 — 한 줄에 두면 필터 폼이 1차 옆 좁은 폭으로 눌린다.
-   링크 하나인 필터(거래처)는 그대로 한 줄. DOM 순서(필터 → 1차)가 곧 시각 순서다. */
+   링크 하나인 필터(거래처)는 그대로 한 줄. DOM 순서(필터 → 1차)가 곧 시각 순서다.
+   07.5-05 — 선택 링크 줄(<nav>)이 든 필터도 같다: 1차 옆에서 줄어들면 링크가 둘째 줄로 접힌다(SYSTEM §3 셋 이하 한 줄 흐름). */
 @media (max-width: 699.98px) {
-  .bar:has(form) {
+  .bar:has(form),
+  .bar:has(nav) {
     flex-wrap: wrap;
   }
 
-  .bar:has(form) > .filters {
+  .bar:has(form) > .filters,
+  .bar:has(nav) > .filters {
     flex: 1 1 100%;
   }
 }

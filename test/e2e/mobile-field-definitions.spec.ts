@@ -81,3 +81,23 @@ test("폰 375 화면 항목 폼: 「필수」 체크박스 터치 영역 44×44"
   expect(box?.width).toBeGreaterThanOrEqual(44);
   expect(box?.height).toBeGreaterThanOrEqual(44);
 });
+
+// 07.5-05 감사 FLAG: 대상 링크 줄(거래처 · 프로젝트 · 견적 줄)은 폰 320 · 375에서 한 줄로 흐른다(SYSTEM.md §3 셋 이하 한 줄 흐름).
+// 1차 「화면 항목 추가」 옆에서 `.filters`가 줄어 「견적 줄」이 둘째 줄로 접히던 결함의 회귀 잠금.
+for (const width of [320, 375]) {
+  test(`폰 ${width} 화면 항목 대상 링크 줄: 링크 셋이 한 줄(같은 top) · 줄 높이 44 이하`, async ({ page }) => {
+    await seedSelectField(`${PREFIX}${randomBytes(3).toString("hex")}`);
+    await page.setViewportSize({ width, height: 800 });
+    await loginAsSysadmin(page);
+    await page.goto("/admin/field-definitions");
+    await expect(page.getByRole("link", { name: "화면 항목 추가" }).first()).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const nav = page.getByRole("navigation", { name: "대상" });
+    const links = nav.getByRole("link");
+    await expect(links).toHaveCount(3);
+    const tops = await links.evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+    expect(new Set(tops).size, `링크 top ${tops.join("/")}`).toBe(1);
+    const navBox = await nav.boundingBox();
+    expect(navBox?.height).toBeLessThanOrEqual(44 + 1);
+  });
+}

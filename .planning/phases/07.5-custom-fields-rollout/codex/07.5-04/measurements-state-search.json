@@ -1,0 +1,899 @@
+[
+  {
+    "state": "closed",
+    "width": 1440,
+    "innerWidth": 1440,
+    "doc": {
+      "scrollWidth": 1440,
+      "clientWidth": 1440
+    },
+    "tableBox": null,
+    "table": {
+      "width": 1224,
+      "scrollWidth": 1222,
+      "clientWidth": 1224
+    },
+    "visibleHeaders": [
+      "번호",
+      "클라이언트",
+      "프로젝트명",
+      "담당 PM",
+      "팀",
+      "기간",
+      "매출",
+      "견적",
+      "실행가",
+      "기준",
+      "수익금",
+      "수익률",
+      "행사 장소",
+      "고객사 담당자 연락처와 직함 메모 칸",
+      "예상 참석 인원과 초청 인원 합계 수",
+      "상태"
+    ],
+    "customHeadersInDom": [
+      "행사 장소",
+      "고객사 담당자 연락처와 직함 메모 칸",
+      "예상 참석 인원과 초청 인원 합계 수"
+    ],
+    "nameColumn": {
+      "th": {
+        "x": 334.3,
+        "y": 256,
+        "width": 142,
+        "height": 337
+      },
+      "cellWidths": [
+        126
+      ]
+    },
+    "customHeaders": [
+      {
+        "label": "행사 장소",
+        "visible": true,
+        "box": {
+          "x": 1207.1,
+          "y": 256,
+          "width": 29.1,
+          "height": 337
+        },
+        "lines": 5,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": [
+          {
+            "text": "서울 코엑스 C홀",
+            "tdWidth": 29.1,
+            "contentWidth": 13.1,
+            "spanWidth": 13.1,
+            "spanMaxWidth": "200px",
+            "textAlign": "start",
+            "lines": 8,
+            "textOverflow": "clip"
+          }
+        ]
+      },
+      {
+        "label": "고객사 담당자 연락처와 직함 메모 칸",
+        "visible": true,
+        "box": {
+          "x": 1236.2,
+          "y": 256,
+          "width": 30.8,
+          "height": 337
+        },
+        "lines": 16,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": [
+          {
+            "text": "마케팅본부 브랜드팀 이수진 책임 010-00",
+            "tdWidth": 30.8,
+            "contentWidth": 14.8,
+            "spanWidth": 14.8,
+            "spanMaxWidth": "200px",
+            "textAlign": "start",
+            "lines": 44,
+            "textOverflow": "clip"
+          }
+        ]
+      },
+      {
+        "label": "예상 참석 인원과 초청 인원 합계 수",
+        "visible": true,
+        "box": {
+          "x": 1267,
+          "y": 256,
+          "width": 100.1,
+          "height": 337
+        },
+        "lines": 3,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": [
+          {
+            "text": "1,250.5",
+            "tdWidth": 100.1,
+            "contentWidth": 84.1,
+            "spanWidth": 50.1,
+            "spanMaxWidth": "none",
+            "textAlign": "right",
+            "lines": 1,
+            "textOverflow": "clip"
+          }
+        ]
+      }
+    ],
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 196,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 301,
+          "y": 89.4,
+          "width": 152,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 469,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_2fc3075c",
+        "name": "cf_cf_2fc3075c",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 917.4,
+          "y": 89.4,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_4aed1e6d",
+        "name": "cf_cf_4aed1e6d",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 1049.4,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "closed",
+    "width": 1280,
+    "innerWidth": 1280,
+    "doc": {
+      "scrollWidth": 1381,
+      "clientWidth": 1280
+    },
+    "tableBox": null,
+    "table": {
+      "width": 1185.5,
+      "scrollWidth": 1183,
+      "clientWidth": 1185
+    },
+    "visibleHeaders": [
+      "번호",
+      "클라이언트",
+      "프로젝트명",
+      "담당 PM",
+      "팀",
+      "기간",
+      "매출",
+      "견적",
+      "실행가",
+      "기준",
+      "수익금",
+      "수익률",
+      "행사 장소",
+      "고객사 담당자 연락처와 직함 메모 칸",
+      "예상 참석 인원과 초청 인원 합계 수",
+      "상태"
+    ],
+    "customHeadersInDom": [
+      "행사 장소",
+      "고객사 담당자 연락처와 직함 메모 칸",
+      "예상 참석 인원과 초청 인원 합계 수"
+    ],
+    "nameColumn": {
+      "th": {
+        "x": 333.8,
+        "y": 256,
+        "width": 142,
+        "height": 337
+      },
+      "cellWidths": [
+        126
+      ]
+    },
+    "customHeaders": [
+      {
+        "label": "행사 장소",
+        "visible": true,
+        "box": {
+          "x": 1206.7,
+          "y": 256,
+          "width": 27.9,
+          "height": 337
+        },
+        "lines": 5,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": [
+          {
+            "text": "서울 코엑스 C홀",
+            "tdWidth": 27.9,
+            "contentWidth": 11.9,
+            "spanWidth": 11.9,
+            "spanMaxWidth": "200px",
+            "textAlign": "start",
+            "lines": 8,
+            "textOverflow": "clip"
+          }
+        ]
+      },
+      {
+        "label": "고객사 담당자 연락처와 직함 메모 칸",
+        "visible": true,
+        "box": {
+          "x": 1234.6,
+          "y": 256,
+          "width": 27.9,
+          "height": 337
+        },
+        "lines": 16,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": [
+          {
+            "text": "마케팅본부 브랜드팀 이수진 책임 010-00",
+            "tdWidth": 27.9,
+            "contentWidth": 11.9,
+            "spanWidth": 11.9,
+            "spanMaxWidth": "200px",
+            "textAlign": "start",
+            "lines": 47,
+            "textOverflow": "clip"
+          }
+        ]
+      },
+      {
+        "label": "예상 참석 인원과 초청 인원 합계 수",
+        "visible": true,
+        "box": {
+          "x": 1262.5,
+          "y": 256,
+          "width": 66.1,
+          "height": 337
+        },
+        "lines": 4,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": [
+          {
+            "text": "1,250.5",
+            "tdWidth": 66.1,
+            "contentWidth": 50.1,
+            "spanWidth": 50.1,
+            "spanMaxWidth": "none",
+            "textAlign": "right",
+            "lines": 1,
+            "textOverflow": "clip"
+          }
+        ]
+      }
+    ],
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 196,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 301,
+          "y": 89.4,
+          "width": 152,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 469,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_2fc3075c",
+        "name": "cf_cf_2fc3075c",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 917.4,
+          "y": 89.4,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_4aed1e6d",
+        "name": "cf_cf_4aed1e6d",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 1049.4,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "closed",
+    "width": 1024,
+    "innerWidth": 1024,
+    "doc": {
+      "scrollWidth": 1024,
+      "clientWidth": 1024
+    },
+    "tableBox": null,
+    "table": {
+      "width": 984,
+      "scrollWidth": 982,
+      "clientWidth": 984
+    },
+    "visibleHeaders": [
+      "클라이언트",
+      "프로젝트명",
+      "담당 PM",
+      "기간",
+      "견적",
+      "기준",
+      "수익금",
+      "수익률",
+      "상태"
+    ],
+    "customHeadersInDom": [
+      "행사 장소",
+      "고객사 담당자 연락처와 직함 메모 칸",
+      "예상 참석 인원과 초청 인원 합계 수"
+    ],
+    "nameColumn": {
+      "th": {
+        "x": 147.9,
+        "y": 304,
+        "width": 180.2,
+        "height": 45.8
+      },
+      "cellWidths": [
+        164.2
+      ]
+    },
+    "customHeaders": [
+      {
+        "label": "행사 장소",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      },
+      {
+        "label": "고객사 담당자 연락처와 직함 메모 칸",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      },
+      {
+        "label": "예상 참석 인원과 초청 인원 합계 수",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      }
+    ],
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 20,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 125,
+          "y": 137.4,
+          "width": 152,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 293,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_2fc3075c",
+        "name": "cf_cf_2fc3075c",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 741.4,
+          "y": 137.4,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_4aed1e6d",
+        "name": "cf_cf_4aed1e6d",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 20,
+          "y": 210.2,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "closed",
+    "width": 768,
+    "innerWidth": 768,
+    "doc": {
+      "scrollWidth": 768,
+      "clientWidth": 768
+    },
+    "tableBox": null,
+    "table": {
+      "width": 728,
+      "scrollWidth": 726,
+      "clientWidth": 728
+    },
+    "visibleHeaders": [
+      "클라이언트",
+      "프로젝트명",
+      "담당 PM",
+      "기간",
+      "견적",
+      "상태"
+    ],
+    "customHeadersInDom": [
+      "행사 장소",
+      "고객사 담당자 연락처와 직함 메모 칸",
+      "예상 참석 인원과 초청 인원 합계 수"
+    ],
+    "nameColumn": {
+      "th": {
+        "x": 143.4,
+        "y": 376.8,
+        "width": 173.8,
+        "height": 45.8
+      },
+      "cellWidths": [
+        157.8
+      ]
+    },
+    "customHeaders": [
+      {
+        "label": "행사 장소",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      },
+      {
+        "label": "고객사 담당자 연락처와 직함 메모 칸",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      },
+      {
+        "label": "예상 참석 인원과 초청 인원 합계 수",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      }
+    ],
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 20,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 125,
+          "y": 137.4,
+          "width": 152,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 293,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_2fc3075c",
+        "name": "cf_cf_2fc3075c",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 363.4,
+          "y": 210.2,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_4aed1e6d",
+        "name": "cf_cf_4aed1e6d",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 495.4,
+          "y": 210.2,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "closed",
+    "width": 375,
+    "innerWidth": 375,
+    "doc": {
+      "scrollWidth": 375,
+      "clientWidth": 375
+    },
+    "tableBox": null,
+    "table": {
+      "width": 343,
+      "scrollWidth": 341,
+      "clientWidth": 343
+    },
+    "visibleHeaders": [
+      "프로젝트명",
+      "견적",
+      "상태"
+    ],
+    "customHeadersInDom": [
+      "행사 장소",
+      "고객사 담당자 연락처와 직함 메모 칸",
+      "예상 참석 인원과 초청 인원 합계 수"
+    ],
+    "nameColumn": {
+      "th": {
+        "x": 17,
+        "y": 493.2,
+        "width": 164.2,
+        "height": 45.8
+      },
+      "cellWidths": [
+        140.2
+      ]
+    },
+    "customHeaders": [
+      {
+        "label": "행사 장소",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      },
+      {
+        "label": "고객사 담당자 연락처와 직함 메모 칸",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      },
+      {
+        "label": "예상 참석 인원과 초청 인원 합계 수",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      }
+    ],
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "filter-cf_cf_2fc3075c",
+        "name": "cf_cf_2fc3075c",
+        "label": "행사 구분",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "filter-cf_cf_4aed1e6d",
+        "name": "cf_cf_4aed1e6d",
+        "label": "지역",
+        "visible": false,
+        "box": null
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "closed",
+    "width": 320,
+    "innerWidth": 320,
+    "doc": {
+      "scrollWidth": 320,
+      "clientWidth": 320
+    },
+    "tableBox": null,
+    "table": {
+      "width": 288,
+      "scrollWidth": 286,
+      "clientWidth": 288
+    },
+    "visibleHeaders": [
+      "프로젝트명",
+      "견적",
+      "상태"
+    ],
+    "customHeadersInDom": [
+      "행사 장소",
+      "고객사 담당자 연락처와 직함 메모 칸",
+      "예상 참석 인원과 초청 인원 합계 수"
+    ],
+    "nameColumn": {
+      "th": {
+        "x": 17,
+        "y": 493.2,
+        "width": 125.5,
+        "height": 45.8
+      },
+      "cellWidths": [
+        101.5
+      ]
+    },
+    "customHeaders": [
+      {
+        "label": "행사 장소",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      },
+      {
+        "label": "고객사 담당자 연락처와 직함 메모 칸",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      },
+      {
+        "label": "예상 참석 인원과 초청 인원 합계 수",
+        "visible": false,
+        "box": null,
+        "lines": null,
+        "textOverflow": "clip",
+        "sortLink": false,
+        "cells": []
+      }
+    ],
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "filter-cf_cf_2fc3075c",
+        "name": "cf_cf_2fc3075c",
+        "label": "행사 구분",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "filter-cf_cf_4aed1e6d",
+        "name": "cf_cf_4aed1e6d",
+        "label": "지역",
+        "visible": false,
+        "box": null
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  }
+]

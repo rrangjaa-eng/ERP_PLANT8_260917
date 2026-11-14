@@ -45,6 +45,11 @@ export function customInfoDirtyKeys(defs: ProjectFieldDefinitionDto[], values: R
   return defs.filter((def) => def.key in draft && draft[def.key] !== customInfoBaseText(def, values)).map((def) => def.key);
 }
 
+/** 새 version이 오면 초안은 옛 기준값과 다른 칸만 남긴다 — 기본 4칸과 같은 규칙(Codex P1 · PR #378, 리뷰 S1). */
+export function rebaseCustomInfoDraft(defs: ProjectFieldDefinitionDto[], oldValues: Record<string, unknown>, draft: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(customInfoDirtyKeys(defs, oldValues, draft).map((key) => [key, draft[key] ?? ""]));
+}
+
 export function CustomInfoFields({
   defs,
   values,

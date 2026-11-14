@@ -78,7 +78,7 @@ import type { PeriodRights } from "@/domain/projects/period";
 import type { InfoFieldError, InfoValues } from "@/domain/projects/info-rules";
 import type { InfoChangeFieldError } from "@/domain/projects/info";
 import { InfoFields, InfoRows, infoDirtyCount, localInfoErrors, type InfoProps } from "./info-fields";
-import { CustomInfoFields, CustomInfoRows, customInfoDirtyKeys, type CustomInfo } from "./custom-info-fields";
+import { CustomInfoFields, CustomInfoRows, customInfoDirtyKeys, rebaseCustomInfoDraft, type CustomInfo } from "./custom-info-fields";
 import { ProjectDelete, type ProjectDeleteProps } from "./project-delete";
 import {
   PoNumberField,
@@ -1404,6 +1404,8 @@ export function QuoteLedger({
         ...info.values,
         ...Object.fromEntries(INFO_KEYS.filter((key) => infoDraft[key] !== infoBase.values[key]).map((key) => [key, infoDraft[key]])),
       });
+      // 리뷰 S1 — 추가 칸도 같은 규칙. 건드렸다 되돌린 칸(초안 = 옛 값)이 새 기준값 앞에서 고친 칸이 되지 않게.
+      setCustomDraft(rebaseCustomInfoDraft(customInfo.defs, customBase, customDraft));
     }
   }
   const [infoServerErrors, setInfoServerErrors] = useState<InfoChangeFieldError[]>([]);

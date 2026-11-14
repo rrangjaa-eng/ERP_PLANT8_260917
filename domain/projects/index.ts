@@ -9,6 +9,7 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { CustomFieldsInvalidError, resolveCustomFieldsWrite } from "@/domain/custom-fields/preserve";
 import { readCustomFieldInputs } from "@/domain/custom-fields/access";
+import { customFieldFilterDefs, customFieldListColumns, customTextSearchKeys, parseCustomFieldFilters } from "@/domain/custom-fields/access-rules";
 import { pickVisibleCustomFields, visibleCustomFieldKeys as defaultVisibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
 import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
@@ -215,7 +216,13 @@ export type ProjectListItemDto = {
   endDatePassed?: boolean;
   /** 07-22(N22 · SC-20) — 수금 지연(collectionStatus — 상세 매출 면과 같은 판정). revenue.paid_amount를 볼 때만. */
   collectionOverdue?: boolean;
+  /** 07.5-04(D-7508) — 추가 칸 값(project.value). 이 사람의 입력 칸 키(활성 ∧ 칸별 보임)만 남긴다. */
+  customFields?: Record<string, unknown>;
 };
+
+// 07.5-04(D-7509) — 목록 열(보이는 활성 칸 앞 3개) · 거르개(보이는 활성 선택 칸 앞 2개). options = 활성 선택지만(보관 선택지 · 필수 여부는 싣지 않는다).
+export type ProjectCustomColumn = { key: string; label: string; type: "text" | "number" | "date" | "select"; options: string[] };
+export type ProjectCustomFilter = { key: string; label: string; options: string[] };
 
 // 04-17(D-90) — attributionLabel: 보기 범위 밖에서 끝나는 행의 기간 칸 2행(`2027 귀속`), 범위 안이면 null.
 export type ProjectListItemWithGroup = ProjectListItemDto & { groupLabel: string; attributionLabel: string | null };
@@ -244,6 +251,7 @@ const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListSource, ProjectListItemDto> = {
     { key: "profitRate", from: "profitRate", infoItem: PROFIT_INFO_ITEMS },
     { key: "endDatePassed", from: "endDatePassed", infoItem: "project.value" },
     { key: "collectionOverdue", from: "collectionOverdue", infoItem: "revenue.paid_amount" },
+    { key: "customFields", from: "customFields", infoItem: "project.value" },
   ],
 };
 
@@ -335,6 +343,8 @@ export type ProjectListQuery = {
   sort?: { key?: string; direction?: string };
   /** URL의 쪽 번호 그대로 — 숫자 아님·1 미만·범위 밖은 clampPage가 보정한다(D-91). */
   page?: ListParam;
+  /** 07.5-04(D-7510) — 추가 칸 거르개 raw(정의 키 → 값, URL `cf_` 접두는 page가 벗긴다). parseCustomFieldFilters가 거른다. */
+  custom?: Readonly<Record<string, string>>;
 };
 
 export type ProjectListResult = {
@@ -358,6 +368,12 @@ export type ProjectListResult = {
   columnStep: ListColumnStep;
   /** 04-18 — 실제로 쓴 정렬(허용 밖 · 볼 수 없는 열 키는 기본 정렬) — 머리글 aria-sort가 이 값을 따른다. */
   sort: ProjectSort;
+  /** 07.5-04(D-7509) — 추가 칸 열(보이는 활성 칸 앞 3개, 정렬 순서). */
+  customColumns: ProjectCustomColumn[];
+  /** 07.5-04(D-7510) — 추가 칸 거르개 정의(보이는 활성 선택 칸 앞 2개). */
+  customFilterDefs: ProjectCustomFilter[];
+  /** 07.5-04(D-7510) — 받아들인 거르개 값만(정의 키 → 활성 선택지 값). 그 밖의 파라미터는 버렸다. */
+  customFilterValues: Record<string, string>;
 };
 
 export type ProjectListDeps = {
@@ -368,6 +384,8 @@ export type ProjectListDeps = {
   teams: typeof repoListTeams;
   visible: ProjectDeps["visible"];
   collectionOverdue: typeof collectionOverdueByProject;
+  /** 07.5-04(eng B-1) — 입력 칸 집합 읽기 주입점(DB 없는 단위 시험이 stub을 넣는다). */
+  customFieldInputs: typeof readCustomFieldInputs;
 };
 
 // 드리즐이 PG 오류를 cause로 감싼다 — 운영 로그에는 PG 코드만(필터 값·금액 없음).
@@ -391,6 +409,13 @@ export async function loadProjectList(
 
   await (deps?.settle ?? settleForProjectList)(viewer);
   const scope = await (deps?.scope ?? projectRowScope)(viewer);
+  // 07.5-04(D-7522 · eng B-13) — 이 사람의 입력 칸 집합(활성 ∧ cf.project.<key> 보임 ∧ project.value 보임)을 호출당 한 번 읽는다.
+  // 열 · 검색 키 · 거르개 · 목록 DTO 칸별 거름이 모두 이 집합 하나다(project.value가 꺼지면 빈 집합 — 검색 · 거르개 확장도 없다).
+  const { inputDefs } = await (deps?.customFieldInputs ?? readCustomFieldInputs)(viewer, { entity: PROJECT_ENTITY, valueInfoItem: "project.value" });
+  const customFilterDefs = customFieldFilterDefs(inputDefs);
+  const customFilterValues = parseCustomFieldFilters(query.custom ?? {}, customFilterDefs);
+  const customTextKeys = customTextSearchKeys(inputDefs);
+  const customSelects = Object.entries(customFilterValues).map(([key, value]) => ({ key, value }));
 
   // 04-48(C-08) — URL 값은 여기서 한 번 정규화한 뒤에만 쓴다(배열 첫 값 · 팀은 uuid 모양 + 고를 수 있는 팀 · 연도
   // 2000–2100). 팀 목록은 필터 줄과 같은 조회이고, uuid 모양의 팀 값이 왔을 때만 읽는다.
@@ -411,6 +436,8 @@ export async function loadProjectList(
     teamId: params.teamId,
     search: params.q,
     ...(range ? { range: { start: range.start, end: range.end } } : {}),
+    ...(params.q && customTextKeys.length > 0 ? { customTextKeys } : {}),
+    ...(customSelects.length > 0 ? { customSelects } : {}),
   };
   const sort = await normalizeSort(viewer, query.sort, deps?.visible ?? defaultVisible);
 
@@ -471,7 +498,10 @@ export async function loadProjectList(
     endDatePassed: isEndDatePassed({ status: row.status, endDate: row.endDate, todayKst }),
     collectionOverdue: collection?.get(row.id)?.overdue ?? false,
   }));
-  const dtos = (await projectMany(viewer, sources, PROJECT_LIST_DTO_SPEC, projectDeps)) as ProjectListItemDto[];
+  const inputKeys = new Set(inputDefs.map((def) => def.key));
+  const dtos = ((await projectMany(viewer, sources, PROJECT_LIST_DTO_SPEC, projectDeps)) as ProjectListItemDto[]).map((dto) =>
+    dto.customFields === undefined ? dto : { ...dto, customFields: pickVisibleCustomFields(dto.customFields, inputKeys) ?? {} },
+  );
   const hasFilter = isUserFiltered(params, thisYear);
   return {
     year,
@@ -490,6 +520,9 @@ export async function loadProjectList(
     params: { teamId: params.teamId, search: params.q, from: params.from, to: params.to },
     columnStep: listColumnStep(dtos),
     sort,
+    customColumns: customFieldListColumns(inputDefs).map((def) => ({ key: def.key, label: def.label, type: def.type, options: def.options })),
+    customFilterDefs: customFilterDefs.map((def) => ({ key: def.key, label: def.label, options: def.options })),
+    customFilterValues,
   };
 }
 

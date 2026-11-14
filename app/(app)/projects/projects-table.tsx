@@ -4,10 +4,11 @@ import Link from "next/link";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import type { ProjectListItemWithGroup, ProjectSortKey } from "@/domain/projects";
+import type { ProjectCustomColumn, ProjectListItemWithGroup, ProjectSortKey } from "@/domain/projects";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
 import { Num } from "@/ui/num/Num";
+import { customFieldDefaultValue } from "@/ui/custom-field/CustomFieldInput";
 import { PROJECT_COLUMN_LABELS } from "./list-columns";
 import { formatListPeriod, isProfitRateBelowThreshold, type ListColumnStep } from "@/domain/projects/list-view";
 import { sortHeaderHref } from "./sort-cycle";
@@ -23,6 +24,7 @@ export function ProjectsTable({
   sort,
   filterQuery,
   profitRateThreshold,
+  customColumns,
 }: {
   rows: ProjectListItemWithGroup[];
   /** 04-48(D-89) — 보기 연도(전체 연도면 null). 기간 칸이 그 해면 월-일만 적는다. */
@@ -35,6 +37,8 @@ export function ProjectsTable({
   filterQuery: string;
   /** quick 261004-51o — 설정 「수익률 기준선(%)」. 미만 행의 수익률 글자만 위험 색. */
   profitRateThreshold: number;
+  /** 07.5-04(D-7509) — 서버가 정한 추가 칸 열(보이는 활성 칸 앞 3개). 값은 이미 칸별로 거른 `row.customFields`에서만 읽는다. */
+  customColumns: ProjectCustomColumn[];
 }) {
   const nowrap = (text: string) => <span className={styles.nowrap}>{text}</span>;
   // 07-22(U15 · SC-20) — 상태 칸 둘째 줄은 한 값: 종료일 지남 > 수금 지연 > 없음(첫 줄 상태 낱말은 그대로). 폰은 같은 값을 접힌 줄 맨 앞에(secondaryText — 한 줄 말줄임에 잘리지 않게).
@@ -100,6 +104,25 @@ export function ProjectsTable({
     },
   ];
   const moneyColumns = amountColumns.filter((column) => rows.some((row) => column.key in row));
+
+  // 07.5-04(D-7509 · D-7524 · UI-SPEC S5) — 추가 칸 열: 금액 뒤 · 상태 앞, 1280 이상에서만(P3), 정렬 링크 없음(SORT_KEY_OF_COLUMN에 없다).
+  // 텍스트 · 선택은 폭 상한 `field`, 숫자 · 날짜는 `number`(12ch). 값 없음 「—」, 활성 선택지 밖 값은 `{값} (보관됨)`.
+  const customFieldColumns: TableColumn<ProjectListItemWithGroup>[] = customColumns.map((def) => ({
+    key: `cf_${def.key}`,
+    header: def.label,
+    priority: "p3",
+    collapseBelow: 1280,
+    cellWidth: def.type === "text" || def.type === "select" ? "field" : "number",
+    ...(def.type === "number" ? { align: "right" as const } : {}),
+    cell: (row) => {
+      const raw = row.customFields?.[def.key];
+      const text = customFieldDefaultValue(def, raw);
+      if (text === "") return "—";
+      if (def.type === "number") return typeof raw === "number" ? <Num value={raw} unit="quantity" /> : text;
+      if (def.type === "select" && !def.options.includes(text)) return `${text} (보관됨)`;
+      return text;
+    },
+  }));
 
   // 04-18(§6-1) — 머리글 정렬 링크. 다른 열은 오름차순 → 내림차순 → 초기화(sortHeaderHref), page를 싣지 않아 1쪽이다.
   const sortHeader = (key: ProjectSortKey): TableColumn<ProjectListItemWithGroup>["sort"] => {
@@ -168,6 +191,7 @@ export function ProjectsTable({
       ),
     },
     ...moneyColumns,
+    ...customFieldColumns,
     {
       key: "status",
       header: PROJECT_COLUMN_LABELS.status,

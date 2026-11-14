@@ -118,6 +118,10 @@ export type ProjectListFilter = {
   range?: { start?: string; end?: string };
   /** 프로젝트명·번호·클라이언트명 ILIKE. */
   search?: string;
+  /** 07.5-04 D-7522: 검색어가 함께 찾는 추가 칸 키(이 사람에게 보이는 활성 텍스트 칸 — domain이 정한다). 비면 절을 더하지 않는다. */
+  customTextKeys?: readonly string[];
+  /** 07.5-04 D-7510: 선택 칸 거르개(정의 키 → 활성 선택지 값 — domain이 거른 뒤 넘긴다). 비면 절을 더하지 않는다. */
+  customSelects?: readonly { key: string; value: string }[];
 };
 
 export const PROJECT_SORT_KEYS = [
@@ -155,6 +159,8 @@ export type ProjectListRow = {
   netProfitKrw: number;
   /** 수익금 ÷ 기준 금액 — 기준 ≤ 0이면 null. */
   profitRate: number | null;
+  /** 07.5-04(D-7508) — 추가 칸 값 가방 전체. 칸별 거름은 domain(loadProjectList)이 한다. */
+  customFields: Record<string, unknown>;
 };
 
 // 04-17(D-90) — 귀속 구간: "in"(종료일이 R 안, R이 없으면 종료일 있는 전부) · "undetermined"(종료일 없음) · 종료 연도 문자열.
@@ -185,9 +191,18 @@ function projectFilterConditions(viewer: Viewer, filter: ProjectListFilter, scop
   if (filter.range) conditions.push(rangeCondition(filter.range));
   if (filter.search) {
     const pattern = `%${filter.search}%`;
-    conditions.push(or(ilike(projects.name, pattern), ilike(projects.number, pattern), ilike(vendors.name, pattern)));
+    // 07.5-04(D-7522) — 추가 칸 절은 키 · 패턴 매개변수 바인딩 + `%` · `_` 이스케이프. JSON 전체를 글자로 바꿔 찾지 않는다(키 이름 · 숨은 칸 값까지 맞는다).
+    const byCustom = (filter.customTextKeys ?? []).map((key) => sql`${projects.customFields} ->> ${key} ILIKE ${likeContains(filter.search ?? "")}`);
+    conditions.push(or(ilike(projects.name, pattern), ilike(projects.number, pattern), ilike(vendors.name, pattern), ...byCustom));
+  }
+  for (const { key, value } of filter.customSelects ?? []) {
+    conditions.push(sql`${projects.customFields} @> ${JSON.stringify({ [key]: value })}::jsonb`);
   }
   return conditions;
+}
+
+function likeContains(value: string): string {
+  return `%${value.replace(/[\\%_]/g, "\\$&")}%`;
 }
 
 // created_at은 시간대 없는 UTC 시각이다(세션 TimeZone = UTC) — KST 날짜로 바꿔 R과 비교한다.
@@ -293,6 +308,7 @@ export async function listProjectsPage(
       profitBasis: sql<ProfitBasis>`${money.profitBasis}`,
       netProfitKrw: sql<number>`${money.profit}::bigint`.mapWith(Number),
       profitRate: sql<number | null>`${money.rate}`.mapWith(Number),
+      customFields: projects.customFields,
     })
     .from(projects)
     .leftJoin(vendors, eq(vendors.id, projects.clientId))
@@ -316,6 +332,7 @@ export async function listProjectsPage(
     clientName: row.clientName ?? "",
     teamName: row.teamName ?? "",
     pmUserName: row.pmUserName ?? "",
+    customFields: (row.customFields ?? {}) as Record<string, unknown>,
   }));
 }
 

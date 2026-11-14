@@ -72,6 +72,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     redirect(`/projects?${next.toString()}`);
   }
 
+  // 07.5-04(D-7510) — `cf_<정의 키>` 파라미터의 첫 값(접두를 한 번 벗긴 raw). 도메인(loadProjectList)이 보이는 활성 선택 칸 · 활성 선택지로 거른다.
+  const rawCustom: Record<string, string> = {};
+  for (const [name, value] of Object.entries(params)) {
+    const first = firstListParam(value);
+    if (name.startsWith("cf_") && first) rawCustom[name.slice(3)] = first;
+  }
+
   const showCreateForm = firstListParam(params.new) === "1";
   const copyFrom = firstListParam(params.copyFrom);
   const statusOptions: ProjectFilterOption[] = (await listProjectStatusCatalog(session.viewer)).map(
@@ -104,6 +111,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       to: params.to,
       sort: { key: sortKey, direction: sortDirection },
       page: params.page,
+      custom: rawCustom,
     }),
     // 04-15(D-70 · S2) — 복사 등록 미리 채우기. 범위 밖 · 보관 · 없는 출처면 null → 일반 등록 폼.
     showCreateForm && copyFrom ? getProjectCopySource(session.viewer, copyFrom) : Promise.resolve(null),
@@ -239,6 +247,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           sort={list.sort}
           filterQuery={filterParams.toString()}
           profitRateThreshold={profitRateThreshold}
+          customColumns={list.customColumns}
         />
       ) : null}
     </ListScreen>

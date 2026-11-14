@@ -22,3 +22,16 @@
     max-width: calc(var(--field-w-select) - var(--s-4) - var(--s-1));
   }
 }
+
+/* 07.5-02(D-7524) — 추가 칸 입력 공용 꼴. 거래처 폼(vendors.module.css)에서 옮긴 같은 값 — 새 토큰 0.
+   선택 칸 감싸개: 패널의 Form.Field 줄(select)은 아래 간격이 없어 TextField 줄과 같은 --s-4를 준다. */
+.field {
+  margin: 0 0 var(--s-4);
+}
+
+/* 기본 칸과 추가 칸 사이 구분선 — 1px 행 선 + 위아래 --s-6(머리 글자 없음). 칸이 0개면 묶음 자체를 그리지 않는다. */
+.group {
+  margin-top: var(--s-6);
+  padding-top: var(--s-6);
+  border-top: var(--line-w) solid var(--border-row);
+}

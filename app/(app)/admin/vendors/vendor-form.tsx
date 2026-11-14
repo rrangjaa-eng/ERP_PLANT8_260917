@@ -23,6 +23,7 @@ import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { SidePanel, editLinkFor } from "@/ui/side-panel/SidePanel";
 import { Select } from "@/ui/select/Select";
+import { CustomFieldGroup, CustomFieldInput } from "@/ui/custom-field/CustomFieldInput";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { KvList } from "@/ui/kv-list/KvList";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
@@ -92,16 +93,6 @@ function existingVendorHref(conflict: BusinessNoConflict): string {
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
-}
-
-// 커스텀 필드 값을 입력 defaultValue용 문자열로 만든다. date 타입은 저장된
-// 값이 ISO 타임스탬프일 수 있어(zod z.coerce.date() → JSON 직렬화) 앞
-// 10자리(YYYY-MM-DD)만 쓴다 — <input type="date">는 그 형식만 받는다.
-function customFieldDefaultValue(def: VendorFieldDefinition, value: unknown): string {
-  if (typeof value !== "string" && typeof value !== "number") return "";
-  const asString = typeof value === "string" ? value : String(value);
-  if (def.type === "date") return asString.slice(0, 10);
-  return asString;
 }
 
 const KIND_OPTIONS = VENDOR_KINDS.map((kind) => ({ value: kind, label: VENDOR_KIND_LABELS[kind] }));
@@ -608,16 +599,16 @@ export function VendorForm({
       {workplace ? null : <VendorContacts initial={contacts} error={contactsError} />}
 
       {fieldDefs.length > 0 && !workplace ? (
-        <div className={styles.customFields} data-testid="vendor-custom-fields">
+        <CustomFieldGroup data-testid="vendor-custom-fields">
           {fieldDefs.map((def) => (
-            <VendorCustomField
+            <CustomFieldInput
               key={def.id}
               def={def}
               defaultValue={editing?.customFields[def.key]}
               error={customFieldErrors?.[def.key]?._errors?.[0]}
             />
           ))}
-        </div>
+        </CustomFieldGroup>
       ) : null}
 
       {duplicateCount ? (
@@ -732,46 +723,6 @@ function AccountNumberField({
         onBlurError(problem);
       }}
     />
-  );
-}
-
-function VendorCustomField({
-  def,
-  defaultValue,
-  error,
-}: {
-  def: VendorFieldDefinition;
-  defaultValue?: unknown;
-  error?: string;
-}) {
-  const id = `cf_${def.key}`;
-  const stringValue = customFieldDefaultValue(def, defaultValue);
-  if (def.type === "select") {
-    const options = def.options ?? [];
-    // 04.5-06: 저장값이 활성 선택지에 없으면(보관된 선택지) 그 값을 「(보관됨)」 옵션으로 활성화한 채 목록 끝에 더한다 —
-    // disabled 옵션은 FormData에서 빠져 「안 바꿈」과 「지움」을 구분할 수 없다(UI-SPEC O2). 판정은 서버(05)가 한다.
-    const archivedValue = stringValue !== "" && !options.includes(stringValue) ? stringValue : null;
-    return (
-      <div className={styles.field}>
-        <Form.Field id={id} label={def.label}>
-          <Select
-            id={id}
-            name={id}
-            options={[
-              ...options.map((option) => ({ value: option, label: option })),
-              ...(archivedValue !== null ? [{ value: archivedValue, label: `${archivedValue} (보관됨)` }] : []),
-            ]}
-            defaultValue={stringValue}
-            error={error}
-          />
-        </Form.Field>
-      </div>
-    );
-  }
-
-  const inputType = def.type === "number" ? "number" : def.type === "date" ? "date" : "text";
-  return (
-    <TextField id={id} name={id} label={def.label} type={inputType} defaultValue={stringValue} error={error} />
   );
 }
 

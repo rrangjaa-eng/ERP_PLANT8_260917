@@ -2729,3 +2729,12 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **범위**: `ui/row-actions/RowActions.module.css`. 홀로 선 `danger` 칸을 쓰는 표(보관함 · 관리 표 · 참여자)가 앞 여백만큼 오른쪽으로 밀린다 — 1024 · 320 넘침은 E2E로 확인.
 **결정자**: 사용자(선택 카드 2026-11-13).
 **영향**: SYSTEM §7-19 · `ui/row-actions/RowActions.module.css`.
+
+## 2026-11-14 — 추가 칸 입력 칸 감싸개 · 묶음 구분선을 공용 CSS 모듈로 옮김 (07.5-02 · D-7524)
+**결정**: 거래처 폼의 비공개 추가 칸 입력(`VendorCustomField` · `customFieldDefaultValue`)을 `ui/custom-field/CustomFieldInput.tsx`(`CustomFieldInput` · `CustomFieldGroup` · `customFieldDefaultValue`)로 꺼내고, 그 꼴 두 규칙을 `ui/custom-field/CustomField.module.css`로 옮긴다 — 선택 칸 감싸개 `.field`(`margin: 0 0 var(--s-4)`, vendors.module.css `.field`와 같은 값) · 묶음 구분선 `.group`(`margin-top` · `padding-top` `--s-6` · `border-top: var(--line-w) solid var(--border-row)`, 옛 vendors.module.css `.customFields`와 같은 값). 거래처 폼 · 프로젝트 등록 패널 · 프로젝트 정보 면 고치기가 같은 부품을 쓴다. vendors.module.css에서는 쓰이지 않게 된 `.customFields`만 지웠다(`.field`는 다른 칸이 계속 쓴다).
+**이유**: 같은 입력 칸이 세 화면에 선다(DESIGN.md §4 규칙 3) — 화면 모듈 CSS는 `ui/`가 import할 수 없어 공용 모듈로 옮긴다. 계산 값이 같아 거래처 폼 DOM · visual 스냅숏은 그대로다.
+**보관 선택지 예외 한 줄**: 추가 칸 폼 select는 저장된 보관 선택지를 활성 옵션 `{값} (보관됨)`으로 끝에 둔다 — SYSTEM.md §7-15 `Select`의 `SelectOption.disabled` 규칙과 다른 04.5 기존 이탈이다. disabled 옵션은 FormData에서 빠져 「안 바꿈」과 「지움」을 가를 수 없다. SYSTEM.md 같은 줄 아래에 예외 한 줄(design F16).
+**고친 칸 표시 한 줄**: 정보 면 고친 추가 칸 = 형제 정보 칸의 실제 규칙 `.periodInputDirty`(`--inset-dirty`, project-detail.module.css) — SYSTEM.md §7-17 개정 6의 「`--surface-dirty` 면」 문장과 07.5 이전부터 다르고, 추가 칸은 형제 칸을 따른다(SYSTEM 문장 정정은 범위 밖, design r2 C2).
+**결정자**: 사용자 카드 2026-11-04 16:20 KST eng E2(D-7524 — 공용 칸 꼴 규칙). 보관 선택지 예외 줄 · dirty 규칙 줄은 계획자 재량(디자인 검토 권고 F16 · r2 C2).
+**범위**: `ui/custom-field/{CustomFieldInput.tsx,CustomField.module.css}` · `app/(app)/admin/vendors/{vendor-form.tsx,vendors.module.css}` · `app/(app)/projects/project-form.tsx` · `app/(app)/projects/[id]/custom-info-fields.tsx`. 새 색 · 서체 · radius · 토큰 0.
+**영향**: SYSTEM §7-15 `Select` 줄 아래 예외 한 줄.

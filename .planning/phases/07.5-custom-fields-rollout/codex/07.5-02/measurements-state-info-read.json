@@ -1,0 +1,566 @@
+[
+  {
+    "width": 375,
+    "innerWidth": 375,
+    "scrollWidth": 375,
+    "sectionCount": 2,
+    "sectionTitles": [
+      "기본",
+      "고객 승인"
+    ],
+    "columnCount": 1,
+    "sectionBoxes": [
+      {
+        "x": 29,
+        "y": 244,
+        "width": 317,
+        "height": 422.6
+      },
+      {
+        "x": 29,
+        "y": 674.6,
+        "width": 317,
+        "height": 109.8
+      }
+    ],
+    "basicItems": [
+      {
+        "text": "행사명캡처추가칸-b44e",
+        "box": {
+          "x": 29,
+          "y": 277.8,
+          "width": 317,
+          "height": 24
+        }
+      },
+      {
+        "text": "고객사캡처프칸고객-b44e",
+        "box": {
+          "x": 29,
+          "y": 305.8,
+          "width": 317,
+          "height": 24
+        }
+      },
+      {
+        "text": "담당 팀E2E팀-0e4ea271",
+        "box": {
+          "x": 29,
+          "y": 333.8,
+          "width": 317,
+          "height": 24
+        }
+      },
+      {
+        "text": "담당 PME2E Employee",
+        "box": {
+          "x": 29,
+          "y": 361.8,
+          "width": 317,
+          "height": 24
+        }
+      },
+      {
+        "text": "기간미정",
+        "box": {
+          "x": 29,
+          "y": 389.8,
+          "width": 317,
+          "height": 24
+        }
+      },
+      {
+        "text": "PO 금액없음",
+        "box": {
+          "x": 29,
+          "y": 417.8,
+          "width": 317,
+          "height": 24
+        }
+      },
+      {
+        "text": "PO 번호없음",
+        "box": {
+          "x": 29,
+          "y": 445.8,
+          "width": 317,
+          "height": 24
+        }
+      },
+      {
+        "text": "E2E캡처프칸장소b44e서울 코엑스 C홀",
+        "box": {
+          "x": 29,
+          "y": 473.8,
+          "width": 317,
+          "height": 24
+        }
+      },
+      {
+        "text": "E2E캡처프칸담당자 연락처 메모b44e마케팅본부 브랜드팀 이수진 책임 0",
+        "box": {
+          "x": 29,
+          "y": 501.8,
+          "width": 317,
+          "height": 76.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸참석 인원 합계 수b44e1,250.5",
+        "box": {
+          "x": 29,
+          "y": 582.6,
+          "width": 317,
+          "height": 24
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사일b44e—",
+        "box": {
+          "x": 29,
+          "y": 610.6,
+          "width": 317,
+          "height": 24
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사 구분b44e로드쇼 (보관됨)",
+        "box": {
+          "x": 29,
+          "y": 638.6,
+          "width": 317,
+          "height": 24
+        }
+      }
+    ],
+    "basicOverlaps": 0,
+    "customInputShadows": [],
+    "siblingNameShadow": null,
+    "saveButtons": [
+      "일괄 저장Ctrl+S"
+    ]
+  },
+  {
+    "width": 320,
+    "innerWidth": 320,
+    "scrollWidth": 320,
+    "sectionCount": 2,
+    "sectionTitles": [
+      "기본",
+      "고객 승인"
+    ],
+    "columnCount": 1,
+    "sectionBoxes": [
+      {
+        "x": 29,
+        "y": 244,
+        "width": 262,
+        "height": 446.6
+      },
+      {
+        "x": 29,
+        "y": 698.6,
+        "width": 262,
+        "height": 109.8
+      }
+    ],
+    "basicItems": [
+      {
+        "text": "행사명캡처추가칸-b44e",
+        "box": {
+          "x": 29,
+          "y": 277.8,
+          "width": 262,
+          "height": 24
+        }
+      },
+      {
+        "text": "고객사캡처프칸고객-b44e",
+        "box": {
+          "x": 29,
+          "y": 305.8,
+          "width": 262,
+          "height": 24
+        }
+      },
+      {
+        "text": "담당 팀E2E팀-0e4ea271",
+        "box": {
+          "x": 29,
+          "y": 333.8,
+          "width": 262,
+          "height": 24
+        }
+      },
+      {
+        "text": "담당 PME2E Employee",
+        "box": {
+          "x": 29,
+          "y": 361.8,
+          "width": 262,
+          "height": 24
+        }
+      },
+      {
+        "text": "기간미정",
+        "box": {
+          "x": 29,
+          "y": 389.8,
+          "width": 262,
+          "height": 24
+        }
+      },
+      {
+        "text": "PO 금액없음",
+        "box": {
+          "x": 29,
+          "y": 417.8,
+          "width": 262,
+          "height": 24
+        }
+      },
+      {
+        "text": "PO 번호없음",
+        "box": {
+          "x": 29,
+          "y": 445.8,
+          "width": 262,
+          "height": 24
+        }
+      },
+      {
+        "text": "E2E캡처프칸장소b44e서울 코엑스 C홀",
+        "box": {
+          "x": 29,
+          "y": 473.8,
+          "width": 262,
+          "height": 24
+        }
+      },
+      {
+        "text": "E2E캡처프칸담당자 연락처 메모b44e마케팅본부 브랜드팀 이수진 책임 0",
+        "box": {
+          "x": 29,
+          "y": 501.8,
+          "width": 262,
+          "height": 100.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸참석 인원 합계 수b44e1,250.5",
+        "box": {
+          "x": 29,
+          "y": 606.6,
+          "width": 262,
+          "height": 24
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사일b44e—",
+        "box": {
+          "x": 29,
+          "y": 634.6,
+          "width": 262,
+          "height": 24
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사 구분b44e로드쇼 (보관됨)",
+        "box": {
+          "x": 29,
+          "y": 662.6,
+          "width": 262,
+          "height": 24
+        }
+      }
+    ],
+    "basicOverlaps": 0,
+    "customInputShadows": [],
+    "siblingNameShadow": null,
+    "saveButtons": [
+      "일괄 저장Ctrl+S"
+    ]
+  },
+  {
+    "width": 768,
+    "innerWidth": 768,
+    "scrollWidth": 768,
+    "sectionCount": 2,
+    "sectionTitles": [
+      "기본",
+      "고객 승인"
+    ],
+    "columnCount": 2,
+    "sectionBoxes": [
+      {
+        "x": 33,
+        "y": 214.4,
+        "width": 339,
+        "height": 406.1
+      },
+      {
+        "x": 396,
+        "y": 214.4,
+        "width": 339,
+        "height": 406.1
+      }
+    ],
+    "basicItems": [
+      {
+        "text": "행사명캡처추가칸-b44e",
+        "box": {
+          "x": 33,
+          "y": 248.2,
+          "width": 339,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "고객사캡처프칸고객-b44e",
+        "box": {
+          "x": 33,
+          "y": 275,
+          "width": 339,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "담당 팀E2E팀-0e4ea271",
+        "box": {
+          "x": 33,
+          "y": 301.8,
+          "width": 339,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "담당 PME2E Employee",
+        "box": {
+          "x": 33,
+          "y": 328.6,
+          "width": 339,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "기간미정",
+        "box": {
+          "x": 33,
+          "y": 355.4,
+          "width": 339,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "PO 금액없음",
+        "box": {
+          "x": 33,
+          "y": 382.2,
+          "width": 339,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "PO 번호없음",
+        "box": {
+          "x": 33,
+          "y": 409,
+          "width": 339,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸장소b44e서울 코엑스 C홀",
+        "box": {
+          "x": 33,
+          "y": 435.8,
+          "width": 339,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸담당자 연락처 메모b44e마케팅본부 브랜드팀 이수진 책임 0",
+        "box": {
+          "x": 33,
+          "y": 462.5,
+          "width": 339,
+          "height": 73.6
+        }
+      },
+      {
+        "text": "E2E캡처프칸참석 인원 합계 수b44e1,250.5",
+        "box": {
+          "x": 33,
+          "y": 540.1,
+          "width": 339,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사일b44e—",
+        "box": {
+          "x": 33,
+          "y": 566.9,
+          "width": 339,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사 구분b44e로드쇼 (보관됨)",
+        "box": {
+          "x": 33,
+          "y": 593.7,
+          "width": 339,
+          "height": 22.8
+        }
+      }
+    ],
+    "basicOverlaps": 0,
+    "customInputShadows": [],
+    "siblingNameShadow": null,
+    "saveButtons": [
+      "일괄 저장Ctrl+S"
+    ]
+  },
+  {
+    "width": 1280,
+    "innerWidth": 1280,
+    "scrollWidth": 1280,
+    "sectionCount": 2,
+    "sectionTitles": [
+      "기본",
+      "고객 승인"
+    ],
+    "columnCount": 2,
+    "sectionBoxes": [
+      {
+        "x": 209,
+        "y": 166.4,
+        "width": 507,
+        "height": 406.1
+      },
+      {
+        "x": 740,
+        "y": 166.4,
+        "width": 507,
+        "height": 406.1
+      }
+    ],
+    "basicItems": [
+      {
+        "text": "행사명캡처추가칸-b44e",
+        "box": {
+          "x": 209,
+          "y": 200.2,
+          "width": 507,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "고객사캡처프칸고객-b44e",
+        "box": {
+          "x": 209,
+          "y": 227,
+          "width": 507,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "담당 팀E2E팀-0e4ea271",
+        "box": {
+          "x": 209,
+          "y": 253.8,
+          "width": 507,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "담당 PME2E Employee",
+        "box": {
+          "x": 209,
+          "y": 280.6,
+          "width": 507,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "기간미정",
+        "box": {
+          "x": 209,
+          "y": 307.4,
+          "width": 507,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "PO 금액없음",
+        "box": {
+          "x": 209,
+          "y": 334.2,
+          "width": 507,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "PO 번호없음",
+        "box": {
+          "x": 209,
+          "y": 361,
+          "width": 507,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸장소b44e서울 코엑스 C홀",
+        "box": {
+          "x": 209,
+          "y": 387.8,
+          "width": 507,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸담당자 연락처 메모b44e마케팅본부 브랜드팀 이수진 책임 0",
+        "box": {
+          "x": 209,
+          "y": 414.5,
+          "width": 507,
+          "height": 73.6
+        }
+      },
+      {
+        "text": "E2E캡처프칸참석 인원 합계 수b44e1,250.5",
+        "box": {
+          "x": 209,
+          "y": 492.1,
+          "width": 507,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사일b44e—",
+        "box": {
+          "x": 209,
+          "y": 518.9,
+          "width": 507,
+          "height": 22.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사 구분b44e로드쇼 (보관됨)",
+        "box": {
+          "x": 209,
+          "y": 545.7,
+          "width": 507,
+          "height": 22.8
+        }
+      }
+    ],
+    "basicOverlaps": 0,
+    "customInputShadows": [],
+    "siblingNameShadow": null,
+    "saveButtons": [
+      "일괄 저장Ctrl+S"
+    ]
+  }
+]

@@ -133,13 +133,6 @@
   height: var(--icon-lg);
 }
 
-/* 04.5-06: 기본 칸과 커스텀 칸 사이 구분선 — 1px 행 선 + --s-6 간격(텍스트 머리 없음). 커스텀 칸이 0개면 이 묶음 자체를 그리지 않는다. */
-.customFields {
-  margin-top: var(--s-6);
-  padding-top: var(--s-6);
-  border-top: var(--line-w) solid var(--border-row);
-}
-
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
 @media (max-width: 699.98px) {
   .clearRow input {

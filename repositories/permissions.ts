@@ -6,6 +6,9 @@ import { fieldDefinitions, permissionMatrix, roles, users, visibilityMatrix } fr
 import type { Viewer } from "@/domain/viewer";
 import { customFieldInfoItem, type FieldDefinitionTarget } from "@/domain/custom-fields/targets";
 
+// 07.5-02: 추가 칸을 읽는 대상 — 관리자 화면 대상 상수(FIELD_DEFINITION_TARGETS, 05가 켠다)보다 넓다. 프로젝트 · 견적 줄 정의는 시험이 직접 심는다(D-7503).
+export type CustomFieldEntity = FieldDefinitionTarget | "project" | "quote_line";
+
 export type PermissionMatrixRow = InferSelectModel<typeof permissionMatrix>;
 export type VisibilityMatrixRow = InferSelectModel<typeof visibilityMatrix>;
 
@@ -243,7 +246,7 @@ export type VendorFieldAccess = {
 export async function readCustomFieldAccess(
   viewer: Viewer,
   roleId: string | null,
-  target: { entity: FieldDefinitionTarget; valueInfoItem: string },
+  target: { entity: CustomFieldEntity; valueInfoItem: string },
   tx: DbOrTx = db,
 ): Promise<CustomFieldAccess> {
   void viewer;

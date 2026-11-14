@@ -76,7 +76,9 @@ import { PreSettleLedgerContext } from "./pre-settle-check";
 import { PeriodField, periodRangeText, periodShortText, type PeriodDraft, type PeriodFieldError } from "./period-field";
 import type { PeriodRights } from "@/domain/projects/period";
 import type { InfoFieldError, InfoValues } from "@/domain/projects/info-rules";
+import type { InfoChangeFieldError } from "@/domain/projects/info";
 import { InfoFields, InfoRows, infoDirtyCount, localInfoErrors, type InfoProps } from "./info-fields";
+import { CustomInfoFields, CustomInfoRows, customInfoDirtyKeys, rebaseCustomInfoDraft, type CustomInfo } from "./custom-info-fields";
 import { ProjectDelete, type ProjectDeleteProps } from "./project-delete";
 import {
   PoNumberField,
@@ -480,6 +482,15 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
 // 총 매출 예상가 칸(04-44)은 `preEstimate:amount`·`preEstimate:currency`·`preEstimate:fxRate`(칸 글자 그대로),
 // PO 번호 칸(07-18 D-P3-2)은 `poNumber:value`, 기본 정보 4칸(07.2-17 S3)은 `info:name`·`info:clientId`·`info:teamId`·`info:pmUserId` + 기준 `info:version`.
 // 검토 B1 — 기간·총 매출 예상가 칸은 차수가 아니라 프로젝트의 칸이다(다른 차수 보관본에서 현재 차수로 옮긴다).
+// 07.5-02 — 정보 저장 거부의 추가 칸 오류(`customFields.<key>`)와 4칸 오류를 가른다.
+function customInfoErrorKey(error: InfoChangeFieldError): string | null {
+  return error.field.startsWith("customFields.") ? error.field.slice("customFields.".length) : null;
+}
+
+function isBasicInfoError(error: InfoChangeFieldError): error is InfoFieldError {
+  return customInfoErrorKey(error) === null;
+}
+
 export const PROJECT_EDIT_OWNERS = ["period", "preEstimate", "poNumber", "info"] as const;
 type StoredUnitPrice = { amount: number; currency: Currency; fxRate: number };
 type StoredLineBase = { version: number; baseline: QuoteLineBaseline; vendorHidden?: true };
@@ -510,7 +521,8 @@ export function editsSnapshot(
   preEstimate: PreEstimateDraft | null,
   preEstimateBase: PreEstimateDraft | null,
   poNumber: { draft: string; base: string } | null = null,
-  info: { draft: InfoValues; base: InfoValues; version: number } | null = null,
+  // custom — 고친 추가 칸만(07.5-02 · D-7516: 기본 정보와 같은 묶음 · 같은 version).
+  info: { draft: InfoValues; base: InfoValues; version: number; custom?: Record<string, string> } | null = null,
 ): Record<string, unknown> {
   const edits: Record<string, unknown> = {};
   for (const line of lines) {
@@ -571,13 +583,15 @@ export function editsSnapshot(
   if (poNumber && poNumber.draft !== poNumber.base) edits["poNumber:value"] = poNumber.draft;
   if (info) {
     for (const key of INFO_KEYS) if (info.draft[key] !== info.base[key]) edits[`info:${key}`] = info.draft[key];
+    for (const [key, value] of Object.entries(info.custom ?? {})) edits[`info:${CUSTOM_INFO_PREFIX}${key}`] = value;
     // 보관 시점 version을 함께 — 복원 뒤 저장이 그 사이 동료 저장과 동시 수정 판정을 받는다(기간 기준값과 같은 결).
-    if (INFO_KEYS.some((key) => `info:${key}` in edits)) edits["info:version"] = info.version;
+    if (Object.keys(edits).some((key) => key.startsWith("info:"))) edits["info:version"] = info.version;
   }
   return edits;
 }
 
 const INFO_KEYS = ["name", "clientId", "teamId", "pmUserId"] as const;
+const CUSTOM_INFO_PREFIX = "custom.";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -742,7 +756,7 @@ export function mergeRestoredEdits(
   period: { start?: string; end?: string; base?: StoredPeriodBase };
   preEstimate: Partial<PreEstimateDraft>;
   poNumber?: string;
-  info?: Partial<InfoValues> & { version: number };
+  info?: Partial<InfoValues> & { version: number; custom?: Record<string, string> };
 } {
   let next = lines;
   const added: DraftLine[] = [];
@@ -752,6 +766,7 @@ export function mergeRestoredEdits(
   let poNumber: string | undefined;
   const infoVersion = edits["info:version"];
   const info: Partial<InfoValues> = {};
+  const custom: Record<string, string> = {};
   for (const [key, value] of Object.entries(edits)) {
     const cut = key.lastIndexOf(":");
     const owner = key.slice(0, cut);
@@ -770,6 +785,7 @@ export function mergeRestoredEdits(
     if (owner === "info") {
       const field = INFO_KEYS.find((key) => key === column);
       if (field && typeof value === "string") info[field] = value;
+      if (column.startsWith(CUSTOM_INFO_PREFIX) && typeof value === "string") custom[column.slice(CUSTOM_INFO_PREFIX.length)] = value;
       continue;
     }
     if (owner === "preEstimate") {
@@ -806,7 +822,9 @@ export function mergeRestoredEdits(
     );
   }
   // 기준 version이 없는 보관본의 기본 정보 칸은 들이지 않는다(기간 칸과 같은 규칙).
-  const restoredInfo = typeof infoVersion === "number" && Object.keys(info).length > 0 ? { info: { ...info, version: infoVersion } } : {};
+  const hasCustom = Object.keys(custom).length > 0;
+  const restoredInfo =
+    typeof infoVersion === "number" && (Object.keys(info).length > 0 || hasCustom) ? { info: { ...info, version: infoVersion, ...(hasCustom ? { custom } : {}) } } : {};
   return { lines: [...next, ...added], period, preEstimate, ...(poNumber !== undefined ? { poNumber } : {}), ...restoredInfo };
 }
 
@@ -1183,6 +1201,7 @@ export function QuoteLedger({
   usdDefaultFxRate,
   lineDoors,
   info,
+  customInfo,
   projectDelete,
 }: {
   /** 리뷰 R2 — 미저장 편집 보관본 키를 보는 사람별로 나눈다. */
@@ -1262,6 +1281,8 @@ export function QuoteLedger({
   lineDoors: LineDoors;
   /** 07.2-17(S3 · DC-9) — 정보 면 기본 정보 4칸(행사명 · 고객사 · 담당 팀 · 담당 PM). 권리 · 잠김 · 후보는 서버 판정. */
   info: InfoProps;
+  /** 07.5-02(S3) — 정보 면 「기본」 구획 끝 추가 칸(이 사람의 입력 칸 · 칸별로 거른 값). 고치는 권리는 기본 정보(info.rights)와 같다(D-7516). */
+  customInfo: CustomInfo;
   /** 07.2-17(S1) — 머리 묶음 끝 `프로젝트 삭제`. `projects.delete` 권리가 없거나 보관된 프로젝트면 null(DOM 없음). */
   projectDelete: ProjectDeleteProps | null;
 }) {
@@ -1370,18 +1391,24 @@ export function QuoteLedger({
   const [infoBase, setInfoBase] = useState({ values: info.values, version: info.version });
   const [renderedInfoVersion, setRenderedInfoVersion] = useState(info.version);
   const [infoDraft, setInfoDraft] = useState<InfoValues | null>(null);
+  // 07.5-02(S3 · D-7516) — 추가 칸. 기준값은 서버 값(칸별로 거른 customFields) 또는 직전 저장 응답, 초안은 고친 칸만(고치기 묶음이 열린 동안).
+  const [customBase, setCustomBase] = useState<Record<string, unknown>>(customInfo.values);
+  const [customDraft, setCustomDraft] = useState<Record<string, string>>({});
   if (renderedInfoVersion !== info.version) {
     setRenderedInfoVersion(info.version);
     setInfoBase({ values: info.values, version: info.version });
+    setCustomBase(customInfo.values);
     // Codex P1(PR #378) — 열린 초안은 내가 바꾼 칸(옛 기준값과 다른 칸)만 남기고 나머지는 새 서버 값으로 — 동료가 바꾼 칸을 다음 저장이 되돌리지 않는다.
     if (infoDraft !== null) {
       setInfoDraft({
         ...info.values,
         ...Object.fromEntries(INFO_KEYS.filter((key) => infoDraft[key] !== infoBase.values[key]).map((key) => [key, infoDraft[key]])),
       });
+      // 리뷰 S1 — 추가 칸도 같은 규칙. 건드렸다 되돌린 칸(초안 = 옛 값)이 새 기준값 앞에서 고친 칸이 되지 않게.
+      setCustomDraft(rebaseCustomInfoDraft(customInfo.defs, customBase, customDraft));
     }
   }
-  const [infoServerErrors, setInfoServerErrors] = useState<InfoFieldError[]>([]);
+  const [infoServerErrors, setInfoServerErrors] = useState<InfoChangeFieldError[]>([]);
   // 「복원」한 기본 정보 칸은 보관 시점 version으로 저장한다(그 사이 동료 저장이면 동시 수정). 저장 성공 · 닫기에 비운다.
   const [restoredInfoVersion, setRestoredInfoVersion] = useState<number | null>(null);
   // D-7220 — 동시 수정 거부 문구(면 아래 한 줄 + 3차 `새로 고침`).
@@ -1683,7 +1710,8 @@ export function QuoteLedger({
         const firstInfoError = data.periodRejected.infoErrors[0];
         if (firstInfoError && data.periodRejected.errors.length === 0 && data.periodRejected.preEstimateErrors.length === 0) {
           setInfoOpen(true);
-          focusWhenReady(firstInfoError.field === "name" ? "info-name" : `info-${firstInfoError.field}`);
+          const customKey = customInfoErrorKey(firstInfoError);
+          focusWhenReady(customKey !== null ? `cf_${customKey}` : firstInfoError.field === "name" ? "info-name" : `info-${firstInfoError.field}`);
         } else {
           focusOutsideError(data.periodRejected.errors, data.periodRejected.preEstimateErrors);
         }
@@ -1717,8 +1745,11 @@ export function QuoteLedger({
         setInfoServerErrors([]);
         setInfoConflict(null);
         if (saved.info) {
-          const { version, ...values } = saved.info;
+          const { version, customFields: savedCustomFields, ...values } = saved.info;
           setInfoBase({ values, version });
+          // 응답의 추가 칸은 이 사람의 입력 칸 값뿐이다(eng P1-2) — 응답에 없는 키는 화면에 없던 칸이다.
+          setCustomBase(savedCustomFields);
+          setCustomDraft({});
           setRestoredInfoVersion(null);
           // 제목(행사명) · 이름은 서버가 그린다 — 다시 받는다.
           router.refresh();
@@ -1796,9 +1827,26 @@ export function QuoteLedger({
   const canEditBasics = info.rights === "edit";
   const canOpenInfoEdit = canEditInfo || canEditBasics;
   const basicsDirty = infoDirtyCount(infoDraft, infoBase.values);
-  const infoErrors = [...infoServerErrors, ...localInfoErrors(infoDraft, infoBase.values, info.candidates)].filter(
+  const infoErrors = [...infoServerErrors.filter(isBasicInfoError), ...localInfoErrors(infoDraft, infoBase.values, info.candidates)].filter(
     (error, index, all) => all.findIndex((other) => other.field === error.field) === index,
   );
+  // 07.5-02 — 추가 칸 dirty는 기본 정보 고치기가 열린 동안만(권리 = 기본 정보, D-7516) · 화면 1차 N에 센다.
+  const customDirtyKeys = infoDraft === null ? [] : customInfoDirtyKeys(customInfo.defs, customBase, customDraft);
+  const customDirty = customDirtyKeys.length;
+  const customErrors = Object.fromEntries(
+    infoServerErrors.flatMap((error) => {
+      const key = customInfoErrorKey(error);
+      return key === null ? [] : [[key, error.reason] as const];
+    }),
+  );
+
+  function changeCustom(key: string, value: string) {
+    cancelInfoCloseTimer();
+    infoEditedSinceSendRef.current = true;
+    persistPendingRef.current = true;
+    setInfoServerErrors([]);
+    setCustomDraft((prev) => ({ ...prev, [key]: value }));
+  }
 
   function changeBasics(next: InfoValues) {
     cancelInfoCloseTimer();
@@ -1846,6 +1894,7 @@ export function QuoteLedger({
     setPreEstimateDraft(null);
     setPoNumberDraft(null);
     setInfoDraft(null);
+    setCustomDraft({});
     setInfoServerErrors([]);
     setRestoredInfoVersion(null);
   }
@@ -1857,7 +1906,7 @@ export function QuoteLedger({
 
   // Esc는 지금 두 단계 그대로 — 첫 Esc는 바뀐 값을 세 칸 모두 되돌리고, 모두 원래 값이면 두 번째 Esc가 묶음을 닫는다.
   function escapeInfoEdit() {
-    if (periodDirtyCount + preEstimateDirty + poNumberDirty + basicsDirty === 0) {
+    if (periodDirtyCount + preEstimateDirty + poNumberDirty + basicsDirty + customDirty === 0) {
       closeInfoEdit();
       return;
     }
@@ -1869,6 +1918,7 @@ export function QuoteLedger({
     setPreEstimateDraft(preEstimateDraft ? preEstimateBaselineDraft : null);
     setPoNumberDraft(poNumberDraft === null ? null : poNumberBase);
     setInfoDraft(infoDraft === null ? null : infoBase.values);
+    setCustomDraft({});
     setInfoServerErrors([]);
     setRestoredInfoVersion(null);
   }
@@ -1889,7 +1939,7 @@ export function QuoteLedger({
   const issuedDirtyCount = (issuedEntries ?? []).filter((entry) => entry.dirty).length;
   const paidDirtyCount = (paidEntries ?? []).filter((entry) => entry.dirty).length;
   const issueRequestDirtyCount = issueRequestRows.filter((request) => request.dirty).length;
-  const dirtyCount = quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + issueRequestDirtyCount + periodDirtyCount + preEstimateDirty + poNumberDirty + basicsDirty;
+  const dirtyCount = quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + issueRequestDirtyCount + periodDirtyCount + preEstimateDirty + poNumberDirty + basicsDirty + customDirty;
   const draftScopeId = viewerDirtyScope(viewerId, projectId);
   const dirtyStorage = useDirtyStorage(draftScopeId, revisionId, dirtyCount);
 
@@ -1905,10 +1955,17 @@ export function QuoteLedger({
         preEstimateDraft,
         preEstimateBaselineDraft,
         poNumberDraft === null ? null : { draft: poNumberDraft, base: poNumberBase },
-        infoDraft === null ? null : { draft: infoDraft, base: infoBase.values, version: restoredInfoVersion ?? infoBase.version },
+        infoDraft === null
+          ? null
+          : {
+              draft: infoDraft,
+              base: infoBase.values,
+              version: restoredInfoVersion ?? infoBase.version,
+              custom: Object.fromEntries(customInfoDirtyKeys(customInfo.defs, customBase, customDraft).map((key) => [key, customDraft[key] ?? ""])),
+            },
       ),
     );
-  }, [lines, periodDraft, periodSaveBaseline, preEstimateDraft, preEstimateBaselineDraft, poNumberDraft, poNumberBase, infoDraft, infoBase, restoredInfoVersion, persist]);
+  }, [lines, periodDraft, periodSaveBaseline, preEstimateDraft, preEstimateBaselineDraft, poNumberDraft, poNumberBase, infoDraft, infoBase, restoredInfoVersion, customInfo.defs, customBase, customDraft, persist]);
 
   // DR-6 — 상태 바뀜 거부 뒤 router.refresh()가 새 status를 내려보내면 화면 편집(줄·매출·기간 칸)을
   // 서버 props로 되돌리고 보관본의 칸 수를 다시 읽어 복원 줄을 띄운다. 기간 저장 성공으로 상태가
@@ -1939,6 +1996,8 @@ export function QuoteLedger({
     // 07.2-17(S3) — 기본 정보 4칸도 같은 꼴(서버 값으로 · 보관본은 복원 줄로).
     setInfoBase({ values: info.values, version: info.version });
     setInfoDraft(null);
+    setCustomBase(customInfo.values);
+    setCustomDraft({});
     setInfoServerErrors([]);
     setRestoredInfoVersion(null);
     setInfoConflict(null);
@@ -1978,8 +2037,9 @@ export function QuoteLedger({
     if (!restoredBase && !hasPreEstimate && restored.poNumber === undefined && !restoredInfo) return;
     setInfoOpen(true);
     if (restoredInfo) {
-      const { version, ...values } = restoredInfo;
+      const { version, custom, ...values } = restoredInfo;
       setInfoDraft({ ...infoBase.values, ...values });
+      setCustomDraft(custom ?? {});
       setRestoredInfoVersion(version);
     }
     if (!canEditInfo) return;
@@ -2318,10 +2378,12 @@ export function QuoteLedger({
           : undefined,
       poNumber: poNumberDraft !== null && poNumberDirty > 0 ? poNumberDraft : undefined,
       info:
-        infoDraft !== null && basicsDirty > 0
+        infoDraft !== null && basicsDirty + customDirty > 0
           ? {
               baselineVersion: restoredInfoVersion ?? infoBase.version,
               ...Object.fromEntries(INFO_KEYS.filter((key) => infoDraft[key] !== infoBase.values[key]).map((key) => [key, infoDraft[key]])),
+              // 07.5-02(D-7506) — 고친 추가 칸만(키 없음 = 안 바꿈 · 빈 글자 = 비움).
+              ...(customDirty > 0 ? { customFields: Object.fromEntries(customDirtyKeys.map((key) => [key, customDraft[key]])) } : {}),
             }
           : undefined,
       quoteLines:
@@ -3569,6 +3631,21 @@ export function QuoteLedger({
                     <span className={styles.infoLabel}>PO 번호</span>
                     {poNumberBase ? <span className={styles.infoValue}>{poNumberBase}</span> : <span className={styles.infoNone}>없음</span>}
                   </p>
+                )}
+                {infoDraft ? (
+                  <CustomInfoFields
+                    defs={customInfo.defs}
+                    values={customBase}
+                    draft={customDraft}
+                    errors={customErrors}
+                    saved={infoSaved}
+                    onChange={changeCustom}
+                    onEscape={escapeInfoEdit}
+                    onSave={attemptSave}
+                    saveLocked={saveLocked}
+                  />
+                ) : (
+                  <CustomInfoRows defs={customInfo.defs} values={customBase} />
                 )}
               </div>
               <div role="group" aria-labelledby={`${INFO_BODY_ID}-approval`} className={styles.infoSection}>

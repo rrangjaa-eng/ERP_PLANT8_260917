@@ -6,6 +6,7 @@ import { PROJECT_PROFIT_RATE_THRESHOLD } from "@/domain/settings/keys";
 import {
   loadProjectList,
   getProjectCopySource,
+  listProjectFieldDefinitions,
   PROJECT_SORT_KEYS,
   type ProjectSortKey,
 } from "@/domain/projects";
@@ -88,7 +89,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
 
   // 07.2-17(S1) — 삭제 착지 `/projects?deleted={id}`. 내가 방금 지운(보관한) 프로젝트일 때만 토스트가 선다(남의 id · 보관 안 된 id는 null).
   const deletedParam = firstListParam(params.deleted);
-  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate, profitRateThreshold, openIssueRequests, canViewBudget, canDeleteProjects, deletedProject] = await Promise.all([
+  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate, profitRateThreshold, openIssueRequests, canViewBudget, canDeleteProjects, deletedProject, customFieldDefs] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
     can(session.viewer, "admin.vendors", "write"),
@@ -117,6 +118,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     // 07.2-17(S1 · D-7213) — 하위 목록 링크 `보관함` — `projects.delete` 쓰기 보유자에게만(보관함도 같은 권한으로 열린다).
     can(session.viewer, "projects.delete", "write"),
     deletedParam && /^[0-9a-f-]{36}$/i.test(deletedParam) ? findDeletedProjectForUndo(session.viewer, deletedParam) : Promise.resolve(null),
+    // 07.5-02(D-7504) — 등록 패널 추가 칸(이 사람의 입력 칸 집합).
+    showCreateForm ? listProjectFieldDefinitions(session.viewer) : Promise.resolve([]),
   ]);
 
   // 등록 폼의 팀 · 담당 PM 칸만 업무 범위로 좁힌다 — 필터 줄은 전체 팀(references.teams)을 계속 쓴다.
@@ -218,6 +221,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
               pmUsers={createReferences.pmUsers}
               creatorDefaults={creatorDefaults}
               usdDefaultFxRate={usdDefaultFxRate}
+              customFieldDefs={customFieldDefs}
             />
           </SidePanel>
         ) : null

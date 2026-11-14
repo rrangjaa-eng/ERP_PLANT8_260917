@@ -1,0 +1,398 @@
+[
+  {
+    "width": 375,
+    "innerWidth": 375,
+    "scrollWidth": 375,
+    "sectionCount": 2,
+    "sectionTitles": [
+      "기본",
+      "고객 승인"
+    ],
+    "columnCount": 1,
+    "sectionBoxes": [
+      {
+        "x": 29,
+        "y": -58.4,
+        "width": 317,
+        "height": 1317
+      },
+      {
+        "x": 29,
+        "y": 1266.5,
+        "width": 317,
+        "height": 109.8
+      }
+    ],
+    "basicItems": [
+      {
+        "text": "행사명고객사캡처프칸고객-b44e바꾸기담당 팀E2E팀-0e4ea271바꾸기",
+        "box": {
+          "x": 29,
+          "y": -16.6,
+          "width": 317,
+          "height": 343.2
+        }
+      },
+      {
+        "text": "시작일종료일",
+        "box": {
+          "x": 29,
+          "y": 338.6,
+          "width": 317,
+          "height": 153.6
+        }
+      },
+      {
+        "text": "PO 금액통화—KRWUSD",
+        "box": {
+          "x": 29,
+          "y": 504.2,
+          "width": 317,
+          "height": 153.6
+        }
+      },
+      {
+        "text": "PO 번호",
+        "box": {
+          "x": 29,
+          "y": 669.8,
+          "width": 317,
+          "height": 64.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸장소b44eE2E캡처프칸담당자 연락처 메모b44eE2E캡처프",
+        "box": {
+          "x": 29,
+          "y": 746.5,
+          "width": 317,
+          "height": 500
+        }
+      }
+    ],
+    "basicOverlaps": 0,
+    "customInputShadows": [
+      {
+        "id": "cf_cf_b3c09418",
+        "boxShadow": "rgb(14, 122, 102) 0px 0px 0px 1px inset"
+      },
+      {
+        "id": "cf_cf_86559fc0",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_a3b2818b",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_f1c3290e",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_b57f295f",
+        "boxShadow": "none"
+      }
+    ],
+    "siblingNameShadow": "rgb(14, 122, 102) 0px 0px 0px 1px inset",
+    "saveButtons": [
+      "일괄 저장 2Ctrl+S"
+    ]
+  },
+  {
+    "width": 320,
+    "innerWidth": 320,
+    "scrollWidth": 320,
+    "sectionCount": 2,
+    "sectionTitles": [
+      "기본",
+      "고객 승인"
+    ],
+    "columnCount": 1,
+    "sectionBoxes": [
+      {
+        "x": 29,
+        "y": -58.4,
+        "width": 262,
+        "height": 1317
+      },
+      {
+        "x": 29,
+        "y": 1266.5,
+        "width": 262,
+        "height": 109.8
+      }
+    ],
+    "basicItems": [
+      {
+        "text": "행사명고객사캡처프칸고객-b44e바꾸기담당 팀E2E팀-0e4ea271바꾸기",
+        "box": {
+          "x": 29,
+          "y": -16.6,
+          "width": 262,
+          "height": 343.2
+        }
+      },
+      {
+        "text": "시작일종료일",
+        "box": {
+          "x": 29,
+          "y": 338.6,
+          "width": 262,
+          "height": 153.6
+        }
+      },
+      {
+        "text": "PO 금액통화—KRWUSD",
+        "box": {
+          "x": 29,
+          "y": 504.2,
+          "width": 262,
+          "height": 153.6
+        }
+      },
+      {
+        "text": "PO 번호",
+        "box": {
+          "x": 29,
+          "y": 669.8,
+          "width": 262,
+          "height": 64.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸장소b44eE2E캡처프칸담당자 연락처 메모b44eE2E캡처프",
+        "box": {
+          "x": 29,
+          "y": 746.5,
+          "width": 262,
+          "height": 500
+        }
+      }
+    ],
+    "basicOverlaps": 0,
+    "customInputShadows": [
+      {
+        "id": "cf_cf_b3c09418",
+        "boxShadow": "rgb(14, 122, 102) 0px 0px 0px 1px inset"
+      },
+      {
+        "id": "cf_cf_86559fc0",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_a3b2818b",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_f1c3290e",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_b57f295f",
+        "boxShadow": "none"
+      }
+    ],
+    "siblingNameShadow": "rgb(14, 122, 102) 0px 0px 0px 1px inset",
+    "saveButtons": [
+      "일괄 저장 2Ctrl+S"
+    ]
+  },
+  {
+    "width": 768,
+    "innerWidth": 768,
+    "scrollWidth": 768,
+    "sectionCount": 2,
+    "sectionTitles": [
+      "기본",
+      "고객 승인"
+    ],
+    "columnCount": 2,
+    "sectionBoxes": [
+      {
+        "x": 33,
+        "y": 214.4,
+        "width": 339,
+        "height": 892.2
+      },
+      {
+        "x": 396,
+        "y": 214.4,
+        "width": 339,
+        "height": 892.2
+      }
+    ],
+    "basicItems": [
+      {
+        "text": "행사명고객사캡처프칸고객-b44e바꾸기담당 팀E2E팀-0e4ea271바꾸기",
+        "box": {
+          "x": 33,
+          "y": 256.2,
+          "width": 339,
+          "height": 178.4
+        }
+      },
+      {
+        "text": "시작일종료일",
+        "box": {
+          "x": 33,
+          "y": 446.6,
+          "width": 339,
+          "height": 88
+        }
+      },
+      {
+        "text": "PO 금액통화—KRWUSD",
+        "box": {
+          "x": 33,
+          "y": 546.6,
+          "width": 339,
+          "height": 88
+        }
+      },
+      {
+        "text": "PO 번호",
+        "box": {
+          "x": 33,
+          "y": 646.6,
+          "width": 339,
+          "height": 32
+        }
+      },
+      {
+        "text": "E2E캡처프칸장소b44eE2E캡처프칸담당자 연락처 메모b44eE2E캡처프",
+        "box": {
+          "x": 33,
+          "y": 690.6,
+          "width": 339,
+          "height": 404
+        }
+      }
+    ],
+    "basicOverlaps": 0,
+    "customInputShadows": [
+      {
+        "id": "cf_cf_b3c09418",
+        "boxShadow": "rgb(14, 122, 102) 0px 0px 0px 1px inset"
+      },
+      {
+        "id": "cf_cf_86559fc0",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_a3b2818b",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_f1c3290e",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_b57f295f",
+        "boxShadow": "none"
+      }
+    ],
+    "siblingNameShadow": "rgb(14, 122, 102) 0px 0px 0px 1px inset",
+    "saveButtons": [
+      "일괄 저장 2Ctrl+S"
+    ]
+  },
+  {
+    "width": 1280,
+    "innerWidth": 1280,
+    "scrollWidth": 1280,
+    "sectionCount": 2,
+    "sectionTitles": [
+      "기본",
+      "고객 승인"
+    ],
+    "columnCount": 2,
+    "sectionBoxes": [
+      {
+        "x": 209,
+        "y": 166.4,
+        "width": 507,
+        "height": 892.2
+      },
+      {
+        "x": 740,
+        "y": 166.4,
+        "width": 507,
+        "height": 892.2
+      }
+    ],
+    "basicItems": [
+      {
+        "text": "행사명고객사캡처프칸고객-b44e바꾸기담당 팀E2E팀-0e4ea271바꾸기",
+        "box": {
+          "x": 209,
+          "y": 208.2,
+          "width": 507,
+          "height": 178.4
+        }
+      },
+      {
+        "text": "시작일종료일",
+        "box": {
+          "x": 209,
+          "y": 398.6,
+          "width": 507,
+          "height": 88
+        }
+      },
+      {
+        "text": "PO 금액통화—KRWUSD",
+        "box": {
+          "x": 209,
+          "y": 498.6,
+          "width": 507,
+          "height": 88
+        }
+      },
+      {
+        "text": "PO 번호",
+        "box": {
+          "x": 209,
+          "y": 598.6,
+          "width": 507,
+          "height": 32
+        }
+      },
+      {
+        "text": "E2E캡처프칸장소b44eE2E캡처프칸담당자 연락처 메모b44eE2E캡처프",
+        "box": {
+          "x": 209,
+          "y": 642.6,
+          "width": 507,
+          "height": 404
+        }
+      }
+    ],
+    "basicOverlaps": 0,
+    "customInputShadows": [
+      {
+        "id": "cf_cf_b3c09418",
+        "boxShadow": "rgb(14, 122, 102) 0px 0px 0px 1px inset"
+      },
+      {
+        "id": "cf_cf_86559fc0",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_a3b2818b",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_f1c3290e",
+        "boxShadow": "none"
+      },
+      {
+        "id": "cf_cf_b57f295f",
+        "boxShadow": "none"
+      }
+    ],
+    "siblingNameShadow": "rgb(14, 122, 102) 0px 0px 0px 1px inset",
+    "saveButtons": [
+      "일괄 저장 2Ctrl+S"
+    ]
+  }
+]

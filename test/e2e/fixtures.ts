@@ -12,10 +12,10 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { archive } from "@/domain/archive";
 import { createFieldDefinition, updateFieldDefinition } from "@/domain/custom-fields/admin";
 import { customFieldInfoItem } from "@/domain/custom-fields/targets";
-import { findFieldDefinitionById } from "@/repositories/field-definitions";
+import { findFieldDefinitionById, insertFieldDefinition } from "@/repositories/field-definitions";
 import { archiveFinishedTempRoles, insertTempRole } from "./temp-roles";
 import { findRoleById } from "@/repositories/roles";
-import { insertVisibilityIfAbsent, listVisibility } from "@/repositories/permissions";
+import { insertVisibilityIfAbsent, listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 
 // 실행마다 고유한 사업자번호(「xxx-xx-xxxxx」) — 같은 사업자번호 거래처는 둘 못 만들고 E2E DB는 스펙끼리 공유한다.
 let businessNoSeq = 0;
@@ -93,8 +93,28 @@ export async function createE2EVendorEditor(
   return { ...credentials, roleId, roleName };
 }
 
+// 07.5-02: 프로젝트 추가 칸 E2E 격리 — 기획 PM(DEFAULT_ROLE_ID) 계급의 권한 · 정보 노출(INFO_ITEMS만, `cf.*` 제외)과 범위를
+// 복사한 임시 계급 + 팀 있는 사용자. 칸을 이 계급에만 보이게 만들어 다른 워커의 등록 · 정보 저장에 칸이 끼지 않는다.
+// teamId — 같은 팀에 둘 때(팀 범위 보기). 없으면 새 팀.
+export async function createE2EProjectEditor(options: { teamId?: string } = {}): Promise<{ email: string; password: string; teamId: string | null; roleId: string }> {
+  const source = await findRoleById(SYSTEM_VIEWER, DEFAULT_ROLE_ID);
+  if (!source) throw new Error(`시드 계급이 없습니다: ${DEFAULT_ROLE_ID}`);
+  const roleId = `role-e2e-pcf-${randomUUID()}`;
+  await insertTempRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 프로젝트 ${roleId.slice(-8)}`, sortOrder: 99, workScope: source.workScope, viewScope: source.viewScope });
+  for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
+  }
+  for (const row of await listVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+    if (row.infoItem.startsWith("cf.")) continue;
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: row.infoItem, visible: row.visible });
+  }
+  const credentials = await createFixtureUser(options.teamId ? { roleId, teamId: options.teamId } : { roleId, withTeam: true });
+  return { ...credentials, roleId };
+}
+
 // 칸 하나를 만든다 — 노출 행은 onlyRoleId 계급에만 생성 트랜잭션 안에서 생긴다(계급 목록 deps 주입).
 // 주입 함수는 DB를 부르지 않는다(잠금을 쥔 트랜잭션 안에서 전역 db로 또 조회하면 풀 고갈 경로가 된다).
+// 07.5-02: entity — 거래처 밖 대상은 대상 상수가 아직 거래처뿐이라(05가 켠다, D-7503) 정의를 직접 심고 onlyRoleId 계급에만 노출 행을 둔다.
 export async function createE2EFieldDefinition(input: {
   label: string;
   type: "text" | "number" | "date" | "select";
@@ -102,9 +122,32 @@ export async function createE2EFieldDefinition(input: {
   options?: string[];
   sortOrder?: number;
   onlyRoleId: string;
+  entity?: "vendor" | "project" | "quote_line";
 }): Promise<{ id: string; key: string; version: number }> {
   const role = await findRoleById(SYSTEM_VIEWER, input.onlyRoleId);
   if (!role) throw new Error(`E2E 전용 계급이 없습니다: ${input.onlyRoleId}`);
+  const entity = input.entity ?? "vendor";
+  if (entity !== "vendor") {
+    const id = randomUUID();
+    const key = `cf_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+    const row = await insertFieldDefinition(SYSTEM_VIEWER, {
+      id,
+      entity,
+      key,
+      label: input.label,
+      type: input.type,
+      options: input.type === "select" ? input.options : undefined,
+      required: input.required,
+      sortOrder: input.sortOrder ?? 0,
+    });
+    const info = customFieldInfoItem(entity, key);
+    await insertVisibilityIfAbsent(SYSTEM_VIEWER, { roleId: input.onlyRoleId, infoItem: info, visible: true });
+    const rows = (await listVisibility(SYSTEM_VIEWER)).filter((visibility) => visibility.infoItem === info);
+    for (const seeded of [SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID]) {
+      if (rows.some((visibility) => visibility.roleId === seeded)) throw new Error(`시드 계급에 노출 행이 생겼습니다: ${seeded} · ${info}`);
+    }
+    return { id, key, version: row.version };
+  }
   const created = await createFieldDefinition(
     SYSTEM_VIEWER,
     {

@@ -24,12 +24,26 @@ import { findMembershipAtDate, findMembershipsAtDate } from "@/repositories/team
 import { findTeamById } from "@/repositories/teams";
 import { findUserById } from "@/repositories/users";
 import { findVendorById, findVendorKindsByIds } from "@/repositories/vendors";
+import { readCustomFieldInputs } from "@/domain/custom-fields/access";
+import { CustomFieldsInvalidError, resolveCustomFieldsWrite } from "@/domain/custom-fields/preserve";
+import { pickVisibleCustomFields } from "@/domain/custom-fields/visibility";
 
 // 07.2-17(PU5 · D-7217~D-7220) — 정보 면 4칸 쓰기. 합성 저장(saveProjectLedger)의 잠근 tx 안에서 applyInfoChange를 부른다 —
 // 권리 → version(동시 수정) → 돈 문서 잠김 · 팀 범위 · 고객사 갈래 · PM 자격 → 칸 오류가 있으면 쓰지 않고 돌려준다(기간 · PO 오류와
 // 모아 한 번에 거부 · U-6) → 없으면 조건부 갱신. 판정 순수 함수는 info-rules.ts(화면과 같이 부른다).
 
-export type InfoInput = { name?: string; clientId?: string; teamId?: string; pmUserId?: string; baselineVersion: number };
+// 07.5-02(D-7506) — customFields는 고친 추가 칸만(키 없음 = 안 바꿈 · 빈 값 = 비움).
+export type InfoInput = {
+  name?: string;
+  clientId?: string;
+  teamId?: string;
+  pmUserId?: string;
+  customFields?: Record<string, unknown>;
+  baselineVersion: number;
+};
+
+// 07.5-02 — 추가 칸 오류는 `customFields.<key>` 칸으로 4칸 오류와 같은 목록에 싣는다(전부 저장 또는 전부 거부).
+export type InfoChangeFieldError = InfoFieldError | { field: `customFields.${string}`; reason: string };
 
 // 트랜잭션 전 사실(잠근 tx 안에서 풀 db를 부르지 않는다 — 04-32). 범위는 합성 저장의 쓰기 범위 그대로(fundOnly 갈래는 들어오지 않는다).
 export type InfoFacts = {
@@ -60,8 +74,19 @@ export async function loadInfoFacts(
 }
 
 export type InfoChangeResult =
-  | { ok: false; errors: InfoFieldError[] }
-  | { ok: true; row: ProjectRow; changed: Partial<Record<"name" | "clientId" | "teamId" | "pmUserId", { from: string; to: string }>> };
+  | { ok: false; errors: InfoChangeFieldError[] }
+  | {
+      ok: true;
+      row: ProjectRow;
+      // 행동 로그 — 4칸은 전후 값, 추가 칸은 바뀐 키 목록만(값 없음 — 노출표가 끈 계급의 값이 기록 보는 사람에게 새지 않게).
+      changed: Partial<Record<"name" | "clientId" | "teamId" | "pmUserId", { from: string; to: string }>> & { customFields?: string[] };
+      // 응답에 싣는 추가 칸 — 같은 tx의 입력 칸 키 집합으로 거른 저장값(숨은 · 보관 칸 값 없음, eng P1-2 · r2 N3).
+      customFields: Record<string, unknown>;
+    };
+
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
 
 export async function applyInfoChange(viewer: Viewer, locked: ProjectRow, input: InfoInput, facts: InfoFacts, tx: DbOrTx): Promise<InfoChangeResult> {
   const rights = infoEditRights({
@@ -83,7 +108,28 @@ export async function applyInfoChange(viewer: Viewer, locked: ProjectRow, input:
   };
   const keys = ["name", "clientId", "teamId", "pmUserId"] as const;
   const changedKeys = keys.filter((key) => after[key] !== before[key]);
-  if (changedKeys.length === 0) return { ok: true, row: locked, changed: {} };
+
+  // 07.5-02(D-7506 · D-7507 · T-04.5-44) — 추가 칸: 잠근 행 저장값에서 update 모드로. 입력 칸 집합은 잠근 뒤 같은 tx로 읽는다.
+  // 입력 밖 키(숨은 · 보관 · project.value 꺼짐)의 제출값은 버리고 저장값은 남는다. 정의에 없는 키는 그대로 던진다.
+  const stored = (locked.customFields ?? {}) as Record<string, unknown>;
+  const { inputDefs, knownKeys } = await readCustomFieldInputs(viewer, { entity: "project", valueInfoItem: "project.value" }, tx);
+  const inputKeys = new Set(inputDefs.map((def) => def.key));
+  let customFields = stored;
+  const customErrors: InfoChangeFieldError[] = [];
+  if (input.customFields !== undefined) {
+    try {
+      customFields = resolveCustomFieldsWrite({ mode: "update", inputDefs, knownKeys, stored, submitted: input.customFields });
+    } catch (error) {
+      if (!(error instanceof CustomFieldsInvalidError)) throw error;
+      for (const [key, reason] of Object.entries(error.fieldErrors)) customErrors.push({ field: `customFields.${key}`, reason });
+    }
+  }
+  const changedCustomKeys = [...new Set([...Object.keys(stored), ...Object.keys(customFields)])].filter((key) => !sameJson(stored[key], customFields[key]));
+  const visibleCustomFields = (row: ProjectRow) => pickVisibleCustomFields((row.customFields ?? {}) as Record<string, unknown>, inputKeys) ?? {};
+
+  if (changedKeys.length === 0 && changedCustomKeys.length === 0 && customErrors.length === 0) {
+    return { ok: true, row: locked, changed: {}, customFields: visibleCustomFields(locked) };
+  }
 
   const extra: InfoFieldError[] = [];
   const clientChanged = after.clientId !== before.clientId;
@@ -109,17 +155,32 @@ export async function applyInfoChange(viewer: Viewer, locked: ProjectRow, input:
       person !== null && person.archivedAt === null && pmEligible({ teamIdAfter: after.teamId, memberTeamId: membership?.teamId ?? null, participant: participants.has(after.pmUserId) });
   }
   const seen = new Set<InfoField>();
-  const errors = [...validateInfoChange({ before, after, moneyCount, pmEligibleAfter }), ...extra].filter((error) => {
-    if (seen.has(error.field)) return false;
-    seen.add(error.field);
-    return true;
-  });
+  const errors: InfoChangeFieldError[] = [
+    ...[...validateInfoChange({ before, after, moneyCount, pmEligibleAfter }), ...extra].filter((error) => {
+      if (seen.has(error.field)) return false;
+      seen.add(error.field);
+      return true;
+    }),
+    ...customErrors,
+  ];
   if (errors.length > 0) return { ok: false, errors };
 
-  const patch = Object.fromEntries(changedKeys.map((key) => [key, after[key]]));
+  // DB 패치는 거르지 않은 결과(숨은 · 보관 값 보존) — 같은 version 비교 · +1(D-7520). 응답은 입력 칸 키로 거른 값만.
+  const patch = {
+    ...Object.fromEntries(changedKeys.map((key) => [key, after[key]])),
+    ...(changedCustomKeys.length > 0 ? { customFields } : {}),
+  };
   const row = await updateProjectInfoIfVersion(viewer, locked.id, { patch, expectedVersion: input.baselineVersion }, tx);
   if (!row) throw new InfoConflictError(infoConflictMessage(locked.updatedAt));
-  return { ok: true, row, changed: Object.fromEntries(changedKeys.map((key) => [key, { from: before[key], to: after[key] }])) };
+  return {
+    ok: true,
+    row,
+    changed: {
+      ...Object.fromEntries(changedKeys.map((key) => [key, { from: before[key], to: after[key] }])),
+      ...(changedCustomKeys.length > 0 ? { customFields: changedCustomKeys } : {}),
+    },
+    customFields: visibleCustomFields(row),
+  };
 }
 
 // 화면 재료 — 고칠 권리가 있을 때만 부른다(소속 팀은 권리자에게만 · T-07.2-17-07). 이름은 등록 폼 축소 투영 그대로.

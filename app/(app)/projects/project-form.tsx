@@ -1,14 +1,15 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { createProjectAction } from "./actions";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
-import type { ProjectCopySource, ProjectInputFieldError } from "@/domain/projects";
+import { CustomFieldGroup, CustomFieldInput } from "@/ui/custom-field/CustomFieldInput";
+import type { ProjectCopySource, ProjectFieldDefinitionDto, ProjectInputFieldError } from "@/domain/projects";
 import type { Currency } from "@/domain/money";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { resolveDefaultOptionId } from "./copy-defaults";
@@ -35,14 +36,19 @@ const PRISTINE_FIELDS = [
   "preEstimateFxRate",
 ] as const;
 
-// 04-15 — 1차 옆 `등록 실패 · {칸} {n}칸`의 칸 이름(라벨 그대로).
-const FIELD_LABELS: Record<ProjectInputFieldError["field"], string> = {
+// 04-15 — 1차 옆 `등록 실패 · {칸} {n}칸`의 칸 이름(라벨 그대로). 추가 칸(`cf_<key>`)은 그 칸 이름이라 여기 없다(eng r2 N2).
+type BaseInputField = Exclude<ProjectInputFieldError["field"], `cf_${string}`>;
+const FIELD_LABELS: Record<BaseInputField, string> = {
   clientId: "클라이언트",
   startDate: "시작일",
   endDate: "종료일",
   preEstimateAmount: "PO 금액",
   preEstimateFxRate: "PO 금액",
 };
+
+function isCustomField(field: ProjectInputFieldError["field"]): field is `cf_${string}` {
+  return field.startsWith("cf_");
+}
 
 function snapshotFormValues(formData: FormData): Record<string, string> {
   const values: Record<string, string> = {};
@@ -64,6 +70,7 @@ export function ProjectForm({
   usdDefaultFxRate,
   copySource = null,
   creatorDefaults = null,
+  customFieldDefs = [],
 }: {
   clients: ProjectFormOption[];
   teams: ProjectFormOption[];
@@ -74,8 +81,12 @@ export function ProjectForm({
   copySource?: (ProjectCopySource & { projectId: string }) | null;
   /** 결정 2 — 담당 PM은 등록하는 사람, 팀은 그 사람의 오늘 소속 팀. 좁힌 옵션에 없으면 빈 칸. */
   creatorDefaults?: { pmUserId: string; teamId: string | null } | null;
+  /** 07.5-02(D-7504) — 이 사람이 입력할 수 있는 추가 칸(정렬 순서). 0개면 구분선 묶음도 없다. */
+  customFieldDefs?: ProjectFieldDefinitionDto[];
 }) {
   const panelRef = useRef<PanelFormHandle>(null);
+  // 입력 버리기 — 추가 칸만 고쳐도 확인이 뜨고 부제 칸 수에 센다.
+  const dirtyFields = useMemo(() => [...PRISTINE_FIELDS, ...customFieldDefs.map((def) => `cf_${def.key}`)], [customFieldDefs]);
 
   // C-06 · 엔지 리뷰 C §1 P2 — 제출 래치. 성공 뒤 상세로 이동하기 전까지
   // isExecuting은 이미 거짓으로 돌아오므로 그 가드만으로는 이동 지연 사이의
@@ -139,6 +150,12 @@ export function ProjectForm({
     const amountRaw = getStringField(formData, "preEstimateAmount");
     const currency: Currency = getStringField(formData, "preEstimateCurrency") === "USD" ? "USD" : "KRW";
     const fxRaw = getStringField(formData, "preEstimateFxRate");
+    // 07.5-02 — 등록은 빈 칸을 보내지 않는다(키 없음 = 빈칸 — 필수면 서버가 칸 오류로 돌려준다).
+    const customFields: Record<string, string> = {};
+    for (const def of customFieldDefs) {
+      const raw = getStringField(formData, `cf_${def.key}`);
+      if (raw !== "") customFields[def.key] = raw;
+    }
     execute({
       clientId: getStringField(formData, "clientId"),
       name: getStringField(formData, "name"),
@@ -153,6 +170,7 @@ export function ProjectForm({
           ? undefined
           : { currency, amount: Number(amountRaw), fxRate: currency === "KRW" ? 1 : fxRaw === "" ? null : Number(fxRaw) },
       preEstimateFxRateTouched: currency !== "KRW" && fxRaw !== initialValuesRef.current?.preEstimateFxRate,
+      customFields,
     });
   }
 
@@ -176,7 +194,11 @@ export function ProjectForm({
     ...(endDateError ? (["endDate"] as const) : []),
     ...(preEstimateErrors?.amount?._errors?.[0] || rejectedOf("preEstimateAmount") ? (["preEstimateAmount"] as const) : []),
     ...(preEstimateErrors?.fxRate?._errors?.[0] || rejectedOf("preEstimateFxRate") ? (["preEstimateFxRate"] as const) : []),
+    // 07.5-02(eng A-6 · r2 N2) — 화면에 그린 추가 칸의 오류를 정렬 순서로 같은 목록에.
+    ...customFieldDefs.flatMap((def) => (rejectedOf(`cf_${def.key}`) ? [`cf_${def.key}` as const] : [])),
   ];
+  const fieldLabel = (field: ProjectInputFieldError["field"]): string =>
+    isCustomField(field) ? (customFieldDefs.find((def) => `cf_${def.key}` === field)?.label ?? "") : FIELD_LABELS[field];
 
   // §7-15 검증 관문 — 필수인데 비면 제출 버튼이 이유를 말한다(막힘 자리는
   // 서버 응답 없이도 클라이언트 상태로 계산할 수 있지만, 이 플랜은
@@ -184,7 +206,7 @@ export function ProjectForm({
   // 04-15 — 필수 칸이 아닌 칸 거부는 Copywriting `Error — 등록 폼 제출` 한 줄(`등록 실패 · PO 금액 1칸`).
   const firstSubmitField = submitFieldErrors[0];
   const submitReason = firstSubmitField
-    ? `등록 실패 · ${FIELD_LABELS[firstSubmitField]} ${submitFieldErrors.length}칸`
+    ? `등록 실패 · ${fieldLabel(firstSubmitField)} ${submitFieldErrors.length}칸`
     : undefined;
   const blockedReason = [clientError, nameError, pmError, teamError, submitReason].filter(Boolean)[0];
 
@@ -197,7 +219,7 @@ export function ProjectForm({
       onSubmit={handleSubmit}
       pending={isExecuting}
       reason={blockedReason}
-      dirtyFields={PRISTINE_FIELDS}
+      dirtyFields={dirtyFields}
     >
       {copySource ? (
         <p className={styles.copySource}>{`${copySource.number} ${copySource.name}에서 복사 · ${copySource.lineCount}줄`}</p>
@@ -335,6 +357,14 @@ export function ProjectForm({
         </Form.Field>
       )}
       <input type="hidden" name="preEstimateFxRate" value={fxRateRawValue} readOnly />
+
+      {customFieldDefs.length > 0 ? (
+        <CustomFieldGroup data-testid="project-custom-fields">
+          {customFieldDefs.map((def) => (
+            <CustomFieldInput key={def.id} def={def} error={rejectedOf(`cf_${def.key}`)} />
+          ))}
+        </CustomFieldGroup>
+      ) : null}
 
       {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
 

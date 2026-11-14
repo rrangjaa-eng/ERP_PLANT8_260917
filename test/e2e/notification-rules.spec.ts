@@ -85,6 +85,7 @@ test("켬 해제는 토스트 없이 즉시 저장 · 행이 muted · 위치 그
   await onBox(page, "결재 차례").check();
   await expect(onBox(page, "결재 차례")).toBeChecked();
   await expect(nameOf(page, "결재 차례")).toHaveAttribute("data-enabled", "true");
+  await expect.poll(async () => (await db.select().from(notificationRules).where(eq(notificationRules.kind, "approval-waiting")))[0]?.enabled).toBe(true);
   await page.reload();
   await expect(onBox(page, "결재 차례")).toBeChecked();
 });

@@ -120,6 +120,19 @@ describe("SF-2 추가 칸만의 경합 — 폴백 「항목」 충돌 해소", (
     expect(resolved.cellConflicts).toEqual({});
   });
 
+  it("진짜 항목 충돌(상대가 항목을 바꿈)의 「그 값으로」는 항목만 받고 내 추가 칸 편집은 남긴다", () => {
+    const line = conflictedLine();
+    const real: Line = {
+      ...line,
+      itemName: "내 배너",
+      cellConflicts: { itemName: { field: "itemName", reason: "다른 사람이 14:01에 현수막으로 바꿈 · 덮어쓰기 / 그 값으로", theirRaw: "현수막", theirVersion: 2 } },
+    };
+    const resolved = resolvedConflictLine(real, "itemName", "theirs");
+    expect(resolved.itemName).toBe("현수막");
+    expect(resolved.customFields).toEqual({ cf_text0001: "내 값" });
+    expect(resolved.dirty).toBe(true);
+  });
+
   it("「덮어쓰기」는 내 추가 칸 편집을 남긴다", () => {
     const resolved = resolvedConflictLine(conflictedLine(), "itemName", "mine");
     expect(resolved.customFields).toEqual({ cf_text0001: "내 값" });

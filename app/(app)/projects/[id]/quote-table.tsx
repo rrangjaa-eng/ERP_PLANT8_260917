@@ -413,7 +413,8 @@ export function customFieldPasteColumn<Row>(column: QuoteLineCustomColumn, isEdi
 // 04-28(D-65) — 「덮어쓰기」는 내 값을 남기고, 「그 값으로」는 그 칸을 서버 값으로 바꾼다. 둘 다 그 줄의 version과 그 칸의 baseline을
 // 서버 현재로 올려 다음 저장이 그 칸에서 다시 충돌하지 않는다.
 // 07.5-03 독립 검토 SF-2 — 추가 칸만의 경합은 줄 단위 폴백 「항목」 충돌로 온다(D-7520). 그 「그 값으로」는 내 추가 칸 편집도 기준값으로
-// 되돌린다 — 남기면 다음 저장이 상대가 저장한 추가 칸 값을 말없이 덮는다.
+// 되돌린다 — 남기면 다음 저장이 상대가 저장한 추가 칸 값을 말없이 덮는다. 폴백은 상대 항목 값이 내 기준값과 같은 「항목」 충돌이다
+// (/review — 상대가 항목을 실제로 바꾼 충돌의 「그 값으로」는 그 칸만 받고 다른 편집은 남긴다, SYSTEM §7-3 (나)).
 export function resolvedConflictLine(line: DraftLine, columnKey: string, choice: "mine" | "theirs"): DraftLine {
   const conflict = line.cellConflicts[columnKey];
   if (!conflict) return line;
@@ -422,7 +423,7 @@ export function resolvedConflictLine(line: DraftLine, columnKey: string, choice:
   const { baseline, value } = theirValuePatch(line.baseline, conflict.field, conflict.theirRaw);
   const next: DraftLine = { ...line, version: conflict.theirVersion, baseline, cellConflicts };
   if (choice === "mine") return next;
-  const taken = { ...next, ...value, ...(conflict.field === "itemName" ? { customFields: line.customFieldsBase } : {}) };
+  const taken = { ...next, ...value, ...(conflict.field === "itemName" && conflict.theirRaw === line.baseline.itemName ? { customFields: line.customFieldsBase } : {}) };
   return { ...taken, dirty: lineDiffersFromBaseline(taken) || customFieldsDiffer(taken) || Object.keys(taken.cellErrors).length > 0 || taken.moved === true };
 }
 

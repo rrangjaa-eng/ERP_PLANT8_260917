@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCustomFieldsSchema } from "@/domain/custom-fields/build-schema";
+import { buildCustomFieldsSchema, CUSTOM_DATE_INVALID_MESSAGE, isStrictIsoDate } from "@/domain/custom-fields/build-schema";
 
 // ROADMAP: 커스텀 필드는 서버 액션이 저장 전에 필드 정의에서 zod 스키마를
 // 조립해 검증한다(미등록 키·타입 불일치 거부). 03-RESEARCH.md Code Examples 4
@@ -87,5 +87,60 @@ describe("buildCustomFieldsSchema", () => {
     const schema = buildCustomFieldsSchema([]);
     expect(schema.safeParse({}).success).toBe(true);
     expect(schema.safeParse({ x: 1 }).success).toBe(false);
+  });
+});
+
+// 07.5-01 D-7521: 날짜 칸은 실존하는 YYYY-MM-DD만 — 관대 파싱(2026-02-31 → 3월 3일)을 막는다. 통과한 값의 저장 모양(Date)은 그대로.
+describe("날짜 칸 엄격 ISO (D-7521)", () => {
+  const schema = buildCustomFieldsSchema([{ key: "due", type: "date" as const }]);
+
+  it("isStrictIsoDate — 실존하는 날짜만 통과(윤년 포함)", () => {
+    expect(isStrictIsoDate("2026-11-04")).toBe(true);
+    expect(isStrictIsoDate("2024-02-29")).toBe(true);
+    expect(isStrictIsoDate("2023-02-29")).toBe(false);
+    expect(isStrictIsoDate("2026-02-31")).toBe(false);
+    expect(isStrictIsoDate("2026-13-01")).toBe(false);
+    expect(isStrictIsoDate("11/4/2026")).toBe(false);
+    expect(isStrictIsoDate("2026-1-4")).toBe(false);
+    expect(isStrictIsoDate("2026-11-04T00:00:00.000Z")).toBe(false);
+  });
+
+  it("2026-11-04 통과 — 결과는 지금처럼 Date", () => {
+    const result = schema.safeParse({ due: "2026-11-04" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const due = (result.data as { due: unknown }).due;
+      expect(due).toBeInstanceOf(Date);
+      expect((due as Date).toISOString().slice(0, 10)).toBe("2026-11-04");
+    }
+  });
+
+  it("유효한 Date 객체는 통과하고 같은 날로 돌아온다", () => {
+    const result = schema.safeParse({ due: new Date("2026-11-04T00:00:00.000Z") });
+    expect(result.success).toBe(true);
+    if (result.success) expect(((result.data as { due: Date }).due).toISOString().slice(0, 10)).toBe("2026-11-04");
+  });
+
+  it("잘못된 Date 객체는 거부", () => {
+    expect(schema.safeParse({ due: new Date("not-a-date") }).success).toBe(false);
+  });
+
+  it("전체 ISO 시각 문자열은 거부 (D-7521 엄격)", () => {
+    expect(schema.safeParse({ due: "2026-11-04T00:00:00.000Z" }).success).toBe(false);
+  });
+
+  it.each(["2026-02-31", "11/4/2026", "2026-1-4", "2023-02-29"])("%s 거부 — 칸 오류 「날짜 아님 · 2026-11-04처럼」", (value) => {
+    const result = schema.safeParse({ due: value });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.code).toBe("custom");
+      expect(result.error.issues[0]?.message).toBe(CUSTOM_DATE_INVALID_MESSAGE);
+    }
+    expect(CUSTOM_DATE_INVALID_MESSAGE).toBe("날짜 아님 · 2026-11-04처럼");
+  });
+
+  it("2024-02-29 통과 · 2023-02-29 거부", () => {
+    expect(schema.safeParse({ due: "2024-02-29" }).success).toBe(true);
+    expect(schema.safeParse({ due: "2023-02-29" }).success).toBe(false);
   });
 });

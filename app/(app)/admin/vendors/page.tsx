@@ -1,10 +1,11 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
-import { listVendors, listVendorFieldDefinitions } from "@/domain/vendors";
+import { listVendors, listVendorFieldDefinitions, type FieldDefinitionDto } from "@/domain/vendors";
+import { customFieldFilterDefs, customFieldListColumns, parseCustomFieldFilters } from "@/domain/custom-fields/access-rules";
 import { listCodeItems } from "@/domain/code-tables";
 import { VENDOR_KIND_LABELS, parseVendorSide, type VendorSide } from "@/domain/vendors/kind";
 import { maskTail4 } from "@/lib/mask-tail4";
@@ -13,7 +14,9 @@ import { PAYMENT_TERM_DAYS } from "@/domain/settings/keys";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { Num } from "@/ui/num/Num";
 import { StaticTable } from "@/ui/table/StaticTable";
+import { CustomFieldFilter } from "@/ui/custom-field/CustomFieldFilter";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { VendorForm, VendorHiddenToggle, VendorDeleteButton, VendorPanel } from "./vendor-form";
 import { AccountNumberCell } from "./account-number";
@@ -45,37 +48,66 @@ export const dynamic = "force-dynamic";
 // 화면 — vendors가 이미 쓰던 ?editId= 토글 방식을 등록에도 그대로 확장한다,
 // DECISIONS.md 2026-09-21 참고).
 // 07-20 V2: 검색어(`q`)도 같은 방식으로 지킨다 — 「필터 지우기」만 갈래 · 검색어를 함께 비운다.
-function vendorsHref(includeHidden: boolean, opts?: { editId?: string; isNew?: boolean; kind?: VendorSide | null; q?: string }): string {
+// 07.5-01: 추가 칸 선택 거르개(`custom` — 정의 키 → 값)도 같은 방식으로 지킨다(URL에는 `cf_<정의 키>`) — 「필터 지우기」만 비운다.
+function vendorsHref(
+  includeHidden: boolean,
+  opts?: { editId?: string; isNew?: boolean; kind?: VendorSide | null; q?: string; custom?: Record<string, string> },
+): string {
   const params = new URLSearchParams();
   if (includeHidden) params.set("includeHidden", "1");
   if (opts?.kind) params.set("kind", opts.kind);
   if (opts?.q) params.set("q", opts.q);
+  for (const [key, value] of Object.entries(opts?.custom ?? {})) params.set(`cf_${key}`, value);
   if (opts?.editId) params.set("editId", opts.editId);
   if (opts?.isNew) params.set("new", "1");
   const query = params.toString();
   return query ? `/admin/vendors?${query}` : "/admin/vendors";
 }
 
+// 07.5-01(D-7509): 추가 칸 한 칸의 목록 셀 — 값은 이미 칸별로 거른 DTO(`vendor.customFields`)에서만 읽는다. 없음 `—`.
+function customFieldCell(def: FieldDefinitionDto, raw: unknown): ReactNode {
+  const text = typeof raw === "string" ? raw : typeof raw === "number" ? String(raw) : "";
+  if (text === "") return "—";
+  switch (def.type) {
+    case "number":
+      return typeof raw === "number" ? <Num value={raw} unit="quantity" /> : text;
+    case "date":
+      return text.slice(0, 10);
+    case "select":
+      return (def.options ?? []).includes(text) ? text : `${text} (보관됨)`;
+    case "text":
+      return text;
+  }
+}
+
 export default async function VendorsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ includeHidden?: string; editId?: string; new?: string; kind?: string; q?: string }>;
+  // 07.5-01: 그 밖의 `cf_<정의 키>` 파라미터(추가 칸 선택 거르개)는 색인 서명으로 받는다.
+  searchParams: Promise<{ includeHidden?: string; editId?: string; new?: string; kind?: string; q?: string; [customFilter: string]: string | string[] | undefined }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.vendors", "view"))) notFound();
 
-  const { includeHidden: includeHiddenParam, editId, new: newParam, kind: kindParam, q: qParam } = await searchParams;
+  const params = await searchParams;
+  const { includeHidden: includeHiddenParam, editId, new: newParam, kind: kindParam, q: qParam } = params;
+  // 07.5-01: `cf_<정의 키>` 파라미터의 첫 값 — 접두를 한 번 벗긴 raw. 도메인이 같은 판정으로 거르고, 화면 값 · 링크 · 내보내기에는 아래 거른 `custom`만 쓴다.
+  const rawCustom: Record<string, string> = {};
+  for (const [name, raw] of Object.entries(params)) {
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (name.startsWith("cf_") && value !== undefined && value !== "") rawCustom[name.slice(3)] = value;
+  }
   const includeHidden = includeHiddenParam === "1";
   // 261006-biv D-5: ?kind=client · supplier만 걸러보기(둘 다 포함), 그 밖의 값은 전체.
   const kindFilter = parseVendorSide(kindParam);
   // 07-20 V2: 검색어 — 이름 · 사업자 번호 숫자 포함(서버가 거른다).
   const query = (qParam ?? "").trim();
-  const filtered = query !== "" || kindFilter !== null;
+  const filtered = query !== "" || kindFilter !== null || Object.keys(rawCustom).length > 0;
 
   const [vendors, filteredVendors, canWrite, canReveal, evidenceTypes, fieldDefs, canArchive, canEditAccount, paymentTermDefault] = await Promise.all([
     listVendors(session.viewer, { includeHidden }),
-    filtered ? listVendors(session.viewer, { includeHidden, kind: kindFilter, q: query }) : null,
+    filtered ? listVendors(session.viewer, { includeHidden, kind: kindFilter, q: query, custom: rawCustom }) : null,
     can(session.viewer, "admin.vendors", "write"),
     visible(session.viewer, REVEAL_INFO_ITEM),
     listCodeItems(session.viewer, "evidence_type"),
@@ -87,6 +119,10 @@ export default async function VendorsPage({
     getSettingValue(PAYMENT_TERM_DAYS),
   ]);
 
+  const customColumns = customFieldListColumns(fieldDefs);
+  const filterDefs = customFieldFilterDefs(fieldDefs);
+  // 화면이 쓰는 거르개 값 — 보이는 활성 선택 칸의 활성 선택지 값만(그 밖의 파라미터는 무시, 빈 결과로 존재를 알리지 않는다).
+  const custom = parseCustomFieldFilters(rawCustom, filterDefs);
   const evidenceTypeLabelByValue = new Map(evidenceTypes.map((item) => [item.value, item.label]));
   // 「동작」 열의 유무 — 머리글·행·접힌 줄의 colSpan이 같은 조건을 쓴다.
   const hasActions = canWrite || canArchive;
@@ -108,7 +144,7 @@ export default async function VendorsPage({
         listVendorDocuments(session.viewer, editingVendor.id),
       ])
     : [[], [], null];
-  const cancelHref = vendorsHref(includeHidden, { kind: kindFilter, q: query });
+  const cancelHref = vendorsHref(includeHidden, { kind: kindFilter, q: query, custom });
   // 표 행만 거른다 — editingVendor는 거르지 않은 목록에서 찾는다(걸러보기 · 검색 중 갈래 · 이름을 바꿔 저장해도 패널이 그대로).
   const shownVendors = filteredVendors ?? vendors;
   // §6-1: 목록이 화면이고 등록은 목록 머리글의 행동이다 — 기본 진입(쿼리
@@ -119,7 +155,7 @@ export default async function VendorsPage({
 
   // DR5 A — 빈 목록(등록된 거래처가 하나도 없음)이면 머리 1차를 그리지 않고 빈 화면의 「거래처 등록」 하나가 등록을 맡는다.
   const primaryAction =
-    canWrite && vendors.length > 0 ? { label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true, kind: kindFilter, q: query }) } : undefined;
+    canWrite && vendors.length > 0 ? { label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true, kind: kindFilter, q: query, custom }) } : undefined;
 
   return (
     <ListScreen
@@ -127,12 +163,12 @@ export default async function VendorsPage({
       primaryAction={primaryAction}
       filters={
         <>
-          <VendorSearch query={query} includeHidden={includeHidden} kind={kindFilter} clearHref={vendorsHref(includeHidden, { kind: kindFilter })} />
+          <VendorSearch query={query} includeHidden={includeHidden} kind={kindFilter} custom={custom} clearHref={vendorsHref(includeHidden, { kind: kindFilter, custom })} />
           <nav aria-label="갈래" className={styles.kindNav}>
             {KIND_FILTERS.map(({ label, kind }) => (
               <Link
                 key={label}
-                href={vendorsHref(includeHidden, { kind, q: query })}
+                href={vendorsHref(includeHidden, { kind, q: query, custom })}
                 scroll={false}
                 className={styles.toggle}
                 aria-current={kind === kindFilter ? "page" : undefined}
@@ -141,12 +177,19 @@ export default async function VendorsPage({
               </Link>
             ))}
           </nav>
-          <Link href={vendorsHref(!includeHidden, { kind: kindFilter, q: query })} scroll={false} className={styles.toggle}>
+          {/* 07.5-01: 보이는 활성 선택 칸 앞 2개 — 갈래 링크 묶음 뒤 · 숨김 포함 앞. 바꾸면 즉시 이동하고 검색어 · 갈래 · 숨김은 숨은 칸으로 지킨다. */}
+          <CustomFieldFilter
+            action="/admin/vendors"
+            preserve={{ includeHidden: includeHidden ? "1" : "", kind: kindFilter ?? "", q: query }}
+            defs={filterDefs.map((def) => ({ key: def.key, label: def.label, options: def.options ?? [] }))}
+            values={custom}
+          />
+          <Link href={vendorsHref(!includeHidden, { kind: kindFilter, q: query, custom })} scroll={false} className={styles.toggle}>
             {includeHidden ? "숨김 제외" : "숨김 포함"}
           </Link>
           {/* 07-20 V1 · K12 · D-736: 필터 줄 끝 2차 — 편집 폭에서만(폰 · 태블릿 세로는 렌더 안 함), 결과가 상한을 넘으면 비활성 + 이유 한 줄. */}
           {shownVendors.length > 0 ? (
-            <VendorExportButton filter={{ includeHidden, kind: kindFilter, q: query }} count={shownVendors.length} />
+            <VendorExportButton filter={{ includeHidden, kind: kindFilter, q: query, custom }} count={shownVendors.length} />
           ) : null}
         </>
       }
@@ -183,7 +226,7 @@ export default async function VendorsPage({
       {vendors.length === 0 ? (
         <ListEmpty
           message="등록된 거래처가 없습니다"
-          action={{ label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true, kind: kindFilter }) }}
+          action={{ label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true, kind: kindFilter, custom }) }}
         />
       ) : shownVendors.length === 0 ? (
         <ListEmpty message="조건에 맞는 거래처가 없습니다" action={{ label: "필터 지우기", href: vendorsHref(includeHidden) }} />
@@ -197,6 +240,15 @@ export default async function VendorsPage({
             { key: "businessNo", header: "사업자 번호", priority: "p2" },
             { key: "evidenceType", header: "기본 증빙 종류", priority: "p2" },
             { key: "account", header: "계좌", priority: "p2", align: "right" },
+            // 07.5-01(D-7509 · D-7524): 이 사람에게 보이는 추가 칸 앞 3개 — 폰은 접힌 줄(P2), 텍스트 · 선택은 폭 상한 `field`, 숫자 · 날짜는 `number`.
+            ...customColumns.map((def) => ({
+              key: `cf_${def.key}`,
+              header: def.label,
+              priority: "p2" as const,
+              foldBelow: 1024 as const,
+              cellWidth: def.type === "text" || def.type === "select" ? ("field" as const) : ("number" as const),
+              ...(def.type === "number" ? { align: "right" as const } : {}),
+            })),
             { key: "status", header: "상태", priority: "p1" },
             ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
           ]}
@@ -218,6 +270,7 @@ export default async function VendorsPage({
                   canReveal={canReveal}
                   revealAction={revealVendorAccountNumberAction}
                 />,
+                ...customColumns.map((def) => <Fragment key={`cf_${def.key}`}>{customFieldCell(def, vendor.customFields?.[def.key])}</Fragment>),
                 <Fragment key="status">
                   {vendor.archivedAt ? (
                     <StatusTag status="보관됨" variant="text" />
@@ -233,7 +286,7 @@ export default async function VendorsPage({
                       vendor.archivedAt ? null : (
                         <RowActions key="actions">
                           {canWrite ? (
-                            <RowAction href={vendorsHref(includeHidden, { editId: vendor.id, kind: kindFilter, q: query })}>수정</RowAction>
+                            <RowAction href={vendorsHref(includeHidden, { editId: vendor.id, kind: kindFilter, q: query, custom })}>수정</RowAction>
                           ) : null}
                           {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
                           {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}

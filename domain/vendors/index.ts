@@ -8,7 +8,7 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { encrypt, decrypt } from "@/lib/crypto";
 import { withTransaction } from "@/lib/db-transaction";
-import { resolveCustomFieldsWrite, type InputFieldDef } from "@/domain/custom-fields/preserve";
+import { resolveCustomFieldsWrite } from "@/domain/custom-fields/preserve";
 import {
   countVendors as repoCountVendors,
   listVendors as repoListVendors,
@@ -24,7 +24,8 @@ import {
   setVendorConfirmed as repoSetVendorConfirmed,
   type VendorRow,
 } from "@/repositories/vendors";
-import { readVendorFieldAccess } from "@/repositories/permissions";
+import { readCustomFieldInputs } from "@/domain/custom-fields/access";
+import { customFieldFilterDefs, customTextSearchKeys, parseCustomFieldFilters } from "@/domain/custom-fields/access-rules";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
 import { servesSide, vendorKindToAdd, vendorKindsFor, VENDOR_KIND_LABELS, type VendorKind, type VendorSide } from "@/domain/vendors/kind";
@@ -233,7 +234,8 @@ export type VendorListDeps = { can: typeof defaultCan };
 
 // 07-20 V2: 목록 · 파일 받기가 같은 거르개 — 숨김 포함 · 갈래(그 쪽 + 둘 다) · 검색어(이름 · 사업자 번호 앞부분).
 // 게이트 P2: 번호 조건은 검색어가 숫자 · 하이픈만일 때만 건다 — `제2공장`의 「2」가 번호 부분 일치로 무관한 거래처를 끌어왔다.
-export type VendorListFilter = { includeHidden?: boolean; kind?: VendorSide | null; q?: string };
+// 07.5-01: `custom` = 선택 칸 거르개(정의 키 → 값 — `cf_` 접두 없음). 보이는 활성 선택 칸 앞 2개의 활성 선택지 값만 걸리고 나머지는 무시한다.
+export type VendorListFilter = { includeHidden?: boolean; kind?: VendorSide | null; q?: string; custom?: Record<string, string> };
 
 export function vendorListQuery(filter: VendorListFilter): { includeHidden: boolean; kinds: VendorKind[] | null; nameQuery: string; digitsQuery: string | null } {
   const q = (filter.q ?? "").trim();
@@ -245,9 +247,19 @@ export function vendorListQuery(filter: VendorListFilter): { includeHidden: bool
   };
 }
 
+// 07.5-01 D-7522 · D-7510: 검색이 함께 찾는 추가 칸 키 · 선택 칸 거르개 — 입력 칸 집합(보이는 활성 칸)에서만 나온다.
+// 호출당 한 번 읽는다(바깥 문이 꺼지면 둘 다 빈 배열 — 숨은 칸 값으로 행이 걸리지 않는다).
+async function customListOptions(viewer: Viewer, filter: VendorListFilter) {
+  // 검색어도 거르개도 없으면 읽지 않는다 — 목록 SQL 불변.
+  if ((filter.q ?? "").trim() === "" && Object.keys(filter.custom ?? {}).length === 0) return {};
+  const { inputDefs } = await vendorInputFieldKeys(viewer);
+  const customSelects = Object.entries(parseCustomFieldFilters(filter.custom ?? {}, customFieldFilterDefs(inputDefs))).map(([key, value]) => ({ key, value }));
+  return { customTextKeys: customTextSearchKeys(inputDefs), customSelects };
+}
+
 export async function listVendors(viewer: Viewer, opts?: VendorListFilter): Promise<VendorDto[]> {
   const scope = await scopeFor(viewer, VENDOR_ENTITY);
-  const rows = await repoListVendors(viewer, { scope, ...vendorListQuery(opts ?? {}) });
+  const rows = await repoListVendors(viewer, { scope, ...vendorListQuery(opts ?? {}), ...(await customListOptions(viewer, opts ?? {})) });
   const visibleKeys = await visibleCustomFieldKeys(viewer, VENDOR_ENTITY);
   return Promise.all(rows.map((row) => toVendorDto(viewer, row, visibleKeys)));
 }
@@ -255,7 +267,7 @@ export async function listVendors(viewer: Viewer, opts?: VendorListFilter): Prom
 // 07-20 D-736 — 파일 받기 상한 판정용. listVendors와 같은 범위 · 거르개로 수만 센다.
 export async function countVendors(viewer: Viewer, opts?: VendorListFilter): Promise<number> {
   const scope = await scopeFor(viewer, VENDOR_ENTITY);
-  return repoCountVendors(viewer, { scope, ...vendorListQuery(opts ?? {}) });
+  return repoCountVendors(viewer, { scope, ...vendorListQuery(opts ?? {}), ...(await customListOptions(viewer, opts ?? {})) });
 }
 
 // 자동완성 — 검색어를 NFC 정규화 + 소문자로 낮춘 뒤 normalizedName의 부분
@@ -322,35 +334,9 @@ export async function listVendorFieldDefinitions(
   }));
 }
 
-type VendorInputFieldDef = InputFieldDef & { id: string; sortOrder: number; optionsColumn: string[] | null };
-
-// 04.5-05: 보는 사람의 거래처 입력 칸 집합 하나 — 「거래처 정보」(vendor.value)가 보이면 활성 ∩ 칸별 보임(03의
-// visibleCustomFieldKeys와 같은 규칙), 아니면 빈 집합. knownKeys는 정의 전체 키(보관 · 노출 행 없는 칸 포함).
-// 정의 · 두 보임을 SQL 한 문(한 스냅숏)으로 읽는다(T-04.5-44). tx는 받은 그대로 넘긴다(domain은 db를 import하지 않는다).
-async function vendorInputFieldKeys(
-  viewer: Viewer,
-  tx?: DbOrTx,
-): Promise<{ inputDefs: VendorInputFieldDef[]; knownKeys: Set<string> }> {
-  const access = await readVendorFieldAccess(viewer, viewer.roleId, tx);
-  const inputDefs = access.vendorValueVisible
-    ? access.definitions
-        .filter((def) => def.archivedAt === null && access.visibleFieldKeys.has(def.key))
-        .map((def) => {
-          const optionsColumn = Array.isArray(def.options) ? (def.options as string[]) : null;
-          return {
-            id: def.id,
-            key: def.key,
-            label: def.label,
-            type: def.type as FieldDefinitionDto["type"],
-            options: optionsColumn ?? [],
-            archivedOptions: def.archivedOptions,
-            required: def.required,
-            sortOrder: def.sortOrder,
-            optionsColumn,
-          };
-        })
-    : [];
-  return { inputDefs, knownKeys: new Set(access.definitions.map((def) => def.key)) };
+// 04.5-05 → 07.5-01: 거래처 입력 칸 집합은 일반화된 readCustomFieldInputs 한 함수다(domain/custom-fields/access.ts).
+async function vendorInputFieldKeys(viewer: Viewer, tx?: DbOrTx) {
+  return readCustomFieldInputs(viewer, { entity: VENDOR_ENTITY, valueInfoItem: "vendor.value" }, tx);
 }
 
 export type VendorWriteDeps = {

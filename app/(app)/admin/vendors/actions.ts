@@ -20,6 +20,7 @@ import {
 import { exportVendorsCsv } from "@/domain/vendors/export";
 import { VendorContactsError } from "@/domain/vendors/contacts";
 import { requestVendorDocumentUpload } from "@/domain/vendors/document-upload";
+import { CUSTOM_FIELD_FILTER_LIMIT } from "@/domain/custom-fields/access-rules";
 import { CustomFieldsInvalidError } from "@/domain/custom-fields/preserve";
 import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { archive } from "@/domain/archive";
@@ -190,7 +191,18 @@ export const archiveVendorAction = authedActionClient
 
 // 07-20 V1 · D-736: 필터 줄 `파일 받기` — 목록과 같은 거르개로 서버가 CSV를 만든다(domain/vendors/export.ts).
 export const exportVendorsCsvAction = authedActionClient
-  .schema(z.object({ includeHidden: z.boolean(), kind: z.enum(["client", "supplier"]).nullable(), q: z.string() }))
+  // 07.5-01: `custom` = 추가 칸 거르개(정의 키 → 선택지 값, 선택지 상한 40자 — targets.ts OPTION_MAX_LENGTH). 서버가 보이는 칸만 걸러 쓴다.
+  .schema(
+    z.object({
+      includeHidden: z.boolean(),
+      kind: z.enum(["client", "supplier"]).nullable(),
+      q: z.string(),
+      custom: z
+        .record(z.string().max(64), z.string().max(40))
+        .refine((record) => Object.keys(record).length <= CUSTOM_FIELD_FILTER_LIMIT)
+        .optional(),
+    }),
+  )
   .action(async ({ parsedInput, ctx }) => exportVendorsCsv(ctx.viewer, parsedInput));
 
 // 07-23 V4 · N4: 확인 표시 켬 · 끔 — 즉시 저장 컨트롤(UI-SPEC 공통 10). 권한(vendors.account 쓰기) · 상태 판정은 domain.

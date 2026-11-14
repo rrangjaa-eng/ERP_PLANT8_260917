@@ -16,6 +16,10 @@ export type VendorListOpts = {
   kinds?: readonly VendorKind[] | null;
   nameQuery?: string;
   digitsQuery?: string | null;
+  /** 07.5-01 D-7522: 검색어가 함께 찾는 추가 칸 키(이 사람에게 보이는 활성 텍스트 칸 — domain이 정한다). 비면 절을 더하지 않는다. */
+  customTextKeys?: readonly string[];
+  /** 07.5-01 D-7510: 선택 칸 거르개(정의 키 → 활성 선택지 값 — domain이 거른 뒤 넘긴다). 비면 절을 더하지 않는다. */
+  customSelects?: readonly { key: string; value: string }[];
 };
 
 function likeContains(value: string): string {
@@ -29,11 +33,16 @@ function listConditions(opts: VendorListOpts) {
   if (opts.kinds) conditions.push(inArray(vendors.kind, [...opts.kinds]));
   if (opts.nameQuery) {
     const byName = ilike(vendors.normalizedName, likeContains(opts.nameQuery));
+    // 키는 매개변수 바인딩 — JSON 전체를 글자로 바꿔 찾지 않는다(키 이름 · 보이지 않는 칸 값까지 맞는다).
+    const byCustom = (opts.customTextKeys ?? []).map((key) => sql`normalize(${vendors.customFields} ->> ${key}, NFC) ILIKE ${likeContains(opts.nameQuery ?? "")}`);
     conditions.push(
       opts.digitsQuery
-        ? or(byName, sql`regexp_replace(${vendors.businessNo}, '[^0-9]', '', 'g') LIKE ${`${opts.digitsQuery}%`}`)
-        : byName,
+        ? or(byName, sql`regexp_replace(${vendors.businessNo}, '[^0-9]', '', 'g') LIKE ${`${opts.digitsQuery}%`}`, ...byCustom)
+        : or(byName, ...byCustom),
     );
+  }
+  for (const { key, value } of opts.customSelects ?? []) {
+    conditions.push(sql`${vendors.customFields} @> ${JSON.stringify({ [key]: value })}::jsonb`);
   }
   return conditions.length ? and(...conditions) : undefined;
 }

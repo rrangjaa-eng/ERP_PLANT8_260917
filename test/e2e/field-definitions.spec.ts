@@ -423,7 +423,7 @@ test("선택형 칸: 선택지를 더해 저장하면 거래처 폼 select와 �
   await expect(row.locator("td").nth(3)).toHaveText("기본, 특약");
 
   await page.goto("/admin/vendors?new=1");
-  const select = page.getByLabel(label, { exact: true });
+  const select = page.getByTestId("vendor-custom-fields").getByLabel(label, { exact: true });
   await expect(select).toBeVisible();
   const optionTexts = await select.locator("option").allTextContents();
   expect(optionTexts).toEqual(expect.arrayContaining(["기본", "특약"]));
@@ -591,7 +591,7 @@ test("저장된 선택지 「삭제」는 보관으로 가고 보관 펼침에 �
   await expect(page).toHaveURL(/\/admin\/field-definitions$/);
 
   await page.goto("/admin/vendors?new=1");
-  const optionTexts = await page.getByLabel(label, { exact: true }).locator("option").allTextContents();
+  const optionTexts = await page.getByTestId("vendor-custom-fields").getByLabel(label, { exact: true }).locator("option").allTextContents();
   expect(optionTexts).toContain("기본");
   expect(optionTexts).not.toContain("특약");
 

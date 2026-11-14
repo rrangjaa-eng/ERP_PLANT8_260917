@@ -5,7 +5,12 @@ import { db } from "@/db/client";
 import { users, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { upsertVisibility } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertRole } from "@/repositories/roles";
+import { insertVendor } from "@/repositories/vendors";
+import { fieldDefinitions } from "@/db/schema";
+import { and } from "drizzle-orm";
+import { seedCustomFieldDefinition } from "../support/custom-fields";
 import { queryActionLog } from "@/repositories/action-log";
 import { EXPORT_REGISTRY } from "@/lib/actions/registry";
 import { createVendor, listVendors, ForbiddenError, type VendorDto } from "@/domain/vendors";
@@ -141,5 +146,110 @@ describe("거래처 파일 받기 (07-20 V1 · D-736)", () => {
 
   it("EXPORT_REGISTRY에 vendors.export(메뉴 admin.vendors · VendorDto)가 있다", () => {
     expect(EXPORT_REGISTRY).toContainEqual({ name: "vendors.export", menu: "admin.vendors", dtoName: "VendorDto" });
+  });
+});
+
+// 07.5-01 D-7511 · T-07.5-01-03/05/06: 파일 받기 CSV는 9칸 뒤에 보이는 활성 추가 칸 전부(상한 없음)를 정렬 순서로 싣는다.
+const BASE_HEADER = "이름,갈래,사업자 번호,지급 기한,계좌 은행,예금주,계좌번호,기본 증빙 종류,숨김";
+
+async function exporter(opts: { vendorValue?: boolean } = {}): Promise<Viewer> {
+  const roleId = `role-vexp-${randomUUID()}`;
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `내려받기${roleId.slice(-8)}`, sortOrder: 99 });
+  await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "admin.vendors", action: "view", allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "vendor.value", visible: opts.vendorValue ?? true });
+  const id = `vendor-export-${randomUUID()}`;
+  await db.insert(users).values({ id, name: "거래처 내려받기 추가 칸", email: `${randomUUID()}@test.local`, roleId });
+  return { id, roleId };
+}
+
+async function seedPlainVendor(name: string, customFields: Record<string, unknown>): Promise<string> {
+  const row = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), customFields });
+  return row.id;
+}
+
+describe("거래처 파일 받기 — 추가 칸 열 (07.5-01 D-7511)", () => {
+  it("보이는 칸 전부(4개 이상도)를 정렬 순서로 · 숫자는 쉼표 · 반올림 없이 · 날짜는 앞 10자 · 수식은 이스케이프 · 값 없음은 빈 칸", async () => {
+    const a = await exporter();
+    const roleIds = [a.roleId ?? ""];
+    const text = await seedCustomFieldDefinition("vendor", { label: "CSV텍스트", type: "text", sortOrder: 1 }, { visibleRoleIds: roleIds });
+    const num = await seedCustomFieldDefinition("vendor", { label: "CSV숫자", type: "number", sortOrder: 2 }, { visibleRoleIds: roleIds });
+    const date = await seedCustomFieldDefinition("vendor", { label: "CSV날짜", type: "date", sortOrder: 3 }, { visibleRoleIds: roleIds });
+    const pick = await seedCustomFieldDefinition("vendor", { label: "CSV선택", type: "select", options: ["서울", "부산"], sortOrder: 4 }, { visibleRoleIds: roleIds });
+    const t = tag();
+    await seedPlainVendor(`${t}-정상`, {
+      [text.key]: "=SUM(A1)",
+      [num.key]: 1234.5,
+      [date.key]: "2026-11-04T00:00:00.000Z",
+      [pick.key]: "서울",
+    });
+    await seedPlainVendor(`${t}-없음`, {});
+    // 숫자가 아닌 옛 값(07.5 밖 쓰기 경로) — 이스케이프를 건너뛰지 않는다
+    await seedPlainVendor(`${t}-옛값`, { [num.key]: "=1+1" });
+
+    const file = await exportVendorsCsv(a, { q: t, includeHidden: false, kind: null });
+    const lines = file.body.replace(/^﻿/, "").trimEnd().split("\r\n");
+    expect(lines[0]).toBe(`${BASE_HEADER},CSV텍스트,CSV숫자,CSV날짜,CSV선택`);
+    expect(lines.find((line) => line.startsWith(`${t}-정상`))).toBe(`${t}-정상,둘 다,,,,,,,,'=SUM(A1),1234.5,2026-11-04,서울`);
+    expect(lines.find((line) => line.startsWith(`${t}-없음`))).toBe(`${t}-없음,둘 다,,,,,,,,,,,`);
+    expect(lines.find((line) => line.startsWith(`${t}-옛값`))).toContain(",'=1+1,");
+  });
+
+  it("끈 계급 · 바깥 문 꺼진 계급 · 보관 칸 — 머리글도 값도 없다", async () => {
+    const a = await exporter();
+    const hiddenRole = await exporter();
+    const noOuter = await exporter({ vendorValue: false });
+    const field = await seedCustomFieldDefinition("vendor", { label: "CSV비밀", type: "text" }, { visibleRoleIds: [a.roleId ?? "", noOuter.roleId ?? ""] });
+    const t = tag();
+    await seedPlainVendor(`${t}-비밀`, { [field.key]: "숨은값XYZ" });
+
+    expect((await exportVendorsCsv(a, { q: t, includeHidden: false, kind: null })).body).toContain("숨은값XYZ");
+    for (const viewer of [hiddenRole, noOuter]) {
+      const body = (await exportVendorsCsv(viewer, { q: t, includeHidden: false, kind: null })).body;
+      expect(body).not.toContain("CSV비밀");
+      expect(body).not.toContain("숨은값XYZ");
+    }
+    await db.update(fieldDefinitions).set({ archivedAt: new Date() }).where(and(eq(fieldDefinitions.entity, "vendor"), eq(fieldDefinitions.key, field.key)));
+    const archived = (await exportVendorsCsv(a, { q: t, includeHidden: false, kind: null })).body;
+    expect(archived).not.toContain("CSV비밀");
+    expect(archived).not.toContain("숨은값XYZ");
+  });
+
+  it("칸 0개면 머리글 9칸 그대로", async () => {
+    const none = await exporter();
+    const t = tag();
+    await seedPlainVendor(`${t}-빈`, {});
+    const lines = (await exportVendorsCsv(none, { q: t, includeHidden: false, kind: null })).body.replace(/^﻿/, "").trimEnd().split("\r\n");
+    expect(lines[0]).toBe(BASE_HEADER);
+  });
+
+  it("거르개(custom)는 목록과 같은 행 수 — excel_export 기록에는 거르개만 싣고 행 값은 싣지 않는다", async () => {
+    const a = await exporter();
+    const field = await seedCustomFieldDefinition("vendor", { label: "CSV지역", type: "select", options: ["서울", "부산"] }, { visibleRoleIds: [a.roleId ?? ""] });
+    const t = tag();
+    await seedPlainVendor(`${t}-서울`, { [field.key]: "서울" });
+    await seedPlainVendor(`${t}-부산`, { [field.key]: "부산" });
+    const filter = { q: t, includeHidden: false, kind: null, custom: { [field.key]: "서울" } };
+    const file = await exportVendorsCsv(a, filter);
+    const lines = file.body.replace(/^﻿/, "").trimEnd().split("\r\n");
+    expect(lines).toHaveLength(2);
+    expect(lines).toHaveLength(1 + (await listVendors(a, filter)).length);
+
+    const logs = (await queryActionLog(SYSTEM_VIEWER, { actorId: a.id, actionType: "excel_export" })).filter((row) => row.entity === "vendor");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.detail).toMatchObject({ filter: { custom: { [field.key]: "서울" } }, count: 1 });
+    expect(JSON.stringify(logs[0]?.detail)).not.toContain(`${t}-서울`);
+  });
+  it("excel_export 기록에는 적용된 거르개만 — 모르는 키 · 선택지 밖 값은 싣지 않는다", async () => {
+    const a = await exporter();
+    const field = await seedCustomFieldDefinition("vendor", { label: "로그지역", type: "select", options: ["서울", "부산"] }, { visibleRoleIds: [a.roleId ?? ""] });
+    const t = tag();
+    await seedPlainVendor(`${t}-서울`, { [field.key]: "서울" });
+    await exportVendorsCsv(a, { q: t, includeHidden: false, kind: null, custom: { [field.key]: "없는선택지", cf_unknown00: "서울" } });
+    const logs = (await queryActionLog(SYSTEM_VIEWER, { actorId: a.id, actionType: "excel_export" })).filter((row) => row.entity === "vendor");
+    expect(logs).toHaveLength(1);
+    const text = JSON.stringify(logs[0]?.detail);
+    expect(text).not.toContain("cf_unknown00");
+    expect(text).not.toContain("없는선택지");
+    expect(text).not.toContain(field.key);
   });
 });

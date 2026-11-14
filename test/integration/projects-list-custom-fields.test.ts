@@ -86,6 +86,28 @@ describe("프로젝트 목록 검색 — 추가 칸 텍스트 값(D-7522)", () =
     expect((await listed(a, { search: `${t}코엑스` })).ids).toEqual([p1]);
   });
 
+  // Opus 검토 S-1 — 보이는 텍스트 칸이 하나라도 있는 계급에서 숨은 칸 키가 검색 키 집합에 섞이지 않는다(칸별 보임 · 혼합 경우).
+  it("텍스트 칸 X는 보이고 Y는 숨은 계급: Y 값으로 찾으면 0행, X 값으로 찾으면 그 행만", async () => {
+    const a = await makeViewer();
+    const b = await makeViewer();
+    const x = await seedCustomFieldDefinition("project", { label: "행사 장소", type: "text", sortOrder: 1 }, { visibleRoleIds: [roleOf(a), roleOf(b)] });
+    const y = await seedCustomFieldDefinition("project", { label: "내부 메모", type: "text", sortOrder: 2 }, { visibleRoleIds: [roleOf(a)] });
+    const t = tag();
+    const p1 = await makeProject(`이름-${tag()}`, { [x.key]: `${t}코엑스`, [y.key]: `${t}숨은메모` });
+    await makeProject(`이름-${tag()}`);
+
+    const hiddenSearch = await listed(b, { search: `${t}숨은메모` });
+    expect(hiddenSearch.ids).toEqual([]);
+    expect(hiddenSearch.total).toBe(0);
+    expect(hiddenSearch.count).toBe(0);
+
+    const visibleSearch = await listed(b, { search: `${t}코엑스` });
+    expect(visibleSearch.ids).toEqual([p1]);
+    expect(visibleSearch.count).toBe(1);
+
+    expect((await listed(a, { search: `${t}숨은메모` })).ids).toEqual([p1]);
+  });
+
   it("목록 결과 직렬화에는 추가 칸 값이 없다 — 보이는 계급도 행에 customFields가 없고, 칸을 끈 계급에는 그 칸 키도 없다", async () => {
     const a = await makeViewer();
     const b = await makeViewer();

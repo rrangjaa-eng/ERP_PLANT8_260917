@@ -187,6 +187,25 @@ describe("archiveRevenueEntry · undoRevenueArchive (D-7601 · D-7602 · D-7605)
     expect(await logsFor(second.id, REVENUE_ARCHIVE_LOG)).toHaveLength(0);
   });
 
+  it("응답 잃은 지우기 재전송 — 같은 사람 · 같은 version · 10분 안이면 같은 응답으로 멱등(로그 1 · version 불변) · 남 · 11분 뒤는 거부", async () => {
+    const finance = await financePerson();
+    const other = await financePerson();
+    const { project, second } = await seeded(finance);
+    const input = { projectId: project.id, entryId: second.id, version: second.version };
+    const first = await archiveRevenueEntry(finance, input);
+    const archivedAt = (await entry(second.id)).archivedAt!;
+
+    expect(await archiveRevenueEntry(finance, input, { now: minutesAfter(archivedAt, 9) })).toEqual(first);
+    expect((await entry(second.id)).version).toBe(first.version);
+    expect(await logsFor(second.id, REVENUE_ARCHIVE_LOG)).toHaveLength(1);
+
+    const stranger = await rejectionOf(archiveRevenueEntry(other, input));
+    expect(stranger.message).toBe("줄을 찾을 수 없음 · 새로 고침");
+    const late = await rejectionOf(archiveRevenueEntry(finance, input, { now: minutesAfter(archivedAt, 11) }));
+    expect(late.message).toBe("줄을 찾을 수 없음 · 새로 고침");
+    expect(await logsFor(second.id, REVENUE_ARCHIVE_LOG)).toHaveLength(1);
+  });
+
   it("되돌리기 — 같은 사람 9분 뒤 성공(version +1 · via undo 로그) · 재전송은 같은 version으로 멱등 · 11분 뒤 · 남은 거부", async () => {
     const finance = await financePerson();
     const other = await financePerson();

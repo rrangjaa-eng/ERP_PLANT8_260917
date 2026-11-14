@@ -93,7 +93,14 @@ export async function archiveRevenueEntry(
   const recordAction = deps.recordAction ?? defaultRecordAction;
   return inLockedRevenueProject(viewer, input.projectId, deps, { archived: projectGone, completed: () => new GateBlockedError(COMPLETED_DELETE_LOCK) }, async (tx) => {
     const entry = await findRevenueEntryById(viewer, input.entryId, tx);
-    if (!entry || entry.projectId !== input.projectId || entry.archivedAt !== null) throw new UserFacingError(ENTRY_NOT_FOUND);
+    if (!entry || entry.projectId !== input.projectId) throw new UserFacingError(ENTRY_NOT_FOUND);
+    if (entry.archivedAt !== null) {
+      // 응답 잃은 재전송 — 이 사람이 이 version에서 지웠고 되돌리기 창 안이면 같은 응답으로 멱등(쓰기 · 로그 없음).
+      const replay =
+        entry.archivedBy === viewer.id && entry.version === input.version + 1 && Math.abs(now().getTime() - entry.archivedAt.getTime()) <= UNDO_WINDOW_MS;
+      if (replay) return { kind: entry.kind as RevenueEntryKind, version: entry.version };
+      throw new UserFacingError(ENTRY_NOT_FOUND);
+    }
     // Q1(D-7610): 잠근 프로젝트 tx 안이라 잇기(원장 tx — 같은 프로젝트 잠금 뒤)가 판정 사이에 끼지 못한다.
     if (await hasIssueRequestForEntry(viewer, entry.id, tx)) throw new UserFacingError(LINKED_REQUEST_BLOCK);
     const no = await entryNo(viewer, input.projectId, entry, tx);

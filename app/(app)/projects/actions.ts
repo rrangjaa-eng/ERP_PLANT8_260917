@@ -12,8 +12,7 @@ import {
   type PeriodFieldError,
 } from "@/domain/projects/ledger";
 import { validatePreEstimateChange, type PreEstimateFieldError } from "@/domain/projects/pre-estimate";
-import { InfoConflictError } from "@/domain/projects/info";
-import type { InfoFieldError } from "@/domain/projects/info-rules";
+import { InfoConflictError, type InfoChangeFieldError } from "@/domain/projects/info";
 import { quoteLinesInputSchema, SaveRejectedError } from "@/domain/quotes/lines";
 import { listCounterpartProjects } from "@/domain/quotes/adjustment-pair";
 import { readQuoteXlsxUpload } from "@/domain/quotes/import-xlsx-upload";
@@ -166,7 +165,7 @@ const issueRequestRowSchema = z
 // 화면의 `"rejected" in data` 좁히기가 풀린다.
 function periodRejected(
   error: PeriodRejectedError,
-): { periodRejected: { errors: PeriodFieldError[]; preEstimateErrors: PreEstimateFieldError[]; infoErrors: InfoFieldError[] } } {
+): { periodRejected: { errors: PeriodFieldError[]; preEstimateErrors: PreEstimateFieldError[]; infoErrors: InfoChangeFieldError[] } } {
   return { periodRejected: { errors: error.errors, preEstimateErrors: error.preEstimateErrors, infoErrors: error.infoErrors } };
 }
 
@@ -224,6 +223,8 @@ export const saveProjectLedgerAction = authedActionClient
           teamId: z.string().uuid().optional(),
           // 사람 id는 uuid가 아닌 글자 id(인증 표 users.id text).
           pmUserId: z.string().min(1).optional(),
+          // 07.5-02(D-7506) — 고친 추가 칸만(키 없음 = 안 바꿈). 판정 · 정의에 없는 키 거부는 domain(resolveCustomFieldsWrite update).
+          customFields: z.record(z.string(), z.unknown()).optional(),
           baselineVersion: z.number().int().positive(),
         })
         .strict()

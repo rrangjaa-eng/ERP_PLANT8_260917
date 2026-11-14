@@ -46,8 +46,7 @@ import { projectResponsibles } from "@/domain/projects/responsibles";
 import { rememberFxRate as defaultRememberFxRate } from "@/domain/money/currency";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { kstToday } from "@/lib/kst-date";
-import { applyInfoChange, loadInfoFacts, type InfoInput } from "@/domain/projects/info";
-import type { InfoFieldError } from "@/domain/projects/info-rules";
+import { applyInfoChange, loadInfoFacts, type InfoChangeFieldError, type InfoInput } from "@/domain/projects/info";
 import {
   findProjectById,
   findProjectInScope,
@@ -111,8 +110,8 @@ export type SaveProjectLedgerResult = {
     endDate: string | null;
     preEstimate?: Money;
     poNumber?: string | null;
-    // 07.2-17 — 정보 4칸을 실은 저장만(새 version과 저장된 값).
-    info?: { name: string; clientId: string; teamId: string; pmUserId: string; version: number };
+    // 07.2-17 — 정보 4칸을 실은 저장만(새 version과 저장된 값). 07.5-02 — customFields는 이 사람의 입력 칸 값만(eng P1-2).
+    info?: { name: string; clientId: string; teamId: string; pmUserId: string; version: number; customFields: Record<string, unknown> };
   };
 };
 
@@ -125,7 +124,7 @@ export class PeriodRejectedError extends UserFacingError {
   constructor(
     readonly errors: PeriodFieldError[],
     readonly preEstimateErrors: PreEstimateFieldError[] = [],
-    readonly infoErrors: InfoFieldError[] = [],
+    readonly infoErrors: InfoChangeFieldError[] = [],
   ) {
     super(errors[0]?.reason ?? infoErrors[0]?.reason ?? "기간 바꾸기 권한 없음");
   }
@@ -345,11 +344,18 @@ export async function saveProjectLedger(
       // A-16: 누가 무엇을 바꿨는지 — 바뀐 칸만 싣는다. 같은 tx, 한 줄. 총 매출 예상가는 07.1-13(사용자 결정 카드
       // 2026-10-28 01:03Z — 04-44 「금액 없이 표시만」을 바꿈)부터 preEstimateChanged 표시와 함께 전후 Money 글자를 싣는다(0원 = 미입력 = null).
       const changed: Record<string, unknown> = {};
-      let savedInfo: { name: string; clientId: string; teamId: string; pmUserId: string; version: number } | undefined;
+      let savedInfo: SaveProjectLedgerResult["project"]["info"];
       if (info?.ok) {
         Object.assign(changed, info.changed);
         current = info.row;
-        savedInfo = { name: info.row.name, clientId: info.row.clientId, teamId: info.row.teamId, pmUserId: info.row.pmUserId, version: info.row.version };
+        savedInfo = {
+          name: info.row.name,
+          clientId: info.row.clientId,
+          teamId: info.row.teamId,
+          pmUserId: info.row.pmUserId,
+          version: info.row.version,
+          customFields: info.customFields,
+        };
       }
 
       const resolved = input.period

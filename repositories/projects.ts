@@ -677,12 +677,12 @@ export async function updateProjectPeriod(
   return row ?? null;
 }
 
-// 07.2-17(PU5 · D-7220) — 정보 면 4칸(행사명 · 고객사 · 담당 팀 · 담당 PM). 화면이 읽은 version(expectedVersion)과 같을 때만
+// 07.2-17(PU5 · D-7220) — 정보 면 4칸(행사명 · 고객사 · 담당 팀 · 담당 PM) · 07.5-02 추가 칸(customFields, 있을 때만). 화면이 읽은 version(expectedVersion)과 같을 때만
 // 바꾸고 version + 1(0행이면 null — 호출자가 동시 수정으로 거부한다). 기간 갱신은 version을 쓰지 않는다(위 주석) — 이 칸들만 쓴다.
 export async function updateProjectInfoIfVersion(
   viewer: Viewer,
   id: string,
-  input: { patch: { name?: string; clientId?: string; teamId?: string; pmUserId?: string }; expectedVersion: number },
+  input: { patch: { name?: string; clientId?: string; teamId?: string; pmUserId?: string; customFields?: Record<string, unknown> }; expectedVersion: number },
   tx: DbOrTx,
 ): Promise<ProjectRow | null> {
   void viewer;

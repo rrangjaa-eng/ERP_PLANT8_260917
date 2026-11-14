@@ -76,7 +76,9 @@ export function ProjectsFilterBar({
     from: defaultValues.from,
     to: defaultValues.to,
   });
-  // 07.5-04(UI-SPEC S5) — 고른 추가 칸 거르개마다 요약 조각 `{칸 이름} {값}`.
+  // 07.5-04(UI-SPEC S5) — 고른 추가 칸 거르개마다 요약 조각 `{칸 이름} {값}`. 칸 이름 · 선택지는 관리자가 정하는 임의 길이라
+  // (UI-SPEC long-text 「값은 줄바꿈 허용, 말줄임 없음」) 이 조각은 조각 안에서도 줄바꿈한다 — 폰 320 가로 넘침 0(감사 B1).
+  const fixedPartCount = summary.length;
   for (const filter of customFilters) {
     const value = defaultValues.custom?.[filter.key];
     if (value) summary.push(`${filter.label} ${value}`);
@@ -161,7 +163,7 @@ export function ProjectsFilterBar({
           {summary.map((part, index) => (
             <Fragment key={`${index}-${part}`}>
               {index > 0 ? " · " : null}
-              <span className={styles.filterSummaryPart}>{part}</span>
+              <span className={index < fixedPartCount ? styles.filterSummaryPart : styles.filterSummaryPartWrap}>{part}</span>
             </Fragment>
           ))}
         </p>

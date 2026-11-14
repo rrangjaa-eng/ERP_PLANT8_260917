@@ -117,4 +117,44 @@ test.describe("프로젝트 목록 추가 칸 (S5)", () => {
     await expect(page.getByLabel(label, { exact: true })).toBeVisible();
     await expect(page.getByLabel(label, { exact: true })).toHaveValue("행사");
   });
+
+  // 07.5-04 독립 DOM 감사 B1 · F1 — 칸 이름 · 선택지는 관리자가 정하는 임의 길이다(이름 ≤ 20자 · 선택지 ≤ 40자). 가장 긴 값으로 잰다.
+  test("가장 긴 칸 이름 · 선택지: 폰 320 · 375 요약(닫힘 · 펼침) 문서 넘침 0 · select 폭 상한(1280 = 칸 폭 − s-4 · 폰 = − s-4 − s-1)", async ({ page }) => {
+    const tag = randomUUID().slice(0, 6);
+    const editor = await createE2EProjectEditor();
+    const label = `${LABEL_PREFIX}${tag}가나다라마바사아`;
+    expect(label).toHaveLength(20);
+    const longOption = "긴선택지".repeat(10);
+    expect(longOption).toHaveLength(40);
+    const field = await createE2EFieldDefinition({ entity: "project", label, type: "select", options: ["팝업", longOption], required: false, onlyRoleId: editor.roleId });
+    await projectOf(editor, `E2E목록칸-긴값-${tag}`, { [field.key]: longOption });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await login(page, editor);
+    const url = `/projects?year=all&cf_${field.key}=${encodeURIComponent(longOption)}`;
+    const select = page.getByLabel(label, { exact: true });
+    const cap = (minus: string[]) =>
+      page.evaluate((names) => {
+        const style = getComputedStyle(document.documentElement);
+        const px = (name: string) => parseFloat(style.getPropertyValue(name));
+        return names.reduce((width, name) => width - px(name), px("--field-w-select"));
+      }, minus);
+
+    expect((await page.goto(url))?.status()).toBe(200);
+    await expect(select).toHaveValue(longOption);
+    const wideWidth = (await select.boundingBox())?.width ?? Infinity;
+    expect(wideWidth, "1280 select 폭").toBeLessThanOrEqual(await cap(["--s-4"]));
+
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      expect((await page.goto(url))?.status()).toBe(200);
+      await expect(page.getByTestId("filter-summary")).toContainText(`${label} ${longOption}`);
+      expect(await docOverflow(page), `${width} 닫힘 문서 가로 넘침`).toBe(0);
+      await page.getByRole("button", { name: "필터", exact: true }).click();
+      await expect(select).toBeVisible();
+      expect(await docOverflow(page), `${width} 펼침 문서 가로 넘침`).toBe(0);
+      const phoneWidth = (await select.boundingBox())?.width ?? Infinity;
+      expect(phoneWidth, `${width} select 폭`).toBeLessThanOrEqual(await cap(["--s-4", "--s-1"]));
+    }
+  });
 });

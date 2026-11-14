@@ -26,104 +26,20 @@
       "기준",
       "수익금",
       "수익률",
-      "행사 장소",
-      "고객사 담당자 연락처와 직함 메모 칸",
-      "예상 참석 인원과 초청 인원 합계 수",
       "상태"
     ],
-    "customHeadersInDom": [
-      "행사 장소",
-      "고객사 담당자 연락처와 직함 메모 칸",
-      "예상 참석 인원과 초청 인원 합계 수"
-    ],
+    "customHeadersInDom": [],
     "nameColumn": {
       "th": {
-        "x": 334.3,
+        "x": 383.2,
         "y": 256,
-        "width": 142,
-        "height": 337
+        "width": 159.6,
+        "height": 45.8
       },
       "cellWidths": [
-        126
+        143.6
       ]
     },
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": true,
-        "box": {
-          "x": 1207.1,
-          "y": 256,
-          "width": 29.1,
-          "height": 337
-        },
-        "lines": 5,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": [
-          {
-            "text": "서울 코엑스 C홀",
-            "tdWidth": 29.1,
-            "contentWidth": 13.1,
-            "spanWidth": 13.1,
-            "spanMaxWidth": "200px",
-            "textAlign": "start",
-            "lines": 8,
-            "textOverflow": "clip"
-          }
-        ]
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": true,
-        "box": {
-          "x": 1236.2,
-          "y": 256,
-          "width": 30.8,
-          "height": 337
-        },
-        "lines": 16,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": [
-          {
-            "text": "마케팅본부 브랜드팀 이수진 책임 010-00",
-            "tdWidth": 30.8,
-            "contentWidth": 14.8,
-            "spanWidth": 14.8,
-            "spanMaxWidth": "200px",
-            "textAlign": "start",
-            "lines": 44,
-            "textOverflow": "clip"
-          }
-        ]
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": true,
-        "box": {
-          "x": 1267,
-          "y": 256,
-          "width": 100.1,
-          "height": 337
-        },
-        "lines": 3,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": [
-          {
-            "text": "1,250.5",
-            "tdWidth": 100.1,
-            "contentWidth": 84.1,
-            "spanWidth": 50.1,
-            "spanMaxWidth": "none",
-            "textAlign": "right",
-            "lines": 1,
-            "textOverflow": "clip"
-          }
-        ]
-      }
-    ],
     "rowCount": 1,
     "firstRowText": "2026-12",
     "empty": false,
@@ -148,7 +64,7 @@
         "box": {
           "x": 301,
           "y": 89.4,
-          "width": 152,
+          "width": 150,
           "height": 32
         }
       },
@@ -158,31 +74,31 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 469,
+          "x": 467,
           "y": 89.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
-          "x": 917.4,
+          "x": 915.4,
           "y": 89.4,
           "width": 116,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {
-          "x": 1049.4,
+          "x": 1047.4,
           "y": 89.4,
           "width": 89,
           "height": 32
@@ -201,14 +117,14 @@
     "width": 1280,
     "innerWidth": 1280,
     "doc": {
-      "scrollWidth": 1381,
+      "scrollWidth": 1280,
       "clientWidth": 1280
     },
     "tableBox": null,
     "table": {
-      "width": 1185.5,
-      "scrollWidth": 1183,
-      "clientWidth": 1185
+      "width": 1064,
+      "scrollWidth": 1062,
+      "clientWidth": 1064
     },
     "visibleHeaders": [
       "번호",
@@ -223,104 +139,20 @@
       "기준",
       "수익금",
       "수익률",
-      "행사 장소",
-      "고객사 담당자 연락처와 직함 메모 칸",
-      "예상 참석 인원과 초청 인원 합계 수",
       "상태"
     ],
-    "customHeadersInDom": [
-      "행사 장소",
-      "고객사 담당자 연락처와 직함 메모 칸",
-      "예상 참석 인원과 초청 인원 합계 수"
-    ],
+    "customHeadersInDom": [],
     "nameColumn": {
       "th": {
-        "x": 333.8,
+        "x": 337.5,
         "y": 256,
         "width": 142,
-        "height": 337
+        "height": 45.8
       },
       "cellWidths": [
         126
       ]
     },
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": true,
-        "box": {
-          "x": 1206.7,
-          "y": 256,
-          "width": 27.9,
-          "height": 337
-        },
-        "lines": 5,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": [
-          {
-            "text": "서울 코엑스 C홀",
-            "tdWidth": 27.9,
-            "contentWidth": 11.9,
-            "spanWidth": 11.9,
-            "spanMaxWidth": "200px",
-            "textAlign": "start",
-            "lines": 8,
-            "textOverflow": "clip"
-          }
-        ]
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": true,
-        "box": {
-          "x": 1234.6,
-          "y": 256,
-          "width": 27.9,
-          "height": 337
-        },
-        "lines": 16,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": [
-          {
-            "text": "마케팅본부 브랜드팀 이수진 책임 010-00",
-            "tdWidth": 27.9,
-            "contentWidth": 11.9,
-            "spanWidth": 11.9,
-            "spanMaxWidth": "200px",
-            "textAlign": "start",
-            "lines": 47,
-            "textOverflow": "clip"
-          }
-        ]
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": true,
-        "box": {
-          "x": 1262.5,
-          "y": 256,
-          "width": 66.1,
-          "height": 337
-        },
-        "lines": 4,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": [
-          {
-            "text": "1,250.5",
-            "tdWidth": 66.1,
-            "contentWidth": 50.1,
-            "spanWidth": 50.1,
-            "spanMaxWidth": "none",
-            "textAlign": "right",
-            "lines": 1,
-            "textOverflow": "clip"
-          }
-        ]
-      }
-    ],
     "rowCount": 1,
     "firstRowText": "2026-12",
     "empty": false,
@@ -345,7 +177,7 @@
         "box": {
           "x": 301,
           "y": 89.4,
-          "width": 152,
+          "width": 150,
           "height": 32
         }
       },
@@ -355,31 +187,31 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 469,
+          "x": 467,
           "y": 89.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
-          "x": 917.4,
+          "x": 915.4,
           "y": 89.4,
           "width": 116,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {
-          "x": 1049.4,
+          "x": 1047.4,
           "y": 89.4,
           "width": 89,
           "height": 32
@@ -418,51 +250,18 @@
       "수익률",
       "상태"
     ],
-    "customHeadersInDom": [
-      "행사 장소",
-      "고객사 담당자 연락처와 직함 메모 칸",
-      "예상 참석 인원과 초청 인원 합계 수"
-    ],
+    "customHeadersInDom": [],
     "nameColumn": {
       "th": {
-        "x": 147.9,
+        "x": 148.1,
         "y": 304,
-        "width": 180.2,
+        "width": 180.5,
         "height": 45.8
       },
       "cellWidths": [
-        164.2
+        164.5
       ]
     },
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      }
-    ],
     "rowCount": 1,
     "firstRowText": "2026-12",
     "empty": false,
@@ -487,7 +286,7 @@
         "box": {
           "x": 125,
           "y": 137.4,
-          "width": 152,
+          "width": 150,
           "height": 32
         }
       },
@@ -497,27 +296,27 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 293,
+          "x": 291,
           "y": 137.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
-          "x": 741.4,
+          "x": 739.4,
           "y": 137.4,
           "width": 116,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {
@@ -557,51 +356,18 @@
       "견적",
       "상태"
     ],
-    "customHeadersInDom": [
-      "행사 장소",
-      "고객사 담당자 연락처와 직함 메모 칸",
-      "예상 참석 인원과 초청 인원 합계 수"
-    ],
+    "customHeadersInDom": [],
     "nameColumn": {
       "th": {
-        "x": 143.4,
+        "x": 143.6,
         "y": 376.8,
-        "width": 173.8,
+        "width": 174.1,
         "height": 45.8
       },
       "cellWidths": [
-        157.8
+        158.1
       ]
     },
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      }
-    ],
     "rowCount": 1,
     "firstRowText": "2026-12",
     "empty": false,
@@ -626,7 +392,7 @@
         "box": {
           "x": 125,
           "y": 137.4,
-          "width": 152,
+          "width": 150,
           "height": 32
         }
       },
@@ -636,15 +402,15 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 293,
+          "x": 291,
           "y": 137.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
@@ -655,8 +421,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {
@@ -693,51 +459,18 @@
       "견적",
       "상태"
     ],
-    "customHeadersInDom": [
-      "행사 장소",
-      "고객사 담당자 연락처와 직함 메모 칸",
-      "예상 참석 인원과 초청 인원 합계 수"
-    ],
+    "customHeadersInDom": [],
     "nameColumn": {
       "th": {
         "x": 17,
         "y": 493.2,
-        "width": 164.2,
+        "width": 163.5,
         "height": 45.8
       },
       "cellWidths": [
-        140.2
+        139.5
       ]
     },
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      }
-    ],
     "rowCount": 1,
     "firstRowText": "2026-12",
     "empty": false,
@@ -764,15 +497,15 @@
         "box": null
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": false,
         "box": null
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": false,
         "box": null
@@ -804,51 +537,18 @@
       "견적",
       "상태"
     ],
-    "customHeadersInDom": [
-      "행사 장소",
-      "고객사 담당자 연락처와 직함 메모 칸",
-      "예상 참석 인원과 초청 인원 합계 수"
-    ],
+    "customHeadersInDom": [],
     "nameColumn": {
       "th": {
         "x": 17,
         "y": 828.4,
-        "width": 164.2,
+        "width": 163.5,
         "height": 45.8
       },
       "cellWidths": [
-        140.2
+        139.5
       ]
     },
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      }
-    ],
     "rowCount": 1,
     "firstRowText": "2026-12",
     "empty": false,
@@ -873,7 +573,7 @@
         "box": {
           "x": 121,
           "y": 258.2,
-          "width": 160,
+          "width": 158,
           "height": 40
         }
       },
@@ -890,8 +590,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
@@ -902,8 +602,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {
@@ -940,51 +640,18 @@
       "견적",
       "상태"
     ],
-    "customHeadersInDom": [
-      "행사 장소",
-      "고객사 담당자 연락처와 직함 메모 칸",
-      "예상 참석 인원과 초청 인원 합계 수"
-    ],
+    "customHeadersInDom": [],
     "nameColumn": {
       "th": {
         "x": 17,
         "y": 493.2,
-        "width": 125.5,
+        "width": 125.3,
         "height": 45.8
       },
       "cellWidths": [
-        101.5
+        101.3
       ]
     },
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      }
-    ],
     "rowCount": 1,
     "firstRowText": "2026-12",
     "empty": false,
@@ -1011,15 +678,15 @@
         "box": null
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": false,
         "box": null
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": false,
         "box": null
@@ -1051,51 +718,18 @@
       "견적",
       "상태"
     ],
-    "customHeadersInDom": [
-      "행사 장소",
-      "고객사 담당자 연락처와 직함 메모 칸",
-      "예상 참석 인원과 초청 인원 합계 수"
-    ],
+    "customHeadersInDom": [],
     "nameColumn": {
       "th": {
         "x": 17,
         "y": 828.4,
-        "width": 125.5,
+        "width": 125.3,
         "height": 45.8
       },
       "cellWidths": [
-        101.5
+        101.3
       ]
     },
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": "clip",
-        "sortLink": false,
-        "cells": []
-      }
-    ],
     "rowCount": 1,
     "firstRowText": "2026-12",
     "empty": false,
@@ -1120,7 +754,7 @@
         "box": {
           "x": 121,
           "y": 258.2,
-          "width": 160,
+          "width": 158,
           "height": 40
         }
       },
@@ -1137,8 +771,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
@@ -1149,8 +783,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {

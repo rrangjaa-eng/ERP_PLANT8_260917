@@ -1,0 +1,594 @@
+[
+  {
+    "fields": 0,
+    "width": 1440,
+    "innerWidth": 1440,
+    "doc": {
+      "scrollWidth": 1440,
+      "clientWidth": 1440
+    },
+    "tableBox": null,
+    "table": {
+      "width": 1224,
+      "scrollWidth": 1222,
+      "clientWidth": 1224
+    },
+    "visibleHeaders": [
+      "번호",
+      "클라이언트",
+      "프로젝트명",
+      "담당 PM",
+      "팀",
+      "기간",
+      "매출",
+      "견적",
+      "실행가",
+      "기준",
+      "수익금",
+      "수익률",
+      "상태"
+    ],
+    "customHeadersInDom": [],
+    "nameColumn": {
+      "th": {
+        "x": 383.2,
+        "y": 183.2,
+        "width": 159.6,
+        "height": 45.8
+      },
+      "cellWidths": [
+        143.6
+      ]
+    },
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 196,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 301,
+          "y": 89.4,
+          "width": 150,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 467,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "fields": 0,
+    "width": 1280,
+    "innerWidth": 1280,
+    "doc": {
+      "scrollWidth": 1280,
+      "clientWidth": 1280
+    },
+    "tableBox": null,
+    "table": {
+      "width": 1064,
+      "scrollWidth": 1062,
+      "clientWidth": 1064
+    },
+    "visibleHeaders": [
+      "번호",
+      "클라이언트",
+      "프로젝트명",
+      "담당 PM",
+      "팀",
+      "기간",
+      "매출",
+      "견적",
+      "실행가",
+      "기준",
+      "수익금",
+      "수익률",
+      "상태"
+    ],
+    "customHeadersInDom": [],
+    "nameColumn": {
+      "th": {
+        "x": 337.5,
+        "y": 256,
+        "width": 142,
+        "height": 45.8
+      },
+      "cellWidths": [
+        126
+      ]
+    },
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 196,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 301,
+          "y": 89.4,
+          "width": 150,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 467,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "fields": 0,
+    "width": 768,
+    "innerWidth": 768,
+    "doc": {
+      "scrollWidth": 768,
+      "clientWidth": 768
+    },
+    "tableBox": null,
+    "table": {
+      "width": 728,
+      "scrollWidth": 726,
+      "clientWidth": 728
+    },
+    "visibleHeaders": [
+      "클라이언트",
+      "프로젝트명",
+      "담당 PM",
+      "기간",
+      "견적",
+      "상태"
+    ],
+    "customHeadersInDom": [],
+    "nameColumn": {
+      "th": {
+        "x": 143.6,
+        "y": 376.8,
+        "width": 174.1,
+        "height": 45.8
+      },
+      "cellWidths": [
+        158.1
+      ]
+    },
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 20,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 125,
+          "y": 137.4,
+          "width": 150,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 291,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "fields": 7,
+    "width": 1440,
+    "innerWidth": 1440,
+    "doc": {
+      "scrollWidth": 1440,
+      "clientWidth": 1440
+    },
+    "tableBox": null,
+    "table": {
+      "width": 1224,
+      "scrollWidth": 1222,
+      "clientWidth": 1224
+    },
+    "visibleHeaders": [
+      "번호",
+      "클라이언트",
+      "프로젝트명",
+      "담당 PM",
+      "팀",
+      "기간",
+      "매출",
+      "견적",
+      "실행가",
+      "기준",
+      "수익금",
+      "수익률",
+      "상태"
+    ],
+    "customHeadersInDom": [],
+    "nameColumn": {
+      "th": {
+        "x": 383.2,
+        "y": 256,
+        "width": 159.6,
+        "height": 45.8
+      },
+      "cellWidths": [
+        143.6
+      ]
+    },
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 196,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 301,
+          "y": 89.4,
+          "width": 150,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 467,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 915.4,
+          "y": 89.4,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 1047.4,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "fields": 7,
+    "width": 1280,
+    "innerWidth": 1280,
+    "doc": {
+      "scrollWidth": 1280,
+      "clientWidth": 1280
+    },
+    "tableBox": null,
+    "table": {
+      "width": 1064,
+      "scrollWidth": 1062,
+      "clientWidth": 1064
+    },
+    "visibleHeaders": [
+      "번호",
+      "클라이언트",
+      "프로젝트명",
+      "담당 PM",
+      "팀",
+      "기간",
+      "매출",
+      "견적",
+      "실행가",
+      "기준",
+      "수익금",
+      "수익률",
+      "상태"
+    ],
+    "customHeadersInDom": [],
+    "nameColumn": {
+      "th": {
+        "x": 337.5,
+        "y": 256,
+        "width": 142,
+        "height": 45.8
+      },
+      "cellWidths": [
+        126
+      ]
+    },
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 196,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 301,
+          "y": 89.4,
+          "width": 150,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 467,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 915.4,
+          "y": 89.4,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 1047.4,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "fields": 7,
+    "width": 768,
+    "innerWidth": 768,
+    "doc": {
+      "scrollWidth": 768,
+      "clientWidth": 768
+    },
+    "tableBox": null,
+    "table": {
+      "width": 728,
+      "scrollWidth": 726,
+      "clientWidth": 728
+    },
+    "visibleHeaders": [
+      "클라이언트",
+      "프로젝트명",
+      "담당 PM",
+      "기간",
+      "견적",
+      "상태"
+    ],
+    "customHeadersInDom": [],
+    "nameColumn": {
+      "th": {
+        "x": 143.6,
+        "y": 376.8,
+        "width": 174.1,
+        "height": 45.8
+      },
+      "cellWidths": [
+        158.1
+      ]
+    },
+    "rowCount": 1,
+    "firstRowText": "2026-12",
+    "empty": false,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 20,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 125,
+          "y": 137.4,
+          "width": 150,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 291,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 363.4,
+          "y": 210.2,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 495.4,
+          "y": 210.2,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  }
+]

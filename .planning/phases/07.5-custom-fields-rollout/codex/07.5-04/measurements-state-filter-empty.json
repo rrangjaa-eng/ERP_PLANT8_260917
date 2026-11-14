@@ -12,35 +12,6 @@
     "visibleHeaders": [],
     "customHeadersInDom": [],
     "nameColumn": null,
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      }
-    ],
     "rowCount": 0,
     "firstRowText": "",
     "empty": true,
@@ -65,7 +36,7 @@
         "box": {
           "x": 301,
           "y": 89.4,
-          "width": 152,
+          "width": 150,
           "height": 32
         }
       },
@@ -75,31 +46,31 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 469,
+          "x": 467,
           "y": 89.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
-          "x": 917.4,
+          "x": 915.4,
           "y": 89.4,
           "width": 116,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {
-          "x": 1049.4,
+          "x": 1047.4,
           "y": 89.4,
           "width": 89,
           "height": 32
@@ -126,35 +97,6 @@
     "visibleHeaders": [],
     "customHeadersInDom": [],
     "nameColumn": null,
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      }
-    ],
     "rowCount": 0,
     "firstRowText": "",
     "empty": true,
@@ -179,7 +121,7 @@
         "box": {
           "x": 301,
           "y": 89.4,
-          "width": 152,
+          "width": 150,
           "height": 32
         }
       },
@@ -189,31 +131,31 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 469,
+          "x": 467,
           "y": 89.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
-          "x": 917.4,
+          "x": 915.4,
           "y": 89.4,
           "width": 116,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {
-          "x": 1049.4,
+          "x": 1047.4,
           "y": 89.4,
           "width": 89,
           "height": 32
@@ -240,35 +182,6 @@
     "visibleHeaders": [],
     "customHeadersInDom": [],
     "nameColumn": null,
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      }
-    ],
     "rowCount": 0,
     "firstRowText": "",
     "empty": true,
@@ -293,7 +206,7 @@
         "box": {
           "x": 125,
           "y": 137.4,
-          "width": 152,
+          "width": 150,
           "height": 32
         }
       },
@@ -303,27 +216,27 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 293,
+          "x": 291,
           "y": 137.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
-          "x": 741.4,
+          "x": 739.4,
           "y": 137.4,
           "width": 116,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {
@@ -354,35 +267,6 @@
     "visibleHeaders": [],
     "customHeadersInDom": [],
     "nameColumn": null,
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      }
-    ],
     "rowCount": 0,
     "firstRowText": "",
     "empty": true,
@@ -407,7 +291,7 @@
         "box": {
           "x": 125,
           "y": 137.4,
-          "width": 152,
+          "width": 150,
           "height": 32
         }
       },
@@ -417,15 +301,15 @@
         "label": "연도",
         "visible": true,
         "box": {
-          "x": 293,
+          "x": 291,
           "y": 137.4,
           "width": 89,
           "height": 32
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
@@ -436,8 +320,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {
@@ -468,35 +352,6 @@
     "visibleHeaders": [],
     "customHeadersInDom": [],
     "nameColumn": null,
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      }
-    ],
     "rowCount": 0,
     "firstRowText": "",
     "empty": true,
@@ -523,15 +378,15 @@
         "box": null
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": false,
         "box": null
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": false,
         "box": null
@@ -557,35 +412,6 @@
     "visibleHeaders": [],
     "customHeadersInDom": [],
     "nameColumn": null,
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      }
-    ],
     "rowCount": 0,
     "firstRowText": "",
     "empty": true,
@@ -610,7 +436,7 @@
         "box": {
           "x": 121,
           "y": 258.2,
-          "width": 160,
+          "width": 158,
           "height": 40
         }
       },
@@ -627,8 +453,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
@@ -639,8 +465,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {
@@ -671,35 +497,6 @@
     "visibleHeaders": [],
     "customHeadersInDom": [],
     "nameColumn": null,
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      }
-    ],
     "rowCount": 0,
     "firstRowText": "",
     "empty": true,
@@ -726,15 +523,15 @@
         "box": null
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": false,
         "box": null
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": false,
         "box": null
@@ -760,35 +557,6 @@
     "visibleHeaders": [],
     "customHeadersInDom": [],
     "nameColumn": null,
-    "customHeaders": [
-      {
-        "label": "행사 장소",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "고객사 담당자 연락처와 직함 메모 칸",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      },
-      {
-        "label": "예상 참석 인원과 초청 인원 합계 수",
-        "visible": false,
-        "box": null,
-        "lines": null,
-        "textOverflow": null,
-        "sortLink": null,
-        "cells": []
-      }
-    ],
     "rowCount": 0,
     "firstRowText": "",
     "empty": true,
@@ -813,7 +581,7 @@
         "box": {
           "x": 121,
           "y": 258.2,
-          "width": 160,
+          "width": 158,
           "height": 40
         }
       },
@@ -830,8 +598,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_2fc3075c",
-        "name": "cf_cf_2fc3075c",
+        "id": "filter-cf_cf_7e23a45b",
+        "name": "cf_cf_7e23a45b",
         "label": "행사 구분",
         "visible": true,
         "box": {
@@ -842,8 +610,8 @@
         }
       },
       {
-        "id": "filter-cf_cf_4aed1e6d",
-        "name": "cf_cf_4aed1e6d",
+        "id": "filter-cf_cf_2690cf15",
+        "name": "cf_cf_2690cf15",
         "label": "지역",
         "visible": true,
         "box": {

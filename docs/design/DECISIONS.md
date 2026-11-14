@@ -2738,3 +2738,10 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정자**: 사용자 카드 2026-11-04 16:20 KST eng E2(D-7524 — 공용 칸 꼴 규칙). 보관 선택지 예외 줄 · dirty 규칙 줄은 계획자 재량(디자인 검토 권고 F16 · r2 C2).
 **범위**: `ui/custom-field/{CustomFieldInput.tsx,CustomField.module.css}` · `app/(app)/admin/vendors/{vendor-form.tsx,vendors.module.css}` · `app/(app)/projects/project-form.tsx` · `app/(app)/projects/[id]/custom-info-fields.tsx`. 새 색 · 서체 · radius · 토큰 0.
 **영향**: SYSTEM §7-15 `Select` 줄 아래 예외 한 줄.
+
+## 2026-11-14 — 견적 줄 추가 칸만 바뀐 동시 수정의 충돌 표시 칸 = 폴백 「항목」 셀 (07.5-03 · D-7520)
+**결정**: 견적 줄 추가 칸(관리자 추가 칸)만 바뀐 줄이 동시 수정으로 부딪히면 충돌 표시 칸은 폴백 「항목」(`itemName`) 셀 한 칸이다 — SYSTEM §7-3 (나) 「실제로 달라진 셀만」의 예외. 셀 단위 baseline(`QuoteLineBaseline` · `readLineBase`)에 추가 칸을 넣지 않고, 기본 칸이 모두 같은데 version이 다르면 조건 UPDATE가 실패해 줄 version 폴백(`cellConflictsFor(…, undefined, …)`)으로 거부한다.
+**이유**: 셀 단위 baseline에 추가 칸을 넣으면 화면 보관본 · 서버 비교 · 충돌 셀 「그 값으로」가 칸 정의(보임 · 보관 · 타입)마다 갈라진다 — 최소안은 기존 폴백을 그대로 쓰는 것이다(UI-SPEC A12 · RESEARCH Q8 · D-7520). 어긋남은 「어느 칸이 바뀌었나」 표시 한 가지이고 덮어쓰기 · 거부는 그대로 막힌다.
+**결정자**: 계획자 재량(디자인 검토 1회차 F18 권고).
+**범위**: `domain/quotes/lines.ts`(무수정 — 기존 폴백) · 시험 `test/integration/quote-line-custom-fields.test.ts` 「추가 칸만 바꾼 두 저장 경합」.
+**영향**: SYSTEM §7-3 (나) 문단 아래 예외 한 줄. 새 색 · 서체 · radius · 토큰 0.

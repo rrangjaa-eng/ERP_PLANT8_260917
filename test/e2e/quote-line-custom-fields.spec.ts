@@ -281,6 +281,10 @@ test.describe("견적 줄 추가 칸 열 (S4)", () => {
     await expect(invalid).toHaveAttribute("aria-invalid", "true");
     await expect(invalid).toContainText("필수 칸 비어 있음 · 값 입력");
     await expect(quoteTable(page).locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
+
+    // 숫자 아닌 글자 붙여넣기 → 일수 칸과 같은 이유 글자(07.2-06).
+    await pasteInto(page, invalid, "abc");
+    await expect(invalid).toContainText("숫자 아님 · 1.5처럼");
   });
 
   test("추가 칸만 고친 뒤 새로 고침 → 복원하면 그 셀이 dirty · 저장 요청 중 형제 셀과 같이 편집이 열리지 않는다 · 폰 375 머리글 0 · 행 시트 값", async ({ page }) => {

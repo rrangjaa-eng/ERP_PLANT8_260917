@@ -2211,7 +2211,7 @@ export function QuoteLedger({
     commitCell(clientKey, columnKey, apply(parsed));
   }
 
-  // 07.5-03(S4 · D-7519 · D-7521) — 추가 칸 셀 커밋. 숫자는 수량 칸과 같은 판정 · 글자, 날짜는 엄격 YYYY-MM-DD(서버 상수 글자).
+  // 07.5-03(S4 · D-7519 · D-7521) — 추가 칸 셀 커밋. 숫자는 수량 칸과 같은 판정(숫자 아님 글자는 일수 칸과 같다), 날짜는 엄격 YYYY-MM-DD(서버 상수 글자).
   // 판정이 실패하면 값을 그대로 두고 그 셀만 오류로 고정한다(숫자 칸 커밋과 같다). 빈 글자는 비움.
   function commitCustomField(clientKey: string, column: QuoteLineCustomColumn, raw: string) {
     const columnKey = customColumnKey(column.key);
@@ -2221,7 +2221,7 @@ export function QuoteLedger({
       const parsed = normalizeNumericPaste(raw);
       judged =
         parsed === null
-          ? { error: numericCellError("quantity") }
+          ? { error: numericCellError("days") }
           : Number(parsed.toFixed(2)) !== parsed
             ? { error: numberInputRejectionReason("quantity", "precision") }
             : { value: String(parsed) };
@@ -3347,7 +3347,8 @@ export function QuoteLedger({
         if (cell.result.status === "error") {
           cellErrors[cell.columnKey] =
             blockedReasons.get(`${cell.rowIndex}:${cell.columnKey}`) ??
-            (cell.columnKey === "days" && cell.result.reason === numericCellError("quantity")
+            ((cell.columnKey === "days" || quoteLineCustomColumns.some((column) => column.type === "number" && customColumnKey(column.key) === cell.columnKey)) &&
+            cell.result.reason === numericCellError("quantity")
               ? numericCellError("days")
               : cell.columnKey === "days" && cell.result.reason === numberInputRejectionReason("quantity", "precision")
                 ? DAYS_PRECISION_REASON

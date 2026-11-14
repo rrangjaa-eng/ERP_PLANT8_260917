@@ -52,9 +52,12 @@ describe("거래처 폼 이유 자리 (04.5-06)", () => {
   // 04.5-06 Task 2: 보관된 선택지가 현재 값 — 활성화된 옵션(disabled는 FormData에서 빠져 「안 바꿈」과 「지움」을 구분할 수 없다)
   it("저장값이 활성 선택지에 없을 때 더하는 옵션은 disabled가 아니고 글자가 「{값} (보관됨)」이다", () => {
     // 07-20 N10: 네이티브 select → ui/select — 옵션은 options 배열의 한 원소다.
-    expect(CODE).toMatch(/\{ value: archivedValue, label: `\$\{archivedValue\} \(보관됨\)` \}/);
-    expect(CODE).not.toMatch(/<option[^>]*\bdisabled\b/);
-    expect(CODE).not.toMatch(/disabled: true/);
+    // 07.5-02: 추가 칸 입력은 공용 컴포넌트(ui/custom-field/CustomFieldInput.tsx)로 옮겼다 — 거래처 폼 · 프로젝트 등록 · 정보 면이 같이 쓴다.
+    const input = readFileSync(resolve(process.cwd(), "ui/custom-field/CustomFieldInput.tsx"), "utf8");
+    expect(CODE).toMatch(/<CustomFieldInput\b/);
+    expect(input).toMatch(/\{ value: archivedValue, label: `\$\{archivedValue\} \(보관됨\)` \}/);
+    expect(input).not.toMatch(/<option[^>]*\bdisabled\b/);
+    expect(input).not.toMatch(/disabled: true/);
   });
 
   it("폼에 없는 칸의 서버 오류는 staleFieldsReason으로 막힘 이유 · 새로 불러오기가 된다(칸 정의 키와 비교)", () => {

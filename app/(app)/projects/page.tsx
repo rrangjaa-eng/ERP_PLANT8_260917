@@ -163,6 +163,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   if (search) filterParams.set("q", search);
   if (from) filterParams.set("from", from);
   if (to) filterParams.set("to", to);
+  // 07.5-04(D-7510) — 받아들인 추가 칸 거르개 값만 싣는다(정렬 · 쪽 링크가 같이 싣는다). 버린 `cf_` 파라미터는 다시 싣지 않는다.
+  const customFilterEntries = Object.entries(list.customFilterValues).sort(([a], [b]) => a.localeCompare(b));
+  for (const [key, value] of customFilterEntries) filterParams.set(`cf_${key}`, value);
   const pageParams = new URLSearchParams(filterParams);
   if (list.sort.key !== "endDate") pageParams.set("sort", list.sort.key);
   if (list.sort.direction !== "asc") pageParams.set("dir", list.sort.direction);
@@ -185,11 +188,11 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         // select의 defaultValue는 마운트 뒤 바뀌어도 칸에 반영되지 않는다 —
         // 「필터 지우기」·뒤로 가기로 URL이 바뀌면 key로 새로 마운트한다(/qa ISSUE-001).
         <ProjectsFilterBar
-          key={`${status ?? ""}|${teamId ?? ""}|${year}|${search ?? ""}|${from ?? ""}|${to ?? ""}`}
+          key={`${status ?? ""}|${teamId ?? ""}|${year}|${search ?? ""}|${from ?? ""}|${to ?? ""}|${customFilterEntries.map(([key, value]) => `${key}=${value}`).join("&")}`}
           teams={references.teams}
           statusOptions={statusOptions}
           yearOptions={yearOptions(currentYear, year)}
-          defaultValues={{ status, teamId, year: String(year), q: search, from, to }}
+          defaultValues={{ status, teamId, year: String(year), q: search, from, to, custom: list.customFilterValues }}
           sort={{ key: list.sort.key !== "endDate" ? list.sort.key : undefined, dir: list.sort.direction !== "asc" ? list.sort.direction : undefined }}
           hasFilter={hasFilter}
           periodErrors={periodErrors}
@@ -198,6 +201,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           }
           budgetLink={canViewBudget ? { label: "예산 현황", href: "/projects/budget" } : null}
           archiveLink={canDeleteProjects ? { label: "보관함", href: "/admin/archive" } : null}
+          customFilters={list.customFilterDefs}
         />
       }
       summary={total > 0 ? <ListTotals totals={totals} /> : undefined}

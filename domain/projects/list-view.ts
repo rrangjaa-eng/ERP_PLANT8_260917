@@ -149,6 +149,8 @@ export type NormalizedListParams = {
   from?: string;
   to?: string;
   page?: string;
+  /** 07.5-04(D-7510) — 받아들인 추가 칸 거르개 값(정의 키 → 값). 정규화는 loadProjectList의 parseCustomFieldFilters가 한다. */
+  custom?: Readonly<Record<string, string>>;
 };
 export type ListEmptyKind = "none" | "default-view" | "filtered";
 
@@ -191,7 +193,9 @@ export function normalizeListParams(
 
 // 기본 보기(올해 · 전체 상태 · 전체 팀 · 검색어·기간 없음)와 다른 값이 있는가. 올해 연도 값은 필터로 세지 않는다.
 export function isUserFiltered(params: Omit<NormalizedListParams, "page">, thisYear: number): boolean {
-  return Boolean(params.status || params.teamId || params.q || params.from || params.to || params.year !== thisYear);
+  return Boolean(
+    params.status || params.teamId || params.q || params.from || params.to || params.year !== thisYear || Object.keys(params.custom ?? {}).length > 0,
+  );
 }
 
 // 빈 목록 세 갈래(UI-SPEC S1 empty) — 행이 있으면 null.

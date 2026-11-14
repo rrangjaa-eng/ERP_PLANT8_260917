@@ -413,6 +413,11 @@ describe("isUserFiltered — 기본 보기(올해 · 전체 상태 · 전체 팀
     expect(isUserFiltered({ year: 2026, q: "x" }, 2026)).toBe(true);
     expect(isUserFiltered({ year: 2026, from: "2026-9-1" }, 2026)).toBe(true);
   });
+
+  it("07.5-04 — 받아들인 추가 칸 거르개 값이 하나라도 있으면 필터이고, 빈 객체는 필터가 아니다", () => {
+    expect(isUserFiltered({ year: 2026, custom: { cf_a: "서울" } }, 2026)).toBe(true);
+    expect(isUserFiltered({ year: 2026, custom: {} }, 2026)).toBe(false);
+  });
 });
 
 describe("listEmptyKind — 빈 목록 세 갈래", () => {

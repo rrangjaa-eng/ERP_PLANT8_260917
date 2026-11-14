@@ -83,4 +83,41 @@ test.describe("프로젝트 목록 추가 칸 (S5)", () => {
     await expect(other.locator("th", { hasText: label })).toHaveCount(0);
     await context.close();
   });
+
+  test("선택 칸 거르개: 고르면 즉시 제출 · URL cf_<key> · 그 행만 · 정렬 링크가 같은 파라미터 · 필터 지우기 · 맞는 행 없음 EMPTY · 375 「필터」 접힘 안 · 요약 조각", async ({ page }) => {
+    const tag = randomUUID().slice(0, 6);
+    const editor = await createE2EProjectEditor();
+    const label = `${LABEL_PREFIX}구분${tag}`;
+    const field = await createE2EFieldDefinition({ entity: "project", label, type: "select", options: ["행사", "전시", "프로모션"], required: false, onlyRoleId: editor.roleId });
+    await projectOf(editor, `E2E목록칸-행사-${tag}`, { [field.key]: "행사" });
+    await projectOf(editor, `E2E목록칸-전시-${tag}`, { [field.key]: "전시" });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await login(page, editor);
+    expect((await page.goto("/projects?year=all"))?.status()).toBe(200);
+    const table = page.getByRole("table", { name: "프로젝트" });
+    const select = page.getByLabel(label, { exact: true });
+    await expect(select.locator("option").first()).toHaveText(`전체 ${label}`);
+    await select.selectOption("행사");
+    await expect(page).toHaveURL(new RegExp(`cf_${field.key}=${encodeURIComponent("행사")}`));
+    await expect(table.getByRole("link", { name: `E2E목록칸-행사-${tag}` })).toBeVisible();
+    await expect(table.getByRole("link", { name: `E2E목록칸-전시-${tag}` })).toHaveCount(0);
+    const sortHref = await table.getByRole("columnheader", { name: "프로젝트명" }).getByRole("link").getAttribute("href");
+    expect(new URL(sortHref ?? "", "http://x").searchParams.get(`cf_${field.key}`)).toBe("행사");
+
+    await page.getByRole("link", { name: "필터 지우기" }).first().click();
+    await expect(page).toHaveURL(/\/projects$/);
+
+    expect((await page.goto(`/projects?year=all&cf_${field.key}=${encodeURIComponent("프로모션")}`))?.status()).toBe(200);
+    await expect(page.getByText("조건에 맞는 프로젝트가 없습니다")).toBeVisible();
+    await expect(page.getByRole("link", { name: "필터 지우기" }).first()).toBeVisible();
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    expect((await page.goto(`/projects?year=all&cf_${field.key}=${encodeURIComponent("행사")}`))?.status()).toBe(200);
+    await expect(page.getByTestId("filter-summary")).toContainText(`${label} 행사`);
+    await expect(page.getByLabel(label, { exact: true })).toBeHidden();
+    await page.getByRole("button", { name: "필터" }).click();
+    await expect(page.getByLabel(label, { exact: true })).toBeVisible();
+    await expect(page.getByLabel(label, { exact: true })).toHaveValue("행사");
+  });
 });

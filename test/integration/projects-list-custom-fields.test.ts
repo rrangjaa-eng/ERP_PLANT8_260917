@@ -130,3 +130,103 @@ describe("프로젝트 목록 검색 — 추가 칸 텍스트 값(D-7522)", () =
     expect(both.count).toBe(2);
   });
 });
+
+describe("프로젝트 목록 선택 칸 거르개(D-7510 · T-07.5-04-02)", () => {
+  async function selectField(roleIds: string[], sortOrder = 1, label = "지역") {
+    const field = await seedCustomFieldDefinition("project", { label, type: "select", options: ["서울", "서울 강남", "부산", "대구"], sortOrder }, { visibleRoleIds: roleIds });
+    // 대구는 보관 선택지 — 활성 선택지에서 빼고 보관 목록으로
+    await db
+      .update(fieldDefinitions)
+      .set({ options: ["서울", "서울 강남", "부산"], archivedOptions: ["대구"] })
+      .where(and(eq(fieldDefinitions.entity, "project"), eq(fieldDefinitions.key, field.key)));
+    return field;
+  }
+
+  it("값이 정확히 같은 행만 고르고(「서울 강남」 · 「서울 」 안 걸림) 목록 · 합계가 같은 집합이며, 받아들인 값만 돌려준다", async () => {
+    const a = await makeViewer();
+    const field = await selectField([roleOf(a)]);
+    const t = tag();
+    const seoul = await makeProject(`${t}-서울`, { [field.key]: "서울" });
+    await makeProject(`${t}-강남`, { [field.key]: "서울 강남" });
+    await makeProject(`${t}-공백`, { [field.key]: "서울 " });
+
+    const filtered = await listed(a, { search: t, custom: { [field.key]: "서울" } });
+    expect(filtered.ids).toEqual([seoul]);
+    expect(filtered.total).toBe(1);
+    expect(filtered.count).toBe(1);
+    expect(filtered.result.customFilterValues).toEqual({ [field.key]: "서울" });
+    expect(filtered.result.customFilterDefs).toEqual([{ key: field.key, label: "지역", options: ["서울", "서울 강남", "부산"] }]);
+    expect(filtered.result.hasFilter).toBe(true);
+  });
+
+  it("보관 선택지 값 · 활성 선택지 밖 값 · 빈 값 · 모르는 키 · 안 보이는 칸 · 보관 칸 파라미터는 거르개 없음(거르개 없을 때와 같은 행)이다", async () => {
+    const a = await makeViewer();
+    const other = await makeViewer();
+    const field = await selectField([roleOf(a)]);
+    const hidden = await selectField([roleOf(other)], 2, "숨은 지역");
+    const t = tag();
+    await makeProject(`${t}-서울`, { [field.key]: "서울", [hidden.key]: "서울" });
+    const daegu = await makeProject(`${t}-대구`, { [field.key]: "대구", [hidden.key]: "부산" });
+    await makeProject(`${t}-없음`);
+    const all = (await listed(a, { search: t })).ids;
+    expect(all).toHaveLength(3);
+    expect(all).toContain(daegu);
+
+    for (const custom of [
+      { [field.key]: "대구" },
+      { [field.key]: "제주" },
+      { [field.key]: "" },
+      { cf_nothere0: "서울" },
+      { [hidden.key]: "서울" },
+    ]) {
+      const ignored = await listed(a, { search: t, custom });
+      expect(ignored.ids, JSON.stringify(custom)).toEqual(all);
+      expect(ignored.count).toBe(3);
+      expect(ignored.result.customFilterValues).toEqual({});
+      expect(ignored.result.hasFilter).toBe(true);
+    }
+
+    await setArchived(field.key, true);
+    const archived = await listed(a, { search: t, custom: { [field.key]: "서울" } });
+    expect(archived.ids).toEqual(all);
+    expect(archived.result.customFilterDefs).toEqual([]);
+  });
+
+  it("기본 보기(올해)에서 맞는 행이 없는 활성 선택지 값은 0건이고 필터 중 EMPTY(filtered) · 「필터 지우기」 판정이다 — 거르개만으로 필터다", async () => {
+    const a = await makeViewer();
+    const field = await selectField([roleOf(a)]);
+    const t = tag();
+    await makeProject(`${t}-서울`, { [field.key]: "서울" });
+    // 프로젝트 종료일(2026-06-30)이 들어가는 연도를 기본 보기로 — 연도 값은 필터로 세지 않는다.
+    const now = () => new Date("2026-09-26T00:00:00Z");
+
+    const none = await loadProjectList(a, { custom: { [field.key]: "부산" } }, { now });
+    expect(none.rows).toEqual([]);
+    expect(none.emptyKind).toBe("filtered");
+    expect(none.hasFilter).toBe(true);
+    const plain = await loadProjectList(a, {}, { now });
+    expect(plain.hasFilter).toBe(false);
+  });
+
+  it("경계: 선택 칸 셋이면 앞 2개만 거르개(3번째는 무시) · 칸 넷이면 열은 앞 3개이고 4번째 텍스트 칸은 열이 아니어도 검색에 걸린다", async () => {
+    const a = await makeViewer();
+    const first = await selectField([roleOf(a)], 1, "구분 1");
+    const second = await selectField([roleOf(a)], 2, "구분 2");
+    const third = await selectField([roleOf(a)], 3, "구분 3");
+    const fourth = await seedCustomFieldDefinition("project", { label: "메모", type: "text", sortOrder: 4 }, { visibleRoleIds: [roleOf(a)] });
+    const t = tag();
+    const seoul = await makeProject(`${t}-서울`, { [first.key]: "서울", [second.key]: "서울", [third.key]: "서울", [fourth.key]: `${t}메모값` });
+    await makeProject(`${t}-부산`, { [first.key]: "부산", [second.key]: "부산", [third.key]: "부산" });
+
+    const both = await listed(a, { search: t, custom: { [first.key]: "서울", [second.key]: "서울" } });
+    expect(both.ids).toEqual([seoul]);
+    expect(both.result.customFilterDefs.map((def) => def.key)).toEqual([first.key, second.key]);
+    expect(both.result.customColumns.map((column) => column.key)).toEqual([first.key, second.key, third.key]);
+
+    const thirdOnly = await listed(a, { search: t, custom: { [third.key]: "서울" } });
+    expect(thirdOnly.ids).toHaveLength(2);
+    expect(thirdOnly.result.customFilterValues).toEqual({});
+
+    expect((await listed(a, { search: `${t}메모` })).ids).toEqual([seoul]);
+  });
+});

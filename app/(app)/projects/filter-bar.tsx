@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/ui/button/Button";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { filterSummary, parseListPeriod, periodOverlapsYear } from "@/domain/projects/list-view";
+import type { ProjectCustomFilter } from "@/domain/projects";
 import styles from "./projects.module.css";
 
 // SYSTEM.md §6-1 필터 한 줄 — 네이티브 GET 폼(action-log/filter-bar.tsx와
@@ -21,6 +22,8 @@ export type ProjectFilterValues = {
   q?: string;
   from?: string;
   to?: string;
+  /** 07.5-04(D-7510) — 받아들인 추가 칸 거르개 값(정의 키 → 값). */
+  custom?: Readonly<Record<string, string>>;
 };
 
 export type ProjectFilterOption = { value: string; label: string };
@@ -38,6 +41,7 @@ export function ProjectsFilterBar({
   issueRequestsLink = null,
   budgetLink = null,
   archiveLink = null,
+  customFilters = [],
 }: {
   teams: { id: string; name: string }[];
   statusOptions: ProjectFilterOption[];
@@ -54,6 +58,8 @@ export function ProjectsFilterBar({
   budgetLink?: { label: string; href: string } | null;
   /** 07.2-17(S1 · D-7213) — 같은 자리 끝의 3차 `보관함`(`projects.delete` 쓰기가 없으면 null — 링크 없음). */
   archiveLink?: { label: string; href: string } | null;
+  /** 07.5-04(D-7510) — 서버가 정한 추가 칸 거르개(보이는 활성 선택 칸 앞 2개 · 활성 선택지만). */
+  customFilters?: ProjectCustomFilter[];
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const fromRef = useRef<HTMLInputElement>(null);
@@ -70,6 +76,11 @@ export function ProjectsFilterBar({
     from: defaultValues.from,
     to: defaultValues.to,
   });
+  // 07.5-04(UI-SPEC S5) — 고른 추가 칸 거르개마다 요약 조각 `{칸 이름} {값}`.
+  for (const filter of customFilters) {
+    const value = defaultValues.custom?.[filter.key];
+    if (value) summary.push(`${filter.label} ${value}`);
+  }
 
   // 04-48(엔지 리뷰 C §2 P2) — 기간 두 칸은 묶음 단위로 제출한다: 묶음의 focusout(React onBlur는 focusout으로
   // 올라온다)에서 포커스가 두 칸 밖으로 나갈 때(relatedTarget)만, 값이 처음과 달라졌을 때만. 시작일 → Tab → 종료일
@@ -250,6 +261,27 @@ export function ProjectsFilterBar({
             </p>
           ) : null}
         </div>
+
+        {/* 07.5-04(D-7510 · UI-SPEC S5) — 추가 칸 선택 거르개: 기존 select 꼴 · 라벨 = 칸 이름 · 바꾸면 즉시 제출. id는 폼 입력 칸 `cf_<key>`와 겹치지 않게 `filter-` 접두. */}
+        {customFilters.map((filter) => (
+          <div key={filter.key} className={styles.selectLabel}>
+            <label htmlFor={`filter-cf_${filter.key}`}>{filter.label}</label>
+            <select
+              id={`filter-cf_${filter.key}`}
+              name={`cf_${filter.key}`}
+              className={styles.select}
+              defaultValue={defaultValues.custom?.[filter.key] ?? ""}
+              onChange={() => formRef.current?.requestSubmit()}
+            >
+              <option value="">전체 {filter.label}</option>
+              {filter.options.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
       </div>
 
       {searchField("q-wide", styles.wideSlot)}

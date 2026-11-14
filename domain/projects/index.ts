@@ -502,7 +502,8 @@ export async function loadProjectList(
   const dtos = ((await projectMany(viewer, sources, PROJECT_LIST_DTO_SPEC, projectDeps)) as ProjectListItemDto[]).map((dto) =>
     dto.customFields === undefined ? dto : { ...dto, customFields: pickVisibleCustomFields(dto.customFields, inputKeys) ?? {} },
   );
-  const hasFilter = isUserFiltered(params, thisYear);
+  // 07.5-04(D-7510) — 받아들인 추가 칸 거르개만 필터로 센다(필터 중 EMPTY · 「필터 지우기」 판정).
+  const hasFilter = isUserFiltered({ ...params, custom: customFilterValues }, thisYear);
   return {
     year,
     rows: dtos.map((dto) => ({

@@ -144,6 +144,27 @@ describe("등록 필수 · 보관 · 숨은 칸 · 선택지 · 날짜 · 숫자
     expect(created.id).toBeTruthy();
   });
 
+  it("이 사람에게 안 보이는 칸의 제출값은 버려진다(정의는 있음 · 거부 아님)", async () => {
+    const a = await makeViewer();
+    const b = await makeViewer();
+    const onlyA = await seedCustomFieldDefinition("project", { label: "A만 보는 칸", type: "text" }, { visibleRoleIds: [roleOf(a)] });
+
+    const created = await createProject(b, await baseInput(b, { customFields: { [onlyA.key]: "숨은 제출값" } }));
+    expect(await storedCustomFields(created.id)).toEqual({});
+  });
+
+  it("보관한 칸의 저장값은 findProject DTO에서 빠지고 DB에는 남는다", async () => {
+    const a = await makeViewer();
+    const place = await seedCustomFieldDefinition("project", { label: "장소", type: "text" }, { visibleRoleIds: [roleOf(a)] });
+    const created = await createProject(a, await baseInput(a, { customFields: { [place.key]: "보관될 값" } }));
+    await db.update(fieldDefinitions).set({ archivedAt: new Date() }).where(and(eq(fieldDefinitions.entity, "project"), eq(fieldDefinitions.key, place.key)));
+
+    const seen = await findProject(a, created.id);
+    expect(seen?.customFields).toEqual({});
+    expect(JSON.stringify(seen)).not.toContain("보관될 값");
+    expect(await storedCustomFields(created.id)).toEqual({ [place.key]: "보관될 값" });
+  });
+
   it("보관 선택지로 등록하면 그 칸 오류 「보관된 선택지 · 다른 선택지 고르기」", async () => {
     const a = await makeViewer();
     const pick = await seedCustomFieldDefinition("project", { label: "구분", type: "select", options: ["새"] }, { visibleRoleIds: [roleOf(a)] });

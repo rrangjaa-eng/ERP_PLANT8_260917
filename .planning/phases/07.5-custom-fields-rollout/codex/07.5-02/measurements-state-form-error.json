@@ -17,7 +17,7 @@
     "borderRowColor": "#e4eae7",
     "customLabels": [
       {
-        "text": "E2E캡처프칸장소0cf2",
+        "text": "E2E캡처프칸장소b44e",
         "lines": 1,
         "box": {
           "x": 16,
@@ -27,7 +27,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸담당자 연락처 메모0cf2",
+        "text": "E2E캡처프칸담당자 연락처 메모b44e",
         "lines": 1,
         "box": {
           "x": 16,
@@ -37,7 +37,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸참석 인원 합계 수0cf2",
+        "text": "E2E캡처프칸참석 인원 합계 수b44e",
         "lines": 1,
         "box": {
           "x": 16,
@@ -47,7 +47,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸행사일0cf2",
+        "text": "E2E캡처프칸행사일b44e",
         "lines": 1,
         "box": {
           "x": 16,
@@ -57,7 +57,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸행사 구분0cf2",
+        "text": "E2E캡처프칸행사 구분b44e",
         "lines": 1,
         "box": {
           "x": 16,
@@ -127,9 +127,9 @@
     "boundaryAbove": 24,
     "boundaryBelow": 25,
     "invalid": [
-      "cf_cf_292f9698"
+      "cf_cf_b3c09418"
     ],
-    "focused": "cf_cf_292f9698",
+    "focused": "cf_cf_b3c09418",
     "primaryButtons": 1
   },
   {
@@ -150,7 +150,7 @@
     "borderRowColor": "#e4eae7",
     "customLabels": [
       {
-        "text": "E2E캡처프칸장소0cf2",
+        "text": "E2E캡처프칸장소b44e",
         "lines": 1,
         "box": {
           "x": 16,
@@ -160,7 +160,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸담당자 연락처 메모0cf2",
+        "text": "E2E캡처프칸담당자 연락처 메모b44e",
         "lines": 1,
         "box": {
           "x": 16,
@@ -170,7 +170,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸참석 인원 합계 수0cf2",
+        "text": "E2E캡처프칸참석 인원 합계 수b44e",
         "lines": 1,
         "box": {
           "x": 16,
@@ -180,7 +180,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸행사일0cf2",
+        "text": "E2E캡처프칸행사일b44e",
         "lines": 1,
         "box": {
           "x": 16,
@@ -190,7 +190,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸행사 구분0cf2",
+        "text": "E2E캡처프칸행사 구분b44e",
         "lines": 1,
         "box": {
           "x": 16,
@@ -260,9 +260,9 @@
     "boundaryAbove": 24,
     "boundaryBelow": 25,
     "invalid": [
-      "cf_cf_292f9698"
+      "cf_cf_b3c09418"
     ],
-    "focused": "cf_cf_292f9698",
+    "focused": "cf_cf_b3c09418",
     "primaryButtons": 1
   },
   {
@@ -283,7 +283,7 @@
     "borderRowColor": "#e4eae7",
     "customLabels": [
       {
-        "text": "E2E캡처프칸장소0cf2",
+        "text": "E2E캡처프칸장소b44e",
         "lines": 1,
         "box": {
           "x": 312,
@@ -293,7 +293,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸담당자 연락처 메모0cf2",
+        "text": "E2E캡처프칸담당자 연락처 메모b44e",
         "lines": 1,
         "box": {
           "x": 312,
@@ -303,7 +303,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸참석 인원 합계 수0cf2",
+        "text": "E2E캡처프칸참석 인원 합계 수b44e",
         "lines": 1,
         "box": {
           "x": 312,
@@ -313,7 +313,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸행사일0cf2",
+        "text": "E2E캡처프칸행사일b44e",
         "lines": 1,
         "box": {
           "x": 312,
@@ -323,12 +323,12 @@
         }
       },
       {
-        "text": "E2E캡처프칸행사 구분0cf2",
+        "text": "E2E캡처프칸행사 구분b44e",
         "lines": 1,
         "box": {
           "x": 312,
           "y": 985.5,
-          "width": 140.5,
+          "width": 144.6,
           "height": 20.8
         }
       }
@@ -393,9 +393,9 @@
     "boundaryAbove": 24,
     "boundaryBelow": 25,
     "invalid": [
-      "cf_cf_292f9698"
+      "cf_cf_b3c09418"
     ],
-    "focused": "cf_cf_292f9698",
+    "focused": "cf_cf_b3c09418",
     "primaryButtons": 1
   },
   {
@@ -416,7 +416,7 @@
     "borderRowColor": "#e4eae7",
     "customLabels": [
       {
-        "text": "E2E캡처프칸장소0cf2",
+        "text": "E2E캡처프칸장소b44e",
         "lines": 1,
         "box": {
           "x": 824,
@@ -426,7 +426,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸담당자 연락처 메모0cf2",
+        "text": "E2E캡처프칸담당자 연락처 메모b44e",
         "lines": 1,
         "box": {
           "x": 824,
@@ -436,7 +436,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸참석 인원 합계 수0cf2",
+        "text": "E2E캡처프칸참석 인원 합계 수b44e",
         "lines": 1,
         "box": {
           "x": 824,
@@ -446,7 +446,7 @@
         }
       },
       {
-        "text": "E2E캡처프칸행사일0cf2",
+        "text": "E2E캡처프칸행사일b44e",
         "lines": 1,
         "box": {
           "x": 824,
@@ -456,12 +456,12 @@
         }
       },
       {
-        "text": "E2E캡처프칸행사 구분0cf2",
+        "text": "E2E캡처프칸행사 구분b44e",
         "lines": 1,
         "box": {
           "x": 824,
           "y": 663.5,
-          "width": 140.5,
+          "width": 144.6,
           "height": 20.8
         }
       }
@@ -526,9 +526,9 @@
     "boundaryAbove": 24,
     "boundaryBelow": 25,
     "invalid": [
-      "cf_cf_292f9698"
+      "cf_cf_b3c09418"
     ],
-    "focused": "cf_cf_292f9698",
+    "focused": "cf_cf_b3c09418",
     "primaryButtons": 1
   }
 ]

@@ -1,0 +1,526 @@
+[
+  {
+    "width": 375,
+    "innerWidth": 375,
+    "scrollWidth": 375,
+    "groupBox": {
+      "x": 16,
+      "y": 808.3,
+      "width": 343,
+      "height": 413
+    },
+    "groupBorderTop": "1px solid rgb(228, 234, 231)",
+    "groupMarginTop": "24px",
+    "groupPaddingTop": "24px",
+    "tokenS6": "24px",
+    "tokenS4": "16px",
+    "borderRowColor": "#e4eae7",
+    "customLabels": [
+      {
+        "text": "E2E캡처프칸장소0cf2",
+        "lines": 1,
+        "box": {
+          "x": 16,
+          "y": 833.3,
+          "width": 343,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸담당자 연락처 메모0cf2",
+        "lines": 1,
+        "box": {
+          "x": 16,
+          "y": 914.1,
+          "width": 343,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸참석 인원 합계 수0cf2",
+        "lines": 1,
+        "box": {
+          "x": 16,
+          "y": 994.9,
+          "width": 343,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사일0cf2",
+        "lines": 1,
+        "box": {
+          "x": 16,
+          "y": 1075.7,
+          "width": 343,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사 구분0cf2",
+        "lines": 1,
+        "box": {
+          "x": 16,
+          "y": 1156.5,
+          "width": 343,
+          "height": 20.8
+        }
+      }
+    ],
+    "baseRowBoxes": [
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 266,
+        "bottom": 330.8
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__long",
+        "top": 330.8,
+        "bottom": 395.6
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 395.6,
+        "bottom": 460.4
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 460.4,
+        "bottom": 525.2
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 525.2,
+        "bottom": 589.9
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 589.9,
+        "bottom": 654.7
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 654.7,
+        "bottom": 719.5
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 719.5,
+        "bottom": 784.3
+      }
+    ],
+    "baseFieldGaps": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "customFieldGaps": [
+      16,
+      16,
+      16,
+      16
+    ],
+    "boundaryAbove": 24,
+    "boundaryBelow": 25,
+    "invalid": [],
+    "focused": "clientId",
+    "primaryButtons": 1
+  },
+  {
+    "width": 320,
+    "innerWidth": 320,
+    "scrollWidth": 320,
+    "groupBox": {
+      "x": 16,
+      "y": 872.5,
+      "width": 288,
+      "height": 413
+    },
+    "groupBorderTop": "1px solid rgb(228, 234, 231)",
+    "groupMarginTop": "24px",
+    "groupPaddingTop": "24px",
+    "tokenS6": "24px",
+    "tokenS4": "16px",
+    "borderRowColor": "#e4eae7",
+    "customLabels": [
+      {
+        "text": "E2E캡처프칸장소0cf2",
+        "lines": 1,
+        "box": {
+          "x": 16,
+          "y": 897.5,
+          "width": 288,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸담당자 연락처 메모0cf2",
+        "lines": 1,
+        "box": {
+          "x": 16,
+          "y": 978.3,
+          "width": 288,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸참석 인원 합계 수0cf2",
+        "lines": 1,
+        "box": {
+          "x": 16,
+          "y": 1059.1,
+          "width": 288,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사일0cf2",
+        "lines": 1,
+        "box": {
+          "x": 16,
+          "y": 1139.9,
+          "width": 288,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사 구분0cf2",
+        "lines": 1,
+        "box": {
+          "x": 16,
+          "y": 1220.7,
+          "width": 288,
+          "height": 20.8
+        }
+      }
+    ],
+    "baseRowBoxes": [
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 330.2,
+        "bottom": 395
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__long",
+        "top": 395,
+        "bottom": 459.8
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 459.8,
+        "bottom": 524.6
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 524.6,
+        "bottom": 589.3
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 589.3,
+        "bottom": 654.1
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 654.1,
+        "bottom": 718.9
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 718.9,
+        "bottom": 783.7
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 783.7,
+        "bottom": 848.5
+      }
+    ],
+    "baseFieldGaps": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "customFieldGaps": [
+      16,
+      16,
+      16,
+      16
+    ],
+    "boundaryAbove": 24,
+    "boundaryBelow": 25,
+    "invalid": [],
+    "focused": "clientId",
+    "primaryButtons": 1
+  },
+  {
+    "width": 768,
+    "innerWidth": 768,
+    "scrollWidth": 768,
+    "groupBox": {
+      "x": 354.2,
+      "y": 612.6,
+      "width": 432,
+      "height": 413
+    },
+    "groupBorderTop": "1px solid rgb(228, 234, 231)",
+    "groupMarginTop": "24px",
+    "groupPaddingTop": "24px",
+    "tokenS6": "24px",
+    "tokenS4": "16px",
+    "borderRowColor": "#e4eae7",
+    "customLabels": [
+      {
+        "text": "E2E캡처프칸장소0cf2",
+        "lines": 1,
+        "box": {
+          "x": 354.2,
+          "y": 637.6,
+          "width": 432,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸담당자 연락처 메모0cf2",
+        "lines": 1,
+        "box": {
+          "x": 354.2,
+          "y": 718.4,
+          "width": 432,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸참석 인원 합계 수0cf2",
+        "lines": 1,
+        "box": {
+          "x": 354.2,
+          "y": 799.2,
+          "width": 432,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사일0cf2",
+        "lines": 1,
+        "box": {
+          "x": 354.2,
+          "y": 880,
+          "width": 432,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사 구분0cf2",
+        "lines": 1,
+        "box": {
+          "x": 354.2,
+          "y": 960.8,
+          "width": 140.5,
+          "height": 20.8
+        }
+      }
+    ],
+    "baseRowBoxes": [
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 70.2,
+        "bottom": 135
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__long",
+        "top": 135,
+        "bottom": 199.8
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 199.8,
+        "bottom": 264.6
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 264.6,
+        "bottom": 329.4
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 329.4,
+        "bottom": 394.2
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 394.2,
+        "bottom": 459
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 459,
+        "bottom": 523.8
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 523.8,
+        "bottom": 588.6
+      }
+    ],
+    "baseFieldGaps": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "customFieldGaps": [
+      16,
+      16,
+      16,
+      16
+    ],
+    "boundaryAbove": 24,
+    "boundaryBelow": 25,
+    "invalid": [],
+    "focused": "clientId",
+    "primaryButtons": 1
+  },
+  {
+    "width": 1280,
+    "innerWidth": 1280,
+    "scrollWidth": 1280,
+    "groupBox": {
+      "x": 866.2,
+      "y": 612.6,
+      "width": 432,
+      "height": 413
+    },
+    "groupBorderTop": "1px solid rgb(228, 234, 231)",
+    "groupMarginTop": "24px",
+    "groupPaddingTop": "24px",
+    "tokenS6": "24px",
+    "tokenS4": "16px",
+    "borderRowColor": "#e4eae7",
+    "customLabels": [
+      {
+        "text": "E2E캡처프칸장소0cf2",
+        "lines": 1,
+        "box": {
+          "x": 866.2,
+          "y": 637.6,
+          "width": 432,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸담당자 연락처 메모0cf2",
+        "lines": 1,
+        "box": {
+          "x": 866.2,
+          "y": 718.4,
+          "width": 432,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸참석 인원 합계 수0cf2",
+        "lines": 1,
+        "box": {
+          "x": 866.2,
+          "y": 799.2,
+          "width": 432,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사일0cf2",
+        "lines": 1,
+        "box": {
+          "x": 866.2,
+          "y": 880,
+          "width": 432,
+          "height": 20.8
+        }
+      },
+      {
+        "text": "E2E캡처프칸행사 구분0cf2",
+        "lines": 1,
+        "box": {
+          "x": 866.2,
+          "y": 960.8,
+          "width": 140.5,
+          "height": 20.8
+        }
+      }
+    ],
+    "baseRowBoxes": [
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 70.2,
+        "bottom": 135
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__long",
+        "top": 135,
+        "bottom": 199.8
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 199.8,
+        "bottom": 264.6
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 264.6,
+        "bottom": 329.4
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 329.4,
+        "bottom": 394.2
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 394.2,
+        "bottom": 459
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__short",
+        "top": 459,
+        "bottom": 523.8
+      },
+      {
+        "el": "div.Form-module__qIqsGG__control Form-module__qIqsGG__select",
+        "top": 523.8,
+        "bottom": 588.6
+      }
+    ],
+    "baseFieldGaps": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "customFieldGaps": [
+      16,
+      16,
+      16,
+      16
+    ],
+    "boundaryAbove": 24,
+    "boundaryBelow": 25,
+    "invalid": [],
+    "focused": "clientId",
+    "primaryButtons": 1
+  }
+]

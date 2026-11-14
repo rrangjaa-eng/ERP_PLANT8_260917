@@ -1447,7 +1447,7 @@ async function projectCompleted(): Promise<SeedResult> {
 // 대상별 작은 함수로 나눠 02 · 03이 프로젝트 · 견적 줄 칸을 같은 꼴로 덧붙인다.
 type SeedFieldSpec = { label: string; type: "text" | "number" | "date" | "select"; sortOrder: number; options?: string[]; archivedOptions?: string[]; archived?: boolean };
 
-async function ensureCustomFieldDefinition(entity: "vendor", spec: SeedFieldSpec): Promise<string> {
+async function ensureCustomFieldDefinition(entity: "vendor" | "project", spec: SeedFieldSpec): Promise<string> {
   const [existing] = await db
     .select({ key: fieldDefinitions.key })
     .from(fieldDefinitions)
@@ -1497,6 +1497,49 @@ async function customFieldsFilled(): Promise<SeedResult> {
   const { filterKey } = await customFieldsFilledVendors(suffix);
   const viewer = await makePerson("관리", SYSADMIN_ROLE_ID, team.id, `${today.slice(0, 4)}-01-01`);
   return { vars: { vendorFilterQuery: `cf_${filterKey}=${encodeURIComponent("서울")}` }, viewer };
+}
+
+// custom-fields-filled-pm: 07.5-02(S2 · S3) 프로젝트 등록 패널 · 정보 면 추가 칸 캡처용 — 담당 PM이 본다(정보 면 「고치기」가 선다).
+// 프로젝트 칸 7개(전 계급 보임 — 캡처 DB 전용) + 보관 칸 하나. 정렬 2 · 3은 공백 포함 스무 자(긴 라벨 · 머리글 backstop — eng B-14 · design F10).
+// 04가 같은 시나리오를 프로젝트 목록 캡처에 쓴다(열 상한 3 · 거르개 상한 2).
+async function customFieldsFilledProjectDefinitions(): Promise<Record<"place" | "contact" | "count" | "day" | "kind" | "region" | "grade" | "archived", string>> {
+  return {
+    place: await ensureCustomFieldDefinition("project", { label: "행사 장소", type: "text", sortOrder: 1 }),
+    contact: await ensureCustomFieldDefinition("project", { label: "고객사 담당자 연락처와 직함 메모 칸", type: "text", sortOrder: 2 }),
+    count: await ensureCustomFieldDefinition("project", { label: "예상 참석 인원과 초청 인원 합계 수", type: "number", sortOrder: 3 }),
+    day: await ensureCustomFieldDefinition("project", { label: "행사일", type: "date", sortOrder: 4 }),
+    kind: await ensureCustomFieldDefinition("project", { label: "행사 구분", type: "select", sortOrder: 5, options: ["팝업", "전시", "세미나"], archivedOptions: ["로드쇼"] }),
+    region: await ensureCustomFieldDefinition("project", { label: "지역", type: "select", sortOrder: 6, options: ["서울", "부산"] }),
+    grade: await ensureCustomFieldDefinition("project", { label: "등급", type: "select", sortOrder: 7, options: ["A", "B", "C"] }),
+    archived: await ensureCustomFieldDefinition("project", { label: "보관한 프로젝트 칸", type: "text", sortOrder: 8, archived: true }),
+  };
+}
+
+async function customFieldsFilledPm(): Promise<SeedResult> {
+  const today = seoulToday();
+  const year = today.slice(0, 4);
+  const suffix = randomUUID().slice(0, 6);
+  const keys = await customFieldsFilledProjectDefinitions();
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처프칸본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처프칸팀-${suffix}` });
+  const pm = await makePerson("담당", "role-pm", team.id, `${year}-01-01`);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처프칸클라이언트-${suffix}`, normalizedName: `캡처프칸클라이언트-${suffix}` });
+  const project = await createProject(pm.viewer, { clientId: client.id, teamId: team.id, pmUserId: pm.viewer.id, name: `캡처추가칸-${suffix}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` });
+  // 보관 선택지 값은 등록 판정이 거부하므로(새 지정) 저장값을 직접 둔다 — 긴 텍스트 · 보관 선택지 · 빈 칸(행사일 · 등급) · 보관 칸 값 섞음.
+  await db
+    .update(projects)
+    .set({
+      customFields: {
+        [keys.place]: "서울 코엑스 C홀",
+        [keys.contact]: "마케팅본부 브랜드팀 이수진 책임 010-0000-0000 평일 오전 통화 가능 · 메일 회신은 다음 날 오전",
+        [keys.count]: 1250.5,
+        [keys.kind]: "로드쇼",
+        [keys.region]: "서울",
+        [keys.archived]: "보관한 칸 값",
+      },
+    })
+    .where(eq(projects.id, project.id));
+  return { vars: { projectId: project.id }, viewer: pm };
 }
 
 // revenue-archive-rows: 07.6-01 매출 줄 지우기 캡처용 — 시스템 관리자(전사 계급 · admin.archive 보유)로 본다. 고객 승인 프로젝트에 발행 줄 넷
@@ -1569,6 +1612,8 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return projectCompleted();
     case "custom-fields-filled":
       return customFieldsFilled();
+    case "custom-fields-filled-pm":
+      return customFieldsFilledPm();
     case "revenue-archive-rows":
       return revenueArchiveRows();
   }

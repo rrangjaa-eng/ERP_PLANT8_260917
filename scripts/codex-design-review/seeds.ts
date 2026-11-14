@@ -2,7 +2,7 @@ import { createHash, randomInt, randomUUID } from "node:crypto";
 import { expect, type Browser } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, files, projectBudgetEntries, projects, purchaseRequests, revenueEntries } from "@/db/schema";
+import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, files, projectBudgetEntries, projects, purchaseRequests, quoteLines, revenueEntries } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -1447,7 +1447,7 @@ async function projectCompleted(): Promise<SeedResult> {
 // 대상별 작은 함수로 나눠 02 · 03이 프로젝트 · 견적 줄 칸을 같은 꼴로 덧붙인다.
 type SeedFieldSpec = { label: string; type: "text" | "number" | "date" | "select"; sortOrder: number; options?: string[]; archivedOptions?: string[]; archived?: boolean };
 
-async function ensureCustomFieldDefinition(entity: "vendor" | "project", spec: SeedFieldSpec): Promise<string> {
+async function ensureCustomFieldDefinition(entity: "vendor" | "project" | "quote_line", spec: SeedFieldSpec): Promise<string> {
   const [existing] = await db
     .select({ key: fieldDefinitions.key })
     .from(fieldDefinitions)
@@ -1515,6 +1515,58 @@ async function customFieldsFilledProjectDefinitions(): Promise<Record<"place" | 
   };
 }
 
+// 07.5-03(S4) 견적 줄 칸 — 열 상한 3 안이 가장 넓은 조합(텍스트 · 선택 · 날짜), 정렬 1 · 3은 공백 포함 스무 자(긴 머리글 줄 수 — eng B-14 · design F10).
+// 넷째 「설치 높이」는 열 상한 밖(머리글 0 확인용) · 보관 칸 하나(값 있음 — 화면 · TSV에 안 나온다).
+async function customFieldsFilledQuoteLineDefinitions(): Promise<Record<"spec" | "kind" | "arrival" | "height" | "archived", string>> {
+  return {
+    spec: await ensureCustomFieldDefinition("quote_line", { label: "장비 규격과 설치 조건 현장 메모 칸", type: "text", sortOrder: 1 }),
+    kind: await ensureCustomFieldDefinition("quote_line", { label: "설치 구분", type: "select", sortOrder: 2, options: ["실내", "실외", "옥상"], archivedOptions: ["가설"] }),
+    arrival: await ensureCustomFieldDefinition("quote_line", { label: "장비 반입 예정일과 현장 도착 확인일", type: "date", sortOrder: 3 }),
+    height: await ensureCustomFieldDefinition("quote_line", { label: "설치 높이", type: "number", sortOrder: 4 }),
+    archived: await ensureCustomFieldDefinition("quote_line", { label: "보관한 견적 줄 칸", type: "text", sortOrder: 5, archived: true }),
+  };
+}
+
+// 담당 PM 프로젝트 현재 차수 줄 넷 — 긴 텍스트 · 보관 선택지 값 · 빈 칸 · 날짜 · 공백 없는 긴 값(셀 실측 폭 — eng r2 N4)을 섞는다.
+// 보관 선택지 값은 등록 판정이 거부하므로 저장값을 직접 둔다.
+async function customFieldsFilledQuoteLines(pm: Person, projectId: string): Promise<void> {
+  const keys = await customFieldsFilledQuoteLineDefinitions();
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
+  if (!revision) throw new Error("1차 차수가 없습니다");
+  const [subcategory] = await listCodeItems(SYSTEM_VIEWER, { tableKey: QUOTE_SUBCATEGORY_TABLE_KEY, scope: { rows: "all", includeArchived: false }, includeInactive: false });
+  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const lines: { itemName: string; customFields: Record<string, unknown> }[] = [
+    {
+      itemName: "LED 스크린",
+      customFields: {
+        [keys.spec]: "P3.9 6x3m 리깅 포함 · 전원 3상 60A 현장 확보 필요 · 반입은 하역장 2번 게이트",
+        [keys.kind]: "실내",
+        [keys.arrival]: "2026-11-04",
+        [keys.height]: 6.5,
+        [keys.archived]: "보관한 칸 값",
+      },
+    },
+    { itemName: "음향 시스템", customFields: { [keys.spec]: "콘솔 32ch", [keys.kind]: "가설" } },
+    { itemName: "현장 운영", customFields: {} },
+    { itemName: "무대 트러스", customFields: { [keys.spec]: "TRUSS-400x400-SQUARE-12M-GROUNDSUPPORT-2SET", [keys.arrival]: "2026-12-01" } },
+  ];
+  const ids = lines.map(() => randomUUID());
+  await saveQuoteLines(pm.viewer, revision.id, {
+    rows: lines.map((line, index) => ({
+      id: ids[index] ?? randomUUID(),
+      isNew: true as const,
+      subcategory: subcategory.value,
+      itemName: line.itemName,
+      unitPrice: { currency: "KRW" as const, amount: 1_000_000 * (index + 1), fxRate: 1 },
+      execution: { currency: "KRW" as const, amount: 600_000 * (index + 1), fxRate: 1 },
+    })),
+  });
+  for (const [index, line] of lines.entries()) {
+    const id = ids[index];
+    if (id) await db.update(quoteLines).set({ customFields: line.customFields }).where(eq(quoteLines.id, id));
+  }
+}
+
 async function customFieldsFilledPm(): Promise<SeedResult> {
   const today = seoulToday();
   const year = today.slice(0, 4);
@@ -1539,6 +1591,7 @@ async function customFieldsFilledPm(): Promise<SeedResult> {
       },
     })
     .where(eq(projects.id, project.id));
+  await customFieldsFilledQuoteLines(pm, project.id);
   return { vars: { projectId: project.id }, viewer: pm };
 }
 

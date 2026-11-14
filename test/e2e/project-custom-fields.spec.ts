@@ -173,6 +173,53 @@ test.describe("프로젝트 추가 칸 (S2 · S3)", () => {
     await context.close();
   });
 
+  // D-7516 — 형제 정보 칸(PO 번호 · 행사명)과 같이: 저장 안 한 추가 칸 편집은 새로 고침 뒤 복원 줄로 남고, 저장 요청 중에는 값을 보인 채 readOnly.
+  test("정보 면 고치기: 추가 칸 편집도 새로 고침 뒤 복원 · 저장 요청 중 readOnly", async ({ page }) => {
+    const tag = randomUUID().slice(0, 6);
+    const editor = await createE2EProjectEditor();
+    const memo = `${LABEL_PREFIX}복원${tag}`;
+    await createE2EFieldDefinition({ entity: "project", label: memo, type: "text", required: false, onlyRoleId: editor.roleId });
+    const client = await newClient();
+
+    await login(page, editor);
+    const form = await openCreatePanel(page, client.name, `E2E추가칸복원-${tag}`);
+    await form.getByTestId("project-custom-fields").getByLabel(memo, { exact: true }).fill("처음 메모");
+    await form.getByRole("button", { name: "프로젝트 등록" }).click();
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    const projectId = page.url().split("/").at(-1) ?? "";
+
+    await expandProjectInfo(page);
+    await projectInfo(page).getByRole("button", { name: "고치기", exact: true }).click();
+    await infoGroup(page, "기본").getByLabel(memo, { exact: true }).fill("복원할 메모");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    await page.reload();
+
+    await expect(page.getByText(/^저장 안 한 편집 \d+칸$/)).toBeVisible();
+    await page.getByRole("button", { name: "복원", exact: true }).click();
+    const input = infoGroup(page, "기본").getByLabel(memo, { exact: true });
+    await expect(input).toHaveValue("복원할 메모");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    // 저장 요청을 붙잡는 동안 칸은 값을 보인 채 읽기 전용(기간 · PO 번호 칸과 같다).
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (request.method() === "POST" && request.headers()["next-action"] !== undefined && (request.postData() ?? "").includes("seenStatus")) await held;
+      await route.continue();
+    });
+    await input.press("Control+s");
+    await expect(page.getByRole("button", { name: /일괄 저장/ })).toContainText("…");
+    await expect(input).toHaveAttribute("readonly", "");
+    await expect(input).toHaveValue("복원할 메모");
+    release();
+    await expect(infoGroup(page, "기본").getByText("복원할 메모")).toBeVisible();
+    const [saved] = await db.select({ customFields: projects.customFields }).from(projects).where(eq(projects.id, projectId));
+    expect(Object.values(saved?.customFields as Record<string, unknown>)).toContain("복원할 메모");
+  });
+
   test("등록 오류 · 입력 버리기 · 날짜 칸 · 보관 선택지(1280 · 375): 필수 칸 오류 1칸 포커스 · 기간 + 필수 한 번에 2칸 · 추가 칸만 고쳐도 확인", async ({ page }) => {
     const tag = randomUUID().slice(0, 6);
     const editor = await createE2EProjectEditor();

@@ -32,6 +32,7 @@ export function CustomFieldInput({
   onChange,
   className,
   onKeyDown,
+  readOnly = false,
 }: {
   def: CustomFieldInputDef;
   defaultValue?: unknown;
@@ -42,12 +43,14 @@ export function CustomFieldInput({
   /** 입력 · select 요소에 붙는다(정보 면 고친 칸 표시). */
   className?: string;
   onKeyDown?: (event: KeyboardEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  /** 저장 요청 중(정보 면 형제 칸과 같다) — 입력은 값을 보인 채 readOnly, select는 바꾸기가 무동작이다. */
+  readOnly?: boolean;
 }) {
   const id = `cf_${def.key}`;
   const controlled = value !== undefined;
   const stringValue = controlled ? value : customFieldDefaultValue(def, defaultValue);
   const valueProps = controlled
-    ? { value, onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) }
+    ? { value, onChange: (event: { target: { value: string } }) => (readOnly ? undefined : onChange?.(event.target.value)) }
     : { defaultValue: stringValue };
   if (def.type === "select") {
     const options = def.options ?? [];
@@ -84,6 +87,7 @@ export function CustomFieldInput({
       label={def.label}
       type={inputType}
       {...valueProps}
+      readOnly={readOnly}
       className={className}
       onKeyDown={onKeyDown}
       error={error}

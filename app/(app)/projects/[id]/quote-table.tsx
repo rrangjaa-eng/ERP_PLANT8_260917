@@ -521,7 +521,8 @@ export function editsSnapshot(
   preEstimate: PreEstimateDraft | null,
   preEstimateBase: PreEstimateDraft | null,
   poNumber: { draft: string; base: string } | null = null,
-  info: { draft: InfoValues; base: InfoValues; version: number } | null = null,
+  // custom — 고친 추가 칸만(07.5-02 · D-7516: 기본 정보와 같은 묶음 · 같은 version).
+  info: { draft: InfoValues; base: InfoValues; version: number; custom?: Record<string, string> } | null = null,
 ): Record<string, unknown> {
   const edits: Record<string, unknown> = {};
   for (const line of lines) {
@@ -582,13 +583,15 @@ export function editsSnapshot(
   if (poNumber && poNumber.draft !== poNumber.base) edits["poNumber:value"] = poNumber.draft;
   if (info) {
     for (const key of INFO_KEYS) if (info.draft[key] !== info.base[key]) edits[`info:${key}`] = info.draft[key];
+    for (const [key, value] of Object.entries(info.custom ?? {})) edits[`info:${CUSTOM_INFO_PREFIX}${key}`] = value;
     // 보관 시점 version을 함께 — 복원 뒤 저장이 그 사이 동료 저장과 동시 수정 판정을 받는다(기간 기준값과 같은 결).
-    if (INFO_KEYS.some((key) => `info:${key}` in edits)) edits["info:version"] = info.version;
+    if (Object.keys(edits).some((key) => key.startsWith("info:"))) edits["info:version"] = info.version;
   }
   return edits;
 }
 
 const INFO_KEYS = ["name", "clientId", "teamId", "pmUserId"] as const;
+const CUSTOM_INFO_PREFIX = "custom.";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -753,7 +756,7 @@ export function mergeRestoredEdits(
   period: { start?: string; end?: string; base?: StoredPeriodBase };
   preEstimate: Partial<PreEstimateDraft>;
   poNumber?: string;
-  info?: Partial<InfoValues> & { version: number };
+  info?: Partial<InfoValues> & { version: number; custom?: Record<string, string> };
 } {
   let next = lines;
   const added: DraftLine[] = [];
@@ -763,6 +766,7 @@ export function mergeRestoredEdits(
   let poNumber: string | undefined;
   const infoVersion = edits["info:version"];
   const info: Partial<InfoValues> = {};
+  const custom: Record<string, string> = {};
   for (const [key, value] of Object.entries(edits)) {
     const cut = key.lastIndexOf(":");
     const owner = key.slice(0, cut);
@@ -781,6 +785,7 @@ export function mergeRestoredEdits(
     if (owner === "info") {
       const field = INFO_KEYS.find((key) => key === column);
       if (field && typeof value === "string") info[field] = value;
+      if (column.startsWith(CUSTOM_INFO_PREFIX) && typeof value === "string") custom[column.slice(CUSTOM_INFO_PREFIX.length)] = value;
       continue;
     }
     if (owner === "preEstimate") {
@@ -817,7 +822,9 @@ export function mergeRestoredEdits(
     );
   }
   // 기준 version이 없는 보관본의 기본 정보 칸은 들이지 않는다(기간 칸과 같은 규칙).
-  const restoredInfo = typeof infoVersion === "number" && Object.keys(info).length > 0 ? { info: { ...info, version: infoVersion } } : {};
+  const hasCustom = Object.keys(custom).length > 0;
+  const restoredInfo =
+    typeof infoVersion === "number" && (Object.keys(info).length > 0 || hasCustom) ? { info: { ...info, version: infoVersion, ...(hasCustom ? { custom } : {}) } } : {};
   return { lines: [...next, ...added], period, preEstimate, ...(poNumber !== undefined ? { poNumber } : {}), ...restoredInfo };
 }
 
@@ -1834,6 +1841,7 @@ export function QuoteLedger({
   function changeCustom(key: string, value: string) {
     cancelInfoCloseTimer();
     infoEditedSinceSendRef.current = true;
+    persistPendingRef.current = true;
     setInfoServerErrors([]);
     setCustomDraft((prev) => ({ ...prev, [key]: value }));
   }
@@ -1945,10 +1953,17 @@ export function QuoteLedger({
         preEstimateDraft,
         preEstimateBaselineDraft,
         poNumberDraft === null ? null : { draft: poNumberDraft, base: poNumberBase },
-        infoDraft === null ? null : { draft: infoDraft, base: infoBase.values, version: restoredInfoVersion ?? infoBase.version },
+        infoDraft === null
+          ? null
+          : {
+              draft: infoDraft,
+              base: infoBase.values,
+              version: restoredInfoVersion ?? infoBase.version,
+              custom: Object.fromEntries(customInfoDirtyKeys(customInfo.defs, customBase, customDraft).map((key) => [key, customDraft[key] ?? ""])),
+            },
       ),
     );
-  }, [lines, periodDraft, periodSaveBaseline, preEstimateDraft, preEstimateBaselineDraft, poNumberDraft, poNumberBase, infoDraft, infoBase, restoredInfoVersion, persist]);
+  }, [lines, periodDraft, periodSaveBaseline, preEstimateDraft, preEstimateBaselineDraft, poNumberDraft, poNumberBase, infoDraft, infoBase, restoredInfoVersion, customInfo.defs, customBase, customDraft, persist]);
 
   // DR-6 — 상태 바뀜 거부 뒤 router.refresh()가 새 status를 내려보내면 화면 편집(줄·매출·기간 칸)을
   // 서버 props로 되돌리고 보관본의 칸 수를 다시 읽어 복원 줄을 띄운다. 기간 저장 성공으로 상태가
@@ -2020,8 +2035,9 @@ export function QuoteLedger({
     if (!restoredBase && !hasPreEstimate && restored.poNumber === undefined && !restoredInfo) return;
     setInfoOpen(true);
     if (restoredInfo) {
-      const { version, ...values } = restoredInfo;
+      const { version, custom, ...values } = restoredInfo;
       setInfoDraft({ ...infoBase.values, ...values });
+      setCustomDraft(custom ?? {});
       setRestoredInfoVersion(version);
     }
     if (!canEditInfo) return;

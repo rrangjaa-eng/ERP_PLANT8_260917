@@ -259,4 +259,16 @@ describe("기본 정보 4칸 보관 · 복원", () => {
     expect(editsSnapshot([], null, PERIOD_V1, null, null, null, { draft: base, base, version: 3 })).toEqual({});
     expect(mergeRestoredEdits([], { "info:name": "겨울 팝업" }, ["print"], KIND_CELLS).info).toBeUndefined();
   });
+
+  // 07.5-02(D-7516) — 추가 칸은 기본 정보 4칸과 같은 묶음 · 같은 version으로 보관 · 복원한다(새로 고침 뒤에도 고친 값이 남는다).
+  it("고친 추가 칸도 같은 version으로 보관하고 되살린다", () => {
+    const stash = editsSnapshot([], null, PERIOD_V1, null, null, null, { draft: base, base, version: 5, custom: { cf_memo0001: "바뀐 메모" } });
+
+    expect(stash).toEqual({ "info:custom.cf_memo0001": "바뀐 메모", "info:version": 5 });
+    expect(mergeRestoredEdits([], stash, ["print"], KIND_CELLS).info).toEqual({ version: 5, custom: { cf_memo0001: "바뀐 메모" } });
+  });
+
+  it("version 없는 추가 칸 보관본은 들이지 않는다", () => {
+    expect(mergeRestoredEdits([], { "info:custom.cf_memo0001": "바뀐 메모" }, ["print"], KIND_CELLS).info).toBeUndefined();
+  });
 });

@@ -99,6 +99,7 @@ export function CustomInfoFields({
             onChange={(next) => onChange(def.key, next)}
             className={value !== base ? styles.periodInputDirty : undefined}
             onKeyDown={handleKeyDown}
+            readOnly={saveLocked}
             error={errors[def.key]}
           />
         );

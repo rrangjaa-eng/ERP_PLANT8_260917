@@ -2738,3 +2738,17 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정자**: 사용자 카드 2026-11-04 16:20 KST eng E2(D-7524 — 공용 칸 꼴 규칙). 보관 선택지 예외 줄 · dirty 규칙 줄은 계획자 재량(디자인 검토 권고 F16 · r2 C2).
 **범위**: `ui/custom-field/{CustomFieldInput.tsx,CustomField.module.css}` · `app/(app)/admin/vendors/{vendor-form.tsx,vendors.module.css}` · `app/(app)/projects/project-form.tsx` · `app/(app)/projects/[id]/custom-info-fields.tsx`. 새 색 · 서체 · radius · 토큰 0.
 **영향**: SYSTEM §7-15 `Select` 줄 아래 예외 한 줄.
+
+## 2026-11-14 — 견적 줄 추가 칸만 바뀐 동시 수정의 충돌 표시 칸 = 폴백 「항목」 셀 (07.5-03 · D-7520)
+**결정**: 견적 줄 추가 칸(관리자 추가 칸)만 바뀐 줄이 동시 수정으로 부딪히면 충돌 표시 칸은 폴백 「항목」(`itemName`) 셀 한 칸이다 — SYSTEM §7-3 (나) 「실제로 달라진 셀만」의 예외. 셀 단위 baseline(`QuoteLineBaseline` · `readLineBase`)에 추가 칸을 넣지 않고, 기본 칸이 모두 같은데 version이 다르면 조건 UPDATE가 실패해 줄 version 폴백(`cellConflictsFor(…, undefined, …)`)으로 거부한다.
+**이유**: 셀 단위 baseline에 추가 칸을 넣으면 화면 보관본 · 서버 비교 · 충돌 셀 「그 값으로」가 칸 정의(보임 · 보관 · 타입)마다 갈라진다 — 최소안은 기존 폴백을 그대로 쓰는 것이다(UI-SPEC A12 · RESEARCH Q8 · D-7520). 어긋남은 「어느 칸이 바뀌었나」 표시 한 가지이고 덮어쓰기 · 거부는 그대로 막힌다.
+**결정자**: 계획자 재량(디자인 검토 1회차 F18 권고).
+**범위**: `domain/quotes/lines.ts`(무수정 — 기존 폴백) · 시험 `test/integration/quote-line-custom-fields.test.ts` 「추가 칸만 바꾼 두 저장 경합」.
+**영향**: SYSTEM §7-3 (나) 문단 아래 예외 한 줄. 새 색 · 서체 · radius · 토큰 0.
+
+## 2026-11-14 — 견적 표 추가 칸 열이 1280에서 「항목」을 누르는 것은 후속 플랜까지 둔다 (07.5-03 · DOM 감사 F1)
+**결정**: 견적 줄 추가 칸 열(최대 3, `p3`)이 서면 1280에서 「항목」 열이 82.8px → 43.4px로 좁아지고 첫 줄 높이가 303px까지 늘어난다(넘침 0, 값은 모두 보이고 고칠 수 있다). SYSTEM §7-2 「가장 긴 문자 열 `min-width` · 그 아래로 눌리기 전에 다음 열을 숨긴다」의 예외로 07.5-03은 지금 모양으로 내고, 편집 표(`Table`)에 열 접기(StaticTable `foldBelow`와 같은 접힌 줄)를 더하는 일은 후속 플랜으로 한다.
+**이유**: 편집 표에는 접기 옵션이 없고(`ui/table/types.ts` `collapseBelow?: 1280 | 1024`만), 1280 이상에서 숨기면 PC에서 값을 볼 곳이 없다. 규칙에 맞추는 길은 편집 표 접기 하나라 공용 부품 · SYSTEM 개정이 드는 별도 플랜이 안전하다. 실측 표는 `/mnt/project-files/07.5-review/exec-03/dom-audit.md`.
+**결정자**: 사용자(선택 카드 2026-11-14 21:06 KST 「지금 그대로, 접기는 후속」).
+**범위**: `app/(app)/projects/[id]/quote-table.tsx` 추가 칸 열. 새 색 · 서체 · radius · 토큰 0.
+**영향**: SYSTEM §7-2 열 숨김 규칙 아래 예외 한 줄(후속 플랜에서 지운다).

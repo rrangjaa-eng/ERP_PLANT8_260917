@@ -153,7 +153,8 @@ test.describe("지급 대상 머리글 · 결재 중 하위 그룹 (07-16 Task 2
     const payer = await makeTeamPayer(fx);
     const { schedule: next } = await pushedDoc(fx, "hold", payer, cal);
     const { id } = await approvedDoc(fx, "retry", payer, { issuedOn: addDays(cal.today, -3) });
-    const manual = firstDay(cal, cal.today, (date) => isBusinessDay(date, cal.lookup) && payWeekIndex(date, cal.today) === 0);
+    // 이번 주에 남은 영업일이 있으면 그날, 주말(토·일)처럼 없으면 다음 주 첫 영업일 — 「이번 주」만 찾으면 주말엔 40일을 넘겨 영업일 아닌 날을 골랐다(2026-11-15 일 CI).
+    const manual = firstDay(cal, cal.today, (date) => isBusinessDay(date, cal.lookup));
     await saveScheduledPayDate(payer.viewer, { expenseId: id, scheduledPayDate: manual, version: await docVersion(id) });
 
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });

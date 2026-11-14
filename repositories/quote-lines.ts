@@ -324,6 +324,8 @@ export async function updateQuoteLineIfVersionMatches(
       clientRemark: input.clientRemark ?? null,
       midCategory: input.midCategory ?? null,
       majorCategory: input.majorCategory ?? null,
+      // 07.5-03(D-7506) — 추가 칸은 실렸을 때만(없으면 저장값 그대로).
+      ...(input.customFields ? { customFields: input.customFields } : {}),
       version: sql`${quoteLines.version} + 1`,
       updatedAt: new Date(),
     })

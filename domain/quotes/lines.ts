@@ -8,7 +8,10 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { buildChanges, moneyChangeText, type LineChange } from "@/domain/action-log/changes";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fields/build-schema";
+import { readCustomFieldInputs } from "@/domain/custom-fields/access";
+import { customFieldListColumns } from "@/domain/custom-fields/access-rules";
+import { CustomFieldsInvalidError, resolveCustomFieldsWrite, UnknownCustomFieldKeyError } from "@/domain/custom-fields/preserve";
+import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import type { ProjectLineEditCtx, QuoteLineCapCtx } from "@/domain/rules/register";
@@ -82,7 +85,6 @@ import {
   findLineLinks as repoFindLineLinks,
   listExpenseDocFacts as repoListExpenseDocFacts,
 } from "@/repositories/quote-line-links";
-import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { findVendorKindsByIds as repoFindVendorKindsByIds, findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
 import { NOT_SUPPLIER_VENDOR, servesSide } from "@/domain/vendors/kind";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
@@ -309,16 +311,19 @@ registerDto({
   fields: QUOTE_LINE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
 
-async function quoteLineCustomFieldsSchema(viewer: Viewer) {
-  const defs = await repoListFieldDefinitions(viewer, QUOTE_LINE_ENTITY);
-  return buildCustomFieldsSchema(
-    defs.map((def) => ({
-      key: def.key,
-      type: def.type as FieldDefType,
-      options: Array.isArray(def.options) ? (def.options as string[]) : undefined,
-      required: def.required,
-    })),
-  );
+// 07.5-03(S4) — 견적 표 추가 칸 열의 재료: 이 사람의 입력 칸(활성 · 칸별 보임 · project.value), 정렬 순서. 열은 화면이
+// customFieldListColumns로 앞 3개만 만든다(줄 저장 판정 집합과 같은 함수 — D-7525).
+export type QuoteLineFieldDefinitionDto = {
+  key: string;
+  label: string;
+  type: "text" | "number" | "date" | "select";
+  options: string[];
+  required: boolean;
+};
+
+export async function listQuoteLineFieldDefinitions(viewer: Viewer): Promise<QuoteLineFieldDefinitionDto[]> {
+  const { inputDefs } = await readCustomFieldInputs(viewer, { entity: QUOTE_LINE_ENTITY, valueInfoItem: "project.value" });
+  return inputDefs.map((def) => ({ key: def.key, label: def.label, type: def.type, options: def.options, required: def.required }));
 }
 
 // D-54: 최신 차수만 '현재 차수'. 상세 화면이 이 함수로 그 차수의 id를
@@ -492,7 +497,10 @@ async function projectLines(
       executionOverKrw: ctx.cardSideFacts?.get(row.id)?.overKrw ?? null,
     }, row.vendorId ? (vendorNames.get(row.vendorId) ?? null) : null, row.counterpartProjectId ? (counterparts.get(row.counterpartProjectId) ?? null) : null);
   });
-  return (await projectMany(viewer, projectables, QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];
+  const dtos = (await projectMany(viewer, projectables, QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];
+  // 07.5-03(D-7508) — 추가 칸 값은 칸별 보임으로 거른다(키 집합은 호출당 한 번). project.value가 꺼져 값이 없으면 그대로 없다.
+  const visibleKeys = await visibleCustomFieldKeys(viewer, QUOTE_LINE_ENTITY);
+  return dtos.map((dto) => (dto.customFields === undefined ? dto : { ...dto, customFields: pickVisibleCustomFields(dto.customFields, visibleKeys) ?? {} }));
 }
 
 // 06.2(Pitfall 1 · M2 · D-6206): 차수 id만 알아도 열리던 입구 — 그 차수의 프로젝트가 보이지 않으면 없음.
@@ -811,6 +819,8 @@ export const quoteLineRowInputSchema = z
     clientRemark: z.string().max(500, CLIENT_REMARK_TOO_LONG).nullable().optional(),
     midCategory: z.string().max(100, MID_CATEGORY_TOO_LONG).nullable().optional(),
     majorCategory: z.string().max(100, MAJOR_CATEGORY_TOO_LONG).nullable().optional(),
+    // 07.5-03(D-7506) — 고친 추가 칸만(키 없음 = 안 바꿈 · 빈 글자 = 비움). 판정 · 정의에 없는 키 거부는 writeQuoteLinesInTx.
+    customFields: z.record(z.string(), z.unknown()).optional(),
     // 04-04 Task 2 ② — 이 줄을 불러왔을 때의 스냅샷(D-65 셀 단위 충돌 판정의 baseline). 기존 줄에서만 의미가 있다.
     baseline: z
       .object({
@@ -879,14 +889,11 @@ const KIND_CHANGED = "줄 종류는 바뀌지 않음 · 새로 고침";
 // 거래처 칸 충돌 값 — 거래처 이름을 볼 수 없거나 이름을 찾지 못하면(「다른 사람이 HH:mm에 다른 값으로 바꿈」).
 const HIDDEN_CONFLICT_VALUE = "다른 값";
 
-type QuoteLineCustomFieldsSchema = Awaited<ReturnType<typeof quoteLineCustomFieldsSchema>>;
-
 // ① 트랜잭션 전(ENG-D3 ① · ARCHITECTURE §4-8) — 잠근 행과 무관한 사실: 권한·금액 노출·차수의 프로젝트(바뀌지
 // 않는 사실)·사용자 정의 필드 스키마·차수당 줄 상한(04-26 설정 값). 여기서만 풀을 부른다.
 export type PreparedQuoteLineSave = {
   revisionId: string;
   projectId: string;
-  customFieldsSchema: QuoteLineCustomFieldsSchema;
   lineCap: number;
   /** 04-13 — `projects` 쓰기와 `projects.adjustment` 쓰기(입구는 둘 중 하나, 줄마다의 판정은 게이트). */
   canWrite: boolean;
@@ -930,7 +937,6 @@ export async function prepareQuoteLineSave(
   return {
     revisionId,
     projectId: revision.projectId,
-    customFieldsSchema: await quoteLineCustomFieldsSchema(viewer),
     lineCap: await getSettingValue(QUOTE_LINE_MAX_PER_REVISION),
     canWrite: canWrite && inWriteScope,
     canAdjust,
@@ -1140,6 +1146,12 @@ function sameCustomFields(stored: unknown, next: Record<string, unknown>): boole
   return canonical((stored ?? {}) as Record<string, unknown>) === canonical(next);
 }
 
+// 07.5-03(eng B-4) — 값이 바뀐 추가 칸 키(오름차순 · 값 없음). 날짜는 저장값(ISO 글자)과 판정 결과(Date)를 같은 JSON 글자로 본다.
+function changedCustomFieldKeys(stored: Record<string, unknown>, next: Record<string, unknown>): string[] {
+  const keys = new Set([...Object.keys(stored), ...Object.keys(next)]);
+  return [...keys].filter((key) => JSON.stringify(stored[key]) !== JSON.stringify(next[key])).sort();
+}
+
 // 04-40 검토 SF-1 — quantity numeric(12,2)의 정수부 한계(db/schema/quote-lines.ts). 저장은 toFixed(2) 뒤 값이다.
 // 07.2 D-7230 — days도 같은 numeric(12,2)라 같은 상수를 쓴다.
 const QUANTITY_COLUMN_LIMIT = 1e10;
@@ -1265,7 +1277,7 @@ export async function writeQuoteLinesInTx(
   deps?: Partial<Pick<QuoteLineWriteDeps, "now" | "afterLock" | "recordAction">>,
 ): Promise<WrittenQuoteLines> {
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  const { revisionId, projectId, customFieldsSchema, lineCap, canWrite, canAdjust, vendorNamesVisible } = prepared;
+  const { revisionId, projectId, lineCap, canWrite, canAdjust, vendorNamesVisible } = prepared;
   const archivedIds = [...new Set(input.archivedLineIds ?? [])];
   const lineIds = input.rows.map((row) => row.id);
   const denyIds = { projectId, revisionId, lineIds: [...lineIds, ...archivedIds] };
@@ -1279,6 +1291,11 @@ export async function writeQuoteLinesInTx(
   if (latest?.id !== revisionId) denyWrite(viewer, CURRENT_REVISION_RULE, { projectId, revisionId }, new UserFacingError(STALE_REVISION));
   // 04-40(사용자 D7 · OV-1) — 승인 차수 축은 같은 tx로 읽은 현재 차수에서만 파생된다(따로 저장하지 않는다).
   const approvedSeq = latest.customerApprovedAt !== null ? latest.seq : null;
+  // 07.5-03(D-7505 · D-7525 · T-04.5-44) — 추가 칸 입력 칸은 잠금 뒤 같은 tx로 한 번. 판정 집합은 화면 열 집합(앞 3개)이고,
+  // 위조 키 판정은 정의 전체(knownKeys)다.
+  const customInputs = await readCustomFieldInputs(viewer, { entity: QUOTE_LINE_ENTITY, valueInfoItem: "project.value" }, tx);
+  const lineInputDefs = customFieldListColumns(customInputs.inputDefs);
+  const customLabel = (key: string) => lineInputDefs.find((def) => def.key === key)?.label ?? key;
   const status = projectRow.status;
   const linkedDocuments = await linkedDocumentsByLine(viewer, revisionId, tx);
   const lineCtx = (lineId: string | null, lineKind: QuoteLineKind, change: ProjectLineEditCtx["change"]): ProjectLineEditCtx => {
@@ -1369,6 +1386,8 @@ export async function writeQuoteLinesInTx(
     kind: QuoteLineKind;
     payload: QuoteLineWritePayload;
     customFields: Record<string, unknown>;
+    /** 07.5-03(eng B-4) — 기존 줄에서 값이 바뀐 추가 칸 키(오름차순). 갱신 set · 행동 로그 키만. */
+    customFieldKeys: string[];
     unchanged: boolean;
     // 07.1-13 S8: 로그 줄 전후용 — 잠금 뒤 읽은 현재 행과 그 행 대비 바뀐 칸.
     current: QuoteLineRow | undefined;
@@ -1443,15 +1462,42 @@ export async function writeQuoteLinesInTx(
       if (vendorId && vendorId !== storedVendorId && vendorKind && !servesSide(vendorKind, "supplier")) {
         formatErrors.push({ rowIndex, rowId: kindRow.id, field: "vendorId", label: CELL_LABELS.vendorId, reason: NOT_SUPPLIER_VENDOR });
       }
+      // 07.5-03(D-7505 · D-7506 · D-7507) — 기존 줄이 추가 칸을 싣지 않으면 저장값 그대로. 그 밖은 create(새 줄) · update(기존 줄)
+      // 판정 — 칸 오류는 cf_<key> 셀 오류로, 정의에 없는 키는 거부 한 지점(write.denied)으로.
+      const storedCustomFields = (current?.customFields ?? {}) as Record<string, unknown>;
+      let customFields = storedCustomFields;
+      let customFieldsRejected = false;
+      if (received.isNew || kindRow.customFields !== undefined) {
+        try {
+          customFields = resolveCustomFieldsWrite({
+            mode: received.isNew ? "create" : "update",
+            inputDefs: lineInputDefs,
+            knownKeys: customInputs.knownKeys,
+            stored: storedCustomFields,
+            submitted: kindRow.customFields ?? {},
+          });
+        } catch (error) {
+          if (error instanceof UnknownCustomFieldKeyError) {
+            deny(LINE_EDIT_RULE, error);
+            continue;
+          }
+          if (!(error instanceof CustomFieldsInvalidError)) throw error;
+          customFieldsRejected = true;
+          for (const [key, reason] of Object.entries(error.fieldErrors)) {
+            formatErrors.push({ rowIndex, rowId: kindRow.id, field: `cf_${key}`, label: customLabel(key), reason });
+          }
+        }
+      }
       const money = normalizeLineMoney(kindRow, rowIndex);
       if (money.errors.length > 0) {
         formatErrors.push(...money.errors);
         continue;
       }
+      if (customFieldsRejected) continue;
       const row = money.row;
       const payload = writePayload(row);
-      const customFields = customFieldsSchema.parse(row.customFields ?? {}) as Record<string, unknown>;
-      const entry = { input: row, kind, payload, customFields, unchanged: false, current, changed: [] as QuoteLineField[] };
+      const customFieldKeys = current ? changedCustomFieldKeys(storedCustomFields, customFields) : [];
+      const entry = { input: row, kind, payload, customFields, customFieldKeys, unchanged: false, current, changed: [] as QuoteLineField[] };
       planned.push(entry);
 
       if (row.isNew) {
@@ -1472,13 +1518,19 @@ export async function writeQuoteLinesInTx(
 
       // 바뀐 칸마다 판정해 칸 오류로 싣는다(이유 = 표 위 한 줄과 같은 문자열). 바뀐 칸이 없으면 게이트를 부르지 않는다.
       const changed = changedFields(current, payload);
-      entry.unchanged = changed.length === 0;
+      entry.unchanged = changed.length === 0 && customFieldKeys.length === 0;
       entry.changed = changed;
       // 04-40(GAP 1) — 기준은 잠금 뒤 같은 tx로 읽은 행의 견적가(페이로드 baseline이 아니다).
       const quoteAmountUnchanged = payload.quoteAmountKrw === current.quoteAmountKrw;
       for (const field of changed) {
         const decision = await gate(projectRow, LINE_EDIT_RULE, lineCtx(row.id, kind, { kind: "update", fields: [field], quoteAmountUnchanged }));
         if (!decision.allowed) gateErrors.push({ rowIndex, rowId: row.id, field, label: CELL_LABELS[field], reason: decision.reason });
+      }
+      // 07.5-03(D-7517) — 추가 칸 편집 규칙은 내부 비고와 같다: 바뀐 추가 칸이 있으면 note 판정을 한 번(note가 이미 바뀌었으면 위에서 봤다).
+      if (customFieldKeys.length > 0 && !changed.includes("note")) {
+        const decision = await gate(projectRow, LINE_EDIT_RULE, lineCtx(row.id, kind, { kind: "update", fields: ["note"], quoteAmountUnchanged }));
+        const [firstKey] = customFieldKeys;
+        if (!decision.allowed && firstKey !== undefined) gateErrors.push({ rowIndex, rowId: row.id, field: `cf_${firstKey}`, label: customLabel(firstKey), reason: decision.reason });
       }
     }
     conflicts.push(...(await conflictsWithVendorNames(conflictCandidates)));
@@ -1594,9 +1646,9 @@ export async function writeQuoteLinesInTx(
   let wrote = false;
   const insertedIds = new Set<string>();
   // 07.1-13 S8: 실제로 쓴 줄의 전후(새 줄 · 고친 줄 · 보관한 줄). 순번은 쓰기가 끝난 뒤 표시 순서로 붙인다.
-  const writtenChanges: { id: string; name: string; archived: boolean; changes: Record<string, [unknown, unknown]> }[] = [];
+  const writtenChanges: { id: string; name: string; archived: boolean; changes: Record<string, [unknown, unknown]>; customFieldKeys?: string[] }[] = [];
 
-  for (const { input: row, kind, payload, customFields, unchanged, current, changed } of planned) {
+  for (const { input: row, kind, payload, customFields, customFieldKeys, unchanged, current, changed } of planned) {
     // D-71 — 환율 칸을 실제로 고친 저장에서만 그 통화의 최근 환율을 기억한다(커밋 뒤 — 트랜잭션을 연 쪽이).
     if (payload.unitPriceCurrency !== "KRW" && row.unitPriceFxRateTouched) {
       fxToRemember.push({ currency: payload.unitPriceCurrency, rate: Number(payload.unitPriceFxRate) });
@@ -1628,7 +1680,8 @@ export async function writeQuoteLinesInTx(
 
     if (unchanged) continue;
     // input.version은 위 판정에서 undefined가 아님을 이미 확인했다.
-    const updated = await repoUpdateQuoteLineIfVersionMatches(viewer, row.id, row.version!, { revisionId }, payload, tx);
+    // 07.5-03(D-7506 · D-7520) — 추가 칸은 바뀐 줄만 set에 싣는다(version 비교 · +1 그대로).
+    const updated = await repoUpdateQuoteLineIfVersionMatches(viewer, row.id, row.version!, { revisionId }, customFieldKeys.length > 0 ? { ...payload, customFields } : payload, tx);
     if (!updated) {
       // 사전 판정과 실제 쓰기 사이의 드문 경합 — 같은 구조화 오류로 거부한다(아직 커밋 전이라 전체가 되돌아간다).
       // 04-28 — 같은 트랜잭션에서 서버 현재 행을 다시 읽어, 실제로 달라진 칸만 서버 값·버전으로 싣는다.
@@ -1640,7 +1693,13 @@ export async function writeQuoteLinesInTx(
     wrote = true;
     // 조건 UPDATE가 성공했으면 잠금 뒤 읽은 current가 덮인 값 그대로다(version이 같았다).
     if (current) {
-      writtenChanges.push({ id: row.id, name: payload.itemName, archived: false, changes: buildChanges(lineChangeView(current, changed), lineChangeView(payload, changed)) });
+      writtenChanges.push({
+        id: row.id,
+        name: payload.itemName,
+        archived: false,
+        changes: buildChanges(lineChangeView(current, changed), lineChangeView(payload, changed)),
+        ...(customFieldKeys.length > 0 ? { customFieldKeys } : {}),
+      });
     }
   }
 
@@ -1768,13 +1827,14 @@ export async function writeQuoteLinesInTx(
   // 원소 차례: 남은 줄(순번 순) → 보관한 줄(순번 순).
   const lineChanges: LineChange[] = [false, true].flatMap((archived) =>
     writtenChanges
-      .filter((line) => line.archived === archived && Object.keys(line.changes).length > 0)
+      .filter((line) => line.archived === archived && (Object.keys(line.changes).length > 0 || (line.customFieldKeys?.length ?? 0) > 0))
       .map((line) => ({
         id: line.id,
         kind: "quote" as const,
         no: (archived ? beforeNo : activeNo).get(line.id) ?? 0,
         name: line.name === "" ? null : line.name,
         changes: line.changes,
+        ...(line.customFieldKeys ? { customFieldKeys: line.customFieldKeys } : {}),
       }))
       .sort((a, b) => a.no - b.no),
   );

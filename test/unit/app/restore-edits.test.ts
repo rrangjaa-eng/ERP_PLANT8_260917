@@ -54,6 +54,8 @@ function savedLine(version: number, unitPriceKrw: number): Line {
     prepaidOverdueDays: null,
     hasCardSideLinks: false,
     executionOverKrw: null,
+    customFields: {},
+    customFieldsBase: {},
   };
 }
 
@@ -270,5 +272,57 @@ describe("기본 정보 4칸 보관 · 복원", () => {
 
   it("version 없는 추가 칸 보관본은 들이지 않는다", () => {
     expect(mergeRestoredEdits([], { "info:custom.cf_memo0001": "바뀐 메모" }, ["print"], KIND_CELLS).info).toBeUndefined();
+  });
+});
+
+// 07.5-03(eng B-6 · r2 N5) — 견적 줄 추가 칸: 기존 줄은 `{id}:cf_<key>` + 같은 줄 `:base`로, 새 줄은 StoredNewLine.customFields로
+// 보관 · 복원한다. 셀 충돌 baseline · readLineBase는 그대로(추가 칸만 바뀐 동시 수정은 줄 version 폴백 — D-7520).
+describe("복원 — 견적 줄 추가 칸", () => {
+  const KEYS = ["cf_spec0001", "cf_kind0001"];
+  const withCustom = (version: number, values: Record<string, string>) => ({ ...savedLine(version, 1000), customFields: values, customFieldsBase: values });
+
+  it("추가 칸만 고친 기존 줄 → cf_ 편집과 :base를 보관하고, 복원하면 그 값 · 보관 version · dirty", () => {
+    const edited = { ...withCustom(1, { cf_spec0001: "옛 규격", cf_kind0001: "실내" }), customFields: { cf_spec0001: "LED 3x2m", cf_kind0001: "실내" }, dirty: true };
+    const stash = JSON.parse(JSON.stringify(editsSnapshot([edited], null, PERIOD_V1, null, null))) as Record<string, unknown>;
+
+    expect(stash["line-1:cf_cf_spec0001"]).toBe("LED 3x2m");
+    expect(stash).not.toHaveProperty("line-1:cf_cf_kind0001");
+    expect(stash["line-1:base"]).toMatchObject({ version: 1 });
+
+    const fresh = withCustom(2, { cf_spec0001: "동료 규격", cf_kind0001: "실외" });
+    const [restored] = mergeRestoredEdits([fresh], stash, ["print"], KIND_CELLS, KEYS).lines;
+
+    expect(restored).toMatchObject({ version: 1, dirty: true, customFields: { cf_spec0001: "LED 3x2m", cf_kind0001: "실외" } });
+    // 화면 기준값은 지금 DTO 값 그대로 — 셀 dirty는 그 값과 비교한다.
+    expect(restored?.customFieldsBase).toEqual({ cf_spec0001: "동료 규격", cf_kind0001: "실외" });
+  });
+
+  it("같은 줄의 다른 추가 칸 편집과 기본 칸 편집이 키별로 함께 들어온다", () => {
+    const edited = { ...withCustom(1, { cf_spec0001: "", cf_kind0001: "" }), itemName: "배너 고침", customFields: { cf_spec0001: "규격", cf_kind0001: "실내" }, dirty: true };
+    const stash = editsSnapshot([edited], null, PERIOD_V1, null, null);
+
+    const [restored] = mergeRestoredEdits([withCustom(1, { cf_spec0001: "", cf_kind0001: "" })], stash, ["print"], KIND_CELLS, KEYS).lines;
+
+    expect(restored).toMatchObject({ itemName: "배너 고침", customFields: { cf_spec0001: "규격", cf_kind0001: "실내" } });
+  });
+
+  it("지금 열에 없는 키 · 글자가 아닌 값은 버린다", () => {
+    const stash = { "line-1:cf_cf_gone0001": "사라진 칸", "line-1:cf_cf_spec0001": 3, "line-1:base": { version: 1, baseline: savedLine(1, 1000).baseline } };
+
+    const [restored] = mergeRestoredEdits([withCustom(1, { cf_spec0001: "", cf_kind0001: "" })], stash, ["print"], KIND_CELLS, KEYS).lines;
+
+    expect(restored?.customFields).toEqual({ cf_spec0001: "", cf_kind0001: "" });
+  });
+
+  it("새 줄은 customFields(글자 값 · 지금 열 키만)로 보관 · 복원한다", () => {
+    const added = { ...savedLine(1, 1000), clientKey: "6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d", id: "6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d", isNew: true as const, dirty: true, customFields: { cf_spec0001: "새 규격" }, customFieldsBase: {} };
+    const stash = JSON.parse(JSON.stringify(editsSnapshot([added], null, PERIOD_V1, null, null))) as Record<string, Record<string, unknown>>;
+    expect(stash["6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d:new"]?.customFields).toEqual({ cf_spec0001: "새 규격" });
+    stash["6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d:new"]!.customFields = { cf_spec0001: "새 규격", cf_gone0001: "x", cf_kind0001: 5 };
+
+    const [restored] = mergeRestoredEdits([], stash, ["print"], { quote: { note: "edit" } } as unknown as KindCells, KEYS).lines;
+
+    expect(restored?.customFields).toEqual({ cf_spec0001: "새 규격" });
+    expect(restored?.customFieldsBase).toEqual({});
   });
 });

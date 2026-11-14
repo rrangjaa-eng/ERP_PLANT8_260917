@@ -1,0 +1,202 @@
+[
+  {
+    "width": 375,
+    "innerWidth": 375,
+    "documentScrollWidth": 375,
+    "documentClientWidth": 375,
+    "tableBox": {
+      "scrollWidth": 375,
+      "clientWidth": 375
+    },
+    "headers": [
+      "번호",
+      "소분류",
+      "항목",
+      "거래처",
+      "수량",
+      "단가",
+      "일수",
+      "견적가",
+      "실행가",
+      "차익",
+      "상태",
+      "내부 비고",
+      "고객 비고",
+      "중분류",
+      "장비 규격과 설치 조건 현장 메모 칸",
+      "설치 구분",
+      "장비 반입 예정일과 현장 도착 확인일",
+      "행동"
+    ],
+    "visibleHeaders": [
+      "항목",
+      "실행가",
+      "상태"
+    ],
+    "customHeaderIndexes": [
+      14,
+      15,
+      16,
+      -1
+    ],
+    "headerBoxes": [
+      {
+        "text": "항목",
+        "width": 132.2,
+        "height": 45.8,
+        "scrollWidth": 132,
+        "clientWidth": 132,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "실행가",
+        "width": 134.1,
+        "height": 45.8,
+        "scrollWidth": 134,
+        "clientWidth": 134,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "상태",
+        "width": 74.7,
+        "height": 45.8,
+        "scrollWidth": 75,
+        "clientWidth": 75,
+        "whiteSpace": "normal"
+      }
+    ],
+    "customCells": {
+      "장비 규격과 설치 조건 현장 메모 칸": [],
+      "설치 구분": [],
+      "장비 반입 예정일과 현장 도착 확인일": [],
+      "설치 높이": null
+    },
+    "firstRowCells": 1,
+    "dirtyCells": 0,
+    "invalidCells": [],
+    "readonlyCells": 0,
+    "footer": "합계 (공급가액 · 4줄) 견적 10,000,000 · 차익 4,000,0006,000,000",
+    "primaryButtons": 3,
+    "fieldWSelect": "200px",
+    "sheet": {
+      "title": "LED 스크린",
+      "text": "LED 스크린무대·시공 · —수량1단가1,000,000일수1견적가1,000,000차익400,000환율—내부 비고—고객 비고—중분류—장비 규격과 설치 조건 현장 메모 칸P3.9 6x3m 리깅 포함 · 전원 3상 60A 현장 확보 필요 · 반입은 하역장 2번 게이트설치 구분실내장비 반입 예정일과 현장 도착 확인일2026-11-04상태미착수거래처 없음 · PC 견적 표에서 고르기",
+      "scrollWidth": 375,
+      "clientWidth": 375
+    },
+    "customHeaderLines": [
+      {
+        "text": "장비 규격과 설치 조건 현장 메모 칸",
+        "lines": null
+      },
+      {
+        "text": "설치 구분",
+        "lines": null
+      },
+      {
+        "text": "장비 반입 예정일과 현장 도착 확인일",
+        "lines": null
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "innerWidth": 320,
+    "documentScrollWidth": 320,
+    "documentClientWidth": 320,
+    "tableBox": {
+      "scrollWidth": 320,
+      "clientWidth": 320
+    },
+    "headers": [
+      "번호",
+      "소분류",
+      "항목",
+      "거래처",
+      "수량",
+      "단가",
+      "일수",
+      "견적가",
+      "실행가",
+      "차익",
+      "상태",
+      "내부 비고",
+      "고객 비고",
+      "중분류",
+      "장비 규격과 설치 조건 현장 메모 칸",
+      "설치 구분",
+      "장비 반입 예정일과 현장 도착 확인일",
+      "행동"
+    ],
+    "visibleHeaders": [
+      "항목",
+      "실행가",
+      "상태"
+    ],
+    "customHeaderIndexes": [
+      14,
+      15,
+      16,
+      -1
+    ],
+    "headerBoxes": [
+      {
+        "text": "항목",
+        "width": 110.8,
+        "height": 45.8,
+        "scrollWidth": 111,
+        "clientWidth": 111,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "실행가",
+        "width": 112.5,
+        "height": 45.8,
+        "scrollWidth": 112,
+        "clientWidth": 112,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "상태",
+        "width": 62.7,
+        "height": 45.8,
+        "scrollWidth": 63,
+        "clientWidth": 63,
+        "whiteSpace": "normal"
+      }
+    ],
+    "customCells": {
+      "장비 규격과 설치 조건 현장 메모 칸": [],
+      "설치 구분": [],
+      "장비 반입 예정일과 현장 도착 확인일": [],
+      "설치 높이": null
+    },
+    "firstRowCells": 1,
+    "dirtyCells": 0,
+    "invalidCells": [],
+    "readonlyCells": 0,
+    "footer": "합계 (공급가액 · 4줄) 견적 10,000,000 · 차익 4,000,0006,000,000",
+    "primaryButtons": 3,
+    "fieldWSelect": "200px",
+    "sheet": {
+      "title": "LED 스크린",
+      "text": "LED 스크린무대·시공 · —수량1단가1,000,000일수1견적가1,000,000차익400,000환율—내부 비고—고객 비고—중분류—장비 규격과 설치 조건 현장 메모 칸P3.9 6x3m 리깅 포함 · 전원 3상 60A 현장 확보 필요 · 반입은 하역장 2번 게이트설치 구분실내장비 반입 예정일과 현장 도착 확인일2026-11-04상태미착수거래처 없음 · PC 견적 표에서 고르기",
+      "scrollWidth": 320,
+      "clientWidth": 320
+    },
+    "customHeaderLines": [
+      {
+        "text": "장비 규격과 설치 조건 현장 메모 칸",
+        "lines": null
+      },
+      {
+        "text": "설치 구분",
+        "lines": null
+      },
+      {
+        "text": "장비 반입 예정일과 현장 도착 확인일",
+        "lines": null
+      }
+    ]
+  }
+]

@@ -48,6 +48,8 @@ export type LineChange = {
   no: number;
   name: string | null;
   changes: Record<string, [unknown, unknown]>;
+  /** 07.5-03(eng B-4) — 값이 바뀐 견적 줄 추가 칸 키(오름차순). 값은 싣지 않는다. */
+  customFieldKeys?: string[];
 };
 
 // 금액 네 열(통화 · 외화 금액 · 환율 · 원화)을 로그 한 줄 글자로 — 원화 `1,000,000원`, 외화는 견적 줄 2행 글자 + ` · {원화}원`.

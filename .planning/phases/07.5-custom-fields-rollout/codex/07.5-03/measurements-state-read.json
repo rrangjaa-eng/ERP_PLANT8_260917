@@ -1,0 +1,1128 @@
+[
+  {
+    "width": 1280,
+    "innerWidth": 1280,
+    "documentScrollWidth": 1280,
+    "documentClientWidth": 1280,
+    "tableBox": {
+      "scrollWidth": 1280,
+      "clientWidth": 1280
+    },
+    "headers": [
+      "번호",
+      "소분류",
+      "항목",
+      "거래처",
+      "수량",
+      "단가",
+      "일수",
+      "견적가",
+      "실행가",
+      "차익",
+      "상태",
+      "내부 비고",
+      "고객 비고",
+      "중분류",
+      "장비 규격과 설치 조건 현장 메모 칸",
+      "설치 구분",
+      "장비 반입 예정일과 현장 도착 확인일",
+      "행동"
+    ],
+    "visibleHeaders": [
+      "번호",
+      "소분류",
+      "항목",
+      "거래처",
+      "수량",
+      "단가",
+      "일수",
+      "견적가",
+      "실행가",
+      "차익",
+      "상태",
+      "내부 비고",
+      "고객 비고",
+      "중분류",
+      "장비 규격과 설치 조건 현장 메모 칸",
+      "설치 구분",
+      "장비 반입 예정일과 현장 도착 확인일",
+      "행동"
+    ],
+    "customHeaderIndexes": [
+      14,
+      15,
+      16,
+      -1
+    ],
+    "headerBoxes": [
+      {
+        "text": "번호",
+        "width": 52,
+        "height": 149.8,
+        "scrollWidth": 52,
+        "clientWidth": 52,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "소분류",
+        "width": 51.4,
+        "height": 149.8,
+        "scrollWidth": 51,
+        "clientWidth": 51,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "항목",
+        "width": 43.4,
+        "height": 149.8,
+        "scrollWidth": 43,
+        "clientWidth": 43,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "거래처",
+        "width": 49.1,
+        "height": 149.8,
+        "scrollWidth": 49,
+        "clientWidth": 49,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "수량",
+        "width": 38.1,
+        "height": 149.8,
+        "scrollWidth": 38,
+        "clientWidth": 38,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "단가",
+        "width": 78.7,
+        "height": 149.8,
+        "scrollWidth": 79,
+        "clientWidth": 79,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "일수",
+        "width": 38.1,
+        "height": 149.8,
+        "scrollWidth": 38,
+        "clientWidth": 38,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "견적가",
+        "width": 78.7,
+        "height": 149.8,
+        "scrollWidth": 79,
+        "clientWidth": 79,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "실행가",
+        "width": 79.3,
+        "height": 149.8,
+        "scrollWidth": 79,
+        "clientWidth": 79,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "차익",
+        "width": 76.1,
+        "height": 149.8,
+        "scrollWidth": 76,
+        "clientWidth": 76,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "상태",
+        "width": 43.9,
+        "height": 149.8,
+        "scrollWidth": 44,
+        "clientWidth": 44,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "내부 비고",
+        "width": 41.3,
+        "height": 149.8,
+        "scrollWidth": 41,
+        "clientWidth": 41,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "고객 비고",
+        "width": 41.3,
+        "height": 149.8,
+        "scrollWidth": 41,
+        "clientWidth": 41,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "중분류",
+        "width": 49.1,
+        "height": 149.8,
+        "scrollWidth": 49,
+        "clientWidth": 49,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "장비 규격과 설치 조건 현장 메모 칸",
+        "width": 53.4,
+        "height": 149.8,
+        "scrollWidth": 53,
+        "clientWidth": 53,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "설치 구분",
+        "width": 36.8,
+        "height": 149.8,
+        "scrollWidth": 37,
+        "clientWidth": 37,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "장비 반입 예정일과 현장 도착 확인일",
+        "width": 100.1,
+        "height": 149.8,
+        "scrollWidth": 100,
+        "clientWidth": 100,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "행동",
+        "width": 111.5,
+        "height": 149.8,
+        "scrollWidth": 111,
+        "clientWidth": 111,
+        "whiteSpace": "normal"
+      }
+    ],
+    "customCells": {
+      "장비 규격과 설치 조건 현장 메모 칸": [
+        {
+          "text": "P3.9 6x3m 리깅 포함 · 전원 3상 60A 현장 확보 필요 · 반입은 하역장 2번 게이트",
+          "height": 303,
+          "lines": 14,
+          "scrollWidth": 53,
+          "clientWidth": 53,
+          "width": "53.375px",
+          "maxWidth": "none",
+          "contentWidth": 37.4,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "콘솔 32ch",
+          "height": 114,
+          "lines": 5,
+          "scrollWidth": 53,
+          "clientWidth": 53,
+          "width": "53.375px",
+          "maxWidth": "none",
+          "contentWidth": 37.4,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "—",
+          "height": 51.8,
+          "lines": 2,
+          "scrollWidth": 53,
+          "clientWidth": 53,
+          "width": "53.375px",
+          "maxWidth": "none",
+          "contentWidth": 37.4,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "TRUSS-400x400-SQUARE-12M-GROUNDSUPPORT-2SET",
+          "height": 260,
+          "lines": 12,
+          "scrollWidth": 53,
+          "clientWidth": 53,
+          "width": "53.375px",
+          "maxWidth": "none",
+          "contentWidth": 37.4,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        }
+      ],
+      "설치 구분": [
+        {
+          "text": "실내",
+          "height": 303,
+          "lines": 14,
+          "scrollWidth": 37,
+          "clientWidth": 37,
+          "width": "36.7969px",
+          "maxWidth": "none",
+          "contentWidth": 20.8,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "가설 (보관됨)",
+          "height": 114,
+          "lines": 5,
+          "scrollWidth": 37,
+          "clientWidth": 37,
+          "width": "36.7969px",
+          "maxWidth": "none",
+          "contentWidth": 20.8,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "—",
+          "height": 51.8,
+          "lines": 2,
+          "scrollWidth": 37,
+          "clientWidth": 37,
+          "width": "36.7969px",
+          "maxWidth": "none",
+          "contentWidth": 20.8,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "—",
+          "height": 260,
+          "lines": 12,
+          "scrollWidth": 37,
+          "clientWidth": 37,
+          "width": "36.7969px",
+          "maxWidth": "none",
+          "contentWidth": 20.8,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        }
+      ],
+      "장비 반입 예정일과 현장 도착 확인일": [
+        {
+          "text": "2026-11-04",
+          "height": 303,
+          "lines": 14,
+          "scrollWidth": 100,
+          "clientWidth": 100,
+          "width": "100.078px",
+          "maxWidth": "none",
+          "contentWidth": 84.1,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "—",
+          "height": 114,
+          "lines": 5,
+          "scrollWidth": 100,
+          "clientWidth": 100,
+          "width": "100.078px",
+          "maxWidth": "none",
+          "contentWidth": 84.1,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "—",
+          "height": 51.8,
+          "lines": 2,
+          "scrollWidth": 100,
+          "clientWidth": 100,
+          "width": "100.078px",
+          "maxWidth": "none",
+          "contentWidth": 84.1,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "2026-12-01",
+          "height": 260,
+          "lines": 12,
+          "scrollWidth": 100,
+          "clientWidth": 100,
+          "width": "100.078px",
+          "maxWidth": "none",
+          "contentWidth": 84.1,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        }
+      ],
+      "설치 높이": null
+    },
+    "firstRowCells": 1,
+    "dirtyCells": 0,
+    "invalidCells": [],
+    "readonlyCells": 20,
+    "footer": "합계 (공급가액 · 4줄) 견적 10,000,000 · 차익 4,000,000",
+    "primaryButtons": 3,
+    "fieldWSelect": "200px",
+    "sheet": null,
+    "customHeaderLines": [
+      {
+        "text": "장비 규격과 설치 조건 현장 메모 칸",
+        "lines": 1
+      },
+      {
+        "text": "설치 구분",
+        "lines": 1
+      },
+      {
+        "text": "장비 반입 예정일과 현장 도착 확인일",
+        "lines": 3
+      }
+    ]
+  },
+  {
+    "width": 1024,
+    "innerWidth": 1024,
+    "documentScrollWidth": 1024,
+    "documentClientWidth": 1024,
+    "tableBox": {
+      "scrollWidth": 1024,
+      "clientWidth": 1024
+    },
+    "headers": [
+      "번호",
+      "소분류",
+      "항목",
+      "거래처",
+      "수량",
+      "단가",
+      "일수",
+      "견적가",
+      "실행가",
+      "차익",
+      "상태",
+      "내부 비고",
+      "고객 비고",
+      "중분류",
+      "장비 규격과 설치 조건 현장 메모 칸",
+      "설치 구분",
+      "장비 반입 예정일과 현장 도착 확인일",
+      "행동"
+    ],
+    "visibleHeaders": [
+      "소분류",
+      "항목",
+      "거래처",
+      "수량",
+      "단가",
+      "일수",
+      "견적가",
+      "실행가",
+      "상태",
+      "내부 비고",
+      "고객 비고",
+      "중분류",
+      "장비 규격과 설치 조건 현장 메모 칸",
+      "설치 구분",
+      "장비 반입 예정일과 현장 도착 확인일",
+      "행동"
+    ],
+    "customHeaderIndexes": [
+      14,
+      15,
+      16,
+      -1
+    ],
+    "headerBoxes": [
+      {
+        "text": "소분류",
+        "width": 53.4,
+        "height": 108.2,
+        "scrollWidth": 53,
+        "clientWidth": 53,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "항목",
+        "width": 48.2,
+        "height": 108.2,
+        "scrollWidth": 48,
+        "clientWidth": 48,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "거래처",
+        "width": 49.1,
+        "height": 108.2,
+        "scrollWidth": 49,
+        "clientWidth": 49,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "수량",
+        "width": 38.1,
+        "height": 108.2,
+        "scrollWidth": 38,
+        "clientWidth": 38,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "단가",
+        "width": 78.7,
+        "height": 108.2,
+        "scrollWidth": 79,
+        "clientWidth": 79,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "일수",
+        "width": 38.1,
+        "height": 108.2,
+        "scrollWidth": 38,
+        "clientWidth": 38,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "견적가",
+        "width": 78.7,
+        "height": 108.2,
+        "scrollWidth": 79,
+        "clientWidth": 79,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "실행가",
+        "width": 79.3,
+        "height": 108.2,
+        "scrollWidth": 79,
+        "clientWidth": 79,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "상태",
+        "width": 43.9,
+        "height": 108.2,
+        "scrollWidth": 44,
+        "clientWidth": 44,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "내부 비고",
+        "width": 44.2,
+        "height": 108.2,
+        "scrollWidth": 44,
+        "clientWidth": 44,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "고객 비고",
+        "width": 44.2,
+        "height": 108.2,
+        "scrollWidth": 44,
+        "clientWidth": 44,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "중분류",
+        "width": 49.1,
+        "height": 108.2,
+        "scrollWidth": 49,
+        "clientWidth": 49,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "장비 규격과 설치 조건 현장 메모 칸",
+        "width": 75,
+        "height": 108.2,
+        "scrollWidth": 75,
+        "clientWidth": 75,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "설치 구분",
+        "width": 43.6,
+        "height": 108.2,
+        "scrollWidth": 44,
+        "clientWidth": 44,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "장비 반입 예정일과 현장 도착 확인일",
+        "width": 100.1,
+        "height": 108.2,
+        "scrollWidth": 100,
+        "clientWidth": 100,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "행동",
+        "width": 118.6,
+        "height": 108.2,
+        "scrollWidth": 119,
+        "clientWidth": 119,
+        "whiteSpace": "normal"
+      }
+    ],
+    "customCells": {
+      "장비 규격과 설치 조건 현장 메모 칸": [
+        {
+          "text": "P3.9 6x3m 리깅 포함 · 전원 3상 60A 현장 확보 필요 · 반입은 하역장 2번 게이트",
+          "height": 198,
+          "lines": 9,
+          "scrollWidth": 75,
+          "clientWidth": 75,
+          "width": "75px",
+          "maxWidth": "none",
+          "contentWidth": 59,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "콘솔 32ch",
+          "height": 93,
+          "lines": 4,
+          "scrollWidth": 75,
+          "clientWidth": 75,
+          "width": "75px",
+          "maxWidth": "none",
+          "contentWidth": 59,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "—",
+          "height": 51.8,
+          "lines": 2,
+          "scrollWidth": 75,
+          "clientWidth": 75,
+          "width": "75px",
+          "maxWidth": "none",
+          "contentWidth": 59,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "TRUSS-400x400-SQUARE-12M-GROUNDSUPPORT-2SET",
+          "height": 176,
+          "lines": 8,
+          "scrollWidth": 75,
+          "clientWidth": 75,
+          "width": "75px",
+          "maxWidth": "none",
+          "contentWidth": 59,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        }
+      ],
+      "설치 구분": [
+        {
+          "text": "실내",
+          "height": 198,
+          "lines": 9,
+          "scrollWidth": 44,
+          "clientWidth": 44,
+          "width": "43.5781px",
+          "maxWidth": "none",
+          "contentWidth": 27.6,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "가설 (보관됨)",
+          "height": 93,
+          "lines": 4,
+          "scrollWidth": 44,
+          "clientWidth": 44,
+          "width": "43.5781px",
+          "maxWidth": "none",
+          "contentWidth": 27.6,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "—",
+          "height": 51.8,
+          "lines": 2,
+          "scrollWidth": 44,
+          "clientWidth": 44,
+          "width": "43.5781px",
+          "maxWidth": "none",
+          "contentWidth": 27.6,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "—",
+          "height": 176,
+          "lines": 8,
+          "scrollWidth": 44,
+          "clientWidth": 44,
+          "width": "43.5781px",
+          "maxWidth": "none",
+          "contentWidth": 27.6,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        }
+      ],
+      "장비 반입 예정일과 현장 도착 확인일": [
+        {
+          "text": "2026-11-04",
+          "height": 198,
+          "lines": 9,
+          "scrollWidth": 100,
+          "clientWidth": 100,
+          "width": "100.078px",
+          "maxWidth": "none",
+          "contentWidth": 84.1,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "—",
+          "height": 93,
+          "lines": 4,
+          "scrollWidth": 100,
+          "clientWidth": 100,
+          "width": "100.078px",
+          "maxWidth": "none",
+          "contentWidth": 84.1,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "—",
+          "height": 51.8,
+          "lines": 2,
+          "scrollWidth": 100,
+          "clientWidth": 100,
+          "width": "100.078px",
+          "maxWidth": "none",
+          "contentWidth": 84.1,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        },
+        {
+          "text": "2026-12-01",
+          "height": 176,
+          "lines": 8,
+          "scrollWidth": 100,
+          "clientWidth": 100,
+          "width": "100.078px",
+          "maxWidth": "none",
+          "contentWidth": 84.1,
+          "textAlign": "start",
+          "textOverflow": "clip",
+          "display": "table-cell"
+        }
+      ],
+      "설치 높이": null
+    },
+    "firstRowCells": 1,
+    "dirtyCells": 0,
+    "invalidCells": [],
+    "readonlyCells": 20,
+    "footer": "합계 (공급가액 · 4줄) 견적 10,000,000 · 차익 4,000,000",
+    "primaryButtons": 3,
+    "fieldWSelect": "200px",
+    "sheet": null,
+    "customHeaderLines": [
+      {
+        "text": "장비 규격과 설치 조건 현장 메모 칸",
+        "lines": 1
+      },
+      {
+        "text": "설치 구분",
+        "lines": 1
+      },
+      {
+        "text": "장비 반입 예정일과 현장 도착 확인일",
+        "lines": 3
+      }
+    ]
+  },
+  {
+    "width": 768,
+    "innerWidth": 768,
+    "documentScrollWidth": 768,
+    "documentClientWidth": 768,
+    "tableBox": {
+      "scrollWidth": 768,
+      "clientWidth": 768
+    },
+    "headers": [
+      "번호",
+      "소분류",
+      "항목",
+      "거래처",
+      "수량",
+      "단가",
+      "일수",
+      "견적가",
+      "실행가",
+      "차익",
+      "상태",
+      "내부 비고",
+      "고객 비고",
+      "중분류",
+      "장비 규격과 설치 조건 현장 메모 칸",
+      "설치 구분",
+      "장비 반입 예정일과 현장 도착 확인일",
+      "행동"
+    ],
+    "visibleHeaders": [
+      "항목",
+      "거래처",
+      "수량",
+      "단가",
+      "일수",
+      "견적가",
+      "실행가",
+      "상태",
+      "장비 규격과 설치 조건 현장 메모 칸",
+      "설치 구분",
+      "장비 반입 예정일과 현장 도착 확인일",
+      "행동"
+    ],
+    "customHeaderIndexes": [
+      14,
+      15,
+      16,
+      -1
+    ],
+    "headerBoxes": [
+      {
+        "text": "항목",
+        "width": 44,
+        "height": 149.8,
+        "scrollWidth": 44,
+        "clientWidth": 44,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "거래처",
+        "width": 49.1,
+        "height": 149.8,
+        "scrollWidth": 49,
+        "clientWidth": 49,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "수량",
+        "width": 38.1,
+        "height": 149.8,
+        "scrollWidth": 38,
+        "clientWidth": 38,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "단가",
+        "width": 78.7,
+        "height": 149.8,
+        "scrollWidth": 79,
+        "clientWidth": 79,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "일수",
+        "width": 38.1,
+        "height": 149.8,
+        "scrollWidth": 38,
+        "clientWidth": 38,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "견적가",
+        "width": 78.7,
+        "height": 149.8,
+        "scrollWidth": 79,
+        "clientWidth": 79,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "실행가",
+        "width": 79.3,
+        "height": 149.8,
+        "scrollWidth": 79,
+        "clientWidth": 79,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "상태",
+        "width": 43.9,
+        "height": 149.8,
+        "scrollWidth": 44,
+        "clientWidth": 44,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "장비 규격과 설치 조건 현장 메모 칸",
+        "width": 56.3,
+        "height": 149.8,
+        "scrollWidth": 56,
+        "clientWidth": 56,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "설치 구분",
+        "width": 37.7,
+        "height": 149.8,
+        "scrollWidth": 38,
+        "clientWidth": 38,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "장비 반입 예정일과 현장 도착 확인일",
+        "width": 100.1,
+        "height": 149.8,
+        "scrollWidth": 100,
+        "clientWidth": 100,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "행동",
+        "width": 82.2,
+        "height": 149.8,
+        "scrollWidth": 82,
+        "clientWidth": 82,
+        "whiteSpace": "normal"
+      }
+    ],
+    "customCells": {
+      "장비 규격과 설치 조건 현장 메모 칸": [],
+      "설치 구분": [],
+      "장비 반입 예정일과 현장 도착 확인일": [],
+      "설치 높이": null
+    },
+    "firstRowCells": 1,
+    "dirtyCells": 0,
+    "invalidCells": [],
+    "readonlyCells": 0,
+    "footer": "합계 (공급가액 · 4줄) 견적 10,000,000 · 차익 4,000,000",
+    "primaryButtons": 3,
+    "fieldWSelect": "200px",
+    "sheet": null,
+    "customHeaderLines": [
+      {
+        "text": "장비 규격과 설치 조건 현장 메모 칸",
+        "lines": 1
+      },
+      {
+        "text": "설치 구분",
+        "lines": 1
+      },
+      {
+        "text": "장비 반입 예정일과 현장 도착 확인일",
+        "lines": 3
+      }
+    ]
+  },
+  {
+    "width": 375,
+    "innerWidth": 375,
+    "documentScrollWidth": 375,
+    "documentClientWidth": 375,
+    "tableBox": {
+      "scrollWidth": 375,
+      "clientWidth": 375
+    },
+    "headers": [
+      "번호",
+      "소분류",
+      "항목",
+      "거래처",
+      "수량",
+      "단가",
+      "일수",
+      "견적가",
+      "실행가",
+      "차익",
+      "상태",
+      "내부 비고",
+      "고객 비고",
+      "중분류",
+      "장비 규격과 설치 조건 현장 메모 칸",
+      "설치 구분",
+      "장비 반입 예정일과 현장 도착 확인일",
+      "행동"
+    ],
+    "visibleHeaders": [
+      "항목",
+      "실행가",
+      "상태"
+    ],
+    "customHeaderIndexes": [
+      14,
+      15,
+      16,
+      -1
+    ],
+    "headerBoxes": [
+      {
+        "text": "항목",
+        "width": 132.2,
+        "height": 45.8,
+        "scrollWidth": 132,
+        "clientWidth": 132,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "실행가",
+        "width": 134.1,
+        "height": 45.8,
+        "scrollWidth": 134,
+        "clientWidth": 134,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "상태",
+        "width": 74.7,
+        "height": 45.8,
+        "scrollWidth": 75,
+        "clientWidth": 75,
+        "whiteSpace": "normal"
+      }
+    ],
+    "customCells": {
+      "장비 규격과 설치 조건 현장 메모 칸": [],
+      "설치 구분": [],
+      "장비 반입 예정일과 현장 도착 확인일": [],
+      "설치 높이": null
+    },
+    "firstRowCells": 1,
+    "dirtyCells": 0,
+    "invalidCells": [],
+    "readonlyCells": 0,
+    "footer": "합계 (공급가액 · 4줄) 견적 10,000,000 · 차익 4,000,0006,000,000",
+    "primaryButtons": 3,
+    "fieldWSelect": "200px",
+    "sheet": null,
+    "customHeaderLines": [
+      {
+        "text": "장비 규격과 설치 조건 현장 메모 칸",
+        "lines": null
+      },
+      {
+        "text": "설치 구분",
+        "lines": null
+      },
+      {
+        "text": "장비 반입 예정일과 현장 도착 확인일",
+        "lines": null
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "innerWidth": 320,
+    "documentScrollWidth": 320,
+    "documentClientWidth": 320,
+    "tableBox": {
+      "scrollWidth": 320,
+      "clientWidth": 320
+    },
+    "headers": [
+      "번호",
+      "소분류",
+      "항목",
+      "거래처",
+      "수량",
+      "단가",
+      "일수",
+      "견적가",
+      "실행가",
+      "차익",
+      "상태",
+      "내부 비고",
+      "고객 비고",
+      "중분류",
+      "장비 규격과 설치 조건 현장 메모 칸",
+      "설치 구분",
+      "장비 반입 예정일과 현장 도착 확인일",
+      "행동"
+    ],
+    "visibleHeaders": [
+      "항목",
+      "실행가",
+      "상태"
+    ],
+    "customHeaderIndexes": [
+      14,
+      15,
+      16,
+      -1
+    ],
+    "headerBoxes": [
+      {
+        "text": "항목",
+        "width": 110.8,
+        "height": 45.8,
+        "scrollWidth": 111,
+        "clientWidth": 111,
+        "whiteSpace": "normal"
+      },
+      {
+        "text": "실행가",
+        "width": 112.5,
+        "height": 45.8,
+        "scrollWidth": 112,
+        "clientWidth": 112,
+        "whiteSpace": "nowrap"
+      },
+      {
+        "text": "상태",
+        "width": 62.7,
+        "height": 45.8,
+        "scrollWidth": 63,
+        "clientWidth": 63,
+        "whiteSpace": "normal"
+      }
+    ],
+    "customCells": {
+      "장비 규격과 설치 조건 현장 메모 칸": [],
+      "설치 구분": [],
+      "장비 반입 예정일과 현장 도착 확인일": [],
+      "설치 높이": null
+    },
+    "firstRowCells": 1,
+    "dirtyCells": 0,
+    "invalidCells": [],
+    "readonlyCells": 0,
+    "footer": "합계 (공급가액 · 4줄) 견적 10,000,000 · 차익 4,000,0006,000,000",
+    "primaryButtons": 3,
+    "fieldWSelect": "200px",
+    "sheet": null,
+    "customHeaderLines": [
+      {
+        "text": "장비 규격과 설치 조건 현장 메모 칸",
+        "lines": null
+      },
+      {
+        "text": "설치 구분",
+        "lines": null
+      },
+      {
+        "text": "장비 반입 예정일과 현장 도착 확인일",
+        "lines": null
+      }
+    ]
+  }
+]

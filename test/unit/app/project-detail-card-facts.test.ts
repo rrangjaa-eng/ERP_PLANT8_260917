@@ -31,6 +31,7 @@ const listQuoteLines = vi.fn<(...args: unknown[]) => Promise<unknown[]>>(() => P
 vi.mock("@/domain/quotes/lines", () => ({
   getCurrentQuoteRevision: () => Promise.resolve({ id: REVISION_ID, seq: 1, approved: false }),
   listQuoteLines: (...args: unknown[]) => listQuoteLines(...args),
+  listQuoteLineFieldDefinitions: () => Promise.resolve([]),
 }));
 const lineCardSideFacts = vi.fn<(...args: unknown[]) => Promise<unknown>>();
 vi.mock("@/domain/corp-card-usages/link-targets", () => ({ lineCardSideFacts: (...args: unknown[]) => lineCardSideFacts(...args) }));

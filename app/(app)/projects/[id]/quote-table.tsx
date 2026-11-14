@@ -384,6 +384,48 @@ function customFieldsDiffer(line: Pick<DraftLine, "customFields" | "customFields
   return Object.keys({ ...line.customFieldsBase, ...line.customFields }).some((key) => customFieldDirty(line, key));
 }
 
+// 07.5-03(S4 · D-7519 · D-7521) — 추가 칸 셀 편집 판정. 숫자는 수량 칸과 같은 판정(숫자 아님 글자는 일수 칸과 같다), 날짜는 엄격 YYYY-MM-DD(서버 상수 글자). 빈 글자는 비움.
+export function customFieldCellInput(column: QuoteLineCustomColumn, raw: string): { value: string } | { error: string } {
+  if (column.type === "date") return customFieldDateInput(raw);
+  if (column.type !== "number") return { value: raw };
+  if (raw.trim() === "") return { value: "" };
+  const parsed = normalizeNumericPaste(raw);
+  if (parsed === null) return { error: numericCellError("days") };
+  return Number(parsed.toFixed(2)) !== parsed ? { error: numberInputRejectionReason("quantity", "precision") } : { value: String(parsed) };
+}
+
+// 07.5-03 독립 검토 SF-1 — 추가 칸 붙여넣기 판정. 빈 글자 · 「—」(빈 칸 복사 글자)는 비움, 나머지는 셀 편집과 같은 판정.
+export function customFieldPasteInput(column: QuoteLineCustomColumn, value: string): { value: string } | { error: string } {
+  return value.trim() === "" || value === "—" ? { value: "" } : customFieldCellInput(column, value);
+}
+
+// 07.5-03 독립 검토 SF-1 — 추가 칸 붙여넣기 열. 숫자 · 날짜는 글자로 받아(빈 칸 · 「—」가 공용 숫자 판정에 걸리지 않게) 적용 때 customFieldPasteInput으로 판정,
+// 선택은 활성 선택지(「—」 = 비움).
+export function customFieldPasteColumn<Row>(column: QuoteLineCustomColumn, isEditable: (row: Row) => boolean): PasteColumn<Row> {
+  return {
+    key: customColumnKey(column.key),
+    kind: column.type === "select" ? "select" : "text",
+    ...(column.type === "select" ? { options: [{ value: "", label: "—" }, ...column.options.map((option) => ({ value: option, label: option }))] } : {}),
+    isEditable,
+  };
+}
+
+// 04-28(D-65) — 「덮어쓰기」는 내 값을 남기고, 「그 값으로」는 그 칸을 서버 값으로 바꾼다. 둘 다 그 줄의 version과 그 칸의 baseline을
+// 서버 현재로 올려 다음 저장이 그 칸에서 다시 충돌하지 않는다.
+// 07.5-03 독립 검토 SF-2 — 추가 칸만의 경합은 줄 단위 폴백 「항목」 충돌로 온다(D-7520). 그 「그 값으로」는 내 추가 칸 편집도 기준값으로
+// 되돌린다 — 남기면 다음 저장이 상대가 저장한 추가 칸 값을 말없이 덮는다.
+export function resolvedConflictLine(line: DraftLine, columnKey: string, choice: "mine" | "theirs"): DraftLine {
+  const conflict = line.cellConflicts[columnKey];
+  if (!conflict) return line;
+  const cellConflicts = { ...line.cellConflicts };
+  delete cellConflicts[columnKey];
+  const { baseline, value } = theirValuePatch(line.baseline, conflict.field, conflict.theirRaw);
+  const next: DraftLine = { ...line, version: conflict.theirVersion, baseline, cellConflicts };
+  if (choice === "mine") return next;
+  const taken = { ...next, ...value, ...(conflict.field === "itemName" ? { customFields: line.customFieldsBase } : {}) };
+  return { ...taken, dirty: lineDiffersFromBaseline(taken) || customFieldsDiffer(taken) || Object.keys(taken.cellErrors).length > 0 || taken.moved === true };
+}
+
 // 07.5-03 — 표 dirty 셀(왼쪽 위 삼각형): 추가 칸은 화면 기준값과 비교하고 나머지는 기존 규칙. 추가 칸만 고친 기존 줄은
 // 고친 셀이 따로 보이므로 소분류 칸의 줄 단위 표시(고친 칸 없는 줄 몫)를 세우지 않는다.
 function quoteCellDirty(line: DraftLine, columnKey: string): boolean {
@@ -2211,22 +2253,11 @@ export function QuoteLedger({
     commitCell(clientKey, columnKey, apply(parsed));
   }
 
-  // 07.5-03(S4 · D-7519 · D-7521) — 추가 칸 셀 커밋. 숫자는 수량 칸과 같은 판정(숫자 아님 글자는 일수 칸과 같다), 날짜는 엄격 YYYY-MM-DD(서버 상수 글자).
+  // 07.5-03(S4 · D-7519 · D-7521) — 추가 칸 셀 커밋(판정은 customFieldCellInput).
   // 판정이 실패하면 값을 그대로 두고 그 셀만 오류로 고정한다(숫자 칸 커밋과 같다). 빈 글자는 비움.
   function commitCustomField(clientKey: string, column: QuoteLineCustomColumn, raw: string) {
     const columnKey = customColumnKey(column.key);
-    let judged: { value: string } | { error: string } = { value: raw };
-    if (column.type === "date") judged = customFieldDateInput(raw);
-    if (column.type === "number" && raw.trim() !== "") {
-      const parsed = normalizeNumericPaste(raw);
-      judged =
-        parsed === null
-          ? { error: numericCellError("days") }
-          : Number(parsed.toFixed(2)) !== parsed
-            ? { error: numberInputRejectionReason("quantity", "precision") }
-            : { value: String(parsed) };
-    }
-    if (column.type === "number" && raw.trim() === "") judged = { value: "" };
+    const judged = customFieldCellInput(column, raw);
     persistPendingRef.current = true;
     if ("error" in judged) {
       const reason = judged.error;
@@ -3219,16 +3250,8 @@ export function QuoteLedger({
       { key: "note", kind: "text", isEditable: (row) => row.cells.note === "edit" },
       { key: "clientRemark", kind: "text", isEditable: (row) => row.cells.clientRemark === "edit" },
       { key: "midCategory", kind: "text", isEditable: (row) => row.cells.midCategory === "edit" },
-      // 07.5-03(S4) — 추가 칸: columns와 같은 자리 · 같은 키. 숫자는 수량 열과 같은 판정, 날짜는 글자로 받아 적용 때 판정, 선택은 활성 선택지(「—」 = 비움).
-      ...quoteLineCustomColumns.map(
-        (column): PasteColumn<DraftLine> => ({
-          key: customColumnKey(column.key),
-          kind: column.type === "number" ? "number" : column.type === "select" ? "select" : "text",
-          ...(column.type === "number" ? { numberKind: "quantity" as const } : {}),
-          ...(column.type === "select" ? { options: [{ value: "", label: "—" }, ...column.options.map((option) => ({ value: option, label: option }))] } : {}),
-          isEditable: (row) => row.cells.note === "edit",
-        }),
-      ),
+      // 07.5-03(S4) — 추가 칸: columns와 같은 자리 · 같은 키(customFieldPasteColumn).
+      ...quoteLineCustomColumns.map((column) => customFieldPasteColumn<DraftLine>(column, (row) => row.cells.note === "edit")),
       // 05-05 — 행 행동 열도 columns와 같은 자리(맨 끝)에 같은 길이로 둔다.
       { key: "door", kind: "text", isEditable: () => false },
     ];
@@ -3347,8 +3370,7 @@ export function QuoteLedger({
         if (cell.result.status === "error") {
           cellErrors[cell.columnKey] =
             blockedReasons.get(`${cell.rowIndex}:${cell.columnKey}`) ??
-            ((cell.columnKey === "days" || quoteLineCustomColumns.some((column) => column.type === "number" && customColumnKey(column.key) === cell.columnKey)) &&
-            cell.result.reason === numericCellError("quantity")
+            (cell.columnKey === "days" && cell.result.reason === numericCellError("quantity")
               ? numericCellError("days")
               : cell.columnKey === "days" && cell.result.reason === numberInputRejectionReason("quantity", "precision")
                 ? DAYS_PRECISION_REASON
@@ -3403,10 +3425,10 @@ export function QuoteLedger({
             patch = { midCategory: value === "—" ? null : value || null };
             break;
           default: {
-            // 07.5-03(S4 · D-7521) — 추가 칸. 날짜는 엄격 판정(아니면 오류 셀), 텍스트의 「—」(빈 칸 복사 글자)는 비움.
+            // 07.5-03(S4 · D-7521 · 독립 검토 SF-1) — 추가 칸. 빈 칸 · 「—」는 비움, 나머지는 셀 편집과 같은 판정(아니면 오류 셀).
             const column = quoteLineCustomColumns.find((candidate) => customColumnKey(candidate.key) === cell.columnKey);
             if (!column) break;
-            const judged = column.type === "date" ? customFieldDateInput(value) : { value: column.type === "text" && value === "—" ? "" : value };
+            const judged = customFieldPasteInput(column, value);
             if ("error" in judged) {
               next[cell.rowIndex] = { ...target, cellErrors: { ...cellErrors, [cell.columnKey]: judged.error }, cellConflicts, dirty: true };
               continue;
@@ -3464,24 +3486,10 @@ export function QuoteLedger({
     );
   }
 
-  // 04-28(D-65) — 「덮어쓰기」는 내 값을 남기고, 「그 값으로」는 그 칸을 서버
-  // 값으로 바꾼다. 둘 다 그 줄의 version과 그 칸의 baseline을 서버 현재로 올려
-  // 다음 저장이 그 칸에서 다시 충돌하지 않는다.
+  // 04-28(D-65) — 해소는 resolvedConflictLine.
   function resolveConflict(clientKey: string, columnKey: string, choice: "mine" | "theirs") {
     persistPendingRef.current = true;
-    setLines((prev) =>
-      prev.map((line) => {
-        const conflict = line.cellConflicts[columnKey];
-        if (line.clientKey !== clientKey || !conflict) return line;
-        const cellConflicts = { ...line.cellConflicts };
-        delete cellConflicts[columnKey];
-        const { baseline, value } = theirValuePatch(line.baseline, conflict.field, conflict.theirRaw);
-        const next: DraftLine = { ...line, version: conflict.theirVersion, baseline, cellConflicts };
-        if (choice === "mine") return next;
-        const taken = { ...next, ...value };
-        return { ...taken, dirty: lineDiffersFromBaseline(taken) || customFieldsDiffer(taken) || Object.keys(taken.cellErrors).length > 0 || taken.moved === true };
-      }),
-    );
+    setLines((prev) => prev.map((line) => (line.clientKey === clientKey ? resolvedConflictLine(line, columnKey, choice) : line)));
   }
 
   function cellIssueFor(row: DraftLine, columnKey: string): CellIssue | undefined {

@@ -359,14 +359,19 @@ describe("타입 판정 · 필수 · 보관 선택지 · 잠금 · 경합(D-7507
     expect(rejected.formatErrors).toEqual([{ rowIndex: 0, rowId: line.id, field: `cf_${s.key}`, label: "설치 구분", reason: "보관된 선택지 · 다른 선택지 고르기" }]);
   });
 
-  it("완료 프로젝트 · 쓰기 권리 없는 사람의 추가 칸 변경은 거부되고 줄은 그대로(D-7517)", async () => {
+  it("정산 · 완료 프로젝트 · 쓰기 권리 없는 사람의 추가 칸 변경은 거부되고 줄은 그대로(D-7517)", async () => {
     const fx = await setupTyped();
     const line = await seedLine(fx.revision.id, fx.subcategory, 0, "잠금", { [fx.x]: "있음" });
     const viewOnly = await makeViewer([{ menu: "projects", action: "view" }]);
 
     await rejection(saveQuoteLines(viewOnly, fx.revision.id, { rows: [asInput(line, { customFields: { [fx.x]: "권리 없음" } })] }));
+    // 07.5-03 독립 검토 INFO-4 — 쓰기 권리가 있는 사람도 내부 비고가 잠긴 줄(정산 기존 줄 · 완료)에서는 note 판정의 cf_<key> 셀로 거부된다.
+    await db.update(projects).set({ status: "settling" }).where(eq(projects.id, fx.project.id));
+    const settling = await formatErrorsOf(saveQuoteLines(fx.a, fx.revision.id, { rows: [asInput(line, { customFields: { [fx.x]: "정산 중" } })] }));
+    expect(settling.formatErrors).toEqual([{ rowIndex: 0, rowId: line.id, field: `cf_${fx.x}`, label: "필수 메모", reason: "정산 · 실행가와 새 줄만" }]);
     await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.project.id));
-    await rejection(saveQuoteLines(fx.a, fx.revision.id, { rows: [asInput(line, { customFields: { [fx.x]: "완료 뒤" } })] }));
+    const completed = await formatErrorsOf(saveQuoteLines(fx.a, fx.revision.id, { rows: [asInput(line, { customFields: { [fx.x]: "완료 뒤" } })] }));
+    expect(completed.formatErrors).toEqual([{ rowIndex: 0, rowId: line.id, field: `cf_${fx.x}`, label: "필수 메모", reason: "완료 · 견적 줄 잠김" }]);
 
     const after = await reloadLine(line.id);
     expect(after.version).toBe(line.version);

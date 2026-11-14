@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, fieldDefinitions, quoteLines, teams } from "@/db/schema";
+import { actionLog, fieldDefinitions, projects, quoteLines, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -10,13 +10,17 @@ import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import {
+  createOutOfQuoteLine,
   getCurrentQuoteRevision,
+  listQuoteLineFieldDefinitions,
   listQuoteLines,
   quoteLineRowInputSchema,
   saveQuoteLines,
   SaveRejectedError,
   type QuoteLineWriteRow,
 } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
+import { customFieldEditValues } from "@/app/(app)/projects/[id]/custom-field-cells";
 import { log } from "@/lib/log";
 import { seedCustomFieldDefinition } from "@/test/support/custom-fields";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
@@ -285,5 +289,168 @@ describe("줄 저장 판정 집합 = 화면 열 집합(D-7525)", () => {
     expect(rejected.summary).toBe("오류 1칸 · 전부 거부");
     expect(rejected.formatErrors).toEqual([{ rowIndex: 0, rowId: plain.id, field: `cf_${fx.q}`, label: "넷 필수", reason: "필수 칸 비어 있음 · 값 입력" }]);
     expect(await db.select().from(quoteLines).where(eq(quoteLines.id, plain.id))).toHaveLength(0);
+  });
+});
+
+describe("타입 판정 · 필수 · 보관 선택지 · 잠금 · 경합(D-7507 · D-7517 · D-7520 · D-7521)", () => {
+  // 한 계급에 텍스트 필수 X(1) · 날짜 D(2) · 숫자 N(3) — 앞 3개 = 판정 집합. 선택 S는 따로 둔다(앞 3개 안에 넣으려고 X 대신).
+  async function setupTyped() {
+    const a = await makeViewer();
+    const role = [roleOf(a)];
+    const x = await seedCustomFieldDefinition("quote_line", { label: "필수 메모", type: "text", required: true, sortOrder: 1 }, { visibleRoleIds: role });
+    const d = await seedCustomFieldDefinition("quote_line", { label: "반입일", type: "date", sortOrder: 2 }, { visibleRoleIds: role });
+    const n = await seedCustomFieldDefinition("quote_line", { label: "설치 높이", type: "number", sortOrder: 3 }, { visibleRoleIds: role });
+    const { project, revision, subcategory } = await makeProject(a.id);
+    return { a, project, revision, subcategory, x: x.key, d: d.key, n: n.key };
+  }
+
+  async function formatErrorsOf(promise: Promise<unknown>) {
+    const error = await rejection(promise);
+    expect(error).toBeInstanceOf(SaveRejectedError);
+    return error as SaveRejectedError;
+  }
+
+  it("숫자 칸 abc · 날짜 칸 2026-02-31은 그 칸 오류 셀(cf_<key>)로 전부 거부 · 날짜 이유는 「날짜 아님 · 2026-11-04처럼」", async () => {
+    const fx = await setupTyped();
+    const line = await seedLine(fx.revision.id, fx.subcategory, 0, "기존", { [fx.x]: "있음" });
+
+    const rejected = await formatErrorsOf(
+      saveQuoteLines(fx.a, fx.revision.id, { rows: [asInput(line, { customFields: { [fx.n]: "abc", [fx.d]: "2026-02-31" } })] }),
+    );
+
+    expect(rejected.summary).toBe("오류 2칸 · 전부 거부");
+    const byField = Object.fromEntries(rejected.formatErrors.map((error) => [error.field, error]));
+    expect(byField[`cf_${fx.d}`]).toMatchObject({ rowId: line.id, label: "반입일", reason: "날짜 아님 · 2026-11-04처럼" });
+    expect(byField[`cf_${fx.n}`]).toMatchObject({ rowId: line.id, label: "설치 높이" });
+    expect(byField[`cf_${fx.n}`]?.reason).toBe("형식 오류 · 값 확인");
+    expect((await reloadLine(line.id)).version).toBe(line.version);
+  });
+
+  it("기존 줄의 빈 필수 칸은 다른 칸 수정을 막지 않고(D-7507), 값 있던 필수 칸을 비우면 「필수 칸 비어 있음 · 값 입력」", async () => {
+    const fx = await setupTyped();
+    const empty = await seedLine(fx.revision.id, fx.subcategory, 0, "빈 필수", {});
+    const filled = await seedLine(fx.revision.id, fx.subcategory, 1, "찬 필수", { [fx.x]: "있음" });
+
+    await saveQuoteLines(fx.a, fx.revision.id, { rows: [asInput(empty, { itemName: "빈 필수 고침", customFields: { [fx.d]: "2026-11-04" } })] });
+    const saved = await reloadLine(empty.id);
+    expect(saved.itemName).toBe("빈 필수 고침");
+    expect(String((saved.customFields as Record<string, unknown>)[fx.d])).toMatch(/^2026-11-04/);
+
+    const rejected = await formatErrorsOf(saveQuoteLines(fx.a, fx.revision.id, { rows: [asInput(filled, { customFields: { [fx.x]: "" } })] }));
+    expect(rejected.formatErrors).toEqual([{ rowIndex: 0, rowId: filled.id, field: `cf_${fx.x}`, label: "필수 메모", reason: "필수 칸 비어 있음 · 값 입력" }]);
+  });
+
+  it("저장값이 보관 선택지인 선택 칸 — 같은 값은 통과 · 다른 보관 선택지는 「보관된 선택지 · 다른 선택지 고르기」", async () => {
+    const a = await makeViewer();
+    const s = await seedCustomFieldDefinition("quote_line", { label: "설치 구분", type: "select", options: ["실내", "실외"], sortOrder: 1 }, { visibleRoleIds: [roleOf(a)] });
+    await db
+      .update(fieldDefinitions)
+      .set({ archivedOptions: ["옛 구분", "더 옛 구분"] })
+      .where(and(eq(fieldDefinitions.entity, "quote_line"), eq(fieldDefinitions.key, s.key)));
+    const { revision, subcategory } = await makeProject(a.id);
+    const line = await seedLine(revision.id, subcategory, 0, "선택 줄", { [s.key]: "옛 구분" });
+
+    await saveQuoteLines(a, revision.id, { rows: [asInput(line, { itemName: "선택 줄 고침", customFields: { [s.key]: "옛 구분" } })] });
+    const kept = await reloadLine(line.id);
+    expect(kept.itemName).toBe("선택 줄 고침");
+    expect(kept.customFields).toEqual({ [s.key]: "옛 구분" });
+
+    const rejected = await formatErrorsOf(saveQuoteLines(a, revision.id, { rows: [asInput(kept, { customFields: { [s.key]: "더 옛 구분" } })] }));
+    expect(rejected.formatErrors).toEqual([{ rowIndex: 0, rowId: line.id, field: `cf_${s.key}`, label: "설치 구분", reason: "보관된 선택지 · 다른 선택지 고르기" }]);
+  });
+
+  it("완료 프로젝트 · 쓰기 권리 없는 사람의 추가 칸 변경은 거부되고 줄은 그대로(D-7517)", async () => {
+    const fx = await setupTyped();
+    const line = await seedLine(fx.revision.id, fx.subcategory, 0, "잠금", { [fx.x]: "있음" });
+    const viewOnly = await makeViewer([{ menu: "projects", action: "view" }]);
+
+    await rejection(saveQuoteLines(viewOnly, fx.revision.id, { rows: [asInput(line, { customFields: { [fx.x]: "권리 없음" } })] }));
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.project.id));
+    await rejection(saveQuoteLines(fx.a, fx.revision.id, { rows: [asInput(line, { customFields: { [fx.x]: "완료 뒤" } })] }));
+
+    const after = await reloadLine(line.id);
+    expect(after.version).toBe(line.version);
+    expect(after.customFields).toEqual({ [fx.x]: "있음" });
+  });
+
+  it("추가 칸만 바꾼 두 저장 경합 — 뒤 저장은 version 충돌 거부 · 충돌 칸은 「항목」(itemName) 한 칸(D-7520)", async () => {
+    const fx = await setupTyped();
+    const line = await seedLine(fx.revision.id, fx.subcategory, 0, "경합", { [fx.x]: "처음" });
+    const baseline = (await listQuoteLines(fx.a, fx.revision.id, { status: fx.project.status, canWrite: true })).find((row) => row.id === line.id);
+    if (!baseline) throw new Error("줄 없음");
+
+    await saveQuoteLines(fx.a, fx.revision.id, { rows: [asInput(line, { customFields: { [fx.x]: "먼저" } })] });
+    const rejected = await formatErrorsOf(saveQuoteLines(fx.a, fx.revision.id, { rows: [asInput(line, { customFields: { [fx.x]: "나중" } })] }));
+
+    expect(rejected.conflicts).toHaveLength(1);
+    expect(rejected.conflicts[0]).toMatchObject({ rowId: line.id, field: "itemName", theirVersion: line.version + 1 });
+    expect((await reloadLine(line.id)).customFields).toEqual({ [fx.x]: "먼저" });
+  });
+
+  it("날짜 · 숫자 값이 있는 줄의 DTO 값을 편집 원문으로 바꿔 새 줄로 저장해도 통과 · 같은 날 · 같은 수(eng B-7 — Ctrl+D 경로)", async () => {
+    const fx = await setupTyped();
+    const source = await seedLine(fx.revision.id, fx.subcategory, 0, "원본", {});
+    await saveQuoteLines(fx.a, fx.revision.id, { rows: [asInput(source, { customFields: { [fx.x]: "원본 메모", [fx.d]: "2026-11-04", [fx.n]: "1234.5" } })] });
+    const listed = (await listQuoteLines(fx.a, fx.revision.id, { status: fx.project.status, canWrite: true })).find((row) => row.id === source.id);
+    const columns = await listQuoteLineFieldDefinitions(fx.a);
+
+    const copy = newRow(fx.subcategory, { customFields: customFieldEditValues(columns, listed?.customFields) });
+    await saveQuoteLines(fx.a, fx.revision.id, { rows: [copy] });
+
+    expect((await reloadLine(copy.id)).customFields).toEqual((await reloadLine(source.id)).customFields);
+  });
+
+  it("차수 복사 뒤 새 차수 줄에 보관 · 숨은 칸 포함 값 그대로 · 견적 밖 줄 생성은 필수 칸에 막히지 않는다(D-7518)", async () => {
+    const fx = await setup();
+    await seedCustomFieldDefinition("quote_line", { label: "필수 칸", type: "text", required: true, sortOrder: 0 }, { visibleRoleIds: [roleOf(fx.a)] });
+
+    const created = await createRevisionFromCurrent(fx.a, { projectId: fx.project.id, fromRevisionId: fx.revision.id });
+    const copied = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, created.revisionId));
+    expect(copied).toHaveLength(2);
+    for (const row of copied) expect(row.customFields).toEqual(fx.stored);
+
+    const outOfQuote = await db.transaction((tx) => createOutOfQuoteLine(fx.a, { revisionId: created.revisionId, itemName: "견적 밖", executionKrw: 10_000 }, tx));
+    expect((await reloadLine(outOfQuote.id)).customFields).toEqual({});
+  });
+});
+
+describe("07.2-12 쌍 조정 줄 — 상대 줄은 추가 칸 판정 · 값 이동 없음(eng B-11)", () => {
+  async function pairProject(pmUserId: string) {
+    const made = await makeProject(pmUserId);
+    await db.update(projects).set({ status: "in_progress" }).where(eq(projects.id, made.project.id));
+    return made;
+  }
+
+  it("필수 칸(정렬 1)이 있어도 A의 새 쌍 조정 줄 저장 통과 · B 상대 줄은 {} · 기존 상대 줄은 저장값 그대로", async () => {
+    const adjuster = await makeViewer([...EDITOR_MENUS, { menu: "projects.adjustment", action: "write" }]);
+    const x = await seedCustomFieldDefinition("quote_line", { label: "쌍 필수", type: "text", required: true, sortOrder: 1 }, { visibleRoleIds: [roleOf(adjuster)] });
+    const a = await pairProject(adjuster.id);
+    const b = await pairProject(adjuster.id);
+    const pair: QuoteLineWriteRow = {
+      id: randomUUID(),
+      isNew: true,
+      lineKind: "adjustment",
+      subcategory: "",
+      itemName: "프로젝트 간 비용 이전",
+      unitPrice: { currency: "KRW", amount: 0, fxRate: 1 },
+      execution: { currency: "KRW", amount: -1_000, fxRate: 1 },
+      counterpartProjectId: b.project.id,
+      customFields: { [x.key]: "A 값" },
+    };
+
+    await saveQuoteLines(adjuster, a.revision.id, { rows: [pair] });
+
+    expect((await reloadLine(pair.id)).customFields).toEqual({ [x.key]: "A 값" });
+    const [partner] = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, b.revision.id));
+    expect(partner?.customFields).toEqual({});
+
+    await db.update(quoteLines).set({ customFields: { [x.key]: "B 값" } }).where(eq(quoteLines.id, partner!.id));
+    const own = await reloadLine(pair.id);
+    await saveQuoteLines(adjuster, a.revision.id, {
+      rows: [asInput(own, { lineKind: "adjustment", subcategory: "", execution: { currency: "KRW", amount: -2_000, fxRate: 1 }, counterpartProjectId: b.project.id, customFields: { [x.key]: "A 새 값" } })],
+    });
+    const synced = await reloadLine(partner!.id);
+    expect(synced.executionAmountKrw).toBe(2_000);
+    expect(synced.customFields).toEqual({ [x.key]: "B 값" });
   });
 });

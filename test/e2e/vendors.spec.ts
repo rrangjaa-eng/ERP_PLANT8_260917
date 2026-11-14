@@ -383,12 +383,13 @@ test.describe("거래처 필터 토글 · 서버 표 (04.6-11 R1)", () => {
     const stamp = randomUUID().slice(0, 8);
     const rows = [];
     for (let index = 0; index < 30; index += 1) {
-      rows.push(await insertVendor(SYSTEM_VIEWER, { name: `스크롤-${stamp}-${index}`, normalizedName: `스크롤-${randomUUID()}` }));
+      rows.push(await insertVendor(SYSTEM_VIEWER, { name: `스크롤-${stamp}-${index}`, normalizedName: `스크롤-${stamp}-${index}` }));
     }
     try {
       await page.setViewportSize({ width: 1280, height: 400 });
       await loginAsSysadmin(page);
-      const response = await page.goto("/admin/vendors");
+      // 검색어로 이 시험의 30행만 남긴다 — 공유 E2E DB에 쌓인 거래처(수천, 숨김 포함)를 「숨김 포함」이 한꺼번에 그리면 전환이 5초를 넘는다.
+      const response = await page.goto(`/admin/vendors?q=${encodeURIComponent(`스크롤-${stamp}`)}`);
       expect(response?.status()).toBe(200);
       // 링크가 보이는 위치에서 잰다 — 화면 밖 링크는 Playwright가 먼저 스크롤해 측정이 깨진다(04.6-04 E2E 요령).
       await page.evaluate(() => window.scrollTo(0, 40));

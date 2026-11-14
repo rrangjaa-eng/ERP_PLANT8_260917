@@ -833,6 +833,7 @@ const DTO_COVERAGE_EXEMPT: Record<string, string> = {
   FieldDefinitionAdminDto: "관리 메타데이터 — 정보 항목이 없고 위 MENU_GATED_DTOS 축(메뉴 view 게이트)이 계급마다 덮는다",
   FieldDefinitionDto: "구조 메타데이터(어떤 칸이 있는지) — 사람 단위 값이 없고 project()를 거치지 않는다(domain/vendors/index.ts 주석)",
   ProjectFieldDefinitionDto: "구조 메타데이터(어떤 칸이 있는지) — FieldDefinitionDto와 같은 꼴, 사람 단위 값이 없고 project.value ∧ cf.project.<key> 노출로 거른 칸만 나간다(domain/projects/index.ts 주석)",
+  QuoteLineFieldDefinitionDto: "구조 메타데이터(어떤 칸이 있는지) — FieldDefinitionDto와 같은 꼴, 사람 단위 값이 없고 활성 · 칸별 보임 · project.value로 거른 칸만 나간다(domain/quotes/lines.ts 주석)",
   GridDto: "권한 · 노출 격자(계급 × 메뉴/정보 항목의 참/거짓) — 사람 단위 값이 없고 admin.permissions · admin.visibility 메뉴 view 뒤에서만 나간다",
 };
 

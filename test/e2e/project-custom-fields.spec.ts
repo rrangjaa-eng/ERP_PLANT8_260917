@@ -146,6 +146,8 @@ test.describe("프로젝트 추가 칸 (S2 · S3)", () => {
     await expect(infoGroup(page, "기본").getByText("처음 메모")).toBeVisible();
 
     await projectInfo(page).getByRole("button", { name: "고치기", exact: true }).click();
+    // 아래 복원 시험과 같이 — `고치기`의 포커스 프레임(requestAnimationFrame)이 지난 뒤 친다.
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
     await infoGroup(page, "기본").getByLabel(memo, { exact: true }).fill("저장한 메모");
     await infoGroup(page, "기본").getByLabel(memo, { exact: true }).press("Control+s");
     await expect(projectInfo(page).getByRole("button", { name: "고치기", exact: true })).toBeVisible();
@@ -190,6 +192,9 @@ test.describe("프로젝트 추가 칸 (S2 · S3)", () => {
 
     await expandProjectInfo(page);
     await projectInfo(page).getByRole("button", { name: "고치기", exact: true }).click();
+    // `고치기`는 다음 프레임(requestAnimationFrame)에 포커스를 기간 시작 칸으로 옮긴다 — 그 프레임이 fill의 포커스와 글자 입력 사이에 오면
+    // 글자가 기간 칸으로 가 추가 칸이 그대로다(CI e2e(2) 실패 원인). 한 프레임 기다린 뒤 친다.
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
     await infoGroup(page, "기본").getByLabel(memo, { exact: true }).fill("복원할 메모");
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
     await page.reload();

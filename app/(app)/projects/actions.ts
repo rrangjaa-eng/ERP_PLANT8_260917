@@ -82,6 +82,8 @@ export const createProjectAction = authedActionClient
         })
         .optional(),
       preEstimateFxRateTouched: z.boolean().optional(),
+      // 07.5-02(D-7505) — 추가 칸 값(`<key>: 글자`). 판정 · 정의에 없는 키 거부는 domain(resolveCustomFieldsWrite).
+      customFields: z.record(z.string(), z.unknown()).optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -97,6 +99,7 @@ export const createProjectAction = authedActionClient
         copyFromProjectId: parsedInput.copyFromProjectId || undefined,
         preEstimate: parsedInput.preEstimate,
         preEstimateFxRateTouched: parsedInput.preEstimateFxRateTouched,
+        customFields: parsedInput.customFields,
       });
     } catch (error) {
       // 04-15 — 기간 · 총 매출 예상가 칸 거부는 칸 오류로 돌려준다(쓰기 전에 던진다 — 행이 없다).

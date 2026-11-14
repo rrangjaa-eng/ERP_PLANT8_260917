@@ -7,7 +7,9 @@ import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fields/build-schema";
+import { CustomFieldsInvalidError, resolveCustomFieldsWrite } from "@/domain/custom-fields/preserve";
+import { readCustomFieldInputs } from "@/domain/custom-fields/access";
+import { pickVisibleCustomFields, visibleCustomFieldKeys as defaultVisibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
 import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday, kstYear } from "@/lib/kst-date";
@@ -65,7 +67,6 @@ import { copyQuoteLines as repoCopyQuoteLines, countCopyableLines as repoCountCo
 import { denyWrite } from "@/domain/rules/deny-write";
 import { coversProjectTeam, isEndDatePassed, loadActorTeamScope } from "@/domain/projects/status";
 import { findMembershipAtDate } from "@/repositories/team-memberships";
-import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { listTeams as repoListTeams } from "@/repositories/teams";
 import { findVendorKindsByIds as repoFindVendorKindsByIds, findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
 import { NOT_CLIENT_VENDOR, servesSide } from "@/domain/vendors/kind";
@@ -150,20 +151,41 @@ registerDto({
   fields: PROJECT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
 
-async function validatedCustomFields(
+// 07.5-02(D-7508 · T-07.5-02-01) — ProjectDto의 출구(findProject · createProject 반환). 「프로젝트 정보」(project.value) 판정 뒤
+// customFields를 칸별로 거른다(거래처 toVendorDto 꼴). customFields가 없으면(project.value 꺼짐) 키 집합을 읽지 않는다(eng A-12).
+async function toProjectDto(
   viewer: Viewer,
-  input: Record<string, unknown> | undefined,
-): Promise<Record<string, unknown>> {
-  const defs = await repoListFieldDefinitions(viewer, PROJECT_ENTITY);
-  const schema = buildCustomFieldsSchema(
-    defs.map((def) => ({
-      key: def.key,
-      type: def.type as FieldDefType,
-      options: Array.isArray(def.options) ? (def.options as string[]) : undefined,
-      required: def.required,
-    })),
-  );
-  return schema.parse(input ?? {}) as Record<string, unknown>;
+  row: ProjectRow,
+  keysOf: typeof defaultVisibleCustomFieldKeys = defaultVisibleCustomFieldKeys,
+): Promise<ProjectDto> {
+  const dto = (await project(viewer, withPreEstimate(row), PROJECT_DTO_SPEC)) as ProjectDto;
+  if (dto.customFields === undefined) return dto;
+  return { ...dto, customFields: pickVisibleCustomFields(dto.customFields, await keysOf(viewer, PROJECT_ENTITY)) ?? {} };
+}
+
+// 07.5-02(D-7504) — 등록 폼 · 정보 면이 그리는 칸 = 서버 저장 판정의 입력 칸 집합(활성 ∧ project.value ∧ cf.project.<key>).
+// 구조 메타데이터라 project()를 거치지 않는다(listVendorFieldDefinitions와 같은 꼴). 보관 선택지는 화면이 저장값으로 안다.
+export type ProjectFieldDefinitionDto = {
+  id: string;
+  key: string;
+  label: string;
+  type: "text" | "number" | "date" | "select";
+  options: string[] | null;
+  required: boolean;
+  sortOrder: number;
+};
+
+export async function listProjectFieldDefinitions(viewer: Viewer): Promise<ProjectFieldDefinitionDto[]> {
+  const { inputDefs } = await readCustomFieldInputs(viewer, { entity: PROJECT_ENTITY, valueInfoItem: "project.value" });
+  return inputDefs.map((def) => ({
+    id: def.id,
+    key: def.key,
+    label: def.label,
+    type: def.type,
+    options: def.optionsColumn,
+    required: def.required,
+    sortOrder: def.sortOrder,
+  }));
 }
 
 // 04-05 — 목록 항목 Dto. 프로젝트 구조 정보(project.value, staffDefault
@@ -481,7 +503,7 @@ const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 export async function findProject(
   viewer: Viewer,
   id: string,
-  deps?: { autoSettlement?: Partial<AutoSettlementDeps> },
+  deps?: { autoSettlement?: Partial<AutoSettlementDeps>; visibleCustomFieldKeys?: typeof defaultVisibleCustomFieldKeys },
 ): Promise<ProjectDto | null> {
   const scope = await projectRowScope(viewer);
   if (scope.rows === "none") return null;
@@ -495,7 +517,7 @@ export async function findProject(
   if (!row) return null;
   if (row.archivedAt !== null && !scope.includeArchived) return null;
 
-  return (await project(viewer, withPreEstimate(row), PROJECT_DTO_SPEC)) as ProjectDto;
+  return toProjectDto(viewer, row, deps?.visibleCustomFieldKeys);
 }
 
 // 07-18 사후 고침 — 상세 정보 면 `손익`. 목록과 같은 행 식을 한 프로젝트에 적용한다(보기 범위 조건을 목록과 같이 건다).
@@ -536,8 +558,9 @@ export type ProjectInput = {
 };
 
 // 04-15(B-17 · PR #38) — 등록 입력의 칸 오류. 화면이 칸 아래 Form.Error와 1차 옆 한 줄로 그린다.
+// 07.5-02(eng A-6) — 추가 칸 오류도 같은 목록(`cf_<key>`)이라 기간 · 금액 오류와 한 번에 돌아간다.
 export type ProjectInputFieldError = {
-  field: "clientId" | "startDate" | "endDate" | "preEstimateAmount" | "preEstimateFxRate";
+  field: "clientId" | "startDate" | "endDate" | "preEstimateAmount" | "preEstimateFxRate" | `cf_${string}`;
   reason: string;
 };
 
@@ -629,6 +652,16 @@ export async function createProject(
   }
 
   const { errors: inputErrors, preEstimate } = validateProjectInput(input);
+  // 07.5-02(D-7505 · eng A-6) — 추가 칸은 이 사람의 입력 칸만 판정한다(보관 · 안 보이는 필수 칸이 등록을 막지 않는다 — D-7503).
+  // 칸 오류는 기본 칸 오류와 한 목록으로, 정의에 없는 키(UnknownCustomFieldKeyError)는 그대로 던진다. 읽기만 해 권한 판정 앞이어도 쓰기가 없다.
+  const { inputDefs, knownKeys } = await readCustomFieldInputs(viewer, { entity: PROJECT_ENTITY, valueInfoItem: "project.value" });
+  let customFields: Record<string, unknown> = {};
+  try {
+    customFields = resolveCustomFieldsWrite({ mode: "create", inputDefs, knownKeys, stored: {}, submitted: input.customFields ?? {} });
+  } catch (error) {
+    if (!(error instanceof CustomFieldsInvalidError)) throw error;
+    for (const [key, reason] of Object.entries(error.fieldErrors)) inputErrors.push({ field: `cf_${key}`, reason });
+  }
   if (inputErrors.length > 0) throw new ProjectInputRejectedError(inputErrors);
   const preEstimateColumns = preEstimate ? moneyToColumns(preEstimate) : null;
 
@@ -643,7 +676,6 @@ export async function createProject(
     denyWrite(viewer, CREATE_TEAM_SCOPE_RULE, {}, new ForbiddenError("담당 PM은 내 팀 사람만 가능 · 내 팀 사람 선택"));
   }
 
-  const customFields = await validatedCustomFields(viewer, input.customFields);
   // C-17: 번호 연도는 KST — 1월 1일 00:00~09:00(KST) 등록도 새해 번호다.
   const year = kstYear(now);
   // 서식 설정은 트랜잭션을 열기 전에 읽는다 — 풀 소진 애플리케이션 교착을
@@ -726,5 +758,5 @@ export async function createProject(
     ...(copiedLineCount !== null ? { detail: { copiedFromProjectId: copySourceId, copiedLineCount } } : {}),
   });
 
-  return (await project(viewer, withPreEstimate(created), PROJECT_DTO_SPEC)) as ProjectDto;
+  return toProjectDto(viewer, created);
 }

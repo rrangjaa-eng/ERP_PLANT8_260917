@@ -1,8 +1,7 @@
 // 클라이언트 import 금지 — 순수 부품은 access-rules.ts
 // domain/custom-fields/access.ts — 07.5-01: 보는 사람의 입력 칸 집합 하나(서버 읽기). 폼 입력 칸 · 목록 열 · 검색 키 · 거르개 · CSV가 같은 집합이다.
-import { readCustomFieldAccess } from "@/repositories/permissions";
+import { readCustomFieldAccess, type CustomFieldEntity } from "@/repositories/permissions";
 import type { DbOrTx } from "@/repositories/document-counters";
-import type { FieldDefinitionTarget } from "@/domain/custom-fields/targets";
 import type { InputFieldDef } from "@/domain/custom-fields/preserve";
 import type { Viewer } from "@/domain/viewer";
 
@@ -13,7 +12,7 @@ export type CustomFieldInputDef = InputFieldDef & { id: string; sortOrder: numbe
 // tx는 받은 그대로 넘긴다(domain은 db를 import하지 않는다).
 export async function readCustomFieldInputs(
   viewer: Viewer,
-  target: { entity: FieldDefinitionTarget; valueInfoItem: string },
+  target: { entity: CustomFieldEntity; valueInfoItem: string },
   tx?: DbOrTx,
 ): Promise<{ inputDefs: CustomFieldInputDef[]; knownKeys: Set<string> }> {
   const access = await readCustomFieldAccess(viewer, viewer.roleId, target, tx);

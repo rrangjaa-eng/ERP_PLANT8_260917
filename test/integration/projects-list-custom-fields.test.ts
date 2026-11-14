@@ -141,6 +141,16 @@ describe("프로젝트 목록 검색 — 추가 칸 텍스트 값(D-7522)", () =
     expect((await listed(a, { search: `${t}a_b` })).ids).toEqual([under]);
   });
 
+  it("`\\`도 글자 그대로 찾는다 — 「로\\서」로 찾으면 「경로\\서울」만, 「경로서울」은 안 걸린다", async () => {
+    const a = await makeViewer();
+    const place = await seedCustomFieldDefinition("project", { label: "경로", type: "text" }, { visibleRoleIds: [roleOf(a)] });
+    const t = tag();
+    const slash = await makeProject(`이름-${tag()}`, { [place.key]: `${t}경로\\서울` });
+    await makeProject(`이름-${tag()}`, { [place.key]: `${t}경로서울` });
+
+    expect((await listed(a, { search: `${t}경로\\서` })).ids).toEqual([slash]);
+  });
+
   it("숫자 · 날짜 칸 값은 검색에 걸리지 않고, 추가 칸 0개 계급의 결과는 이름 · 번호 · 거래처로 찾은 결과와 같다", async () => {
     const a = await makeViewer();
     const none = await makeViewer();

@@ -8,7 +8,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { db } from "@/db/client";
 import { codeItems, projects, quoteLines, revenueEntries } from "@/db/schema";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
@@ -1102,6 +1102,26 @@ test.describe("매출 줄 삭제 · 되돌리기 (07.6-01)", () => {
     await expect(statusArea(page).first()).toHaveText("");
     await expect(deleteButton(page, "발행 줄", "2026-09-05")).toBeFocused();
     expect((await storedEntry(projectIdOf(seeded.projectUrl), "2026-09-05"))?.archivedAt).toBeNull();
+  });
+
+  test("지운 줄이 보관함 복원 · 저장으로 표에 다시 선 뒤 되돌리기 → 서버 멱등 성공에도 그 줄은 하나", async ({ page }) => {
+    const seeded = await openAsFinance(page, { issued: ISSUED_TWO, paid: [] });
+    const issued = revenueTable(page, "발행 줄");
+    await deleteButton(page, "발행 줄", "2026-09-05").click();
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(0);
+    // 보관함 복원(DB 흉내 — restoreRevenueEntryRow와 같은 version +1).
+    await db
+      .update(revenueEntries)
+      .set({ archivedAt: null, archivedBy: null, version: sql`${revenueEntries.version} + 1` })
+      .where(and(eq(revenueEntries.projectId, projectIdOf(seeded.projectUrl)), eq(revenueEntries.entryDate, "2026-09-05")));
+    await issued.getByLabel("메모").first().fill("고친 메모");
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(1);
+
+    await statusArea(page).first().getByRole("button", { name: "되돌리기" }).click();
+    await expect(statusArea(page).first()).toHaveText("");
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(1);
+    await expect(issued).toContainText("합계 (공급가액 · 2줄)");
   });
 
   test("다른 줄 편집(dirty)을 둔 채 입금 줄 삭제 → 편집 · 「일괄 저장 1」 그대로 / 저장 전 새 발행 줄 삭제 → 되돌리기로 돌아옴 · DB 행 수 불변", async ({ page }) => {

@@ -1306,6 +1306,8 @@ export function QuoteLedger({
     if (draft.fromIssueRequestId && current?.some((entry) => entry.fromIssueRequestId === draft.fromIssueRequestId)) return;
     const setEntries = kind === "issue" ? setIssuedEntries : setPaidEntries;
     setEntries((prev) => {
+      // 보관함 복원 뒤 저장이 그 줄을 이미 다시 실었으면(되돌리기는 서버 멱등 성공) 끼우지 않는다 — 같은 id 두 줄 방지.
+      if (prev?.some((entry) => entry.id === draft.id)) return prev;
       const next = [...(prev ?? [])];
       next.splice(Math.min(index, next.length), 0, draft);
       return next;

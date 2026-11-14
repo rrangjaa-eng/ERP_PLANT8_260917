@@ -70,6 +70,17 @@ import { SettlementButton, type SettlementHeaderProps } from "./settlement-butto
 import { CommissionPanel } from "./commission-panel";
 import { CounterpartPicker, type PickedCounterpart } from "./counterpart-picker";
 import { lineCellDirty, unsavedEditsReason } from "./unsaved-edits";
+import {
+  customColumnKey,
+  customFieldCellText,
+  customFieldCopyText,
+  customFieldDateInput,
+  customFieldDuplicateValues,
+  customFieldEditValues,
+  customFieldKeyOf,
+  customFieldSheetItems,
+  type QuoteLineCustomColumn,
+} from "./custom-field-cells";
 import { CUSTOMER_APPROVAL_TRIGGER_ID, CustomerApprovalItems, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import type { ProjectProfitSummary } from "@/domain/projects/profit-summary";
 import { PreSettleLedgerContext } from "./pre-settle-check";
@@ -160,6 +171,10 @@ type DraftLine = {
   pendingDelete?: "delete" | "cancel";
   /** 07.2-12(D7298-B · UI-SPEC S11) — 조정 쌍의 상대 프로젝트(항목 셀 2행). 새 줄은 고른 프로젝트 id를 저장 때 싣는다. */
   counterpart?: { projectId?: string; number: string; name: string | null };
+  /** 07.5-03(S4) — 보이는 추가 칸 열의 값(편집 원문 글자 · 키 = 칸 키). 저장 때 기존 줄은 고친 칸만, 새 줄은 전부 싣는다. */
+  customFields: Record<string, string>;
+  /** 07.5-03(eng B-6) — 화면 전용 추가 칸 기준값(fromDto 값). 서버로 가지 않는다 — 셀 충돌 baseline(QuoteLineBaseline)은 그대로. */
+  customFieldsBase: Record<string, string>;
 };
 
 type LineCells = Record<QuoteLineField, QuoteCellEditability>;
@@ -359,6 +374,25 @@ function lineDiffersFromBaseline(line: DraftLine): boolean {
   );
 }
 
+// 07.5-03(eng B-6 · r2 N5) — 추가 칸 dirty는 화면 전용 기준값과 비교한다. 줄 dirty 재계산 · 미저장 보관의 `:base` 조건이
+// lineDiffersFromBaseline과 OR로 같이 본다.
+function customFieldDirty(line: Pick<DraftLine, "customFields" | "customFieldsBase">, key: string): boolean {
+  return (line.customFields[key] ?? "") !== (line.customFieldsBase[key] ?? "");
+}
+
+function customFieldsDiffer(line: Pick<DraftLine, "customFields" | "customFieldsBase">): boolean {
+  return Object.keys({ ...line.customFieldsBase, ...line.customFields }).some((key) => customFieldDirty(line, key));
+}
+
+// 07.5-03 — 표 dirty 셀(왼쪽 위 삼각형): 추가 칸은 화면 기준값과 비교하고 나머지는 기존 규칙. 추가 칸만 고친 기존 줄은
+// 고친 셀이 따로 보이므로 소분류 칸의 줄 단위 표시(고친 칸 없는 줄 몫)를 세우지 않는다.
+function quoteCellDirty(line: DraftLine, columnKey: string): boolean {
+  const key = customFieldKeyOf(columnKey);
+  if (key !== null) return line.dirty && customFieldDirty(line, key);
+  if (columnKey === "subcategory" && line.dirty && !line.isNew && !line.moved && line.subcategory === line.baseline.subcategory && customFieldsDiffer(line)) return false;
+  return lineCellDirty(line, columnKey);
+}
+
 function baselineFromDto(dto: QuoteLineDto): QuoteLineBaseline {
   return {
     subcategory: dto.subcategory,
@@ -377,7 +411,8 @@ function baselineFromDto(dto: QuoteLineDto): QuoteLineBaseline {
   };
 }
 
-function fromDto(dto: QuoteLineDto): DraftLine {
+function fromDto(dto: QuoteLineDto, customColumns: readonly QuoteLineCustomColumn[]): DraftLine {
+  const customFields = customFieldEditValues(customColumns, dto.customFields);
   return {
     clientKey: dto.id,
     id: dto.id,
@@ -415,6 +450,8 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     hasCardSideLinks: dto.hasCardSideLinks,
     executionOverKrw: dto.executionOverKrw,
     ...(dto.counterpart ? { counterpart: dto.counterpart } : {}),
+    customFields,
+    customFieldsBase: customFields,
   };
 }
 
@@ -474,6 +511,8 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
     prepaidOverdueDays: null,
     hasCardSideLinks: false,
     executionOverKrw: null,
+    customFields: {},
+    customFieldsBase: {},
   };
 }
 
@@ -512,6 +551,8 @@ type StoredNewLine = {
   midCategory: string | null;
   majorCategory: string | null;
   counterpart?: { projectId: string; number: string; name: string | null };
+  /** 07.5-03 — 추가 칸 값(편집 원문 글자). 옛 보관본에는 없다. */
+  customFields?: Record<string, string>;
 };
 
 export function editsSnapshot(
@@ -545,6 +586,7 @@ export function editsSnapshot(
         midCategory: line.midCategory,
         majorCategory: line.majorCategory,
         ...(line.counterpart?.projectId ? { counterpart: { projectId: line.counterpart.projectId, number: line.counterpart.number, name: line.counterpart.name } } : {}),
+        customFields: line.customFields,
       };
       edits[`${line.clientKey}:new`] = stored;
       continue;
@@ -562,10 +604,12 @@ export function editsSnapshot(
     if (line.clientRemark !== (base.clientRemark ?? null)) edits[`${line.id}:clientRemark`] = line.clientRemark;
     if (line.midCategory !== (base.midCategory ?? null)) edits[`${line.id}:midCategory`] = line.midCategory;
     if (line.majorCategory !== (base.majorCategory ?? null)) edits[`${line.id}:majorCategory`] = line.majorCategory;
+    // 07.5-03(eng B-6) — 고친 추가 칸은 셀 편집 보관 키 꼴 `{id}:cf_<key>`로.
+    for (const [key, value] of Object.entries(line.customFields)) if (customFieldDirty(line, key)) edits[`${line.id}:${customColumnKey(key)}`] = value;
     // Codex 리뷰 P2(PR #372) — 저장 전 지우기 표시도 보관한다(취소 예정이 새로 고침 뒤 사라지면 저장 때 취소가 빠진다).
     if (line.pendingDelete) edits[`${line.id}:pendingDelete`] = line.pendingDelete;
     // 검토 8(S18) — 칸이 하나라도 있으면 그 줄의 version·baseline을 함께 보관한다(복원 뒤 저장이 충돌 판정을 받는다).
-    if ((lineDiffersFromBaseline(line) || line.pendingDelete) && line.version !== undefined) {
+    if ((lineDiffersFromBaseline(line) || customFieldsDiffer(line) || line.pendingDelete) && line.version !== undefined) {
       const stored: StoredLineBase = { version: line.version, baseline: base, vendorHidden: line.vendorHidden };
       edits[`${line.id}:base`] = stored;
     }
@@ -692,8 +736,11 @@ export function restoredCellPatch(column: string, value: unknown): Partial<Draft
       return typeof value === "string" || value === null ? { majorCategory: value } : null;
     case "pendingDelete":
       return value === "delete" || value === "cancel" ? { pendingDelete: value } : null;
-    default:
-      return null;
+    default: {
+      // 07.5-03(eng B-6) — 추가 칸 편집 `cf_<key>`. 줄에 병합할 조각만 돌려준다(키별 병합 · 지금 열 밖 키 거름은 호출부).
+      const key = customFieldKeyOf(column);
+      return key !== null && typeof value === "string" ? { customFields: { [key]: value } } : null;
+    }
   }
 }
 
@@ -705,7 +752,13 @@ function restoredCounterpart(value: unknown): Pick<DraftLine, "counterpart"> {
   return { counterpart: { projectId: value.projectId, number: value.number, name: typeof value.name === "string" ? value.name : null } };
 }
 
-function restoredNewLine(value: unknown, subcategories: readonly string[], kindCells: Record<QuoteLineKind, LineCells>, storedId: string): DraftLine | null {
+function restoredNewLine(
+  value: unknown,
+  subcategories: readonly string[],
+  kindCells: Record<QuoteLineKind, LineCells>,
+  storedId: string,
+  customKeys: readonly string[],
+): DraftLine | null {
   if (!isRecord(value)) return null;
   // 04-23 — 새 줄의 종류를 되살린다(옛 보관본에는 없어 견적 줄). 조정·견적 외 비용은 소분류를 빈 값으로 보낸다.
   const lineKind = QUOTE_LINE_KINDS.find((kind) => kind === value.lineKind) ?? "quote";
@@ -739,6 +792,11 @@ function restoredNewLine(value: unknown, subcategories: readonly string[], kindC
     const patch = restoredCellPatch(column, value[field]);
     if (patch) line = { ...line, ...patch };
   }
+  // 07.5-03 — 추가 칸은 내부 비고와 같은 편집 판정(D-7517). 지금 열 키 · 글자 값만 되살린다.
+  const storedCustom = value.customFields;
+  if (cells.note === "edit" && isRecord(storedCustom)) {
+    line = { ...line, customFields: Object.fromEntries(customKeys.flatMap((key) => (typeof storedCustom[key] === "string" ? [[key, storedCustom[key]]] : []))) };
+  }
   return line;
 }
 
@@ -751,6 +809,8 @@ export function mergeRestoredEdits(
   // 고를 수 있는(활성) 견적 분류 — 첫 값이 새 줄 기본값이다.
   subcategories: readonly string[],
   kindCells: Record<QuoteLineKind, LineCells>,
+  // 07.5-03 — 지금 견적 표의 추가 칸 키(열 순서). 그 밖 키의 보관 편집은 버린다.
+  customKeys: readonly string[] = [],
 ): {
   lines: DraftLine[];
   period: { start?: string; end?: string; base?: StoredPeriodBase };
@@ -795,13 +855,14 @@ export function mergeRestoredEdits(
       continue;
     }
     if (column === "new") {
-      const line = restoredNewLine(value, subcategories, kindCells, owner);
+      const line = restoredNewLine(value, subcategories, kindCells, owner, customKeys);
       if (line) added.push({ ...line, savedVendor: savedVendorFrom(lines, line.vendorId) });
       continue;
     }
     const patch = restoredCellPatch(column, value);
     const base = readLineBase(edits[`${owner}:base`]);
     if (!patch || !base) continue;
+    if (patch.customFields && !Object.keys(patch.customFields).every((key) => customKeys.includes(key))) continue;
     // Codex 리뷰 P2(PR #138) — 그 사이 꺼지거나 보관된 분류로 바꾼 편집은 들이지 않는다(다른 칸 편집은 들인다).
     if (patch.subcategory !== undefined && !subcategories.includes(patch.subcategory)) continue;
     // /review 적대 검토(PR #135) — 보관할 때나 지금 거래처가 가려졌으면 기준값의 거래처는 본 적 없는(또는 볼 수 없는) 값이다.
@@ -815,6 +876,8 @@ export function mergeRestoredEdits(
             ...patch,
             ...stored,
             baseline: vendorHidden || line.vendorHidden ? { ...stored.baseline, vendorId: line.baseline.vendorId } : stored.baseline,
+            // 07.5-03(eng r2 N5) — 추가 칸은 키별 병합(같은 줄의 다른 칸 편집 · 지금 값이 남는다).
+            customFields: patch.customFields ? { ...line.customFields, ...patch.customFields } : line.customFields,
             // 지우기 표시만으로는 칸 편집이 아니다(표시를 끄면 dirty가 남지 않게 — toggleDeleteLine과 같다).
             dirty: patch.pendingDelete ? line.dirty : true,
           }
@@ -1202,6 +1265,7 @@ export function QuoteLedger({
   lineDoors,
   info,
   customInfo,
+  quoteLineCustomColumns,
   projectDelete,
 }: {
   /** 리뷰 R2 — 미저장 편집 보관본 키를 보는 사람별로 나눈다. */
@@ -1283,10 +1347,12 @@ export function QuoteLedger({
   info: InfoProps;
   /** 07.5-02(S3) — 정보 면 「기본」 구획 끝 추가 칸(이 사람의 입력 칸 · 칸별로 거른 값). 고치는 권리는 기본 정보(info.rights)와 같다(D-7516). */
   customInfo: CustomInfo;
+  /** 07.5-03(S4 · D-7504 · D-7525) — 견적 줄 추가 칸 열(이 사람의 입력 칸 앞 3개 — customFieldListColumns, 정렬 순서). 0개면 표는 지금 그대로. */
+  quoteLineCustomColumns: QuoteLineCustomColumn[];
   /** 07.2-17(S1) — 머리 묶음 끝 `프로젝트 삭제`. `projects.delete` 권리가 없거나 보관된 프로젝트면 null(DOM 없음). */
   projectDelete: ProjectDeleteProps | null;
 }) {
-  const [lines, setLinesState] = useState<DraftLine[]>(() => displayOrder(initialLines.map(fromDto)));
+  const [lines, setLinesState] = useState<DraftLine[]>(() => displayOrder(initialLines.map((dto) => fromDto(dto, quoteLineCustomColumns))));
   // 04-23 — 어느 경로로 줄을 바꿔도 종류 순서(조정 맨 아래)를 지킨다. 04-19(C-04) — 그룹도 표시 순서로 모은다.
   const setLines = useCallback(
     (next: DraftLine[] | ((prev: DraftLine[]) => DraftLine[])) =>
@@ -1723,7 +1789,7 @@ export function QuoteLedger({
         return; // 총 매출 예상가 칸 오류로 전부 거부.
       }
       if (data?.quoteLines?.lines) {
-        setLines(data.quoteLines.lines.map(fromDto));
+        setLines(data.quoteLines.lines.map((dto) => fromDto(dto, quoteLineCustomColumns)));
       }
       setResplitKey((key) => key + 1);
       if (data?.revenue) {
@@ -1978,7 +2044,7 @@ export function QuoteLedger({
     setRenderedStatus(status);
     setRenderedRevisionId(revisionId);
     setSeenStatus(status);
-    setLines(initialLines.map(fromDto));
+    setLines(initialLines.map((dto) => fromDto(dto, quoteLineCustomColumns)));
     setIssuedEntries(entriesFromDto(revenue.issuedEntries));
     setPaidEntries(entriesFromDto(revenue.paidEntries));
     setIssueRequestRows(issueRequestDraftsFromDto(issueRequests.rows));
@@ -2028,7 +2094,7 @@ export function QuoteLedger({
       out_of_quote: outOfQuoteLineCells,
       adjustment: adjustmentLineCells,
       commission: commissionLineCells,
-    });
+    }, quoteLineCustomColumns.map((column) => column.key));
     setLines(restored.lines);
     // 07-18(D-P1-1 · D-P3-2) — 복원한 값이 있으면 면을 펼치고 세 칸 묶음을 연다. 고치지 않은 칸은 기준값에서 시작한 초안이다.
     const restoredBase = restored.period.base;
@@ -2145,6 +2211,33 @@ export function QuoteLedger({
     commitCell(clientKey, columnKey, apply(parsed));
   }
 
+  // 07.5-03(S4 · D-7519 · D-7521) — 추가 칸 셀 커밋. 숫자는 수량 칸과 같은 판정 · 글자, 날짜는 엄격 YYYY-MM-DD(서버 상수 글자).
+  // 판정이 실패하면 값을 그대로 두고 그 셀만 오류로 고정한다(숫자 칸 커밋과 같다). 빈 글자는 비움.
+  function commitCustomField(clientKey: string, column: QuoteLineCustomColumn, raw: string) {
+    const columnKey = customColumnKey(column.key);
+    let judged: { value: string } | { error: string } = { value: raw };
+    if (column.type === "date") judged = customFieldDateInput(raw);
+    if (column.type === "number" && raw.trim() !== "") {
+      const parsed = normalizeNumericPaste(raw);
+      judged =
+        parsed === null
+          ? { error: numericCellError("quantity") }
+          : Number(parsed.toFixed(2)) !== parsed
+            ? { error: numberInputRejectionReason("quantity", "precision") }
+            : { value: String(parsed) };
+    }
+    if (column.type === "number" && raw.trim() === "") judged = { value: "" };
+    persistPendingRef.current = true;
+    if ("error" in judged) {
+      const reason = judged.error;
+      setLines((prev) => prev.map((line) => (line.clientKey === clientKey ? { ...line, cellErrors: { ...line.cellErrors, [columnKey]: reason }, dirty: true } : line)));
+      return;
+    }
+    const value = judged.value;
+    clearCellError(clientKey, columnKey);
+    setLines((prev) => prev.map((line) => (line.clientKey === clientKey ? { ...line, customFields: { ...line.customFields, [column.key]: value }, dirty: true } : line)));
+  }
+
   const addLine = useCallback(
     (afterRow?: DraftLine) => {
       // 04-23 — 견적 줄에서만 소분류를 물려받는다(조정·견적 외 비용 줄의 소분류 칸은 종류 값이다).
@@ -2209,6 +2302,8 @@ export function QuoteLedger({
         clientRemark: source.clientRemark,
         midCategory: source.midCategory,
         majorCategory: subcategory === source.subcategory ? source.majorCategory : null,
+        // 07.5-03(D-7518 · eng B-7 · B-12) — 보이는 추가 칸의 편집 원문을 옮기되 보관 선택지 값은 뺀다(새 줄은 등록 판정).
+        customFields: customFieldDuplicateValues(quoteLineCustomColumns, source.customFields),
       };
       const index = prev.findIndex((line) => line.clientKey === clientKey);
       return [...prev.slice(0, index + 1), copy, ...prev.slice(index + 1)];
@@ -2420,6 +2515,12 @@ export function QuoteLedger({
                 midCategory: line.midCategory ?? undefined,
                 majorCategory: line.majorCategory ?? undefined,
                 baseline: line.isNew ? undefined : { ...line.baseline, lineStatus: line.baseline.lineStatus as QuoteLineStatus },
+                // 07.5-03(D-7506) — 새 줄은 추가 칸 전부(등록 판정), 기존 줄은 고친 칸만(키 없음 = 안 바꿈 · 빈 글자 = 비움).
+                customFields: line.isNew
+                  ? line.customFields
+                  : customFieldsDiffer(line)
+                    ? Object.fromEntries(Object.entries(line.customFields).filter(([key]) => customFieldDirty(line, key)))
+                    : undefined,
               })),
             }
           : undefined,
@@ -2888,6 +2989,40 @@ export function QuoteLedger({
           },
         }),
     },
+    // 07.5-03(S4 · D-7504 · D-7517 · D-7524) — 추가 칸 열: 중분류 뒤 · 행동 앞, 폰 P3(행 시트에서 읽기), 편집 판정 = 같은 줄 내부 비고.
+    // 셀 폭은 열 옵션만(텍스트 · 선택 `field` · 숫자 · 날짜 `number`). 복사 글자는 아래 copyTextByKey가 싣는다.
+    ...quoteLineCustomColumns.map(
+      (column): TableColumn<DraftLine> => ({
+        key: customColumnKey(column.key),
+        header: column.label,
+        priority: "p3",
+        cellWidth: column.type === "number" || column.type === "date" ? "number" : "field",
+        ...(column.type === "number" ? { align: "right" as const } : {}),
+        editability: (row) => atWidth(row.cells.note),
+        cell: (row) => customFieldCellText(column, row.customFields[column.key] ?? ""),
+        editCell: (row, ctx) => {
+          const raw = row.customFields[column.key] ?? "";
+          const commit = (value: string) => {
+            commitCustomField(row.clientKey, column, value);
+            ctx.onCommit(value);
+          };
+          if (column.type === "number") return <NumericEditCell ariaLabel={column.label} initialValue={raw} kind="quantity" onCommit={commit} />;
+          if (column.type === "select") {
+            // 저장값이 보관 선택지면 그 값을 끝 옵션으로 살려 안 건드리면 그대로 저장된다(S2 · S3 폼과 같은 규칙).
+            const base = row.customFieldsBase[column.key] ?? "";
+            const archived = base !== "" && !column.options.includes(base) ? [{ value: base, label: `${base} (보관됨)` }] : [];
+            return selectEditCell({
+              id: `quote-${customColumnKey(column.key)}-${row.clientKey}`,
+              ariaLabel: column.label,
+              initialValue: raw,
+              options: [{ value: "", label: "—" }, ...column.options.map((option) => ({ value: option, label: option })), ...archived],
+              onCommit: commit,
+            });
+          }
+          return textEditCell({ ariaLabel: column.label, initialValue: raw, onCommit: commit });
+        },
+      }),
+    ),
     // 05-05 — 맨 오른쪽 행 행동 열(머리글은 스크린리더용). 보는 사람에게 권리가 있을 때만 서버가 열을 보낸다. 저장 전 새 줄 · 문 닫힘 · 열림 밖 갈래는 셀이 비어 있다(나머지 갈래는 05-15).
     ...(lineDoors.showColumn
       ? [
@@ -3047,6 +3182,10 @@ export function QuoteLedger({
   const copyTextByKey = new Map(
     quoteLineReadColumns<DraftLine>({ subcategories: subcategoryLabels, vendors, vendorShown }, (row) => lines.indexOf(row) + 1).map((column) => [column.key, column.copyText]),
   );
+  // 07.5-03(eng B-8) — 추가 칸 열의 TSV 글자(화면 글자 · 보관 선택지는 값만). 앱 형식 메타에는 싣지 않는다(UI-SPEC A13).
+  for (const column of quoteLineCustomColumns) {
+    copyTextByKey.set(customColumnKey(column.key), (row: DraftLine) => customFieldCopyText(column, row.customFields[column.key] ?? ""));
+  }
   for (const column of columns) column.copyText = copyTextByKey.get(column.key);
 
   // 04-04(다) — 붙여넣기 열 정의. columns와 같은 순서·같은 길이여야 한다
@@ -3080,6 +3219,16 @@ export function QuoteLedger({
       { key: "note", kind: "text", isEditable: (row) => row.cells.note === "edit" },
       { key: "clientRemark", kind: "text", isEditable: (row) => row.cells.clientRemark === "edit" },
       { key: "midCategory", kind: "text", isEditable: (row) => row.cells.midCategory === "edit" },
+      // 07.5-03(S4) — 추가 칸: columns와 같은 자리 · 같은 키. 숫자는 수량 열과 같은 판정, 날짜는 글자로 받아 적용 때 판정, 선택은 활성 선택지(「—」 = 비움).
+      ...quoteLineCustomColumns.map(
+        (column): PasteColumn<DraftLine> => ({
+          key: customColumnKey(column.key),
+          kind: column.type === "number" ? "number" : column.type === "select" ? "select" : "text",
+          ...(column.type === "number" ? { numberKind: "quantity" as const } : {}),
+          ...(column.type === "select" ? { options: [{ value: "", label: "—" }, ...column.options.map((option) => ({ value: option, label: option }))] } : {}),
+          isEditable: (row) => row.cells.note === "edit",
+        }),
+      ),
       // 05-05 — 행 행동 열도 columns와 같은 자리(맨 끝)에 같은 길이로 둔다.
       { key: "door", kind: "text", isEditable: () => false },
     ];
@@ -3088,12 +3237,13 @@ export function QuoteLedger({
       .split(" ")
       .flatMap((key) => byKey.filter((column) => column.key === key))
       .map((column) => ({ ...column, isEditable: (row: DraftLine) => row.pendingDelete !== "delete" && column.isEditable(row) }));
-  }, [subcategories, vendors, columnKeyList, lines]);
+  }, [subcategories, vendors, columnKeyList, lines, quoteLineCustomColumns]);
 
   // 04-30(DR-35) — 잠긴 셀은 표 위 한 줄과 같은 이유(quoteLockReason), 읽기 전용 셀은 연결 문서 이유(DTO).
   // 이유가 없는 잠김은 아무것도 띄우지 않는다(DR-22).
   function blockedReasonFor(row: DraftLine, columnKey: string): string | null {
-    const field = COLUMN_TO_FIELD[columnKey];
+    // 07.5-03(D-7517) — 추가 칸 셀의 잠김 이유는 같은 줄 내부 비고와 같다.
+    const field = COLUMN_TO_FIELD[columnKey] ?? (customFieldKeyOf(columnKey) !== null ? "note" : undefined);
     // 04-23(DR-22) — 조정 줄의 잠긴 칸은 이유 글자가 없다(권한 밖 줄은 잠긴 모양과 무반응이 말한다).
     if (!field || row.lineKind === "adjustment") return null;
     const level = row.cells[field];
@@ -3251,8 +3401,18 @@ export function QuoteLedger({
           case "midCategory":
             patch = { midCategory: value === "—" ? null : value || null };
             break;
-          default:
+          default: {
+            // 07.5-03(S4 · D-7521) — 추가 칸. 날짜는 엄격 판정(아니면 오류 셀), 텍스트의 「—」(빈 칸 복사 글자)는 비움.
+            const column = quoteLineCustomColumns.find((candidate) => customColumnKey(candidate.key) === cell.columnKey);
+            if (!column) break;
+            const judged = column.type === "date" ? customFieldDateInput(value) : { value: column.type === "text" && value === "—" ? "" : value };
+            if ("error" in judged) {
+              next[cell.rowIndex] = { ...target, cellErrors: { ...cellErrors, [cell.columnKey]: judged.error }, cellConflicts, dirty: true };
+              continue;
+            }
+            patch = { customFields: { ...target.customFields, [column.key]: judged.value } };
             break;
+          }
         }
         next[cell.rowIndex] = { ...target, ...patch, cellErrors, cellConflicts, dirty: true };
       }
@@ -3284,7 +3444,8 @@ export function QuoteLedger({
         const cellErrors = { ...line.cellErrors };
         const cellConflicts = { ...line.cellConflicts };
         for (const cell of mine) {
-          const column = FIELD_TO_COLUMN[cell.field];
+          // 07.5-03 — 추가 칸 거부 셀은 서버 field(`cf_<key>`)가 곧 열 키다.
+          const column = FIELD_TO_COLUMN[cell.field] ?? (customFieldKeyOf(cell.field) !== null ? cell.field : undefined);
           if (!column) continue;
           if (cell.kind === "conflict") {
             cellConflicts[column] = {
@@ -3317,7 +3478,7 @@ export function QuoteLedger({
         const next: DraftLine = { ...line, version: conflict.theirVersion, baseline, cellConflicts };
         if (choice === "mine") return next;
         const taken = { ...next, ...value };
-        return { ...taken, dirty: lineDiffersFromBaseline(taken) || Object.keys(taken.cellErrors).length > 0 || taken.moved === true };
+        return { ...taken, dirty: lineDiffersFromBaseline(taken) || customFieldsDiffer(taken) || Object.keys(taken.cellErrors).length > 0 || taken.moved === true };
       }),
     );
   }
@@ -3793,7 +3954,7 @@ export function QuoteLedger({
         onPasteAtCell={editableWidth ? handlePasteAtCell : undefined}
         firstIssueSignal={issueTarget?.table === "quote" ? issueTarget.signal : undefined}
         cellIssue={cellIssueFor}
-        cellDirty={lineCellDirty}
+        cellDirty={quoteCellDirty}
         onRowTap={(row) => setSheetRowKey(row.clientKey)}
         rowLabel={(row) => row.itemName || "(항목명 없음)"}
         // 04-47(DR-16) — 합계 행 오른쪽 한 줄: 상한·거부 요약(danger) · 붙여넣기 묶음 · 저장 성공(혼자). 표가 조립해 넘겨준다.
@@ -3935,6 +4096,8 @@ export function QuoteLedger({
             { label: "내부 비고", value: openSheetRow.note ?? "—" },
             { label: "고객 비고", value: openSheetRow.clientRemark ?? "—" },
             { label: "중분류", value: openSheetRow.midCategory ?? "—" },
+            // 07.5-03(S4 · D-7504) — 추가 칸(열 순서 · 읽기 전용).
+            ...customFieldSheetItems(quoteLineCustomColumns, openSheetRow.customFields),
             {
               label: "상태",
               value:

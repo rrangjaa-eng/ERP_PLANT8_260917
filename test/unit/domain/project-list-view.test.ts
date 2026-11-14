@@ -25,6 +25,9 @@ import { log } from "@/lib/log";
 import { LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import type { ProjectAggregateBucket, ProjectListRow } from "@/repositories/projects";
 
+// 07.5-04(eng B-1) — DB 없는 목록 단위 시험의 입력 칸 읽기 stub(빈 입력 칸 — calls에 기록하지 않는다).
+const noCustomFields = () => Promise.resolve({ inputDefs: [], knownKeys: new Set<string>() });
+
 // 04-17(D-88 · D-89 · D-90 · 계약 7) — 목록 보기 범위 · 귀속 · 합계 제목 · 제외 문구 · 수익금 기준의 순수 함수.
 // 실제 SQL(겹침 · 귀속 구간 · 기준 식)은 test/integration/projects-list.test.ts가 본다.
 
@@ -154,6 +157,7 @@ describe("loadProjectList — 목록 읽기 실패의 운영 로그(엔지 리�
           now: () => new Date("2026-09-26T00:00:00Z"),
           scope: () => Promise.resolve({ rows: "all", includeArchived: false }),
           settle: () => Promise.resolve(),
+          customFieldInputs: noCustomFields,
           repo: {
             aggregate: () => Promise.reject(failure),
             listPage: () => Promise.resolve([]),
@@ -200,6 +204,7 @@ describe("loadProjectList — 번호 페이지 읽기 순서(C-23 · A-07)", () 
         calls.push("scope");
         return Promise.resolve({ rows: "all" as const, includeArchived: false });
       },
+      customFieldInputs: noCustomFields,
       repo: {
         aggregate: () => {
           calls.push("aggregate");
@@ -251,6 +256,71 @@ describe("loadProjectList — 번호 페이지 읽기 순서(C-23 · A-07)", () 
     expect(result.rows).toEqual([]);
     expect(result.page).toBe(1);
     expect(result.pageCount).toBe(0);
+  });
+});
+
+// 07.5-04(D-7510 · D-7522 · eng B-1) — 입력 칸 집합 하나(stub)로 검색 키 · 거르개가 정해지고 목록 · 합계에 같은 필터가 간다. 목록 열은 없다(사용자 결정 2026-11-14 23:43 KST).
+describe("loadProjectList — 추가 칸 검색 키 · 거르개(입력 칸 집합 하나)", () => {
+  const def = (key: string, type: "text" | "number" | "date" | "select", options: string[] = []) => ({
+    id: `id-${key}`,
+    key,
+    label: `칸 ${key}`,
+    type,
+    options,
+    archivedOptions: [],
+    required: false,
+    sortOrder: 1,
+    optionsColumn: type === "select" ? options : null,
+  });
+
+  function stub(inputDefs: ReturnType<typeof def>[]) {
+    const filters: unknown[] = [];
+    let reads = 0;
+    const deps = {
+      now: () => new Date("2026-09-26T00:00:00Z"),
+      settle: () => Promise.resolve(),
+      scope: () => Promise.resolve({ rows: "all" as const, includeArchived: false }),
+      customFieldInputs: () => {
+        reads += 1;
+        return Promise.resolve({ inputDefs, knownKeys: new Set(inputDefs.map((d) => d.key)) });
+      },
+      repo: {
+        aggregate: (_viewer: unknown, options: { filter: unknown }) => {
+          filters.push(options.filter);
+          return Promise.resolve([]);
+        },
+        listPage: () => Promise.resolve([]),
+      },
+    };
+    return { deps, filters, reads: () => reads };
+  }
+
+  const viewer = { id: "u1", roleId: "" };
+
+  it("텍스트 칸 키가 검색 키 · 활성 선택지 값만 거르개로 목록 · 합계 필터에 가고 열 정의는 돌려주지 않는다(입력 칸 읽기는 한 번)", async () => {
+    const defs = [def("a", "text"), def("b", "select", ["서울", "부산"]), def("c", "number"), def("d", "text"), def("e", "select", ["행사"])];
+    const { deps, filters, reads } = stub(defs);
+
+    const result = await loadProjectList(viewer, { year: "all", search: "코엑스", custom: { b: "서울", e: "없는값", z: "x" } }, deps);
+
+    expect(reads()).toBe(1);
+    expect(result).not.toHaveProperty("customColumns");
+    expect(result.customFilterDefs).toEqual([
+      { key: "b", label: "칸 b", options: ["서울", "부산"] },
+      { key: "e", label: "칸 e", options: ["행사"] },
+    ]);
+    expect(result.customFilterValues).toEqual({ b: "서울" });
+    expect(filters[0]).toMatchObject({ search: "코엑스", customTextKeys: ["a", "d"], customSelects: [{ key: "b", value: "서울" }] });
+  });
+
+  it("입력 칸이 0개면 거르개가 비고 필터에 추가 칸 절이 없다(main과 같은 필터)", async () => {
+    const { deps, filters } = stub([]);
+
+    const result = await loadProjectList(viewer, { year: "all", search: "코엑스", custom: { b: "서울" } }, deps);
+
+    expect(result.customFilterDefs).toEqual([]);
+    expect(result.customFilterValues).toEqual({});
+    expect(filters[0]).toEqual({ status: undefined, teamId: undefined, search: "코엑스" });
   });
 });
 
@@ -340,6 +410,11 @@ describe("isUserFiltered — 기본 보기(올해 · 전체 상태 · 전체 팀
     expect(isUserFiltered({ year: 2026, teamId: "t" }, 2026)).toBe(true);
     expect(isUserFiltered({ year: 2026, q: "x" }, 2026)).toBe(true);
     expect(isUserFiltered({ year: 2026, from: "2026-9-1" }, 2026)).toBe(true);
+  });
+
+  it("07.5-04 — 받아들인 추가 칸 거르개 값이 하나라도 있으면 필터이고, 빈 객체는 필터가 아니다", () => {
+    expect(isUserFiltered({ year: 2026, custom: { cf_a: "서울" } }, 2026)).toBe(true);
+    expect(isUserFiltered({ year: 2026, custom: {} }, 2026)).toBe(false);
   });
 });
 
@@ -529,6 +604,7 @@ describe("loadProjectList — 행의 endDatePassed", () => {
         now: () => new Date("2026-09-25T20:00:00Z"),
         scope: () => Promise.resolve({ rows: "all", includeArchived: false }),
         settle: () => Promise.resolve(),
+        customFieldInputs: noCustomFields,
         visible: () => Promise.resolve(true),
         // 07-22 — 수금 지연 판정은 이 시험의 관심 밖(DB를 읽지 않게 빈 판정).
         collectionOverdue: () => Promise.resolve(new Map()),
@@ -585,6 +661,7 @@ describe("loadProjectList — 볼 수 없는 금액 열의 정렬 차단", () =>
         now: () => new Date("2026-09-26T00:00:00Z"),
         scope: () => Promise.resolve({ rows: "all", includeArchived: false }),
         settle: () => Promise.resolve(),
+        customFieldInputs: noCustomFields,
         visible: (_viewer, infoItem) => Promise.resolve(shown[infoItem] ?? false),
         repo: {
           aggregate: () =>

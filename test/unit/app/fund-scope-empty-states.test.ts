@@ -60,6 +60,8 @@ vi.mock("@/domain/projects", () => ({
       params: {},
       columnStep: "wide",
       sort: { key: "endDate", direction: "asc" },
+      customFilterDefs: [],
+      customFilterValues: {},
     }),
 }));
 vi.mock("@/app/(app)/projects/actions", () => ({ createProjectAction: () => undefined }));

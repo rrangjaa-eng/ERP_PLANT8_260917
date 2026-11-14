@@ -84,6 +84,12 @@
   white-space: nowrap;
 }
 
+/* 07.5-04 감사 B1 — 추가 칸 조각(관리자가 정한 칸 이름 ≤ 20자 · 선택지 ≤ 40자)은 길이가 정해지지 않아 조각 안에서도 꺾는다:
+   낱말 경계 우선(body keep-all), 한 낱말이 줄보다 길면 아무 데서나(UI-SPEC long-text 「값은 줄바꿈 허용, 말줄임 없음」). */
+.filterSummaryPartWrap {
+  overflow-wrap: anywhere;
+}
+
 .selectLabel {
   display: flex;
   flex-direction: column;
@@ -103,6 +109,21 @@
   color: var(--text-strong);
   padding: 0 var(--s-2);
   font-size: var(--text-body);
+}
+
+/* 필터 줄 select 폭 상한(SYSTEM.md §6-1 · 지출결의 expenses.module.css · ui/custom-field CustomField.module.css와 같은 값) —
+   네이티브 select는 가장 긴 옵션(관리자 추가 칸 선택지 ≤ 40자 · 긴 팀 이름)만큼 넓어져 줄이 늘어난다(07.5-04 감사 F1).
+   `.select`를 함께 쓰는 카드 사용 필터(cards/card-usage-list.tsx)는 제 폭 규칙이 있어 프로젝트 필터 줄에만 건다. */
+@media (min-width: 700px) and (max-width: 1439.98px) {
+  .filterFields .select {
+    max-width: calc(var(--field-w-select) - var(--s-4));
+  }
+}
+
+@media (max-width: 699.98px) {
+  .filterFields .select {
+    max-width: calc(var(--field-w-select) - var(--s-4) - var(--s-1));
+  }
 }
 
 .toggle {

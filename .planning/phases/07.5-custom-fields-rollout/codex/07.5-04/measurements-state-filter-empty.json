@@ -1,0 +1,632 @@
+[
+  {
+    "state": "closed",
+    "width": 1440,
+    "innerWidth": 1440,
+    "doc": {
+      "scrollWidth": 1440,
+      "clientWidth": 1440
+    },
+    "tableBox": null,
+    "table": null,
+    "visibleHeaders": [],
+    "customHeadersInDom": [],
+    "nameColumn": null,
+    "rowCount": 0,
+    "firstRowText": "",
+    "empty": true,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 196,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 301,
+          "y": 89.4,
+          "width": 149,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 466,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 914.4,
+          "y": 89.4,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 1046.4,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀 · 행사 구분 팝업",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "closed",
+    "width": 1280,
+    "innerWidth": 1280,
+    "doc": {
+      "scrollWidth": 1280,
+      "clientWidth": 1280
+    },
+    "tableBox": null,
+    "table": null,
+    "visibleHeaders": [],
+    "customHeadersInDom": [],
+    "nameColumn": null,
+    "rowCount": 0,
+    "firstRowText": "",
+    "empty": true,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 196,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 301,
+          "y": 89.4,
+          "width": 149,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 466,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 914.4,
+          "y": 89.4,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 1046.4,
+          "y": 89.4,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀 · 행사 구분 팝업",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "closed",
+    "width": 1024,
+    "innerWidth": 1024,
+    "doc": {
+      "scrollWidth": 1024,
+      "clientWidth": 1024
+    },
+    "tableBox": null,
+    "table": null,
+    "visibleHeaders": [],
+    "customHeadersInDom": [],
+    "nameColumn": null,
+    "rowCount": 0,
+    "firstRowText": "",
+    "empty": true,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 20,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 125,
+          "y": 137.4,
+          "width": 149,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 290,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 738.4,
+          "y": 137.4,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 20,
+          "y": 210.2,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀 · 행사 구분 팝업",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "closed",
+    "width": 768,
+    "innerWidth": 768,
+    "doc": {
+      "scrollWidth": 768,
+      "clientWidth": 768
+    },
+    "tableBox": null,
+    "table": null,
+    "visibleHeaders": [],
+    "customHeadersInDom": [],
+    "nameColumn": null,
+    "rowCount": 0,
+    "firstRowText": "",
+    "empty": true,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 20,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 125,
+          "y": 137.4,
+          "width": 149,
+          "height": 32
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 290,
+          "y": 137.4,
+          "width": 89,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 363.4,
+          "y": 210.2,
+          "width": 116,
+          "height": 32
+        }
+      },
+      {
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 495.4,
+          "y": 210.2,
+          "width": 89,
+          "height": 32
+        }
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀 · 행사 구분 팝업",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "closed",
+    "width": 375,
+    "innerWidth": 375,
+    "doc": {
+      "scrollWidth": 375,
+      "clientWidth": 375
+    },
+    "tableBox": null,
+    "table": null,
+    "visibleHeaders": [],
+    "customHeadersInDom": [],
+    "nameColumn": null,
+    "rowCount": 0,
+    "firstRowText": "",
+    "empty": true,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
+        "label": "행사 구분",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
+        "label": "지역",
+        "visible": false,
+        "box": null
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀 · 행사 구분 팝업",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "filter-open",
+    "width": 375,
+    "innerWidth": 375,
+    "doc": {
+      "scrollWidth": 375,
+      "clientWidth": 375
+    },
+    "tableBox": null,
+    "table": null,
+    "visibleHeaders": [],
+    "customHeadersInDom": [],
+    "nameColumn": null,
+    "rowCount": 0,
+    "firstRowText": "",
+    "empty": true,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 16,
+          "y": 258.2,
+          "width": 93,
+          "height": 40
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 121,
+          "y": 258.2,
+          "width": 157,
+          "height": 40
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 16,
+          "y": 331,
+          "width": 93,
+          "height": 40
+        }
+      },
+      {
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 16,
+          "y": 520.6,
+          "width": 122,
+          "height": 40
+        }
+      },
+      {
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 150,
+          "y": 520.6,
+          "width": 93,
+          "height": 40
+        }
+      }
+    ],
+    "detailOpen": "true",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀 · 행사 구분 팝업",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "closed",
+    "width": 320,
+    "innerWidth": 320,
+    "doc": {
+      "scrollWidth": 320,
+      "clientWidth": 320
+    },
+    "tableBox": null,
+    "table": null,
+    "visibleHeaders": [],
+    "customHeadersInDom": [],
+    "nameColumn": null,
+    "rowCount": 0,
+    "firstRowText": "",
+    "empty": true,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
+        "label": "행사 구분",
+        "visible": false,
+        "box": null
+      },
+      {
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
+        "label": "지역",
+        "visible": false,
+        "box": null
+      }
+    ],
+    "detailOpen": "false",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀 · 행사 구분 팝업",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  },
+  {
+    "state": "filter-open",
+    "width": 320,
+    "innerWidth": 320,
+    "doc": {
+      "scrollWidth": 320,
+      "clientWidth": 320
+    },
+    "tableBox": null,
+    "table": null,
+    "visibleHeaders": [],
+    "customHeadersInDom": [],
+    "nameColumn": null,
+    "rowCount": 0,
+    "firstRowText": "",
+    "empty": true,
+    "filters": [
+      {
+        "id": "status",
+        "name": "status",
+        "label": "상태",
+        "visible": true,
+        "box": {
+          "x": 16,
+          "y": 258.2,
+          "width": 93,
+          "height": 40
+        }
+      },
+      {
+        "id": "teamId",
+        "name": "teamId",
+        "label": "팀",
+        "visible": true,
+        "box": {
+          "x": 121,
+          "y": 258.2,
+          "width": 157,
+          "height": 40
+        }
+      },
+      {
+        "id": "year",
+        "name": "year",
+        "label": "연도",
+        "visible": true,
+        "box": {
+          "x": 16,
+          "y": 331,
+          "width": 93,
+          "height": 40
+        }
+      },
+      {
+        "id": "filter-cf_cf_4f810731",
+        "name": "cf_cf_4f810731",
+        "label": "행사 구분",
+        "visible": true,
+        "box": {
+          "x": 16,
+          "y": 520.6,
+          "width": 122,
+          "height": 40
+        }
+      },
+      {
+        "id": "filter-cf_cf_9212f3ee",
+        "name": "cf_cf_9212f3ee",
+        "label": "지역",
+        "visible": true,
+        "box": {
+          "x": 150,
+          "y": 520.6,
+          "width": 93,
+          "height": 40
+        }
+      }
+    ],
+    "detailOpen": "true",
+    "summary": "전체 연도 · 전체 상태 · 전체 팀 · 행사 구분 팝업",
+    "primaryButtons": [
+      "프로젝트 등록"
+    ],
+    "downloadButtons": 0
+  }
+]

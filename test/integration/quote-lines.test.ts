@@ -4,10 +4,10 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { db, pool } from "@/db/client";
 import { actionLog, projects, quoteRevisions, quoteLines, codeItems, teams } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
-import { insertFieldDefinition } from "@/repositories/field-definitions";
+import { seedCustomFieldDefinition } from "@/test/support/custom-fields";
 import { createProject, loadProjectList } from "@/domain/projects";
 import {
   getCurrentQuoteRevision,
@@ -42,7 +42,7 @@ vi.mock("@/lib/viewer", async () => {
   return { getSession: () => Promise.resolve({ viewer, user: { id: viewer.id } }) };
 });
 
-const QUOTE_LINE_ENTITY = "quote_line";
+const QUOTE_LINE_ENTITY = "quote_line" as const;
 
 async function setupProject() {
   const client = await insertVendor(SYSTEM_VIEWER, {
@@ -104,13 +104,8 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
   it("(b) 미등록 custom_fields 키가 거부된다", async () => {
     const { revision, subcategoryValue } = await setupProject();
 
-    await insertFieldDefinition(SYSTEM_VIEWER, {
-      id: `fd-${randomUUID()}`,
-      entity: QUOTE_LINE_ENTITY,
-      key: "registeredKey",
-      type: "text",
-      required: false,
-    });
+    // 07.5-03(RESEARCH Pitfall 7) — 정의 + 보임 행 쌍(보임 행이 없으면 등록 키도 입력 밖이라 조용히 버려진다).
+    const { key: registeredKey } = await seedCustomFieldDefinition(QUOTE_LINE_ENTITY, { label: "등록 칸", type: "text" }, { visibleRoleIds: [SYSADMIN_ROLE_ID] });
 
     await expect(
       saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
@@ -119,7 +114,7 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
           itemName: "항목",
           unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
           execution: { currency: "KRW", amount: 50_000, fxRate: 1 },
-          customFields: { registeredKey: "값", unregisteredKey: "거부되어야 한다" },
+          customFields: { [registeredKey]: "값", unregisteredKey: "거부되어야 한다" },
         },
       ] }),
     ).rejects.toThrow();

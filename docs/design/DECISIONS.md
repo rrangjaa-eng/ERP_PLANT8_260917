@@ -2759,3 +2759,11 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **결정자**: 사용자(선택 카드 2026-11-14 23:43 KST 「열은 빼고 검색·거르개만」).
 **범위**: `app/(app)/projects/projects-table.tsx`(추가 칸 열 없음 — 07.5-04 이전 그대로) · `domain/projects/index.ts`(`ProjectListItemDto.customFields` · 열 정의 없음) · `repositories/projects.ts`(목록 select에 `custom_fields` 없음). 검색 · 거르개(`filter-bar.tsx` · `page.tsx`)는 그대로. 새 색 · 서체 · radius · 토큰 0.
 **영향**: SYSTEM 무수정(규칙을 지키는 쪽으로 뺐다). 1280 · 1440 문서 가로 넘침 0(칸 정의 유무와 무관하게 표 폭 같음 — `test/e2e/design-capture-07.5-04.spec.ts`).
+
+## 2026-11-14 — 화면 항목 관리의 대상 고르기는 선택 링크 줄 (07.5-05 · UI-SPEC S1 · design B4)
+**결정**: `/admin/field-definitions` 필터 줄 맨 앞에 `<nav aria-label="대상">` 링크 셋(거래처 · 프로젝트 · 견적 줄 — `FIELD_DEFINITION_TARGETS` 순서, 글자 `TARGET_LABELS`) + 현재 대상 `aria-current="page"`. 규칙 셋만 더한다 — `.targetNav`(vendors `.kindNav`와 같은 값) · `.toggle[aria-current="page"]`(강한 글자 700 · 밑줄 없음, §7-16) · 폰 `.targetNav { flex: 1 1 100% }`. 대상이 하나뿐이면 링크 줄을 그리지 않는다.
+**이유**: 라벨 없는 select는 `ui/select`가 `width: 100%`라 필터 줄을 채우고 보이는 라벨이 없다. 옆 관리 화면(거래처 「갈래」 · 코드표 · 공휴일)과 같은 선택 링크 줄 꼴이고, SYSTEM.md:229 셋 이하 한 줄 흐름 규칙 안이다.
+**결정자**: 계획자 재량(07.5-CONTEXT Claude's Discretion 「관리 화면 대상 고르기 UI」) · `/plan-design-review` 1회차 B4.
+**바뀐 규칙**: 없음(기존 선택 링크 줄 규칙 적용).
+**버린 대안**: 라벨 없는 select · 보이는 라벨 + 폭 규칙을 더한 select.
+**범위**: `app/(app)/admin/field-definitions/{page.tsx,field-definitions.module.css}`. 새 색 · 서체 · radius · 토큰 0.

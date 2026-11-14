@@ -24,7 +24,7 @@ import {
   type CreateFieldDefinitionInput,
   type UpdateFieldDefinitionInput,
 } from "@/domain/custom-fields/admin-input";
-import { FIELD_DEFINITION_TARGETS, customFieldInfoItem } from "@/domain/custom-fields/targets";
+import { FIELD_DEFINITION_TARGETS, customFieldInfoItem, type FieldDefinitionTarget } from "@/domain/custom-fields/targets";
 import { deriveArchivedOptions } from "@/domain/custom-fields/options";
 import {
   FIELD_DEFINITION_ARCHIVED_CAUSE,
@@ -35,10 +35,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 const MENU = "admin.field-definitions";
 
-// 요청이 대상을 고를 수 없다 — 서버가 대상 등록부의 거래처를 넣는다.
-const FIELD_ENTITY = FIELD_DEFINITION_TARGETS[0];
-
-// 이름은 보관된 칸까지 포함해 거래처 안에서 유일하다(D10-12). 문구는 액션이 nameConflictMessage로 고른다.
+// 이름은 보관된 칸까지 포함해 대상 안에서 유일하다(D10-12 · DB field_definitions_entity_label_key = entity · label). 문구는 액션이 nameConflictMessage로 고른다.
 export class DuplicateFieldNameError extends UserFacingError {
   constructor(readonly archived: boolean) {
     super(archived ? "보관함에 같은 이름의 화면 항목 있음" : "같은 이름의 화면 항목 있음");
@@ -49,8 +46,12 @@ export class DuplicateFieldNameError extends UserFacingError {
 const NAME_UNIQUE_CONSTRAINT = "field_definitions_entity_label_key";
 const KEY_UNIQUE_CONSTRAINT = "field_definitions_entity_key_key";
 
-async function defaultFindNameConflict(viewer: Viewer, name: string): Promise<{ archived: boolean } | null> {
-  const rows = await listFieldDefinitions(viewer, FIELD_ENTITY);
+async function defaultFindNameConflict(
+  viewer: Viewer,
+  name: string,
+  target: FieldDefinitionTarget,
+): Promise<{ archived: boolean } | null> {
+  const rows = await listFieldDefinitions(viewer, target);
   const match = rows.find((row) => row.label === name);
   return match ? { archived: match.archivedAt !== null } : null;
 }
@@ -74,7 +75,7 @@ export type CreateFieldDefinitionDeps = {
   ) => Promise<void>;
   recordAction: typeof defaultRecordAction;
   // 이름 예약 조회(경합 테스트가 건너뛰게 주입한다) — 같은 이름의 칸이 있으면 { archived }.
-  findNameConflict: (viewer: Viewer, name: string) => Promise<{ archived: boolean } | null>;
+  findNameConflict: (viewer: Viewer, name: string, target: FieldDefinitionTarget) => Promise<{ archived: boolean } | null>;
 };
 
 // 칸 정의와 전 계급(보관 계급 포함) 노출 행을 한 트랜잭션에서 만든다 — 중간에 실패하면 아무것도
@@ -91,7 +92,7 @@ export async function createFieldDefinition(
   // 액션 밖 호출자 방어(T-04.5-52) — 입력 스키마와 같은 상수로 이름 자르기 · 길이 · 정렬 범위를 다시 판정한다.
   const parsed = createFieldDefinitionInput.parse(input);
   const findNameConflict = deps?.findNameConflict ?? defaultFindNameConflict;
-  const conflict = await findNameConflict(viewer, parsed.name);
+  const conflict = await findNameConflict(viewer, parsed.name, parsed.target);
   if (conflict) throw new DuplicateFieldNameError(conflict.archived);
 
   const listRoles = deps?.listRoles ?? defaultListRoles;
@@ -105,15 +106,17 @@ export async function createFieldDefinition(
     actionType: "document_create",
     entity: "field_definitions",
     entityId: created.id,
-    detail: { key: created.key, entity: FIELD_ENTITY },
+    detail: { key: created.key, entity: parsed.target },
   });
 
   return created;
 }
 
+type ParsedCreateInput = ReturnType<typeof createFieldDefinitionInput.parse>;
+
 async function insertWithKeyRetry(
   viewer: Viewer,
-  input: CreateFieldDefinitionInput,
+  input: ParsedCreateInput,
   generateKey: () => string,
   listRoles: CreateFieldDefinitionDeps["listRoles"],
   insertVisibility: CreateFieldDefinitionDeps["insertVisibility"],
@@ -125,7 +128,7 @@ async function insertWithKeyRetry(
     } catch (error) {
       // 조회와 쓰기 사이 경합으로 이름 유일 위반이 나면 같은 조회로 활성 · 보관을 가려 같은 오류로 바꾼다.
       if (isUniqueViolation(error, NAME_UNIQUE_CONSTRAINT)) {
-        const conflict = await defaultFindNameConflict(viewer, input.name);
+        const conflict = await defaultFindNameConflict(viewer, input.name, input.target);
         if (conflict) throw new DuplicateFieldNameError(conflict.archived);
         throw error;
       }
@@ -136,7 +139,7 @@ async function insertWithKeyRetry(
 
 async function insertWithGrants(
   viewer: Viewer,
-  input: CreateFieldDefinitionInput,
+  input: ParsedCreateInput,
   key: string,
   listRoles: CreateFieldDefinitionDeps["listRoles"],
   insertVisibility: CreateFieldDefinitionDeps["insertVisibility"],
@@ -149,7 +152,7 @@ async function insertWithGrants(
       viewer,
       {
         id,
-        entity: FIELD_ENTITY,
+        entity: input.target,
         key,
         label: input.name.trim(),
         type: input.type,
@@ -163,7 +166,7 @@ async function insertWithGrants(
     for (const role of roles) {
       await insertVisibility(
         viewer,
-        { roleId: role.id, infoItem: customFieldInfoItem(FIELD_ENTITY, key), visible: true, updatedBy: viewer.id },
+        { roleId: role.id, infoItem: customFieldInfoItem(input.target, key), visible: true, updatedBy: viewer.id },
         tx,
       );
     }
@@ -199,15 +202,21 @@ export type UpdateFieldDefinitionDeps = {
   recordAction: typeof defaultRecordAction;
   findById: (viewer: Viewer, id: string) => Promise<FieldDefinitionRow | null>;
   // 자기 자신(excludeId)을 뺀 같은 이름의 칸이 있으면 { archived }.
-  findNameConflict: (viewer: Viewer, name: string, excludeId: string) => Promise<{ archived: boolean } | null>;
+  findNameConflict: (
+    viewer: Viewer,
+    name: string,
+    excludeId: string,
+    target: string,
+  ) => Promise<{ archived: boolean } | null>;
 };
 
 async function defaultFindOtherNameConflict(
   viewer: Viewer,
   name: string,
   excludeId: string,
+  target: string,
 ): Promise<{ archived: boolean } | null> {
-  const rows = await listFieldDefinitions(viewer, FIELD_ENTITY);
+  const rows = await listFieldDefinitions(viewer, target);
   const match = rows.find((row) => row.id !== excludeId && row.label === name);
   return match ? { archived: match.archivedAt !== null } : null;
 }
@@ -241,7 +250,7 @@ export async function updateFieldDefinition(
   if (row.version !== parsed.version) throw new FieldDefinitionConflictError();
 
   const findNameConflict = deps?.findNameConflict ?? defaultFindOtherNameConflict;
-  const conflict = await findNameConflict(viewer, parsed.name, row.id);
+  const conflict = await findNameConflict(viewer, parsed.name, row.id, row.entity);
   if (conflict) throw new DuplicateFieldNameError(conflict.archived);
 
   // 타입은 읽은 행으로 본다 — 수정 입력에 type이 없다. 빈 선택지가 저장되면 build-schema의 z.enum이 비어 거래처 폼 검증이 깨진다.
@@ -270,7 +279,7 @@ export async function updateFieldDefinition(
   } catch (error) {
     // 조회와 쓰기 사이 경합으로 이름 유일 위반이 나면 같은 조회로 활성 · 보관을 가려 같은 오류로 바꾼다.
     if (isUniqueViolation(error, NAME_UNIQUE_CONSTRAINT)) {
-      const raced = await defaultFindOtherNameConflict(viewer, parsed.name, row.id);
+      const raced = await defaultFindOtherNameConflict(viewer, parsed.name, row.id, row.entity);
       if (raced) throw new DuplicateFieldNameError(raced.archived);
     }
     throw error;
@@ -334,16 +343,17 @@ function toFieldType(value: string): FieldDefinitionAdminDto["type"] {
   return found;
 }
 
-// 거래처 정의 전부(보관 포함 — 화면이 거른다)를 listFieldDefinitions 순서(sortOrder, key) 그대로.
+// 고른 대상(기본 거래처 — 기존 호출 그대로)의 정의 전부(보관 포함 — 화면이 거른다)를 listFieldDefinitions 순서(sortOrder, key) 그대로.
 export async function listFieldDefinitionsForAdmin(
   viewer: Viewer,
+  target: FieldDefinitionTarget = "vendor",
   deps?: Partial<ListFieldDefinitionsForAdminDeps>,
 ): Promise<FieldDefinitionAdminDto[]> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, MENU, "view"))) throw new ForbiddenError(PERMISSION_DENIED_CAUSE);
 
   const list = deps?.listFieldDefinitions ?? listFieldDefinitions;
-  const rows = await list(viewer, FIELD_ENTITY);
+  const rows = await list(viewer, target);
   return rows.map((row) => ({
     id: row.id,
     key: row.key,

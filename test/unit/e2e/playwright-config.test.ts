@@ -52,6 +52,8 @@ describe("playwright.config.ts — 규약 C4 확인증 프로젝트 격리(백�
       "permissions-fund-note-unset.spec.ts",
       "reason-options-empty.spec.ts",
       "settings-company-logo.spec.ts",
+      // 07.5-05 — 관리 화면에서 만든 프로젝트 · 견적 줄 칸은 전 계급 보임이라 병렬 desktop 스펙의 폼 칸 · 표 열 · Tab 순서를 흔든다.
+      "custom-fields-rollout-journey.spec.ts",
     ];
     expect(byName("desktop")?.testIgnore).toEqual(expect.arrayContaining(shared));
     expect(byName("desktop-settings")?.testMatch).toEqual(shared);

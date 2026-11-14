@@ -3,7 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { listFieldDefinitionsForAdmin, type FieldDefinitionAdminDto } from "@/domain/custom-fields/admin";
-import { nextSortOrder } from "@/domain/custom-fields/targets";
+import {
+  FIELD_DEFINITION_TARGETS,
+  nextSortOrder,
+  TARGET_LABELS,
+  type FieldDefinitionTarget,
+} from "@/domain/custom-fields/targets";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
@@ -21,9 +26,14 @@ export const dynamic = "force-dynamic";
 
 const LIST_HREF = "/admin/field-definitions";
 
-// 목록 링크 — 보관 포함 필터와 열린 폼의 쿼리를 함께 지킨다(vendors의 vendorsHref와 같은 결).
-function listHref(includeArchived: boolean, opts?: { isNew?: boolean; editId?: string }): string {
+// 목록 링크 — 고른 대상 · 보관 포함 필터 · 열린 폼의 쿼리를 함께 지킨다(vendors의 vendorsHref와 같은 결).
+// 대상이 거래처(기본)면 `target`을 싣지 않는다 — 대상을 켜기 전 주소 그대로.
+function listHref(
+  includeArchived: boolean,
+  opts?: { isNew?: boolean; editId?: string; target?: FieldDefinitionTarget },
+): string {
   const params = new URLSearchParams();
+  if (opts?.target && opts.target !== "vendor") params.set("target", opts.target);
   if (includeArchived) params.set("includeArchived", "1");
   if (opts?.isNew) params.set("new", "1");
   if (opts?.editId) params.set("editId", opts.editId);
@@ -38,6 +48,11 @@ const TYPE_LABELS: Record<FieldDefinitionAdminDto["type"], string> = {
   select: "선택",
 };
 
+// 07.5-05 D-7502: `?target=`은 대상 상수 안 글자만 — 없거나 모르는 값(복수형 · 대소문자 · 빈 글자)이면 거래처.
+function parseTarget(value: string | undefined): FieldDefinitionTarget {
+  return FIELD_DEFINITION_TARGETS.find((entry) => entry === value) ?? "vendor";
+}
+
 // 선택지 열: 타입이 선택일 때만 활성 선택지의 콤마 목록, 그 외 「—」.
 function optionsText(def: FieldDefinitionAdminDto): string {
   return def.type === "select" && def.options.length > 0 ? def.options.join(", ") : "—";
@@ -46,14 +61,15 @@ function optionsText(def: FieldDefinitionAdminDto): string {
 export default async function FieldDefinitionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ new?: string; editId?: string; includeArchived?: string }>;
+  searchParams: Promise<{ new?: string; editId?: string; includeArchived?: string; target?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.field-definitions", "view"))) notFound();
 
-  const { new: newParam, editId, includeArchived: includeArchivedParam } = await searchParams;
+  const { new: newParam, editId, includeArchived: includeArchivedParam, target: targetParam } = await searchParams;
   const includeArchived = includeArchivedParam === "1";
+  const target = parseTarget(targetParam);
   const [canWrite, canArchiveWrite, canViewVisibility] = await Promise.all([
     can(session.viewer, "admin.field-definitions", "write"),
     can(session.viewer, "admin.archive", "write"),
@@ -65,9 +81,9 @@ export default async function FieldDefinitionsPage({
   // 목록을 불러오지 못하면 표 자리에 오류 한 줄 + 같은 주소로 다시 시도(§7-7 ERROR).
   let allDefs: FieldDefinitionAdminDto[];
   try {
-    allDefs = await listFieldDefinitionsForAdmin(session.viewer);
+    allDefs = await listFieldDefinitionsForAdmin(session.viewer, target);
   } catch {
-    const retryHref = listHref(includeArchived, { isNew: newParam === "1", editId });
+    const retryHref = listHref(includeArchived, { isNew: newParam === "1", editId, target });
     return (
       <ListScreen title="화면 항목">
         <ListEmpty tone="error" message="화면 항목 불러오기 실패" action={{ label: "다시 시도", href: retryHref }} />
@@ -82,24 +98,44 @@ export default async function FieldDefinitionsPage({
   const editing = canWrite && editId ? (activeDefs.find((def) => def.id === editId) ?? null) : null;
   const showCreateForm = canWrite && editing === null && newParam === "1";
   const showForm = editing !== null || showCreateForm;
-  const cancelHref = listHref(includeArchived);
-  const openFormQuery = { isNew: showCreateForm, editId: editing?.id };
+  const cancelHref = listHref(includeArchived, { target });
+  const openFormQuery = { isNew: showCreateForm, editId: editing?.id, target };
 
   // DR5 A — 보관 포함 전체가 0건이면 머리 1차를 그리지 않고 빈 화면의 「화면 항목 추가」 하나가 등록을 맡는다(쓰기 권한 없으면 둘 다 없다).
-  const addHref = listHref(false, { isNew: true });
-  const primaryAction = canWrite && allDefs.length > 0 ? { label: "화면 항목 추가", href: listHref(includeArchived, { isNew: true }) } : undefined;
+  const addHref = listHref(false, { isNew: true, target });
+  const primaryAction =
+    canWrite && allDefs.length > 0 ? { label: "화면 항목 추가", href: listHref(includeArchived, { isNew: true, target }) } : undefined;
 
   return (
     <ListScreen
       title="화면 항목"
       primaryAction={primaryAction}
       filters={
-        allDefs.length > 0 ? (
-          // 3차 토글 — 열린 폼의 쿼리를 지킨다.
-          <Link href={listHref(!includeArchived, openFormQuery)} scroll={false} className={styles.toggle}>
-            {includeArchived ? "보관 제외" : "보관 포함"}
-          </Link>
-        ) : undefined
+        <>
+          {/* 07.5-05 S1: 대상 링크 줄(옆 관리 화면 「갈래」 링크 줄 꼴 — design B4). 대상 EMPTY에서도 보이고, 링크는 `new` · `editId`를
+              싣지 않아 패널이 닫힌다. 대상이 하나뿐이면 그리지 않는다. */}
+          {FIELD_DEFINITION_TARGETS.length > 1 ? (
+            <nav aria-label="대상" className={styles.targetNav}>
+              {FIELD_DEFINITION_TARGETS.map((entry) => (
+                <Link
+                  key={entry}
+                  href={listHref(includeArchived, { target: entry })}
+                  scroll={false}
+                  className={styles.toggle}
+                  aria-current={entry === target ? "page" : undefined}
+                >
+                  {TARGET_LABELS[entry]}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
+          {allDefs.length > 0 ? (
+            // 3차 토글 — 열린 폼의 쿼리를 지킨다.
+            <Link href={listHref(!includeArchived, openFormQuery)} scroll={false} className={styles.toggle}>
+              {includeArchived ? "보관 제외" : "보관 포함"}
+            </Link>
+          ) : null}
+        </>
       }
       empty={
         allDefs.length === 0 ? (
@@ -112,10 +148,11 @@ export default async function FieldDefinitionsPage({
       panel={
         // 수정은 편집 가능한 칸을, 등록은 쓰기 권한이 있을 때만 — 권한 없는 계급에는 `?new=1` · `?editId=`로 와도 패널이 없다.
         showForm ? (
-          <SidePanel key={editing?.id ?? "new"} title={editing ? "화면 항목 수정" : "화면 항목 추가"} closeHref={cancelHref}>
+          <SidePanel key={editing?.id ?? "new"} title={`${TARGET_LABELS[target]} 화면 항목 ${editing ? "수정" : "추가"}`} closeHref={cancelHref}>
             <FieldDefinitionForm
               key={editing ? `${editing.id}:${editing.version}` : "new"}
               cancelHref={cancelHref}
+              target={target}
               editing={
                 editing
                   ? {
@@ -166,7 +203,7 @@ export default async function FieldDefinitionsPage({
               def.archived ? null : (
                 <RowActions key="actions">
                   {canWrite ? (
-                    <RowAction href={listHref(includeArchived, { editId: def.id })}>
+                    <RowAction href={listHref(includeArchived, { editId: def.id, target })}>
                       <span className="sr-only">{def.label} </span>수정
                     </RowAction>
                   ) : null}

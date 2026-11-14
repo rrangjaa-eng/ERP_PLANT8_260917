@@ -468,7 +468,7 @@ test("수정: 목록 「수정」으로 열면 값이 채워지고 타입은 텍
   await expect(form.getByText("텍스트", { exact: true })).toBeVisible();
   // 「타입」 라벨이 타입 글자를 가리킨다(label for가 라벨 붙일 수 없는 요소를 가리키지 않는다).
   await expect(form.getByLabel("타입", { exact: true })).toHaveText("텍스트");
-  await expect(form.getByRole("link", { name: "새 화면 항목 추가" })).toHaveAttribute("href", "/admin/field-definitions?new=1");
+  await expect(form.getByRole("link", { name: "새 화면 항목 추가" })).toHaveAttribute("href", "/admin/field-definitions?target=vendor&new=1");
   // R4 — 패널이 열려 있어도 머리 1차 「화면 항목 추가」(여는 요소)는 렌더에 남는다(뒤는 모달이 막는다).
   await expect(page.getByRole("link", { name: "화면 항목 추가", exact: true })).toHaveCount(1);
   const version = form.locator('input[name="version"]');
@@ -775,4 +775,41 @@ test("「보관 포함」 토글은 열린 폼의 쿼리를 지킨다", async ({
     "href",
     "/admin/field-definitions?includeArchived=1&new=1",
   );
+});
+
+// 07.5-05 S1 · design B4: 대상 링크 줄 — 상수 순서 · 현재 대상 aria-current · 링크는 includeArchived를 지키고 new · editId를 버린다.
+// 이 스펙(desktop 병렬)은 프로젝트 · 견적 줄 칸을 만들지 않는다(eng C-5) — 만드는 여정은 custom-fields-rollout-journey(desktop-settings).
+test("대상 링크 줄 — 순서 · 현재 표시 · 보관 포함 유지 · 패널 제목이 고른 대상을 따른다", async ({ page }) => {
+  await login(page, admin);
+  await seedFieldRow(uniqueLabel(), 2);
+  await page.goto("/admin/field-definitions?includeArchived=1");
+
+  const nav = page.getByRole("navigation", { name: "대상" });
+  await expect(nav.getByRole("link")).toHaveText(["거래처", "프로젝트", "견적 줄"]);
+  await expect(nav.getByRole("link", { name: "거래처" })).toHaveAttribute("aria-current", "page");
+  await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+
+  await nav.getByRole("link", { name: "프로젝트" }).click();
+  await expect(page).toHaveURL(/\/admin\/field-definitions\?target=project&includeArchived=1$/);
+  await expect(nav.getByRole("link", { name: "프로젝트" })).toHaveAttribute("aria-current", "page");
+  await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+
+  await page.getByRole("link", { name: "화면 항목 추가", exact: true }).first().click();
+  await expect(page).toHaveURL(/target=project/);
+  await expect(page.getByRole("dialog", { name: "프로젝트 화면 항목 추가", exact: true })).toBeVisible();
+});
+
+test("대상 링크는 열린 패널의 new · editId를 싣지 않고, 모르는 target 값은 거래처로 읽는다", async ({ page }) => {
+  await login(page, admin);
+  const fixture = await seedFieldRow(uniqueLabel(), 2);
+  await page.goto(`/admin/field-definitions?editId=${fixture.id}`);
+  await expect(page.getByRole("dialog", { name: "거래처 화면 항목 수정", exact: true })).toBeVisible();
+  const nav = page.getByRole("navigation", { name: "대상" });
+  await expect(nav.getByRole("link", { name: "견적 줄" })).toHaveAttribute("href", "/admin/field-definitions?target=quote_line");
+  await expect(nav.getByRole("link", { name: "거래처" })).toHaveAttribute("href", "/admin/field-definitions");
+
+  for (const value of ["vendors", "Project", ""]) {
+    await page.goto(`/admin/field-definitions?target=${value}`);
+    await expect(page.getByRole("navigation", { name: "대상" }).getByRole("link", { name: "거래처" })).toHaveAttribute("aria-current", "page");
+  }
 });

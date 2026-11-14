@@ -1,8 +1,14 @@
 import { z } from "zod";
-import { ACTIVE_OPTIONS_MAX, FIELD_NAME_MAX, OPTION_MAX_LENGTH, SORT_ORDER_MAX } from "@/domain/custom-fields/targets";
+import {
+  ACTIVE_OPTIONS_MAX,
+  FIELD_DEFINITION_TARGETS,
+  FIELD_NAME_MAX,
+  OPTION_MAX_LENGTH,
+  SORT_ORDER_MAX,
+} from "@/domain/custom-fields/targets";
 
-// 04.5-01: 화면 항목(커스텀 칸) 생성 입력 — 대상(entity)은 받지 않는다(서버가 거래처를 넣는다,
-// T-04.5-02). 선택형(04.5-02)은 활성 선택지 1~30개 · 각 1~40자 · 중복 없음이다. 칸 오류 문구는 UI-SPEC Copywriting 표의 뜻 그대로 명사형이다
+// 04.5-01: 화면 항목(커스텀 칸) 생성 입력. 07.5-05: 대상은 `target`(대상 상수 enum — 상수 밖 글자 거부, T-07.5-05-01)이고
+// `entity` 키는 여전히 받지 않는다(.strict()). 선택형(04.5-02)은 활성 선택지 1~30개 · 각 1~40자 · 중복 없음이다. 칸 오류 문구는 UI-SPEC Copywriting 표의 뜻 그대로 명사형이다
 // (DECISIONS 2026-09-26 · error-copy-noun-style 테스트가 높임말 종결을 막는다 — 04.5-08 편차).
 export const NAME_EMPTY_MESSAGE = "이름 비어 있음 · 화면 항목 이름 적기";
 export const NAME_TOO_LONG_MESSAGE = `이름 ${FIELD_NAME_MAX}자 초과 · ${FIELD_NAME_MAX}자 이하로 줄이기`;
@@ -43,28 +49,41 @@ const optionsField = z
     }
   });
 
+// 두 생성 스키마(도메인 · 액션)가 같은 칸 묶음 · 같은 선택지 검사를 건다 — 검사가 붙은 스키마를 덮어 잇지 않는다(zod가 모듈 로드 때 예외, eng r2 N1).
+const createFields = {
+  name: nameField,
+  type: z.enum(["text", "number", "date", "select"]),
+  required: z.boolean(),
+  sortOrder: sortOrderField,
+  options: optionsField.optional(),
+};
+
+function checkOptionsForType(input: { type: string; options?: string[] | undefined }, ctx: z.RefinementCtx): void {
+  const count = input.options?.length ?? 0;
+  if (input.type === "select" && count === 0) {
+    ctx.addIssue({ code: "custom", path: ["options"], message: OPTIONS_ZERO_CAUSE });
+  }
+  if (input.type !== "select" && count > 0) {
+    ctx.addIssue({ code: "custom", path: ["options"], message: OPTIONS_ON_NON_SELECT_MESSAGE });
+  }
+}
+
+// 도메인 입력 — target을 생략하면 거래처(04.5 호출 그대로 · assumption_delta_decision).
 export const createFieldDefinitionInput = z
-  .object({
-    name: nameField,
-    type: z.enum(["text", "number", "date", "select"]),
-    required: z.boolean(),
-    sortOrder: sortOrderField,
-    options: optionsField.optional(),
-  })
+  .object({ ...createFields, target: z.enum(FIELD_DEFINITION_TARGETS).default("vendor") })
   .strict()
-  .superRefine((input, ctx) => {
-    const count = input.options?.length ?? 0;
-    if (input.type === "select" && count === 0) {
-      ctx.addIssue({ code: "custom", path: ["options"], message: OPTIONS_ZERO_CAUSE });
-    }
-    if (input.type !== "select" && count > 0) {
-      ctx.addIssue({ code: "custom", path: ["options"], message: OPTIONS_ON_NON_SELECT_MESSAGE });
-    }
-  });
+  .superRefine(checkOptionsForType);
 
-export type CreateFieldDefinitionInput = z.infer<typeof createFieldDefinitionInput>;
+// 호출자가 넘기는 모양(target 생략 가능 — eng C-2). 파싱 뒤 값은 parse 결과 추론을 쓴다.
+export type CreateFieldDefinitionInput = z.input<typeof createFieldDefinitionInput>;
 
-// 04.5-02: 수정 입력 — type · entity 키가 없다(.strict()가 거부 — 타입은 바꿀 수 없고 대상은 서버가 정한다, T-04.5-02).
+// 관리 화면 액션 입력 — target 필수 · 기본값 없음(폼이 대상을 빠뜨리면 거래처 칸으로 조용히 저장되던 길을 막는다, eng C-3).
+export const createFieldDefinitionActionInput = z
+  .object({ ...createFields, target: z.enum(FIELD_DEFINITION_TARGETS) })
+  .strict()
+  .superRefine(checkOptionsForType);
+
+// 04.5-02: 수정 입력 — type · entity · target 키가 없다(.strict()가 거부 — 타입 · 대상은 바꿀 수 없다, 대상은 저장된 행 그대로).
 // 선택형인지는 읽은 행으로 판정하므로 선택지 배열은 모양 규칙만 본다(선택형의 0개 거부는 domain).
 export const updateFieldDefinitionInput = z
   .object({

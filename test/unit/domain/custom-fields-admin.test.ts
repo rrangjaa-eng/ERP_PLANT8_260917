@@ -2,11 +2,17 @@ import { describe, expect, it } from "vitest";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import {
   FIELD_DEFINITION_TARGETS,
+  TARGET_LABELS,
   customFieldInfoItem,
   nextSortOrder,
   parseCustomFieldInfoItem,
 } from "@/domain/custom-fields/targets";
-import { createFieldDefinitionInput, nameConflictMessage, updateFieldDefinitionInput } from "@/domain/custom-fields/admin-input";
+import {
+  createFieldDefinitionActionInput,
+  createFieldDefinitionInput,
+  nameConflictMessage,
+  updateFieldDefinitionInput,
+} from "@/domain/custom-fields/admin-input";
 import { addOption, deriveArchivedOptions, normalizeOption, removeOption } from "@/domain/custom-fields/options";
 
 // 04.5-08: 대상 등록부 · 입력 규칙 · 이름 충돌 문구 — DB 없이 도는 순수 계약.
@@ -18,8 +24,10 @@ function issueMessages(input: unknown): string[] {
 }
 
 describe("대상 등록부 · 항목 키 규약", () => {
-  it("대상은 거래처 하나다", () => {
-    expect([...FIELD_DEFINITION_TARGETS]).toEqual(["vendor"]);
+  // 07.5-05 D-7502: 대상은 거래처 · 프로젝트 · 견적 줄(entity 글자는 PROJECT_ENTITY · QUOTE_LINE_ENTITY와 같다).
+  it("대상은 거래처 · 프로젝트 · 견적 줄 순서이고 라벨이 같은 파일에 있다", () => {
+    expect([...FIELD_DEFINITION_TARGETS]).toEqual(["vendor", "project", "quote_line"]);
+    expect(TARGET_LABELS).toEqual({ vendor: "거래처", project: "프로젝트", quote_line: "견적 줄" });
   });
 
   it("노출표 항목 키는 cf.<entity>.<key>이고 역으로 풀린다", () => {
@@ -194,6 +202,40 @@ describe("생성 입력 — 선택형", () => {
     expect(createFieldDefinitionInput.safeParse({ ...valid, options: ["기본"] }).success).toBe(false);
     expect(createFieldDefinitionInput.safeParse({ ...valid, options: [] }).success).toBe(true);
     expect(createFieldDefinitionInput.safeParse(valid).success).toBe(true);
+  });
+});
+
+// 07.5-05 T-07.5-05-01: 도메인 생성 입력은 target 생략 = 거래처(04.5 호출 그대로), 관리 화면 액션 스키마는 target 필수(eng C-3).
+describe("생성 입력 — 대상 (07.5-05)", () => {
+  it("상수 안 대상은 통과하고 생략하면 거래처다", () => {
+    expect(createFieldDefinitionInput.parse({ ...valid, target: "project" }).target).toBe("project");
+    expect(createFieldDefinitionInput.parse({ ...valid, target: "quote_line" }).target).toBe("quote_line");
+    expect(createFieldDefinitionInput.parse(valid).target).toBe("vendor");
+  });
+
+  it("상수 밖 글자(복수형 · 대소문자 · 빈 글자)는 거부한다", () => {
+    for (const target of ["vendors", "Project", "", "QUOTE_LINE"]) {
+      expect(createFieldDefinitionInput.safeParse({ ...valid, target }).success).toBe(false);
+    }
+  });
+
+  it("수정 입력은 target을 받지 않는다(대상 변경 불가)", () => {
+    const update = { id: "fd-1", version: 3, name: "계약 메모", required: true, sortOrder: 2 };
+    expect(updateFieldDefinitionInput.safeParse({ ...update, target: "project" }).success).toBe(false);
+  });
+
+  it("액션 스키마는 target이 빠지면 거부하고 상수 안 대상만 받는다", () => {
+    expect(createFieldDefinitionActionInput.safeParse(valid).success).toBe(false);
+    expect(createFieldDefinitionActionInput.parse({ ...valid, target: "project" }).target).toBe("project");
+    expect(createFieldDefinitionActionInput.safeParse({ ...valid, target: "vendors" }).success).toBe(false);
+    expect(createFieldDefinitionActionInput.safeParse({ ...valid, target: "project", entity: "project" }).success).toBe(false);
+  });
+
+  it("액션 스키마도 같은 선택지 검사를 건다", () => {
+    const base = { ...valid, target: "project" };
+    expect(createFieldDefinitionActionInput.safeParse({ ...base, type: "select", options: [] }).success).toBe(false);
+    expect(createFieldDefinitionActionInput.safeParse({ ...base, type: "text", options: ["가"] }).success).toBe(false);
+    expect(createFieldDefinitionActionInput.safeParse({ ...base, type: "select", options: ["가"] }).success).toBe(true);
   });
 });
 

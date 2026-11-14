@@ -2767,3 +2767,11 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **바뀐 규칙**: 없음(기존 선택 링크 줄 규칙 적용).
 **버린 대안**: 라벨 없는 select · 보이는 라벨 + 폭 규칙을 더한 select.
 **범위**: `app/(app)/admin/field-definitions/{page.tsx,field-definitions.module.css}`. 새 색 · 서체 · radius · 토큰 0.
+
+## 2026-11-15 — 폰 필터 줄 전폭 규칙은 선택 링크 줄(`<nav>`)이 든 필터에도 적용 (07.5-05 독립 DOM 감사 FLAG)
+**결정**: `ui/list-screen/ListScreen.module.css` 폰(<700) 규칙 `.bar:has(form)`(wrap) · `.bar:has(form) > .filters`(`flex: 1 1 100%`)에 `.bar:has(nav)`를 더한다. 링크 줄이 든 필터는 1차 옆에서 줄어들지 않고 전폭이며, 1차는 다음 줄로 내려간다(DOM 순서 = 시각 순서).
+**이유**: `/admin/field-definitions` 대상 링크 줄(거래처 · 프로젝트 · 견적 줄)이 폰 320 · 340에서 1차 옆으로 줄어든 `.filters` 안에서 둘째 줄로 접혔다(nav 162.9×104). SYSTEM.md §3 「셋 이하 한 줄 흐름」과 어긋난다. 화면 하나만 예외로 두지 않고 공용 규칙을 넓혔다.
+**결정자**: 계획자 재량 범위의 결함 수정(독립 DOM 감사 판정 FLAG 1).
+**바뀐 규칙**: ListScreen 폰 필터 전폭 조건 `:has(form)` → `:has(form), :has(nav)`. 새 색 · 서체 · radius · 토큰 0.
+**범위**: `ui/list-screen/ListScreen.module.css`. 영향 화면(폰 320 · 375만): 화면 항목 관리(1차 있을 때 머리 줄이 위 링크 줄 + 아래 1차 두 줄이 됨, 375 높이 104 → 164) · 코드표 · 공휴일 · 연차 두 보기(1차가 없거나 폰에서 숨겨져 상자 폭만 전폭, 링크 위치 · 높이 같음). 768 · 1280 영향 없음.
+

@@ -74,6 +74,13 @@ button.action {
   }
 }
 
+/* 칸에 홀로 선 위험 행동은 앞 칸 행동에서 칸 경계를 넘어 --s-8 이상 떨어진다(DECISIONS 2026-11-13) — 칸 여백 둘(--cell-pad-x × 2 = --s-4)에 앞 여백 --s-4를 더한다. 폰은 행동 열이 없거나 한 줄 목록이라 PC(≥700)에서만. */
+@media (min-width: 700px) {
+  .row > .dangerEnd:only-child {
+    margin-inline-start: var(--s-4);
+  }
+}
+
 /* 비활성 이유 — 행동 바로 뒤 글자. Button의 막힘 이유와 같은 역할(위험 색 · 보조 크기). */
 .withReason {
   display: inline-flex;

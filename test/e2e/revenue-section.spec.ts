@@ -7,14 +7,15 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { db } from "@/db/client";
-import { codeItems, quoteLines, revenueEntries } from "@/db/schema";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { codeItems, projects, quoteLines, revenueEntries } from "@/db/schema";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertTempRole } from "./temp-roles";
 import { saveRevenue, type MoneyInputDto } from "@/domain/revenue";
+import { saveProjectLedger } from "@/domain/projects/ledger";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { chooseApprovalBasis, openApprovalSheet, submitApproval } from "./project-info-helpers";
 
@@ -1028,5 +1029,346 @@ test.describe("발행 줄 계산서 파일 (07-22 · W7)", () => {
     await page.goto(seeded.projectUrl);
     await expect(revenueSection(page)).toBeVisible();
     await expect(page.getByRole("button", { name: "계산서 붙이기" })).toHaveCount(0);
+  });
+});
+
+// 07.6-01(D-7601 · D-7602 · D-7612 · design r1 G1 · G2 · G4 · G5 · P3 D6 · D7 · D13): 매출 줄 `삭제` → 표 위 결과 줄 `되돌리기`.
+test.describe("매출 줄 삭제 · 되돌리기 (07.6-01)", () => {
+  const ISSUED_TWO: SeedEntry[] = [
+    { entryDate: "2026-09-01", amount: krw(1_000_000), note: "1차" },
+    { entryDate: "2026-09-05", amount: krw(500_000), note: "2차" },
+  ];
+
+  async function openAsFinance(page: Page, seed: Parameters<typeof seedRevenueProject>[0], width = 1280) {
+    const seeded = await seedRevenueProject(seed);
+    await grantFinanceRole();
+    const finance = await createFixtureUser({ roleId: "role-ceo" });
+    await page.setViewportSize({ width, height: 900 });
+    await login(page, finance.email, finance.password);
+    await page.goto(seeded.projectUrl);
+    return seeded;
+  }
+
+  const deleteButton = (page: Page, caption: "발행 줄" | "입금 줄", date: string) =>
+    revenueTable(page, caption).getByRole("button", { name: new RegExp(`${caption} ${date} 삭제$`) });
+  const statusArea = (page: Page) => revenueSection(page).locator('div[role="status"]');
+  const projectIdOf = (url: string) => url.split("/").at(-1)!;
+  async function storedEntry(projectId: string, date: string) {
+    const [row] = await db.select().from(revenueEntries).where(and(eq(revenueEntries.projectId, projectId), eq(revenueEntries.entryDate, date)));
+    return row;
+  }
+  // 서버 액션 POST 가운데 매출 줄 지우기 · 되돌리기(본문에 entryId)만 붙잡는다.
+  function holdEntryAction(page: Page) {
+    let arrive!: () => void;
+    let free!: () => void;
+    const arrived = new Promise<void>((resolve) => (arrive = resolve));
+    const gate = new Promise<void>((resolve) => (free = resolve));
+    const ready = page.route("**/*", async (route) => {
+      const request = route.request();
+      if (!isServerAction(request) || !(request.postData() ?? "").includes('"entryId"')) {
+        await route.fallback();
+        return;
+      }
+      arrive();
+      await gate;
+      await route.continue();
+    });
+    return { ready, arrived, release: free };
+  }
+
+  test("1280 경영관리 — 저장된 발행 줄 삭제 → 줄 빠짐 · 결과 줄 · 되돌리기 포커스 → 되돌리기 → 같은 자리 · DB 활성 · 「보관」 0 · 확인 창 0", async ({ page }) => {
+    const seeded = await openAsFinance(page, { issued: ISSUED_TWO, paid: [{ entryDate: "2026-09-20", amount: krw(330_000) }] });
+    const issued = revenueTable(page, "발행 줄");
+    await expect(issued.locator("th", { hasText: "계산서" })).toHaveCount(1);
+    await expect(issued.locator("th", { hasText: "행동" })).toHaveCount(1);
+    await expect(statusArea(page)).toHaveCount(2);
+    await expect(statusArea(page).first()).toHaveText("");
+
+    await deleteButton(page, "발행 줄", "2026-09-05").click();
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(0);
+    await expect(issued).toContainText("합계 (공급가액 · 1줄)");
+    await expect(statusArea(page).first()).toContainText("발행 줄 2026-09-05 삭제됨");
+    const undo = statusArea(page).first().getByRole("button", { name: "되돌리기" });
+    await expect(undo).toBeFocused();
+    const describedBy = await undo.getAttribute("aria-describedby");
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText("발행 줄 2026-09-05 삭제됨");
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    await expect(revenueSection(page)).not.toContainText("보관");
+    expect((await storedEntry(projectIdOf(seeded.projectUrl), "2026-09-05"))?.archivedAt).not.toBeNull();
+
+    await undo.click();
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(1);
+    await expect(issued.locator("tbody tr:not([aria-hidden])").nth(1).getByLabel("발행일")).toHaveValue("2026-09-05");
+    await expect(statusArea(page).first()).toHaveText("");
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toBeFocused();
+    expect((await storedEntry(projectIdOf(seeded.projectUrl), "2026-09-05"))?.archivedAt).toBeNull();
+  });
+
+  test("지운 줄이 보관함 복원 · 저장으로 표에 다시 선 뒤 되돌리기 → 서버 멱등 성공에도 그 줄은 하나", async ({ page }) => {
+    const seeded = await openAsFinance(page, { issued: ISSUED_TWO, paid: [] });
+    const issued = revenueTable(page, "발행 줄");
+    await deleteButton(page, "발행 줄", "2026-09-05").click();
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(0);
+    // 보관함 복원(DB 흉내 — restoreRevenueEntryRow와 같은 version +1).
+    await db
+      .update(revenueEntries)
+      .set({ archivedAt: null, archivedBy: null, version: sql`${revenueEntries.version} + 1` })
+      .where(and(eq(revenueEntries.projectId, projectIdOf(seeded.projectUrl)), eq(revenueEntries.entryDate, "2026-09-05")));
+    await issued.getByLabel("메모").first().fill("고친 메모");
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(1);
+
+    await statusArea(page).first().getByRole("button", { name: "되돌리기" }).click();
+    await expect(statusArea(page).first()).toHaveText("");
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(1);
+    await expect(issued).toContainText("합계 (공급가액 · 2줄)");
+  });
+
+  test("다른 줄 편집(dirty)을 둔 채 입금 줄 삭제 → 편집 · 「일괄 저장 1」 그대로 / 저장 전 새 발행 줄 삭제 → 되돌리기로 돌아옴 · DB 행 수 불변", async ({ page }) => {
+    const seeded = await openAsFinance(page, { issued: ISSUED_TWO, paid: [{ entryDate: "2026-09-20", amount: krw(330_000) }] });
+    const issued = revenueTable(page, "발행 줄");
+    await issued.getByLabel("메모").first().fill("고친 메모");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    await deleteButton(page, "입금 줄", "2026-09-20").click();
+    await expect(statusArea(page).nth(1)).toContainText("입금 줄 2026-09-20 삭제됨");
+    await expect(issued.getByLabel("메모").first()).toHaveValue("고친 메모");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    const before = await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectIdOf(seeded.projectUrl)));
+    await page.getByRole("button", { name: "발행 줄 추가" }).click();
+    await issued.getByLabel("발행일").last().fill("2026-09-09");
+    await deleteButton(page, "발행 줄", "2026-09-09").click();
+    await expect(deleteButton(page, "발행 줄", "2026-09-09")).toHaveCount(0);
+    await statusArea(page).first().getByRole("button", { name: "되돌리기" }).click();
+    await expect(deleteButton(page, "발행 줄", "2026-09-09")).toHaveCount(1);
+    const after = await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectIdOf(seeded.projectUrl)));
+    expect(after).toHaveLength(before.length);
+  });
+
+  test("(G5) 지우기 대기 중 1차는 `…` · aria-disabled · 처리 중이고 Ctrl+S는 저장을 보내지 않는다 → 놓으면 풀린다", async ({ page }) => {
+    await openAsFinance(page, { issued: ISSUED_TWO });
+    const issued = revenueTable(page, "발행 줄");
+    await issued.getByLabel("메모").first().fill("고친 메모");
+    const save = page.getByRole("button", { name: /일괄 저장/ });
+    await expect(save).toContainText("일괄 저장 1");
+    const hold = holdEntryAction(page);
+    await hold.ready;
+    let ledgerPosts = 0;
+    page.on("request", (request) => {
+      // 일괄 저장(본문에 seenStatus)만 센다 — 법인카드 · 참여자 섹션의 늦은 수화 조회(본문 projectId 하나)는 저장이 아니다.
+      if (isServerAction(request) && (request.postData() ?? "").includes('"seenStatus"')) ledgerPosts += 1;
+    });
+    await deleteButton(page, "발행 줄", "2026-09-05").click();
+    await hold.arrived;
+    await expect(save).toHaveAttribute("aria-disabled", "true");
+    await expect(save).toContainText("…");
+    await expect(save).toContainText("처리 중");
+    // Ctrl+S는 표 칸이 받는다(ui/table 격자 키) — 남은 첫 줄 메모 칸에서 누른다.
+    await issued.getByLabel("메모").first().focus();
+    await page.keyboard.press("Control+s");
+    await page.waitForTimeout(300);
+    expect(ledgerPosts).toBe(0);
+    hold.release();
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(0);
+    await expect(save).not.toHaveAttribute("aria-disabled", "true");
+    await expect(save).toContainText("일괄 저장 1");
+    await expect(save).not.toContainText("…");
+    // 셈이 비지 않았는지 — 풀린 뒤 같은 칸의 Ctrl+S는 저장 하나를 보낸다.
+    await issued.getByLabel("메모").first().focus();
+    await page.keyboard.press("Control+s");
+    await expect.poll(() => ledgerPosts).toBe(1);
+  });
+
+  test("(G2) 지우기 실패는 그 행에 — 연결 실패는 켠 채 `삭제 실패 · 다시 시도` · 충돌은 비활성 + 이유 + 포커스 · 앞 결과 줄 `되돌리기`는 남는다", async ({ page }) => {
+    const seeded = await openAsFinance(page, { issued: ISSUED_TWO });
+    await deleteButton(page, "발행 줄", "2026-09-05").click();
+    await expect(statusArea(page).first()).toContainText("발행 줄 2026-09-05 삭제됨");
+
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (isServerAction(request) && (request.postData() ?? "").includes('"entryId"')) await route.abort();
+      else await route.fallback();
+    });
+    await deleteButton(page, "발행 줄", "2026-09-01").click();
+    const first = deleteButton(page, "발행 줄", "2026-09-01");
+    await expect(revenueTable(page, "발행 줄")).toContainText("삭제 실패 · 다시 시도");
+    await expect(first).not.toHaveAttribute("aria-disabled", "true");
+    await expect(statusArea(page).first()).toContainText("발행 줄 2026-09-05 삭제됨");
+    await expect(statusArea(page).first().getByRole("button", { name: "되돌리기" })).toHaveCount(1);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+
+    const stored = await storedEntry(projectIdOf(seeded.projectUrl), "2026-09-01");
+    await db.update(revenueEntries).set({ version: (stored?.version ?? 1) + 1 }).where(eq(revenueEntries.id, stored!.id));
+    await first.click();
+    await expect(first).toHaveAttribute("aria-disabled", "true");
+    await expect(revenueTable(page, "발행 줄")).toContainText("삭제 실패 · 다른 사람이 먼저 이 줄을 바꿈");
+    await expect(first).toBeFocused();
+    await statusArea(page).first().getByRole("button", { name: "되돌리기" }).click();
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(1);
+  });
+
+  test("(G6) 되돌리기 연결 실패 → `되돌리기 실패 · 다시 시도` · 버튼 남음 → 다시 누르면 돌아온다", async ({ page }) => {
+    await openAsFinance(page, { issued: ISSUED_TWO });
+    await deleteButton(page, "발행 줄", "2026-09-05").click();
+    await expect(statusArea(page).first()).toContainText("삭제됨");
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (isServerAction(request) && (request.postData() ?? "").includes('"entryId"')) await route.abort();
+      else await route.fallback();
+    });
+    await statusArea(page).first().getByRole("button", { name: "되돌리기" }).click();
+    await expect(statusArea(page).first()).toContainText("되돌리기 실패 · 다시 시도");
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await statusArea(page).first().getByRole("button", { name: "되돌리기" }).click();
+    await expect(deleteButton(page, "발행 줄", "2026-09-05")).toHaveCount(1);
+  });
+
+  test("(G4) 10분이 지나면 `되돌리기`는 사라지고 결과 글자는 남는다(포커스는 글자로)", async ({ page }) => {
+    await page.clock.install();
+    await openAsFinance(page, { issued: ISSUED_TWO });
+    await deleteButton(page, "발행 줄", "2026-09-05").click();
+    const undo = statusArea(page).first().getByRole("button", { name: "되돌리기" });
+    await expect(undo).toBeFocused();
+    await page.clock.fastForward("09:50");
+    await expect(undo).toHaveCount(1);
+    await page.clock.fastForward("00:15");
+    await expect(undo).toHaveCount(0);
+    await expect(statusArea(page).first()).toHaveText("발행 줄 2026-09-05 삭제됨");
+    await expect(statusArea(page).first().locator("span")).toBeFocused();
+  });
+
+  test("(D13) 마지막 발행 · 입금 줄을 지우면 EMPTY · 추가 버튼 · 결과 줄 · 입금 합계 행이 함께 선다", async ({ page }) => {
+    await openAsFinance(page, { issued: [{ entryDate: "2026-09-01", amount: krw(1_000_000) }], paid: [{ entryDate: "2026-09-20", amount: krw(330_000) }] });
+    await deleteButton(page, "발행 줄", "2026-09-01").click();
+    await expect(revenueSection(page)).toContainText("발행한 세금계산서가 없습니다");
+    await expect(page.getByRole("button", { name: "발행 줄 추가" })).toHaveCount(1);
+    await expect(statusArea(page).first().getByRole("button", { name: "되돌리기" })).toHaveCount(1);
+    const footerCells = revenueTable(page, "입금 줄").locator("tfoot tr td");
+    await expect(footerCells).toHaveCount(3);
+    await expect(footerCells.nth(1)).toContainText("초과 입금");
+    await expect(footerCells.nth(2)).toHaveText("");
+    await deleteButton(page, "입금 줄", "2026-09-20").click();
+    await expect(revenueSection(page)).toContainText("입금 줄이 없습니다");
+    await expect(page.getByRole("button", { name: "입금 줄 추가" })).toHaveCount(1);
+    await expect(statusArea(page).nth(1).getByRole("button", { name: "되돌리기" })).toHaveCount(1);
+    await expect(footerCells).toHaveCount(3);
+  });
+
+  test("(D-7612) 완료 프로젝트 — 행동 열 · 삭제 0 · 표 위 `완료 프로젝트 · 삭제 불가` 하나", async ({ page }) => {
+    const seeded = await seedRevenueProject({ issued: ISSUED_TWO, paid: [{ entryDate: "2026-09-20", amount: krw(330_000) }] });
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, projectIdOf(seeded.projectUrl)));
+    await grantFinanceRole();
+    const finance = await createFixtureUser({ roleId: "role-ceo" });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await login(page, finance.email, finance.password);
+    await page.goto(seeded.projectUrl);
+    await expect(revenueTable(page, "발행 줄").locator("th", { hasText: "계산서" })).toHaveCount(1);
+    await expect(revenueSection(page).locator("th", { hasText: "행동" })).toHaveCount(0);
+    await expect(revenueSection(page).getByRole("button", { name: /삭제$/ })).toHaveCount(0);
+    await expect(revenueSection(page).getByText("완료 프로젝트 · 삭제 불가", { exact: true })).toHaveCount(1);
+  });
+
+  test("(D7) 담당 PM 1280은 삭제 · 행동 열 0 / 경영관리 1000은 행동 열(빈 셀)만 · 375는 보이는 삭제 0", async ({ page }) => {
+    const seeded = await seedRevenueProject({ issued: ISSUED_TWO, paid: [{ entryDate: "2026-09-20", amount: krw(330_000) }] });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await login(page, seeded.email, seeded.password);
+    await page.goto(seeded.projectUrl);
+    await expect(revenueTable(page, "발행 줄")).toBeVisible();
+    await expect(revenueSection(page).getByRole("button", { name: /삭제$/ })).toHaveCount(0);
+    await expect(revenueSection(page).locator("th", { hasText: "행동" })).toHaveCount(0);
+
+    await page.context().clearCookies();
+    await grantFinanceRole();
+    const finance = await createFixtureUser({ roleId: "role-ceo" });
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await login(page, finance.email, finance.password);
+    await page.goto(seeded.projectUrl);
+    await expect(revenueSection(page).locator("th", { hasText: "행동" })).toHaveCount(2);
+    await expect(revenueSection(page).getByRole("button", { name: /삭제$/ })).toHaveCount(0);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await expect(revenueSection(page).getByRole("button", { name: /삭제$/ }).filter({ visible: true })).toHaveCount(0);
+  });
+
+  test("(Q1 · D12) 발행 요청이 이어진 발행 줄 셋 — `삭제`는 aria-disabled + `발행 요청 연결 · 삭제 불가` · 이어지지 않은 줄만 켜짐 · 1024 발행 표 가로 넘침 0", async ({ page }) => {
+    const seeded = await seedRevenueProject({});
+    const projectId = projectIdOf(seeded.projectUrl);
+    const requests = ["2026-09-01", "2026-09-02", "2026-09-03"].map((date, index) => ({ id: randomUUID(), isNew: true as const, desiredIssueDate: date, amount: krw(1_000_000), memo: `차수 ${index + 1}` }));
+    // 발행 요청은 담당 PM이 올린다(requested_by는 실제 사람).
+    const [owner] = await db.select({ pmUserId: projects.pmUserId }).from(projects).where(eq(projects.id, projectId));
+    await saveProjectLedger({ id: owner?.pmUserId ?? "", roleId: DEFAULT_ROLE_ID }, projectId, { seenStatus: "bidding", issueRequests: requests });
+    await saveProjectLedger(SYSTEM_VIEWER, projectId, {
+      seenStatus: "bidding",
+      revenue: {
+        issuedEntries: [
+          ...requests.map((request) => ({ id: randomUUID(), isNew: true as const, entryDate: request.desiredIssueDate, amount: request.amount, note: request.memo, fromIssueRequestId: request.id })),
+          { id: randomUUID(), isNew: true as const, entryDate: "2026-09-10", amount: krw(500_000), note: "따로" },
+        ],
+      },
+    });
+    await grantFinanceRole();
+    const finance = await createFixtureUser({ roleId: "role-ceo" });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await login(page, finance.email, finance.password);
+    await page.goto(seeded.projectUrl);
+    for (const date of ["2026-09-01", "2026-09-02", "2026-09-03"]) {
+      const blocked = deleteButton(page, "발행 줄", date);
+      await expect(blocked).toHaveAttribute("aria-disabled", "true");
+      await expect(blocked).toHaveAccessibleDescription("발행 요청 연결 · 삭제 불가");
+    }
+    await expect(deleteButton(page, "발행 줄", "2026-09-10")).not.toHaveAttribute("aria-disabled", "true");
+    // aria-disabled 버튼은 포커스를 지킨다 — Enter로 눌러도 아무 일 없음.
+    await deleteButton(page, "발행 줄", "2026-09-01").focus();
+    await page.keyboard.press("Enter");
+    await expect(statusArea(page).first()).not.toContainText("삭제됨");
+    await page.setViewportSize({ width: 1024, height: 900 });
+    const issued = revenueTable(page, "발행 줄");
+    await expect(deleteButton(page, "발행 줄", "2026-09-01")).toBeVisible();
+    // 표를 감싼 가로 스크롤 상자(overflow-x auto · scroll)의 넘침 — 없으면 문서.
+    const { scrollWidth, clientWidth } = await issued.evaluate((node) => {
+      let box: HTMLElement | null = node.parentElement;
+      while (box && !["auto", "scroll"].includes(getComputedStyle(box).overflowX)) box = box.parentElement;
+      const target = box ?? document.documentElement;
+      return { scrollWidth: target.scrollWidth, clientWidth: target.clientWidth };
+    });
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    const [stored] = await db.select().from(revenueEntries).where(and(eq(revenueEntries.projectId, projectId), eq(revenueEntries.entryDate, "2026-09-01")));
+    expect(stored?.archivedAt).toBeNull();
+  });
+
+  test("(DECISIONS 2026-11-13 · §7-19) 발행 표 `계산서` 칸 마지막 행동 → 다른 칸 `삭제` 가로 간격 >= 32px (1280 · 1024)", async ({ page }) => {
+    await openAsFinance(page, { issued: ISSUED_TWO });
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      const del = deleteButton(page, "발행 줄", "2026-09-05");
+      await expect(del).toBeVisible();
+      const gap = await del.evaluate((node) => {
+        const deleteCell = node.closest("td");
+        const invoiceCell = deleteCell?.previousElementSibling;
+        const controls = invoiceCell?.querySelectorAll("button, a");
+        const last = controls?.item((controls?.length ?? 1) - 1);
+        if (!last) throw new Error("계산서 칸 행동 없음");
+        return node.getBoundingClientRect().left - last.getBoundingClientRect().right;
+      });
+      expect(gap, `${width}px 간격`).toBeGreaterThanOrEqual(32);
+    }
+  });
+
+  test("(D-7608) 입금일 칸 max = KST 오늘 · 새 입금 줄 내일 → 일괄 저장 → 그 칸 `미래 입금일 · 오늘까지 날짜 고르기` · 입금 표 `오류 1칸 · 전부 거부`", async ({ page }) => {
+    const seeded = await openAsFinance(page, { issued: ISSUED_TWO, paid: [{ entryDate: "2026-09-20", amount: krw(330_000) }] });
+    const today = kstToday(new Date());
+    const paid = revenueTable(page, "입금 줄");
+    await page.getByRole("button", { name: "입금 줄 추가" }).click();
+    const newDate = paid.getByLabel("입금일").last();
+    await expect(newDate).toHaveAttribute("max", today);
+    await newDate.fill(addDays(today, 1));
+    const rejected = page.waitForResponse((response) => isServerAction(response.request()));
+    await newDate.focus();
+    await page.keyboard.press("Control+s");
+    await rejected;
+    const dateCell = paid.locator("tbody tr:not([aria-hidden])").last().locator('td[aria-invalid="true"]');
+    await expect(dateCell).toHaveCount(1);
+    await expect(dateCell).toContainText("미래 입금일 · 오늘까지 날짜 고르기");
+    await expect(paid.locator("tfoot").getByText("오류 1칸 · 전부 거부", { exact: true })).toBeVisible();
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectIdOf(seeded.projectUrl)))).toHaveLength(3);
   });
 });

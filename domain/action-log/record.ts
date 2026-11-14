@@ -75,6 +75,9 @@ export const CORE_ACTION_TYPES = [
   "document_print",
   // 07.2-19 D-7216: 완료 되돌리기(승인 → 초안) — 사유 원문이 결재선 끝 줄의 유일한 원천이라 끌 수 없다(정리로도 지우지 않는다 — prune-scope).
   "document_reopen",
+  // 07.6 eng r1 E1: 매출 발행 · 입금 줄 지우기 · 되살리기는 발행 합계 · 수금 지연을 바꾸는 돈 기록이라 끌 수 없다 — archive · restore(끌 수 있음)에 두지 않는다
+  "revenue_entry_archive",
+  "revenue_entry_restore",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -128,6 +131,8 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   budget_manual_change: "예산 직접 수정",
   document_print: "서류 인쇄",
   document_reopen: "승인 되돌리기",
+  revenue_entry_archive: "매출 줄 삭제",
+  revenue_entry_restore: "매출 줄 복원",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -189,6 +194,9 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "document_print",
   // 07.2-19 D-7216: 승인 되돌리기 사유는 결재선 끝 줄의 원천이고 프로젝트 행에 흔적 칸이 없어 끌 수 없다
   "document_reopen",
+  // 07.6 eng r1 E1: 매출 줄 지우기 · 되살리기는 돈 기록이라 끌 수 없다
+  "revenue_entry_archive",
+  "revenue_entry_restore",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

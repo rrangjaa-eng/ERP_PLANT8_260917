@@ -42,6 +42,8 @@ import { log } from "@/lib/log";
 import { getOwnedEvidence, requestEvidenceUpload } from "@/domain/evidence";
 import { requestProjectDocumentUpload } from "@/domain/projects/document-upload";
 import { REVENUE_INVOICE_KIND } from "@/domain/revenue/invoice-file";
+import { listRevenue } from "@/domain/revenue";
+import { archiveRevenueEntry, undoRevenueArchive } from "@/domain/revenue/archive";
 import "./actions.registry";
 
 // PROJ-01·PROJ-02: domain/projects·domain/quotes/lines만 부른다. 등록은
@@ -504,3 +506,33 @@ export const undoProjectDeleteAction = authedActionClient
     revalidatePath("/admin/archive");
     return { number: done.number };
   });
+
+// 07.6-01(D-7601 · D-7602): 매출 발행 · 입금 줄 지우기(보관) · 되돌리기. 판정은 domain/revenue/archive.ts. 커밋 뒤 합계(잔액 · 수금 지연)는 따로 읽는다 —
+// 이미 지웠는데 「삭제 실패」를 보이면 사용자가 다시 눌러 되돌리기 기회를 잃는다(eng r1 P2-A2 · ledger.ts 「커밋 뒤 단계는 씌우지 않는다」).
+const revenueEntryActionSchema = z.object({ projectId: z.string().uuid(), entryId: z.string().uuid(), version: z.number().int().min(1) });
+
+async function revenueTotalsAfterCommit(viewer: Parameters<typeof listRevenue>[0], projectId: string, entryId: string, event: string) {
+  try {
+    const revenue = await listRevenue(viewer, projectId);
+    return { balanceKrw: revenue.balanceKrw, collectionOverdue: revenue.collectionOverdue };
+  } catch {
+    log.warn(event, { projectId, entryId });
+    return {};
+  }
+}
+
+export const archiveRevenueEntryAction = authedActionClient.schema(revenueEntryActionSchema).action(async ({ parsedInput, ctx }) => {
+  const { kind, version } = await archiveRevenueEntry(ctx.viewer, parsedInput);
+  revalidatePath(`/projects/${parsedInput.projectId}`);
+  revalidatePath("/projects");
+  revalidatePath("/admin/archive");
+  return { kind, version, ...(await revenueTotalsAfterCommit(ctx.viewer, parsedInput.projectId, parsedInput.entryId, "revenue.archive.totals_failed")) };
+});
+
+export const undoRevenueArchiveAction = authedActionClient.schema(revenueEntryActionSchema).action(async ({ parsedInput, ctx }) => {
+  const { kind, version } = await undoRevenueArchive(ctx.viewer, parsedInput);
+  revalidatePath(`/projects/${parsedInput.projectId}`);
+  revalidatePath("/projects");
+  revalidatePath("/admin/archive");
+  return { kind, version, ...(await revenueTotalsAfterCommit(ctx.viewer, parsedInput.projectId, parsedInput.entryId, "revenue.undo.totals_failed")) };
+});

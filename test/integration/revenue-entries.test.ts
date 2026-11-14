@@ -21,7 +21,7 @@ import { addHistorizedValue, getSettingValue, setSettingValue } from "@/domain/s
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
-import { kstToday } from "@/lib/kst-date";
+import { addDays, kstToday } from "@/lib/kst-date";
 import { saveProjectLedgerAction } from "@/app/(app)/projects/actions";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import { ForbiddenError } from "@/domain/revenue";
@@ -1025,5 +1025,79 @@ describe("매출 줄 저장 로그의 줄 전후(07.1-13 S8)", () => {
       saveRevenue(finance, project.id, { issuedEntries: [{ id: entry.id, version: entry.version, entryDate: "2026-09-01", amount: krw(3_000) }] }),
     ).rejects.toThrow(/다른 사람이 먼저 이 줄을 바꿈/);
     expect((await revenueLogs(project.id)).length).toBe(logsAfterFirst);
+  });
+});
+
+// 07.6-01 Task 3(D-7608): 새 입금 줄 · 바뀐 입금일이 오늘(KST) 뒤면 칸 오류로 전부 거부. 발행 줄 · 그대로인 미래 입금 줄은 막지 않는다(A4).
+describe("입금일 미래 막기(07.6-01 · D-7608)", () => {
+  const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+  const FUTURE = "미래 입금일 · 오늘까지 날짜 고르기";
+  // KST 2026-11-05 정오.
+  const now = () => new Date("2026-11-05T03:00:00Z");
+
+  async function rejected(promise: Promise<unknown>): Promise<SaveRejectedError> {
+    try {
+      await promise;
+    } catch (error) {
+      if (error instanceof SaveRejectedError) return error;
+      throw error;
+    }
+    throw new Error("거부되지 않았다");
+  }
+  async function entriesOf(projectId: string) {
+    return db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectId));
+  }
+  async function revenueLogCount(projectId: string): Promise<number> {
+    return (await db.select().from(actionLog).where(and(eq(actionLog.entity, "revenue_entry"), eq(actionLog.entityId, projectId)))).length;
+  }
+
+  it("새 입금 줄 내일 → 날짜 칸 오류 · DB 불변 · 로그 0 / 발행 줄 내일 · 입금 오늘 → 저장됨", async () => {
+    const finance = await createFinanceViewer();
+    const { project } = await setupProject();
+    const id = randomUUID();
+    const error = await rejected(saveRevenue(finance, project.id, { paidEntries: [{ id, isNew: true, entryDate: "2026-11-06", amount: krw(1_000) }] }, { now }));
+    expect(error.formatErrors).toEqual([{ rowIndex: 0, rowId: id, field: "entryDate", label: "날짜", reason: FUTURE }]);
+    expect(await entriesOf(project.id)).toHaveLength(0);
+    expect(await revenueLogCount(project.id)).toBe(0);
+
+    await saveRevenue(
+      finance,
+      project.id,
+      { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: "2026-11-06", amount: krw(2_000) }], paidEntries: [{ id: randomUUID(), isNew: true, entryDate: "2026-11-05", amount: krw(1_000) }] },
+      { now },
+    );
+    expect(await entriesOf(project.id)).toHaveLength(2);
+  });
+
+  it("원장 저장(saveProjectLedger)도 KST 내일 입금 줄을 거부한다", async () => {
+    const { project } = await setupProject();
+    const tomorrow = addDays(kstToday(new Date()), 1);
+    const error = await rejected(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, { seenStatus: "bidding", revenue: { paidEntries: [{ id: randomUUID(), isNew: true, entryDate: tomorrow, amount: krw(1_000) }] } }),
+    );
+    expect(error.formatErrors.map((cell) => cell.reason)).toEqual([FUTURE]);
+    expect(await entriesOf(project.id)).toHaveLength(0);
+  });
+
+  it("(A4) 이미 저장된 미래 입금 줄 — 메모만 고치면 저장 · 날짜를 다른 미래로 바꾸면 그 줄 칸 오류 · DB 불변", async () => {
+    const finance = await createFinanceViewer();
+    const { project } = await setupProject();
+    const [row] = await db
+      .insert(revenueEntries)
+      .values({ projectId: project.id, kind: "payment", entryDate: "2026-11-07", amountCurrency: "KRW", amountForeignAmount: null, amountFxRate: "1", amountAmountKrw: 1_000, note: "선입금" })
+      .returning();
+    if (!row) throw new Error("입금 줄 준비 실패");
+    const logsBefore = await revenueLogCount(project.id);
+    await saveRevenue(finance, project.id, { paidEntries: [{ id: row.id, version: row.version, entryDate: "2026-11-07", amount: krw(1_000), note: "선입금 확인" }] }, { now });
+    const [memoChanged] = await entriesOf(project.id);
+    expect(memoChanged?.note).toBe("선입금 확인");
+    expect(await revenueLogCount(project.id)).toBe(logsBefore + 1);
+
+    const error = await rejected(
+      saveRevenue(finance, project.id, { paidEntries: [{ id: row.id, version: memoChanged?.version, entryDate: "2026-11-08", amount: krw(1_000), note: "선입금 확인" }] }, { now }),
+    );
+    expect(error.formatErrors).toEqual([{ rowIndex: 0, rowId: row.id, field: "entryDate", label: "날짜", reason: FUTURE }]);
+    const [after] = await entriesOf(project.id);
+    expect(after?.entryDate).toBe("2026-11-07");
   });
 });

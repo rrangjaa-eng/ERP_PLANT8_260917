@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { projects, revenueEntries, revenueIssueRequests, users } from "@/db/schema";
@@ -172,4 +172,21 @@ export async function listIssueRequestAmounts(
       ),
     )
     .orderBy(asc(revenueIssueRequests.desiredIssueDate), asc(revenueIssueRequests.id));
+}
+
+// 07.6-01(Q1 · D-7610): 이 발행 줄에 이어진 발행 요청이 있는가(issued_entry_id 유일 색인). 지우기 잠근 tx 안에서 읽는다.
+export async function hasIssueRequestForEntry(viewer: Viewer, entryId: string, tx: DbOrTx): Promise<boolean> {
+  void viewer;
+  const [row] = await tx.select({ id: revenueIssueRequests.id }).from(revenueIssueRequests).where(eq(revenueIssueRequests.issuedEntryId, entryId)).limit(1);
+  return row !== undefined;
+}
+
+// 07.6-01(Q1): 프로젝트의 발행 요청이 이어진 발행 줄 id — 매출 칸 `삭제` 막힘 이유 재료. 범위는 호출자(listRevenue)가 판정한 뒤.
+export async function listLinkedIssueEntryIdsByProject(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  const rows = await tx
+    .select({ entryId: revenueIssueRequests.issuedEntryId })
+    .from(revenueIssueRequests)
+    .where(and(eq(revenueIssueRequests.projectId, projectId), isNotNull(revenueIssueRequests.issuedEntryId)));
+  return rows.flatMap((row) => (row.entryId ? [row.entryId] : []));
 }

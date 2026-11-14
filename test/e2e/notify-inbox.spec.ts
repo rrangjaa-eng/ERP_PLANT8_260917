@@ -427,6 +427,8 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     await login(page, user);
 
     await page.goto("/");
+    // 홈 loading.tsx 뼈대(같은 제목)와 스트리밍 본문이 바꿔치기 전 잠깐 함께 있다 — 뼈대가 빠진 뒤 제목을 잰다.
+    await expect(page.locator('[data-ui="home-skeleton"]')).toHaveCount(0);
     await expect(page.locator('[data-ui="screen-title"]')).toHaveText("내 차례");
     await expect(page.getByText("지금 처리할 항목", { exact: true })).toHaveCount(0);
     await expect(page.locator("table")).toHaveCount(0);

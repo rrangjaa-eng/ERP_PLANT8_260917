@@ -2,7 +2,7 @@ import { createHash, randomInt, randomUUID } from "node:crypto";
 import { expect, type Browser } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, files, projectBudgetEntries, projects, purchaseRequests } from "@/db/schema";
+import { corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, files, projectBudgetEntries, projects, purchaseRequests, revenueEntries } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -20,6 +20,7 @@ import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domai
 import { voidEvidence } from "@/domain/evidence";
 import { completePurchaseRequest, createPurchaseRequest, precheckPurchaseCompletion, precheckPurchaseRequest } from "@/domain/purchase-requests";
 import { saveRevenue } from "@/domain/revenue";
+import { saveProjectLedger } from "@/domain/projects/ledger";
 import { planAccountNumberUpdate } from "@/domain/vendors";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { findExpenseById } from "@/repositories/expenses";
@@ -1498,6 +1499,42 @@ async function customFieldsFilled(): Promise<SeedResult> {
   return { vars: { vendorFilterQuery: `cf_${filterKey}=${encodeURIComponent("서울")}` }, viewer };
 }
 
+// revenue-archive-rows: 07.6-01 매출 줄 지우기 캡처용 — 시스템 관리자(전사 계급 · admin.archive 보유)로 본다. 고객 승인 프로젝트에 발행 줄 넷
+// (셋은 발행 요청 이어짐 — 막힘 이유 밀도) · 입금 줄 하나(과거 · 오늘 — 미래 입금일 거부) · 보관된 발행 줄 하나, 완료 프로젝트 하나(발행 줄 하나).
+async function revenueArchiveRows(): Promise<SeedResult> {
+  const today = seoulToday();
+  const year = today.slice(0, 4);
+  const suffix = randomUUID().slice(0, 6);
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처매출본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처매출팀-${suffix}` });
+  const pm = await makePerson("담당", "role-pm", team.id, `${year}-01-01`);
+  const teamLead = await makePerson("팀장", "role-team-lead", team.id, `${year}-01-01`);
+  const admin = await makePerson("관리자", "role-sysadmin", team.id, `${year}-01-01`);
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `캡처매출거래처-${suffix}`, normalizedName: `캡처매출거래처-${suffix}` });
+  const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+  const { projectId } = await inProgressProjectLines({ suffix, teamId: team.id, pm, teamLead, vendorId: vendor.id }, [8_000_000]);
+  const requests = [0, 1, 2].map((index) => ({ id: randomUUID(), isNew: true as const, desiredIssueDate: daysBefore(today, 30 - index), amount: krw(1_000_000), memo: `차수 ${index + 1}` }));
+  await saveProjectLedger(pm.viewer, projectId, { seenStatus: "in_progress", issueRequests: requests });
+  const archivedId = randomUUID();
+  await saveProjectLedger(admin.viewer, projectId, {
+    seenStatus: "in_progress",
+    revenue: {
+      issuedEntries: [
+        ...requests.map((request) => ({ id: randomUUID(), isNew: true as const, entryDate: request.desiredIssueDate, amount: request.amount, note: request.memo, fromIssueRequestId: request.id })),
+        { id: randomUUID(), isNew: true as const, entryDate: daysBefore(today, 20), amount: krw(2_000_000), note: "잔금" },
+        { id: archivedId, isNew: true as const, entryDate: daysBefore(today, 10), amount: krw(500_000), note: "잘못 넣은 줄" },
+      ],
+      paidEntries: [{ id: randomUUID(), isNew: true as const, entryDate: today, amount: krw(1_100_000), note: "입금" }],
+    },
+  });
+  // 보관된 줄은 DB 갱신으로 만든다 — main 작업 나무에서도 같은 시드가 돌아 main 기준 캡처가 되게(지우기 함수는 이 페이즈 것).
+  await db.update(revenueEntries).set({ archivedAt: new Date(), archivedBy: admin.viewer.id }).where(eq(revenueEntries.id, archivedId));
+  const completed = await inProgressProjectLines({ suffix: `${suffix}-완료`, teamId: team.id, pm, teamLead, vendorId: vendor.id }, [3_000_000]);
+  await saveRevenue(SYSTEM_VIEWER, completed.projectId, { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: daysBefore(today, 5), amount: krw(4_000_000) }] });
+  await db.update(projects).set({ status: "completed" }).where(eq(projects.id, completed.projectId));
+  return { vars: { projectId, completedProjectId: completed.projectId }, viewer: admin };
+}
+
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
   switch (name) {
     case "pre-settle-evidence-pending":
@@ -1532,5 +1569,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return projectCompleted();
     case "custom-fields-filled":
       return customFieldsFilled();
+    case "revenue-archive-rows":
+      return revenueArchiveRows();
   }
 }

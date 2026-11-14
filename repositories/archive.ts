@@ -28,6 +28,7 @@ import { findFieldDefinitionById, listArchivedFieldDefinitions, setFieldDefiniti
 import { FIELD_DEFINITION_TARGETS } from "@/domain/custom-fields/targets";
 import { findProjectById, listArchivedProjectNames } from "@/repositories/projects";
 import { findEntriesByIds as findReserveEntriesByIds, setEntryArchived as setReserveEntryArchived, listArchivedEntryNames as listArchivedReserveEntryNames } from "@/repositories/reserve-entries";
+import { findRevenueEntryById, listArchivedRevenueEntryNames } from "@/repositories/revenue-entries";
 
 // archive()/restore()(domain/archive/index.ts)가 필요로 하는 최소 행 모양.
 // isSeed는 roles 전용(시드 계급 보관 거부 판정) — 다른 표는 없어도 된다.
@@ -48,8 +49,11 @@ export type ArchivedItem = {
   dateTaken?: boolean;
   // 거래처만 — 같은 숫자 사업자번호의 살아 있는 거래처가 있으면 참(복원 불가). 화면 DTO에는 싣지 않는다.
   businessNoTaken?: boolean;
-  // 견적 줄 · 프로젝트만 — 줄이 속한 프로젝트 · 프로젝트 자신(06.2 I-2 · 07.2-17: 도메인이 보는 범위로 거른다). 화면 DTO에는 싣지 않는다.
+  // 견적 줄 · 매출 줄 · 프로젝트만 — 줄이 속한 프로젝트 · 프로젝트 자신(06.2 I-2 · 07.2-17 · 07.6: 도메인이 보는 범위로 거른다). 화면 DTO에는 싣지 않는다.
   projectId?: string;
+  // 매출 줄만(07.6) — 줄이 속한 프로젝트가 보관됨 · 완료(D-7612)이면 참(복원 불가). 화면 DTO에는 싣지 않는다.
+  projectArchived?: boolean;
+  projectCompleted?: boolean;
   // 팀만 — 위 본부가 사용중지(보관)이면 참(복원 불가 · 본부 먼저 복원). 화면 DTO에는 싣지 않는다.
   parentArchived?: boolean;
 };
@@ -249,6 +253,26 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     async listArchived(viewer) {
       const rows = await listArchivedReserveEntryNames(viewer);
       return rows.map((row) => ({ entity: "reserve_entry", label: "리저브", ...row }));
+    },
+  },
+  // 07.6-01(D-7603 · D-7611 · Q2) — 매출 발행 · 입금 줄. 보관(지우기)은 잠금 · version · 발행 요청 연결 막기를 지나는 domain/revenue/archive.ts로만 한다 —
+  // 범용 archive()는 늘 보호 행이다. 복원은 DOMAIN_RESTORERS가 restoreRevenueEntry에 맡긴다(목록은 projects.revenue 보기 · 복원은 쓰기).
+  {
+    entity: "revenue_entry",
+    label: "매출 줄",
+    requiredMenu: "projects.revenue",
+    setArchived() {
+      return Promise.reject(new Error("매출 줄 보관 · 복원은 domain/revenue로만"));
+    },
+    async findById(viewer, id) {
+      return findRevenueEntryById(viewer, id);
+    },
+    isProtected() {
+      return true;
+    },
+    async listArchived(viewer) {
+      const rows = await listArchivedRevenueEntryNames(viewer);
+      return rows.map((row) => ({ entity: "revenue_entry", label: "매출 줄", ...row }));
     },
   },
   // quick 261001-hfi(ADMN-12 · D-01) — 공휴일. 보관은 대체일 재계산을 지나는 domain/holidays의 deleteHoliday로만 한다 —

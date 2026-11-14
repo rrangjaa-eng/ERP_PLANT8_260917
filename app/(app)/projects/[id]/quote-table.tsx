@@ -45,7 +45,8 @@ import type { RevenueDto } from "@/domain/revenue";
 import type { LineDoorCell, LineDoors } from "@/domain/expenses";
 import type { QuoteImportLine } from "@/domain/quotes/import-xlsx";
 import type { Currency, Money } from "@/domain/money";
-import { RevenueSection, type EntryDraft } from "./revenue-section";
+import { RevenueSection, type EntryDraft, type RevenueTotals } from "./revenue-section";
+import { COMPLETED_DELETE_LOCK } from "@/domain/revenue/archive-rules";
 import { useQuoteXlsxImport } from "./xlsx-import";
 import {
   IssueRequestTable,
@@ -809,6 +810,22 @@ export function mergeRestoredEdits(
   return { lines: [...next, ...added], period, preEstimate, ...(poNumber !== undefined ? { poNumber } : {}), ...restoredInfo };
 }
 
+// 07.6-01(eng r1 B-P3-8): 지운 매출 줄의 칸은 거부 봉투에서 뺀다 — 합계 행 · 표 밖 오류 수가 그 줄 몫을 세지 않는다. 남은 칸이 0이면 봉투도 없다.
+function withoutRemovedRevenueCells<T extends { summary: string; cells: { rowId?: string; kind: "conflict" | "error" }[] }>(
+  envelope: T,
+  removed: ReadonlySet<string>,
+): T | undefined {
+  const cells = envelope.cells.filter((cell) => cell.rowId === undefined || !removed.has(cell.rowId));
+  if (cells.length === envelope.cells.length) return envelope;
+  if (cells.length === 0) return undefined;
+  const conflictRows = new Set(cells.filter((cell) => cell.kind === "conflict").map((cell) => cell.rowId)).size;
+  const errorCells = cells.filter((cell) => cell.kind === "error").length;
+  const summary = [conflictRows > 0 ? `충돌 ${conflictRows}줄 · 전부 거부` : null, errorCells > 0 ? `오류 ${errorCells}칸 · 전부 거부` : null]
+    .filter(Boolean)
+    .join(" · ");
+  return { ...envelope, cells, summary };
+}
+
 function entriesFromDto(entries: RevenueDto["issuedEntries"]): EntryDraft[] | undefined {
   if (entries === undefined) return undefined;
   return entries.map((entry) => ({
@@ -824,6 +841,7 @@ function entriesFromDto(entries: RevenueDto["issuedEntries"]): EntryDraft[] | un
     vatKrw: entry.vatKrw,
     totalKrw: entry.totalKrw,
     foreignLine: formatForeignLine(entry.amount),
+    deleteBlockedReason: entry.deleteBlockedReason,
   }));
 }
 
@@ -1266,6 +1284,41 @@ export function QuoteLedger({
     issuedIds: (issuedEntries ?? []).flatMap((entry) => (entry.id ? [entry.id] : [])),
     paidIds: (paidEntries ?? []).flatMap((entry) => (entry.id ? [entry.id] : [])),
   };
+  // 07.6-01(D-7601 · D-7602): 매출 줄 지우기 · 되돌리기 — 그 줄만 빼고 끼운다(목록을 통째로 갈지 않는다 — 다른 줄 편집 보존).
+  // 대기 중에는 저장 길 전부(버튼 · Ctrl+S · 표 밖 칸 저장)와 편집 칸을 잠근다(eng r1 B-P2-2 · design r1 G5).
+  const [revenueRowPending, setRevenueRowPending] = useState(false);
+  const [removedRevenueIds, setRemovedRevenueIds] = useState<ReadonlySet<string>>(() => new Set());
+  function applyRevenueTotals(totals: RevenueTotals | null) {
+    if (!totals) return;
+    setBalanceKrw(totals.balanceKrw);
+    setCollectionOverdue(totals.collectionOverdue);
+  }
+  function removeEntry(kind: "issue" | "payment", clientKey: string, totals: RevenueTotals | null) {
+    const setEntries = kind === "issue" ? setIssuedEntries : setPaidEntries;
+    const removed = (kind === "issue" ? issuedEntries : paidEntries)?.find((entry) => entry.clientKey === clientKey);
+    setEntries((prev) => prev?.filter((entry) => entry.clientKey !== clientKey));
+    if (removed?.id && !removedRevenueIds.has(removed.id)) setRemovedRevenueIds((prev) => new Set(prev).add(removed.id));
+    applyRevenueTotals(totals);
+  }
+  function restoreEntry(kind: "issue" | "payment", draft: EntryDraft, index: number, totals: RevenueTotals | null) {
+    // design r1 G3: 같은 발행 요청을 실은 줄이 이미 있으면 끼우지 않는다(연결을 비워 끼우면 같은 계산서가 두 줄 — 이중 계상).
+    const current = kind === "issue" ? issuedEntries : paidEntries;
+    if (draft.fromIssueRequestId && current?.some((entry) => entry.fromIssueRequestId === draft.fromIssueRequestId)) return;
+    const setEntries = kind === "issue" ? setIssuedEntries : setPaidEntries;
+    setEntries((prev) => {
+      // 보관함 복원 뒤 저장이 그 줄을 이미 다시 실었으면(되돌리기는 서버 멱등 성공) 끼우지 않는다 — 같은 id 두 줄 방지.
+      if (prev?.some((entry) => entry.id === draft.id)) return prev;
+      const next = [...(prev ?? [])];
+      next.splice(Math.min(index, next.length), 0, draft);
+      return next;
+    });
+    setRemovedRevenueIds((prev) => {
+      const next = new Set(prev);
+      next.delete(draft.id);
+      return next;
+    });
+    applyRevenueTotals(totals);
+  }
   const [balanceKrw, setBalanceKrw] = useState<number | undefined>(revenue.balanceKrw);
   const [collectionOverdue, setCollectionOverdue] = useState<boolean | undefined>(revenue.collectionOverdue);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -2219,7 +2272,7 @@ export function QuoteLedger({
   }
 
   function handleSave() {
-    if (savingRef.current || isExecuting) return; // 버튼·키보드 두 경로가 여기서 한 번만 보낸다.
+    if (savingRef.current || isExecuting || revenueRowPending) return; // 버튼·키보드 두 경로가 여기서 한 번만 보낸다(07.6-01: 매출 줄 지우기 · 되돌리기 대기 중에도).
     // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않고 첫 오류로 간다(04-47 DR-5).
     if (goToFirstIssue()) return;
     savingRef.current = true;
@@ -2352,7 +2405,7 @@ export function QuoteLedger({
 
   // 04-49(DR-3 · 계약 3) — 저장 요청 동안 화면의 편집기(견적 줄 표 · 매출 표 · 기간 칸 · 총 매출 예상가 칸)는 보이되 편집에
   // 들어가지 않는다. 응답이 오면(성공·실패·거부 모두) isExecuting이 풀려 곧바로 다시 편집된다.
-  const saveLocked = isExecuting;
+  const saveLocked = isExecuting || revenueRowPending;
   // 04-30 리뷰 S-5 — 셀 편집기가 열린 동안에는 1차를 누르면 그 값이 커밋되고 저장된다 — 비활성으로 보이지 않는다.
   const [cellEditing, setCellEditing] = useState(false);
   // 04-49(DR-14 · DR-24 · DR-36 · 계약 6) — 1024 미만이면 견적 줄 표·매출 표는 보기 전용이다(표 밖 칸만 편집).
@@ -3249,7 +3302,8 @@ export function QuoteLedger({
   // F2 — next-safe-action의 validationErrors(예: 항목명 빈 값)는 serverError와
   // 달리 조용히 무시되고 있었다 — 같은 요약 자리에 일반 문구로 띄운다.
   // 04-28 — 거부 봉투가 있으면 그 요약(`충돌 N줄 · 전부 거부` / `오류 N칸 · 전부 거부`).
-  const rejectedEnvelope = result.data && "rejected" in result.data ? result.data.rejected : undefined;
+  const rawRejectedEnvelope = result.data && "rejected" in result.data ? result.data.rejected : undefined;
+  const rejectedEnvelope = rawRejectedEnvelope ? withoutRemovedRevenueCells(rawRejectedEnvelope, removedRevenueIds) : undefined;
   // U-6 — 표 밖 칸(기간 · 총 매출 예상가) 오류로 전부 거부되면 합계 행에 그 칸 수를 붙인다.
   const outsideErrorCount =
     result.data && "periodRejected" in result.data
@@ -3365,7 +3419,7 @@ export function QuoteLedger({
         type="button"
         variant="primary"
         className={styles.headerTouchButton}
-        pending={isExecuting}
+        pending={isExecuting || revenueRowPending}
         disabled={dirtyCount === 0 && !cellEditing}
         disabledReason={saveDisabledReason}
         reasonTone="info"
@@ -3838,6 +3892,11 @@ export function QuoteLedger({
       </PreSettleLedgerContext.Provider>
 
       <RevenueSection
+        projectId={projectId}
+        deleteLock={status === "completed" ? COMPLETED_DELETE_LOCK : null}
+        onEntryRemoved={removeEntry}
+        onEntryRestored={restoreEntry}
+        onRowActionPendingChange={setRevenueRowPending}
         contract={revenue.contract}
         issuedEntries={issuedEntries}
         paidEntries={paidEntries}

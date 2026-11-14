@@ -20,6 +20,10 @@ import { findCodeItemById } from "@/repositories/code-tables";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 import { setupExpenseProject } from "./fixtures/expenses";
 import { archiveProject } from "@/domain/projects/archive";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { revenueEntries } from "@/db/schema";
+import { insertRevenueEntry } from "@/repositories/revenue-entries";
 import { addTeam, countLogs, makeAdmin, makeDelegatedRole, makeOrgTeam, makeSeated, uniqueName } from "./admin-cap-fixtures";
 
 // 06.4-03: 보관함 「복원」으로 사람을 되살릴 때 사람 쓰기 · 권한 상한 · 자리를 다시 본다(D-6406 · G36).
@@ -377,6 +381,15 @@ const ARCHIVED_ROW_OF_GATED_KIND: Record<string, () => Promise<string>> = {
     const fx = await setupExpenseProject();
     await archiveProject(fx.lead, fx.projectId);
     return fx.projectId;
+  },
+  // 07.6: 매출 줄은 보관을 domain/revenue/archive.ts로만 하므로(범용 archive는 isProtected) DB로 만든다 — 발행 줄이라 미래 입금일 규칙과 무관.
+  // 이 표의 `countLogs("restore", entity, id)`는 매출 줄 로그 entityId가 프로젝트 id이고 종류가 revenue_entry_restore라 늘 0 — 로그 불변은 revenue-archive.test.ts가 `detail->>'entryId'`로 잰다.
+  revenue_entry: async () => {
+    const fx = await setupExpenseProject();
+    const row = await insertRevenueEntry(SYSTEM_VIEWER, { projectId: fx.projectId, kind: "issue", entryDate: "2026-09-01", amountCurrency: "KRW", amountForeignAmount: null, amountFxRate: "1", amountAmountKrw: 1_000_000 });
+    if (!row) throw new Error("매출 줄 준비 실패");
+    await db.update(revenueEntries).set({ archivedAt: new Date(), archivedBy: SYSTEM_VIEWER.id }).where(eq(revenueEntries.id, row.id));
+    return row.id;
   },
 };
 

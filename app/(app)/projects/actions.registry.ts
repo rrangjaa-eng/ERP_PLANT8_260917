@@ -127,3 +127,7 @@ registerAction({ name: "undoProjectDeleteAction", menu: "projects.delete", actio
 
 // 07.2-19(PU2 · D-7216): 완료 되돌리기 — projects.reopen 쓰기. 판정은 domain(reopenCompletedProject). 번호만 돌려준다(DTO 없음).
 registerAction({ name: "reopenProjectAction", menu: "projects.reopen", action: "write", dtoName: null });
+
+// 07.6-01(D-7601 · D-7602): 매출 줄 지우기 · 되돌리기 — 잔액 · 수금 지연은 RevenueDto 투영 값이다.
+registerAction({ name: "archiveRevenueEntryAction", menu: "projects.revenue", action: "write", dtoName: "RevenueDto" });
+registerAction({ name: "undoRevenueArchiveAction", menu: "projects.revenue", action: "write", dtoName: "RevenueDto" });

@@ -302,3 +302,22 @@ describe("document_reopen (07.2-19 D-7216)", () => {
     expect(appendActionLog).toHaveBeenCalledTimes(1);
   });
 });
+
+// 07.6 eng r1 E1(사용자 카드 확정 11/4 22:24 KST): 매출 줄 지우기 · 되살리기는 발행 합계 · 수금 지연을 바꾸는 돈 기록이라 끌 수 없는 전용 종류다.
+describe("revenue_entry_archive · revenue_entry_restore (07.6 eng r1 E1)", () => {
+  it("세 배열에 함께 있고 라벨은 「매출 줄 삭제」 · 「매출 줄 복원」이다(「보관」 낱말 0)", () => {
+    for (const type of ["revenue_entry_archive", "revenue_entry_restore"]) {
+      expect(CORE_ACTION_TYPES as readonly string[]).toContain(type);
+      expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain(type);
+    }
+    const labels = ACTION_TYPE_LABELS as Record<string, string>;
+    expect(labels.revenue_entry_archive).toBe("매출 줄 삭제");
+    expect(labels.revenue_entry_restore).toBe("매출 줄 복원");
+    expect(`${labels.revenue_entry_archive}${labels.revenue_entry_restore}`).not.toContain("보관");
+  });
+
+  it("선택 로그 설정의 선택지에 없다(끌 수 없다)", () => {
+    expect(ACTION_LOG_OPTIONAL_TYPES.default as readonly string[]).not.toContain("revenue_entry_archive");
+    expect(ACTION_LOG_OPTIONAL_TYPES.default as readonly string[]).not.toContain("revenue_entry_restore");
+  });
+});

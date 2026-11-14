@@ -25,6 +25,7 @@ import { findEffectiveValue, findSimpleValue } from "@/repositories/settings";
 import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT, PROJECT_COLLECTION_DUE_DAYS } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstDateOf, kstToday } from "@/lib/kst-date";
+import { futurePaidDateErrors } from "@/domain/revenue/paid-date";
 import type { HolidayLookup } from "@/domain/holidays/business-day";
 import { loadHolidayLookup as defaultLoadHolidayLookup, readHolidayLookup } from "@/domain/holidays/calendar";
 import { LUNAR_TABLE_FIRST_YEAR, LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
@@ -43,12 +44,13 @@ import {
   type RevenueEntryRow,
 } from "@/repositories/revenue-entries";
 import { findLatestQuoteRevision as repoFindLatestQuoteRevision } from "@/repositories/quote-revisions";
+import { listLinkedIssueEntryIdsByProject } from "@/repositories/revenue-issue-requests";
 import { sumQuoteAmountByRevision as repoSumQuoteAmountByRevision } from "@/repositories/quote-lines";
 
 export class ForbiddenError extends UserFacingError {}
 export class ProjectNotFoundError extends UserFacingError {}
 
-const REVENUE_SETTLEMENT_MENU = "projects.revenue";
+export const REVENUE_SETTLEMENT_MENU = "projects.revenue";
 const REVENUE_ENTITY = "revenue_entry";
 
 export type RevenueEntryKind = "issue" | "payment";
@@ -117,7 +119,12 @@ export type RevenueEntryDto = {
   recomputeDeltaKrw: number | null;
   note: string | null;
   version: number;
+  /** 07.6-01(Q1) — 이 줄을 지울 수 없는 이유(서버가 글자를 정한다). 발행 요청이 이어진 발행 줄만, 그 밖은 null. */
+  deleteBlockedReason: string | null;
 };
+
+// 07.6-01(Q1 · D-7610 — 사용자 카드 확정 11/4 22:24 KST 「그대로 막기」): 발행 요청이 이어진 발행 줄은 지우지 않는다.
+export const LINKED_REQUEST_BLOCK = "발행 요청 연결 · 삭제 불가";
 
 // 04-16(D-84) — 계약 금액은 입력이 아니라 고객 승인된 현재 차수의 견적 합계다. 미승인이면 금액 셋이 null이고
 // pendingLabel(`{n}차 고객 승인 전`)만 있다 — 이전 승인 차수의 합계로 대신하지 않는다.
@@ -169,6 +176,7 @@ registerDto({
 function toEntryDto(
   row: RevenueEntryRow,
   computed: { vatKrw: number | null; totalKrw: number | null; computedGrossKrw: number | null; recomputeDeltaKrw: number | null },
+  deleteBlockedReason: string | null = null,
 ): RevenueEntryDto {
   const money = moneyFromRow({
     currency: row.amountCurrency,
@@ -187,6 +195,7 @@ function toEntryDto(
     recomputeDeltaKrw: computed.recomputeDeltaKrw,
     note: row.note,
     version: row.version,
+    deleteBlockedReason,
   };
 }
 
@@ -233,11 +242,16 @@ export async function listRevenue(viewer: Viewer, projectId: string, deps?: Part
   const rows = await repoListRevenueEntriesByProject(viewer, projectId);
   const issuedRows = rows.filter((row) => row.kind === "issue");
   const paidRows = rows.filter((row) => row.kind === "payment");
+  const linkedEntryIds = new Set(await listLinkedIssueEntryIdsByProject(viewer, projectId));
 
   const issuedEntries = await Promise.all(
     issuedRows.map(async (row) => {
       const vat = await computeVat(row.amountAmountKrw, new Date(row.entryDate), deps);
-      return toEntryDto(row, { vatKrw: vat.vatKrw, totalKrw: vat.totalKrw, computedGrossKrw: null, recomputeDeltaKrw: null });
+      return toEntryDto(
+        row,
+        { vatKrw: vat.vatKrw, totalKrw: vat.totalKrw, computedGrossKrw: null, recomputeDeltaKrw: null },
+        linkedEntryIds.has(row.id) ? LINKED_REQUEST_BLOCK : null,
+      );
     }),
   );
   const paidEntries = await Promise.all(
@@ -383,11 +397,13 @@ export type RevenueWriteDeps = {
   rememberFxRate: typeof rememberFxRate;
   /** 04-41(B §1) — 트랜잭션 앞에서 계산한 권한. 있으면 잠긴 트랜잭션 안에서 권한을 조회하지 않는다. */
   rights: { canWriteEntries: boolean };
+  /** 07.6-01(D-7608) — 입금일 미래 판정의 오늘(KST). 테스트가 시각을 주입한다. */
+  now: () => Date;
 };
 
 const ENTRY_SCOPE_RULE = "revenue.entry-scope";
 const REPLAY_RULE = "revenue.replay-mismatch";
-const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
+export const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
 const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
 
 type EntryPayload = {
@@ -450,7 +466,7 @@ function sameStoredEntry(stored: RevenueEntryRow, owner: { projectId: string; ki
 }
 
 // 07.1-13 S8: 로그 줄 전후 보기 — 날짜 · 금액(Money 글자) · 메모만 비교한다(version · id 제외).
-function entryChangeView(entry: EntryPayload | RevenueEntryRow): Record<string, unknown> {
+export function entryChangeView(entry: EntryPayload | RevenueEntryRow): Record<string, unknown> {
   return {
     entryDate: entry.entryDate,
     amount: moneyChangeText({
@@ -502,6 +518,8 @@ async function saveEntries(
         if (!stored || stored.projectId !== projectId || stored.kind !== kind) {
           denyWrite(viewer, ENTRY_SCOPE_RULE, { projectId, entryIds: [input.id] }, new UserFacingError(ENTRY_NOT_FOUND));
         }
+        // 07.6-01(R6): 보관된 줄은 없음과 같은 글자 — 낡은 탭의 정상 사용자라 denyWrite(write.denied 경고)를 부르지 않는다.
+        if (stored.archivedAt !== null) throw new UserFacingError(ENTRY_NOT_FOUND);
         // SF-2 — 응답을 잃은 재전송: 첫 커밋이 version을 하나 올렸고 값이 이번 입력과 같으면 no-op(쓰기·로그 없음).
         if (stored.version === input.version + 1 && sameStoredEntry(stored, { projectId, kind }, payload)) continue;
         throw new UserFacingError(`다른 사람이 먼저 이 줄을 바꿈 · 덮어쓰기 / 그 값으로(줄 ${input.id})`);
@@ -551,7 +569,7 @@ export async function saveRevenueInTx(
   viewer: Viewer,
   projectId: string,
   input: SaveRevenueInput,
-  deps: Pick<RevenueWriteDeps, "rights"> & Partial<Pick<RevenueWriteDeps, "recordAction">>,
+  deps: Pick<RevenueWriteDeps, "rights"> & Partial<Pick<RevenueWriteDeps, "recordAction" | "now">>,
   tx: DbOrTx,
 ): Promise<FxToRemember[]> {
   if ((input.issuedEntries || input.paidEntries) && !deps.rights.canWriteEntries) {
@@ -566,6 +584,9 @@ export async function saveRevenueInTx(
   // 07.1-13 S8(E-P2-39): 고치는 기존 줄의 이전 값을 쓰기 전에 같은 tx로 한 번 묶어 읽는다(줄마다 질의하지 않는다).
   const editedIds = [...issued, ...paid].flatMap(({ input }) => (input.id && !input.isNew ? [input.id] : []));
   const priorById = new Map((await repoFindRevenueEntriesByIds(viewer, editedIds, tx)).map((row) => [row.id, row] as const));
+  // 07.6-01(D-7608): 새 입금 줄 · 바뀐 입금일이 오늘(KST) 뒤면 칸 오류로 전부 거부 — 형식 오류 봉투가 먼저, 발행 줄은 보지 않는다.
+  const futurePaid = futurePaidDateErrors(input.paidEntries ?? [], priorById, kstToday((deps.now ?? (() => new Date()))()));
+  if (futurePaid.length > 0) throw new SaveRejectedError([], futurePaid);
   const issuedResult = await saveEntries(viewer, projectId, "issue", issued, priorById, tx);
   const paidResult = await saveEntries(viewer, projectId, "payment", paid, priorById, tx);
 
@@ -597,7 +618,7 @@ export async function saveRevenue(
   const fxToRemember = await withTransaction(async (tx) => {
     const locked = await lockProjectForWrite(viewer, projectId, tx);
     if (!locked || locked.archivedAt !== null) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
-    return saveRevenueInTx(viewer, projectId, input, { rights, recordAction: deps?.recordAction }, tx);
+    return saveRevenueInTx(viewer, projectId, input, { rights, recordAction: deps?.recordAction, now: deps?.now }, tx);
   });
   await rememberFxAfterCommit(fxToRemember, deps?.rememberFxRate);
   return listRevenue(viewer, projectId);

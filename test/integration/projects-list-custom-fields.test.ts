@@ -12,7 +12,8 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject, loadProjectList } from "@/domain/projects";
 import { seedCustomFieldDefinition } from "@/test/support/custom-fields";
 
-// 07.5-04(D-7508 · D-7510 · D-7522 · T-07.5-04-01/03/04/05) — 프로젝트 목록 검색 · 목록 DTO가 이 사람에게 보이는 활성 칸 집합 하나로만 돈다.
+// 07.5-04(D-7510 · D-7522 · T-07.5-04-01/03/04/05) — 프로젝트 목록 검색 · 거르개가 이 사람에게 보이는 활성 칸 집합 하나로만 돈다.
+// 목록에는 추가 칸 열이 없다(사용자 결정 2026-11-14 23:43 KST — 값은 상세 정보 면) — 목록 결과에는 추가 칸 값이 실리지 않는다.
 // 계급마다 임시 계급을 만든다(시드 계급에 노출 행을 만들지 않는다). 매 시험 전 표가 비워진다(setup.ts).
 
 async function makeViewer(infoItems: string[] = ["project.value"]): Promise<Viewer> {
@@ -69,7 +70,8 @@ describe("프로젝트 목록 검색 — 추가 칸 텍스트 값(D-7522)", () =
     expect(seenByA.ids).toEqual([p1]);
     expect(seenByA.total).toBe(1);
     expect(seenByA.count).toBe(1);
-    expect(seenByA.result.rows[0]?.customFields).toEqual({ [place.key]: `${t}코엑스 C홀` });
+    expect(seenByA.result.rows[0]).not.toHaveProperty("customFields");
+    expect(JSON.stringify(seenByA.result)).not.toContain("C홀");
 
     const seenByB = await listed(b, { search: `${t}코엑스` });
     expect(seenByB.ids).toEqual([]);
@@ -84,19 +86,24 @@ describe("프로젝트 목록 검색 — 추가 칸 텍스트 값(D-7522)", () =
     expect((await listed(a, { search: `${t}코엑스` })).ids).toEqual([p1]);
   });
 
-  it("칸을 끈 계급의 목록 행 직렬화에는 그 칸 키 · 값이 없다(DTO 칸별 거름 — D-7508)", async () => {
+  it("목록 결과 직렬화에는 추가 칸 값이 없다 — 보이는 계급도 행에 customFields가 없고, 칸을 끈 계급에는 그 칸 키도 없다", async () => {
     const a = await makeViewer();
     const b = await makeViewer();
     const place = await seedCustomFieldDefinition("project", { label: "행사 장소", type: "text" }, { visibleRoleIds: [roleOf(a)] });
     const t = tag();
     const p1 = await makeProject(`${t}-이름`, { [place.key]: `${t}코엑스` });
 
+    const seenByA = await listed(a, { search: t });
+    expect(seenByA.ids).toEqual([p1]);
+    expect(seenByA.result.rows[0]).not.toHaveProperty("customFields");
+    expect(seenByA.result).not.toHaveProperty("customColumns");
+    expect(JSON.stringify(seenByA.result)).not.toContain(`${t}코엑스`);
+
     const seenByB = await listed(b, { search: t });
     expect(seenByB.ids).toEqual([p1]);
-    expect(seenByB.result.rows[0]?.customFields).toEqual({});
+    expect(seenByB.result.rows[0]).not.toHaveProperty("customFields");
     expect(JSON.stringify(seenByB.result)).not.toContain(`${t}코엑스`);
     expect(JSON.stringify(seenByB.result)).not.toContain(place.key);
-    expect(seenByB.result.customColumns).toEqual([]);
   });
 
   it("`%` · `_`는 글자 그대로 찾는다 — 「50%」로 찾으면 「50%할인」만, 「500」은 안 걸린다", async () => {
@@ -208,7 +215,7 @@ describe("프로젝트 목록 선택 칸 거르개(D-7510 · T-07.5-04-02)", () 
     expect(plain.hasFilter).toBe(false);
   });
 
-  it("경계: 선택 칸 셋이면 앞 2개만 거르개(3번째는 무시) · 칸 넷이면 열은 앞 3개이고 4번째 텍스트 칸은 열이 아니어도 검색에 걸린다", async () => {
+  it("경계: 선택 칸 셋이면 앞 2개만 거르개(3번째는 무시) · 칸 넷이면 4번째 텍스트 칸도 검색에 걸린다", async () => {
     const a = await makeViewer();
     const first = await selectField([roleOf(a)], 1, "구분 1");
     const second = await selectField([roleOf(a)], 2, "구분 2");
@@ -221,7 +228,6 @@ describe("프로젝트 목록 선택 칸 거르개(D-7510 · T-07.5-04-02)", () 
     const both = await listed(a, { search: t, custom: { [first.key]: "서울", [second.key]: "서울" } });
     expect(both.ids).toEqual([seoul]);
     expect(both.result.customFilterDefs.map((def) => def.key)).toEqual([first.key, second.key]);
-    expect(both.result.customColumns.map((column) => column.key)).toEqual([first.key, second.key, third.key]);
 
     const thirdOnly = await listed(a, { search: t, custom: { [third.key]: "서울" } });
     expect(thirdOnly.ids).toHaveLength(2);

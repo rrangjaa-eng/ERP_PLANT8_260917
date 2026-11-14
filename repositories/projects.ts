@@ -159,8 +159,6 @@ export type ProjectListRow = {
   netProfitKrw: number;
   /** 수익금 ÷ 기준 금액 — 기준 ≤ 0이면 null. */
   profitRate: number | null;
-  /** 07.5-04(D-7508) — 추가 칸 값 가방 전체. 칸별 거름은 domain(loadProjectList)이 한다. */
-  customFields: Record<string, unknown>;
 };
 
 // 04-17(D-90) — 귀속 구간: "in"(종료일이 R 안, R이 없으면 종료일 있는 전부) · "undetermined"(종료일 없음) · 종료 연도 문자열.
@@ -308,7 +306,6 @@ export async function listProjectsPage(
       profitBasis: sql<ProfitBasis>`${money.profitBasis}`,
       netProfitKrw: sql<number>`${money.profit}::bigint`.mapWith(Number),
       profitRate: sql<number | null>`${money.rate}`.mapWith(Number),
-      customFields: projects.customFields,
     })
     .from(projects)
     .leftJoin(vendors, eq(vendors.id, projects.clientId))
@@ -332,7 +329,6 @@ export async function listProjectsPage(
     clientName: row.clientName ?? "",
     teamName: row.teamName ?? "",
     pmUserName: row.pmUserName ?? "",
-    customFields: (row.customFields ?? {}) as Record<string, unknown>,
   }));
 }
 

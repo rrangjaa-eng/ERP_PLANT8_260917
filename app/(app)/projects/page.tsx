@@ -251,7 +251,6 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           sort={list.sort}
           filterQuery={filterParams.toString()}
           profitRateThreshold={profitRateThreshold}
-          customColumns={list.customColumns}
         />
       ) : null}
     </ListScreen>

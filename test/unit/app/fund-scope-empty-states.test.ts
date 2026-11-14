@@ -60,7 +60,6 @@ vi.mock("@/domain/projects", () => ({
       params: {},
       columnStep: "wide",
       sort: { key: "endDate", direction: "asc" },
-      customColumns: [],
       customFilterDefs: [],
       customFilterValues: {},
     }),

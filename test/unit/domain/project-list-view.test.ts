@@ -259,8 +259,8 @@ describe("loadProjectList — 번호 페이지 읽기 순서(C-23 · A-07)", () 
   });
 });
 
-// 07.5-04(D-7509 · D-7510 · D-7522 · eng B-1) — 입력 칸 집합 하나(stub)로 열 · 검색 키 · 거르개가 정해지고 목록 · 합계에 같은 필터가 간다.
-describe("loadProjectList — 추가 칸 열 · 검색 키 · 거르개(입력 칸 집합 하나)", () => {
+// 07.5-04(D-7510 · D-7522 · eng B-1) — 입력 칸 집합 하나(stub)로 검색 키 · 거르개가 정해지고 목록 · 합계에 같은 필터가 간다. 목록 열은 없다(사용자 결정 2026-11-14 23:43 KST).
+describe("loadProjectList — 추가 칸 검색 키 · 거르개(입력 칸 집합 하나)", () => {
   const def = (key: string, type: "text" | "number" | "date" | "select", options: string[] = []) => ({
     id: `id-${key}`,
     key,
@@ -297,15 +297,14 @@ describe("loadProjectList — 추가 칸 열 · 검색 키 · 거르개(입력 �
 
   const viewer = { id: "u1", roleId: "" };
 
-  it("보이는 활성 칸 앞 3개가 열이고, 텍스트 칸 키가 검색 키 · 활성 선택지 값만 거르개로 목록 · 합계 필터에 간다(입력 칸 읽기는 한 번)", async () => {
+  it("텍스트 칸 키가 검색 키 · 활성 선택지 값만 거르개로 목록 · 합계 필터에 가고 열 정의는 돌려주지 않는다(입력 칸 읽기는 한 번)", async () => {
     const defs = [def("a", "text"), def("b", "select", ["서울", "부산"]), def("c", "number"), def("d", "text"), def("e", "select", ["행사"])];
     const { deps, filters, reads } = stub(defs);
 
     const result = await loadProjectList(viewer, { year: "all", search: "코엑스", custom: { b: "서울", e: "없는값", z: "x" } }, deps);
 
     expect(reads()).toBe(1);
-    expect(result.customColumns.map((column) => column.key)).toEqual(["a", "b", "c"]);
-    expect(result.customColumns[1]).toEqual({ key: "b", label: "칸 b", type: "select", options: ["서울", "부산"] });
+    expect(result).not.toHaveProperty("customColumns");
     expect(result.customFilterDefs).toEqual([
       { key: "b", label: "칸 b", options: ["서울", "부산"] },
       { key: "e", label: "칸 e", options: ["행사"] },
@@ -314,12 +313,11 @@ describe("loadProjectList — 추가 칸 열 · 검색 키 · 거르개(입력 �
     expect(filters[0]).toMatchObject({ search: "코엑스", customTextKeys: ["a", "d"], customSelects: [{ key: "b", value: "서울" }] });
   });
 
-  it("입력 칸이 0개면 열 · 거르개가 비고 필터에 추가 칸 절이 없다(main과 같은 필터)", async () => {
+  it("입력 칸이 0개면 거르개가 비고 필터에 추가 칸 절이 없다(main과 같은 필터)", async () => {
     const { deps, filters } = stub([]);
 
     const result = await loadProjectList(viewer, { year: "all", search: "코엑스", custom: { b: "서울" } }, deps);
 
-    expect(result.customColumns).toEqual([]);
     expect(result.customFilterDefs).toEqual([]);
     expect(result.customFilterValues).toEqual({});
     expect(filters[0]).toEqual({ status: undefined, teamId: undefined, search: "코엑스" });
@@ -595,7 +593,6 @@ describe("loadProjectList — 행의 endDatePassed", () => {
     profitBasis: "quote",
     netProfitKrw: 0,
     profitRate: null,
-    customFields: {},
   });
 
   async function endDatePassedOf(rows: ProjectListRow[]) {

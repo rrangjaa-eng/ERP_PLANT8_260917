@@ -9,8 +9,9 @@ import { createProject } from "@/domain/projects";
 import { insertVendor } from "@/repositories/vendors";
 import { archiveE2EFieldDefinitions, createE2EFieldDefinition, createE2EProjectEditor, createFixtureUser } from "./fixtures";
 
-// 07.5-04(S5 · D-7509 · D-7510 · D-7522) — 프로젝트 목록 추가 칸 열 · 키워드 검색 · 선택 칸 거르개.
-// 칸은 전용 계급(createE2EProjectEditor)에만 보이게 만든다 — 시드 계급 사용자 목록에는 열 · 거르개가 없다.
+// 07.5-04(S5 · D-7510 · D-7522) — 프로젝트 목록 추가 칸 키워드 검색 · 선택 칸 거르개.
+// 목록에는 추가 칸 열을 두지 않는다(사용자 결정 2026-11-14 23:43 KST — 값은 상세 정보 면) — 칸이 있어도 1280 · 1440 가로 넘침 0.
+// 칸은 전용 계급(createE2EProjectEditor)에만 보이게 만든다 — 시드 계급 사용자 목록에는 거르개가 없다.
 const LABEL_PREFIX = "E2E목록칸";
 
 test.afterAll(async () => {
@@ -36,12 +37,12 @@ async function projectOf(account: { email: string; teamId: string | null }, name
   return created.id;
 }
 
-async function headers(page: Page): Promise<string[]> {
-  return (await page.getByRole("table", { name: "프로젝트" }).getByRole("columnheader").allInnerTexts()).map((text) => text.trim());
+async function docOverflow(page: Page): Promise<number> {
+  return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 }
 
 test.describe("프로젝트 목록 추가 칸 (S5)", () => {
-  test("텍스트 칸: 1280에서 금액 열 뒤 · 「상태」 앞 열(정렬 링크 없음) · 같은 값으로 검색 → 그 행만 · 1024에서 보이는 머리글 0 · 시드 계급에는 머리글 DOM 0", async ({ page, browser }) => {
+  test("텍스트 칸: 1280 · 1440에 추가 칸 머리글 · 값 셀 DOM 0 · 가로 넘침 0 · 같은 값으로 검색 → 그 행만 · 시드 계급 목록도 머리글 0", async ({ page, browser }) => {
     const tag = randomUUID().slice(0, 6);
     const editor = await createE2EProjectEditor();
     const label = `${LABEL_PREFIX}장소${tag}`;
@@ -52,16 +53,15 @@ test.describe("프로젝트 목록 추가 칸 (S5)", () => {
 
     await page.setViewportSize({ width: 1280, height: 900 });
     await login(page, editor);
-    expect((await page.goto("/projects?year=all"))?.status()).toBe(200);
-
     const table = page.getByRole("table", { name: "프로젝트" });
-    const header = table.getByRole("columnheader", { name: label, exact: true });
-    await expect(header).toBeVisible();
-    const names = await headers(page);
-    expect(names.at(-1)).toBe("상태");
-    expect(names.at(-2)).toBe(label);
-    await expect(header.getByRole("link")).toHaveCount(0);
-    await expect(table.getByRole("row").filter({ hasText: `E2E목록칸-값-${tag}` }).getByRole("cell", { name: `E2E-코엑스${tag}` })).toBeVisible();
+    for (const width of [1440, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect((await page.goto("/projects?year=all"))?.status()).toBe(200);
+      await expect(table.getByRole("link", { name: `E2E목록칸-값-${tag}` })).toBeVisible();
+      await expect(table.locator("th", { hasText: label })).toHaveCount(0);
+      await expect(table.getByText(`E2E-코엑스${tag}`)).toHaveCount(0);
+      expect(await docOverflow(page), `${width} 문서 가로 넘침`).toBe(0);
+    }
 
     const search = page.locator("#q-wide");
     await search.fill(`E2E-코엑스${tag}`);
@@ -69,9 +69,6 @@ test.describe("프로젝트 목록 추가 칸 (S5)", () => {
     await expect(page).toHaveURL(new RegExp(`q=${encodeURIComponent(`E2E-코엑스${tag}`)}`));
     await expect(table.getByRole("link", { name: `E2E목록칸-값-${tag}` })).toBeVisible();
     await expect(table.getByRole("link", { name: `E2E목록칸-다른-${tag}` })).toHaveCount(0);
-
-    await page.setViewportSize({ width: 1024, height: 900 });
-    await expect(table.getByRole("columnheader", { name: label, exact: true })).toHaveCount(0);
 
     const seeded = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
     await projectOf(seeded, `E2E목록칸-시드-${tag}`);

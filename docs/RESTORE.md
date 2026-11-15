@@ -76,7 +76,9 @@ gcloud sql backups list --instance=plant8-$ENV-db --filter="type=AUTOMATED AND s
   --sort-by=~startTime --limit=5 --project=$GCP_PROJECT_ID
 ```
 
-**3. 복원 전 안전 백업** — PITR이 꺼져 있어, 4가 덮어쓸 지금 데이터는 이것 없이는 되돌릴 길이 없다:
+수동 백업(`pre-promote` · `pre-cutover` 등 ON_DEMAND)은 이 필터에 안 나온다 — `gcloud sql backups list --instance=plant8-$ENV-db --filter="description=<설명>" --project=$GCP_PROJECT_ID`로 고른다.
+
+**3. 복원 전 안전 백업** — PITR을 켰든 껐든 4는 운영 인스턴스를 덮어써, 지금 데이터는 이것 없이는 되돌릴 길이 없다:
 
 ```bash
 gcloud sql backups create --instance=plant8-$ENV-db --description=pre-restore-<날짜> --project=$GCP_PROJECT_ID
@@ -141,3 +143,8 @@ gcloud sql instances patch plant8-$ENV-db --backup-start-time=18:00 --retained-b
 ```
 
 두 번째는 첫 번째 결과가 `18:00` · 7개와 다를 때만 낸다.
+
+## PITR 시점 복원
+
+PITR을 켠 뒤 특정 시점으로 되돌리는 복원은 운영 인스턴스를 덮지 않고 새 인스턴스로의 클론이다: `gcloud sql instances clone plant8-$ENV-db <새 이름> --point-in-time=<UTC 시각> --project=$GCP_PROJECT_ID`.
+그 뒤 처리(클론으로 옮길지 · 잘못된 입력만 앞으로 고칠지)는 사용자가 정한다 — 기본은 앞으로 고치기([`CUTOVER.md`](CUTOVER.md) §5 「전환 뒤 막힘」).

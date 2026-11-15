@@ -112,6 +112,20 @@ describe("docs/RESTORE.md", () => {
     expect(content).toContain(token);
   });
 
+  // 08-01 Task 3(B9) — 수동 백업(pre-promote · pre-cutover)은 자동 백업 필터에 안 나온다. PITR을 켠 뒤 특정 시점 복원은 클론이다.
+  it("§3에 수동 백업(ON_DEMAND · description=)을 고르는 줄과 PITR 클론 복원이 있다", () => {
+    const lines = content.split("\n");
+    const start = lines.findIndex((line) => line.startsWith("## 3."));
+    const section = lines.slice(start).join("\n");
+    expect(section).toContain("ON_DEMAND");
+    expect(section).toContain("description=");
+    expect(section).toContain("clone");
+  });
+
+  it("OPERATIONS.md에 PITR이 꺼져 있다는 옛 문장이 없다", () => {
+    expect(readDoc("OPERATIONS.md")).not.toContain("PITR은 꺼져 있다");
+  });
+
   // 사고 복원 순서: 쓰기 중단 → 요청 비우기 → 복원 전 안전 백업 → 복원 → 닫힌 채 스키마 맞추기 →
   // 닫힌 채 인증된 확인 → 다시 열기 → 재개(Codex 2차 #5 · CEO-1). 각 토큰이 처음 나오는 줄 번호가 커진다.
   it("사고 복원 여덟 단계 토큰이 처음 나오는 줄 순서가 맞다", () => {
@@ -363,5 +377,43 @@ describe("docs/CUTOVER.md", () => {
   it("표 행 하나는 300자 이하다", () => {
     const tooLong = content.split("\n").filter((line) => line.startsWith("|") && line.length > 300);
     expect(tooLong).toEqual([]);
+  });
+
+  // 08-01 Task 3 — §0 선행 조건 · §3 전환일 · §4 직후 · §6 공지 문안(D8-02 · D8-04 · D8-05 · D8-06 · D1 · D2).
+  it("§3 전환일 순서: 수동 백업 → dry-run → apply → 보관 → 재등록 → 입력 금지 공지가 처음 나오는 줄 순서다", () => {
+    const lines = cutoverSection(content, "## 3. 전환일").split("\n");
+    const order = ["수동 백업", "dry-run", "apply", "보관", "재등록", "입력 금지 공지"].map((token) =>
+      lines.findIndex((line) => line.includes(token)),
+    );
+    for (const index of order) expect(index).toBeGreaterThan(-1);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(new Set(order).size).toBe(order.length);
+  });
+
+  it("§3에서 dry-run이 처음 나오는 줄(5번)에 deploy.yml도 있다", () => {
+    const line = cutoverSection(content, "## 3. 전환일")
+      .split("\n")
+      .find((l) => l.includes("dry-run"));
+    expect(line).toContain("deploy.yml");
+  });
+
+  it.each(["cutover.yml", "plant8-prod-db", "confirm", "늦게 온 비용"])("§3 전환일에 '%s'가 있다", (token) => {
+    expect(cutoverSection(content, "## 3. 전환일")).toContain(token);
+  });
+
+  it.each(["27001", "재발급"])("§4 전환 직후에 '%s'가 있다", (token) => {
+    expect(cutoverSection(content, "## 4. 전환 직후")).toContain(token);
+  });
+
+  it.each(["07.2-17", "07.3-03", "#109", "07.2-09", "거래처 보강", "CEO-4", "CEO-5"])("§0 선행 조건에 '%s'가 있다", (token) => {
+    expect(cutoverSection(content, "## 0. 선행 조건")).toContain(token);
+  });
+
+  it.each(["전환일에 모두 지워짐", "연습 금지", "지급 처리 기록", "점검 시작"])("§6 공지 문안에 '%s'가 있다", (token) => {
+    expect(cutoverSection(content, "## 6. 공지 문안")).toContain(token);
+  });
+
+  it("§5에 전환 뒤 막힘 줄이 있다", () => {
+    expect(cutoverSection(content, "## 5. 되돌릴 수 없는 문")).toContain("전환 뒤 막힘");
   });
 });

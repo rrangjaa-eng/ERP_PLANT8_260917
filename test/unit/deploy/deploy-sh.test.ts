@@ -505,12 +505,12 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     repoDir = setupRepo();
   });
 
-  it("Job 7개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
+  it("Job 8개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
     expect(r.status).toBe(0);
 
     const deployLines = r.log.split("\n").filter((l) => l.startsWith("run jobs deploy plant8-staging-"));
-    expect(deployLines).toHaveLength(7);
+    expect(deployLines).toHaveLength(8);
     for (const line of deployLines) {
       expect(line).toContain("APP_ENV=staging");
       expect(line).toContain("BETTER_AUTH_URL=https://plant8-staging-");
@@ -557,6 +557,48 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     expect(purge).not.toContain("APP_DATA_KEY");
     expect(purge).not.toContain("DB_ADMIN_PASSWORD");
     expect(r.log).not.toContain("run jobs execute plant8-staging-purge-certs");
+
+    // 08-04(D8-05): 전환 Job — 배포는 만들기만 하고, cutover.yml이 execute --args로 apply를 넘긴다.
+    const cutover = jobLine(r.log, "cutover");
+    expect(cutover).toContain("--command=node,dist/cli/cutover-cli.mjs");
+    expect(cutover).not.toContain("--args=");
+    expect(cutover).toContain("GCP_PROJECT_ID=test-proj");
+    expect(cutover).toContain("CLOUD_SQL_INSTANCE_ID=plant8-staging-db");
+    expect(cutover).toContain("STORAGE_DRIVER=gcs");
+    expect(cutover).toContain("GCS_EVIDENCE_BUCKET=test-proj-plant8-staging-evidence");
+    expect(cutover).toContain("--set-secrets=BETTER_AUTH_SECRET=better-auth-secret-staging:latest");
+    expect(cutover).not.toContain("APP_DATA_KEY");
+    expect(cutover).not.toContain("DB_ADMIN_PASSWORD");
+    expect(cutover).toContain("--task-timeout=15m");
+    expect(cutover).toContain("--max-retries=0");
+    expect(cutover).toContain("--service-account=plant8-staging-runtime@test-proj.iam.gserviceaccount.com");
+    expect(r.log).not.toContain("run jobs execute plant8-staging-cutover");
+    expect(r.log.split("\n").filter((l) => l.startsWith("run jobs deploy ") && l.includes("--args=--apply"))).toHaveLength(0);
+  });
+
+  // 08-04(eng 검토 1회차 B2): 전환 Job은 스모크 통과 뒤에만 바뀐다 — 거부된 이미지 · 옛 스키마로 apply가 돌지 않게.
+  it("cutover Job은 알림(스모크 바로 앞) · 스모크 · 자동 파기 Job 배포보다 뒤에 배포된다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const cutover = lineIndex(r.log, "run jobs deploy plant8-staging-cutover ");
+    expect(cutover).toBeGreaterThan(-1);
+    expect(cutover).toBeGreaterThan(lineIndex(r.log, "alpha monitoring policies create"));
+    const lastSmoke = r.log.split("\n").reduce((acc, l, i) => (l.includes("/internal/notify-tick") && l.includes("-X POST") ? i : acc), -1);
+    expect(lastSmoke).toBeGreaterThan(-1);
+    expect(cutover).toBeGreaterThan(lastSmoke);
+    expect(cutover).toBeGreaterThan(lineIndex(r.log, "run jobs deploy plant8-staging-purge-certs-auto "));
+  });
+
+  it.each(["1", "3"])("migrate가 실패(fail-migrate %s)하면 cutover Job을 배포하지 않는다", (code) => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], { state: { "fail-migrate": code } });
+    expect(r.status).toBe(1);
+    expect(r.log).not.toContain("run jobs deploy plant8-staging-cutover ");
+  });
+
+  it("스모크가 실패하면 cutover Job을 배포하지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], { state: { health: "503" } });
+    expect(r.status).toBe(1);
+    expect(r.log).not.toContain("run jobs deploy plant8-staging-cutover ");
   });
 });
 

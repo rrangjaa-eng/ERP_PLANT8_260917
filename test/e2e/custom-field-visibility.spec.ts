@@ -59,18 +59,18 @@ test("추가한 칸이 노출표 열로 올라오고, 기획 PM 셀을 끄면 �
   try {
     const response = await page.goto("/admin/visibility");
     expect(response?.status()).toBe(200);
-    await expect(page.getByRole("rowheader", { name: label })).toBeVisible();
+    await expect(page.getByRole("rowheader", { name: `거래처 · ${label}` })).toBeVisible();
     for (const role of SEED_ROLES) {
-      await expect(page.getByRole("checkbox", { name: `${role.name} · ${label}`, exact: true })).toBeChecked();
+      await expect(page.getByRole("checkbox", { name: `${role.name} · 거래처 · ${label}`, exact: true })).toBeChecked();
     }
 
-    const pmCell = page.getByRole("checkbox", { name: `${PM_ROLE.name} · ${label}`, exact: true });
+    const pmCell = page.getByRole("checkbox", { name: `${PM_ROLE.name} · 거래처 · ${label}`, exact: true });
     await pmCell.uncheck();
     await expect.poll(() => storedVisible(PM_ROLE.id, infoItem)).toBe(false);
 
     await page.reload();
-    await expect(page.getByRole("checkbox", { name: `${PM_ROLE.name} · ${label}`, exact: true })).not.toBeChecked();
-    await expect(page.getByRole("checkbox", { name: `시스템 관리자 · ${label}`, exact: true })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: `${PM_ROLE.name} · 거래처 · ${label}`, exact: true })).not.toBeChecked();
+    await expect(page.getByRole("checkbox", { name: `시스템 관리자 · 거래처 · ${label}`, exact: true })).toBeChecked();
   } finally {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: PM_ROLE.id, infoItem, visible: true });
   }
@@ -99,7 +99,7 @@ test("시스템 관리자 행에서 칸을 끄면 거래처 목록 · 편집 화
 
     // 노출표에서 시스템 관리자 행의 그 칸을 끈다.
     await page.goto("/admin/visibility");
-    await page.getByRole("checkbox", { name: `시스템 관리자 · ${label}`, exact: true }).uncheck();
+    await page.getByRole("checkbox", { name: `시스템 관리자 · 거래처 · ${label}`, exact: true }).uncheck();
     await expect.poll(() => storedVisible(SYSADMIN_ROLE_ID, infoItem)).toBe(false);
 
     await page.goto("/admin/vendors");
@@ -115,7 +115,7 @@ test("시스템 관리자 행에서 칸을 끄면 거래처 목록 · 편집 화
 
     // 다시 켜면 편집 화면에 값이 돌아온다.
     await page.goto("/admin/visibility");
-    await page.getByRole("checkbox", { name: `시스템 관리자 · ${label}`, exact: true }).check();
+    await page.getByRole("checkbox", { name: `시스템 관리자 · 거래처 · ${label}`, exact: true }).check();
     await expect.poll(() => storedVisible(SYSADMIN_ROLE_ID, infoItem)).toBe(true);
     await page.goto(editHref!);
     await expect(page.getByLabel(label, { exact: true })).toHaveValue(value);

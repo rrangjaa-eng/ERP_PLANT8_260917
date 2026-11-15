@@ -16,8 +16,28 @@
   text-decoration-thickness: var(--underline-w-hover);
 }
 
+/* 07.5-05 S1: 대상 링크 줄 — vendors .kindNav와 같은 값(design B4 · SYSTEM §7-16). */
+.targetNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+/* 현재 대상 링크 — §7-16 「강한 글자 700, 밑줄 없음」(vendors · code-tables .toggle[aria-current]와 같은 값). */
+.toggle[aria-current="page"] {
+  color: var(--text-strong);
+  font-weight: var(--fw-bold);
+  text-decoration: none;
+}
+
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
 @media (max-width: 699.98px) {
+  /* 대상 링크 줄이 전폭을 차지해 「보관 포함」은 처음부터 다음 줄에 선다(vendors .kindNav와 같은 값 — 글꼴 전후 줄 이동 없음). */
+  .targetNav {
+    flex: 1 1 100%;
+  }
+
   .toggle {
     display: inline-flex;
     align-items: center;

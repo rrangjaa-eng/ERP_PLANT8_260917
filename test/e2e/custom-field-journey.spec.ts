@@ -67,7 +67,8 @@ test("관리 화면에서 만든 칸: 추가 → 보임 → 값 저장 → 계�
   const label = `${PREFIX}${tail}`;
   const value = `여정값${tail}`;
   const vendorName = `V여정${tail}`;
-  const editorCell = `${editor.roleName} · ${label}`;
+  // 07.5-05 S7: 노출표 행 이름 = `{대상} · {칸 이름}` — 체크박스 이름도 같은 글자를 따른다.
+  const editorCell = `${editor.roleName} · 거래처 · ${label}`;
 
   await login(page, admin);
 
@@ -87,7 +88,7 @@ test("관리 화면에서 만든 칸: 추가 → 보임 → 값 저장 → 계�
   await page.goto("/admin/vendors?new=1");
   await expect(page.getByLabel(label, { exact: true })).toBeVisible();
   await page.goto("/admin/visibility");
-  await expect(page.getByRole("rowheader", { name: label })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: `거래처 · ${label}` })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: editorCell, exact: true })).toBeChecked();
 
   // ② 값 저장.
@@ -134,7 +135,7 @@ test("관리 화면에서 만든 칸: 추가 → 보임 → 값 저장 → 계�
     await expect(page.getByLabel(label, { exact: true })).toHaveCount(0);
     expect(await page.content()).not.toContain(value);
     await page.goto("/admin/visibility");
-    await expect(page.getByRole("rowheader", { name: label })).toHaveCount(0);
+    await expect(page.getByRole("rowheader", { name: `거래처 · ${label}` })).toHaveCount(0);
     await expect(page.locator("#main-content")).not.toContainText(label);
 
     // ⑤ 보관함에서 복원 → 시스템 관리자에게 칸 · 값 · 노출표 열이 돌아오고, 계급별 끔은 그대로다.
@@ -142,14 +143,14 @@ test("관리 화면에서 만든 칸: 추가 → 보임 → 값 저장 → 계�
     const archiveRow = page.locator("tr", { hasText: label });
     await expect(archiveRow).toContainText("화면 항목");
     await archiveRow.getByRole("button", { name: "복원" }).click();
-    await expect(page.getByText(`복원 · ${label} 복원됨`)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(`복원 · 거래처 · ${label} 복원됨`)).toBeVisible({ timeout: 15000 });
 
     await page.goto(editHref!);
     await expect(page.getByLabel(label, { exact: true })).toHaveValue(value);
     await page.goto("/admin/visibility");
-    await expect(page.getByRole("rowheader", { name: label })).toBeVisible();
+    await expect(page.getByRole("rowheader", { name: `거래처 · ${label}` })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: editorCell, exact: true })).not.toBeChecked();
-    await expect(page.getByRole("checkbox", { name: `시스템 관리자 · ${label}`, exact: true })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: `시스템 관리자 · 거래처 · ${label}`, exact: true })).toBeChecked();
 
     await expectHiddenFrom(editorPage, editHref!, vendorName, label, value);
   } finally {

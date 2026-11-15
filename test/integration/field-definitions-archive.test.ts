@@ -118,9 +118,26 @@ describe("칸 보관 · 복원 권한 (04.5-04)", () => {
     const adminList = await listArchive(admin);
     expect(adminList.find((item) => item.entity === ENTITY && item.id === field.id)).toMatchObject({
       label: "화면 항목",
-      name: "목록 칸 비",
+      name: "거래처 · 목록 칸 비",
       restorable: true,
     });
+  });
+
+  // 07.5-05 S7 · eng C-1: 같은 이름 칸이 대상마다 있어 보관함 행 이름에 대상 접두를 붙인다.
+  it("보관함 화면 항목 행 이름은 `{대상} · {칸 이름}` — 같은 이름 거래처 · 프로젝트 칸이 구분된다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const vendorField = await createFieldDefinition(admin, textInput("비고"));
+    const projectField = await createFieldDefinition(admin, { ...textInput("비고"), target: "project" });
+    const quoteField = await createFieldDefinition(admin, { ...textInput("규격"), target: "quote_line" });
+    for (const field of [vendorField, projectField, quoteField]) await archive(admin, ENTITY, field.id);
+
+    const names = new Map((await listArchive(admin)).filter((item) => item.entity === ENTITY).map((item) => [item.id, item.name]));
+    expect(names.get(vendorField.id)).toBe("거래처 · 비고");
+    expect(names.get(projectField.id)).toBe("프로젝트 · 비고");
+    expect(names.get(quoteField.id)).toBe("견적 줄 · 규격");
+
+    await restore(admin, ENTITY, projectField.id);
+    expect((await readRow(projectField.id)).archivedAt).toBeNull();
   });
 
   it("칸 관리 보기만 있으면 보관함 목록의 칸 정의 행이 복원 불가다", async () => {
@@ -188,9 +205,10 @@ describe("칸 보관 · 복원 권한 (04.5-04)", () => {
     expect((await readRow(field.id)).version).toBe(3);
   });
 
-  it("대상 밖(프로젝트) 정의는 보관 · 복원이 ArchivableRowNotFoundError이고 보관함 목록에 없다", async () => {
-    const id = `fd-project-${randomUUID()}`;
-    await insertFieldDefinition(SYSTEM_VIEWER, { id, entity: "project", key: `p_${randomUUID().slice(0, 8)}`, type: "text" });
+  // 07.5-05: 프로젝트 · 견적 줄은 대상 상수 안이 됐다 — 대상 밖은 상수에 없는 entity(지출)로 본다.
+  it("대상 밖(지출) 정의는 보관 · 복원이 ArchivableRowNotFoundError이고 보관함 목록에 없다", async () => {
+    const id = `fd-expense-${randomUUID()}`;
+    await insertFieldDefinition(SYSTEM_VIEWER, { id, entity: "expense", key: `p_${randomUUID().slice(0, 8)}`, type: "text" });
 
     await expect(archive(SYSTEM_VIEWER, ENTITY, id)).rejects.toBeInstanceOf(ArchivableRowNotFoundError);
     expect((await readRow(id)).archivedAt).toBeNull();

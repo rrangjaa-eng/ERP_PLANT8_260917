@@ -1,7 +1,20 @@
 // 04.5-08: 화면 항목(커스텀 칸)의 대상 등록부 · 노출표 항목 키 규약 · 길이·개수 상한 · 정렬 기본값.
 // 다른 모듈을 import하지 않는 순수 모듈 — 클라이언트 폼도 이 파일을 import한다.
-export const FIELD_DEFINITION_TARGETS = ["vendor"] as const;
+// 07.5-05 D-7502: 순서 = 관리 화면 대상 링크 · 노출표 행 · 보관함 행 순서. entity 글자는 PROJECT_ENTITY · QUOTE_LINE_ENTITY와 같다
+// (이 파일은 의존 0을 지키려고 import하지 않고 글자로 둔다).
+export const FIELD_DEFINITION_TARGETS = ["vendor", "project", "quote_line"] as const;
 export type FieldDefinitionTarget = (typeof FIELD_DEFINITION_TARGETS)[number];
+
+export const TARGET_LABELS: Record<FieldDefinitionTarget, string> = {
+  vendor: "거래처",
+  project: "프로젝트",
+  quote_line: "견적 줄",
+};
+
+// 저장된 entity 글자를 대상 타입으로 좁힌다(상수 밖이면 거짓).
+export function isFieldDefinitionTarget(entity: string): entity is FieldDefinitionTarget {
+  return FIELD_DEFINITION_TARGETS.some((target) => target === entity);
+}
 
 export const FIELD_NAME_MAX = 20;
 export const OPTION_MAX_LENGTH = 40;

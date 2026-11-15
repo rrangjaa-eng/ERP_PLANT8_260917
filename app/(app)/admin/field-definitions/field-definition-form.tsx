@@ -10,7 +10,12 @@ import { TextField } from "@/ui/input/TextField";
 import { Select } from "@/ui/select/Select";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import { ACTIVE_OPTIONS_MAX, FIELD_NAME_MAX, OPTION_MAX_LENGTH } from "@/domain/custom-fields/targets";
+import {
+  ACTIVE_OPTIONS_MAX,
+  FIELD_NAME_MAX,
+  OPTION_MAX_LENGTH,
+  type FieldDefinitionTarget,
+} from "@/domain/custom-fields/targets";
 import {
   FIELD_DEFINITION_CONFLICT_CAUSE,
   NAME_CONFLICT_ARCHIVED_RESTORE_MESSAGE,
@@ -55,7 +60,10 @@ const FORM_ID = "field-definition-form";
 const REASON_ID = "fd-form-reason";
 const NAME_ERROR_ID = "fd-name-error";
 const VISIBILITY_HREF = "/admin/visibility";
-const NEW_HREF = "/admin/field-definitions?new=1";
+// 수정 패널 「새 화면 항목 추가」 — 지금 대상을 싣는다(대상을 잃으면 거래처 등록 폼이 열린다, 07.5-05 eng C-4).
+function newHref(target: FieldDefinitionTarget): string {
+  return `/admin/field-definitions?target=${target}&new=1`;
+}
 
 // 충돌 원인의 「 · 」 앞 — 이유 자리 글자(「수정할 수 없음 — {이것} · 」)이고 뒤의 다음 한 수는 3차 버튼이 그린다.
 const CONFLICT_REASON = FIELD_DEFINITION_CONFLICT_CAUSE.split(" · ")[0] ?? FIELD_DEFINITION_CONFLICT_CAUSE;
@@ -91,6 +99,8 @@ const EMPTY_OPTIONS: OptionState = { active: [], archived: [] };
 
 type FormProps = {
   cancelHref: string;
+  /** 지금 고른 대상(`?target=`) — 등록 제출 객체에 싣는다. 수정은 저장된 대상 그대로(입력에 대상 없음). */
+  target: FieldDefinitionTarget;
   /** null이면 등록 모드. */
   editing: EditingField | null;
   /** 정렬 순서 기본값 = min(활성 최대값 + 1, 999), 활성 정의가 없으면 1(서버가 계산해 넘긴다). */
@@ -103,7 +113,7 @@ type FormProps = {
 // 정렬 기본값이 채워져 있다. 성공 뒤(UQ-8 B): 등록은 패널을 열어 둔 채 칸을 비우고(`PanelForm.succeed` — 첫 칸 포커스 · 결과 한 줄) 다음 정렬 기본값을
 // 채운다 · 수정은 닫힌다. 화면 항목에는 상세 화면이 없어 R9 D의 상세 이동은 해당 없다. 수정 폼은 타입이 읽기 전용(새 칸을 만든다)이고 숨은 version을
 // 싣고 버전 조건부로 저장한다 — page.tsx가 `key`에 version을 넣어 「새로 불러오기」가 최신 행으로 폼을 다시 채운다.
-export function FieldDefinitionForm({ cancelHref, editing, defaultSortOrder, canViewVisibility }: FormProps) {
+export function FieldDefinitionForm({ cancelHref, target, editing, defaultSortOrder, canViewVisibility }: FormProps) {
   const router = useRouter();
   const panelRef = useRef<PanelFormHandle>(null);
   const submitted = useRef({ name: "", sortOrder: 0 });
@@ -208,6 +218,7 @@ export function FieldDefinitionForm({ cancelHref, editing, defaultSortOrder, can
       required: payload.required,
       sortOrder: payload.sortOrder,
       options: payload.options,
+      target,
     });
   }
 
@@ -302,7 +313,7 @@ export function FieldDefinitionForm({ cancelHref, editing, defaultSortOrder, can
             <Form.Field id="fd-type" label="타입" width="select">
               <span className={styles.typeText}>
                 <output id="fd-type">{TYPE_OPTIONS.find((option) => option.value === editing.type)?.label}</output>
-                <Link href={NEW_HREF} className={buttonLinkClassName("tertiary")}>
+                <Link href={newHref(target)} className={buttonLinkClassName("tertiary")}>
                   새 화면 항목 추가
                 </Link>
               </span>

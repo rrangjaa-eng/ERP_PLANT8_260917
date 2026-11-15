@@ -218,7 +218,8 @@ describe("mask_reveal · cert_correct detail — ip · submissionId", () => {
     expect(rows.map((row) => row.detail)).toEqual([
       { fields: ["주민등록번호", "연락처"], ip: IP, submissionId: seeded.submissionId },
     ]);
-    const text = JSON.stringify(rows[0]?.detail);
+    // submissionId(무작위 UUID)는 위 toEqual이 이미 고정했다 — 숫자 검사에서 빼야 UUID에 우연히 든 `5555`로 깨지지 않는다(#392 CI).
+    const text = JSON.stringify({ ...(rows[0]?.detail as Record<string, unknown> | undefined), submissionId: undefined });
     expect(text).not.toMatch(/\d{13}/);
     expect(text).not.toContain(newRrn.slice(6));
     expect(text).not.toContain("5555");

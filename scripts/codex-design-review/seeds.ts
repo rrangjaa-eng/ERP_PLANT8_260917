@@ -1499,6 +1499,40 @@ async function customFieldsFilled(): Promise<SeedResult> {
   return { vars: { vendorFilterQuery: `cf_${filterKey}=${encodeURIComponent("서울")}` }, viewer };
 }
 
+// custom-fields-scale: 07.5-05(S1 · S7 scale backstop) — 관리 화면 · 정보 노출표 · 보관함 규모 캡처용. 세 대상마다 칸 20개(이름 정확히 20자 ·
+// 타입 넷을 돌아가며 · 선택 칸은 선택지 3개)를 전 계급 보임으로 둔다. 정의는 (대상, 이름)으로 이미 있으면 다시 쓴다(경로마다 시드를 다시 부른다).
+const SCALE_TARGETS = [
+  { entity: "vendor", prefix: "거래처규모" },
+  { entity: "project", prefix: "프로젝트규모" },
+  { entity: "quote_line", prefix: "견적줄규모" },
+] as const;
+const SCALE_TYPES = ["text", "number", "date", "select"] as const;
+
+function scaleLabel(prefix: string, index: number): string {
+  const base = `${prefix} 칸${String(index).padStart(2, "0")} `;
+  return base.padEnd(20, "가나다라마바사아자차카타파하");
+}
+
+async function customFieldsScale(): Promise<SeedResult> {
+  const today = seoulToday();
+  const suffix = randomUUID().slice(0, 6);
+  for (const { entity, prefix } of SCALE_TARGETS) {
+    for (let index = 1; index <= 20; index += 1) {
+      const type = SCALE_TYPES[(index - 1) % SCALE_TYPES.length]!;
+      await ensureCustomFieldDefinition(entity, {
+        label: scaleLabel(prefix, index),
+        type,
+        sortOrder: index,
+        ...(type === "select" ? { options: ["첫째 선택지", "둘째 선택지", "셋째 선택지"] } : {}),
+      });
+    }
+  }
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처규모본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처규모팀-${suffix}` });
+  const viewer = await makePerson("관리", SYSADMIN_ROLE_ID, team.id, `${today.slice(0, 4)}-01-01`);
+  return { vars: {}, viewer };
+}
+
 // custom-fields-filled-pm: 07.5-02(S2 · S3) 프로젝트 등록 패널 · 정보 면 추가 칸 캡처용 — 담당 PM이 본다(정보 면 「고치기」가 선다).
 // 프로젝트 칸 7개(전 계급 보임 — 캡처 DB 전용) + 보관 칸 하나. 정렬 2 · 3은 공백 포함 스무 자(긴 라벨 · 머리글 backstop — eng B-14 · design F10).
 // 04가 같은 시나리오를 프로젝트 목록 캡처에 쓴다(열 상한 3 · 거르개 상한 2).
@@ -1667,6 +1701,8 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return customFieldsFilled();
     case "custom-fields-filled-pm":
       return customFieldsFilledPm();
+    case "custom-fields-scale":
+      return customFieldsScale();
     case "revenue-archive-rows":
       return revenueArchiveRows();
   }

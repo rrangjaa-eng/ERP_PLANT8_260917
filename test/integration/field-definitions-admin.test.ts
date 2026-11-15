@@ -355,6 +355,103 @@ describe("화면 항목 이름 예약 · 관리 목록 (04.5-08)", () => {
   });
 });
 
+// 07.5-05 D-7502: 대상을 고른 생성 · 대상 안 이름 유일 · 수정은 저장된 대상 그대로 · 관리 목록은 대상별(기본 거래처).
+describe("화면 항목 대상 (07.5-05)", () => {
+  const uniqueName = (prefix: string) => `${prefix}${randomUUID().slice(0, 6)}`;
+  async function make(admin: Viewer, name: string, target?: "vendor" | "project" | "quote_line") {
+    return createFieldDefinition(admin, { ...input(name), ...(target ? { target } : {}) });
+  }
+
+  async function readRow(id: string) {
+    const [row] = await db.select().from(fieldDefinitions).where(eq(fieldDefinitions.id, id));
+    if (!row) throw new Error("행이 없다");
+    return row;
+  }
+
+  it("target project로 만들면 행 entity · 전 계급 노출 행 cf.project.<key> · 로그 detail이 프로젝트다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const { id, key } = await make(admin, uniqueName("비고"), "project");
+
+    expect((await readRow(id)).entity).toBe("project");
+    const allRoles = await db.select({ id: roles.id }).from(roles);
+    const rows = await db.select().from(visibilityMatrix).where(eq(visibilityMatrix.infoItem, `cf.project.${key}`));
+    expect(rows.map((row) => row.roleId).sort()).toEqual(allRoles.map((role) => role.id).sort());
+    expect(rows.every((row) => row.visible)).toBe(true);
+    const [log] = await db.select().from(actionLog).where(and(eq(actionLog.entity, "field_definitions"), eq(actionLog.entityId, id)));
+    expect(log?.detail).toEqual({ key, entity: "project" });
+  });
+
+  it("target quote_line도 같은 길로 만들어지고, target을 빼면 거래처다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const quote = await make(admin, uniqueName("규격"), "quote_line");
+    const vendor = await make(admin, uniqueName("기본"));
+    expect((await readRow(quote.id)).entity).toBe("quote_line");
+    expect((await readRow(vendor.id)).entity).toBe("vendor");
+  });
+
+  it("이름은 대상 안에서만 유일하다 — 거래처 · 프로젝트 같은 이름 공존, 같은 대상 두 번째는 활성 충돌", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const name = uniqueName("비고");
+    await make(admin, name, "vendor");
+    await make(admin, name, "project");
+    await make(admin, name, "quote_line");
+
+    const attempt = createFieldDefinition(admin, { ...input(name), target: "project" });
+    await expect(attempt).rejects.toBeInstanceOf(DuplicateFieldNameError);
+    await expect(attempt).rejects.toMatchObject({ archived: false });
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(fieldDefinitions)
+      .where(and(eq(fieldDefinitions.label, name), eq(fieldDefinitions.entity, "project")));
+    expect(row?.count).toBe(1);
+  });
+
+  it("수정 — 다른 대상 칸 이름으로는 통과 · 같은 대상 칸 이름은 충돌 · 대상은 바뀌지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const vendorName = uniqueName("거래처칸");
+    const takenName = uniqueName("프로젝트칸");
+    await make(admin, vendorName, "vendor");
+    await make(admin, takenName, "project");
+    const target = await make(admin, uniqueName("고칠칸"), "project");
+
+    await updateFieldDefinition(admin, { id: target.id, version: 1, name: vendorName, required: false, sortOrder: 1 });
+    const after = await readRow(target.id);
+    expect(after.label).toBe(vendorName);
+    expect(after.entity).toBe("project");
+
+    const attempt = updateFieldDefinition(admin, { id: target.id, version: 2, name: takenName, required: false, sortOrder: 1 });
+    await expect(attempt).rejects.toBeInstanceOf(DuplicateFieldNameError);
+    expect((await readRow(target.id)).label).toBe(vendorName);
+  });
+
+  it("관리 목록은 고른 대상의 정의만이고 인자 없이 부르면 거래처다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const quote = await make(admin, uniqueName("견적칸"), "quote_line");
+    const vendor = await make(admin, uniqueName("거래칸"), "vendor");
+
+    const quoteList = await listFieldDefinitionsForAdmin(admin, "quote_line");
+    expect(quoteList.map((dto) => dto.id)).toContain(quote.id);
+    expect(quoteList.map((dto) => dto.id)).not.toContain(vendor.id);
+    expect(quoteList.map((dto) => dto.id)).toEqual((await listFieldDefinitions(admin, "quote_line")).map((row) => row.id));
+
+    const defaultList = await listFieldDefinitionsForAdmin(admin);
+    expect(defaultList.map((dto) => dto.id)).toContain(vendor.id);
+    expect(defaultList.map((dto) => dto.id)).not.toContain(quote.id);
+    for (const dto of quoteList) {
+      expect(Object.keys(dto).sort()).toEqual([...FIELD_DEFINITION_ADMIN_DTO_FIELDS].sort());
+    }
+  });
+
+  it("상수 밖 target은 domain이 거부하고 행이 늘지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const before = await countFieldDefinitions();
+    // 타입 밖 글자를 액션 밖 호출자처럼 넣는다 — 스키마가 막는지 본다.
+    const forged = { ...input(uniqueName("위조")), target: "vendors" } as unknown as Parameters<typeof createFieldDefinition>[1];
+    await expect(createFieldDefinition(admin, forged)).rejects.toThrow();
+    expect(await countFieldDefinitions()).toBe(before);
+  });
+});
+
 // 04.5-02: 칸 수정 — 버전 조건부 갱신 · 보관 먼저 판정 · 타입 불변 · 이름 예약(자기 제외).
 describe("화면 항목 수정 (04.5-02)", () => {
   const uniqueName = (prefix: string) => `${prefix}${randomUUID().slice(0, 6)}`;
@@ -496,10 +593,11 @@ describe("화면 항목 수정 (04.5-02)", () => {
     expect(await readRow(id)).toEqual(before);
   });
 
-  it("없는 id와 대상 상수 밖(프로젝트) 정의의 수정은 「화면 항목 없음」으로 거부되고 행이 바뀌지 않는다", async () => {
+  // 07.5-05: 프로젝트 · 견적 줄은 대상 상수 안이 됐다 — 대상 밖은 상수에 없는 entity(지출)로 본다.
+  it("없는 id와 대상 상수 밖(지출) 정의의 수정은 「화면 항목 없음」으로 거부되고 행이 바뀌지 않는다", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID);
     const projectId = `fd-${randomUUID()}`;
-    await insertFieldDefinition(SYSTEM_VIEWER, { id: projectId, entity: "project", key: `cf_pj${randomUUID().slice(0, 6)}`, label: uniqueName("프로젝트칸"), type: "text" });
+    await insertFieldDefinition(SYSTEM_VIEWER, { id: projectId, entity: "expense", key: `cf_ex${randomUUID().slice(0, 6)}`, label: uniqueName("대상밖칸"), type: "text" });
     const before = await readRow(projectId);
 
     await expect(updateFieldDefinition(admin, edit(`fd-없음-${randomUUID()}`, 1, uniqueName("없음")))).rejects.toBeInstanceOf(FieldDefinitionNotFoundError);

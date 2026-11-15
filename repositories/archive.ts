@@ -25,7 +25,7 @@ import { findVendorById, setVendorArchived } from "@/repositories/vendors";
 import { findQuoteLineById, setQuoteLineArchived } from "@/repositories/quote-lines";
 import { findHolidayById, listArchivedHolidays } from "@/repositories/holidays";
 import { findFieldDefinitionById, listArchivedFieldDefinitions, setFieldDefinitionArchived } from "@/repositories/field-definitions";
-import { FIELD_DEFINITION_TARGETS } from "@/domain/custom-fields/targets";
+import { FIELD_DEFINITION_TARGETS, isFieldDefinitionTarget, TARGET_LABELS } from "@/domain/custom-fields/targets";
 import { findProjectById, listArchivedProjectNames } from "@/repositories/projects";
 import { findEntriesByIds as findReserveEntriesByIds, setEntryArchived as setReserveEntryArchived, listArchivedEntryNames as listArchivedReserveEntryNames } from "@/repositories/reserve-entries";
 import { findRevenueEntryById, listArchivedRevenueEntryNames } from "@/repositories/revenue-entries";
@@ -317,7 +317,8 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
       return rows.map((row) => ({ entity: "project", label: "프로젝트", id: row.id, name: `${row.number} ${row.name}`, archivedAt: row.archivedAt, archivedBy: row.archivedBy, projectId: row.id }));
     },
   },
-  // 04.5-04(D10-12 · O21) — 화면 항목(칸 정의). 대상 상수 밖(프로젝트 · 견적 줄) 정의는 「없음」으로 본다(O13).
+  // 04.5-04(D10-12 · O21) — 화면 항목(칸 정의). 대상 상수 밖 정의는 「없음」으로 본다(O13).
+  // 07.5-05 S7: 행 이름 = `{대상} · {칸 이름}` — 같은 이름 칸이 대상마다 있을 수 있다.
   {
     entity: "field_definitions",
     label: "화면 항목",
@@ -332,7 +333,14 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     },
     async listArchived(viewer) {
       const rows = await listArchivedFieldDefinitions(viewer, FIELD_DEFINITION_TARGETS);
-      return rows.map((row) => ({ entity: "field_definitions", label: "화면 항목", id: row.id, name: row.label, archivedAt: row.archivedAt, archivedBy: row.archivedBy }));
+      return rows.map((row) => ({
+        entity: "field_definitions",
+        label: "화면 항목",
+        id: row.id,
+        name: isFieldDefinitionTarget(row.entity) ? `${TARGET_LABELS[row.entity]} · ${row.label}` : row.label,
+        archivedAt: row.archivedAt,
+        archivedBy: row.archivedBy,
+      }));
     },
   },
 ];

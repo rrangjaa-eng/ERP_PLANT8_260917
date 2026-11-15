@@ -122,6 +122,10 @@ describe("parseArgs", () => {
     expect(parseArgs(["/expenses/{expenseId}", "--out", "test-results/r.md", "--seed", "evidence-private-type"]).seed).toBe("evidence-private-type");
   });
 
+  it("--seed custom-fields-scale도 받는다(07.5-05 — 대상마다 칸 20개 · 이름 20자 규모 시드)", () => {
+    expect(parseArgs(["/admin/visibility", "--out", "test-results/r.md", "--seed", "custom-fields-scale"]).seed).toBe("custom-fields-scale");
+  });
+
   it("--plan은 반복할 수 있다", () => {
     const args = parseArgs([
       "/x",

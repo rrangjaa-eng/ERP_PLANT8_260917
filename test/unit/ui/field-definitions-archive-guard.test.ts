@@ -84,3 +84,14 @@ describe("보관 · 복원 액션의 재검증 경로 (04.5-04)", () => {
     expect(registry).toMatch(/name: "archiveFieldDefinitionAction",\s*menu: "admin\.archive",\s*action: "write",\s*dtoName: null/);
   });
 });
+
+// 07.5-05 Opus 검토 SHOULD-FIX: 생성 액션은 target 필수 · 기본값 없는 액션 스키마를 쓴다(eng C-3).
+// 도메인 스키마(기본값 vendor)로 되돌리면 target이 빠진 제출이 거래처 칸으로 조용히 저장된다.
+describe("화면 항목 생성 액션 스키마 (07.5-05 eng C-3)", () => {
+  const ACTIONS = code("app/(app)/admin/field-definitions/actions.ts");
+
+  it("생성 액션은 createFieldDefinitionActionInput으로 검사한다", () => {
+    expect(ACTIONS).toMatch(/\.schema\(createFieldDefinitionActionInput\)/);
+    expect(ACTIONS).not.toMatch(/\.schema\(createFieldDefinitionInput\)/);
+  });
+});

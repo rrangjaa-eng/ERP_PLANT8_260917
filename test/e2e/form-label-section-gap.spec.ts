@@ -310,7 +310,10 @@ test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.
     await loginAsSysadmin(page);
     await page.goto("/admin/vendors");
     await page.getByRole("link", { name: "거래처 등록" }).first().click();
-    await expect(page.locator("#vendor-form")).toBeVisible();
+    // 거래처 목록은 행 × 추가 칸 열을 다 그린다 — CI는 앞선 스펙의 거래처 수백 줄과 병렬 스펙(field-definitions)의 추가 칸 열 때문에
+    // `?new=1` 다시 그림이 5초를 넘었다(#392 CI e2e(1) 두 번: 「거래처 등록 처리 중」인 채 폼 없음). 로컬 실측: 거래처 450줄에서
+    // 추가 칸 0개 1.5초 · 3개 3.0초. 이 검사는 배치를 재지 속도를 재지 않는다.
+    await expect(page.locator("#vendor-form")).toBeVisible({ timeout: 15000 });
     await expectPanelSelectLayoutAtAllWidths(page, "#vendor-form");
   });
 

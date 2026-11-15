@@ -5,6 +5,7 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { recordAction } from "@/domain/action-log/record";
 import type { SystemStatus } from "@/domain/system-status";
+import type { ObjectStorage } from "@/lib/gcp/storage";
 import {
   countByOwnerKinds,
   countCounterRowsExcept,
@@ -12,6 +13,7 @@ import {
   countRows,
   deleteAll,
   deleteByOwnerKinds,
+  listFileObjectKeys,
   lockDeleteTables,
   lockMarkerExclusive,
   readMarker,
@@ -48,11 +50,24 @@ export class CutoverRefusedError extends Error {
 
 type Snapshot = { counts: Record<string, number>; counters: number; total: number; token: string };
 
+// 남는 업무성 표(C2) — dry-run에 정보로만 보인다(확인 문자열에는 넣지 않는다 · CEO 검토 2026-11-04 CEO8-8).
+const KEPT_INFO_TABLES = ["leave_adjustments", "evidence_records", "evidence_import_batches"] as const;
+
 export type DryRunResult =
-  | ({ mode: "dry-run" } & Snapshot)
+  | ({ mode: "dry-run"; objects: number; kept: Record<(typeof KEPT_INFO_TABLES)[number], number> } & Snapshot)
   | { mode: "dry-run"; marker: string; demoRemaining: number };
 
-export type ApplyResult = { mode: "apply"; marker: string } & Snapshot;
+// objectKeys — 삭제 전에 같은 트랜잭션에서 읽은 증빙 파일 키(커밋 뒤 cleanupCutoverObjects가 지운다).
+export type ApplyResult = { mode: "apply"; marker: string; objectKeys: string[] } & Snapshot;
+
+// eng 검토 1회차 2026-11-04 (E4): 정리 루프 상한 — Job 15분(--task-timeout) · 요청당 10초 두 번 안에서 멈춘다.
+export const OBJECT_CLEANUP_MAX_MS = 600_000;
+export const OBJECT_CLEANUP_MAX_CONSECUTIVE_FAILURES = 5;
+
+export type CleanupStorage = Pick<ObjectStorage, "release" | "delete">;
+
+// CLI가 `cutover.objects` 로그로 남긴다. stopped — null(끝까지) · time · failures(멈춘 뒤 남은 키는 전부 고아).
+export type ObjectCleanupResult = { total: number; deleted: number; orphaned: number; orphanKeys: string[]; stopped: null | "time" | "failures" };
 
 // 표 이름 순 `이름=수` 줄(+ document_counters=초기화 행 수)의 sha256 앞 8자리, 앞에 총건수.
 export function confirmToken(counts: Record<string, number>, counters: number): { total: number; token: string } {
@@ -92,7 +107,41 @@ function isBackupFresh(backup: Backup, now: Date): boolean {
 export async function dryRunCutover(viewer: Viewer): Promise<DryRunResult> {
   const marker = await readMarker(viewer);
   if (marker) return { mode: "dry-run", marker, demoRemaining: await countDemoRows(viewer, SOURCE_NOT_DEMO) };
-  return { mode: "dry-run", ...(await snapshot(viewer)) };
+  const kept = { leave_adjustments: 0, evidence_records: 0, evidence_import_batches: 0 };
+  for (const table of KEPT_INFO_TABLES) kept[table] = await countRows(viewer, table);
+  const objects = (await listFileObjectKeys(viewer, DELETE_FILE_OWNER_KINDS)).length;
+  return { mode: "dry-run", ...(await snapshot(viewer)), objects, kept };
+}
+
+// 키마다 보존 표식 해제 → 삭제. 실패는 모아 계속하되 시간 · 연속 실패 상한에서 멈춘다. 객체 결과는 DB 전환을 되돌리지 않는다.
+export async function cleanupCutoverObjects(
+  keys: readonly string[],
+  deps: { storage: CleanupStorage },
+  opts: { now: () => Date },
+): Promise<ObjectCleanupResult> {
+  const startedAt = opts.now().getTime();
+  const orphanKeys: string[] = [];
+  let deleted = 0;
+  let consecutiveFailures = 0;
+  let stopped: ObjectCleanupResult["stopped"] = null;
+  for (const [index, key] of keys.entries()) {
+    if (opts.now().getTime() - startedAt > OBJECT_CLEANUP_MAX_MS) stopped = "time";
+    else if (consecutiveFailures >= OBJECT_CLEANUP_MAX_CONSECUTIVE_FAILURES) stopped = "failures";
+    if (stopped) {
+      orphanKeys.push(...keys.slice(index));
+      break;
+    }
+    try {
+      await deps.storage.release(key);
+      await deps.storage.delete(key);
+      deleted += 1;
+      consecutiveFailures = 0;
+    } catch {
+      orphanKeys.push(key);
+      consecutiveFailures += 1;
+    }
+  }
+  return { total: keys.length, deleted, orphaned: orphanKeys.length, orphanKeys, stopped };
 }
 
 export async function applyCutover(
@@ -112,6 +161,8 @@ export async function applyCutover(
 
     const current = await snapshot(viewer, tx);
     if (current.token !== input.confirm) throw new CutoverRefusedError("confirm_mismatch");
+    // 판을 비우면 파일 키를 잃는다(260907 시험파일지우기.mjs:5) — 삭제 전에 같은 트랜잭션에서 읽는다.
+    const objectKeys = await listFileObjectKeys(viewer, DELETE_FILE_OWNER_KINDS, tx);
 
     const assertDeleted = (table: string, deleted: number) => {
       if (deleted !== current.counts[table]) throw new Error(`전환 중단: ${table} 지운 행 ${deleted} ≠ 센 건수 ${current.counts[table]}`);
@@ -132,6 +183,6 @@ export async function applyCutover(
       },
       { tx },
     );
-    return { mode: "apply", ...current, marker };
+    return { mode: "apply", ...current, marker, objectKeys };
   });
 }

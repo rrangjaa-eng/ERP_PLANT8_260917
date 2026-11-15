@@ -51,12 +51,14 @@ export function parseArgs(argv: string[]): CutoverArgs {
 }
 
 export type CliDeps = {
-  domain: Pick<typeof CutoverDomain, "dryRunCutover" | "applyCutover" | "CutoverRefusedError">;
+  domain: Pick<typeof CutoverDomain, "dryRunCutover" | "applyCutover" | "cleanupCutoverObjects" | "CutoverRefusedError">;
   cutoverDeps: CutoverDomain.CutoverDeps;
   viewer: Viewer;
   log: Pick<typeof Log, "info" | "warn">;
   appEnv: string;
   now: () => Date;
+  // 운영 · 스테이징은 gcs 드라이버(getObjectStorage). apply 전에 부른다 — 버킷 설정이 없으면 아무것도 지우기 전에 끝난다.
+  getStorage: () => CutoverDomain.CleanupStorage;
 };
 
 export async function runCli(argv: string[], loadDeps: () => Promise<CliDeps>): Promise<number> {
@@ -77,12 +79,20 @@ export async function runCli(argv: string[], loadDeps: () => Promise<CliDeps>): 
       log.info("cutover.done", { env: deps.appEnv, ...(await domain.dryRunCutover(deps.viewer)) });
       return 0;
     }
-    const result = await domain.applyCutover(
+    const storage = deps.getStorage();
+    const { objectKeys, ...result } = await domain.applyCutover(
       deps.viewer,
       { confirm: args.confirm ?? "", now: deps.now(), runUrl: args.runUrl },
       deps.cutoverDeps,
     );
-    log.info("cutover.done", { env: deps.appEnv, ...result });
+    // eng 검토 1회차 2026-11-04 (E4): 커밋 직후 · 정리 전에 DB 결과와 지울 키 전부를 먼저 남긴다 — 정리 중 Job이 끊겨도
+    // 전환 여부와 남은 키가 로그에 있다(pending만 있고 cutover.objects가 없으면 정리 중 끊긴 것).
+    log.info("cutover.done", { env: deps.appEnv, ...result, objects: objectKeys.length });
+    if (objectKeys.length === 0) return 0;
+    log.info("cutover.objects.pending", { total: objectKeys.length, keys: objectKeys });
+    const objects = await domain.cleanupCutoverObjects(objectKeys, { storage }, { now: deps.now });
+    if (objects.orphaned > 0) log.warn("cutover.objects", objects);
+    else log.info("cutover.objects", objects);
     return 0;
   } catch (error) {
     if (deps && error instanceof deps.domain.CutoverRefusedError) {
@@ -97,16 +107,25 @@ export async function runCli(argv: string[], loadDeps: () => Promise<CliDeps>): 
 let closeDb: (() => Promise<void>) | null = null;
 
 async function loadDeps(): Promise<CliDeps> {
-  const [client, domain, backup, { log }, { env }, { SYSTEM_VIEWER }] = await Promise.all([
+  const [client, domain, backup, { log }, { env }, { SYSTEM_VIEWER }, { getObjectStorage }] = await Promise.all([
     import("@/db/client"),
     import("@/domain/cutover"),
     import("@/lib/gcp/cloud-sql-admin"),
     import("@/lib/log"),
     import("@/lib/env"),
     import("@/domain/viewer"),
+    import("@/lib/gcp/storage"),
   ]);
   closeDb = client.closeDb;
-  return { domain, cutoverDeps: { getLastBackup: (params) => backup.getLastBackup(params) }, viewer: SYSTEM_VIEWER, log, appEnv: env.APP_ENV, now: () => new Date() };
+  return {
+    domain,
+    cutoverDeps: { getLastBackup: (params) => backup.getLastBackup(params) },
+    viewer: SYSTEM_VIEWER,
+    log,
+    appEnv: env.APP_ENV,
+    now: () => new Date(),
+    getStorage: getObjectStorage,
+  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

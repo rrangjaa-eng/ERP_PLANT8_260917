@@ -7,7 +7,7 @@ import { log } from "@/lib/log";
 // 오류 메시지·로그에는 연산 이름과 상태 코드만 — 객체 키(행사·당첨자 id)·버킷
 // 이름·본문은 넣지 않는다(lib/crypto.ts와 같은 원칙).
 
-export type GcsOp = "put" | "get" | "delete" | "meta" | "move" | "retain";
+export type GcsOp = "put" | "get" | "delete" | "meta" | "move" | "retain" | "release";
 
 export type GcsRequestInit = {
   op: GcsOp;

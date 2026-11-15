@@ -28,7 +28,7 @@ const LAST_TABLE = DELETE_ORDER[DELETE_ORDER.length - 1] ?? "";
 
 async function installTrigger(body: string): Promise<void> {
   await db.execute(sql.raw(`create or replace function cutover_test_hook() returns trigger language plpgsql as $$ begin ${body}; return null; end $$`));
-  await db.execute(sql.raw(`create trigger cutover_test_hook before delete on "${LAST_TABLE}" for each statement execute function cutover_test_hook()`));
+  await db.execute(sql.raw(`create trigger cutover_test_hook BEFORE DELETE on "${LAST_TABLE}" for each statement execute function cutover_test_hook()`));
 }
 
 afterEach(async () => {

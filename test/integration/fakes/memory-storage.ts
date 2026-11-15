@@ -14,6 +14,7 @@ export type MemoryStorage = ObjectStorage & {
   objects: Map<string, ObjectMetadata>;
   moves: { from: string; to: string }[];
   retains: string[];
+  releases: string[];
   deletes: string[];
   signedGets: { key: string; expiresSec: number; filename: string; disposition: string }[];
   put(url: string, object: { size: number; contentType: string; sha256: string; head?: Uint8Array }): void;
@@ -54,6 +55,7 @@ export function createMemoryStorage(): MemoryStorage {
     objects: new Map(),
     moves: [],
     retains: [],
+    releases: [],
     deletes: [],
     signedGets: [],
     failRetain: false,
@@ -124,6 +126,11 @@ export function createMemoryStorage(): MemoryStorage {
     retain(key) {
       if (storage.failRetain) return Promise.reject(new Error("memory storage: retain failed (injected)"));
       storage.retains.push(key);
+      return Promise.resolve();
+    },
+
+    release(key) {
+      storage.releases.push(key);
       return Promise.resolve();
     },
 

@@ -289,6 +289,11 @@ describe("retain — 임시 보존 표식(F9 이중 방어)", () => {
     await expect(storage.release(EVIDENCE_KEY)).rejects.toThrow(GcsUnavailableError);
   });
 
+  it("release는 객체가 없으면(404) 조용히 끝난다 — 이미 지워진 키가 정리 루프의 연속 실패로 세지지 않게", async () => {
+    const { storage } = storageWith([{ status: 404 }]);
+    await expect(storage.release(EVIDENCE_KEY)).resolves.toBeUndefined();
+  });
+
   it("REST 범위는 devstorage.full_control — read_write 범위에서 retain PATCH가 403이었다(스파이크 · 원인 가설)", () => {
     expect(GCS_OBJECT_SCOPE).toBe("https://www.googleapis.com/auth/devstorage.full_control");
   });

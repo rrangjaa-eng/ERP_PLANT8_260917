@@ -422,6 +422,8 @@ export function createGcsStorage(opts: {
         headers: { "Content-Type": "application/json" },
         body: Buffer.from(JSON.stringify({ temporaryHold: false })),
       });
+      // 이미 없는 객체는 풀 표식도 없다 — 이어지는 delete도 404를 조용히 넘긴다.
+      if (res.status === 404) return;
       if (!ok(res.status)) {
         logger.warn("gcs.request_failed", { op: "release", status: res.status, reason: gcsErrorMessage(res) });
         throw new GcsUnavailableError("release", res.status);

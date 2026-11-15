@@ -142,7 +142,7 @@ gcloud sql instances describe plant8-$ENV-db --project=$GCP_PROJECT_ID --format=
 gcloud sql instances patch plant8-$ENV-db --backup-start-time=18:00 --retained-backups-count=7 --project=$GCP_PROJECT_ID
 ```
 
-두 번째는 첫 번째 결과가 `18:00` · 7개와 다를 때만 낸다.
+두 번째는 첫 번째 결과가 `18:00` · 7개와 다를 때만 낸다. PITR을 켠 뒤라면 `pointInTimeRecoveryEnabled`도 본다 — `false`면 `--enable-point-in-time-recovery`를 같은 patch에 더한다.
 
 ## PITR 시점 복원
 

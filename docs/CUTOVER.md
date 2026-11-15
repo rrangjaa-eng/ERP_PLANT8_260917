@@ -36,6 +36,7 @@
 | (a) 이유: `ensure_cert_bucket`이 버킷이 없으면 서비스를 바꾸기 전에 멈춘다 | 사용자 | 승격 로그가 마이그레이션 앞에서 멈추지 않는다 |
 | (a) 보안 스캐너 CI(#109)가 main에 머지됨(첫 승격 선행 · 이 페이즈가 만들지 않는다) | 사용자 | #109 머지 기록 |
 | (b) 머지 동결 — 승격 SHA는 스테이징이 서빙 중인 SHA뿐이다(promote-guard) | 사용자 | 승격이 끝날 때까지 main 머지가 없다 |
+| (b) PITR 켜기 — 인스턴스 설정은 사용자가 한다(전환 전 결정 · 승격 전에 켜 두면 승격 실패 때 시점 복원도 된다) | 사용자 | `gcloud sql instances describe plant8-prod-db` 출력의 `pointInTimeRecoveryEnabled: true` |
 | (c) 수동 백업: `gcloud sql backups create --instance=plant8-prod-db --description=pre-promote-<날짜> --project=$GCP_PROJECT_ID` | 사용자 | `backups list`에서 설명이 맞는 백업이 `SUCCESSFUL` |
 | (c) 승격 뒤에는 9/18 리비전으로 못 돌아간다(rollback-floor — 0012 · 0015 · 0021 · 0036 등이 하한을 올린다) | 사용자 | 위 백업이 유일한 복원점이라는 것을 안다 |
 | (d) `deploy.yml` Run workflow — target=production, sha 비움 | 사용자 | 실행 링크가 success |
@@ -51,8 +52,7 @@
 (f) 실패할 때:
 
 - 마이그레이션 가드가 멈추면 DB는 그대로다(한 트랜잭션 — `test/integration/migration-first-promotion.test.ts`가 고정). 원인을 고친 뒤 다시 승격한다.
-- 스모크 실패 + 하한 거부: 로그에 「rollback FAILED」가 나오면 실패한 새 리비전이 서빙 중이다. 원인을 고쳐 같은 SHA를 재배포하고, 안 되면 pre-promote 백업을 복원한다([`RESTORE.md`](RESTORE.md) §3).
-- PITR은 전환 전에 켠다 — 인스턴스 설정은 사용자가 한다. 증거는 설정 화면 또는 `gcloud sql instances describe plant8-prod-db` 출력의 `pointInTimeRecoveryEnabled: true`.
+- 스모크 실패 + 하한 거부: 로그에 「rollback FAILED」가 나오면 실패한 새 리비전이 서빙 중이다. 원인을 고쳐 같은 SHA를 재배포하고, 안 되면 pre-promote 백업을 복원한다([`RESTORE.md`](RESTORE.md) §3) — 이때 §3 5번(스키마 맞추기)은 건너뛰고 트래픽을 9/18 리비전으로 되돌린다(`gcloud run services update-traffic plant8-prod --to-revisions=<9/18 리비전>=100`). 서빙 중인 새 이미지로 migrate를 돌리면 실패한 마이그레이션이 다시 걸린다.
 - 승격 시점은 지금 먼저 한 번, 전환 전에 한 번 더(§2 (c′) 리허설 앞).
 
 ## 2. 전환 준비
@@ -72,9 +72,9 @@
 | (b) 9/18에 만든 기존 계정은 「정상」으로 보일 수 있다 — 목록을 사람 수와 대조한다. 계정 발급 안내에 연습 안내(§6)를 꼭 넣는다 | 관리자 | 대조한 건수 한 줄 |
 | (c) 로그인 확인 — 사람 목록 「첫 로그인 전」 0명이 목표다 | 관리자 | 목록의 「첫 로그인 전」 건수 |
 | (c) 비밀번호를 안 바꾼 사람이 있어도 전환한다. 그 사람은 전환 뒤 사람 상세 「비밀번호 초기화」로 재발급하고, 화면을 못 쓸 때만 `account.yml reset`. 한 사람 때문에 전환을 미루지 않는다 | 관리자 | 대상 이름 목록 |
-| (c′) 재승격 — §0 선행이 끝나고 08-02 · 08-04가 main에 들어와 스테이징이 초록이면 프로덕션 리허설 앞(전환 1주 이상 전)에 §1 (b)~(e)를 반복한다(수동 백업 `pre-promote-2-<날짜>`) | 사용자 | 승격 실행 링크 success |
+| (c′) 재승격 — §0 선행이 끝나고 08-02 · 08-04가 main에 들어와 스테이징이 초록이면 프로덕션 리허설 앞(전환 1주 이상 전)에 §1 (b)~(e)를 반복한다(§1 (c) 명령의 description을 `pre-promote-2-<날짜>`로 바꾼다) | 사용자 | 승격 실행 링크 success |
 | (c′) 운영 `cutover.yml` env=production · mode=dry-run(읽기만)으로 Job · 건수를 본다 | 사용자 | 요약에 표별 건수가 찍힌다 |
-| (d) 프로덕션 복원 리허설 — 재승격 뒤 `restore-rehearsal.yml` env=production · confirm_production `plant8-prod-db`. 전환 최소 1주 전에 한다 | 사용자 | 실행 success |
+| (d) 프로덕션 복원 리허설 — 재승격 뒤 `restore-rehearsal.yml` env=production · confirm_production `plant8-prod-db`. 전환 최소 1주 전, 재승격 뒤 첫 자동 백업(18:00 UTC)이 끝난 다음에 한다 — 리허설은 최신 자동 백업을 복원한다 | 사용자 | 실행 success |
 | (d) 상태 화면 「복원 리허설」 행의 일시가 그 실행 날짜이고 백업 id가 요약과 같다. 스테이징 성공은 이 조건을 채우지 않는다 | 사용자 | 일시 · 백업 id 대조 한 줄 |
 | (e) 전환일 2027-01-04: 준비 완료(마스터 · 전 직원 계정 · 프로덕션 리허설 1회 성공)는 그 전까지의 조건이다. 안 끝나면 전환하지 않고 사용자가 정한다 | 사용자 | 전환 전날 조건 대조 |
 | (f) 인트라넷 결재 마감 공지 — 전환 3영업일 전. 날짜는 `/admin/holidays` 공휴일 표로 센다 | 관리자 | 공지 날짜 |
@@ -83,7 +83,7 @@
 
 ## 3. 전환일
 
-전환 시각 앞뒤 입력은 멈춘다. 확인 문자열이 다르면 도구가 거부하니 그때는 5번부터 다시 한다.
+전환 시각 앞뒤 입력은 멈춘다. 도구가 거부하면 이유대로 한다: `confirm_mismatch`(사이에 입력) → 5번부터, `backup_not_fresh`(백업이 3시간보다 오래됨) → 4번부터, `already_cut_over` → 다시 돌리지 않고 §4로 간다.
 
 | 단계 | 누가 | 증거 |
 |---|---|---|
@@ -93,7 +93,7 @@
 | 4 **수동 백업** `pre-cutover-<날짜>` | 사용자 | `SUCCESSFUL` + 상태 화면 「마지막 백업」 |
 | 5 `deploy.yml`의 마지막 production 실행이 success인지 먼저 본다 — 아니면 멈춘다. 이어서 `cutover.yml` env=production · mode=**dry-run** · confirm_production `plant8-prod-db` | 사용자 | 요약의 표별 건수 + 확인 문자열 기록 |
 | 6 건수를 사람이 본다(견본 `[테스트]` 데이터도 여기서 드러난다). 연차 조정 · 증빙 줄이 0이 아니어도 apply는 막지 않는다 — 연습 입력이면 §4에서 그 화면으로 바로잡는다 | 관리자 | 표별 건수 한 줄 |
-| 7 같은 워크플로 mode=**apply** · confirm=그 확인 문자열 — 업무 기록 표와 번호 카운터(cert 제외)를 비운다. 다음 프로젝트 번호 27001 · 전환 시각을 같은 트랜잭션에 기록 · 행동 로그는 남는다 | 사용자 | 요약 `cutover.done` |
+| 7 같은 워크플로 env=production · mode=**apply** · confirm=그 확인 문자열 · confirm_production `plant8-prod-db` — 업무 기록 표와 번호 카운터(cert 제외)를 비운다. 다음 프로젝트 번호 27001 · 전환 시각을 같은 트랜잭션에 기록 · 행동 로그는 남는다 | 사용자 | 요약 `cutover.done` |
 | 7 증빙 파일 객체는 커밋 뒤 지운다. 실패는 Job 로그 `cutover.objects`의 고아 목록으로 남는다 | 사용자 | 고아 0 또는 목록 |
 | 8 연습용 마스터 **보관** — 기존 보관함 · `bank_transfer`는 제외 | 관리자 | 각 마스터 화면 기본 목록에 실제 쓰는 행만 있고 `/admin/archive`에 보인다 |
 | 9 진행 중 프로젝트 **재등록** — 대상은 전환일에 인트라넷에서 정산이 끝나지 않은 프로젝트 전부. 견적 줄은 견적 엑셀 올리기로 채우고 전환일 이후 지출만 올린다 | 관리자 | `/projects` 목록 건수 = 인트라넷 미정산 프로젝트 수 |
@@ -111,7 +111,7 @@
 | 연차 조정 입력(사람 상세 연차 칸) | 관리자 | 직원마다 남은 연차가 인트라넷과 같다 |
 | 증빙 일괄 등록(`/expenses/evidence`) | 관리자 | 올린 파일 행 수 · 실패 0 |
 | notify-tick · 「마지막 백업」 눈 확인. 고아 객체가 있으면 Job 로그의 키로 콘솔에서 보류 해제 → 삭제 | 사용자 | 로그 · 상태 화면 |
-| 전환 2주 뒤 프로덕션 복원 리허설 1회 — 직원 입력 표가 복원본에 있는지 | 사용자 | 리허설 실행 success |
+| 전환 2주 뒤 프로덕션 복원 리허설 1회 — 직원 입력 표가 복원본에 있는지(빈 표도 통과하니 요약의 표별 행 수를 본다) | 사용자 | 리허설 실행 success + 직원 입력 표 행 수가 0이 아니다 |
 
 ## 5. 되돌릴 수 없는 문
 

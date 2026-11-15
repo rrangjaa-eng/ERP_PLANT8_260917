@@ -58,7 +58,7 @@ function runBody(step: string): string {
 function bash(body: string, env: Record<string, string>): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", body], {
     cwd: ROOT,
-    env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env },
+    env: { ...process.env, ...env },
     encoding: "utf8",
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -139,6 +139,8 @@ type Scenario = {
   late?: Payload[];
   lateFrom?: number;
   textPayload?: string;
+  // execute가 실행을 만들기 전에 실패(권한 · 인자 오류) — executions list가 직전 실행만 보인다
+  noExecution?: boolean;
 };
 
 type RunResult = {
@@ -164,7 +166,12 @@ case "$*" in
     exit 1
     ;;
   "run jobs executions list "*)
-    echo "plant8-staging-cutover-x7k2p"
+    # execute 전에는 직전 실행 이름 · 뒤에는 이번 실행 이름(no-exec면 실행이 생기지 않은 것)
+    if grep -q '^run jobs execute ' "$D/calls" && [ ! -f "$D/no-exec" ]; then
+      echo "plant8-staging-cutover-x7k2p"
+    else
+      echo "plant8-staging-cutover-old00"
+    fi
     ;;
   "logging read "*'jsonPayload.event=~'*)
     n=$(( $(cat "$D/polls" 2>/dev/null || echo 0) + 1 ))
@@ -195,6 +202,7 @@ function runStep(s: Scenario): RunResult {
     writeFileSync(join(dir, "late-from"), String(s.lateFrom ?? 1));
   }
   if (s.textPayload !== undefined) writeFileSync(join(dir, "text-payload"), s.textPayload);
+  if (s.noExecution) writeFileSync(join(dir, "no-exec"), "");
   const summaryPath = join(dir, "summary.md");
   writeFileSync(summaryPath, "");
   const r = bash(runBody(stepById("run")), {
@@ -260,6 +268,8 @@ describe("cutover.yml — 입력 · 권한 · 그룹(D8-05)", () => {
   it("docs/CUTOVER.md가 같은 이름을 쓴다(cutover.yml · confirm_production · plant8-prod-db · dry-run · apply)", () => {
     for (const name of ["cutover.yml", "confirm_production", "plant8-prod-db", "dry-run", "apply"]) {
       expect(cutoverDoc).toContain(name);
+    }
+    for (const name of ["confirm_production", "plant8-prod-db", "dry-run", "apply"]) {
       expect(workflow).toContain(name);
     }
   });
@@ -486,7 +496,7 @@ describe("cutover.yml — 실패 경로 세 갈래는 요약 한 줄 + 종료 1(
     expect(r.status).toBe(1);
     expect(r.polls).toBe(1);
     expect(r.summary).toContain("거부 · confirm_mismatch");
-    expect(r.summary).toContain("dry-run 뒤 입력이 생김 · CUTOVER §3 5번(dry-run)부터 다시");
+    expect(r.summary).toContain("dry-run 뒤 입력이 생김 · CUTOVER §3 5번 dry-run부터 다시");
     expect(r.calls).toContain("value(textPayload)");
     expect(r.calls).toContain('jsonPayload.event="status.backup_unavailable"');
   });
@@ -506,7 +516,7 @@ describe("cutover.yml — 실패 경로 세 갈래는 요약 한 줄 + 종료 1(
     });
     expect(r.status).toBe(1);
     expect(r.summary).toContain("거부 · backup_not_fresh");
-    expect(r.summary).toContain("백업이 3시간 넘음 · §3 4번(수동 백업)부터 다시");
+    expect(r.summary).toContain("백업이 3시간 넘음 · §3 4번 수동 백업부터 다시");
     expect(r.summary).toContain("kind ok");
   });
 
@@ -526,6 +536,15 @@ describe("cutover.yml — 실패 경로 세 갈래는 요약 한 줄 + 종료 1(
     expect(r.status).toBe(1);
     expect(r.summary).toContain("실행 실패");
     expect(r.summary).toContain("사유: DATABASE_URL 연결 실패");
+  });
+
+  it("execute가 새 실행을 만들지 못하고 실패 → 직전 실행의 로그를 읽지 않고 「실행 실패」 · 종료 1", () => {
+    const r = runStep({ mode: "apply", execStatus: 1, early: [dryDone], noExecution: true });
+    expect(r.status).toBe(1);
+    expect(r.polls).toBe(0);
+    expect(r.summary).toContain("실행 실패");
+    expect(r.summary).not.toContain("다음 apply의 confirm");
+    expect(r.calls).not.toContain("plant8-staging-cutover-old00\"");
   });
 
   it("실행 성공 · 로그 못 찾음 → 「요약 없음 — apply를 다시 돌리지 말고 …」 · 종료 1", () => {

@@ -17,7 +17,7 @@ test.afterAll(async () => {
   await db.delete(holidays).where(inArray(holidays.name, HOLIDAY_NAMES));
 });
 
-async function expectPrimaryBesideNav(page: Page, navName: string, primaryName: string): Promise<void> {
+async function expectPrimaryBesideNav(page: Page, navName: string, primaryName: string, mustFit = false): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
   const nav = page.getByRole("navigation", { name: navName });
   const primary = page.getByRole("link", { name: primaryName, exact: true }).first();
@@ -25,9 +25,30 @@ async function expectPrimaryBesideNav(page: Page, navName: string, primaryName: 
   const navBox = await nav.boundingBox();
   const primaryBox = await primary.boundingBox();
   expect(navBox && primaryBox, "상자").toBeTruthy();
-  // 같은 줄: 1차 위 끝이 링크 줄 상자 안에 있다(다음 줄이면 링크 줄 아래 끝보다 아래).
-  expect(primaryBox!.y, `1차 y ${primaryBox!.y} · 링크 줄 y ${navBox!.y} h ${navBox!.height}`).toBeLessThan(navBox!.y + navBox!.height);
-  expect(primaryBox!.x).toBeGreaterThan(navBox!.x + navBox!.width);
+  // 링크 수는 데이터를 따른다(공휴일 연도 = DB에 있는 해 — CI는 앞선 스펙이 심은 해까지 보여 링크 줄이 길다, #392 e2e(2)).
+  // 그래서 「링크를 한 줄로 늘어놓은 폭 + 줄 간격 + 1차 폭」이 줄 안에 들어갈 때만 같은 줄을 요구하고, 안 들어가면 다음 줄을 요구한다.
+  const fits = await primary.evaluate((link, label) => {
+    const navEl = document.querySelector(`nav[aria-label="${label}"]`)!;
+    let bar = link.parentElement!;
+    while (!bar.contains(navEl)) bar = bar.parentElement!;
+    const list = navEl.querySelector("ul") ?? navEl;
+    const items = [...list.children];
+    const listGap = parseFloat(getComputedStyle(list).columnGap) || 0;
+    const navNatural = items.reduce((sum, item) => sum + item.getBoundingClientRect().width, 0) + listGap * Math.max(items.length - 1, 0);
+    const barStyle = getComputedStyle(bar);
+    const inner = bar.clientWidth - parseFloat(barStyle.paddingLeft) - parseFloat(barStyle.paddingRight);
+    return navNatural + (parseFloat(barStyle.columnGap) || 0) + link.getBoundingClientRect().width <= inner;
+  }, navName);
+  // 연차 보기 링크는 고정 개수라 늘 들어간다 — 이 경우가 「들어가는데 1차가 내려간」 회귀(77b3582e)를 잠근다.
+  if (mustFit) expect(fits, "연차 보기 링크 + 1차는 폰 폭에 들어가야 한다").toBe(true);
+  const where = `맞음 ${fits} · 1차 y ${primaryBox!.y} · 링크 줄 y ${navBox!.y} h ${navBox!.height}`;
+  if (fits) {
+    // 같은 줄: 1차 위 끝이 링크 줄 상자 안에 있다(다음 줄이면 링크 줄 아래 끝보다 아래).
+    expect(primaryBox!.y, where).toBeLessThan(navBox!.y + navBox!.height);
+    expect(primaryBox!.x).toBeGreaterThan(navBox!.x + navBox!.width);
+  } else {
+    expect(primaryBox!.y, where).toBeGreaterThanOrEqual(navBox!.y + navBox!.height);
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
 }
 
@@ -58,6 +79,6 @@ for (const width of [320, 375]) {
     await page.getByRole("button", { name: "로그인" }).click();
     await expect(page).toHaveURL(/\/account$/);
     await page.goto("/leave");
-    await expectPrimaryBesideNav(page, "연차 보기", "연차 신청");
+    await expectPrimaryBesideNav(page, "연차 보기", "연차 신청", true);
   });
 }

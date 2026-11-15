@@ -314,4 +314,54 @@ describe("docs/CUTOVER.md", () => {
     expect(operations).toContain("CUTOVER.md");
     expect(lineCount(operations)).toBeLessThanOrEqual(300);
   });
+
+  // 08-01 Task 2 — §2 전환 준비(D1 · D8-03 · D8-07 · D8-08 · MIG-04).
+  it.each([
+    "plant8-prod-db",
+    "1주",
+    "일시",
+    "첫 로그인 전",
+    "account.yml",
+    "reset",
+    "2027-01-04",
+    "27001",
+    "3영업일",
+    "연차 조정",
+    "리저브 기초 잔액",
+    "정산 결재선 3단",
+    "본부 책임자",
+    "경영관리본부",
+    "연습 안내",
+    "비밀번호 초기화",
+    "둘 다",
+  ])("§2 전환 준비에 '%s'가 있다", (token) => {
+    expect(cutoverSection(content, "## 2. 전환 준비")).toContain(token);
+  });
+
+  it("§2에서 재승격이 프로덕션 리허설(restore-rehearsal.yml)보다 먼저 나온다", () => {
+    const lines = cutoverSection(content, "## 2. 전환 준비").split("\n");
+    const reUpgrade = lines.findIndex((line) => line.includes("재승격"));
+    const rehearsal = lines.findIndex((line) => line.includes("restore-rehearsal.yml"));
+    expect(reUpgrade).toBeGreaterThan(-1);
+    expect(rehearsal).toBeGreaterThan(-1);
+    expect(reUpgrade).toBeLessThan(rehearsal);
+  });
+
+  it("옛 전환일 규칙(다음 달 첫 영업일)과 settings:import 전환 도구가 없다", () => {
+    expect(content).not.toContain("다음 달 첫 영업일");
+    for (const line of content.split("\n").filter((l) => l.includes("settings:import"))) {
+      expect(line).toContain("쓰지 않는다");
+    }
+  });
+
+  // 폰으로 읽는 런북 — 계획의 출처 태그를 옮기지 않고, 표 행 하나는 300자 이하다.
+  it("검토 · 카드 출처 태그가 없다", () => {
+    expect(content).not.toMatch(/검토 \d{4}-\d{2}-\d{2}/);
+    expect(content).not.toMatch(/사용자 카드 \d{4}/);
+  });
+
+  it("표 행 하나는 300자 이하다", () => {
+    const tooLong = content.split("\n").filter((line) => line.startsWith("|") && line.length > 300);
+    expect(tooLong).toEqual([]);
+  });
 });

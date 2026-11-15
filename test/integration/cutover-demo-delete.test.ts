@@ -8,6 +8,7 @@ import {
   expenseDateChangeRequests,
   expenseEvidenceReviews,
   files,
+  leaveAdjustments,
   leaveRequests,
   notificationLog,
   projectBudgetEntries,
@@ -37,7 +38,19 @@ import { insertPayment } from "@/repositories/expense-payments";
 import { insertPurchaseRequest } from "@/repositories/purchase-requests";
 import { seedDemoData } from "@/scripts/demo-data";
 import { SETTING_DEFS } from "@/domain/settings/keys";
-import { applyCutover, CutoverRefusedError, dryRunCutover, type CutoverDeps } from "@/domain/cutover";
+import * as cutoverDomain from "@/domain/cutover";
+import {
+  applyCutover,
+  cleanupCutoverObjects,
+  CutoverRefusedError,
+  dryRunCutover,
+  OBJECT_CLEANUP_MAX_CONSECUTIVE_FAILURES,
+  OBJECT_CLEANUP_MAX_MS,
+  type CleanupStorage,
+  type CutoverDeps,
+} from "@/domain/cutover";
+import { runCli, type CliDeps } from "@/scripts/cutover-cli";
+import { createMemoryStorage } from "./fakes/memory-storage";
 import { CUTOVER_MARKER_KEY } from "@/repositories/cutover";
 import { upsertDocumentCounter } from "@/repositories/document-counters";
 import { seoulToday } from "@/lib/dates";
@@ -336,4 +349,172 @@ describe("전환 apply — 모든 업무 기록 표(08-02 Task 2)", () => {
     expect(Object.keys(sources)).toHaveLength(12);
     expect(sources).toEqual(Object.fromEntries(Object.keys(sources).map((key) => [key, "live"])));
   }, 120_000);
+});
+
+// ── Task 3: 증빙 객체 정리 · 거부 사례 · 전환 뒤 확인 ──
+
+type LogLine = { level: "info" | "warn"; event: string; data: Record<string, unknown> };
+
+function logCollector() {
+  const lines: LogLine[] = [];
+  return {
+    lines,
+    log: {
+      info: (event: string, data?: Record<string, unknown>) => void lines.push({ level: "info", event, data: data ?? {} }),
+      warn: (event: string, data?: Record<string, unknown>) => void lines.push({ level: "warn", event, data: data ?? {} }),
+    },
+  };
+}
+
+function cliDeps(storage: CleanupStorage, logs: ReturnType<typeof logCollector>, getLastBackup: CutoverDeps["getLastBackup"] = freshBackup(10)): () => Promise<CliDeps> {
+  return () =>
+    Promise.resolve({
+      domain: cutoverDomain,
+      cutoverDeps: { getLastBackup },
+      viewer: SYSTEM_VIEWER,
+      log: logs.log,
+      appEnv: "local",
+      now: () => NOW,
+      getStorage: () => storage,
+    });
+}
+
+// 지울 종류(expense) 파일 n개 + 지킬 종류(vendor_document) 1개 — 저장소 키를 돌려준다.
+async function insertEvidenceFiles(count: number): Promise<{ deleteKeys: string[]; keepKey: string }> {
+  const person = await makePerson(`올린이-${randomUUID().slice(0, 6)}`, "role-pm", "기획1팀");
+  const rows = Array.from({ length: count }, () => fileRow("expense", randomUUID(), person.id));
+  const keep = fileRow("vendor_document", randomUUID(), person.id);
+  await db.insert(files).values([...rows, keep]);
+  return { deleteKeys: rows.map((row) => row.objectKey).sort(), keepKey: keep.objectKey };
+}
+
+async function tokenNow(): Promise<string> {
+  const dry = await dryRunCutover(SYSTEM_VIEWER);
+  if (!("token" in dry)) throw new Error("dry-run 건수 없음");
+  return dry.token;
+}
+
+describe("전환 apply — 증빙 객체 정리 · 거부 · 전환 뒤 확인(08-02 Task 3)", () => {
+  it("지운 업무의 증빙 키에만 release → delete를 하고 거래처 서류 키는 건드리지 않는다", async () => {
+    const { deleteKeys, keepKey } = await insertEvidenceFiles(2);
+    const storage = createMemoryStorage();
+    const ops: string[] = [];
+    const tracked: CleanupStorage = {
+      release: (key) => (ops.push(`release ${key}`), storage.release(key)),
+      delete: (key) => (ops.push(`delete ${key}`), storage.delete(key)),
+    };
+
+    const result = await applyCutover(SYSTEM_VIEWER, { confirm: await tokenNow(), now: NOW, runUrl: null }, deps());
+    expect([...result.objectKeys].sort()).toEqual(deleteKeys);
+    const objects = await cleanupCutoverObjects(result.objectKeys, { storage: tracked }, { now: () => NOW });
+
+    expect(objects).toEqual({ total: 2, deleted: 2, orphaned: 0, orphanKeys: [], stopped: null });
+    expect(ops).toEqual(result.objectKeys.flatMap((key) => [`release ${key}`, `delete ${key}`]));
+    expect(ops.some((op) => op.endsWith(keepKey))).toBe(false);
+  });
+
+  it("CLI apply는 커밋 직후 cutover.done → cutover.objects.pending → cutover.objects 순으로 남기고, 한 키 삭제 실패는 고아로 남긴 채 DB는 전환된다", async () => {
+    const { deleteKeys } = await insertEvidenceFiles(2);
+    const storage = createMemoryStorage();
+    const failing = deleteKeys[0] ?? "";
+    const flaky: CleanupStorage = {
+      release: (key) => storage.release(key),
+      delete: (key) => (key === failing ? Promise.reject(new Error("delete failed (injected)")) : storage.delete(key)),
+    };
+    const logs = logCollector();
+
+    const code = await runCli(["--apply", "--confirm", await tokenNow()], cliDeps(flaky, logs));
+
+    expect(code).toBe(0);
+    expect(logs.lines.map((line) => line.event)).toEqual(["cutover.done", "cutover.objects.pending", "cutover.objects"]);
+    expect(logs.lines[0]?.data).toMatchObject({ mode: "apply", objects: 2 });
+    expect(typeof logs.lines[0]?.data.marker).toBe("string");
+    expect([...((logs.lines[1]?.data.keys as string[]) ?? [])].sort()).toEqual(deleteKeys);
+    expect(logs.lines[2]?.data).toMatchObject({ total: 2, deleted: 1, orphaned: 1, orphanKeys: [failing], stopped: null });
+    expect(await countRows("files")).toBe(1);
+    expect(await marker()).not.toBeNull();
+  });
+
+  it("연속 실패 5번이면 정리를 멈추고 남은 키 전부를 고아로 센다 · 종료 0", async () => {
+    const { deleteKeys } = await insertEvidenceFiles(7);
+    const broken: CleanupStorage = { release: () => Promise.reject(new Error("release failed (injected)")), delete: () => Promise.resolve() };
+    const logs = logCollector();
+
+    const code = await runCli(["--apply", "--confirm", await tokenNow()], cliDeps(broken, logs));
+
+    expect(code).toBe(0);
+    const objects = logs.lines.find((line) => line.event === "cutover.objects")?.data;
+    expect(objects).toMatchObject({ total: 7, deleted: 0, orphaned: 7, stopped: "failures" });
+    expect([...((objects?.orphanKeys as string[]) ?? [])].sort()).toEqual(deleteKeys);
+    expect(await marker()).not.toBeNull();
+  });
+
+  it("시간 상한(OBJECT_CLEANUP_MAX_MS)을 넘기면 멈추고 남은 키를 고아로 센다", async () => {
+    const storage = createMemoryStorage();
+    const keys = ["evidence/a", "evidence/b", "evidence/c"];
+    let tick = 0;
+    const clock = () => new Date(NOW.getTime() + tick++ * (OBJECT_CLEANUP_MAX_MS / 2 + 1));
+
+    const result = await cleanupCutoverObjects(keys, { storage }, { now: clock });
+
+    expect(result.stopped).toBe("time");
+    expect(result.deleted).toBeGreaterThanOrEqual(1);
+    expect(result.deleted + result.orphaned).toBe(3);
+    expect(result.orphanKeys).toEqual(keys.slice(result.deleted));
+    expect(OBJECT_CLEANUP_MAX_CONSECUTIVE_FAILURES).toBe(5);
+  });
+
+  it("dry-run은 지울 객체 수와 남는 업무성 표 건수(kept)를 보이고, kept 표에 행을 더해도 확인 문자열은 같다", async () => {
+    await insertEvidenceFiles(3);
+    const person = await makePerson(`연차-${randomUUID().slice(0, 6)}`, "role-pm", "기획1팀");
+    const before = await dryRunCutover(SYSTEM_VIEWER);
+    if (!("token" in before)) throw new Error("dry-run 건수 없음");
+    expect(before.objects).toBe(3);
+    expect(before.kept).toEqual({ leave_adjustments: 0, evidence_records: 0, evidence_import_batches: 0 });
+
+    await db.insert(leaveAdjustments).values({ userId: person.id, bucket: "monthly", amountQuarters: 4, reason: "시험", createdBy: person.id });
+    const after = await dryRunCutover(SYSTEM_VIEWER);
+    if (!("token" in after)) throw new Error("dry-run 건수 없음");
+
+    expect(after.kept.leave_adjustments).toBe(1);
+    expect(after.token).toBe(before.token);
+  });
+
+  it("전환 뒤 dry-run은 표시 시각과 demo 남은 행 0을 보이고, apply 재실행은 already_cut_over로 거부된다", async () => {
+    await makeProject();
+    await applyCutover(SYSTEM_VIEWER, { confirm: await tokenNow(), now: NOW, runUrl: null }, deps());
+    await makeProject();
+
+    const after = await dryRunCutover(SYSTEM_VIEWER);
+    expect(after).toEqual({ mode: "dry-run", marker: await marker(), demoRemaining: 0 });
+
+    const projectsBefore = await countRows("projects");
+    const error = await applyCutover(SYSTEM_VIEWER, { confirm: "0-00000000", now: NOW, runUrl: null }, deps()).catch((e: unknown) => e);
+    expect((error as CutoverRefusedError).reason).toBe("already_cut_over");
+    expect(await countRows("projects")).toBe(projectsBefore);
+    expect(await cutoverApplyLogs()).toBe(1);
+  });
+
+  it("dry-run 뒤 행이 하나 늘면 confirm_mismatch로 거부하고 아무 행도 바꾸지 않는다", async () => {
+    await makeProject();
+    const token = await tokenNow();
+    await makeProject();
+    const projectsBefore = await countRows("projects");
+
+    const error = await applyCutover(SYSTEM_VIEWER, { confirm: token, now: NOW, runUrl: null }, deps()).catch((e: unknown) => e);
+
+    expect((error as CutoverRefusedError).reason).toBe("confirm_mismatch");
+    expect(await countRows("projects")).toBe(projectsBefore);
+    expect(await marker()).toBeNull();
+  });
+
+  it("CLI 백업 거부는 종료 3 · cutover.refused 로그에 reason backup_not_fresh와 backup.kind가 실린다", async () => {
+    const logs = logCollector();
+    const unavailable = () => Promise.resolve({ kind: "unavailable" as const, reason: "Error:permission" });
+
+    const code = await runCli(["--apply", "--confirm", await tokenNow()], cliDeps(createMemoryStorage(), logs, unavailable));
+
+    expect(code).toBe(3);
+    expect(logs.lines).toEqual([{ level: "warn", event: "cutover.refused", data: { reason: "backup_not_fresh", backup: { kind: "unavailable", reason: "Error:permission" } } }]);
+  });
 });

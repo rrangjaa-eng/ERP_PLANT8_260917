@@ -204,4 +204,23 @@ describe("데이터 디렉터리의 객체", () => {
     expect(JSON.parse(await readFile(path.join(dataDir, `${key}.json`), "utf8"))).toMatchObject({ ...meta, retained: true });
     expect(await storage.getMetadata(key)).toEqual(meta);
   });
+
+  // 08-02(C7): 전환 apply가 지운 업무의 증빙 객체는 보존 표식을 푼 뒤 지운다.
+  it("release는 retained 표식을 지우고 · 그 뒤 delete하면 파일 · 사이드카가 없다", async () => {
+    const key = `evidence/${randomUUID()}`;
+    await storage.writeObject(key, Buffer.from([1, 2, 3]), meta);
+    await storage.retain(key);
+
+    await storage.release(key);
+    expect(JSON.parse(await readFile(path.join(dataDir, `${key}.json`), "utf8"))).not.toHaveProperty("retained");
+
+    await storage.delete(key);
+    expect(await storage.readObject(key)).toBeNull();
+    await expect(readFile(path.join(dataDir, `${key}.json`), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(dataDir, key))).rejects.toThrow();
+  });
+
+  it("release는 객체가 없으면 아무것도 하지 않는다", async () => {
+    await expect(storage.release(`evidence/${randomUUID()}`)).resolves.toBeUndefined();
+  });
 });

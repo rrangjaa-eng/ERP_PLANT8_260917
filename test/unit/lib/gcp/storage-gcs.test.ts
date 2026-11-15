@@ -1,7 +1,7 @@
 import { createHash, generateKeyPairSync, sign as rsaSign, verify as rsaVerify } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildV4SignedUrl } from "@/lib/gcp/gcs-v4";
-import type { GcsRequest, GcsRequestInit, GcsResponse } from "@/lib/gcp/gcs";
+import { GcsUnavailableError, type GcsRequest, type GcsRequestInit, type GcsResponse } from "@/lib/gcp/gcs";
 import { createGcsStorage, GCS_OBJECT_SCOPE, type GcsSigner } from "@/lib/gcp/storage";
 
 // 05-12 Task 1(EVID-01 · T-05-1204): gcs 증빙 드라이버의 배관. 네트워크 없음 — 서명기는 실행 중 만든 RSA 키,
@@ -273,6 +273,20 @@ describe("retain — 임시 보존 표식(F9 이중 방어)", () => {
     const { storage, warn } = storageWith([json(403, { error: { code: 403, message: "Insufficient Permission" } })]);
     await expect(storage.retain(EVIDENCE_KEY)).rejects.toThrow("GCS retain 실패: 403");
     expect(warn).toHaveBeenCalledWith("gcs.request_failed", { op: "retain", status: 403, reason: "Insufficient Permission" });
+  });
+
+  // 08-02(C7): 전환 apply가 지운 업무의 증빙 객체는 보존 표식을 푼 뒤 지운다(보류 중 객체는 삭제가 거부된다).
+  it("release는 객체 주소에 PATCH { temporaryHold: false } · 2xx가 아니면 GcsUnavailableError", async () => {
+    const { storage, calls } = storageWith([json(200, {}), { status: 403 }]);
+    await storage.release(EVIDENCE_KEY);
+    expect(calls[0]).toEqual({
+      op: "release",
+      method: "PATCH",
+      url: `https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(EVIDENCE_KEY)}`,
+      headers: { "Content-Type": "application/json" },
+      body: Buffer.from(JSON.stringify({ temporaryHold: false })),
+    });
+    await expect(storage.release(EVIDENCE_KEY)).rejects.toThrow(GcsUnavailableError);
   });
 
   it("REST 범위는 devstorage.full_control — read_write 범위에서 retain PATCH가 403이었다(스파이크 · 원인 가설)", () => {

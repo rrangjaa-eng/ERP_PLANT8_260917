@@ -22,4 +22,40 @@ describe("RESTORE_CHECK_TABLES", () => {
     expect(new Set(names).size).toBe(names.length);
     expect(RESTORE_CHECK_TABLES.some((e) => e.requireRows)).toBe(true);
   });
+
+  // 08-01 CEO-3: 직원 입력 표는 전환 직전 0행일 수 있어 requireRows false로 읽히는지만 본다.
+  it("직원 입력 표 12개가 requireRows false로 들어 있다", () => {
+    const staffTables = [
+      "projects",
+      "quote_revisions",
+      "quote_lines",
+      "revenue_entries",
+      "reserve_entries",
+      "corp_card_usages",
+      "expense_payments",
+      "purchase_requests",
+      "approval_instances",
+      "leave_requests",
+      "corp_cards",
+      "evidence_records",
+    ];
+    for (const table of staffTables) {
+      expect(RESTORE_CHECK_TABLES.find((e) => e.table === table), table).toEqual({ table, requireRows: false });
+    }
+  });
+
+  it("기존 requireRows true 9표는 그대로다", () => {
+    const required = RESTORE_CHECK_TABLES.filter((e) => e.requireRows).map((e) => e.table);
+    expect(required).toEqual([
+      "users",
+      "roles",
+      "permission_matrix",
+      "visibility_matrix",
+      "code_items",
+      "org_units",
+      "teams",
+      "settings_simple",
+      "settings_historized",
+    ]);
+  });
 });

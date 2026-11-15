@@ -96,7 +96,7 @@ Cloud Run/구글 엣지가 예약 경로로 취급해 컨테이너까지 도달�
 target=production, sha 입력(비우면 스테이징이 서빙 중인 SHA) → 가드가 그 SHA 이미지가
 Artifact Registry에 있고 스테이징이 실제로 서빙 중인지 확인 → 통과 시 같은 이미지로 배포.
 GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저장소) — 실행 권한은 저장소
-쓰기 협업자로 제한한다.
+쓰기 협업자로 제한한다. 첫 운영 승격 · 전환일 순서는 [`docs/CUTOVER.md`](CUTOVER.md).
 
 **실패 시:** 카나리(0% → 검증 → 승격) 단계는 없다 — 새 리비전은 스모크 **전에** 이미
 100% 트래픽을 받는다. 그래서 스모크 실패는 나쁜 리비전이 서빙 중이라는 뜻이고,
@@ -295,6 +295,6 @@ base64 -i ~/.codex/auth.json | tr -d '\n'                                # macOS
 
 ## 14. 백업·복원 (OPS-03)
 
-자동 백업은 `deploy.sh`가 켠다(`--backup-start-time=18:00` UTC · `--retained-backups-count=7`, 확인: `gcloud sql instances describe plant8-{env}-db --format='value(settings.backupConfiguration)'`). PITR은 꺼져 있다 — 복원 단위는 하루 1회 자동 백업이고 그 뒤 입력은 복원에서 사라진다.
+자동 백업은 `deploy.sh`가 켠다(`--backup-start-time=18:00` UTC · `--retained-backups-count=7`, 확인: `gcloud sql instances describe plant8-{env}-db --format='value(settings.backupConfiguration)'`). PITR은 전환 전에 켠다([`CUTOVER.md`](CUTOVER.md) §1) — 켠 뒤 특정 시점 복원(클론)은 RESTORE §3, 자동 백업 복원은 하루 1회 단위라 그 뒤 입력은 사라진다.
 리허설: Actions `restore-rehearsal.yml`을 main에서 실행(production은 `confirm_production`에 `plant8-prod-db`) → 임시 `plant8-{env}-rehearsal-<실행 id>-<시도>`에 최신 백업 복원 → `plant8-{env}-restore` Job 확인 → 삭제 → 그 환경 DB에 기록.
 결과는 `/admin/system-status` 「복원 리허설」과 Actions 요약 — 기록 단계 전 이른 실패(WIF 인증 등)는 화면에 남지 않아 이전 결과가 최신처럼 보인다, Actions 실행 결과를 먼저 본다. 남은 임시 인스턴스 정리와 실제 사고 복원은 [`docs/RESTORE.md`](RESTORE.md). 확인증 파기(CERT-02)는 Cloud Scheduler가 월 1회 자동 실행한다(처음은 dry-run, 그동안 월 1회 수동 `--apply`는 계속 · 모드 파일 `infra/purge-certs-auto.mode` · 적용 전환은 사용자 머지 PR) — 절차 · 35일 감시 · 백업 복원 뒤 `--apply`는 [`docs/CERT-PURGE.md`](CERT-PURGE.md).

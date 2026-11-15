@@ -15,7 +15,16 @@ const ROOT = process.cwd();
 const SELF_RELATIVE = "test/unit/no-admin-boolean.test.ts";
 
 // 검사 대상 디렉터리 — 그 안의 .ts·.tsx·.mjs 전부.
-const TARGET_DIRS = ["domain", "repositories", "lib", "ui", "app", "scripts", "test", "eslint"];
+const TARGET_DIRS = [
+  "domain",
+  "repositories",
+  "lib",
+  "ui",
+  "app",
+  "scripts",
+  "test",
+  "eslint",
+];
 
 // 제외 목록:
 // - db/** 전체 — D-37이 남긴 잔여 컬럼 정의(db/schema/auth.ts)와 그 컬럼을
@@ -28,6 +37,9 @@ const TARGET_DIRS = ["domain", "repositories", "lib", "ui", "app", "scripts", "t
 //   두 문장)을 재현해 검증하는 테스트라 잔여 컬럼(관리자 여부 불리언)을 직접
 //   읽고 쓴다. db/schema/auth.ts와 같은 이유로 예외다 — 판정 코드가 아니라
 //   "그 컬럼이 실제로 존재하고 백필된다"는 사실 자체를 검사한다.
+// - test/integration/migration-first-promotion.test.ts — 운영 9/18 뼈대(0003 이전)의
+//   시스템 관리자 행을 그대로 만들어 첫 승격(0003 백필 포함)을 재현하는 테스트라
+//   잔여 컬럼에 직접 값을 넣는다. roles.test.ts와 같은 이유로 예외다.
 const EXCLUDED_DIR_SEGMENTS = new Set([
   "node_modules",
   ".next",
@@ -35,14 +47,20 @@ const EXCLUDED_DIR_SEGMENTS = new Set([
   "playwright-report",
   "test-results",
 ]);
-const EXCLUDED_FILES = new Set([SELF_RELATIVE, "test/unit/eslint-rules/fixtures", "test/integration/roles.test.ts"]);
+const EXCLUDED_FILES = new Set([
+  SELF_RELATIVE,
+  "test/unit/eslint-rules/fixtures",
+  "test/integration/roles.test.ts",
+  "test/integration/migration-first-promotion.test.ts",
+]);
 
 const FORBIDDEN_PATTERNS = ["isAdmin", "is_admin"];
 
 function isExcludedPath(relPath: string): boolean {
   if (EXCLUDED_FILES.has(relPath)) return true;
   const segments = relPath.split("/");
-  if (segments.some((segment) => EXCLUDED_DIR_SEGMENTS.has(segment))) return true;
+  if (segments.some((segment) => EXCLUDED_DIR_SEGMENTS.has(segment)))
+    return true;
   // test/unit/eslint-rules/fixtures/** — 디렉터리 전체를 문자열 접두어로 제외.
   if (relPath.startsWith("test/unit/eslint-rules/fixtures/")) return true;
   return false;

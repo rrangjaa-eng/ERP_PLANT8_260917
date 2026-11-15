@@ -1,20 +1,20 @@
 ---
 gsd_state_version: "1.0"
-current_phase: "07.1"
-current_phase_name: 후속 (carryover-followup) (INSERTED)
+current_phase: 08
+current_phase_name: 전환
 current_plan: 2
 status: executing
-stopped_at: Completed 07.1-20-PLAN.md
-last_updated: "2026-11-04T05:25:07.617Z"
-last_activity: 2026-11-01
-last_activity_desc: Phase 07.1 execution started
-state_head: 34cc9d37e18d429c1ee60cc872e244a16c838a79
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-11-15T09:30:52.462Z"
+last_activity: 2026-11-15
+last_activity_desc: Phase 08 execution started
+state_head: 229e85c8580813d089221ecec89313bffd844fc2
 progress:
-  total_phases: 27
+  total_phases: 29
   completed_phases: 7
-  total_plans: 326
-  completed_plans: 306
-  percent: 26
+  total_plans: 343
+  completed_plans: 336
+  percent: 24
 ---
 
 # Project State
@@ -24,17 +24,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-30)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 07.1 — 후속 (carryover-followup) (INSERTED)
+**Current focus:** Phase 08 — 전환
 
 ## Current Position
 
-Phase: 07.1 (후속 (carryover-followup) (INSERTED)) — EXECUTING
+Phase: 08 (전환) — EXECUTING
 Current Plan: 2
-Total Plans in Phase: 20
+Total Plans in Phase: 8
 Status: Ready to execute
-Last activity: 2026-11-01 — Phase 07.1 execution started
+Last activity: 2026-11-15 — Phase 08 execution started
 
-Progress: [███░░░░░░░] 26%
+Progress: [██░░░░░░░░] 24%
 
 ## Performance Metrics
 
@@ -152,6 +152,7 @@ Progress: [███░░░░░░░] 26%
 | Phase 06 P35 | 40min | 2 tasks | 6 files |
 | Phase 06 P39 | n/a | 3 tasks | 8 files |
 | Phase 07.1 P20 | 47 min | 3 tasks | 9 files |
+| Phase 08 P01 | 40 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -394,6 +395,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-34: 카드 ① 「구매 요청만」 -> 구매 요청 고객 승인 게이트(서버: quote.customer-approval 재사용, 잠긴 tx 최신 차수)
 - [Phase 06]: 06-35: 구매 요청 문도 표 전체 게이트(tableGateReason)를 따르고 줄 고르기 바닥 줄은 서버 projectBlockedReason 우선 (카드 ① 2026-10-14)
 - [Phase 07.1]: 07.1-20: 폰 /cards 행동 열 p3로 숨김 + 삭제는 수정 패널 번호 줄 끝(폰 전용) — 공용 파일 0 변경, 06-14 D-1 선례
+- [Phase 08]: 08-01: 통합 시험 뼈대 자리는 countThrough(_rate_limits_id_column)=3(가정 A1) · CEO-3 직원 입력 표 12개 requireRows false
 
 ### Pending Todos
 
@@ -510,6 +512,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-01T12:28:24.574Z
-Stopped at: Completed 07.1-20-PLAN.md
+Last session: 2026-11-15T09:30:51.877Z
+Stopped at: Completed 08-01-PLAN.md
 Resume file: None

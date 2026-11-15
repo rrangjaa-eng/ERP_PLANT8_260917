@@ -112,6 +112,20 @@ describe("docs/RESTORE.md", () => {
     expect(content).toContain(token);
   });
 
+  // 08-01 Task 3(B9) — 수동 백업(pre-promote · pre-cutover)은 자동 백업 필터에 안 나온다. PITR을 켠 뒤 특정 시점 복원은 클론이다.
+  it("§3에 수동 백업(ON_DEMAND · description=)을 고르는 줄과 PITR 클론 복원이 있다", () => {
+    const lines = content.split("\n");
+    const start = lines.findIndex((line) => line.startsWith("## 3."));
+    const section = lines.slice(start).join("\n");
+    expect(section).toContain("ON_DEMAND");
+    expect(section).toContain("description=");
+    expect(section).toContain("clone");
+  });
+
+  it("OPERATIONS.md에 PITR이 꺼져 있다는 옛 문장이 없다", () => {
+    expect(readDoc("OPERATIONS.md")).not.toContain("PITR은 꺼져 있다");
+  });
+
   // 사고 복원 순서: 쓰기 중단 → 요청 비우기 → 복원 전 안전 백업 → 복원 → 닫힌 채 스키마 맞추기 →
   // 닫힌 채 인증된 확인 → 다시 열기 → 재개(Codex 2차 #5 · CEO-1). 각 토큰이 처음 나오는 줄 번호가 커진다.
   it("사고 복원 여덟 단계 토큰이 처음 나오는 줄 순서가 맞다", () => {
@@ -262,5 +276,144 @@ describe("docs/EVIDENCE-STORAGE.md", () => {
     for (const kind of kinds) {
       expect(kindLine, kind).toContain(`\`${kind}\``);
     }
+  });
+});
+
+// 08-01(MIG-04 · MIG-05) — 첫 운영 승격 · 전환 런북. OPERATIONS.md는 300줄 상한이라 별도 문서(CERT-PURGE.md 선례).
+// `## N. ` 머리부터 다음 `## ` 머리 앞까지 잘라 단언한다(다른 절의 같은 낱말에 속지 않게).
+function cutoverSection(content: string, heading: string): string {
+  const lines = content.split("\n");
+  const start = lines.findIndex((line) => line.startsWith(heading));
+  if (start === -1) return "";
+  const next = lines.findIndex((line, index) => index > start && line.startsWith("## "));
+  return lines.slice(start, next === -1 ? undefined : next).join("\n");
+}
+
+describe("docs/CUTOVER.md", () => {
+  const content = readDoc("CUTOVER.md");
+
+  it("200줄 이하다", () => {
+    expect(lineCount(content)).toBeLessThanOrEqual(200);
+  });
+
+  it("12자리 숫자(프로젝트 번호·백업 id 형태)가 없다(D-03)", () => {
+    expect(content).not.toMatch(/\d{12}/);
+  });
+
+  it("절 머리가 §0 선행 조건 → §6 공지 문안 순서로 있다", () => {
+    const headings = [
+      "## 0. 선행 조건",
+      "## 1. 첫 운영 승격",
+      "## 2. 전환 준비",
+      "## 3. 전환일",
+      "## 4. 전환 직후",
+      "## 5. 되돌릴 수 없는 문",
+      "## 6. 공지 문안",
+    ];
+    const lines = content.split("\n");
+    const order = headings.map((heading) => lines.findIndex((line) => line.startsWith(heading)));
+    for (const index of order) expect(index).toBeGreaterThan(-1);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it.each(["수동 백업", "pre-promote", "verify.yml", "evidence-bucket", "머지 동결", "/api/health", "PITR"])(
+    "§1 첫 운영 승격에 '%s'가 있다",
+    (token) => {
+      expect(cutoverSection(content, "## 1. 첫 운영 승격")).toContain(token);
+    },
+  );
+
+  it("OPERATIONS.md가 이 문서를 가리키고 300줄 이하 그대로다", () => {
+    const operations = readDoc("OPERATIONS.md");
+    expect(operations).toContain("CUTOVER.md");
+    expect(lineCount(operations)).toBeLessThanOrEqual(300);
+  });
+
+  // 08-01 Task 2 — §2 전환 준비(D1 · D8-03 · D8-07 · D8-08 · MIG-04).
+  it.each([
+    "plant8-prod-db",
+    "1주",
+    "일시",
+    "첫 로그인 전",
+    "account.yml",
+    "reset",
+    "2027-01-04",
+    "27001",
+    "3영업일",
+    "연차 조정",
+    "리저브 기초 잔액",
+    "정산 결재선 3단",
+    "본부 책임자",
+    "경영관리본부",
+    "연습 안내",
+    "비밀번호 초기화",
+    "둘 다",
+  ])("§2 전환 준비에 '%s'가 있다", (token) => {
+    expect(cutoverSection(content, "## 2. 전환 준비")).toContain(token);
+  });
+
+  it("§2에서 재승격이 프로덕션 리허설(restore-rehearsal.yml)보다 먼저 나온다", () => {
+    const lines = cutoverSection(content, "## 2. 전환 준비").split("\n");
+    const reUpgrade = lines.findIndex((line) => line.includes("재승격"));
+    const rehearsal = lines.findIndex((line) => line.includes("restore-rehearsal.yml"));
+    expect(reUpgrade).toBeGreaterThan(-1);
+    expect(rehearsal).toBeGreaterThan(-1);
+    expect(reUpgrade).toBeLessThan(rehearsal);
+  });
+
+  it("옛 전환일 규칙(다음 달 첫 영업일)과 settings:import 전환 도구가 없다", () => {
+    expect(content).not.toContain("다음 달 첫 영업일");
+    for (const line of content.split("\n").filter((l) => l.includes("settings:import"))) {
+      expect(line).toContain("쓰지 않는다");
+    }
+  });
+
+  // 폰으로 읽는 런북 — 계획의 출처 태그를 옮기지 않고, 표 행 하나는 300자 이하다.
+  it("검토 · 카드 출처 태그가 없다", () => {
+    expect(content).not.toMatch(/검토 \d{4}-\d{2}-\d{2}/);
+    expect(content).not.toMatch(/사용자 카드 \d{4}/);
+  });
+
+  it("표 행 하나는 300자 이하다", () => {
+    const tooLong = content.split("\n").filter((line) => line.startsWith("|") && line.length > 300);
+    expect(tooLong).toEqual([]);
+  });
+
+  // 08-01 Task 3 — §0 선행 조건 · §3 전환일 · §4 직후 · §6 공지 문안(D8-02 · D8-04 · D8-05 · D8-06 · D1 · D2).
+  it("§3 전환일 순서: 수동 백업 → dry-run → apply → 보관 → 재등록 → 입력 금지 공지가 처음 나오는 줄 순서다", () => {
+    const lines = cutoverSection(content, "## 3. 전환일").split("\n");
+    const order = ["수동 백업", "dry-run", "apply", "보관", "재등록", "입력 금지 공지"].map((token) =>
+      lines.findIndex((line) => line.includes(token)),
+    );
+    for (const index of order) expect(index).toBeGreaterThan(-1);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(new Set(order).size).toBe(order.length);
+  });
+
+  it("§3에서 dry-run이 처음 나오는 줄(5번)에 deploy.yml도 있다", () => {
+    const line = cutoverSection(content, "## 3. 전환일")
+      .split("\n")
+      .find((l) => l.includes("dry-run"));
+    expect(line).toContain("deploy.yml");
+  });
+
+  it.each(["cutover.yml", "plant8-prod-db", "confirm", "늦게 온 비용"])("§3 전환일에 '%s'가 있다", (token) => {
+    expect(cutoverSection(content, "## 3. 전환일")).toContain(token);
+  });
+
+  it.each(["27001", "재발급"])("§4 전환 직후에 '%s'가 있다", (token) => {
+    expect(cutoverSection(content, "## 4. 전환 직후")).toContain(token);
+  });
+
+  it.each(["07.2-17", "07.3-03", "#109", "07.2-09", "거래처 보강", "CEO-4", "CEO-5"])("§0 선행 조건에 '%s'가 있다", (token) => {
+    expect(cutoverSection(content, "## 0. 선행 조건")).toContain(token);
+  });
+
+  it.each(["전환일에 모두 지워짐", "연습 금지", "지급 처리 기록", "점검 시작"])("§6 공지 문안에 '%s'가 있다", (token) => {
+    expect(cutoverSection(content, "## 6. 공지 문안")).toContain(token);
+  });
+
+  it("§5에 전환 뒤 막힘 줄이 있다", () => {
+    expect(cutoverSection(content, "## 5. 되돌릴 수 없는 문")).toContain("전환 뒤 막힘");
   });
 });

@@ -6,17 +6,19 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { recordAction } from "@/domain/action-log/record";
 import type { SystemStatus } from "@/domain/system-status";
 import {
+  countByOwnerKinds,
   countCounterRowsExcept,
   countDemoRows,
   countRows,
   deleteAll,
+  deleteByOwnerKinds,
   lockDeleteTables,
   lockMarkerExclusive,
   readMarker,
   resetCountersExcept,
   writeMarker,
 } from "@/repositories/cutover";
-import { DELETE_ORDER, KEEP_COUNTER_KEYS, RESET_TABLES, SOURCE_NOT_DEMO } from "./tables";
+import { DELETE_FILE_OWNER_KINDS, DELETE_ORDER, FILE_TABLES, KEEP_COUNTER_KEYS, RESET_TABLES, SOURCE_NOT_DEMO } from "./tables";
 
 // 08-02(D8-05 · D8-09): 전환 도구. dry-run은 건수 · 확인 문자열만, apply는 한 트랜잭션에서 잠금 → 표시 확인 → 확인 문자열 대조 →
 // 업무 표 비우기(FK 순서) → 번호 카운터 초기화(cert 제외) → 전환 표시 → 행동 로그. 하나라도 실패하면 아무것도 안 바뀐다.
@@ -65,6 +67,7 @@ export function confirmToken(counts: Record<string, number>, counters: number): 
 
 async function snapshot(viewer: Viewer, tx?: DbOrTx): Promise<Snapshot> {
   const counts: Record<string, number> = {};
+  for (const table of FILE_TABLES) counts[table] = await countByOwnerKinds(viewer, table, DELETE_FILE_OWNER_KINDS, tx);
   for (const table of DELETE_ORDER) counts[table] = await countRows(viewer, table, tx);
   const counters = await countCounterRowsExcept(viewer, KEEP_COUNTER_KEYS, tx);
   return { counts, counters, ...confirmToken(counts, counters) };
@@ -104,16 +107,17 @@ export async function applyCutover(
   return withTransaction(async (tx) => {
     await lockMarkerExclusive(viewer, tx);
     // 건수를 세기 전에 삭제 표 · 카운터의 쓰기를 막는다(E2).
-    await lockDeleteTables(viewer, [...DELETE_ORDER, ...RESET_TABLES], tx);
+    await lockDeleteTables(viewer, [...FILE_TABLES, ...DELETE_ORDER, ...RESET_TABLES], tx);
     if (await readMarker(viewer, tx)) throw new CutoverRefusedError("already_cut_over");
 
     const current = await snapshot(viewer, tx);
     if (current.token !== input.confirm) throw new CutoverRefusedError("confirm_mismatch");
 
-    for (const table of DELETE_ORDER) {
-      const deleted = await deleteAll(viewer, table, tx);
+    const assertDeleted = (table: string, deleted: number) => {
       if (deleted !== current.counts[table]) throw new Error(`전환 중단: ${table} 지운 행 ${deleted} ≠ 센 건수 ${current.counts[table]}`);
-    }
+    };
+    for (const table of FILE_TABLES) assertDeleted(table, await deleteByOwnerKinds(viewer, table, DELETE_FILE_OWNER_KINDS, tx));
+    for (const table of DELETE_ORDER) assertDeleted(table, await deleteAll(viewer, table, tx));
     const reset = await resetCountersExcept(viewer, KEEP_COUNTER_KEYS, tx);
     if (reset !== current.counters) throw new Error(`전환 중단: document_counters 초기화 ${reset} ≠ 센 건수 ${current.counters}`);
 

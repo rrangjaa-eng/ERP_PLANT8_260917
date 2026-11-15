@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { expensePayments, quoteLines, quoteRevisions } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { rowSource } from "@/repositories/cutover";
 
 export type QuoteLineRow = InferSelectModel<typeof quoteLines>;
 
@@ -194,7 +195,7 @@ export async function insertQuoteLineIfAbsent(
       midCategory: input.midCategory ?? null,
       majorCategory: input.majorCategory ?? null,
       copiedFromLineId: input.copiedFromLineId ?? null,
-      source: input.source ?? "demo",
+      source: input.source ?? (await rowSource(viewer, tx)),
       customFields: input.customFields ?? {},
       adjustmentPairId: input.adjustmentPairId ?? null,
       counterpartProjectId: input.counterpartProjectId ?? null,
@@ -370,6 +371,7 @@ export async function copyQuoteLines(
   tx: DbOrTx,
 ): Promise<number> {
   void viewer;
+  const source = await rowSource(viewer, tx);
   const rows = await tx
     .insert(quoteLines)
     .select(
@@ -380,6 +382,7 @@ export async function copyQuoteLines(
           revisionId: sql`${input.toRevisionId}::uuid`.as("revision_id"),
           copiedFromLineId: (input.withLineage ? sql`${quoteLines.id}` : sql`null::uuid`).as("copied_from_line_id"),
           version: sql`1`.as("version"),
+          source: sql`${source}::text`.as("source"),
           createdAt: sql`now()`.as("created_at"),
           updatedAt: sql`now()`.as("updated_at"),
         })
@@ -452,7 +455,7 @@ export async function insertSourcedAdjustmentLine(viewer: Viewer, values: Source
   void viewer;
   const [row] = await tx
     .insert(quoteLines)
-    .values({ ...values, lineKind: "adjustment", version: 1, sourceSyncedVersion: 1 })
+    .values({ ...values, lineKind: "adjustment", version: 1, sourceSyncedVersion: 1, source: await rowSource(viewer, tx) })
     .returning();
   if (!row) throw new Error("조정 줄을 넣지 못했다");
   return row;

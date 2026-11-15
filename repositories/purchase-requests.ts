@@ -4,6 +4,7 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { corpCardUsages, projects, purchaseRequests, quoteLines, quoteRevisions, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import { rowSource } from "@/repositories/cutover";
 
 // 06-08(EXP-10): 구매 요청 쓰기 · 목록. 범위는 목록 쿼리의 조건에서 갈린다(리포지토리가 거른다 — domain이 거르지 않는다).
 // 트랜잭션 안에서 부르는 함수는 전부 `tx: DbOrTx`를 받는다(06-03 tx 규약 · CROSS E-2).
@@ -25,7 +26,7 @@ export type PurchaseRequestInsert = Omit<
 
 export async function insertPurchaseRequest(viewer: Viewer, values: PurchaseRequestInsert, tx: DbOrTx): Promise<PurchaseRequestRow> {
   void viewer;
-  const [row] = await tx.insert(purchaseRequests).values({ ...values, status: "requested" }).returning();
+  const [row] = await tx.insert(purchaseRequests).values({ ...values, status: "requested", source: await rowSource(viewer, tx) }).returning();
   if (!row) throw new Error("구매 요청 INSERT 결과 없음");
   return row;
 }

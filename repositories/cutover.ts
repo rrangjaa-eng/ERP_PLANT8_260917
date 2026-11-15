@@ -1,6 +1,6 @@
-import { eq, notInArray, sql } from "drizzle-orm";
+import { eq, inArray, notInArray, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { documentCounters, settingsSimple } from "@/db/schema";
+import { documentCounters, files, settingsSimple } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import { DEMO_SOURCE, LIVE_SOURCE } from "@/domain/cutover/tables";
 import { lockSimpleKey, upsertSimpleValue } from "@/repositories/settings";
@@ -53,6 +53,28 @@ export async function deleteAll(viewer: Viewer, table: string, tx: DbOrTx): Prom
   void viewer;
   const result = await tx.execute(sql`delete from ${sql.identifier(table)}`);
   return result.rowCount ?? 0;
+}
+
+// files · upload_intents — 지울 소유 종류의 행만(거래처 서류 · 회사 로고는 남는다).
+export async function countByOwnerKinds(viewer: Viewer, table: string, kinds: readonly string[], tx: DbOrTx = db): Promise<number> {
+  void viewer;
+  const result = await tx.execute<{ n: number }>(
+    sql`select count(*)::int as n from ${sql.identifier(table)} where owner_kind in (${sql.join(kinds.map((kind) => sql`${kind}`), sql`, `)})`,
+  );
+  return Number(result.rows[0]?.n ?? 0);
+}
+
+export async function deleteByOwnerKinds(viewer: Viewer, table: string, kinds: readonly string[], tx: DbOrTx): Promise<number> {
+  void viewer;
+  const result = await tx.execute(sql`delete from ${sql.identifier(table)} where owner_kind in (${sql.join(kinds.map((kind) => sql`${kind}`), sql`, `)})`);
+  return result.rowCount ?? 0;
+}
+
+// 지울 증빙 파일의 저장소 키 — apply가 삭제 전에 같은 트랜잭션에서 읽는다(커밋 뒤 객체 정리).
+export async function listFileObjectKeys(viewer: Viewer, kinds: readonly string[], tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  const rows = await tx.select({ objectKey: files.objectKey }).from(files).where(inArray(files.ownerKind, [...kinds])).orderBy(files.objectKey);
+  return rows.map((row) => row.objectKey);
 }
 
 export async function countCounterRowsExcept(viewer: Viewer, keepKeys: readonly string[], tx: DbOrTx = db): Promise<number> {

@@ -3,6 +3,7 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { expensePayments, expenses } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import { rowSource } from "@/repositories/cutover";
 
 // 06-03(EXP-06): 지급 기록 쓰기 · 살아 있는 기록 조회 · 지출결의 문서 version +1. 살아 있는 지급은 문서당 하나 —
 // 06-27 부분 유니크 인덱스 `expense_payments_live_uniq`가 최종 판정한다. 행 잠금은 05 lockExpenseForUpdate를 쓴다(A#8).
@@ -15,7 +16,7 @@ export type ExpensePaymentInsert = Omit<
 
 export async function insertPayment(viewer: Viewer, values: ExpensePaymentInsert, tx: DbOrTx): Promise<ExpensePaymentRow> {
   void viewer;
-  const [row] = await tx.insert(expensePayments).values(values).returning();
+  const [row] = await tx.insert(expensePayments).values({ ...values, source: await rowSource(viewer, tx) }).returning();
   if (!row) throw new Error("지급 기록 INSERT 결과 없음");
   return row;
 }

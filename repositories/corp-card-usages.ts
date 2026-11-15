@@ -6,6 +6,7 @@ import { corpCardUsages, corpCards, projects, purchaseRequests, quoteLines, quot
 import type { Viewer } from "@/domain/viewer";
 import { liveLinkExists } from "@/repositories/evidence-record-links";
 import { aliveFileExists } from "@/repositories/files";
+import { rowSource } from "@/repositories/cutover";
 
 // 06-05(EXP-07): 법인카드 사용 쓰기 · 목록 · 직전 등록. 범위(UA-612)는 목록 쿼리의 조건에서 갈린다 — 보관된 건은 늘 뺀다(H-4 기반).
 
@@ -18,7 +19,7 @@ export type CardUsageInsert = Omit<
 
 export async function insertCardUsage(viewer: Viewer, values: CardUsageInsert, tx: DbOrTx): Promise<CardUsageRow> {
   void viewer;
-  const [row] = await tx.insert(corpCardUsages).values(values).returning();
+  const [row] = await tx.insert(corpCardUsages).values({ ...values, source: await rowSource(viewer, tx) }).returning();
   if (!row) throw new Error("카드 사용 INSERT 결과 없음");
   return row;
 }

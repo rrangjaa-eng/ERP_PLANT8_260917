@@ -200,10 +200,11 @@ describe("새 차수 트레이서(04-14 Task 1 · D-53, 실제 Postgres)", () =>
 
     const [copy] = await linesOf(created.revisionId);
     if (!copy) throw new Error("복사본이 없습니다");
-    const { id, revisionId: copyRevision, copiedFromLineId, version, createdAt, updatedAt, ...copyBusiness } = copy;
+    // 08-02(D8-05): source는 원본을 잇지 않고 복사 시점의 전환 표시(rowSource)를 따른다 — 전환 전이라 demo.
+    const { id, revisionId: copyRevision, copiedFromLineId, version, createdAt, updatedAt, source: copySource, ...copyBusiness } = copy;
     void createdAt;
     void updatedAt;
-    const { id: originalId, revisionId: originalRevision, copiedFromLineId: originalLineage, version: originalVersion, createdAt: oc, updatedAt: ou, ...originalBusiness } = original;
+    const { id: originalId, revisionId: originalRevision, copiedFromLineId: originalLineage, version: originalVersion, createdAt: oc, updatedAt: ou, source: originalSource, ...originalBusiness } = original;
     void originalLineage;
     void originalVersion;
     void oc;
@@ -213,6 +214,8 @@ describe("새 차수 트레이서(04-14 Task 1 · D-53, 실제 Postgres)", () =>
     expect(originalRevision).toBe(revisionId);
     expect(copiedFromLineId).toBe(originalId);
     expect(version).toBe(1);
+    expect(originalSource).toBe("legacy");
+    expect(copySource).toBe("demo");
     expect(copyBusiness).toEqual(originalBusiness);
   });
 

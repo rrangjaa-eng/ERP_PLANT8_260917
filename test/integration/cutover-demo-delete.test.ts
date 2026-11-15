@@ -18,7 +18,7 @@ import { countRows, makePerson, teamIdByName } from "./approvals-fixtures";
 
 const NOW = new Date();
 const freshBackup = (minutesAgo: number, status = "SUCCESSFUL") =>
-  (async () => ({ kind: "ok" as const, status, endTime: new Date(NOW.getTime() - minutesAgo * 60_000).toISOString() })) satisfies CutoverDeps["getLastBackup"];
+  (() => Promise.resolve({ kind: "ok" as const, status, endTime: new Date(NOW.getTime() - minutesAgo * 60_000).toISOString() })) satisfies CutoverDeps["getLastBackup"];
 const deps = (getLastBackup: CutoverDeps["getLastBackup"] = freshBackup(10)): CutoverDeps => ({ getLastBackup });
 
 async function makeProject(pm?: Viewer) {
@@ -53,7 +53,7 @@ describe("전환 도구 — 프로젝트 한 줄 트레이서(08-02 Task 1)", ()
     await makeProject();
     const before = { projects: await countRows("projects"), revisions: await countRows("quote_revisions"), counters: await countRows("document_counters") };
 
-    const result = await dryRunCutover(SYSTEM_VIEWER, deps());
+    const result = await dryRunCutover(SYSTEM_VIEWER);
 
     if (!("token" in result)) throw new Error("전환 전 dry-run이 건수를 돌려주지 않았다");
     expect(result.mode).toBe("dry-run");
@@ -69,7 +69,7 @@ describe("전환 도구 — 프로젝트 한 줄 트레이서(08-02 Task 1)", ()
     expect(demoProject.source).toBe("demo");
     await upsertDocumentCounter(SYSTEM_VIEWER, { counterKey: "cert", period: "2026", value: 7 });
     const actionLogBefore = await countRows("action_log");
-    const dry = await dryRunCutover(SYSTEM_VIEWER, deps());
+    const dry = await dryRunCutover(SYSTEM_VIEWER);
     if (!("token" in dry)) throw new Error("dry-run 건수 없음");
 
     const result = await applyCutover(SYSTEM_VIEWER, { confirm: dry.token, now: NOW, runUrl: null }, deps());
@@ -90,7 +90,7 @@ describe("전환 도구 — 프로젝트 한 줄 트레이서(08-02 Task 1)", ()
 
   it("apply 뒤 새 프로젝트는 source 'live' · 번호는 서울 연도 두 자리 + 001이다", async () => {
     const { person } = await makeProject();
-    const dry = await dryRunCutover(SYSTEM_VIEWER, deps());
+    const dry = await dryRunCutover(SYSTEM_VIEWER);
     if (!("token" in dry)) throw new Error("dry-run 건수 없음");
     await applyCutover(SYSTEM_VIEWER, { confirm: dry.token, now: NOW, runUrl: null }, deps());
 
@@ -103,11 +103,11 @@ describe("전환 도구 — 프로젝트 한 줄 트레이서(08-02 Task 1)", ()
   it.each([
     ["4시간 전 성공", freshBackup(240)],
     ["실패한 백업", freshBackup(10, "FAILED")],
-    ["백업 없음", async () => ({ kind: "none" as const })],
-    ["조회 불가", async () => ({ kind: "unavailable" as const, reason: "not-configured" })],
+    ["백업 없음", () => Promise.resolve({ kind: "none" as const })],
+    ["조회 불가", () => Promise.resolve({ kind: "unavailable" as const, reason: "not-configured" })],
   ])("백업 가드 — %s이면 backup_not_fresh로 거부하고 아무 행도 바꾸지 않는다", async (_label, getLastBackup) => {
     await makeProject();
-    const dry = await dryRunCutover(SYSTEM_VIEWER, deps());
+    const dry = await dryRunCutover(SYSTEM_VIEWER);
     if (!("token" in dry)) throw new Error("dry-run 건수 없음");
     const projectsBefore = await countRows("projects");
 

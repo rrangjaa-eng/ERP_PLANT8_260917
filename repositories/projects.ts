@@ -22,6 +22,7 @@ import type { Viewer } from "@/domain/viewer";
 import type { RowScope } from "@/domain/permissions/scope-for";
 import { rowScopeCondition } from "@/repositories/row-scope";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { rowSource } from "@/repositories/cutover";
 import { ISSUED_BASIS_STATUSES, type ProfitBasis } from "@/domain/projects/list-view";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 
@@ -512,7 +513,7 @@ export async function insertProject(viewer: Viewer, input: ProjectInsertInput, t
       preEstimateForeignAmount: input.preEstimateForeignAmount,
       preEstimateFxRate: input.preEstimateFxRate,
       preEstimateAmountKrw: input.preEstimateAmountKrw,
-      source: input.source ?? "demo",
+      source: input.source ?? (await rowSource(viewer, tx)),
       customFields: input.customFields ?? {},
     })
     .returning();

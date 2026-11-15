@@ -264,3 +264,54 @@ describe("docs/EVIDENCE-STORAGE.md", () => {
     }
   });
 });
+
+// 08-01(MIG-04 · MIG-05) — 첫 운영 승격 · 전환 런북. OPERATIONS.md는 300줄 상한이라 별도 문서(CERT-PURGE.md 선례).
+// `## N. ` 머리부터 다음 `## ` 머리 앞까지 잘라 단언한다(다른 절의 같은 낱말에 속지 않게).
+function cutoverSection(content: string, heading: string): string {
+  const lines = content.split("\n");
+  const start = lines.findIndex((line) => line.startsWith(heading));
+  if (start === -1) return "";
+  const next = lines.findIndex((line, index) => index > start && line.startsWith("## "));
+  return lines.slice(start, next === -1 ? undefined : next).join("\n");
+}
+
+describe("docs/CUTOVER.md", () => {
+  const content = readDoc("CUTOVER.md");
+
+  it("200줄 이하다", () => {
+    expect(lineCount(content)).toBeLessThanOrEqual(200);
+  });
+
+  it("12자리 숫자(프로젝트 번호·백업 id 형태)가 없다(D-03)", () => {
+    expect(content).not.toMatch(/\d{12}/);
+  });
+
+  it("절 머리가 §0 선행 조건 → §6 공지 문안 순서로 있다", () => {
+    const headings = [
+      "## 0. 선행 조건",
+      "## 1. 첫 운영 승격",
+      "## 2. 전환 준비",
+      "## 3. 전환일",
+      "## 4. 전환 직후",
+      "## 5. 되돌릴 수 없는 문",
+      "## 6. 공지 문안",
+    ];
+    const lines = content.split("\n");
+    const order = headings.map((heading) => lines.findIndex((line) => line.startsWith(heading)));
+    for (const index of order) expect(index).toBeGreaterThan(-1);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it.each(["수동 백업", "pre-promote", "verify.yml", "evidence-bucket", "머지 동결", "/api/health", "PITR"])(
+    "§1 첫 운영 승격에 '%s'가 있다",
+    (token) => {
+      expect(cutoverSection(content, "## 1. 첫 운영 승격")).toContain(token);
+    },
+  );
+
+  it("OPERATIONS.md가 이 문서를 가리키고 300줄 이하 그대로다", () => {
+    const operations = readDoc("OPERATIONS.md");
+    expect(operations).toContain("CUTOVER.md");
+    expect(lineCount(operations)).toBeLessThanOrEqual(300);
+  });
+});

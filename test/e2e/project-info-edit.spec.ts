@@ -75,6 +75,10 @@ async function openEdit(page: Page) {
   await expandProjectInfo(page);
   await projectInfo(page).getByRole("button", { name: "고치기", exact: true }).click();
   await expect(projectInfo(page).getByLabel("행사명", { exact: true })).toBeVisible();
+  // `고치기`는 첫 칸(기간 시작, 기간 권리 없으면 행사명)으로 포커스를 옮기고 다음 프레임(requestAnimationFrame)에 한 번 더 옮긴다 —
+  // 그 프레임이 fill의 포커스와 글자 넣기 사이에 끼면 글자가 기간 칸으로 가 `일괄 저장 1`이 서지 않는다(#392 CI e2e(2)).
+  await expect(projectInfo(page).locator("#period-start, #info-name").and(page.locator(":focus"))).toHaveCount(1);
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 }
 
 test.describe("기본 정보 4칸 (S3)", () => {

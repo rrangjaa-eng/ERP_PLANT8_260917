@@ -499,6 +499,7 @@ deploy_purge_auto_job() {
 }
 
 # 08-04(D8-05): 전환 demo 삭제 Job — 배포는 만들기만 하고 실행하지 않는다. cutover.yml이 execute --args로 apply를 넘긴다.
+# --args=""로 저장된 args를 비운다 — deploy는 주지 않은 플래그의 이전 값을 남겨, 손으로 넣은 --apply가 dry-run 실행에 남을 수 있다(08-04 /review P3-1).
 # 비밀은 인증 비밀만 — 백업 조회(GCP_PROJECT_ID · CLOUD_SQL_INSTANCE_ID)와 증빙 객체 정리(gcs 버킷)만 더한다.
 # 스모크 통과 뒤에 배포한다 — 마이그레이션 · 스모크가 멈춘 배포가 이 Job만 새 이미지로 바꿔 거부된 이미지 · 옛 스키마로 apply가 돌지 않게(eng 검토 B2).
 deploy_cutover_job() {
@@ -517,7 +518,7 @@ deploy_cutover_job() {
   )
   run gcloud run jobs deploy "$(job_name "$ENV" cutover)" \
     "${job_common[@]}" \
-    --command=node,dist/cli/cutover-cli.mjs \
+    --command=node,dist/cli/cutover-cli.mjs --args="" \
     --set-env-vars="${common_env},GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=$(sql_instance "$ENV"),STORAGE_DRIVER=gcs,GCS_EVIDENCE_BUCKET=$(evidence_bucket "$ENV" "$PROJECT")" \
     --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
 }

@@ -561,7 +561,9 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     // 08-04(D8-05): 전환 Job — 배포는 만들기만 하고, cutover.yml이 execute --args로 apply를 넘긴다.
     const cutover = jobLine(r.log, "cutover");
     expect(cutover).toContain("--command=node,dist/cli/cutover-cli.mjs");
-    expect(cutover).not.toContain("--args=");
+    // 08-04 /review(Opus 독립 검토 P3-1): 저장된 args를 빈 값으로 고정 — 손으로 update한 --apply가 다음 dry-run 실행에 남지 않게.
+    expect(cutover).toMatch(/--args=(\s|$)/);
+    expect(cutover).not.toContain("--apply");
     expect(cutover).toContain("GCP_PROJECT_ID=test-proj");
     expect(cutover).toContain("CLOUD_SQL_INSTANCE_ID=plant8-staging-db");
     expect(cutover).toContain("STORAGE_DRIVER=gcs");

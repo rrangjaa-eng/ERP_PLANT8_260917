@@ -2,7 +2,7 @@ name: security
 
 # 보안 스캐너 5종(#109 · 사용자 결정 2026-09-30 선택 A — 로컬 Docker 대신 CI).
 #   gitleaks    저장소 이력 전체 속 비밀
-#   semgrep     정적 규칙(레지스트리 p/default · 지표 전송 끔)
+#   semgrep     정적 규칙(레지스트리 p/default · 지표 전송 끔 · .claude 개발 도구는 배포되지 않아 뺌)
 #   zizmor      워크플로 보안
 #   osv-scanner 의존성 취약점(pnpm-lock.yaml)
 #   trivy       설정 · IaC(Dockerfile 등)
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - run: pipx run "semgrep==${SEMGREP_VERSION}" scan --config p/default --metrics off --severity ERROR --error .
+      - run: pipx run "semgrep==${SEMGREP_VERSION}" scan --config p/default --metrics off --severity ERROR --error --exclude .claude .
 
   zizmor:
     runs-on: ubuntu-latest
@@ -82,7 +82,7 @@ jobs:
       # 종료 1 = 취약점 있음(아래에서 심각도로 거른다) · 그 밖의 0 아닌 값 = 도구 오류.
       - run: |
           rc=0
-          "$(go env GOPATH)/bin/osv-scanner" scan source --lockfile pnpm-lock.yaml \
+          "$(go env GOPATH)/bin/osv-scanner" scan source --lockfile pnpm-lock.yaml --config osv-scanner.toml \
             --format json --output osv.json || rc=$?
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
           jq -r '.results[]?.packages[]? | .package as $p | .groups[]?

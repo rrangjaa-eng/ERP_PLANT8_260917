@@ -1,0 +1,11 @@
+# osv-scanner 예외(#109). 거짓 양성만, 이유와 함께 둔다.
+# xlsx는 npm 판이 멈춰 공식 판이 cdn.sheetjs.com에만 있다(package.json). 아래 두 권고는
+# 영향 범위가 「< 0.19.3」 · 「< 0.20.2」인데 npm에 고친 판이 없어 osv가 0.20.3도 걸린다고 본다.
+
+[[IgnoredVulns]]
+id = "GHSA-4r6h-8v6p-xvw6"
+reason = "xlsx < 0.19.3 프로토타입 오염 — 설치된 판은 cdn.sheetjs.com 0.20.3이라 범위 밖"
+
+[[IgnoredVulns]]
+id = "GHSA-5pgg-2g8v-p4x9"
+reason = "xlsx < 0.20.2 ReDoS — 설치된 판은 cdn.sheetjs.com 0.20.3이라 범위 밖"

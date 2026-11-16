@@ -599,6 +599,15 @@ describe("security.yml", () => {
     expect(security).toContain("tonumber? // 99) | select(. >= 7)");
     expect(security).toContain('test "$high" -eq 0');
   });
+
+  it("예외는 이유를 적은 파일로만 — osv는 osv-scanner.toml(거짓 양성 id), semgrep은 배포되지 않는 .claude만 뺀다", () => {
+    expect(security).toContain("--lockfile pnpm-lock.yaml --config osv-scanner.toml");
+    expect(security).toMatch(/semgrep[^\n]*--exclude \.claude \.$/m);
+    const osvConfig = readFileSync(resolve(process.cwd(), "osv-scanner.toml"), "utf8");
+    const ids = [...osvConfig.matchAll(/^id = "([^"]+)"$/gm)].map((m) => m[1]);
+    expect(ids).toEqual(["GHSA-4r6h-8v6p-xvw6", "GHSA-5pgg-2g8v-p4x9"]);
+    expect((osvConfig.match(/^reason = "/gm) ?? []).length).toBe(ids.length);
+  });
 });
 
 // #109 zizmor unpinned-uses(높음) — 태그는 옮길 수 있어 공급망 공격 통로가 된다.

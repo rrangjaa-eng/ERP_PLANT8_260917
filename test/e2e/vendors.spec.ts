@@ -924,7 +924,7 @@ test.describe("거래처 검색 · 파일 받기 (07-20 SC-16)", () => {
       expect(lines[0]).toBe("이름,갈래,사업자 번호,지급 기한,계좌 은행,예금주,계좌번호,기본 증빙 종류,숨김");
       expect(lines.length - 1).toBe(await page.locator("tbody tr:visible").count());
       // 결과 줄 · 토스트 없음(ui/toast 요소가 없다).
-      await expect(page.locator('[class*="Toast-module"]')).toHaveCount(0);
+      await expect(page.locator("[class$='_toast'], [class*='_toast ']")).toHaveCount(0);
       await expect(page.locator("#vendors-export-error")).toHaveCount(0);
     } finally {
       for (const vendor of made) await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
@@ -969,7 +969,7 @@ test.describe("거래처 검색 · 파일 받기 (07-20 SC-16)", () => {
       });
       expect(errorColor).toBe(dangerColor);
       // 토스트 없음 — 실패는 버튼 아래 오류 줄 하나뿐이다(ui/toast 요소가 없다).
-      await expect(page.locator('[class*="Toast-module"]')).toHaveCount(0);
+      await expect(page.locator("[class$='_toast'], [class*='_toast ']")).toHaveCount(0);
       await expect(error).toHaveAttribute("role", "alert");
       await expect(button).not.toHaveAttribute("aria-busy", "true");
     } finally {
@@ -1104,7 +1104,7 @@ test.describe("거래처 담당자 · 서류 · 확인 표시 (07-23 SC-17 ⑦�
       await saved.nth(1).getByRole("button", { name: "삭제" }).click();
       await expect(saved).toHaveCount(4);
       await expect(saved.nth(1).getByLabel("이름", { exact: true })).toHaveValue("담당3");
-      await expect(page.locator('[class*="Toast-module"]')).toHaveCount(0);
+      await expect(page.locator("[class$='_toast'], [class*='_toast ']")).toHaveCount(0);
       await expect(panelOf(page).getByText(/삭제됨|담당자 삭제/)).toHaveCount(0);
 
       // 저장 전 폼 상태 — `취소 Esc`(바뀐 칸 확인 창 `입력 버리기`)가 되돌리기다.
@@ -1301,7 +1301,7 @@ test.describe("거래처 담당자 · 서류 · 확인 표시 (07-23 SC-17 ⑦�
       await expect(undo).toBeFocused();
       await expect(panelOf(page).getByText("확인됨", { exact: true })).toBeVisible();
       await expect(panelOf(page).getByText("확인 전", { exact: true })).toHaveCount(0);
-      await expect(page.locator('[class*="Toast-module"]')).toHaveCount(0);
+      await expect(page.locator("[class$='_toast'], [class*='_toast ']")).toHaveCount(0);
       await page.unroute("**/admin/vendors**");
 
       await undo.click();

@@ -261,7 +261,7 @@ test.describe("정산 결재 문서 — 증빙 대기 건수 행(07.1-01 PD3)", 
     const value = terms.filter({ hasText: /^증빙 대기$/ }).locator("xpath=following-sibling::dd[1]");
     await expect(value).toHaveText("1건");
     expect(await value.locator("span").first().evaluate((element) => getComputedStyle(element).color)).toBe(await warningColor(ceo));
-    await expect(value.locator('[class*="Num-module__"][class$="__num"], [class*="Num-module__"][class*="__num "]')).toHaveText("1");
+    await expect(value.locator('[class$="_num"], [class*="_num "]')).toHaveText("1");
     // 「실행가 합」 뒤 · 「기안」 앞.
     const labels = await terms.allTextContents();
     expect(labels.indexOf("증빙 대기")).toBe(labels.indexOf("실행가 합") + 1);

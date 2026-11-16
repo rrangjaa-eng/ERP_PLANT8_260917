@@ -41,4 +41,8 @@ describe("CLI 번들 계약(deploy.sh ↔ build-cli.mjs)", () => {
   it("확인증 파기 CLI(purge-certs)가 번들에 들어 있다(04.3-12)", () => {
     expect(bundledOutputs()).toContain("dist/cli/purge-certs.mjs");
   });
+
+  it("전환 CLI(cutover-cli)가 번들에 들어 있다(08-02 — 08-04 Job이 부른다)", () => {
+    expect(bundledOutputs()).toContain("dist/cli/cutover-cli.mjs");
+  });
 });

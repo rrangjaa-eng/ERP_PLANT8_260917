@@ -7,6 +7,7 @@ import type { RowScope } from "@/domain/permissions/scope-for";
 import { rowScopeCondition } from "@/repositories/row-scope";
 import type { DbOrTx } from "@/repositories/document-counters";
 import type { VendorKind } from "@/domain/vendors/kind";
+import { rowSource } from "@/repositories/cutover";
 
 export type ReserveEntryRow = InferSelectModel<typeof reserveEntries>;
 
@@ -112,7 +113,7 @@ export async function insertEntry(
   void viewer;
   const [row] = await tx
     .insert(reserveEntries)
-    .values({ ...input })
+    .values({ ...input, source: await rowSource(viewer, tx) })
     .onConflictDoNothing({ target: reserveEntries.id })
     .returning();
   return row ?? null;

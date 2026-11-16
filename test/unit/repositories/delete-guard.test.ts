@@ -14,6 +14,7 @@ const ALLOWED_DELETES: Record<string, { count: number; reason: string }> = {
   "cert-events.ts": { count: 1, reason: "신청 취소 — 토큰 없는 신청됨 행사만(경품 0 확인 뒤), 보관함 규약 예외(N16 a)" },
   "cert-prizes.ts": { count: 1, reason: "경품 표 편집의 줄 삭제 — 버전 확인 뒤 행사 안 편집 행" },
   "cert-submissions.ts": { count: 1, reason: "서명 업로드 의도 표 — FK · 개인정보 없는 임시 의도 행" },
+  "cutover.ts": { count: 3, reason: "08-02 전환 apply — 확인 문자열 · 백업 가드 · 한 트랜잭션 안에서만 업무 기록 표 · 지울 종류 파일 행 · 번호 카운터(cert 제외)를 비운다(D8-05)" },
   "expense-evidence-reviews.ts": { count: 1, reason: "증빙 확인 기록 되돌리기 — 증빙 추가 · 무효가 확인 전으로 돌린다(06-11 C4)" },
   "holidays.ts": { count: 2, reason: "대체공휴일 파생 행만 — 규칙이 다시 만든다(수동 행은 보관)" },
   "privacy-session-activity.ts": { count: 1, reason: "better-auth 세션 행 — 로그인 세션은 업무 기록이 아니고 끊긴 세션을 남기지 않는다(활동 행은 CASCADE)" },

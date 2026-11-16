@@ -78,6 +78,8 @@ export const CORE_ACTION_TYPES = [
   // 07.6 eng r1 E1: 매출 발행 · 입금 줄 지우기 · 되살리기는 발행 합계 · 수금 지연을 바꾸는 돈 기록이라 끌 수 없다 — archive · restore(끌 수 있음)에 두지 않는다
   "revenue_entry_archive",
   "revenue_entry_restore",
+  // 08-02(C4 · E1): 전환 실행 — 업무 표 전체 삭제 · 번호 초기화와 한 트랜잭션으로 남기는 기록이라 끌 수 없다(행 삭제는 0046 트리거가 막는다).
+  "cutover_apply",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -133,6 +135,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   document_reopen: "승인 되돌리기",
   revenue_entry_archive: "매출 줄 삭제",
   revenue_entry_restore: "매출 줄 복원",
+  cutover_apply: "전환 실행",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -197,6 +200,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   // 07.6 eng r1 E1: 매출 줄 지우기 · 되살리기는 돈 기록이라 끌 수 없다
   "revenue_entry_archive",
   "revenue_entry_restore",
+  // 08-02(C4 · E1): 전환 실행은 업무 표 전체 삭제와 한 트랜잭션으로 남기는 기록이라 끌 수 없다
+  "cutover_apply",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

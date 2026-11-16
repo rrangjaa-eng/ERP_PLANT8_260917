@@ -64,6 +64,13 @@ describe("recordAction (OPS-05)", () => {
     expect(appendActionLog).not.toHaveBeenCalled();
   });
 
+  // 08-02(C4 · E1): 전환 실행은 업무 표 전체 삭제와 한 트랜잭션으로 남기는 기록이라 세 배열에 함께 있고 끌 수 없다.
+  it("cutover_apply가 세 배열에 함께 있다(08-02)", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("cutover_apply");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("cutover_apply");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).cutover_apply).toBe("전환 실행");
+  });
+
   it("ALWAYS_ON_ACTION_TYPES는 CORE_ACTION_TYPES의 부분집합이다", () => {
     for (const type of ALWAYS_ON_ACTION_TYPES) {
       expect(CORE_ACTION_TYPES as readonly string[]).toContain(type);

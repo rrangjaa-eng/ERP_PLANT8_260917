@@ -5,6 +5,7 @@ import { projects, revenueEntries, revenueIssueRequests, users } from "@/db/sche
 import type { RowScope } from "@/domain/permissions/scope-for";
 import type { Viewer } from "@/domain/viewer";
 import { rowScopeCondition } from "@/repositories/row-scope";
+import { rowSource } from "@/repositories/cutover";
 
 // 06-18(D-610): 발행 요청 표. 잠그고 쓰는 함수는 전부 `tx: DbOrTx`를 필수로 받는다(06-03 tx 규약 — 풀 기본값 없음).
 
@@ -36,7 +37,7 @@ export async function listIssueRequestRowsByProject(viewer: Viewer, projectId: s
 /** 화면 uuid로 멱등 삽입 — 이미 있으면 넣지 않고 null. */
 export async function insertIssueRequest(viewer: Viewer, values: IssueRequestInsert, tx: DbOrTx): Promise<IssueRequestRow | null> {
   void viewer;
-  const [row] = await tx.insert(revenueIssueRequests).values({ ...values, status: "requested" }).onConflictDoNothing({ target: revenueIssueRequests.id }).returning();
+  const [row] = await tx.insert(revenueIssueRequests).values({ ...values, status: "requested", source: await rowSource(viewer, tx) }).onConflictDoNothing({ target: revenueIssueRequests.id }).returning();
   return row ?? null;
 }
 

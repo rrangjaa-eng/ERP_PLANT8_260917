@@ -32,6 +32,8 @@ export type ObjectStorage = {
   delete(key: string): Promise<void>;
   // 완료된 `evidence/` 객체의 보존 표식 — 1차 보호는 접두어 분리(수명 주기는 `incoming/`에만)이고 이것은 이중 방어다.
   retain(key: string): Promise<void>;
+  // 08-02(C7): retain의 반대 — 전환 apply가 지운 업무의 증빙 객체는 보존 표식을 푼 뒤 지운다(보류 중 객체는 삭제가 거부된다).
+  release(key: string): Promise<void>;
 };
 
 export class ObjectStorageNotConfiguredError extends Error {}
@@ -236,6 +238,16 @@ export function createLocalStorage(opts: { secret: string; dataDir: string; base
       await writeFile(sidecarPath(key), JSON.stringify({ ...sidecar, retained: true }));
     },
 
+    // 객체가 없으면 아무것도 하지 않는다.
+    async release(key) {
+      assertLocalKey(key);
+      const sidecar = await readSidecar(key);
+      if (!sidecar) return;
+      const { retained, ...rest } = sidecar;
+      void retained;
+      await writeFile(sidecarPath(key), JSON.stringify(rest));
+    },
+
     async writeObject(key, bytes, metadata) {
       assertLocalKey(key);
       await mkdir(path.dirname(objectPath(key)), { recursive: true });
@@ -399,6 +411,22 @@ export function createGcsStorage(opts: {
       if (!ok(res.status)) {
         logger.warn("gcs.request_failed", { op: "retain", status: res.status, reason: gcsErrorMessage(res) });
         throw new GcsUnavailableError("retain", res.status);
+      }
+    },
+
+    async release(key) {
+      const res = await send({
+        op: "release",
+        method: "PATCH",
+        url: objectUrl(key),
+        headers: { "Content-Type": "application/json" },
+        body: Buffer.from(JSON.stringify({ temporaryHold: false })),
+      });
+      // 이미 없는 객체는 풀 표식도 없다 — 이어지는 delete도 404를 조용히 넘긴다.
+      if (res.status === 404) return;
+      if (!ok(res.status)) {
+        logger.warn("gcs.request_failed", { op: "release", status: res.status, reason: gcsErrorMessage(res) });
+        throw new GcsUnavailableError("release", res.status);
       }
     },
   };

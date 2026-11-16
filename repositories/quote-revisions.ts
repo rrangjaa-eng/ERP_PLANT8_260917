@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { quoteLines, quoteRevisions } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { rowSource } from "@/repositories/cutover";
 
 export type QuoteRevisionRow = InferSelectModel<typeof quoteRevisions>;
 
@@ -23,7 +24,7 @@ export async function insertQuoteRevision(
   void viewer;
   const [row] = await tx
     .insert(quoteRevisions)
-    .values({ projectId: input.projectId, seq: input.seq, source: input.source ?? "demo" })
+    .values({ projectId: input.projectId, seq: input.seq, source: input.source ?? (await rowSource(viewer, tx)) })
     .returning();
   if (!row) throw new Error("quote_revisions insert가 행을 반환하지 않았습니다.");
   return row;
@@ -90,7 +91,7 @@ export async function insertRevision(
   tx: DbOrTx,
 ): Promise<QuoteRevisionRow> {
   void viewer;
-  const [row] = await tx.insert(quoteRevisions).values({ projectId: input.projectId, seq: input.seq }).returning();
+  const [row] = await tx.insert(quoteRevisions).values({ projectId: input.projectId, seq: input.seq, source: await rowSource(viewer, tx) }).returning();
   if (!row) throw new Error("quote_revisions insert가 행을 반환하지 않았습니다.");
   return row;
 }

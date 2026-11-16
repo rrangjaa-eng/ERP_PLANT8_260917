@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { projects, revenueEntries, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { rowSource } from "@/repositories/cutover";
 
 export type RevenueEntryRow = InferSelectModel<typeof revenueEntries>;
 
@@ -134,7 +135,7 @@ export async function insertRevenueEntry(
       amountFxRate: input.amountFxRate,
       amountAmountKrw: input.amountAmountKrw,
       note: input.note ?? null,
-      source: input.source ?? "demo",
+      source: input.source ?? (await rowSource(viewer, tx)),
       customFields: input.customFields ?? {},
     })
     .onConflictDoNothing({ target: revenueEntries.id })

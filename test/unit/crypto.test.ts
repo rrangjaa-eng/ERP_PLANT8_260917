@@ -108,6 +108,14 @@ describe("lib/crypto", () => {
     expect(() => decrypt(tampered.join(":"))).toThrow();
   });
 
+  it("인증 태그를 앞 4바이트로 잘라도 복호화가 실패한다(태그 길이 16 고정 · semgrep gcm-no-tag-length)", async () => {
+    process.env.APP_DATA_KEY_v1 = VALID_KEY_V1;
+    const { encrypt, decrypt } = await loadCrypto();
+    const parts = encrypt("짧은태그").split(":");
+    const shortTag = Buffer.from(parts[2] ?? "", "base64").subarray(0, 4).toString("base64");
+    expect(() => decrypt([parts[0], parts[1], shortTag, parts[3]].join(":"))).toThrow();
+  });
+
   it("알 수 없는 버전 접두어면 복호화가 그 버전을 가리키는 예외를 던진다", async () => {
     process.env.APP_DATA_KEY_v1 = VALID_KEY_V1;
     const { decrypt } = await loadCrypto();

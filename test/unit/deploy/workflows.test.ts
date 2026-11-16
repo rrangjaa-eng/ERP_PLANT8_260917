@@ -598,6 +598,14 @@ describe("security.yml", () => {
     expect(security).toContain('if [ "$rc" -gt 1 ]; then exit "$rc"; fi');
     expect(security).toContain("tonumber? // 99) | select(. >= 7)");
     expect(security).toContain('test "$high" -eq 0');
+    expect(security).toContain('if [ "$rc" -eq 1 ] && [ "$groups" -eq 0 ]; then');
+  });
+
+  it("Go 도구 체인도 버전을 고정한다(stable 금지)", () => {
+    expect(security).not.toContain("go-version: stable");
+    const goVersions = [...security.matchAll(/go-version: "(\d+\.\d+\.\d+)"/g)].map((m) => m[1]);
+    expect(goVersions.length).toBe((security.match(/actions\/setup-go@/g) ?? []).length);
+    expect(new Set(goVersions).size).toBe(1);
   });
 
   it("예외는 이유를 적은 파일로만 — osv는 osv-scanner.toml(거짓 양성 id), semgrep은 배포되지 않는 .claude만 뺀다", () => {

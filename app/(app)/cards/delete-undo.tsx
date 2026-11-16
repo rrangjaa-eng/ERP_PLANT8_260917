@@ -32,7 +32,6 @@ type DeleteUndoValue = {
   shown: number;
   /** 되돌린 행 — 다시 그려지면 그 행 `삭제`가 포커스를 받는다(04.2 공휴일 `focusDate` 선례, DOM D-4). */
   focusId: string | null;
-  clearFocus: () => void;
   /** 성공이면 null, 거부 · 실패면 그 글자. `opts.panel`이면 실패를 표 위 결과 줄에 쓰지 않고 글자만 돌려준다(패널은 호출부가 보인다). */
   remove: (target: { id: string; version: number }, opts?: { panel?: boolean }) => Promise<string | null>;
   undo: (removed: Removed) => void;
@@ -75,7 +74,6 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
   // 새로 지울 때마다 `되돌리기`를 다시 그려 포커스를 준다.
   const [shown, setShown] = useState(0);
   const [focusId, setFocusId] = useState<string | null>(null);
-  const clearFocus = useCallback(() => setFocusId(null), []);
   const lineRef = useRef<HTMLParagraphElement>(null);
   const focusUndo = useCallback(() => lineRef.current?.querySelector<HTMLElement>("button")?.focus(), []);
   // 되돌린 뒤 다시 받은 화면이 그려졌는데 포커스가 갈 곳 없이 body에 있으면(되살린 줄이 이 목록에 없다 — 다른 달 건) 화면 제목으로.
@@ -84,6 +82,8 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!afterUndoRef.current || refreshing) return;
     afterUndoRef.current = false;
+    // 표식은 되돌리기 새로 고침이 끝난 뒤에 지운다 — 그 사이 행이 내려갔다 다시 그려져도 다시 포커스를 받게.
+    setFocusId(null);
     const active = document.activeElement;
     if (active && active !== document.body) return;
     focusScreenTitle();
@@ -127,7 +127,7 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
   }
 
   return (
-    <DeleteUndoContext.Provider value={{ pendingId, line, shown, focusId, clearFocus, remove, undo: (removed) => void undo(removed), focusUndo, lineRef }}>
+    <DeleteUndoContext.Provider value={{ pendingId, line, shown, focusId, remove, undo: (removed) => void undo(removed), focusUndo, lineRef }}>
       {children}
     </DeleteUndoContext.Provider>
   );
@@ -190,15 +190,15 @@ export function CardUsageEditAction({ id, href, name }: { id: string; href: stri
 // `onDone`은 삭제가 성공했을 때만 호출부가 그 자리의 패널을 닫는 데 쓴다(패널 갈래 — 거부면 패널을 열어 둔 채 버튼 뒤 한 줄,
 // 표 위 결과 줄은 패널에 가려 있다). `onDone`이 없으면(행) 거부도 표 위 결과 줄이 말한다.
 export function CardUsageDeleteButton({ id, version, name, onDone, busy }: { id: string; version: number; name: string; onDone?: () => void; busy?: boolean }) {
-  const { pendingId, remove, focusId, clearFocus } = useDeleteUndo();
+  const { pendingId, remove, focusId } = useDeleteUndo();
   const nameRef = useRef<HTMLSpanElement>(null);
   const [rejection, setRejection] = useState<string | null>(null);
-  // 되돌린 행이면 이 `삭제`가 포커스를 받고 표식을 지운다(다른 행이 다시 받지 않게). 행이 다시 그려질 때만이 아니라
-  // 지운 행이 아직 남아 있을 때도(빨리 되돌려 삭제 새로 고침이 되돌리기 새로 고침에 덮인 때 — next 16.4) 표식이 서면 받는다.
-  const restored = focusId === id;
+  // 되돌린 행이면 이 `삭제`가 포커스를 받는다. 행이 다시 그려질 때만이 아니라 지운 행이 아직 남아 있을 때도
+  // (빨리 되돌려 삭제 새로 고침이 되돌리기 새로 고침에 덮인 때 — next 16.4) 표식이 서면 받는다. 표식은 되돌리기
+  // 새로 고침이 끝나면 공급자가 지운다. 패널 갈래(`onDone`)는 받지 않는다 — 행 하나만.
+  const restored = !onDone && focusId === id;
   useEffect(() => {
     if (!restored) return;
-    clearFocus();
     const button = nameRef.current?.closest("button");
     if (!button) return;
     if (button.getClientRects().length > 0) {
@@ -209,7 +209,7 @@ export function CardUsageDeleteButton({ id, version, name, onDone, busy }: { id:
     const next = button.closest("tr")?.nextElementSibling;
     if (!next?.matches("[class*='collapsedRow']")) return;
     next.querySelector<HTMLElement>('td[role="button"]')?.focus();
-  }, [restored, clearFocus]);
+  }, [restored]);
   const split = splitRefreshTail(rejection ?? undefined);
   return (
     <>

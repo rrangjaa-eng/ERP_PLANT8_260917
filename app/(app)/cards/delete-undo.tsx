@@ -193,14 +193,19 @@ export function CardUsageDeleteButton({ id, version, name, onDone, busy }: { id:
   const { pendingId, remove, focusId, clearFocus } = useDeleteUndo();
   const nameRef = useRef<HTMLSpanElement>(null);
   const [rejection, setRejection] = useState<string | null>(null);
-  // 되돌려 다시 그려진 행이면 이 `삭제`가 포커스를 받고 표식을 지운다(다른 행이 다시 받지 않게).
-  const [restored] = useState(() => focusId === id);
+  // 되돌린 행이면 이 `삭제`가 포커스를 받고 표식을 지운다(다른 행이 다시 받지 않게). 행이 다시 그려질 때만이 아니라
+  // 지운 행이 아직 남아 있을 때도(빨리 되돌려 삭제 새로 고침이 되돌리기 새로 고침에 덮인 때 — next 16.4) 표식이 서면 받는다.
+  const restored = focusId === id;
   useEffect(() => {
     if (!restored) return;
     clearFocus();
-    // 폰은 행동 열이 숨어 이 `삭제`가 포커스를 받지 못한다 — 같은 줄 묶음의 접힌 줄 탭 칸으로(`PurchaseList` 선례).
     const button = nameRef.current?.closest("button");
-    if (!button || button.getClientRects().length > 0) return;
+    if (!button) return;
+    if (button.getClientRects().length > 0) {
+      button.focus();
+      return;
+    }
+    // 폰은 행동 열이 숨어 이 `삭제`가 포커스를 받지 못한다 — 같은 줄 묶음의 접힌 줄 탭 칸으로(`PurchaseList` 선례).
     const next = button.closest("tr")?.nextElementSibling;
     if (!next?.matches("[class*='collapsedRow']")) return;
     next.querySelector<HTMLElement>('td[role="button"]')?.focus();
@@ -212,7 +217,6 @@ export function CardUsageDeleteButton({ id, version, name, onDone, busy }: { id:
         danger
         pending={pendingId === id}
         busy={busy}
-        autoFocus={restored}
         onClick={() => {
           setRejection(null);
           void remove({ id, version }, onDone ? { panel: true } : undefined).then((failed) => {

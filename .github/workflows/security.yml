@@ -1,0 +1,97 @@
+name: security
+
+# 보안 스캐너 5종(#109 · 사용자 결정 2026-09-30 선택 A — 로컬 Docker 대신 CI).
+#   gitleaks    저장소 이력 전체 속 비밀
+#   semgrep     정적 규칙(레지스트리 p/default · 지표 전송 끔)
+#   zizmor      워크플로 보안
+#   osv-scanner 의존성 취약점(pnpm-lock.yaml)
+#   trivy       설정 · IaC(Dockerfile 등)
+# 도구는 서드파티 Action 없이 버전을 고정해 설치한다 — Go 모듈은 sum.golang.org가
+# 체크섬을 확인하고, PyPI 도구는 정확한 버전으로 받는다. 비밀 · 쓰기 권한은 쓰지 않는다.
+# 하나라도 찾으면 그 잡이 빨갛다. main 전체는 workflow_dispatch로 돌린다.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch: {}
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: v8.30.1
+  SEMGREP_VERSION: 1.185.0
+  ZIZMOR_VERSION: 1.32.0
+  OSV_SCANNER_VERSION: v2.7.1
+  TRIVY_VERSION: v0.76.2
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: stable
+          cache: false
+      - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
+      - run: |
+          "$(go env GOPATH)/bin/gitleaks" git --redact --no-banner --exit-code 1 .
+
+  semgrep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: pipx run "semgrep==${SEMGREP_VERSION}" scan --config p/default --metrics off --error .
+
+  zizmor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      # 온라인 감사(가짜 커밋 · 알려진 취약 Action)에 읽기 토큰만 쓴다.
+      - run: pipx run "zizmor==${ZIZMOR_VERSION}" --no-progress .github/workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  osv-scanner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: stable
+          cache: false
+      - run: go install "github.com/google/osv-scanner/v2/cmd/osv-scanner@${OSV_SCANNER_VERSION}"
+      - run: |
+          "$(go env GOPATH)/bin/osv-scanner" scan source --lockfile pnpm-lock.yaml
+
+  trivy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: stable
+          cache: false
+      - run: go install "github.com/aquasecurity/trivy/cmd/trivy@${TRIVY_VERSION}"
+      - run: |
+          "$(go env GOPATH)/bin/trivy" config --exit-code 1 --severity HIGH,CRITICAL .

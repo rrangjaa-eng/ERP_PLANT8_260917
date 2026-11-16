@@ -542,3 +542,45 @@ describe("visual-baseline.yml", () => {
     expect(block).toContain("git push");
   });
 });
+
+// #109 보안 스캐너 5종 — 첫 운영 승격 선행(docs/CUTOVER.md §0 · §1 (a)).
+describe("security.yml", () => {
+  const security = readWorkflow("security.yml");
+
+  it("PR마다 · 수동(main 전체)으로 돌고 push 트리거는 없다", () => {
+    expect(security).toMatch(/on:\s*\n\s*pull_request:/);
+    expect(security).toContain("workflow_dispatch:");
+    expect(security).not.toMatch(/^\s{2}push:/m);
+  });
+
+  it("권한은 contents: read 하나뿐이고 비밀을 읽지 않는다", () => {
+    expect(security).toMatch(/permissions:\s*\n\s*contents: read\s*\n/);
+    expect(security).not.toContain("write");
+    expect(security).not.toContain("secrets.");
+  });
+
+  it("스캐너 5종이 각자 잡으로 있고 버전이 고정돼 있다", () => {
+    for (const job of ["gitleaks", "semgrep", "zizmor", "osv-scanner", "trivy"]) {
+      expect(security, `잡 ${job}`).toMatch(new RegExp(`^  ${job}:$`, "m"));
+    }
+    for (const v of ["GITLEAKS_VERSION", "SEMGREP_VERSION", "ZIZMOR_VERSION", "OSV_SCANNER_VERSION", "TRIVY_VERSION"]) {
+      expect(security, v).toMatch(new RegExp(`${v}: v?\\d+\\.\\d+\\.\\d+\\n`));
+    }
+    expect(security).not.toMatch(/@latest|==latest/);
+  });
+
+  it("Action은 커밋 해시로 고정하고 체크아웃 자격 증명을 남기지 않는다", () => {
+    const uses = [...security.matchAll(/uses: (\S+)/g)].map((m) => m[1] ?? "");
+    expect(uses.length).toBeGreaterThan(0);
+    for (const u of uses) expect(u).toMatch(/@[0-9a-f]{40}$/);
+    const checkouts = (security.match(/actions\/checkout@/g) ?? []).length;
+    expect((security.match(/persist-credentials: false/g) ?? []).length).toBe(checkouts);
+  });
+
+  it("gitleaks는 이력 전체(fetch-depth 0)를 보고, 각 스캐너는 찾으면 실패한다", () => {
+    expect(security).toContain("fetch-depth: 0");
+    expect(security).toMatch(/gitleaks" git --redact[^\n]*--exit-code 1/);
+    expect(security).toMatch(/semgrep[^\n]*--metrics off --error/);
+    expect(security).toMatch(/trivy" config --exit-code 1/);
+  });
+});

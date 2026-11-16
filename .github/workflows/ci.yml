@@ -47,7 +47,7 @@ jobs:
     outputs:
       app: ${{ steps.scope.outputs.app }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: scope
         if: github.event_name == 'pull_request'
         env:
@@ -67,14 +67,14 @@ jobs:
         run: echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - id: passed
         if: github.event.action == 'ready_for_review' && github.run_attempt == 1
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .quality-passed
           key: quality-passed-${{ steps.tree.outputs.tree }}
           lookup-only: true
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         if: steps.passed.outputs.cache-hit != 'true'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: steps.passed.outputs.cache-hit != 'true'
         with:
           node-version-file: .nvmrc
@@ -103,7 +103,7 @@ jobs:
       # actions/cache는 비어 있지 않은 경로가 필요하다 — 내용은 쓰지 않는다.
       - run: mkdir -p .quality-passed && touch .quality-passed/ok
         if: steps.passed.outputs.cache-hit != 'true'
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: steps.passed.outputs.cache-hit != 'true'
         with:
           path: .quality-passed
@@ -141,9 +141,9 @@ jobs:
       APP_ENV: local
       CI: "true"
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -186,9 +186,9 @@ jobs:
       APP_ENV: local
       CI: "true"
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -201,14 +201,14 @@ jobs:
           v=$(node -p "require('@playwright/test/package.json').version")
           echo "version=$v" >> "$GITHUB_OUTPUT"
       - id: pw-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ steps.pw.outputs.version }}
       - timeout-minutes: 15
         run: pnpm exec playwright install --with-deps chromium
       - if: steps.pw-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ steps.pw-cache.outputs.cache-primary-key }}
@@ -224,7 +224,7 @@ jobs:
           E2E_SKIP_DESKTOP: "1"
         run: pnpm test:e2e --project=desktop-settings
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-report-${{ matrix.shard }}
           path: |
@@ -241,13 +241,13 @@ jobs:
     needs: [quality, integration, e2e]
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: tree
         run: |
           tree=$(git rev-parse 'HEAD^{tree}')
           echo "tree=$tree" >> "$GITHUB_OUTPUT"
           echo "$tree" > tested-tree.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tested-tree-${{ steps.tree.outputs.tree }}
           path: tested-tree.txt

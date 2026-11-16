@@ -107,7 +107,7 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
       "pnpm lint:sql",
       "pnpm test:unit",
       ".claude/hooks/tests",
-      "actions/cache/save@v4",
+      "actions/cache/save@",
     ].map((token) => firstLine(qualityBlock, token));
     for (const line of order) expect(line).toBeGreaterThan(-1);
     expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -118,16 +118,16 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     const qualityBlock = jobBlock(ci, "quality", "integration");
     for (const token of [
       "HEAD^{tree}",
-      "actions/cache/restore@v4",
+      "actions/cache/restore@",
       "lookup-only: true",
       "key: quality-passed-${{ steps.tree.outputs.tree }}",
-      "actions/cache/save@v4",
+      "actions/cache/save@",
     ]) {
       expect(qualityBlock, `quality 잡에 ${token}이 있어야 한다`).toContain(token);
     }
     // passed가 건너뛰어지면(draft·재실행) cache-primary-key 출력이 비므로 저장 키는 tree에서 직접 만든다.
     expect(qualityBlock).not.toContain("cache-primary-key");
-    const save = qualityBlock.slice(qualityBlock.indexOf("actions/cache/save@v4"));
+    const save = qualityBlock.slice(qualityBlock.indexOf("actions/cache/save@"));
     expect(save).toContain("key: quality-passed-${{ steps.tree.outputs.tree }}");
   });
 
@@ -237,7 +237,7 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
   it("e2e 실패 업로드가 playwright-report/와 함께 test-results/(전후·차이 사진)를 올린다", () => {
     const ci = readWorkflow("ci.yml");
     const block = jobBlock(ci, "e2e", "tested-tree");
-    const upload = block.slice(block.indexOf("actions/upload-artifact@v4"));
+    const upload = block.slice(block.indexOf("actions/upload-artifact@"));
     expect(upload).toMatch(/path: \|\n\s+playwright-report\/\n\s+test-results\/\n/);
   });
 

@@ -42,7 +42,6 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   # 배포 CI 중복 제거(2026-10-01 사용자 결정): main 커밋 tree가 PR CI 전체 통과 기록(ci.yml
@@ -59,7 +58,7 @@ jobs:
     outputs:
       hit: ${{ steps.find.outputs.hit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: find
         env:
           GH_TOKEN: ${{ github.token }}
@@ -90,6 +89,9 @@ jobs:
       (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')) &&
       (needs.ci.result == 'success' || (needs.ci.result == 'skipped' && needs.tested.outputs.hit == 'true'))
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     env:
       ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
     steps:
@@ -102,15 +104,15 @@ jobs:
             echo "::error::main이 아닌 ref는 배포하지 않습니다(ENG-D12) — main에서 다시 실행하세요" >&2
             exit 1
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - id: auth
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/erp-repo
           service_account: gha-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
-      - uses: google-github-actions/setup-gcloud@v3
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
         with:
           install_components: alpha,beta
       - id: deploy
@@ -124,6 +126,9 @@ jobs:
   production:
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'production'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     env:
       ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
     steps:
@@ -136,15 +141,15 @@ jobs:
             echo "::error::main이 아닌 ref는 배포하지 않습니다(ENG-D12) — main에서 다시 실행하세요" >&2
             exit 1
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - id: auth
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/erp-repo
           service_account: gha-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
-      - uses: google-github-actions/setup-gcloud@v3
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
         with:
           install_components: alpha,beta
       # 스테이징이 실제로 서빙 중인 SHA만 프로덕션에 올린다(D-05) — 이 가드가

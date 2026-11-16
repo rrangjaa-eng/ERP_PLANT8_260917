@@ -39,11 +39,11 @@ jobs:
       APP_ENV: local
       CI: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -54,14 +54,14 @@ jobs:
       - run: pnpm exec playwright test --project=visual --update-snapshots=all
       # 방금 만든 사진으로 한 번 더 비교한다 — 흔들리면 여기서 빨개져 commit 잡이 돌지 않는다.
       - run: pnpm exec playwright test --project=visual --update-snapshots=none
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: visual-baseline
           path: test/e2e/*.spec.ts-snapshots/**/*.png
           retention-days: 7
       # 재비교가 실패하면 위 업로드는 건너뛴다 — 차이 사진(actual·diff)은 여기서 따로 올려 원인을 본다. commit 잡은 받지 않는다.
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: visual-baseline-diff
           path: test-results/
@@ -75,9 +75,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # 업로드 경로에 와일드카드가 있어 아티팩트는 첫 와일드카드 뒤 계층만 담는다 — test/e2e에 받아야 제 자리에 앉는다.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: visual-baseline
           path: test/e2e

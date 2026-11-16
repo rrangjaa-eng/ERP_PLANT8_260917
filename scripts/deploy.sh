@@ -498,6 +498,31 @@ deploy_purge_auto_job() {
     --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
 }
 
+# 08-04(D8-05): 전환 demo 삭제 Job — 배포는 만들기만 하고 실행하지 않는다. cutover.yml이 execute --args로 apply를 넘긴다.
+# --args=""로 저장된 args를 비운다 — deploy는 주지 않은 플래그의 이전 값을 남겨, 손으로 넣은 --apply가 dry-run 실행에 남을 수 있다(08-04 /review P3-1).
+# 비밀은 인증 비밀만 — 백업 조회(GCP_PROJECT_ID · CLOUD_SQL_INSTANCE_ID)와 증빙 객체 정리(gcs 버킷)만 더한다.
+# 스모크 통과 뒤에 배포한다 — 마이그레이션 · 스모크가 멈춘 배포가 이 Job만 새 이미지로 바꿔 거부된 이미지 · 옛 스키마로 apply가 돌지 않게(eng 검토 B2).
+deploy_cutover_job() {
+  STAGE=deploy_cutover_job
+  local runtime_email iam_user better_auth_secret common_env
+  runtime_email="$(runtime_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
+  iam_user="$(runtime_sa "$ENV")@${PROJECT}.iam"
+  better_auth_secret="$(secret_name better-auth-secret "$ENV")"
+  common_env="APP_ENV=${ENV},BETTER_AUTH_URL=${SERVICE_URL},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME}"
+  local job_common=(
+    --image="$IMAGE" --region="$REGION" --project="$PROJECT"
+    --service-account="$runtime_email"
+    --network="$NETWORK" --subnet="$NETWORK" --vpc-egress=private-ranges-only
+    --set-cloudsql-instances="$CONN_NAME"
+    --max-retries=0 --task-timeout=15m
+  )
+  run gcloud run jobs deploy "$(job_name "$ENV" cutover)" \
+    "${job_common[@]}" \
+    --command=node,dist/cli/cutover-cli.mjs --args="" \
+    --set-env-vars="${common_env},GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=$(sql_instance "$ENV"),STORAGE_DRIVER=gcs,GCS_EVIDENCE_BUCKET=$(evidence_bucket "$ENV" "$PROJECT")" \
+    --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
+}
+
 # 자동 파기 모드는 배포하는 커밋(--sha)의 infra/purge-certs-auto.mode에서 읽는다 — 작업 트리가 아니라.
 # 프로덕션 CI는 main HEAD를 체크아웃하지만 promote-guard가 정한 --sha를 배포하므로 트리 파일은 더 새로울 수 있다.
 # 첫 값(공백 · 줄 전체 # 주석 · 값 뒤 인라인 # 주석 제외). 이른 단계에서 검증해 빌드 · gcloud 변경 전에 멈춘다.
@@ -925,6 +950,7 @@ main() {
   ensure_alerts
   smoke
   deploy_purge_auto_job
+  deploy_cutover_job
   ensure_purge_scheduler
   map_domain
 

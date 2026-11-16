@@ -169,7 +169,7 @@ test.describe("§7-14 이력 목록 — 표 면 (07.1-18 PA8)", () => {
       await loginAsAdmin(page);
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`/admin/settings?group=${encodeURIComponent("세율")}`);
-      const tables = page.locator("table[class*='HistoryList']");
+      const tables = page.locator("main table");
       await expect(tables.first()).toBeVisible();
       const surfaces = await page.evaluate(() => {
         const probe = document.createElement("div");
@@ -179,7 +179,7 @@ test.describe("§7-14 이력 목록 — 표 면 (07.1-18 PA8)", () => {
         probe.remove();
         return {
           expected,
-          tables: Array.from(document.querySelectorAll("table[class*='HistoryList']")).map((table) => {
+          tables: Array.from(document.querySelectorAll("main table")).map((table) => {
             const style = getComputedStyle(table);
             return { border: style.borderTopWidth, borderStyle: style.borderTopStyle, radius: style.borderTopLeftRadius, background: style.backgroundColor, right: table.getBoundingClientRect().right };
           }),

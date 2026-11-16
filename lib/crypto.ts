@@ -17,6 +17,8 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { env } from "@/lib/env";
 
 const ALGO = "aes-256-gcm";
+// 인증 태그 길이를 16바이트로 고정한다 — 없으면 잘린 태그(4바이트 등)도 검증을 통과한다.
+const AUTH_TAG_LENGTH = 16;
 const IV_LENGTH = 12; // GCM 권장 길이
 
 // aes-256-gcm 키 길이(바이트). scripts/deploy.sh가 app-data-key-v1을 최초
@@ -124,7 +126,7 @@ export function encrypt(plaintext: string): string {
   const version = newestKeyVersion();
   const key = keyFor(version);
   const iv = randomBytes(IV_LENGTH);
-  const cipher = createCipheriv(ALGO, key, iv);
+  const cipher = createCipheriv(ALGO, key, iv, { authTagLength: AUTH_TAG_LENGTH });
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `${version}:${iv.toString("base64")}:${tag.toString("base64")}:${ciphertext.toString("base64")}`;
@@ -140,7 +142,7 @@ export function decrypt(stored: string): string {
     throw new UnknownEncryptionKeyVersionError(`알 수 없는 키 버전입니다: ${version}`);
   }
   const key = keyFor(version);
-  const decipher = createDecipheriv(ALGO, key, Buffer.from(ivB64, "base64"));
+  const decipher = createDecipheriv(ALGO, key, Buffer.from(ivB64, "base64"), { authTagLength: AUTH_TAG_LENGTH });
   decipher.setAuthTag(Buffer.from(tagB64, "base64"));
   const plaintext = Buffer.concat([
     decipher.update(Buffer.from(dataB64, "base64")),

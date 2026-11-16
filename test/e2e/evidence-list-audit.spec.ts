@@ -157,7 +157,7 @@ async function literal(target: Locator, props: readonly string[]): Promise<Recor
 
 function moduleClass(page: Page, name: string): Locator {
   // 이름 토큰 끝이 정확히 맞아야 한다(`restoreAction`이 `restoreActions`에 걸리지 않게).
-  return page.locator(`[class*="evidence-table-module__"][class$="__${name}"], [class*="evidence-table-module__"][class*="__${name} "]`);
+  return page.locator(`[class$="_${name}"], [class*="_${name} "]`);
 }
 
 async function tokenProbe(page: Page, prop: string, expr: string): Promise<string> {
@@ -201,11 +201,11 @@ function filterSelect(page: Page, name: "상태" | "종류" | "기간"): Locator
 }
 
 function primaryButtons(page: Page): Locator {
-  return page.locator('main button[class*="Button-module__"][class*="__primary"]');
+  return page.locator('main button[class$="_primary"], main button[class*="_primary "]');
 }
 
 function hintRow(page: Page): Locator {
-  return page.locator('main div[class*="__hintRow"]');
+  return page.locator('main div[class$="_hintRow"], main div[class*="_hintRow "]');
 }
 
 function dropZone(page: Page): Locator {
@@ -621,7 +621,7 @@ test("③ intake 1280 — Ctrl+U 파일 선택 · 방향키 → Enter 편집 →
   const foot = evidenceTable(page).locator("tfoot");
   await expect(foot).toContainText(/공개 범위 저장 · \d+줄 · \d{2}:\d{2}/);
   record("Ctrl+S → 합계 행 `공개 범위 저장 · n줄 · HH:mm`", 1280, role, url, (await foot.innerText()).replace(/\s+/g, " "), "/공개 범위 저장 · \\d+줄 · HH:mm/", true);
-  const toasts = await page.locator("[role='status'][class*='Toast'], [class*='Toast-module__']").count();
+  const toasts = await page.locator("[class$='_toast'], [class*='_toast ']").count();
   record("저장 성공 토스트 수", 1280, role, url, toasts, 0, toasts === 0);
 });
 
@@ -666,7 +666,7 @@ test("④ intake 1280 — 서버 거부: version 바뀐 줄 + 보관된 팀 → 
     const savedRows = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.id, rich.lotte[0]!));
     const [row] = await db.select({ saved: evidenceRecords.visibilitySavedAt }).from(evidenceRecords).where(eq(evidenceRecords.id, rich.lotte[0]!));
     record("전부 거부 — 저장된 줄 0(DB visibility_saved_at)", 1280, role, url, `${savedRows.length}행 · saved_at ${row?.saved ? row.saved.toISOString() : "null"}`, "null", row?.saved === null);
-    const toasts = await page.locator("[class*='Toast-module__']").count();
+    const toasts = await page.locator("[class$='_toast'], [class*='_toast ']").count();
     record("거부 토스트 수", 1280, role, url, toasts, 0, toasts === 0);
   } finally {
     await db.update(teams).set({ archivedAt: null }).where(eq(teams.id, otherTeamId));

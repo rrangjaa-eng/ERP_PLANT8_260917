@@ -32,9 +32,17 @@ describe("deploy.yml", () => {
     expect(deploy).toMatch(/sha:[\s\S]*?default: ""/);
   });
 
-  it("permissions에 id-token: write와 contents: read가 있다", () => {
-    expect(deploy).toContain("id-token: write");
-    expect(deploy).toContain("contents: read");
+  it("워크플로 권한은 contents: read뿐이고 id-token: write는 배포 잡(staging · production)에만 있다(zizmor excessive-permissions)", () => {
+    expect(deploy).toMatch(/\npermissions:\n  contents: read\n\njobs:/);
+    for (const job of ["staging", "production"]) {
+      const start = deploy.indexOf(`\n  ${job}:\n`);
+      expect(start, job).toBeGreaterThan(-1);
+      const rest = deploy.slice(start + 1);
+      const end = rest.slice(1).search(/\n  [a-z-]+:\n/);
+      const block = end === -1 ? rest : rest.slice(0, end + 1);
+      expect(block, job).toMatch(/\n    permissions:\n      contents: read\n      id-token: write\n/);
+    }
+    expect(deploy.match(/id-token: write/g)).toHaveLength(2);
   });
 
   it("ci 잡이 workflow_call로 ci.yml을 부른다", () => {
@@ -70,7 +78,7 @@ describe("deploy.yml", () => {
   it("WIF 인증에 정확한 workload_identity_provider 키를 쓴다(오타 없음)", () => {
     expect(deploy).toContain("workload_identity_provider:");
     expect(deploy).not.toContain("workflow_identity_provider:");
-    expect(deploy).toContain("google-github-actions/auth@v3");
+    expect(deploy).toContain("google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0");
   });
 
   it("staging 잡은 needs: ci이고 push 또는 target==staging에서 실행된다", () => {
@@ -472,7 +480,7 @@ describe("visual-baseline.yml", () => {
   it("테스트 잡은 읽기 권한이고 checkout이 자격 증명을 저장하지 않는다", () => {
     const block = baseline();
     expect(block).toMatch(/permissions:\n\s+contents: read\n/);
-    expect(block).toMatch(/uses: actions\/checkout@v4\n\s+with:\n\s+persist-credentials: false/);
+    expect(block).toMatch(/uses: actions\/checkout@[0-9a-f]{40} # v4\.\d+\.\d+\n\s+with:\n\s+persist-credentials: false/);
   });
 
   it("테스트 잡은 --update-snapshots=all 뒤에 같은 프로젝트를 --update-snapshots=none으로 재비교한다", () => {
@@ -487,7 +495,7 @@ describe("visual-baseline.yml", () => {
   it("테스트 잡은 재비교 뒤 스냅숏 PNG만 visual-baseline 아티팩트(보존 7일)로 올린다", () => {
     const block = baseline();
     const none = block.indexOf("--update-snapshots=none");
-    const upload = block.indexOf("actions/upload-artifact@v4");
+    const upload = block.indexOf("actions/upload-artifact@");
     expect(upload).toBeGreaterThan(none);
     const tail = block.slice(upload);
     expect(tail).toContain("name: visual-baseline");
@@ -501,7 +509,7 @@ describe("visual-baseline.yml", () => {
     const step = block.indexOf("if: failure()");
     expect(step, "failure() 조건의 업로드 스텝이 있어야 한다").toBeGreaterThan(none);
     const tail = block.slice(step);
-    expect(tail).toContain("actions/upload-artifact@v4");
+    expect(tail).toContain("actions/upload-artifact@");
     expect(tail).toContain("name: visual-baseline-diff");
     expect(tail).toContain("path: test-results/");
     expect(tail).toContain("retention-days: 7");
@@ -519,8 +527,8 @@ describe("visual-baseline.yml", () => {
   it("커밋 잡은 테스트 잡 뒤(needs: baseline)에 돌고 checkout·download-artifact·git 셸 스텝뿐이다", () => {
     const block = commit();
     expect(block).toMatch(/\n    needs: baseline\n/);
-    const uses = [...block.matchAll(/uses:\s*(\S+)/g)].map((m) => m[1]);
-    expect(uses).toEqual(["actions/checkout@v4", "actions/download-artifact@v4"]);
+    const uses = [...block.matchAll(/uses:\s*(\S+)@/g)].map((m) => m[1]);
+    expect(uses).toEqual(["actions/checkout", "actions/download-artifact"]);
   });
 
   it("커밋 잡 run에 pnpm·npm·npx·node·playwright·corepack이 없다(쓰기 토큰 곁에서 저장소 코드를 돌리지 않는다)", () => {
@@ -540,5 +548,87 @@ describe("visual-baseline.yml", () => {
       expect(line).not.toMatch(/git add (-A|--all|\.)(\s|$)/);
     }
     expect(block).toContain("git push");
+  });
+});
+
+// #109 보안 스캐너 5종 — 첫 운영 승격 선행(docs/CUTOVER.md §0 · §1 (a)).
+describe("security.yml", () => {
+  const security = readWorkflow("security.yml");
+
+  it("PR마다 · 수동(main 전체)으로 돌고 push 트리거는 없다", () => {
+    expect(security).toMatch(/on:\s*\n\s*pull_request:/);
+    expect(security).toContain("workflow_dispatch:");
+    expect(security).not.toMatch(/^\s{2}push:/m);
+  });
+
+  it("권한은 contents: read 하나뿐이고 비밀을 읽지 않는다", () => {
+    expect(security).toMatch(/permissions:\s*\n\s*contents: read\s*\n/);
+    expect(security).not.toContain("write");
+    expect(security).not.toContain("secrets.");
+  });
+
+  it("스캐너 5종이 각자 잡으로 있고 버전이 고정돼 있다", () => {
+    for (const job of ["gitleaks", "semgrep", "zizmor", "osv-scanner", "trivy"]) {
+      expect(security, `잡 ${job}`).toMatch(new RegExp(`^  ${job}:$`, "m"));
+    }
+    for (const v of ["GITLEAKS_VERSION", "SEMGREP_VERSION", "ZIZMOR_VERSION", "OSV_SCANNER_VERSION", "TRIVY_VERSION"]) {
+      expect(security, v).toMatch(new RegExp(`${v}: v?\\d+\\.\\d+\\.\\d+\\n`));
+    }
+    expect(security).not.toMatch(/@latest|==latest/);
+  });
+
+  it("Action은 커밋 해시로 고정하고 체크아웃 자격 증명을 남기지 않는다", () => {
+    const uses = [...security.matchAll(/uses: (\S+)/g)].map((m) => m[1] ?? "");
+    expect(uses.length).toBeGreaterThan(0);
+    for (const u of uses) expect(u).toMatch(/@[0-9a-f]{40}$/);
+    const checkouts = (security.match(/actions\/checkout@/g) ?? []).length;
+    expect((security.match(/persist-credentials: false/g) ?? []).length).toBe(checkouts);
+  });
+
+  it("gitleaks는 이력 전체(fetch-depth 0)를 보고, 각 스캐너는 찾으면 실패한다", () => {
+    expect(security).toContain("fetch-depth: 0");
+    expect(security).toMatch(/gitleaks" git --redact[^\n]*--exit-code 1/);
+    expect(security).toMatch(/semgrep[^\n]*--metrics off --severity ERROR --error/);
+    expect(security).toMatch(/trivy" config --exit-code 1 --severity HIGH,CRITICAL/);
+  });
+
+  it("막는 기준은 높음 이상(사용자 카드 2026-11-16) — zizmor high · osv CVSS 7.0 이상 또는 심각도 없음", () => {
+    expect(security).toMatch(/zizmor[^\n]*--min-severity high/);
+    expect(security).toMatch(/osv-scanner" scan source[^\n]*\\\n\s+--format json --output osv\.json \|\| rc=\$\?/);
+    expect(security).toContain('if [ "$rc" -gt 1 ]; then exit "$rc"; fi');
+    expect(security).toContain("tonumber? // 99) | select(. >= 7)");
+    expect(security).toContain('test "$high" -eq 0');
+    expect(security).toContain('if [ "$rc" -eq 1 ] && [ "$groups" -eq 0 ]; then');
+  });
+
+  it("Go 도구 체인도 버전을 고정한다(stable 금지)", () => {
+    expect(security).not.toContain("go-version: stable");
+    const goVersions = [...security.matchAll(/go-version: "(\d+\.\d+\.\d+)"/g)].map((m) => m[1]);
+    expect(goVersions.length).toBe((security.match(/actions\/setup-go@/g) ?? []).length);
+    expect(new Set(goVersions).size).toBe(1);
+  });
+
+  it("예외는 이유를 적은 파일로만 — osv는 osv-scanner.toml(거짓 양성 id), semgrep은 배포되지 않는 .claude만 뺀다", () => {
+    expect(security).toContain("--lockfile pnpm-lock.yaml --config osv-scanner.toml");
+    expect(security).toMatch(/semgrep[^\n]*--exclude \.claude \.$/m);
+    const osvConfig = readFileSync(resolve(process.cwd(), "osv-scanner.toml"), "utf8");
+    const ids = [...osvConfig.matchAll(/^id = "([^"]+)"$/gm)].map((m) => m[1]);
+    expect(ids).toEqual(["GHSA-4r6h-8v6p-xvw6", "GHSA-5pgg-2g8v-p4x9"]);
+    expect((osvConfig.match(/^reason = "/gm) ?? []).length).toBe(ids.length);
+  });
+});
+
+// #109 zizmor unpinned-uses(높음) — 태그는 옮길 수 있어 공급망 공격 통로가 된다.
+describe("모든 워크플로", () => {
+  it("Action을 40자 커밋 해시로 고정하고 버전 주석을 단다(로컬 재사용 워크플로 제외)", () => {
+    const files = readdirSync(WORKFLOWS_DIR).filter((f) => f.endsWith(".yml"));
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      for (const m of readWorkflow(file).matchAll(/uses:\s*(\S+)(.*)$/gm)) {
+        const ref = m[1] ?? "";
+        if (ref.startsWith("./")) continue;
+        expect(`${file}: ${ref}${m[2] ?? ""}`).toMatch(/@[0-9a-f]{40} # v\d+\.\d+\.\d+$/);
+      }
+    }
   });
 });

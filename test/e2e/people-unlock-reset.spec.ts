@@ -100,7 +100,7 @@ test.describe("사람 목록 잠김 · 잠금 풀기 (SC-11)", () => {
     const result = page.getByRole("status").filter({ hasText: "잠금 풀기 ·" });
     await expect(result).toHaveText(`잠금 풀기 · ${a.name}`);
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.locator("[class*='Toast-module__']")).toHaveCount(0);
+    await expect(page.locator("[class$='_toast'], [class*='_toast ']")).toHaveCount(0);
     // 다음 우선 값 — 발급 직후 계정은 첫 로그인 전 · 임시 비밀번호 사용 중.
     await expect(statusCell(rowA)).not.toContainText("잠김");
     await expect(statusCell(rowA)).toContainText("임시 비밀번호 사용 중");
@@ -358,7 +358,7 @@ test.describe("사람 상세 로그인 섹션 · 비밀번호 초기화 (SC-12 T
     await loginSection(page).getByRole("button", { name: "잠금 풀기" }).click();
     await expect(loginStatusValue(page)).toHaveText("임시 비밀번호 사용 중");
     await expect(loginSection(page).getByRole("button", { name: "잠금 풀기" })).toHaveCount(0);
-    await expect(page.locator("[class*='Toast-module__']")).toHaveCount(0);
+    await expect(page.locator("[class$='_toast'], [class*='_toast ']")).toHaveCount(0);
     await expect(loginSection(page).getByRole("button", { name: "비밀번호 초기화" })).toBeFocused();
     expect(await openFailures(a.email)).toBe(0);
   });
@@ -430,7 +430,7 @@ test.describe("사람 상세 로그인 섹션 · 비밀번호 초기화 (SC-12 T
 
     // 값은 URL · 토스트 · 페이지 HTML 재요청 · 행동 로그 화면에 없다.
     expect(page.url()).not.toContain(temp);
-    await expect(page.locator("[class*='Toast-module__']")).toHaveCount(0);
+    await expect(page.locator("[class$='_toast'], [class*='_toast ']")).toHaveCount(0);
     expect(await (await page.request.get(`/admin/people/${a.userId}`)).text()).not.toContain(temp);
     expect(await (await page.request.get("/admin/action-log")).text()).not.toContain(temp);
 
